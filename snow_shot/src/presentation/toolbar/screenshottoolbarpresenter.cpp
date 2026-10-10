@@ -87,6 +87,9 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
         toolbar->setSelectionDisplayUnit(state.selectionDisplayUnit);
     }
     updateOcrAvailability(m_overlayCoordinator, state.ocrAvailable);
+    if (m_overlayCoordinator.selectionToolbarHidden()) {
+        return;
+    }
     if (!state.selectionToolbarMode || !hasValidSelection(state.selectionPixels)) {
         m_overlayCoordinator.hideSelectionToolbar();
         return;
@@ -180,6 +183,9 @@ void ScreenshotToolbarPresenter::moveToolbar(const ScreenshotToolbarPresentation
 
 void ScreenshotToolbarPresenter::moveSelectionToolbar(
     const ScreenshotToolbarPresentationState& state) {
+    if (m_overlayCoordinator.selectionToolbarHidden()) {
+        return;
+    }
     ScreenshotSelectionToolbarWidget* toolbarWidget = m_overlayCoordinator.selectionToolbar();
     if (toolbarWidget == nullptr) {
         return;

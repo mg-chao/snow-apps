@@ -3,6 +3,9 @@
 
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
+#include "snow_shot/presentation/screenshotcolorpickercontroller.h"
+#include "snow_shot/presentation/screenshotcolorpickerwindow.h"
+#include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
@@ -104,7 +107,9 @@ class NoopToolbarCommands final : public ScreenshotToolbarCommandSink,
     void incrementSelectedSerialNumbers() override {}
     void createTextForSelectedSerialNumber() override {}
     void repositionToolbarForContentChange() override {}
-    void hideColorPickersForScreenshotUi() override {}
+    void hideColorPickersForScreenshotUi() override {
+        hideColorPickers();
+    }
     void toggleSelectionAspectRatioLockFromToolbar() override {}
     void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset) override {}
     void openSelectionResizeModalFromToolbar() override {}
@@ -112,6 +117,7 @@ class NoopToolbarCommands final : public ScreenshotToolbarCommandSink,
     void setSelectionCornerRadiusFromToolbar(int) override {}
     void setSelectionShadowWidthFromToolbar(int) override {}
     void setSelectionToolbarHovered(bool) override {}
+    std::function<void()> hideColorPickers = [] {};
 };
 
 // Count observable translation requests to distinguish content rebuilding from movement.
@@ -131,14 +137,21 @@ class HintTranslationObserver final : public QTranslator {
 class PaintObserver final : public QObject {
   public:
     QObject* canvas = nullptr;
+    QObject* colorPicker = nullptr;
     qint64 canvasPaints = 0;
     qint64 uiPaints = 0;
     qint64 canvasDamagePixels = 0;
+    qint64 colorPickerPaints = 0;
+    qint64 colorPickerMoves = 0;
+    qint64 colorPickerOwnerChanges = 0;
 
     void reset() {
         canvasPaints = 0;
         uiPaints = 0;
         canvasDamagePixels = 0;
+        colorPickerPaints = 0;
+        colorPickerMoves = 0;
+        colorPickerOwnerChanges = 0;
     }
 
   protected:
@@ -150,7 +163,15 @@ class PaintObserver final : public QObject {
                     canvasDamagePixels += static_cast<qint64>(rect.width()) * rect.height();
             } else {
                 ++uiPaints;
+                if (object == colorPicker)
+                    ++colorPickerPaints;
             }
+        }
+        if (object == colorPicker && event != nullptr) {
+            if (event->type() == QEvent::Move)
+                ++colorPickerMoves;
+            else if (event->type() == QEvent::ParentChange)
+                ++colorPickerOwnerChanges;
         }
         return false;
     }
@@ -199,19 +220,42 @@ class Fixture final {
         intelligentSelection.beginCaptureSession(true);
         captureState.sessionId = 1;
         captureState.sessionState = ScreenshotSessionState::OverlayVisible;
-        ScreenshotPresentationServicesContext context{
-            captureState, coordinator,
-            toolbar,      geometry,
-            displays,     interaction,
-            selection,    intelligentSelection,
-            {},           [this]() { ++stateNotifications; }};
-#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        ScreenshotPresentationServicesContext context{captureState,
+                                                      coordinator,
+                                                      toolbar,
+                                                      geometry,
+                                                      displays,
+                                                      interaction,
+                                                      selection,
+                                                      intelligentSelection,
+                                                      {},
+                                                      [this]() {
+                                                          ++stateNotifications;
+                                                          if (onStateChanged)
+                                                              onStateChanged();
+                                                      }};
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE) ||                                         \
+    defined(SNOW_SHOT_SELECTION_BASELINE_HAS_FRAME_SCHEDULER)
         if (virtualClock)
             context.monotonicNanoseconds = [this]() { return nowNanoseconds; };
 #else
         Q_UNUSED(virtualClock);
 #endif
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        context.presentColorPicker = [this](ScreenshotOverlayWindow* owner,
+                                            const QPointF& position) {
+            if (colorPickerController)
+                colorPickerController->updateForOverlay(owner, position,
+                                                        services->colorPickerContext());
+        };
+#endif
         services = std::make_unique<ScreenshotPresentationServices>(std::move(context));
+        commands.hideColorPickers = [this] {
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+            services->discardColorPickerPresentation();
+#endif
+            coordinator.hideColorPicker();
+        };
         preferences.selectionTransitionAnimationEnabled = animation;
         services->setUiPreferences(preferences);
         overlay.show();
@@ -247,13 +291,37 @@ class Fixture final {
     }
     void requestPointer(const QPointF& position) {
         displays.startup->logicalPosition = overlay.mapToGlobal(position.toPoint());
-#if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+#if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE) &&                                          \
+    !defined(SNOW_SHOT_SELECTION_BASELINE_HAS_FRAME_SCHEDULER)
         coordinator.updateGuideLines(
             displays, &overlay, position, !interaction.inactive() && guidesEnabled,
             preferences.cursorGuideLineColor, preferences.monitorCenterGuideLineColor,
             preferences.selectionCenterGuideLineColor);
 #else
         services->updatePointerPresentation(&overlay, position);
+#endif
+    }
+    void enableColorPicker(ScreenshotColorPickerDisplayMode mode) {
+        coordinator.createColorPicker(overlay.mapToGlobal(QPoint(30, 30)));
+        coordinator.prepareColorPickerSurface(displays);
+        colorPickerController = std::make_unique<ScreenshotColorPickerController>(
+            coordinator, geometry, displays, physicalCursor);
+        colorPickerController->setDisplayMode(mode);
+        preferences.colorPickerDisplayMode = mode;
+        services->setUiPreferences(preferences);
+        paintObserver.colorPicker = coordinator.colorPicker();
+        coordinator.colorPicker()->installEventFilter(&paintObserver);
+        requestMagnifier(QPointF(30, 30));
+        flushFrame();
+        processEvents();
+        resetCounters();
+    }
+    void requestMagnifier(const QPointF& position) {
+        requestPointer(position);
+#if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        colorPickerController->updateForOverlay(&overlay, position, services->colorPickerContext());
+#else
+        services->requestColorPickerPresentation(&overlay, position);
 #endif
     }
     void enableGuides() {
@@ -267,7 +335,8 @@ class Fixture final {
         nowNanoseconds += milliseconds * 1000000;
     }
     void flushFrame() {
-#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE) ||                                         \
+    defined(SNOW_SHOT_SELECTION_BASELINE_HAS_FRAME_SCHEDULER)
         services->flushPendingFrame();
 #endif
     }
@@ -279,6 +348,10 @@ class Fixture final {
         stateNotifications = 0;
         hintTranslations.requests = 0;
         paintObserver.reset();
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        if (auto* picker = coordinator.colorPicker())
+            picker->resetWorkCounters();
+#endif
         // Diagnostic regions otherwise accumulate a crosshair grid across frames,
         // distorting timing according to the number of coalesced pointer samples.
         resetSelectionRenderDiagnosticsForCurrentThread();
@@ -304,9 +377,13 @@ class Fixture final {
     ScreenshotUiPreferences preferences;
     HintTranslationObserver hintTranslations;
     PaintObserver paintObserver;
+    snow_shot::platform::PhysicalCursor physicalCursor{
+        {true, [] { return std::optional<QPoint>{}; }, [](const QPoint&) { return true; }}};
+    std::unique_ptr<ScreenshotColorPickerController> colorPickerController;
     std::unique_ptr<ScreenshotPresentationServices> services;
     qint64 nowNanoseconds = 1000000000;
     qint64 stateNotifications = 0;
+    std::function<void()> onStateChanged;
     bool guidesEnabled = false;
 };
 } // namespace selection_presentation_test

@@ -62,6 +62,15 @@ void applyDisplayModelsToDisplaySession(
         return;
     }
 
+    std::optional<ScreenshotImageSource> capturedSource;
+    if (applyCapturedImage && displaySession.hasImageSources()) {
+        QList<ScreenshotImageLayer> layers;
+        displaySession.forEachImageSource([&](qsizetype, const CapturedDisplayModel& source) {
+            layers.append(screenshotDisplayImageLayers(source, displaySession.cursorVisible));
+        });
+        capturedSource = ScreenshotImageSource::fromLayers(std::move(layers));
+    }
+
     displaySession.forEachMutableActiveDisplay([&](qsizetype index, CapturedDisplayModel& display) {
         ScreenshotOverlayWindow* overlay = displaySession.overlayAt(index);
         if (overlay == nullptr) {
@@ -84,15 +93,8 @@ void applyDisplayModelsToDisplaySession(
         }
 
         if (applyCapturedImage) {
-            if (displaySession.hasImageSources()) {
-                QList<ScreenshotImageLayer> layers;
-                displaySession.forEachImageSource(
-                    [&](qsizetype, const CapturedDisplayModel& source) {
-                        layers.append(
-                            screenshotDisplayImageLayers(source, displaySession.cursorVisible));
-                    });
-                overlay->setScreenshotImageSource(
-                    ScreenshotImageSource::fromLayers(std::move(layers)));
+            if (capturedSource) {
+                overlay->setScreenshotImageSource(*capturedSource);
             } else {
                 overlay->setScreenshotImageSource(
                     screenshotDisplayImageSource(display, displaySession.cursorVisible));

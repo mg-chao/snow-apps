@@ -9,6 +9,8 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotpresentationframeclock.h"
+#include "snow_shot/presentation/screenshotpresentationframescheduler.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
@@ -19,10 +21,8 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QElapsedTimer>
-#include <QMetaObject>
 #include <QPointer>
 #include <QScreen>
-#include <QTimer>
 
 #include <cmath>
 #include <algorithm>
@@ -117,7 +117,8 @@ struct PresentationSnapshot {
 
 struct ScreenshotPresentationServices::State {
     QElapsedTimer clock;
-    QTimer timer;
+    std::unique_ptr<ScreenshotPresentationFrameScheduler> scheduler;
+    ScreenshotPresentationFrameClock frameClock;
     ScreenshotToolbarPresentationState toolbar;
     PresentationLifecycle lifecycle;
     ScreenshotSelectionVisualState visual;
@@ -127,6 +128,11 @@ struct ScreenshotPresentationServices::State {
     QPointer<ScreenshotOverlayWindow> pointerOwner;
     QPointer<ScreenshotOverlayWindow> selectionOwner;
     QPointer<ScreenshotOverlayWindow> hintOwner;
+    QPointer<ScreenshotOverlayWindow> colorPickerOwner;
+    QPointF colorPickerPosition;
+    QRect colorPickerCaptureGeometry;
+    quint64 colorPickerSessionId = 0;
+    quint64 colorPickerLayoutGeneration = 0;
     QRectF selectionGlobal;
     QPoint cursorPosition;
     QPointF pointerLocal;
@@ -139,6 +145,7 @@ struct ScreenshotPresentationServices::State {
     bool semanticDirty = false;
     bool geometryDirty = false;
     bool pointerDirty = false;
+    bool colorPickerDirty = false;
     bool pointerKnown = false;
     bool inFrame = false;
 };
@@ -148,24 +155,31 @@ ScreenshotPresentationServices::ScreenshotPresentationServices(
     : m_context(std::move(context)), m_state(std::make_unique<State>()),
       m_smartSelectionTransition([this](const QRectF&) { m_state->geometryDirty = true; }) {
     m_state->clock.start();
-    m_state->timer.setObjectName(QStringLiteral("screenshotPresentationFrameTimer"));
-    m_state->timer.setTimerType(Qt::PreciseTimer);
-    QObject::connect(&m_state->timer, &QTimer::timeout, &m_state->timer, [this] {
-        if (!m_state->semanticDirty && !m_state->geometryDirty && !m_state->pointerDirty &&
-            !m_smartSelectionTransition.isRunning()) {
-            // Keep the native timer across input bursts. On Windows, tearing
-            // down a precision timer synchronizes with its callback thread.
-            constexpr qint64 kIdleGraceNs = 50000000;
-            if (nowNanoseconds() - m_state->lastFrameNs >= kIdleGraceNs)
-                m_state->timer.stop();
-            return;
-        }
-        flushPendingFrame();
-    });
+    m_state->scheduler = std::make_unique<ScreenshotPresentationFrameScheduler>(
+        [this] { return nowNanoseconds(); },
+        [this] {
+            const qint64 now = nowNanoseconds();
+            if (!m_state->semanticDirty && !m_state->geometryDirty && !m_state->pointerDirty &&
+                !m_state->colorPickerDirty && !m_smartSelectionTransition.isRunning()) {
+                m_state->scheduler->cancelDeadline();
+                return;
+            }
+            if (m_state->frameClock.due(now))
+                flushPendingFrame();
+            else
+                scheduleFrame();
+        });
     reloadConfiguredShortcuts();
 }
 
 ScreenshotPresentationServices::~ScreenshotPresentationServices() = default;
+
+#ifdef SNOW_SHOT_BENCH_INTERNALS
+const ScreenshotPresentationFrameScheduler&
+ScreenshotPresentationServices::frameSchedulerForTesting() const {
+    return *m_state->scheduler;
+}
+#endif
 
 void ScreenshotPresentationServices::hideToolbar() {
     m_context.toolbarPresenter.hideToolbar();
@@ -277,6 +291,7 @@ void ScreenshotPresentationServices::updateOverlayState() {
         (m_state->pointerOwner &&
          m_state->pointerCaptureGeometry != m_state->pointerOwner->captureGeometry());
     if (topologyChanged) {
+        discardColorPickerPresentation();
         m_state->pointerOwner.clear();
         m_state->pointerKnown = false;
         m_state->presentationDirty = true;
@@ -301,7 +316,9 @@ void ScreenshotPresentationServices::updateOverlayState() {
         return;
     }
     if (newSession) {
-        m_state->timer.stop();
+        m_state->scheduler->stop();
+        m_state->frameClock.reset();
+        discardColorPickerPresentation();
         // Reset the trajectory as well as the pending work across capture epochs.
         (void)m_smartSelectionTransition.update({}, false, nowNanoseconds() / 1000000);
         m_state->pointerKnown = false;
@@ -310,6 +327,9 @@ void ScreenshotPresentationServices::updateOverlayState() {
         m_state->preferencesDirty = true;
         m_state->committed.reset();
     }
+    if (lifecycle.suppressed || m_context.interaction.inactive() ||
+        m_context.interaction.dragging())
+        discardColorPickerPresentation();
     m_state->lifecycle = lifecycle;
     m_state->toolbar = toolbar;
     m_state->visual = visual;
@@ -359,33 +379,54 @@ void ScreenshotPresentationServices::scheduleFrame() {
             screen = display->screen;
     }
     const qreal rate = screen ? screen->refreshRate() : 60.0;
-    const qreal validRate = std::isfinite(rate) && rate > 1.0 ? rate : 60.0;
-    const qint64 period = qRound64(1000000000.0 / validRate);
-    const int interval = static_cast<int>(std::max<qint64>(1, (period + 999999) / 1000000));
-    if (m_state->timer.isActive()) {
-        if (m_state->timer.interval() != interval)
-            m_state->timer.setInterval(interval);
+    m_state->frameClock.setRefreshRate(rate, m_state->lastFrameNs);
+    m_state->scheduler->setDeadline(m_state->frameClock.nextFrameNanoseconds());
+}
+
+void ScreenshotPresentationServices::requestColorPickerPresentation(
+    ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
+    if (!overlay || m_context.interaction.inactive() || m_context.interaction.dragging() ||
+        m_context.captureState.presentationSuppressed)
         return;
-    }
-    const qint64 remaining = m_state->lastFrameNs + period - nowNanoseconds();
-    m_state->timer.start(interval);
-    if (remaining <= 0) {
-        const quint64 sessionId = m_state->sessionId;
-        QMetaObject::invokeMethod(
-            &m_state->timer,
-            [this, sessionId] {
-                if (m_state->sessionId == sessionId)
-                    flushPendingFrame();
-            },
-            Qt::QueuedConnection);
-    }
+    m_state->colorPickerOwner = overlay;
+    m_state->colorPickerPosition = localPosition;
+    m_state->colorPickerCaptureGeometry = overlay->captureGeometry();
+    m_state->colorPickerSessionId = m_context.captureState.sessionId;
+    m_state->colorPickerLayoutGeneration =
+        m_context.displaySession.startup ? m_context.displaySession.startup->layoutGeneration : 0;
+    m_state->colorPickerDirty = true;
+    scheduleFrame();
+}
+
+void ScreenshotPresentationServices::discardColorPickerPresentation() {
+    m_state->colorPickerDirty = false;
+    m_state->colorPickerOwner.clear();
+}
+
+void ScreenshotPresentationServices::flushColorPickerPresentation() {
+    if (!std::exchange(m_state->colorPickerDirty, false))
+        return;
+    const auto owner = m_state->colorPickerOwner;
+    m_state->colorPickerOwner.clear();
+    const quint64 layoutGeneration =
+        m_context.displaySession.startup ? m_context.displaySession.startup->layoutGeneration : 0;
+    // Raw pointer coordinates survive selection confirmation. Apply current picker
+    // visibility and selection state at delivery; dragging owns a different sample anchor.
+    if (owner && m_state->colorPickerSessionId == m_context.captureState.sessionId &&
+        m_state->colorPickerLayoutGeneration == layoutGeneration &&
+        m_state->colorPickerCaptureGeometry == owner->captureGeometry() &&
+        !m_context.interaction.inactive() && !m_context.interaction.dragging() &&
+        !m_context.captureState.presentationSuppressed && m_context.presentColorPicker)
+        m_context.presentColorPicker(owner, m_state->colorPickerPosition);
 }
 
 void ScreenshotPresentationServices::flushPendingFrame() {
     if (m_state->inFrame || !m_state->initialized)
         return;
     if (m_state->sessionId != m_context.captureState.sessionId) {
-        m_state->timer.stop();
+        m_state->scheduler->stop();
+        m_state->frameClock.reset();
+        discardColorPickerPresentation();
         (void)m_smartSelectionTransition.update({}, false, nowNanoseconds() / 1000000);
         m_state->semanticDirty = false;
         m_state->presentationDirty = false;
@@ -434,6 +475,7 @@ void ScreenshotPresentationServices::flushPendingFrame() {
     (void)m_smartSelectionTransition.advance(now / 1000000);
     const bool geometry = std::exchange(m_state->geometryDirty, false);
     const QRectF selection = m_smartSelectionTransition.displayedSelection();
+    const bool colorPicker = m_state->colorPickerDirty;
     if (semantic || geometry || pointer) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("overlay.present_state");
         presentOverlayState(selection, semantic, geometry);
@@ -443,16 +485,30 @@ void ScreenshotPresentationServices::flushPendingFrame() {
             toolbar.selectionCanvas = selection;
             m_context.toolbarPresenter.moveSelectionToolbar(toolbar);
         }
+    }
+    flushColorPickerPresentation();
+    if (semantic || geometry || pointer || colorPicker) {
         m_state->lastFrameNs = now;
+        m_state->frameClock.advancePast(now);
     }
     // Side effects observe committed semantic changes; animation and pointer frames
     // never restart recognition or rebuild external interaction state.
     if (notify)
         m_context.stateChanged();
     m_state->inFrame = false;
-    if (m_state->semanticDirty || m_state->geometryDirty || m_state->pointerDirty ||
-        m_smartSelectionTransition.isRunning())
+    // Synchronous presentation and semantic callbacks can span several display periods.
+    // Skip those elapsed deadlines instead of immediately emitting a catch-up frame.
+    m_state->frameClock.advancePast(nowNanoseconds());
+    if (m_context.interaction.inactive()) {
+        m_state->scheduler->stop();
+    } else if (m_state->semanticDirty || m_state->geometryDirty || m_state->pointerDirty ||
+               m_state->colorPickerDirty || m_smartSelectionTransition.isRunning()) {
         scheduleFrame();
+    } else {
+        // A one-shot wakeup has no idle polling cost. Keep its notifier registered
+        // throughout this capture, and cancel only a superseded pending deadline.
+        m_state->scheduler->cancelDeadline();
+    }
 }
 
 void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection,
@@ -565,9 +621,9 @@ void ScreenshotPresentationServices::updateOverlayCursors() const {
 ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext() const {
     ScreenshotColorPickerContext context;
     context.selectionDisplayUnit = m_uiPreferences.selectionDisplayUnit;
-    context.active = !m_context.interaction.inactive() &&
-                     !m_context.captureState.captureInProgress &&
-                     !m_context.interaction.scrollingCapture();
+    context.active =
+        !m_context.interaction.inactive() && !m_context.captureState.presentationSuppressed &&
+        !m_context.captureState.captureInProgress && !m_context.interaction.scrollingCapture();
     context.moveToolActive = m_context.interaction.moveToolActive();
     context.intelligentSelecting = m_context.interaction.intelligentSelecting();
     context.manualSelecting = m_context.interaction.manualSelecting();

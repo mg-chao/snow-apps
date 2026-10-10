@@ -26,9 +26,11 @@
 #include "widgets/select.h"
 #include "widgets/tooltip.h"
 #include "widgets/button.h"
+#include "widgets/popup_interaction_host.h"
 #include "widgets/detail/overlay_popup_surface.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QBackingStore>
 #include <QDir>
 #include <QEnterEvent>
@@ -332,9 +334,38 @@ void overlayPreparationCachesContentAndInvalidatesTranslations() {
         require(translator.calls > 0 && hints->accessibleName() != initialLines,
                 "binding configuration changes must invalidate hint content");
 
+        class ToolbarPaintObserver final : public QObject {
+          public:
+            int paints = 0;
+
+          protected:
+            bool eventFilter(QObject*, QEvent* event) override {
+                if (event->type() == QEvent::Paint) {
+                    ++paints;
+                }
+                return false;
+            }
+        } toolbarPaints;
         auto* toolbar = host.selectionToolbar();
+        toolbar->installEventFilter(&toolbarPaints);
         toolbar->setSelectionState(QRect(10, 20, 120, 80), false, 0, 0);
         host.showSelectionToolbar();
+        require(
+            toolbarPaints.paints == 1,
+            "a prepared child toolbar must reveal its current state with one synchronous paint");
+        {
+            ScreenshotOverlayWindow secondOverlay(sink, new SnowCanvasWidget);
+            secondOverlay.resize(900, 700);
+            secondOverlay.show();
+            QApplication::processEvents();
+            toolbarPaints.paints = 0;
+            host.attachSelectionToolbarToOverlay(&secondOverlay);
+            require(toolbar->isVisible() && toolbar->parentWidget() == &secondOverlay &&
+                        toolbarPaints.paints == 1,
+                    "changing a visible toolbar owner must paint its retained content once");
+            host.attachSelectionToolbarToOverlay(&overlay);
+        }
+        toolbar->removeEventFilter(&toolbarPaints);
         host.hideSelectionToolbar();
         translator.calls = 0;
         for (int frame = 0; frame < 20; ++frame) {
@@ -669,7 +700,11 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
         snow_shot::platform::PhysicalCursor cursor;
         StyleToolbarCommands commands;
         ScreenshotOverlayCoordinator coordinator(sink, canvas, shortcuts);
-        commands.hidePickers = [&]() { coordinator.hideColorPicker(); };
+        bool queuedPicker = false;
+        commands.hidePickers = [&]() {
+            queuedPicker = false;
+            coordinator.hideColorPicker();
+        };
         coordinator.setToolbarCommandSinks(commands, commands);
         coordinator.attachToolbarToOverlay(&overlay);
         auto* toolbar = coordinator.toolbar();
@@ -711,14 +746,49 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
                 "entering the separate group popover must immediately hide the screenshot picker");
         require(coordinator.screenshotUiContainsGlobalPoint(popupPoint),
                 "the popover body must belong to screenshot UI");
+        queuedPicker = true;
+        QMouseEvent pendingMove(QEvent::MouseMove, surface->mapFromGlobal(popupPoint),
+                                surface->mapFromGlobal(popupPoint), popupPoint, Qt::NoButton,
+                                Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(surface, &pendingMove);
+        require(!queuedPicker && coordinator.colorPicker()->isHidden(),
+                "popup input must cancel queued canvas samples while the picker is already hidden");
         controller.updateAfterCursorMove(popupPoint, context);
         require(!coordinator.colorPicker()->isVisible(),
                 "picker updates over a popover must keep it hidden");
 
-        const auto revealPickerInGap = [&]() {
-            controller.updateAfterCursorMove(gapPoint, context);
+        bool coveredGapReported = false;
+        const auto revealPickerOnCanvas = [&]() {
+            auto* canvasWidget = overlay.canvas();
+            QPoint revealPoint = gapPoint;
+            if (coordinator.screenshotUiContainsGlobalPoint(revealPoint)) {
+                // A nested popup may legitimately cover the original toolbar gap.
+                const QRect candidates = canvasWidget->rect().adjusted(20, 20, -20, -20);
+                bool foundCanvasPoint = false;
+                for (const QPoint& local : {candidates.topLeft(), candidates.topRight(),
+                                            candidates.bottomLeft(), candidates.bottomRight()}) {
+                    const QPoint global = canvasWidget->mapToGlobal(local);
+                    if (!coordinator.screenshotUiContainsGlobalPoint(global)) {
+                        revealPoint = global;
+                        foundCanvasPoint = true;
+                        break;
+                    }
+                }
+                require(foundCanvasPoint,
+                        "picker restoration requires an uncovered point on the overlay canvas");
+                if (!coveredGapReported) {
+                    std::cout << "covered gap (" << gapPoint.x() << ", " << gapPoint.y()
+                              << ") -> canvas (" << revealPoint.x() << ", " << revealPoint.y()
+                              << ")\n";
+                    coveredGapReported = true;
+                }
+            }
+            require(canvasWidget->rect().contains(canvasWidget->mapFromGlobal(revealPoint)) &&
+                        !coordinator.screenshotUiContainsGlobalPoint(revealPoint),
+                    "picker restoration must use canvas input outside every visible popup");
+            controller.updateAfterCursorMove(revealPoint, context);
             require(coordinator.colorPicker()->isVisible(),
-                    "returning to the canvas gap must restore the picker");
+                    "returning to uncovered canvas input must restore the picker");
         };
         const auto enterWidget = [&](QWidget* receiver) {
             const QPoint local = receiver->rect().center();
@@ -733,7 +803,7 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
         };
         auto* content = popover->contentWidget();
         require(content && content->isVisible(), "group popover content must be visible");
-        revealPickerInGap();
+        revealPickerOnCanvas();
         const QPoint local = content->rect().center();
         const QPoint global = content->mapToGlobal(local);
         QMouseEvent move(QEvent::MouseMove, local, content->window()->mapFromGlobal(global), global,
@@ -742,7 +812,7 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
         require(!coordinator.colorPicker()->isVisible(),
                 "moving inside a popup child must also hide the picker");
         for (auto type : {QEvent::HoverEnter, QEvent::HoverMove}) {
-            revealPickerInGap();
+            revealPickerOnCanvas();
             QHoverEvent hover(type, local, global, QPointF(-1, -1), Qt::NoModifier);
             QApplication::sendEvent(content, &hover);
             require(!coordinator.colorPicker()->isVisible(),
@@ -785,13 +855,20 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
                         surface->isVisible(),
                     "nested popup and its parent must stay visible together");
             const QPoint nestedPoint = nestedContent->mapToGlobal(nestedContent->rect().center());
-            require(coordinator.screenshotUiContainsGlobalPoint(nestedPoint),
-                    "nested top-level popup input must belong to the original toolbar scope");
-            revealPickerInGap();
+            require(
+                coordinator.screenshotUiContainsGlobalPoint(nestedPoint) &&
+                    adqt::widgets::detail::popupInteractionContainsGlobalPos(surface, nestedPoint),
+                "nested top-level popup input must belong to the original toolbar scope");
+            revealPickerOnCanvas();
             enterWidget(nestedContent);
             nested.hide();
-            require(!coordinator.screenshotUiContainsGlobalPoint(nestedPoint),
-                    "a closed nested popup must release its interaction region");
+            // Its center may still belong to the parent popup. Query the nested
+            // host directly so parent overlap cannot hide a leaked interaction region.
+            require(
+                !nested.isVisible() &&
+                    (!nested.surfaceWidget() || !nested.surfaceWidget()->isVisible()) &&
+                    !adqt::widgets::detail::popupInteractionContainsGlobalPos(surface, nestedPoint),
+                "a closed nested popup must release its own interaction region");
         }
 
         popover->hide();
@@ -816,7 +893,7 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
         const QPoint selectPoint = select.view()->mapToGlobal(select.view()->rect().center());
         require(coordinator.screenshotUiContainsGlobalPoint(selectPoint),
                 "select popup input must also belong to screenshot UI");
-        revealPickerInGap();
+        revealPickerOnCanvas();
         enterWidget(select.view()->viewport());
         select.hidePopup();
         select.hide();
@@ -829,7 +906,7 @@ void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
         popover->show();
         require(popover->surfaceWidget() && popover->surfaceWidget()->isVisible(),
                 "group popover must reopen after capture reset");
-        revealPickerInGap();
+        revealPickerOnCanvas();
         enterWidget(popover->contentWidget());
         coordinator.hideToolbar();
         require(!coordinator.screenshotUiContainsGlobalPoint(triggerPoint) &&
@@ -1124,6 +1201,119 @@ void invocationMonitorOwnsThePreparedSurface() {
         require(coordinator.colorPicker()->parentWidget() == &primary,
                 "a removed invocation display must fall back to an active overlay");
     }
+}
+
+void hiddenPickerSamplesWithoutPreparingPresentation() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary directory unavailable");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    storage.shutdown();
+    require(storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path(), 60000})
+                .success,
+            "hidden picker fixture must initialize isolated storage");
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime canvas;
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    ScreenshotOverlayWindow first(sink, new SnowCanvasWidget);
+    ScreenshotOverlayWindow second(sink, new SnowCanvasWidget);
+    first.setGeometry(0, 0, 80, 60);
+    second.setGeometry(80, 0, 80, 60);
+    first.show();
+    second.show();
+    CapturedDisplayModel left;
+    left.stableId = QStringLiteral("left");
+    left.logicalRect = first.geometry();
+    left.physicalRect = left.logicalRect;
+    left.active = true;
+    left.geometryResolved = true;
+    left.image = QImage(80, 60, QImage::Format_RGBA8888);
+    left.image.fill(Qt::red);
+    auto right = left;
+    right.stableId = QStringLiteral("right");
+    right.logicalRect = second.geometry();
+    right.physicalRect = right.logicalRect;
+    right.image = QImage(80, 60, QImage::Format_RGBA8888);
+    right.image.fill(Qt::blue);
+    right.cursorPatch = QImage(3, 3, QImage::Format_RGBA8888);
+    right.cursorPatch.fill(Qt::green);
+    right.cursorPixelRect = QRect(19, 19, 3, 3);
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(left, &first);
+    displays.appendDisplay(right, &second);
+    displays.cursorVisible = true;
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    snow_shot::platform::PhysicalCursor cursor(
+        {true, [] { return std::optional<QPoint>{}; }, [](const QPoint&) { return true; }});
+    ScreenshotOverlayCoordinator coordinator(sink, canvas, shortcuts);
+    coordinator.createColorPicker(QPoint(20, 20));
+    coordinator.prepareColorPickerSurface(displays);
+    auto* picker = coordinator.colorPicker();
+    const auto preparedHandle = picker->windowHandle();
+    const auto preparedId = picker->internalWinId();
+    const QPoint preparedPosition = picker->pos();
+    require(preparedId != 0 && picker->parentWidget() == &first,
+            "hidden picker fixture must prepare the initial owner's surface");
+    picker->resetWorkCounters();
+    ScreenshotColorPickerController controller(coordinator, geometry, displays, cursor);
+    ScreenshotColorPickerContext context;
+    context.active = true;
+    context.moveToolActive = true;
+    context.intelligentSelecting = true;
+    controller.setDisplayMode(ScreenshotColorPickerDisplayMode::AlwaysHide);
+    const auto* sampledDisplay = &displays.displayAt(1);
+    controller.updateAtPhysicalPoint(QPoint(100, 20), context, 1.0, sampledDisplay);
+    require(controller.copyColorToClipboard(context) &&
+                QApplication::clipboard()->text() == QStringLiteral("#00FF00"),
+            "hidden sampling must copy the visible captured cursor pixel");
+    for (int offset = 0; offset < 16; ++offset)
+        controller.updateAtPhysicalPoint(QPoint(104 + offset, 20), context, 1.0, sampledDisplay);
+    require(controller.copyColorToClipboard(context) &&
+                QApplication::clipboard()->text() == QStringLiteral("#0000FF"),
+            "hidden motion must keep the copied sample current on another display");
+    auto counters = picker->workCounters();
+    require(counters.samples == 17 && counters.previews == 0 && counters.moves == 0 &&
+                counters.ownerChanges == 0 && picker->parentWidget() == &first &&
+                picker->windowHandle() == preparedHandle && picker->internalWinId() == preparedId &&
+                picker->pos() == preparedPosition && picker->isHidden(),
+            "hidden picker motion must sample without preview, positioning or native reparenting");
+    require(controller.cycleFormat(context) && controller.copyColorToClipboard(context) &&
+                QApplication::clipboard()->text() == QStringLiteral("0000FF"),
+            "hidden color format changes must preserve the current sample");
+    displays.cursorVisible = false;
+    controller.updateAtPhysicalPoint(QPoint(100, 20), context, 1.0, sampledDisplay);
+    require(controller.copyColorToClipboard(context) &&
+                QApplication::clipboard()->text() == QStringLiteral("0000FF"),
+            "hidden cursor suppression must immediately use the clean capture");
+    picker->resetWorkCounters();
+    controller.updateAtPhysicalPoint(QPoint(100, 20), context, 1.0, sampledDisplay);
+    require(picker->workCounters().samples == 0,
+            "an unchanged hidden sample must reuse the clean capture when the cursor is disabled");
+    controller.setDisplayMode(ScreenshotColorPickerDisplayMode::AlwaysShow);
+    picker->resetWorkCounters();
+    controller.updateAtPhysicalPoint(QPoint(100, 20), context, 1.0, sampledDisplay);
+    counters = picker->workCounters();
+    require(counters.samples == 0 && counters.previews == 1,
+            "revealing a hidden sample must rebuild the preview once without resampling its color");
+    require(counters.ownerChanges == 1 && picker->parentWidget() == &second,
+            "revealing a hidden sample must attach the visible owner once");
+    require(picker->isVisible(), "revealing a hidden sample must show the picker");
+    controller.setDisplayMode(ScreenshotColorPickerDisplayMode::HideOutsideSelection);
+    context.intelligentSelecting = false;
+    context.manualSelecting = true;
+    context.selectionPixels = QRect(80, 0, 10, 10);
+    picker->resetWorkCounters();
+    controller.updateAtPhysicalPoint(QPoint(110, 20), context, 1.0, sampledDisplay);
+    counters = picker->workCounters();
+    require(counters.samples == 1 && counters.previews == 0 && counters.moves == 0 &&
+                counters.ownerChanges == 0 && picker->isHidden() &&
+                controller.copyColorToClipboard(context),
+            "hide-outside-selection must use the same accurate sample-only path");
+    controller.setSuppressed(true);
+    require(!controller.copyColorToClipboard(context),
+            "suppression must continue to block copying hidden samples");
+    coordinator.releaseColorPicker();
+    storage.shutdown();
 }
 
 void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
@@ -1502,6 +1692,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--hidden-picker-only"))) {
+        hiddenPickerSamplesWithoutPreparingPresentation();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--overlay-preparation-only"))) {
         overlayPreparationCachesContentAndInvalidatesTranslations();
         return 0;
@@ -1533,6 +1727,7 @@ int main(int argc, char** argv) {
     pickerLifetimeFollowsExplicitSessionOperations();
     visibleRecaptureWindowsIncludePicker();
     invocationMonitorOwnsThePreparedSurface();
+    hiddenPickerSamplesWithoutPreparingPresentation();
     startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor();
     return 0;
 }

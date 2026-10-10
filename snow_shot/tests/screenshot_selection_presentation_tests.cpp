@@ -1,7 +1,11 @@
 #include "screenshot_selection_presentation_fixture.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
+#include "snow_shot/presentation/screenshotpresentationframescheduler.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
 
 #include <QPainter>
+#include <QClipboard>
+#include <QMouseEvent>
 #include <QLabel>
 #include <QEventLoop>
 #include <QPointer>
@@ -42,14 +46,16 @@ class PresentationTimerObserver final : public QObject {
         return timerEvents > previousEvents;
     }
 
-    QPointer<QTimer> timer;
+    QPointer<QObject> timer;
 
   protected:
     bool eventFilter(QObject* object, QEvent* event) override {
-        if (event != nullptr && event->type() == QEvent::Timer) {
-            auto* observed = qobject_cast<QTimer*>(object);
+        if (event != nullptr &&
+            (event->type() == QEvent::Timer || event->type() == QEvent::WinEventAct)) {
+            auto* observed = object;
             if (observed != nullptr &&
-                observed->objectName() == QStringLiteral("screenshotPresentationFrameTimer")) {
+                (observed->objectName() == QStringLiteral("screenshotPresentationFrameTimer") ||
+                 observed->objectName() == QStringLiteral("screenshotPresentationFrameNotifier"))) {
                 require(timer.isNull() || timer == observed,
                         "one presentation fixture must retain the same frame timer object");
                 timer = observed;
@@ -250,6 +256,46 @@ void endingSelectionMovementRefreshesTheDeferredToolbarContent() {
             "refreshing deferred toolbar content must not republish unchanged semantic state");
 }
 
+void hiddenSelectionToolbarDefersPresentationUntilReveal() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.preferences.selectionDisplayUnit = ScreenshotSelectionDisplayUnit::PhysicalPixels;
+    fixture.services->setUiPreferences(fixture.preferences);
+    fixture.flushFrame();
+    auto* toolbar = fixture.coordinator.selectionToolbar();
+    fixture.coordinator.setSelectionToolbarHidden(true);
+    fixture.processEvents();
+    QLabel* width = nullptr;
+    for (QLabel* label : toolbar->findChildren<QLabel*>()) {
+        if (label->accessibleName() == QStringLiteral("Width")) {
+            width = label;
+            break;
+        }
+    }
+    require(width != nullptr, "selection toolbar must expose its width readout");
+    const QString hiddenWidth = width->text();
+    const QRect hiddenGeometry = toolbar->geometry();
+    auto* hiddenOwner = toolbar->parentWidget();
+    QRectF latest;
+    for (int frame = 0; frame < 20; ++frame) {
+        latest = QRectF(120 + frame * 4, 100 + frame * 3, 320 + frame * 10, 180);
+        fixture.requestSelection(latest);
+        fixture.advanceClock(17);
+        fixture.flushFrame();
+    }
+    fixture.processEvents();
+    require(fixture.displayedSelection() == latest,
+            "hiding the selection toolbar must preserve selection presentation");
+    require(!toolbar->isVisible() && width->text() == hiddenWidth &&
+                toolbar->geometry() == hiddenGeometry && toolbar->parentWidget() == hiddenOwner,
+            "hidden selection frames must not update toolbar content, layout, position or owner");
+    fixture.coordinator.setSelectionToolbarHidden(false);
+    fixture.services->showSelectionToolbar();
+    require(toolbar->isVisible() &&
+                width->text() == QString::number(fixture.selection.pixelSelection().width()) &&
+                toolbar->geometry() != hiddenGeometry,
+            "revealing the selection toolbar must synchronize current content and placement");
+}
+
 void animationFramesOnlyChangeDisplayedGeometry() {
     Fixture fixture;
     const QRectF initial = fixture.displayedSelection();
@@ -362,47 +408,73 @@ void anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate() {
             "discarded epoch work must remain canceled on subsequent frame attempts");
 }
 
-void theFrameTimerSurvivesInputBurstsAndStopsAfterIdleOrEpochExit() {
+void theFrameSchedulerRetainsItsBackendWithoutIdleWakeupsAndStopsAtEpochExit() {
     Fixture fixture(QSize(1200, 800), false);
     PresentationTimerObserver observer;
     fixture.requestPointer(QPointF(100, 150));
+    fixture.advanceClock(17);
+    const auto& scheduler = fixture.services->frameSchedulerForTesting();
     require(observer.waitForNextTimeout(),
             "the scheduled presentation timer must deliver a frame before the watchdog");
-    require(observer.timer && observer.timer->isActive() && !observer.timer->isSingleShot(),
-            "the real presentation frame timer must remain active after delivering a frame");
-    const int timerId = observer.timer->timerId();
-    require(timerId >= 0, "an active presentation timer must have a valid native timer ID");
+    require(observer.timer && !scheduler.active(),
+            "a delivered frame must leave no pending idle deadline");
+    QObject* backend = scheduler.wakeupObject();
+    require(backend == observer.timer, "the scheduler must expose its retained native backend");
 
     for (int request = 1; request <= 3; ++request) {
         fixture.requestPointer(QPointF(100 + request * 10, 150));
         fixture.advanceClock(8);
         fixture.flushFrame();
-        require(observer.timer->isActive() && observer.timer->timerId() == timerId,
-                "subsequent frame commits must reuse the active native presentation timer");
+        require(!scheduler.active() && scheduler.wakeupObject() == backend,
+                "subsequent frame commits must reuse the backend without scheduling idle work");
     }
     require(fixture.stateNotifications == 0,
             "reusing the pointer presentation timer must not publish semantic changes");
 
     fixture.advanceClock(50);
-    require(observer.waitForNextTimeout(),
-            "the active timer must receive an idle check before the watchdog");
-    require(observer.timer && !observer.timer->isActive(),
-            "the presentation timer must stop after its virtual idle grace expires");
+    fixture.processEvents();
+    require(!scheduler.active() && scheduler.wakeupObject() == backend,
+            "idle presentation must retain its backend without arming an idle deadline");
 
     // This request queues an immediately eligible frame after the idle period.
     // Ending the epoch before event dispatch must cancel both timer and queued work.
     fixture.requestPointer(QPointF(250, 200));
-    require(observer.timer->isActive(), "new pointer work must reactivate the same timer object");
+    require(scheduler.active(), "new pointer work must reactivate the same timer object");
     ++fixture.captureState.sessionId;
     fixture.captureState.sessionState = ScreenshotSessionState::IdlePrepared;
     fixture.overlay.clearScreenshotSelection();
     fixture.resetCounters();
     fixture.flushFrame();
     fixture.processEvents();
-    require(observer.timer && !observer.timer->isActive(),
+    require(observer.timer && !scheduler.active(),
             "a capture epoch exit must cancel an active presentation timer");
     require(fixture.stateNotifications == 0 && !fixture.overlay.hasScreenshotSelection(),
             "the canceled timer and queued first frame must not resurrect old epoch state");
+}
+
+void synchronousFrameWorkSkipsExpiredDeadlines() {
+    Fixture fixture;
+    PresentationTimerObserver observer;
+    const QRectF initial = fixture.displayedSelection();
+    const qreal reportedRate = fixture.overlay.screen()->refreshRate();
+    const qreal rate = std::isfinite(reportedRate) && reportedRate > 1.0 ? reportedRate : 60.0;
+    const qint64 workMilliseconds = static_cast<qint64>(std::ceil(3000.0 / rate)) + 1;
+    fixture.onStateChanged = [&] { fixture.advanceClock(workMilliseconds); };
+    fixture.requestSelection(initial.translated(160, 120));
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    fixture.onStateChanged = {};
+    require(fixture.stateNotifications == 1 && fixture.displayedSelection() == initial,
+            "synchronous semantic work must leave the animation at its committed start frame");
+    require(fixture.services->frameSchedulerForTesting().active(),
+            "an unfinished animation must retain a pending future frame");
+    require(observer.waitForNextTimeout(),
+            "the retained backend must wake after the simulated presentation work");
+    require(fixture.displayedSelection() == initial,
+            "deadlines elapsed inside synchronous work must be skipped instead of caught up");
+    fixture.advanceClock(static_cast<qint64>(std::ceil(1000.0 / rate)) + 1);
+    require(observer.waitForNextTimeout() && fixture.displayedSelection() != initial,
+            "animation must resume when the next future display deadline becomes eligible");
 }
 
 void pointerBurstsDoNotPublishSemanticChanges() {
@@ -591,6 +663,274 @@ void shortcutContentStillRetranslatesOnLanguageChange() {
     require(fixture.hintTranslations.requests == 0,
             "later frames must reuse the newly translated shortcut content");
 }
+QString sampledColor(Fixture& fixture, const QPointF& localPosition) {
+    const auto& display = fixture.displays.displayAt(0);
+    const QPointF canvasPosition = fixture.geometry.canvasPositionForOverlayLocalPoint(
+        fixture.displays, &fixture.overlay, localPosition);
+    const QPoint physicalPosition =
+        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, canvasPosition);
+    return display.image
+        .pixelColor(physicalPosition.x() - display.physicalRect.x(),
+                    physicalPosition.y() - display.physicalRect.y())
+        .name(QColor::HexRgb)
+        .toUpper();
+}
+
+ScreenshotOverlayInputActions pickerInputActions(Fixture& fixture) {
+    ScreenshotOverlayInputActions actions;
+    actions.updateColorPickerForOverlay = [&fixture](ScreenshotOverlayWindow* owner,
+                                                     const QPointF& position) {
+        fixture.services->requestColorPickerPresentation(owner, position);
+    };
+    actions.updateColorPickerForSelectionDrag = [&fixture](const QPointF& position) {
+        fixture.services->discardColorPickerPresentation();
+        fixture.colorPickerController->updateForSelectionDrag(
+            position, fixture.services->colorPickerContext());
+    };
+    actions.updateOverlayState = [&fixture] { fixture.services->updateOverlayState(); };
+    actions.showToolbar = [&fixture] { fixture.services->showToolbar(); };
+    return actions;
+}
+
+void queuedPickerInputSurvivesSelectionConfirmation() {
+    for (const auto mode : {ScreenshotColorPickerDisplayMode::AlwaysShow,
+                            ScreenshotColorPickerDisplayMode::HideOutsideSelection,
+                            ScreenshotColorPickerDisplayMode::AlwaysHide}) {
+        for (const bool mouseConfirmation : {true, false}) {
+            Fixture fixture(QSize(1200, 800), false);
+            fixture.displays.startup->resumeLiveInput();
+            fixture.enableColorPicker(mode);
+            fixture.coordinator.setSelectionToolbarHidden(true);
+            require(fixture.intelligentSelection.applyCanvasHitPath(
+                        {fixture.baseSelection()}, fixture.geometry.canvasBounds(), 1.0),
+                    "picker confirmation requires a valid smart selection");
+            ScreenshotOverlayInputHandler input({fixture.captureState, fixture.interaction,
+                                                 fixture.selection, fixture.intelligentSelection,
+                                                 fixture.geometry, fixture.displays,
+                                                 pickerInputActions(fixture)});
+            auto* picker = fixture.coordinator.colorPicker();
+            const QString previousColor = picker->currentColorText();
+            QPointF latest;
+            for (int sample = 0; sample < 16; ++sample) {
+                latest = QPointF(300 + sample, 200 + sample);
+                input.handleMouseMove(&fixture.overlay, latest);
+            }
+            require(picker->workCounters().samples == 0,
+                    "hover bursts must remain deferred until selection confirmation");
+            if (mouseConfirmation) {
+                latest += QPointF(10, 10);
+                input.handleMousePress(&fixture.overlay, latest);
+                require(picker->workCounters().samples == 0,
+                        "a smart-selection press must retain hover batching");
+                input.handleMouseRelease(&fixture.overlay, latest);
+            } else {
+                input.confirmSelection();
+            }
+            const QString expectedColor = sampledColor(fixture, latest);
+            require(previousColor != expectedColor && fixture.interaction.movingSelection(),
+                    "confirmation must enter editing at a new sample point");
+            fixture.services->flushColorPickerPresentation();
+            require(fixture.colorPickerController->copyColorToClipboard(
+                        fixture.services->colorPickerContext()) &&
+                        QApplication::clipboard()->text() == expectedColor,
+                    "confirmation before a display frame must copy the latest cursor pixel");
+            const auto counters = picker->workCounters();
+            require(counters.samples == 1 &&
+                        counters.previews ==
+                            (mode == ScreenshotColorPickerDisplayMode::AlwaysHide ? 0U : 1U),
+                    "confirmation must sample once using the current picker visibility");
+            fixture.flushFrame();
+            require(picker->workCounters().samples == 1,
+                    "a later frame must not replay the confirmed sample");
+        }
+    }
+}
+
+void queuedPickerHoverYieldsToSelectionDrag() {
+    for (const bool confirmedSelection : {false, true}) {
+        Fixture fixture(QSize(1200, 800), false);
+        fixture.displays.startup->resumeLiveInput();
+        fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysShow);
+        fixture.coordinator.setSelectionToolbarHidden(true);
+        if (confirmedSelection)
+            fixture.interaction.confirmSelection();
+        else
+            fixture.interaction.returnToSelectionMode(false);
+        fixture.services->updateOverlayState();
+        auto* picker = fixture.coordinator.colorPicker();
+        auto actions = pickerInputActions(fixture);
+        const auto sampleDrag = actions.updateColorPickerForSelectionDrag;
+        bool anchorSampled = false;
+        actions.updateColorPickerForSelectionDrag = [&](const QPointF& position) {
+            require(picker->workCounters().samples == 0 && picker->workCounters().previews == 0,
+                    "starting a drag must discard hover before presenting its sample anchor");
+            sampleDrag(position);
+            anchorSampled = true;
+        };
+        ScreenshotOverlayInputHandler input(
+            {fixture.captureState, fixture.interaction, fixture.selection,
+             fixture.intelligentSelection, fixture.geometry, fixture.displays, std::move(actions)});
+        fixture.requestMagnifier(QPointF(310, 210));
+        input.handleMousePress(&fixture.overlay, QPointF(300, 200));
+        require(anchorSampled && fixture.interaction.dragging() &&
+                    picker->workCounters().samples == 1 && picker->workCounters().previews == 1,
+                "a drag must sample only its direct anchor at both same-mode and mode boundaries");
+        const QString anchorColor = picker->currentColorText();
+        fixture.services->requestColorPickerPresentation(&fixture.overlay, QPointF(400, 280));
+        fixture.services->flushColorPickerPresentation();
+        fixture.flushFrame();
+        require(picker->currentColorText() == anchorColor && picker->workCounters().samples == 1 &&
+                    picker->workCounters().previews == 1,
+                "raw hover requests during dragging must not replace the direct sample anchor");
+    }
+}
+
+void queuedPickerSamplesTheLatestPointBeforeClipboardCommands() {
+    for (const auto mode : {ScreenshotColorPickerDisplayMode::AlwaysShow,
+                            ScreenshotColorPickerDisplayMode::AlwaysHide}) {
+        Fixture fixture(QSize(1200, 800), false);
+        fixture.enableColorPicker(mode);
+        QPointF latest;
+        for (int sample = 0; sample < 16; ++sample) {
+            latest = QPointF(800 + sample, 500 + sample);
+            fixture.requestMagnifier(latest);
+        }
+        auto* picker = fixture.coordinator.colorPicker();
+        require(picker->workCounters().samples == 0,
+                "queued picker input must wait until a presentation or clipboard boundary");
+        fixture.services->flushColorPickerPresentation();
+        const auto context = fixture.services->colorPickerContext();
+        require(fixture.colorPickerController->copyColorToClipboard(context) &&
+                    QApplication::clipboard()->text() == picker->currentColorText() &&
+                    picker->currentColorText().contains(sampledColor(fixture, latest).mid(1)),
+                "copy must sample the latest queued point before reading its formatted color");
+        auto counters = picker->workCounters();
+        require(counters.samples == 1 &&
+                    counters.previews ==
+                        (mode == ScreenshotColorPickerDisplayMode::AlwaysShow ? 1U : 0U),
+                "one picker boundary must coalesce sixteen inputs and skip hidden previews");
+        fixture.flushFrame();
+        require(picker->workCounters().samples == 1,
+                "a later frame must not replay the sample already flushed for copying");
+        latest += QPointF(10, 10);
+        fixture.requestMagnifier(latest);
+        fixture.services->flushColorPickerPresentation();
+        require(fixture.colorPickerController->cycleFormat(context) &&
+                    fixture.colorPickerController->copyColorToClipboard(context) &&
+                    QApplication::clipboard()->text() == picker->currentColorText(),
+                "format changes must act on the newly sampled point before copying");
+        static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+        static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+        static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+        if (mode == ScreenshotColorPickerDisplayMode::AlwaysShow) {
+            latest += QPointF(10, 10);
+            fixture.requestMagnifier(latest);
+            fixture.services->flushColorPickerPresentation();
+            const auto& display = fixture.displays.displayAt(0);
+            const QPoint physical = fixture.geometry.physicalPositionForCanvasPoint(
+                fixture.displays, fixture.geometry.canvasPositionForOverlayLocalPoint(
+                                      fixture.displays, &fixture.overlay, latest));
+            const auto conversion = screenshotSelectionDisplayConversion(
+                fixture.geometry, fixture.displays, context.selectionPixels,
+                context.selectionDisplayUnit, &display);
+            const auto relative = screenshotMagnifierRelativeDisplayPosition(
+                fixture.geometry, display, physical, context.selectionPixels, conversion);
+            require(relative && fixture.colorPickerController->toggleCoordinateMode(context) &&
+                        picker->currentPositionText() == QStringLiteral("X: %1 Y: %2")
+                                                             .arg(qRound(relative->x()))
+                                                             .arg(qRound(relative->y())),
+                    "coordinate toggles must use the latest queued point and selection origin");
+            static_cast<void>(fixture.colorPickerController->toggleCoordinateMode(context));
+        }
+    }
+}
+
+void explicitCursorSamplingCannotBeOverwrittenByQueuedHover() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysHide);
+    fixture.requestMagnifier(QPointF(800, 500));
+    fixture.services->discardColorPickerPresentation();
+    const QPointF keyboardPoint(820, 510);
+    fixture.colorPickerController->updateForOverlay(&fixture.overlay, keyboardPoint,
+                                                    fixture.services->colorPickerContext());
+    auto* picker = fixture.coordinator.colorPicker();
+    const QString color = picker->currentColorText();
+    fixture.flushFrame();
+    require(picker->workCounters().samples == 1 && picker->currentColorText() == color &&
+                color == sampledColor(fixture, keyboardPoint),
+            "an immediate cursor update must discard the older queued hover sample");
+}
+
+void pickerWorkIsDiscardedAtCaptureAndDisabledToolBoundaries() {
+    for (int boundary = 0; boundary < 5; ++boundary) {
+        Fixture fixture(QSize(1200, 800), false);
+        fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysHide);
+        fixture.requestMagnifier(QPointF(800, 500));
+        switch (boundary) {
+        case 0:
+            ++fixture.captureState.sessionId;
+            break;
+        case 1:
+            fixture.captureState.presentationSuppressed = true;
+            break;
+        case 2:
+            fixture.interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+            break;
+        case 3:
+            fixture.interaction.reset();
+            break;
+        case 4:
+            fixture.overlay.setCaptureGeometry(
+                fixture.overlay.captureGeometry().translated(100, 50));
+            break;
+        }
+        fixture.services->flushColorPickerPresentation();
+        require(fixture.coordinator.colorPicker()->workCounters().samples == 0,
+                "session, suppression, disabled tools and owner geometry must discard old input");
+        if (boundary == 1)
+            require(!fixture.colorPickerController->copyColorToClipboard(
+                        fixture.services->colorPickerContext()),
+                    "suppressed presentation must not copy a stale cached sample");
+        fixture.flushFrame();
+        require(fixture.coordinator.colorPicker()->workCounters().samples == 0,
+                "a later frame must not revive discarded picker work");
+        if (boundary == 2) {
+            fixture.interaction.setMoveTool(true, false);
+            fixture.services->updateOverlayState();
+            fixture.services->flushColorPickerPresentation();
+            require(fixture.coordinator.colorPicker()->workCounters().samples == 0,
+                    "re-enabling the move tool must not replay input from before a disabled tool");
+        }
+    }
+}
+
+void destroyedPickerOwnersAndPopupEntryCancelPendingInput() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysHide);
+    auto* temporaryOwner =
+        new ScreenshotOverlayWindow(fixture.events, new SnowCanvasWidget(fixture.canvasRuntime));
+    fixture.services->requestColorPickerPresentation(temporaryOwner, QPointF(20, 20));
+    delete temporaryOwner;
+    fixture.services->flushColorPickerPresentation();
+    require(fixture.coordinator.colorPicker()->workCounters().samples == 0,
+            "deleting a queued picker owner must cancel its deferred sample");
+    fixture.coordinator.showToolbar();
+    auto* trigger = fixture.coordinator.toolbar()->findChild<QWidget*>(
+        QStringLiteral("screenshotArrowLineButton"));
+    require(trigger && trigger->isVisible(),
+            "picker cancellation requires a visible toolbar button");
+    fixture.coordinator.hideColorPicker();
+    fixture.requestMagnifier(QPointF(800, 500));
+    const QPoint local = trigger->rect().center();
+    const QPoint global = trigger->mapToGlobal(local);
+    QMouseEvent move(QEvent::MouseMove, local, trigger->window()->mapFromGlobal(global), global,
+                     Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(trigger, &move);
+    fixture.services->flushColorPickerPresentation();
+    require(fixture.coordinator.colorPicker()->workCounters().samples == 0 &&
+                fixture.coordinator.colorPicker()->isHidden(),
+            "screenshot UI entry must cancel queued samples even while the picker is hidden");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -605,9 +945,11 @@ int main(int argc, char* argv[]) {
     displayRebindingReappliesSelectionAfterRendererReset();
     endingSelectionMovementRefreshesTheDeferredToolbarContent();
     animationFramesOnlyChangeDisplayedGeometry();
+    hiddenSelectionToolbarDefersPresentationUntilReveal();
     modeAndSessionChangesCancelOldAnimation();
     anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate();
-    theFrameTimerSurvivesInputBurstsAndStopsAfterIdleOrEpochExit();
+    theFrameSchedulerRetainsItsBackendWithoutIdleWakeupsAndStopsAtEpochExit();
+    synchronousFrameWorkSkipsExpiredDeadlines();
     pointerBurstsDoNotPublishSemanticChanges();
     pointerUpdatesWithHiddenGuidesRemainAvailableForLaterPresentation();
     pointerOnlyHintVisibilityUsesTheLatestPresentedSelection();
@@ -615,5 +957,11 @@ int main(int argc, char* argv[]) {
     layoutGenerationChangesRefreshTheAnchoredPointer();
     imageRebindingKeepsAcceptedPointerPrecisionForUnchangedGeometry();
     shortcutContentStillRetranslatesOnLanguageChange();
+    queuedPickerInputSurvivesSelectionConfirmation();
+    queuedPickerHoverYieldsToSelectionDrag();
+    queuedPickerSamplesTheLatestPointBeforeClipboardCommands();
+    explicitCursorSamplingCannotBeOverwrittenByQueuedHover();
+    pickerWorkIsDiscardedAtCaptureAndDisabledToolBoundaries();
+    destroyedPickerOwnersAndPopupEntryCancelPendingInput();
     return 0;
 }

@@ -323,11 +323,12 @@ void showPreparedChildWidget(QWidget* widget) {
         return;
     }
 
+    const bool wasVisible = widget->isVisible();
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared_child.show");
         widget->show();
     }
-    {
+    if (wasVisible) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared_child.repaint");
         widget->repaint();
     }
@@ -382,7 +383,10 @@ bool ScreenshotOverlayUiHost::eventFilter(QObject* watched, QEvent* event) {
                 position = QPoint(qFloor(globalPosition.x()), qFloor(globalPosition.y()));
             }
             if (position && screenshotUiContainsGlobalPoint(*position)) {
-                if (pickerVisible) {
+                if (m_toolbarCommands != nullptr) {
+                    // Cancel deferred canvas samples even before the popup first becomes visible.
+                    m_toolbarCommands->hideColorPickersForScreenshotUi();
+                } else if (pickerVisible) {
                     hideColorPicker();
                 }
                 // Application filters see moves even on controls without mouse tracking.
@@ -569,6 +573,17 @@ void ScreenshotOverlayUiHost::releaseColorPicker() {
 
 ScreenshotColorPickerWindow* ScreenshotOverlayUiHost::colorPicker() const {
     return m_colorPicker.data();
+}
+
+void ScreenshotOverlayUiHost::sampleColorPicker(const QImage& image, const QRect& physicalRect,
+                                                const QPoint& physicalPoint,
+                                                const QImage& cursorPatch,
+                                                const QRect& cursorPixelRect) {
+    if (ScreenshotColorPickerWindow* picker = colorPicker()) {
+        picker->hidePicker();
+        picker->setCaptureImage(image, physicalRect, cursorPatch, cursorPixelRect);
+        static_cast<void>(picker->updateColorSample(physicalPoint));
+    }
 }
 
 void ScreenshotOverlayUiHost::updateColorPicker(

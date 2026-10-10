@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotimagerendering.h"
+#include "snow_shot/presentation/screenshotimagesource.h"
 
 #include <QColorSpace>
 #include <QImage>
@@ -97,6 +98,55 @@ void paintScaledSourceWindow(QPainter& painter, const QRectF& targetWindow, cons
 }
 
 } // namespace
+
+bool ScreenshotImageSource::imageIsOpaque(const QImage& image) const {
+    if (image.isNull())
+        return false;
+    if (!image.hasAlphaChannel())
+        return true;
+
+    const auto scan = [&]() {
+        if (image.format() == QImage::Format_ARGB32 ||
+            image.format() == QImage::Format_ARGB32_Premultiplied) {
+            for (int y = 0; y < image.height(); ++y) {
+                const auto* pixels = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+                for (int x = 0; x < image.width(); ++x) {
+                    if (qAlpha(pixels[x]) != 255)
+                        return false;
+                }
+            }
+            return true;
+        }
+        if (image.format() == QImage::Format_RGBA8888 ||
+            image.format() == QImage::Format_RGBA8888_Premultiplied) {
+            for (int y = 0; y < image.height(); ++y) {
+                const auto* pixels = image.constScanLine(y);
+                for (int x = 0; x < image.width(); ++x) {
+                    if (pixels[x * 4 + 3] != 255)
+                        return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    };
+    if (opacityMetadata == nullptr)
+        return scan();
+
+    const std::lock_guard lock(opacityMetadata->mutex);
+    const qint64 key = image.cacheKey();
+    for (const auto& entry : opacityMetadata->entries) {
+        if (entry.imageKey == key)
+            return entry.opaque;
+    }
+    const bool opaque = scan();
+    // Bound metadata even if a caller repeatedly edits a copied source in place.
+    constexpr qsizetype kMaximumOpacityEntries = 64;
+    if (opacityMetadata->entries.size() == kMaximumOpacityEntries)
+        opacityMetadata->entries.removeFirst();
+    opacityMetadata->entries.append({key, opaque});
+    return opaque;
+}
 
 void paintExposedScreenshotImage(QPainter& painter, const QRectF& targetRect, const QImage& image,
                                  const QRectF& sourceRect, const QRegion& exposedRegion) {

@@ -507,6 +507,13 @@ ScreenshotColorPickerWindow* ScreenshotOverlayCoordinator::colorPicker() const {
     return m_uiHost.colorPicker();
 }
 
+void ScreenshotOverlayCoordinator::sampleColorPicker(const QImage& image, const QRect& physicalRect,
+                                                     const QPoint& physicalPoint,
+                                                     const QImage& cursorPatch,
+                                                     const QRect& cursorPixelRect) {
+    m_uiHost.sampleColorPicker(image, physicalRect, physicalPoint, cursorPatch, cursorPixelRect);
+}
+
 void ScreenshotOverlayCoordinator::updateColorPicker(
     ScreenshotOverlayWindow* overlay, const QImage& image, const QRect& physicalRect,
     const QPoint& physicalPoint, const QPointF& localPosition, qreal opacity,

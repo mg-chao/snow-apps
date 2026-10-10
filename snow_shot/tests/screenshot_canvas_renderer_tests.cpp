@@ -1301,6 +1301,144 @@ void partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr() {
             "region's bottom or right boundary");
 }
 
+void rectangularMaskAndBorderMatchPathRasterizationAtFractionalDprs() {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    renderer.setMaskVisible(true);
+    const QColor mask(21, 78, 149, 137);
+    const QColor border(241, 102, 38, 193);
+    renderer.setMaskColor(mask);
+    renderer.setSelectionBorderColor(border);
+    const QRect viewport(0, 0, 96, 72);
+    const std::array selections{QRectF(12, 10, 50, 40),
+                                QRectF(12.25, 10.5, 40.75, 24.5),
+                                QRectF(12.25, 10.75, 0.4, 0.5),
+                                QRectF(-10, 20, 40, 30),
+                                QRectF(viewport),
+                                QRectF{}};
+    const std::array exposures{QRegion(viewport),
+                               QRegion(QRect(9, 7, 34, 29)) + QRect(55, 32, 20, 23)};
+    const std::array transforms{QTransform{}, QTransform(1.25, 0, 0, 0.75, 3.5, 2.25)};
+    QTransform rotatedPainter;
+    rotatedPainter.translate(48, 36).rotate(17).translate(-48, -36);
+    QTransform shearedPainter;
+    shearedPainter.translate(48, 36).shear(0.18, -0.11).translate(-48, -36);
+    const std::array painterTransforms{QTransform{}, rotatedPainter, shearedPainter};
+    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+        for (const auto& selection : selections) {
+            renderer.setSelection(selection, false);
+            for (const auto& exposure : exposures) {
+                for (const auto& transform : transforms) {
+                    for (const auto& painterTransform : painterTransforms) {
+                        for (const bool antialias : {false, true}) {
+                            for (const bool borderVisible : {false, true}) {
+                                renderer.setSelectionBorderVisible(borderVisible);
+                                const auto paint = [&](bool reference) {
+                                    QImage image(QSize(qCeil(viewport.width() * dpr),
+                                                       qCeil(viewport.height() * dpr)),
+                                                 QImage::Format_ARGB32_Premultiplied);
+                                    image.setDevicePixelRatio(dpr);
+                                    image.fill(QColor(37, 83, 129, 211));
+                                    QPainter painter(&image);
+                                    painter.setWorldTransform(painterTransform);
+                                    if (!painterTransform.isIdentity())
+                                        require(
+                                            painter.deviceTransform().type() > QTransform::TxScale,
+                                            "rotation and shear must exercise a non-axis device "
+                                            "transform in the rectangular mask reference");
+                                    painter.setRenderHint(QPainter::Antialiasing, antialias);
+                                    painter.setClipRegion(exposure);
+                                    if (reference) {
+                                        const QRectF hole =
+                                            transform.mapRect(selection.normalized());
+                                        QPainterPath path;
+                                        path.setFillRule(Qt::OddEvenFill);
+                                        path.addRect(QRectF(viewport));
+                                        if (!selection.isEmpty())
+                                            path.addRect(hole);
+                                        painter.fillPath(path, mask);
+                                        const QRectF outline = hole.adjusted(0.5, 0.5, -0.5, -0.5);
+                                        if (borderVisible && !selection.isEmpty() &&
+                                            outline.isValid() && !outline.isEmpty()) {
+                                            QPainterPath outlinePath;
+                                            outlinePath.addRect(outline);
+                                            painter.setPen(QPen(border, 2));
+                                            painter.setBrush(Qt::NoBrush);
+                                            painter.drawPath(outlinePath);
+                                        }
+                                    } else {
+                                        renderer.renderAfterCanvas(
+                                            painter, {viewport, exposure, transform, dpr});
+                                    }
+                                    painter.end();
+                                    return image;
+                                };
+                                const QImage actual = paint(false);
+                                const QImage expected = paint(true);
+                                if (actual != expected) {
+                                    std::cerr
+                                        << "rectangle raster mismatch: DPR " << dpr << ", rect "
+                                        << selection.x() << ',' << selection.y() << ' '
+                                        << selection.width() << 'x' << selection.height() << ", AA "
+                                        << antialias << ", border " << borderVisible
+                                        << ", transform " << transform.m11() << ','
+                                        << transform.m22() << ',' << transform.dx() << ','
+                                        << transform.dy() << ", painter transform "
+                                        << painterTransform.m11() << ',' << painterTransform.m12()
+                                        << ',' << painterTransform.m21() << ','
+                                        << painterTransform.m22() << ',' << painterTransform.dx()
+                                        << ',' << painterTransform.dy() << '\n';
+                                }
+                                require(
+                                    actual == expected,
+                                    "rectangular fast paths must preserve mask and border pixels "
+                                    "for fractional DPR, clipping, alpha, subpixel rectangles, "
+                                    "and non-axis painter transforms");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void imageSourceOpacityMetadataIsSharedAndTracksPixelChanges() {
+    const QRectF bounds(0, 0, 96, 72);
+    for (const auto format : {QImage::Format_ARGB32, QImage::Format_ARGB32_Premultiplied,
+                              QImage::Format_RGBA8888, QImage::Format_RGBA8888_Premultiplied}) {
+        QImage image(96, 72, format);
+        image.fill(QColor(12, 34, 56));
+        const ScreenshotImageSource source =
+            ScreenshotImageSource::fromLayers({{image, bounds, bounds}, {image, bounds, bounds}});
+        const ScreenshotImageSource sibling = source;
+        require(source.imageIsOpaque(image) && sibling.imageIsOpaque(image),
+                "source copies must agree on an opaque capture buffer");
+        require(source.opacityMetadataEntryCountForTesting() == 1 &&
+                    sibling.opacityMetadataEntryCountForTesting() == 1,
+                "duplicate layers and overlays must share one opacity check per pixel buffer");
+        QImage changed = image;
+        changed.setPixelColor(48, 36, QColor(12, 34, 56, 63));
+        require(!sibling.imageIsOpaque(changed) && source.imageIsOpaque(image),
+                "detaching or changing alpha must not reuse stale source opacity");
+        require(source.opacityMetadataEntryCountForTesting() == 2,
+                "changed pixel buffers must receive a distinct shared opacity answer");
+    }
+
+    QImage image(96, 72, QImage::Format_RGBA8888);
+    image.fill(Qt::blue);
+    image.setDevicePixelRatio(1.5);
+    const ScreenshotImageSource source = ScreenshotImageSource::fromImage(image, bounds);
+    SnowCanvasWidget firstCanvas;
+    SnowCanvasWidget secondCanvas;
+    ScreenshotCanvasRenderer first(firstCanvas);
+    ScreenshotCanvasRenderer second(secondCanvas);
+    first.setImageSource(source);
+    second.setImageSource(source);
+    require(source.opacityMetadataEntryCountForTesting() == 1,
+            "renderer DPR normalization must not trigger duplicate capture-opacity scans");
+}
+
 int ocrTextItemCount(SnowCanvasWidget& canvas) {
     const auto* textLayer =
         canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
@@ -6627,9 +6765,16 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--background-coverage-only"))) {
+        imageSourceOpacityMetadataIsSharedAndTracksPixelChanges();
         rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
         rendererCoveragePreservesAlphaAndDisplayGaps();
         overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
+        return 0;
+    }
+    if (application.arguments().contains(
+            QStringLiteral("--rectangular-selection-rendering-only"))) {
+        rectangularMaskAndBorderMatchPathRasterizationAtFractionalDprs();
+        partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--guide-rendering-only"))) {
@@ -6876,6 +7021,8 @@ int main(int argc, char** argv) {
     ordinaryExposedImageRenderingRemainsPixelEquivalent();
     chunkedImagePaintersRenderPastTheRasterCoordinateLimit();
     partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr();
+    rectangularMaskAndBorderMatchPathRasterizationAtFractionalDprs();
+    imageSourceOpacityMetadataIsSharedAndTracksPixelChanges();
     overlayWatermarkRendersOnlyInsideScreenshotSelection();
     overlayTextWrapUsesScreenshotSelection();
     reusedRendererReplacesScreenshotImage();

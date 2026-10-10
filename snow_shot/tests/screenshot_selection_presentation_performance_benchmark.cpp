@@ -17,12 +17,21 @@
 namespace {
 using selection_presentation_test::Fixture;
 
-enum class Scenario { SteadySelection, ChangedSelection, Pointer, AnimationFrames, Retargeting };
+enum class Scenario {
+    SteadySelection,
+    ChangedSelection,
+    Pointer,
+    AnimationFrames,
+    Retargeting,
+    MagnifierVisible,
+    MagnifierHidden,
+};
 
 struct Case {
     const char* name;
     Scenario scenario;
     int requestsPerFrame;
+    bool toolbarHidden = false;
 };
 
 constexpr std::array kCases{
@@ -36,6 +45,13 @@ constexpr std::array kCases{
     Case{"animation_frames_16", Scenario::AnimationFrames, 16},
     Case{"animation_retargeting_1", Scenario::Retargeting, 1},
     Case{"animation_retargeting_16", Scenario::Retargeting, 16},
+    Case{"changed_targets_hidden_1", Scenario::ChangedSelection, 1, true},
+    Case{"changed_targets_hidden_16", Scenario::ChangedSelection, 16, true},
+    Case{"animation_frames_hidden_1", Scenario::AnimationFrames, 1, true},
+    Case{"magnifier_visible_1", Scenario::MagnifierVisible, 1},
+    Case{"magnifier_visible_16", Scenario::MagnifierVisible, 16},
+    Case{"magnifier_hidden_1", Scenario::MagnifierHidden, 1},
+    Case{"magnifier_hidden_16", Scenario::MagnifierHidden, 16},
 };
 
 QJsonObject distribution(std::vector<double> values) {
@@ -65,6 +81,17 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
     const int frameIntervalMs =
         requestedFrameIntervalMs > 0 ? requestedFrameIntervalMs : (animation ? 17 : 8);
     Fixture fixture(logicalSize, animation, !animation);
+    const bool magnifier = benchmarkCase.scenario == Scenario::MagnifierVisible ||
+                           benchmarkCase.scenario == Scenario::MagnifierHidden;
+    if (benchmarkCase.toolbarHidden) {
+        fixture.coordinator.setSelectionToolbarHidden(true);
+        fixture.processEvents();
+        fixture.resetCounters();
+    }
+    if (magnifier)
+        fixture.enableColorPicker(benchmarkCase.scenario == Scenario::MagnifierHidden
+                                      ? ScreenshotColorPickerDisplayMode::AlwaysHide
+                                      : ScreenshotColorPickerDisplayMode::AlwaysShow);
     if (benchmarkCase.scenario == Scenario::Pointer)
         fixture.enableGuides();
     const QRectF base = fixture.baseSelection();
@@ -77,8 +104,16 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         for (int request = 0; request < benchmarkCase.requestsPerFrame; ++request) {
             const int sample = frame * benchmarkCase.requestsPerFrame + request;
             targets.push_back(base.translated(2.0 * (1 + sample % 121), (sample * 3) % 71));
-            pointers.emplace_back(40.0 + sample % (logicalSize.width() - 80),
-                                  40.0 + (sample * 3) % (logicalSize.height() - 80));
+            if (magnifier) {
+                // Keep the sample band below the selection and its interactive toolbar.
+                pointers.emplace_back(logicalSize.width() * 0.65 +
+                                          sample % std::max(1, logicalSize.width() / 4),
+                                      logicalSize.height() * 0.6 +
+                                          (sample * 3) % std::max(1, logicalSize.height() / 5));
+            } else {
+                pointers.emplace_back(40.0 + sample % (logicalSize.width() - 80),
+                                      40.0 + (sample * 3) % (logicalSize.height() - 80));
+            }
         }
     }
 
@@ -99,6 +134,15 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
     qint64 canvasDamagePixels = 0;
     qint64 displayedGeometryChanges = 0;
     qint64 targetRequests = 0;
+    qint64 colorPickerPaints = 0;
+    qint64 colorPickerMoveEvents = 0;
+    qint64 colorPickerOwnerChangeEvents = 0;
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+    qint64 colorPickerSamples = 0;
+    qint64 colorPickerPreviews = 0;
+    qint64 colorPickerPositionMoves = 0;
+    qint64 colorPickerOwnerChanges = 0;
+#endif
     const int framesPerTarget =
         (ScreenshotSmartSelectionTransition::kDurationMs + frameIntervalMs - 1) / frameIntervalMs +
         2;
@@ -124,6 +168,10 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
                     break;
                 case Scenario::Pointer:
                     fixture.requestPointer(pointers[index]);
+                    break;
+                case Scenario::MagnifierVisible:
+                case Scenario::MagnifierHidden:
+                    fixture.requestMagnifier(pointers[index]);
                     break;
                 case Scenario::ChangedSelection:
                 case Scenario::AnimationFrames:
@@ -192,6 +240,18 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
             uiPaints += fixture.paintObserver.uiPaints;
             canvasDamagePixels += fixture.paintObserver.canvasDamagePixels;
             displayedGeometryChanges += frameGeometryChanges;
+            colorPickerPaints += fixture.paintObserver.colorPickerPaints;
+            colorPickerMoveEvents += fixture.paintObserver.colorPickerMoves;
+            colorPickerOwnerChangeEvents += fixture.paintObserver.colorPickerOwnerChanges;
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+            if (auto* picker = fixture.coordinator.colorPicker()) {
+                const auto counters = picker->workCounters();
+                colorPickerSamples += static_cast<qint64>(counters.samples);
+                colorPickerPreviews += static_cast<qint64>(counters.previews);
+                colorPickerPositionMoves += static_cast<qint64>(counters.moves);
+                colorPickerOwnerChanges += static_cast<qint64>(counters.ownerChanges);
+            }
+#endif
             if (requestTarget)
                 targetRequests += benchmarkCase.requestsPerFrame;
         }
@@ -211,6 +271,12 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
     return {{"scenario", QString::fromLatin1(benchmarkCase.name)},
             {"iterations", iterations},
             {"requests_per_frame", benchmarkCase.requestsPerFrame},
+            {"selection_toolbar_hidden", benchmarkCase.toolbarHidden},
+            {"magnifier_included", magnifier},
+            {"magnifier_display_mode", !magnifier ? "excluded"
+                                       : benchmarkCase.scenario == Scenario::MagnifierHidden
+                                           ? "always_hide"
+                                           : "always_show"},
             {"request_count", targetRequests},
             {"clock", animation ? "real_monotonic" : "controlled_monotonic"},
             {"frame_commit", animation ? "scheduled_timer" : "explicit_frame"},
@@ -226,6 +292,20 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
             {"hint_translation_requests", hintTranslationRequests},
             {"canvas_paints", canvasPaints},
             {"ui_paints", uiPaints},
+            {"magnifier_paints", colorPickerPaints},
+            {"magnifier_move_events", colorPickerMoveEvents},
+            {"magnifier_owner_change_events", colorPickerOwnerChangeEvents},
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+            {"magnifier_samples", colorPickerSamples},
+            {"magnifier_preview_rebuilds", colorPickerPreviews},
+            {"magnifier_position_moves", colorPickerPositionMoves},
+            {"magnifier_owner_changes", colorPickerOwnerChanges},
+#else
+            {"magnifier_samples", QJsonValue(QJsonValue::Null)},
+            {"magnifier_preview_rebuilds", QJsonValue(QJsonValue::Null)},
+            {"magnifier_position_moves", QJsonValue(QJsonValue::Null)},
+            {"magnifier_owner_changes", QJsonValue(QJsonValue::Null)},
+#endif
             {"displayed_geometry_changes", displayedGeometryChanges},
             {"work_ms_per_canvas_paint", millisecondsPerPaint},
             {"work_ms_per_geometry_change", millisecondsPerGeometryChange},
@@ -315,8 +395,13 @@ int main(int argc, char* argv[]) {
          "Controlled cases commit once per supplied frame; animation uses each implementation's "
          "event-driven timer with event pumping and requested idle waits of at most 1ms. "
          "Event-processing work and counters cover the entire input interval. Compare animation "
-         "costs with observed paint and geometry counts. Idle waits, selector workers, magnifier, "
-         "and input-to-photon latency are excluded from work timings."},
+         "costs with observed paint and geometry counts. Magnifier cases include pointer "
+         "presentation and the real picker controller/window: baseline updates each input sample "
+         "immediately, optimized commits the latest sample with the presentation frame. Picker "
+         "paint/move/owner-change event counts are comparable; internal sampling/preview counters "
+         "are unavailable for the baseline and reported as null. Other cases exclude magnifier "
+         "work. Idle waits, selector workers, native mouse delivery, and input-to-photon latency "
+         "are excluded from work timings."},
         {"results", results}};
     const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);
     if (parser.isSet(QStringLiteral("output"))) {

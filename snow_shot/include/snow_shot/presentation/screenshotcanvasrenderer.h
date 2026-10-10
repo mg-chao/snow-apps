@@ -214,6 +214,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
         QRect viewportRect;
         int cornerRadius = 0;
         int borderCornerRadius = 0;
+        QRectF effectiveRect;
+        QRectF outlineRect;
+        bool rectangular = false;
         QPainterPath effectivePath;
         QPainterPath outlinePath;
         QPainterPath draftPath;
@@ -241,8 +244,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
                          bool originalOnly);
     [[nodiscard]] QRectF pinnedViewportForContext(const SnowCanvasRenderContext& context) const;
-    const SelectionViewGeometry& selectionViewGeometry(const SnowCanvasRenderContext& context,
-                                                       int cornerRadius, int borderCornerRadius);
+    SelectionViewGeometry& selectionViewGeometry(const SnowCanvasRenderContext& context,
+                                                 int cornerRadius, int borderCornerRadius);
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
     // Widget-space repaint region for an image canvas rect; empty when the
     // rect maps outside the viewport, the full viewport when the display cache is

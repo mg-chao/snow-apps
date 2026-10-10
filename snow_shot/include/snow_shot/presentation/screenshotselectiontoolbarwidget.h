@@ -89,7 +89,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
     void updateInputRegion();
     void releaseNativeInputSurface();
-    bool updateLabels(bool refreshGeometry = false);
+    bool updateLabels(bool refreshGeometry = false, bool refreshUnits = true);
     void retranslateUi();
     void updateLockIconPixmap();
     void updateIconPixmaps();

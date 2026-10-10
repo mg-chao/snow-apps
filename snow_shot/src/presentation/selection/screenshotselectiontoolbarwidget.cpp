@@ -381,7 +381,9 @@ void ScreenshotSelectionToolbarWidget::resetForNewCapture() {
 
 void ScreenshotSelectionToolbarWidget::prepareForDisplay() {
     updateLabels(true);
-    updateIconPixmaps();
+    if (m_displayMode == DisplayMode::Full) {
+        updateIconPixmaps();
+    }
     updateDisplayMode();
     updateWindowSize();
 }
@@ -425,6 +427,9 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
                          : ScreenshotSelectionDisplayUnit::PhysicalPixels,
         canvasUsesPoints});
     const bool unitsChanged = m_canvasUsesPoints != canvasUsesPoints || m_displayValues != values;
+    const bool unitSystemChanged =
+        m_canvasUsesPoints != canvasUsesPoints || m_displayValues.unit != values.unit;
+    const bool sizeChanged = m_displayValues.size != values.size;
     const bool aspectRatioChanged = m_aspectRatioLocked != aspectRatioLocked;
     const bool aspectRatioPresetChanged = m_aspectRatioPreset != aspectRatioPreset;
     const bool cornerRadiusChanged = m_cornerRadius != clampedRadius;
@@ -444,15 +449,17 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
     m_shadowWidth = clampedShadowWidth;
     m_displayMode = displayMode;
 
+    const bool fullMode = displayMode == DisplayMode::Full;
     bool labelGeometryChanged = false;
-    if (selectionChanged || unitsChanged || cornerRadiusChanged || shadowWidthChanged ||
-        displayModeChanged) {
-        labelGeometryChanged = updateLabels();
+    if (displayModeChanged || unitSystemChanged || sizeChanged ||
+        (fullMode &&
+         (selectionChanged || unitsChanged || cornerRadiusChanged || shadowWidthChanged))) {
+        labelGeometryChanged = updateLabels(false, unitSystemChanged || displayModeChanged);
     }
-    if (aspectRatioChanged) {
+    if (fullMode && (aspectRatioChanged || displayModeChanged)) {
         updateLockIconPixmap();
     }
-    if (aspectRatioPresetChanged) {
+    if (fullMode && (aspectRatioPresetChanged || displayModeChanged)) {
         const QSignalBlocker blocker(m_aspectRatioSelect);
         m_aspectRatioSelect->setCurrentValue(
             screenshotSelectionAspectRatioPresetId(m_aspectRatioPreset));
@@ -460,7 +467,7 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
     if (displayModeChanged) {
         updateDisplayMode();
     }
-    if (labelGeometryChanged || displayModeChanged || aspectRatioPresetChanged) {
+    if (labelGeometryChanged || displayModeChanged || (fullMode && aspectRatioPresetChanged)) {
         updateWindowSize();
     }
 }
@@ -887,7 +894,7 @@ void ScreenshotSelectionToolbarWidget::updateInputRegion() {
     setMask(toolbar_widgets::interactiveInputRegion(m_panel->geometry(), m_toolbarHovered));
 }
 
-bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
+bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry, bool refreshUnits) {
     bool geometryChanged = false;
     const auto updateUnit = [&](QLabel* label, ScreenshotSelectionDisplayUnit unit) {
         geometryChanged |=
@@ -900,25 +907,33 @@ bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
             label->setAccessibleName(description);
         }
     };
-    for (QLabel* label : m_canvasUnitLabels) {
-        updateUnit(label, m_canvasUsesPoints ? ScreenshotSelectionDisplayUnit::LogicalPixels
-                                             : ScreenshotSelectionDisplayUnit::PhysicalPixels);
+    if (refreshUnits) {
+        for (QLabel* label : m_canvasUnitLabels) {
+            updateUnit(label, m_canvasUsesPoints ? ScreenshotSelectionDisplayUnit::LogicalPixels
+                                                 : ScreenshotSelectionDisplayUnit::PhysicalPixels);
+        }
+        for (auto* label : {m_positionUnitLabel, m_sizeUnitLabel}) {
+            updateUnit(label, m_displayValues.unit);
+        }
     }
-    for (auto* label : {m_positionUnitLabel, m_sizeUnitLabel}) {
-        updateUnit(label, m_displayValues.unit);
-    }
-    geometryChanged |= updateLabelText(
-        m_xLabel, screenshotSelectionDisplayValue(m_displayValues.position.x()), refreshGeometry);
-    geometryChanged |= updateLabelText(
-        m_yLabel, screenshotSelectionDisplayValue(m_displayValues.position.y()), refreshGeometry);
     geometryChanged |=
         updateLabelText(m_widthLabel, screenshotSelectionDisplayValue(m_displayValues.size.width()),
                         refreshGeometry);
     geometryChanged |= updateLabelText(
         m_heightLabel, screenshotSelectionDisplayValue(m_displayValues.size.height()),
         refreshGeometry);
-    geometryChanged |= updateLabelText(m_radiusLabel, valueText(m_cornerRadius), refreshGeometry);
-    geometryChanged |= updateLabelText(m_shadowLabel, valueText(m_shadowWidth), refreshGeometry);
+    if (m_displayMode == DisplayMode::Full) {
+        geometryChanged |=
+            updateLabelText(m_xLabel, screenshotSelectionDisplayValue(m_displayValues.position.x()),
+                            refreshGeometry);
+        geometryChanged |=
+            updateLabelText(m_yLabel, screenshotSelectionDisplayValue(m_displayValues.position.y()),
+                            refreshGeometry);
+        geometryChanged |=
+            updateLabelText(m_radiusLabel, valueText(m_cornerRadius), refreshGeometry);
+        geometryChanged |=
+            updateLabelText(m_shadowLabel, valueText(m_shadowWidth), refreshGeometry);
+    }
     return geometryChanged;
 }
 

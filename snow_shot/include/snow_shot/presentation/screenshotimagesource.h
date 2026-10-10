@@ -7,6 +7,8 @@
 #include <QSize>
 
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <utility>
 
 class QObject;
@@ -30,20 +32,44 @@ struct ScreenshotImageLayer {
 };
 
 struct ScreenshotImageSource {
+    struct OpacityMetadata {
+        struct Entry {
+            qint64 imageKey = 0;
+            bool opaque = false;
+        };
+        std::mutex mutex;
+        QList<Entry> entries;
+    };
+
     QImage materializedImage;
     QRectF materializedCanvasRect;
     QList<ScreenshotImageLayer> layers;
+    // Copies sent to different overlays share the derived answer, while QImage's
+    // cache key prevents a detached or edited image from reusing stale opacity.
+    std::shared_ptr<OpacityMetadata> opacityMetadata;
+
+    [[nodiscard]] bool imageIsOpaque(const QImage& image) const;
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    [[nodiscard]] qsizetype opacityMetadataEntryCountForTesting() const {
+        if (opacityMetadata == nullptr)
+            return 0;
+        const std::lock_guard lock(opacityMetadata->mutex);
+        return opacityMetadata->entries.size();
+    }
+#endif
 
     [[nodiscard]] static ScreenshotImageSource fromImage(QImage image, const QRectF& canvasRect) {
         ScreenshotImageSource source;
         source.materializedImage = std::move(image);
         source.materializedCanvasRect = canvasRect.normalized();
+        source.opacityMetadata = std::make_shared<OpacityMetadata>();
         return source;
     }
 
     [[nodiscard]] static ScreenshotImageSource fromLayers(QList<ScreenshotImageLayer> layers) {
         ScreenshotImageSource source;
         source.layers = std::move(layers);
+        source.opacityMetadata = std::make_shared<OpacityMetadata>();
         return source;
     }
 

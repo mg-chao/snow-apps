@@ -739,6 +739,57 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
     checkUnits(0, 4);
 }
 
+void smartSelectionDefersHiddenFieldsUntilEditing() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    using Mode = ScreenshotSelectionToolbarWidget::DisplayMode;
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    const QRect initial(80, 70, 317, 181);
+    toolbar.setSelectionState(initial, false, 4, 2);
+    const auto field = [&](const char* name) -> QLabel* {
+        for (QLabel* label : toolbar.findChildren<QLabel*>()) {
+            if (label->accessibleName() == QString::fromLatin1(name)) {
+                return label;
+            }
+        }
+        require(false, "selection toolbar field missing");
+        return nullptr;
+    };
+    const auto* x = field("X coordinate");
+    const auto* y = field("Y coordinate");
+    const auto* radius = field("Corner radius");
+    const auto* shadow = field("Shadow width");
+    toolbar.setSelectionState(initial, false, 4, 2, Mode::SizeOnly);
+    const QSize sizeOnlySize = toolbar.contentSizeHint();
+    const auto* select = toolbar.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotSelectionAspectRatioSelect"));
+    require(select != nullptr, "selection toolbar must expose its ratio selector");
+    for (int index = 0; index < 100; ++index) {
+        toolbar.setSelectionState(QRect(10000 + index, -10000 - index, 317, 181), true, 12, 8,
+                                  Mode::SizeOnly, false, std::nullopt, Preset::Square);
+        require(toolbar.contentSizeHint() == sizeOnlySize,
+                "smart-selection positions and hidden effects must not change the size readout");
+    }
+    require(x->text() == QStringLiteral("80") && y->text() == QStringLiteral("70") &&
+                radius->text() == QStringLiteral("4") && shadow->text() == QStringLiteral("2") &&
+                select->currentValue() == QStringLiteral("free"),
+            "smart-selection frames must defer hidden field and ratio presentation");
+    const QRect latest(10099, -10099, 1024, 576);
+    toolbar.setSelectionState(latest, true, 12, 8, Mode::SizeOnly, false, std::nullopt,
+                              Preset::Square);
+    require(field("Width")->text() == QStringLiteral("1024") &&
+                field("Height")->text() == QStringLiteral("576"),
+            "smart-selection dimensions must continue to update immediately");
+    toolbar.setSelectionState(latest, true, 12, 8, Mode::Full, false, std::nullopt, Preset::Square);
+    require(x->text() == QStringLiteral("10099") && y->text() == QStringLiteral("-10099") &&
+                radius->text() == QStringLiteral("12") && shadow->text() == QStringLiteral("8") &&
+                select->currentValue() == QStringLiteral("1:1"),
+            "entering editing must present the latest deferred values and ratio");
+    require(commands.selectedPresets.empty(),
+            "revealing a deferred ratio must not dispatch a selection edit");
+}
+
 adqt::widgets::AdSelect* ratioSelect(ScreenshotSelectionToolbarWidget& toolbar) {
     auto* select = toolbar.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotSelectionAspectRatioSelect"));
@@ -1326,6 +1377,7 @@ int main(int argc, char* argv[]) {
     selectionToolbarInputSurfaceMatchesInteractivePanel();
     selectionToolbarLabelsFollowApplicationFontFamily();
     selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection();
+    smartSelectionDefersHiddenFieldsUntilEditing();
     smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles();
     smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed();
     aspectRatioSelectSynchronizesWithoutDispatchingCommands();

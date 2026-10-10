@@ -140,6 +140,9 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void prepareColorPickerSurface(const ScreenshotDisplaySession& displaySession);
     void releaseColorPicker();
     ScreenshotColorPickerWindow* colorPicker() const;
+    void sampleColorPicker(const QImage& image, const QRect& physicalRect,
+                           const QPoint& physicalPoint, const QImage& cursorPatch = {},
+                           const QRect& cursorPixelRect = {});
     void updateColorPicker(ScreenshotOverlayWindow* overlay, const QImage& image,
                            const QRect& physicalRect, const QPoint& physicalPoint,
                            const QPointF& localPosition, qreal opacity,
@@ -163,6 +166,9 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void showToolbar();
     void hideSelectionToolbar();
     void setSelectionToolbarHidden(bool hidden);
+    [[nodiscard]] bool selectionToolbarHidden() const {
+        return m_uiHost.selectionToolbarHidden();
+    }
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void destroyUiResources();

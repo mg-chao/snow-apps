@@ -149,40 +149,42 @@ bool rectFCovers(const QRectF& outer, const QRect& inner) {
            outer.right() >= innerBounds.right() && outer.bottom() >= innerBounds.bottom();
 }
 
-bool imageIsOpaque(const QImage& image) {
-    if (image.isNull()) {
+bool paintPixelAlignedRectangularMask(QPainter& painter, const QRectF& viewport,
+                                      const QRectF& selection, const QColor& color) {
+    const QTransform device = painter.deviceTransform();
+    if (device.type() > QTransform::TxScale || device.m11() <= 0 || device.m22() <= 0 ||
+        !viewport.contains(selection))
         return false;
+    const auto pixelAligned = [&](const QRectF& rect) {
+        const QRectF pixels = device.mapRect(rect);
+        const std::array edges{pixels.left(), pixels.top(), pixels.right(), pixels.bottom()};
+        return std::all_of(edges.begin(), edges.end(), [](qreal edge) {
+            return std::isfinite(edge) && std::abs(edge) < std::numeric_limits<int>::max() &&
+                   std::abs(edge - std::round(edge)) <= 1e-8;
+        });
+    };
+    if (!pixelAligned(viewport) || !pixelAligned(selection))
+        return false;
+
+    // Adjacent antialiased strips would blend twice at fractional joins. Only
+    // integral device edges use this path; fractional coverage uses the original
+    // odd-even rasterizer below, retaining its exact edge samples.
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    const std::array strips{
+        QRectF(viewport.left(), viewport.top(), viewport.width(), selection.top() - viewport.top()),
+        QRectF(viewport.left(), selection.bottom(), viewport.width(),
+               viewport.bottom() - selection.bottom()),
+        QRectF(viewport.left(), selection.top(), selection.left() - viewport.left(),
+               selection.height()),
+        QRectF(selection.right(), selection.top(), viewport.right() - selection.right(),
+               selection.height())};
+    for (const QRectF& strip : strips) {
+        if (!strip.isEmpty())
+            painter.fillRect(strip, color);
     }
-    if (!image.hasAlphaChannel()) {
-        return true;
-    }
-    // Capture images use these byte and word formats. Scan only when the source
-    // changes; formats with an unfamiliar alpha representation stay conservative.
-    if (image.format() == QImage::Format_ARGB32 ||
-        image.format() == QImage::Format_ARGB32_Premultiplied) {
-        for (int y = 0; y < image.height(); ++y) {
-            const auto* pixels = reinterpret_cast<const QRgb*>(image.constScanLine(y));
-            for (int x = 0; x < image.width(); ++x) {
-                if (qAlpha(pixels[x]) != 255) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-    if (image.format() == QImage::Format_RGBA8888 ||
-        image.format() == QImage::Format_RGBA8888_Premultiplied) {
-        for (int y = 0; y < image.height(); ++y) {
-            const auto* pixels = image.constScanLine(y);
-            for (int x = 0; x < image.width(); ++x) {
-                if (pixels[x * 4 + 3] != 255) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-    return false;
+    painter.restore();
+    return true;
 }
 
 QRect interiorPixelRect(const QRectF& rect) {
@@ -1096,25 +1098,26 @@ bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
 }
 
 void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage) {
+    QList<QRectF> opaqueRects;
+    // DPR normalization can detach the QImage. Check the shared source key first
+    // so every overlay reuses the answer for the same captured pixel buffer.
+    if (source.isMaterialized()) {
+        if (source.imageIsOpaque(source.materializedImage))
+            opaqueRects.append(source.materializedCanvasRect);
+    } else if (source.isLayered()) {
+        for (const ScreenshotImageLayer& layer : source.layers) {
+            if (source.imageIsOpaque(layer.image))
+                opaqueRects.append(layer.destinationCanvasRect);
+        }
+    }
     if (source.isMaterialized() && source.materializedImage.devicePixelRatio() != 1.0) {
         if (!snowCanvasDetachImage(source.materializedImage))
             return;
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
-    m_opaqueImageCanvasRects.clear();
+    m_opaqueImageCanvasRects = std::move(opaqueRects);
     m_opaqueCoverageValid = false;
-    if (m_imageSource.isMaterialized()) {
-        if (imageIsOpaque(m_imageSource.materializedImage)) {
-            m_opaqueImageCanvasRects.append(m_imageSource.materializedCanvasRect);
-        }
-    } else if (m_imageSource.isLayered()) {
-        for (const ScreenshotImageLayer& layer : m_imageSource.layers) {
-            if (layer.isValid() && imageIsOpaque(layer.image)) {
-                m_opaqueImageCanvasRects.append(layer.destinationCanvasRect);
-            }
-        }
-    }
     QList<SnowCanvasBaseImageSource> baseSources;
     if (m_imageSource.isMaterialized()) {
         baseSources.push_back(
@@ -1919,7 +1922,7 @@ void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
     }
 }
 
-const ScreenshotCanvasRenderer::SelectionViewGeometry&
+ScreenshotCanvasRenderer::SelectionViewGeometry&
 ScreenshotCanvasRenderer::selectionViewGeometry(const SnowCanvasRenderContext& context,
                                                 int cornerRadius, int borderCornerRadius) {
     auto& geometry = m_selectionViewGeometry;
@@ -1934,23 +1937,31 @@ ScreenshotCanvasRenderer::selectionViewGeometry(const SnowCanvasRenderContext& c
     geometry.viewportRect = context.viewportRect;
     geometry.cornerRadius = cornerRadius;
     geometry.borderCornerRadius = borderCornerRadius;
-    geometry.effectivePath = shaped ? context.canvasToViewTransform.map(screenshotRegionPath(
-                                          *m_selectionState.region, cornerRadius))
-                                    : selectionShapePath(m_selectionState.bounds, cornerRadius,
-                                                         context.canvasToViewTransform);
+    geometry.rectangular = !shaped && m_selectionState.draftPath.isEmpty() && cornerRadius == 0 &&
+                           borderCornerRadius == 0;
+    geometry.effectiveRect = context.canvasToViewTransform.mapRect(m_selectionState.bounds);
+    geometry.outlineRect = geometry.effectiveRect.adjusted(0.5, 0.5, -0.5, -0.5);
+    geometry.effectivePath = geometry.rectangular ? QPainterPath{}
+                             : shaped ? context.canvasToViewTransform.map(screenshotRegionPath(
+                                            *m_selectionState.region, cornerRadius))
+                                      : selectionShapePath(m_selectionState.bounds, cornerRadius,
+                                                           context.canvasToViewTransform);
     geometry.outlinePath =
-        shaped ? context.canvasToViewTransform.map(screenshotRegionPath(
-                     m_selectionState.confirmedRegion.isEmpty() ? *m_selectionState.region
-                                                                : m_selectionState.confirmedRegion,
-                     borderCornerRadius))
-               : selectionShapePath(m_selectionState.bounds, borderCornerRadius,
-                                    context.canvasToViewTransform, 0.5);
+        geometry.rectangular ? QPainterPath{}
+        : shaped
+            ? context.canvasToViewTransform.map(screenshotRegionPath(
+                  m_selectionState.confirmedRegion.isEmpty() ? *m_selectionState.region
+                                                             : m_selectionState.confirmedRegion,
+                  borderCornerRadius))
+            : selectionShapePath(m_selectionState.bounds, borderCornerRadius,
+                                 context.canvasToViewTransform, 0.5);
     geometry.draftPath = context.canvasToViewTransform.map(m_selectionState.draftPath);
     geometry.maskPath = {};
-    geometry.maskPath.setFillRule(Qt::OddEvenFill);
-    geometry.maskPath.addRect(QRectF(context.viewportRect));
-    if (m_selectionState.present) {
-        geometry.maskPath.addPath(geometry.effectivePath);
+    if (!geometry.rectangular) {
+        geometry.maskPath.setFillRule(Qt::OddEvenFill);
+        geometry.maskPath.addRect(QRectF(context.viewportRect));
+        if (m_selectionState.present)
+            geometry.maskPath.addPath(geometry.effectivePath);
     }
     // Cache the geometry decisions along with the paths. Cursor motion changes
     // none of these inputs, including potentially large confirmed contours.
@@ -2049,7 +2060,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         m_renderMode == RenderMode::Standard ? m_selectionState.cornerRadius : 0;
     const int selectionBorderCornerRadius = m_ocrPresentation == nullptr ? visibleCornerRadius : 0;
     const bool shaped = m_selectionState.region.has_value();
-    const auto& geometry =
+    auto& geometry =
         selectionViewGeometry(context, visibleCornerRadius, selectionBorderCornerRadius);
     const auto& effectivePath = geometry.effectivePath;
     const auto& outlinePath = geometry.outlinePath;
@@ -2063,7 +2074,19 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         // texture. Cache contours whose edge processing can amortize that blit.
         m_maskCache.draw(painter, effectivePath, m_maskColor, true, context.viewportRect);
     if (m_maskVisible && !cachedMask) {
-        painter.fillPath(geometry.maskPath, m_maskColor);
+        const bool rectangularMask =
+            geometry.rectangular && m_selectionState.present &&
+            paintPixelAlignedRectangularMask(painter, QRectF(context.viewportRect),
+                                             geometry.effectiveRect, m_maskColor);
+        if (!rectangularMask) {
+            if (geometry.maskPath.isEmpty()) {
+                geometry.maskPath.setFillRule(Qt::OddEvenFill);
+                geometry.maskPath.addRect(QRectF(context.viewportRect));
+                if (m_selectionState.present)
+                    geometry.maskPath.addRect(geometry.effectiveRect);
+            }
+            painter.fillPath(geometry.maskPath, m_maskColor);
+        }
     }
     if (m_renderMode == RenderMode::Standard && m_guideLinesVisible) {
         const QRectF viewport(context.viewportRect);
@@ -2158,9 +2181,13 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             painter.setBrush(Qt::NoBrush);
             // Cache in local physical-pixel coordinates. Integer-pixel moves
             // reuse the raster; fractional moves retain their exact sample phase.
-            if (!shaped || (m_selectionState.confirmedRegion.isEmpty() && !sharedDraftOutline) ||
-                !m_outlineCache.draw(painter, outlinePath, selectionAccent, false,
-                                     context.viewportRect)) {
+            if (geometry.rectangular) {
+                if (geometry.outlineRect.isValid() && !geometry.outlineRect.isEmpty())
+                    painter.drawRect(geometry.outlineRect);
+            } else if (!shaped ||
+                       (m_selectionState.confirmedRegion.isEmpty() && !sharedDraftOutline) ||
+                       !m_outlineCache.draw(painter, outlinePath, selectionAccent, false,
+                                            context.viewportRect)) {
                 painter.drawPath(outlinePath);
             }
             if (!m_selectionState.marquee.isEmpty()) {

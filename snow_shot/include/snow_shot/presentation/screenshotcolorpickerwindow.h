@@ -23,6 +23,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     void resetForNewCapture();
     void setCaptureImage(const QImage& image, const QRect& physicalRect,
                          const QImage& cursorPatch = {}, const QRect& cursorPixelRect = {});
+    [[nodiscard]] bool updateColorSample(const QPoint& physicalPoint);
     void
     updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition, qreal opacity,
                  std::optional<ScreenshotCoordinateDisplayValues> displayValues = std::nullopt);
@@ -33,6 +34,21 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QString currentColorText() const;
     QString currentPositionText() const;
     bool hasCurrentColor() const;
+
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    struct WorkCounters {
+        quint64 samples = 0;
+        quint64 previews = 0;
+        quint64 moves = 0;
+        quint64 ownerChanges = 0;
+    };
+    [[nodiscard]] WorkCounters workCounters() const {
+        return m_workCounters;
+    }
+    void resetWorkCounters() {
+        m_workCounters = {};
+    }
+#endif
 
     QSize sizeHint() const override;
 
@@ -74,7 +90,11 @@ class ScreenshotColorPickerWindow final : public QWidget {
     ColorFormat m_colorFormat = ColorFormat::Hex;
     bool m_relativeCoordinates = false;
     bool m_hasCurrentColor = false;
+    bool m_previewDirty = true;
     qreal m_preparedSurfaceDevicePixelRatio = 0.0;
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    WorkCounters m_workCounters;
+#endif
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H

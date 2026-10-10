@@ -555,6 +555,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset preset) override;
     void openSelectionResizeModalFromToolbar() override;
     void hideColorPickersForScreenshotUi() override;
+    void hideColorPicker();
+    void updateColorPickerAtCurrentCursor();
     void updateGuideLinesForScreenshotUi(const QPoint& globalPosition) override;
     void beginCanvasColorSampling(adqt::widgets::AdColorPicker* picker) override;
     void adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy) override;
@@ -837,6 +839,17 @@ void ScreenshotController::Impl::reloadUiPreferences() {
     applyUiPreferences(preferences);
 }
 
+void ScreenshotController::Impl::hideColorPicker() {
+    if (m_presentationServices)
+        m_presentationServices->discardColorPickerPresentation();
+    m_colorPickerController->hide();
+}
+
+void ScreenshotController::Impl::updateColorPickerAtCurrentCursor() {
+    m_presentationServices->discardColorPickerPresentation();
+    m_colorPickerController->updateAtCurrentCursor(m_presentationServices->colorPickerContext());
+}
+
 void ScreenshotController::Impl::applyUiPreferences(const ScreenshotUiPreferences& preferences) {
     m_uiPreferences = preferences.normalized();
     if (m_colorPickerController != nullptr) {
@@ -858,8 +871,7 @@ void ScreenshotController::Impl::applyUiPreferences(const ScreenshotUiPreference
     if (m_presentationServices != nullptr) {
         m_presentationServices->setUiPreferences(m_uiPreferences);
         if (!m_interaction.inactive() && m_colorPickerController != nullptr) {
-            m_colorPickerController->updateAtCurrentCursor(
-                m_presentationServices->colorPickerContext());
+            updateColorPickerAtCurrentCursor();
         }
     }
 }
@@ -932,8 +944,7 @@ void ScreenshotController::Impl::createHistoryService() {
                         m_presentationServices->showToolbar();
                     }
                 }
-                m_colorPickerController->updateAtCurrentCursor(
-                    m_presentationServices->colorPickerContext());
+                updateColorPickerAtCurrentCursor();
             },
             [this](bool loading) {
                 setHistoryLoadingMessageVisible(loading);
@@ -1165,6 +1176,11 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
                 if (m_mcpObserving)
                     emit owner.mcpCanvasChanged();
             },
+            {},
+            [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
+                m_colorPickerController->updateForOverlay(
+                    overlay, localPosition, m_presentationServices->colorPickerContext());
+            },
         });
     QObject::connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
                      &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, &owner,
@@ -1277,7 +1293,7 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
 #else
             nullptr,
 #endif
-            [this]() { m_colorPickerController->hide(); },
+            [this]() { hideColorPicker(); },
             [this]() { cancelCapture(); },
             [this](const QPointF& canvasPosition) {
                 return m_overlayInputHandler != nullptr
@@ -1421,8 +1437,12 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
                     return m_selectionResizeWorkflow->open(modalParent, request,
                                                            std::move(applySelection));
                 },
-                [this]() { m_colorPickerController->hide(); },
-                [this](bool suppressed) { m_colorPickerController->setSuppressed(suppressed); },
+                [this]() { hideColorPicker(); },
+                [this](bool suppressed) {
+                    if (suppressed)
+                        m_presentationServices->discardColorPickerPresentation();
+                    m_colorPickerController->setSuppressed(suppressed);
+                },
             },
             [this](int cornerRadius, int shadowWidth) {
                 m_selectionSettings->setSelectionEffects(cornerRadius, shadowWidth);
@@ -1508,10 +1528,7 @@ void ScreenshotController::Impl::createSelectorWorkflow() {
             m_intelligentSelection,
             ScreenshotSelectorPresentationCallbacks{
                 [this]() { m_presentationServices->updateOverlayState(); },
-                [this]() {
-                    m_colorPickerController->updateAtCurrentCursor(
-                        m_presentationServices->colorPickerContext());
-                },
+                [this]() { updateColorPickerAtCurrentCursor(); },
                 [this]() { m_presentationServices->hideToolbar(); },
                 [this]() { m_presentationServices->updateOverlayCursors(); },
                 [this](quint64 sessionId) {
@@ -1605,10 +1622,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             ScreenshotCapturePresentationCallbacks{
                 [this]() { m_presentationServices->hideToolbar(); },
                 [this]() { m_presentationServices->updateOverlayState(); },
-                [this]() {
-                    m_colorPickerController->updateAtCurrentCursor(
-                        m_presentationServices->colorPickerContext());
-                },
+                [this]() { updateColorPickerAtCurrentCursor(); },
                 [this]() { handleCapturePresented(); },
                 [this]() {
                     if (m_globalMouseDrag.active()) {
@@ -1904,25 +1918,28 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             return m_historyService != nullptr && m_historyService->returnToCurrentScreenshot();
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
-            m_colorPickerController->updateForOverlay(overlay, localPosition,
-                                                      m_presentationServices->colorPickerContext());
+            m_presentationServices->requestColorPickerPresentation(overlay, localPosition);
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
             m_presentationServices->updatePointerPresentation(overlay, localPosition);
         },
         [this](const QPointF& virtualPosition) {
+            m_presentationServices->discardColorPickerPresentation();
             m_colorPickerController->updateForSelectionDrag(
                 virtualPosition, m_presentationServices->colorPickerContext());
         },
         [this]() {
+            m_presentationServices->flushColorPickerPresentation();
             return m_colorPickerController->copyColorToClipboard(
                 m_presentationServices->colorPickerContext());
         },
         [this]() {
+            m_presentationServices->flushColorPickerPresentation();
             return m_colorPickerController->cycleFormat(
                 m_presentationServices->colorPickerContext());
         },
         [this]() {
+            m_presentationServices->flushColorPickerPresentation();
             return m_colorPickerController->toggleCoordinateMode(
                 m_presentationServices->colorPickerContext());
         },
@@ -2072,6 +2089,9 @@ bool ScreenshotController::Impl::moveCursorOnePixel(
     if (!result.commandApplied()) {
         return false;
     }
+    // A successful native warp supersedes queued hover samples, even if its
+    // resulting position could not be read or canvas sampling owns the cursor.
+    m_presentationServices->discardColorPickerPresentation();
     if (!result.position.has_value()) {
         return true;
     }
@@ -2391,20 +2411,24 @@ bool ScreenshotController::Impl::setScreenshotCursorVisible(bool visible) {
         if (!cursor.isEmpty())
             damage = damage.isEmpty() ? cursor : damage.united(cursor);
     });
-    m_displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel& display,
-                                              ScreenshotOverlayWindow* overlay) {
-        if (m_displaySession.hasImageSources())
-            overlay->setScreenshotImageSource(ScreenshotImageSource::fromLayers(layers), damage);
-        else if (!display.cursorPatch.isNull())
-            overlay->setScreenshotImageSource(screenshotDisplayImageSource(display, visible),
-                                              screenshotCursorCanvasRect(display));
-    });
+    const bool hasImageSources = m_displaySession.hasImageSources();
+    const ScreenshotImageSource imageSource =
+        hasImageSources ? ScreenshotImageSource::fromLayers(std::move(layers))
+                        : ScreenshotImageSource{};
+    m_displaySession.forEachActiveOverlay(
+        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+            if (hasImageSources)
+                overlay->setScreenshotImageSource(imageSource, damage);
+            else if (!display.cursorPatch.isNull())
+                overlay->setScreenshotImageSource(screenshotDisplayImageSource(display, visible),
+                                                  screenshotCursorCanvasRect(display));
+        });
     invalidateRecognitionSession();
     if (m_autoFilterController)
         m_autoFilterController->resetSession();
     if (auto* toolbar = m_overlayCoordinator->toolbar())
         toolbar->synchronizeCursorState();
-    m_colorPickerController->updateAtCurrentCursor(m_presentationServices->colorPickerContext());
+    updateColorPickerAtCurrentCursor();
     emit owner.mcpCanvasChanged();
     return true;
 }
@@ -2935,7 +2959,7 @@ void ScreenshotController::Impl::resumeScrollingCaptureAfterSelectionResize() {
     m_interaction.enterScrollingCapture();
     m_captureState.sessionState = ScreenshotSessionState::Editing;
     m_presentationServices->updateOverlayState();
-    m_colorPickerController->hide();
+    hideColorPicker();
     m_toolbarPresenter->hideSelectionToolbar();
     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
         toolbar->setScrollingScreenshotMode(true);
@@ -2970,7 +2994,7 @@ void ScreenshotController::Impl::hideCapturePresentationImmediately() {
     SNOW_SHOT_PIN_PERF_SCOPE("controller.hide_presentation");
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.hide_presentation.enter");
     if (m_colorPickerController != nullptr) {
-        m_colorPickerController->hide();
+        hideColorPicker();
     }
     if (m_toolbarPresenter != nullptr) {
         m_toolbarPresenter->hideSelectionToolbar();
@@ -3065,7 +3089,7 @@ void ScreenshotController::Impl::startScrollingScreenshot() {
     m_interaction.enterScrollingCapture();
     m_captureState.sessionState = ScreenshotSessionState::Editing;
     m_presentationServices->updateOverlayState();
-    m_colorPickerController->hide();
+    hideColorPicker();
     m_toolbarPresenter->hideSelectionToolbar();
     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
         toolbar->setScrollingScreenshotMode(true);
@@ -4336,7 +4360,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -5373,10 +5397,12 @@ void ScreenshotController::Impl::openSelectionResizeModalFromToolbar() {
 }
 
 void ScreenshotController::Impl::hideColorPickersForScreenshotUi() {
+    m_presentationServices->discardColorPickerPresentation();
     m_selectionEditWorkflow->hideColorPickersForScreenshotUi();
 }
 
 void ScreenshotController::Impl::updateGuideLinesForScreenshotUi(const QPoint& globalPosition) {
+    m_presentationServices->discardColorPickerPresentation();
     if (m_interaction.inactive()) {
         return;
     }
@@ -5672,8 +5698,7 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
         return false;
     }
     if (m_colorPickerController != nullptr && m_presentationServices != nullptr) {
-        m_colorPickerController->updateAtCurrentCursor(
-            m_presentationServices->colorPickerContext());
+        updateColorPickerAtCurrentCursor();
     }
     return true;
 }

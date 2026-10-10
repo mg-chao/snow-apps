@@ -99,12 +99,22 @@ void ScreenshotColorPickerController::updateAtPhysicalPoint(
         hide();
         return;
     }
-    const QPointF overlayLocalPosition = QPointF(logicalPoint - overlay->geometry().topLeft());
     const qreal pickerOpacity =
         std::min(std::clamp<qreal>(opacity, 0.0, 1.0),
                  opacityForPoint(m_geometry.canvasPositionForPhysicalPoint(*display, physicalPoint),
                                  opacity < 1.0, context));
 
+    if (pickerOpacity <= 0.0) {
+        // Keep color-copy commands current without moving the hidden native popup.
+        m_overlayCoordinator.sampleColorPicker(display->image, display->physicalRect, physicalPoint,
+                                               m_displaySession.cursorVisible ? display->cursorPatch
+                                                                              : QImage{},
+                                               display->cursorPixelRect);
+        m_overlay = overlay;
+        return;
+    }
+
+    const QPointF overlayLocalPosition = QPointF(logicalPoint - overlay->geometry().topLeft());
     const auto conversion =
         screenshotSelectionDisplayConversion(m_geometry, m_displaySession, context.selectionPixels,
                                              context.selectionDisplayUnit, display);

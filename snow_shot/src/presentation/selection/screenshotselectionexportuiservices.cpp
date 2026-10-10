@@ -1256,7 +1256,7 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     restoring.groupId = found->groupId;
     restoring.createdUtc = found->createdUtc;
     restoring.generation = generation;
-    restoring.attentionPending = m_pendingAttention.remove(id) > 0;
+    restoring.attentionPending = m_pendingAttention.remove(id);
     m_restoringIds.insert(id, std::move(restoring));
     auto* repositoryGuard = &repository;
     const auto alive = m_restoreAlive;

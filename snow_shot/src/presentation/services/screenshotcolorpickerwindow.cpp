@@ -213,6 +213,9 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
     if (parentWidget() == owner && isWindow()) {
         return;
     }
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    ++m_workCounters.ownerChanges;
+#endif
 
     hidePicker();
     m_preparedSurfaceDevicePixelRatio = 0.0;
@@ -280,30 +283,29 @@ void ScreenshotColorPickerWindow::resetForNewCapture() {
     m_positionText.reset();
     m_currentColor = QColor();
     m_hasCurrentColor = false;
+    m_previewDirty = true;
     hidePicker();
 }
 
 void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRect& physicalRect,
                                                   const QImage& cursorPatch,
                                                   const QRect& cursorPixelRect) {
+    const bool validPatch = !cursorPatch.isNull() && cursorPatch.size() == cursorPixelRect.size() &&
+                            image.rect().contains(cursorPixelRect);
+    const QImage normalizedPatch = validPatch ? cursorPatch : QImage();
+    const QRect normalizedPixelRect = validPatch ? cursorPixelRect : QRect();
     if (m_captureImage.cacheKey() == image.cacheKey() && m_physicalRect == physicalRect &&
-        m_cursorPatch.cacheKey() == cursorPatch.cacheKey() &&
-        m_cursorPixelRect == cursorPixelRect) {
+        m_cursorPatch.cacheKey() == normalizedPatch.cacheKey() &&
+        m_cursorPixelRect == normalizedPixelRect) {
         return;
     }
 
     m_captureImage = image;
-    const bool validPatch = !cursorPatch.isNull() && cursorPatch.size() == cursorPixelRect.size() &&
-                            image.rect().contains(cursorPixelRect);
-    m_cursorPatch = validPatch ? cursorPatch : QImage();
-    m_cursorPixelRect = validPatch ? cursorPixelRect : QRect();
+    m_cursorPatch = normalizedPatch;
+    m_cursorPixelRect = normalizedPixelRect;
     m_physicalRect = physicalRect;
-    if (m_previewImage.size() != QSize(kPreviewPickerSize, kPreviewPickerSize) ||
-        m_previewImage.format() != QImage::Format_ARGB32_Premultiplied) {
-        m_previewImage =
-            QImage(kPreviewPickerSize, kPreviewPickerSize, QImage::Format_ARGB32_Premultiplied);
-    }
     m_hasCurrentColor = false;
+    m_previewDirty = true;
 }
 
 void ScreenshotColorPickerWindow::updatePicker(
@@ -315,7 +317,8 @@ void ScreenshotColorPickerWindow::updatePicker(
     }
 
     opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
-    const bool previewChanged = updatePreview(physicalPoint);
+    const bool previewChanged =
+        opacity > 0.0 ? updatePreview(physicalPoint) : updateColorSample(physicalPoint);
     auto values = displayValues.value_or(ScreenshotCoordinateDisplayValues{
         QPointF(m_currentPhysicalPoint), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
     // The readout uses whole pixels; subpixel changes do not invalidate text layout.
@@ -323,6 +326,14 @@ void ScreenshotColorPickerWindow::updatePicker(
     if (values.relativePosition) {
         values.relativePosition = QPointF(std::round(values.relativePosition->x()),
                                           std::round(values.relativePosition->y()));
+    }
+    if (opacity <= 0.0) {
+        if (m_displayValues != values) {
+            m_displayValues = values;
+            m_positionText.reset();
+        }
+        hidePicker();
+        return;
     }
     const QString previousPositionText = currentPositionText();
     if (m_displayValues != values) {
@@ -337,11 +348,6 @@ void ScreenshotColorPickerWindow::updatePicker(
         if (opacityChanged) {
             m_opacityEffect->setOpacity(opacity);
         }
-    }
-
-    if (opacity <= 0.0) {
-        hidePicker();
-        return;
     }
 
     const bool wasVisible = isVisible();
@@ -367,10 +373,11 @@ QString ScreenshotColorPickerWindow::currentPositionText() const {
 }
 
 void ScreenshotColorPickerWindow::hidePicker() {
-    if (m_opacityEffect != nullptr) {
+    if (m_opacityEffect != nullptr && m_opacityEffect->opacity() != 0.0) {
         m_opacityEffect->setOpacity(0.0);
     }
-    hide();
+    if (!isHidden())
+        hide();
 }
 
 bool ScreenshotColorPickerWindow::event(QEvent* event) {
@@ -524,7 +531,7 @@ void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {
                      fitText(textFont, colorText, colorRect.toAlignedRect().width() - 8));
 }
 
-bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
+bool ScreenshotColorPickerWindow::updateColorSample(const QPoint& physicalPoint) {
     if (m_captureImage.isNull() || m_physicalRect.isNull()) {
         return false;
     }
@@ -534,11 +541,34 @@ bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
     const int imageX = std::clamp(physicalPoint.x() - m_physicalRect.left(), 0, maxImageX);
     const int imageY = std::clamp(physicalPoint.y() - m_physicalRect.top(), 0, maxImageY);
     const QPoint nextPhysicalPoint(m_physicalRect.left() + imageX, m_physicalRect.top() + imageY);
-    if (m_hasCurrentColor && m_currentPhysicalPoint == nextPhysicalPoint &&
-        !m_previewImage.isNull()) {
+    if (m_hasCurrentColor && m_currentPhysicalPoint == nextPhysicalPoint) {
         return false;
     }
     m_currentPhysicalPoint = nextPhysicalPoint;
+    // A same-point reveal must rebuild the neighborhood after hidden sampling.
+    m_previewDirty = true;
+    const RgbaPixel centerPixel =
+        !m_cursorPatch.isNull() && m_cursorPixelRect.contains(imageX, imageY)
+            ? rgbaPixelAt(m_cursorPatch, imageX - m_cursorPixelRect.x(),
+                          imageY - m_cursorPixelRect.y())
+            : rgbaPixelAt(m_captureImage, imageX, imageY);
+    m_currentColor = QColor(centerPixel.red, centerPixel.green, centerPixel.blue, 255);
+    m_hasCurrentColor = true;
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    ++m_workCounters.samples;
+#endif
+    return true;
+}
+
+bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
+    static_cast<void>(updateColorSample(physicalPoint));
+    if (!m_hasCurrentColor || !m_previewDirty) {
+        return false;
+    }
+    const int maxImageX = std::max(0, m_captureImage.width() - 1);
+    const int maxImageY = std::max(0, m_captureImage.height() - 1);
+    const int imageX = m_currentPhysicalPoint.x() - m_physicalRect.left();
+    const int imageY = m_currentPhysicalPoint.y() - m_physicalRect.top();
 
     if (m_previewImage.isNull()) {
         m_previewImage =
@@ -560,9 +590,10 @@ bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
         }
     }
 
-    const RgbaPixel centerPixel = sample(imageX, imageY);
-    m_currentColor = QColor(centerPixel.red, centerPixel.green, centerPixel.blue, 255);
-    m_hasCurrentColor = true;
+    m_previewDirty = false;
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    ++m_workCounters.previews;
+#endif
     return true;
 }
 
@@ -585,6 +616,9 @@ bool ScreenshotColorPickerWindow::updatePosition(const QPointF& overlayLocalPosi
         return false;
     }
 
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    ++m_workCounters.moves;
+#endif
     move(targetPosition);
     return true;
 }

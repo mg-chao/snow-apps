@@ -504,6 +504,11 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
     }
     QJsonObject summary;
     summary.insert(QStringLiteral("schemaVersion"), 4);
+#if defined(SNOW_SHOT_SELECTION_RENDER_BASELINE)
+    summary.insert(QStringLiteral("implementation"), QStringLiteral("baseline"));
+#else
+    summary.insert(QStringLiteral("implementation"), QStringLiteral("candidate"));
+#endif
     summary.insert(QStringLiteral("requestedSurfaceWidth"), surfaceSize.width());
     summary.insert(QStringLiteral("requestedSurfaceHeight"), surfaceSize.height());
     summary.insert(QStringLiteral("surfaceWidth"), actualCanvasSize.width());
@@ -516,10 +521,12 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
     summary.insert(QStringLiteral("qtPlatform"), QGuiApplication::platformName());
     summary.insert(QStringLiteral("qtScaleFactor"), qEnvironmentVariable("QT_SCALE_FACTOR"));
     summary.insert(QStringLiteral("translucentWindow"), translucent);
-    summary.insert(QStringLiteral("timingScope"),
-                   QStringLiteral("API mutation plus QApplication::processEvents, including "
-                                  "synchronous backing-store flush; excludes compositor latency "
-                                  "and the screenshot presenter/input path"));
+    summary.insert(
+        QStringLiteral("timingScope"),
+        QStringLiteral("Default: API mutation plus QApplication::processEvents, including "
+                       "synchronous backing-store flush; excludes compositor latency "
+                       "and the screenshot presenter/input path. A scenario's "
+                       "measurement field overrides this default scope."));
     summary.insert(QStringLiteral("paintedBoundingRectScope"),
                    QStringLiteral("bounding rectangle of observed canvas paint events; proxy "
                                   "for Windows translucent backing-store presentation area"));
@@ -600,6 +607,10 @@ int main(int argc, char** argv) {
         QStringLiteral("resize-filter-interior"),
         QStringLiteral("resize-filter-edge"),
         QStringLiteral("smart-selection-animation"),
+        QStringLiteral("rectangular-overlay-pass-aligned"),
+        QStringLiteral("rectangular-overlay-pass-fractional"),
+        QStringLiteral("shared-source-startup"),
+        QStringLiteral("separate-source-startup"),
         QStringLiteral("rounded-corners"),
         QStringLiteral("hover-entry-exit"),
         QStringLiteral("shadow-width-sweep"),
@@ -693,6 +704,114 @@ int main(int argc, char** argv) {
         report.insert(QStringLiteral("devicePixelRatio"), fixture.canvas->devicePixelRatioF());
         reports.append(report);
     };
+
+    const auto selectedScenario = [&](const QString& name) {
+        return !parser.isSet(QStringLiteral("scenario")) ||
+               parser.values(QStringLiteral("scenario")).contains(name);
+    };
+    const auto runOverlayPass = [&](const QString& name, bool fractional) {
+        if (!selectedScenario(name))
+            return;
+        const qreal dpr = canvas.devicePixelRatioF();
+        QImage target(QSize(qCeil(surfaceWidth * dpr), qCeil(surfaceHeight * dpr)),
+                      QImage::Format_ARGB32_Premultiplied);
+        target.setDevicePixelRatio(dpr);
+        const QTransform transform =
+            QTransform::fromTranslate(surfaceWidth / 2.0, surfaceHeight / 2.0);
+        ScenarioResult result;
+        result.name = name;
+        for (int frame = 0; frame < warmup + iterations; ++frame) {
+            target.fill(QColor(37, 83, 129));
+            resetSelectionRenderDiagnosticsForCurrentThread();
+            resetGuideLineRenderDiagnosticsForCurrentThread();
+            const qreal x = 20.0 + frame % 97;
+            const qreal y = 20.0 + frame % 53;
+            const qreal phase = fractional ? 0.271 : 0.0;
+            const QRectF hole((std::round(x * dpr) + phase) / dpr,
+                              (std::round(y * dpr) + phase) / dpr,
+                              std::round(surfaceWidth * 0.55 * dpr) / dpr,
+                              std::round(surfaceHeight * 0.55 * dpr) / dpr);
+            QElapsedTimer timer;
+            timer.start();
+            renderer.setSelection(hole.translated(-surfaceWidth / 2.0, -surfaceHeight / 2.0),
+                                  false);
+            const qint64 mutationNs = timer.nsecsElapsed();
+            {
+                QPainter painter(&target);
+                painter.setRenderHint(QPainter::Antialiasing);
+                renderer.renderAfterCanvas(painter,
+                                           {canvas.rect(), QRegion(canvas.rect()), transform, dpr});
+            }
+            if (frame >= warmup) {
+                FrameSample sample;
+                sample.milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1e6;
+                sample.mutationMs = static_cast<double>(mutationNs) / 1e6;
+                sample.eventProcessingMs = sample.milliseconds - sample.mutationMs;
+                result.samples.push_back(sample);
+            }
+        }
+        auto report = summarize(result, {}, {});
+        report.insert(
+            QStringLiteral("measurement"),
+            QStringLiteral("Selection mutation plus direct overlay mask/border paint "
+                           "into QImage; excludes background, Qt event delivery, "
+                           "backing-store flush, and compositor presentation. "
+                           "eventProcessingP95Ms denotes direct paint work in this case."));
+        report.insert(QStringLiteral("devicePixelRatio"), dpr);
+        report.insert(QStringLiteral("canvasWidth"), surfaceWidth);
+        report.insert(QStringLiteral("canvasHeight"), surfaceHeight);
+        reports.append(report);
+    };
+    runOverlayPass(QStringLiteral("rectangular-overlay-pass-aligned"), false);
+    runOverlayPass(QStringLiteral("rectangular-overlay-pass-fractional"), true);
+
+    const auto runSourceStartup = [&](const QString& name, bool shared) {
+        if (!selectedScenario(name))
+            return;
+        constexpr int kOverlayCount = 3;
+        const qreal dpr = canvas.devicePixelRatioF();
+        const QSize pixels(qCeil(surfaceWidth * dpr), qCeil(surfaceHeight * dpr));
+        const QRectF bounds(-surfaceWidth / 2.0, -surfaceHeight / 2.0, surfaceWidth, surfaceHeight);
+        QList<ScreenshotImageLayer> layers;
+        std::array<std::unique_ptr<SnowCanvasWidget>, kOverlayCount> canvases;
+        std::array<std::unique_ptr<ScreenshotCanvasRenderer>, kOverlayCount> renderers;
+        for (int overlay = 0; overlay < kOverlayCount; ++overlay) {
+            QImage image(pixels, QImage::Format_ARGB32_Premultiplied);
+            image.fill(QColor(37 + overlay, 83, 129));
+            layers.append({std::move(image), bounds, bounds});
+            canvases[overlay] = std::make_unique<SnowCanvasWidget>(fixture.runtime);
+            canvases[overlay]->resize(surfaceSize);
+            renderers[overlay] = std::make_unique<ScreenshotCanvasRenderer>(*canvases[overlay]);
+        }
+        ScenarioResult result;
+        result.name = name;
+        for (int frame = 0; frame < warmup + iterations; ++frame) {
+            QElapsedTimer timer;
+            timer.start();
+            const ScreenshotImageSource source = ScreenshotImageSource::fromLayers(layers);
+            for (auto& current : renderers)
+                current->setImageSource(shared ? source
+                                               : ScreenshotImageSource::fromLayers(layers));
+            if (frame >= warmup) {
+                FrameSample sample;
+                sample.milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1e6;
+                sample.mutationMs = sample.milliseconds;
+                result.samples.push_back(sample);
+            }
+        }
+        auto report = summarize(result, {}, {});
+        report.insert(
+            QStringLiteral("measurement"),
+            QStringLiteral("Source creation plus setImageSource for three preconstructed "
+                           "overlays sharing three opaque alpha-format capture buffers; "
+                           "excludes capture, widget creation, event delivery, and paint."));
+        report.insert(QStringLiteral("devicePixelRatio"), dpr);
+        report.insert(QStringLiteral("overlayCount"), kOverlayCount);
+        report.insert(QStringLiteral("sourceBufferCount"), kOverlayCount);
+        reports.append(report);
+    };
+    runSourceStartup(QStringLiteral("shared-source-startup"), true);
+    runSourceStartup(QStringLiteral("separate-source-startup"), false);
 
     QVector<QPointF> freehand;
     freehand.reserve(10000);

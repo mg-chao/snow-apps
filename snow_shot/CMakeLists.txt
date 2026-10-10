@@ -1448,6 +1448,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
+    src/presentation/services/screenshotpresentationframescheduler.cpp
     src/presentation/services/windowgroupswitchercontroller.cpp
     src/presentation/components/windowgroupswitcherpopup.cpp
     src/presentation/services/pinnedwindowgroupmanager.cpp
@@ -6081,6 +6082,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     # Share the real screenshot UI implementation between deterministic frame tests
     # and the preparation benchmark; the fixture never substitutes the presenter.
     set(_selection_presentation_sources ${_color_picker_lifecycle_sources}
+        src/presentation/services/screenshotcolorpickercontroller.cpp
+        src/platform/physicalcursor.cpp
         src/presentation/overlay/screenshotoverlaycoordinator.cpp
         src/presentation/overlay/screenshotoverlayuihost.cpp
         src/presentation/services/screenshotcolorpickerwindow.cpp
@@ -6103,7 +6106,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_compile_definitions(${target} PUBLIC SNOW_SHOT_BENCH_INTERNALS=1)
         target_link_libraries(${target} PUBLIC snow_shot_diagnostics snow_shot_storage
             snow_shot_window_shortcuts ${canvas_target} ant_design_qt adqt_icon_core
-            ant_design_icons_qt Qt6::Widgets)
+            ant_design_icons_qt Qt6::Widgets Qt6::GuiPrivate)
         snow_shot_link_macos_window_platform(${target})
         if(WIN32)
             target_link_libraries(${target} PUBLIC comctl32)
@@ -6114,6 +6117,27 @@ if(SNOW_SHOT_BUILD_TESTS)
     endfunction()
     snow_shot_selection_presentation_runtime(snow-shot-selection-presentation-runtime
         "${CMAKE_CURRENT_SOURCE_DIR}" snow_draw_engine_qt_canvas)
+    target_sources(snow-shot-selection-presentation-runtime PRIVATE
+        src/presentation/services/screenshotpresentationframescheduler.cpp)
+    add_executable(snow-shot-presentation-frame-scheduler-tests
+        tests/screenshot_presentation_frame_scheduler_tests.cpp
+        src/presentation/services/screenshotpresentationframescheduler.cpp)
+    target_include_directories(snow-shot-presentation-frame-scheduler-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-presentation-frame-scheduler-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-presentation-frame-scheduler-tests
+        COMMAND snow-shot-presentation-frame-scheduler-tests)
+    set_tests_properties(snow-shot-presentation-frame-scheduler-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(SNOW_SHOT_BUILD_BENCHMARKS)
+        add_executable(snow-shot-presentation-frame-scheduler-benchmark
+            tests/screenshot_presentation_frame_scheduler_performance_benchmark.cpp
+            src/presentation/services/screenshotpresentationframescheduler.cpp)
+        target_include_directories(snow-shot-presentation-frame-scheduler-benchmark PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-presentation-frame-scheduler-benchmark PRIVATE Qt6::Core)
+    endif()
     add_executable(snow-shot-selection-presentation-tests
         tests/screenshot_selection_presentation_tests.cpp)
     target_link_libraries(snow-shot-selection-presentation-tests PRIVATE
@@ -6127,8 +6151,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-canvas-renderer-tests --pointer-presentation-only -platform offscreen)
     add_test(NAME snow-shot-background-coverage-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --background-coverage-only -platform offscreen)
+    add_test(NAME snow-shot-rectangular-selection-rendering-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --rectangular-selection-rendering-only -platform offscreen)
     set_tests_properties(snow-shot-selection-presentation-tests snow-shot-overlay-preparation-tests
         snow-shot-background-coverage-tests snow-shot-pointer-presentation-tests
+        snow-shot-rectangular-selection-rendering-tests
         PROPERTIES LABELS "unit" TIMEOUT 60
         SNOW_TEST_CROSS_PLATFORM TRUE ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -6156,6 +6183,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow_shot_selection_presentation_runtime(snow-shot-selection-presentation-baseline-runtime
                 "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_shot"
                 snow-shot-selection-baseline-canvas)
+            target_sources(snow-shot-selection-presentation-baseline-runtime PRIVATE
+                "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_shot/src/presentation/overlay/screenshotimagerendering.cpp")
             # Reuse unchanged support archives, replacing the canvas throughout their
             # transitive link interfaces (storage's image codec also links the canvas).
             function(snow_shot_baseline_needs_canvas dependency output visited)
@@ -6248,6 +6277,13 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/include")
             target_compile_definitions(snow-shot-selection-presentation-baseline-runtime PUBLIC
                 SNOW_SHOT_SELECTION_PRESENTATION_BASELINE=1)
+            file(READ "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_shot/include/snow_shot/presentation/screenshotpresentationservices.h"
+                _baseline_presentation_header)
+            if(_baseline_presentation_header MATCHES "flushPendingFrame" AND
+               _baseline_presentation_header MATCHES "monotonicNanoseconds")
+                target_compile_definitions(snow-shot-selection-presentation-baseline-runtime PUBLIC
+                    SNOW_SHOT_SELECTION_BASELINE_HAS_FRAME_SCHEDULER=1)
+            endif()
             add_executable(snow-shot-selection-presentation-baseline-benchmark
                 tests/screenshot_selection_presentation_performance_benchmark.cpp)
             target_link_libraries(snow-shot-selection-presentation-baseline-benchmark PRIVATE
@@ -6255,11 +6291,72 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow_shot_import_offscreen_platform(snow-shot-selection-presentation-baseline-benchmark)
         endif()
     endif()
+    if(SNOW_SHOT_BUILD_BENCHMARKS AND TARGET snow-shot-selection-baseline-canvas)
+        # Keep the harness identical while freezing renderer code, inline geometry,
+        # and canvas implementation at the archived comparison revision.
+        set(_selection_render_baseline_root
+            "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_shot")
+        set(_selection_render_baseline_sources)
+        foreach(_source IN ITEMS
+            include/snow_shot/presentation/screenshotcanvasrenderer.h
+            include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+            src/presentation/ocr/screenshotocrpresentation.cpp
+            src/presentation/ocr/screenshotocrtextlayout.cpp
+            src/presentation/ocr/screenshotocrtexttransform.cpp
+            src/presentation/ocr/screenshotocrlayout.cpp
+            src/presentation/ocr/screenshottabledocument.cpp
+            src/presentation/overlay/screenshotcanvasrenderer.cpp
+            src/presentation/overlay/screenshotimagerendering.cpp
+            src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
+            list(APPEND _selection_render_baseline_sources
+                "${_selection_render_baseline_root}/${_source}")
+        endforeach()
+        add_executable(snow-shot-selection-render-baseline-benchmark
+            tests/screenshot_selection_render_benchmark.cpp
+            ${_selection_render_baseline_sources})
+        target_compile_definitions(snow-shot-selection-render-baseline-benchmark PRIVATE
+            NOMINMAX SNOW_SHOT_BENCH_INTERNALS=1 SNOW_SHOT_SELECTION_RENDER_BASELINE=1)
+        target_include_directories(snow-shot-selection-render-baseline-benchmark BEFORE PRIVATE
+            "${_selection_render_baseline_root}/include"
+            "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/include"
+            "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/src/rendering"
+            "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/crates/snow-draw-engine-c/include")
+        snow_shot_baseline_dependency(ant_design_qt _selection_render_baseline_antd)
+        target_link_libraries(snow-shot-selection-render-baseline-benchmark PRIVATE
+            Qt6::Widgets ${_selection_render_baseline_antd} snow-shot-selection-baseline-canvas)
+        if(WIN32)
+            target_link_libraries(snow-shot-selection-render-baseline-benchmark PRIVATE dwmapi user32)
+        endif()
+        snow_shot_import_offscreen_platform(snow-shot-selection-render-baseline-benchmark)
+        unset(_selection_render_baseline_root)
+        unset(_selection_render_baseline_sources)
+        unset(_selection_render_baseline_antd)
+    endif()
+    if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS AND
+       TARGET snow-shot-selection-presentation-baseline-runtime)
+        add_executable(snow-shot-selection-toolbar-baseline-performance-benchmark
+            tests/screenshot_selection_toolbar_performance_benchmark.cpp)
+        target_compile_definitions(snow-shot-selection-toolbar-baseline-performance-benchmark PRIVATE
+            SNOW_SELECTION_TOOLBAR_BASELINE=1)
+        target_link_libraries(snow-shot-selection-toolbar-baseline-performance-benchmark PRIVATE
+            snow-shot-selection-presentation-baseline-runtime)
+        snow_shot_import_offscreen_platform(snow-shot-selection-toolbar-baseline-performance-benchmark)
+    endif()
     if(SNOW_SHOT_BUILD_BENCHMARKS)
         set(_selection_validation_targets snow_shot snow-shot-selection-presentation-tests
             snow-shot-selection-presentation-benchmark snow-shot-screenshot-canvas-renderer-tests
-            snow-shot-color-picker-lifecycle-tests snow-shot-smart-selection-transition-tests)
+            snow-shot-color-picker-lifecycle-tests snow-shot-smart-selection-transition-tests
+            snow-shot-presentation-frame-scheduler-tests
+            snow-shot-presentation-frame-scheduler-benchmark)
+        if(WIN32)
+            list(APPEND _selection_validation_targets
+                snow-shot-selection-render-benchmark
+                snow-shot-selection-toolbar-performance-benchmark
+                snow-shot-screenshot-selection-toolbar-hover-tests)
+        endif()
         foreach(_target IN ITEMS snow-shot-selection-presentation-baseline-benchmark
+            snow-shot-selection-render-baseline-benchmark
+            snow-shot-selection-toolbar-baseline-performance-benchmark
             snow-canvas-custom-renderer-tests snow-canvas-distance-tests)
             if(TARGET ${_target})
                 list(APPEND _selection_validation_targets ${_target})

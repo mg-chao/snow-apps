@@ -43,7 +43,10 @@ struct ScreenshotPresentationServicesContext {
     std::function<void()> stateChanged = [] {};
     // Optional monotonic clock for deterministic frame scheduling tests.
     std::function<qint64()> monotonicNanoseconds = {};
+    std::function<void(ScreenshotOverlayWindow*, const QPointF&)> presentColorPicker = {};
 };
+
+class ScreenshotPresentationFrameScheduler;
 
 class ScreenshotPresentationServices final {
   public:
@@ -66,8 +69,15 @@ class ScreenshotPresentationServices final {
     void setSelectionMovementActive(bool active);
     void updateOverlayState();
     void updatePointerPresentation(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
+    void requestColorPickerPresentation(ScreenshotOverlayWindow* overlay,
+                                        const QPointF& localPosition);
+    void flushColorPickerPresentation();
+    void discardColorPickerPresentation();
     void flushPendingFrame();
     void updateOverlayCursors() const;
+#ifdef SNOW_SHOT_BENCH_INTERNALS
+    [[nodiscard]] const ScreenshotPresentationFrameScheduler& frameSchedulerForTesting() const;
+#endif
 
     [[nodiscard]] ScreenshotColorPickerContext colorPickerContext() const;
 
