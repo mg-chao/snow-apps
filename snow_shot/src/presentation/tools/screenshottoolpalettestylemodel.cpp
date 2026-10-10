@@ -46,6 +46,10 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     angleStyle = defaults.angle;
     angleStyleMixed = 0;
     showingSelectedAngle = false;
+    creationMagnifierStyle = defaults.magnifier;
+    magnifierStyle = defaults.magnifier;
+    magnifierStyleMixed = 0;
+    showingSelectedMagnifier = false;
     angleControlsActive = false;
     m_creationTextStyle.setTextStyle(defaults.text);
     m_textStyle.setTextStyle(defaults.text);

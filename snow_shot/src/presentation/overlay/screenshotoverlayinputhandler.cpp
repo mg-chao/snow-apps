@@ -21,6 +21,7 @@
 #include "snow_shot/image/screenshotregionpoints.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -851,6 +852,16 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
     }
     if (m_context.interaction.activeTool() == ScreenshotActiveTool::Select && deltaY != 0) {
         return m_context.actions.stepSelectionOpacity(deltaY > 0 ? 1 : -1);
+    }
+    if (m_context.interaction.activeTool() == ScreenshotActiveTool::Magnifier && deltaY != 0 &&
+        canvas != nullptr) {
+        auto style = canvas->canvasMagnifierStyle();
+        style.factor =
+            std::clamp(std::round(style.factor * 10.0) + (deltaY > 0 ? 1 : -1), 10.0, 100.0) / 10.0;
+        const bool creationDefaults = canvas->canvasStyleToolbarState().source !=
+                                      SnowCanvasStyleToolbarSource::SelectedMagnifier;
+        return canvas->commitStyleEdit(SnowCanvasMagnifierEdit{
+            style, SnowCanvasMagnifierStylePropertyFactor, creationDefaults});
     }
     if (m_context.interaction.activeTool() == ScreenshotActiveTool::Spotlight && deltaY != 0) {
         return m_context.actions.stepSpotlightOpacity(deltaY > 0 ? 1 : -1);

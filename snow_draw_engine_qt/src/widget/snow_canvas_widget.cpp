@@ -80,6 +80,7 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     case SnowCanvasTool::Arrow:
     case SnowCanvasTool::Distance:
     case SnowCanvasTool::Angle:
+    case SnowCanvasTool::Magnifier:
     case SnowCanvasTool::Line:
     case SnowCanvasTool::RectangleHighlight:
     case SnowCanvasTool::RectangleFilter:
@@ -332,6 +333,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void resetDocumentRetainedState() override;
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
                              const QRegion& damage = {}, bool partialDamage = false);
+    void updateBaseImageContent(const QRegion& damage);
     void smartEraseChanged() override {
         clearRenderState();
         widget.update();
@@ -366,6 +368,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style, quint32 properties);
     bool setCanvasAngleStyle(const SnowCanvasAngleStyle& style, quint32 properties);
+    bool setCanvasMagnifierStyle(const SnowCanvasMagnifierStyle& style, quint32 properties,
+                                 bool creationDefaults);
     bool adjustAngleValue(double deltaRadians);
     snow_canvas_wheel::StepAccumulator angleWheelSteps;
     std::uint64_t angleAdjustmentTarget = 0;
@@ -996,6 +1000,28 @@ bool SnowCanvasWidget::Impl::adjustAngleValue(double deltaRadians) {
 
 SnowCanvasDistanceStyle SnowCanvasWidget::canvasDistanceStyle() const {
     return canvasStyleToolbarState().distanceStyle;
+}
+
+SnowCanvasMagnifierStyle SnowCanvasWidget::canvasMagnifierStyle() const {
+    return canvasStyleToolbarState().magnifierStyle;
+}
+
+bool SnowCanvasWidget::setCanvasMagnifierStyle(const SnowCanvasMagnifierStyle& style,
+                                               quint32 properties) {
+    const bool creationDefaults =
+        canvasStyleToolbarState().source != SnowCanvasStyleToolbarSource::SelectedMagnifier;
+    return m_impl->setCanvasMagnifierStyle(style, properties, creationDefaults);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasMagnifierStyle(const SnowCanvasMagnifierStyle& style,
+                                                     quint32 properties, bool creationDefaults) {
+    if (!snow_canvas_types::validMagnifierStyle(style))
+        return false;
+    return applyMutation([&]() {
+        return snow_canvas_commands::setMagnifierStylePatch(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+            snow_canvas_types::toEngineMagnifierStyle(style), properties, creationDefaults);
+    });
 }
 
 bool SnowCanvasWidget::setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style,
@@ -2487,6 +2513,9 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
     snow_canvas_compositor::Frame frame = buildPaintFrame();
     if (canvasContentIsVisible) {
         const SnowCanvasRenderContext tileContext = renderContext(painter, exposedRegion);
+        const QList<SnowCanvasBaseImageSource> baseImageSources =
+            installedCustomRenderer != nullptr ? installedCustomRenderer->baseImageSources()
+                                               : QList<SnowCanvasBaseImageSource>{};
         const auto reference = installedCustomRenderer != nullptr
                                    ? installedCustomRenderer->filterRenderReference()
                                    : std::nullopt;
@@ -2514,6 +2543,7 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
         };
         if (auto* owner = runtimeBinding.runtimeOwner())
             sceneRequest.smartErase = owner->smartEraseSnapshot();
+        sceneRequest.baseImageSources = &baseImageSources;
         if (!reference.has_value())
             referenceScene.reset();
         const bool referenceRendered =
@@ -3145,6 +3175,12 @@ bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
                 if (patch.creationDefaults == editsSelection)
                     return false;
                 return widget.setCanvasAngleStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasMagnifierEdit>) {
+                if (!patch.creationDefaults && canvasStyleToolbarState().source !=
+                                                   SnowCanvasStyleToolbarSource::SelectedMagnifier)
+                    return false;
+                return setCanvasMagnifierStyle(patch.style, patch.properties,
+                                               patch.creationDefaults);
             } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
                 return setCanvasTextStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {
@@ -3515,8 +3551,7 @@ void SnowCanvasWidget::Impl::setBaseImageSources(const QList<SnowCanvasBaseImage
         if (!partialDamage)
             smartEraseChanged();
         else {
-            clearRenderState();
-            widget.update(damage);
+            widget.updateBaseImageContent(damage);
         }
     }
 }
@@ -3528,4 +3563,38 @@ void SnowCanvasWidget::setBaseImageSources(const QList<SnowCanvasBaseImageSource
 void SnowCanvasWidget::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
                                            const QRegion& damage) {
     m_impl->setBaseImageSources(sources, damage, true);
+}
+
+void SnowCanvasWidget::updateBaseImageContent(const QRegion& damage) {
+    m_impl->updateBaseImageContent(damage);
+}
+
+void SnowCanvasWidget::Impl::updateBaseImageContent(const QRegion& damage) {
+    // A magnifier can feed later filters far from the changed original pixels.
+    // Invalidate both replay and filter tile caches before repainting that lens.
+    clearRenderState();
+    if (damage.isEmpty()) {
+        widget.update();
+        return;
+    }
+    QRegion repaint = damage;
+    const auto& cache = displayState.displayCache();
+    const auto& info = cache.sceneInfo();
+    const auto projection = snow_canvas_render_geometry::sceneProjection(info);
+    for (std::uint32_t index = 0; index < cache.sceneItemCount(); ++index) {
+        const auto& item = cache.sceneItems()[index];
+        if (item.kind != SNOW_SCENE_DISPLAY_ITEM_MAGNIFIER)
+            continue;
+        const auto& geometry = item.magnifier;
+        const QRectF sourceBounds = snow_canvas_render_geometry::rotatedRectBounds(
+            snow_canvas_render_geometry::canvasToView(projection, geometry.source_center_x,
+                                                      geometry.source_center_y),
+            geometry.source_width * projection.cameraZoom,
+            geometry.source_height * projection.cameraZoom, item.rotation, 0.0);
+        // Include the filtering guard: a source pixel just outside the outline can
+        // contribute to smooth enlargement along the magnifier's boundary.
+        if (damage.intersects(sourceBounds.toAlignedRect().adjusted(-2, -2, 2, 2)))
+            repaint += snow_canvas_render_geometry::alignedRectForBounds(item.viewBounds);
+    }
+    widget.update(repaint.intersected(widget.rect()));
 }

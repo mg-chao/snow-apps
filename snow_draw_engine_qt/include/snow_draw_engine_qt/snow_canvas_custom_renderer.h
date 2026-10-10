@@ -1,5 +1,8 @@
 #pragma once
 
+#include "snow_canvas_image_source_types.h"
+
+#include <QList>
 #include <QRect>
 #include <QRegion>
 #include <QTransform>
@@ -34,6 +37,10 @@ class SnowCanvasCustomRenderer {
     // Increment only when pristine pixels change. Hosts with temporary backdrop previews
     // can keep eraser source tiles stable; the default follows contentRevision().
     [[nodiscard]] virtual std::uint64_t originalBackgroundRevision() const;
+
+    // Shared original image layers in paint order, in canvas coordinates. Decorations,
+    // annotations and temporary effect previews must not be included.
+    [[nodiscard]] virtual QList<SnowCanvasBaseImageSource> baseImageSources() const;
 
     // Retain the background and scene at this resolution when filters are present.
     // Zoom, viewport size, and display DPR only transform the retained output.

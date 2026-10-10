@@ -41,6 +41,7 @@ impl Editor {
         }
 
         match self.resolve_canvas_hit(document, policy, canvas_point, true) {
+            CanvasHit::MagnifierLens(id) => PrimaryPointerIntent::BeginMagnifierLens { id },
             CanvasHit::SelectionHandle(target) => {
                 if target == SelectionHitTarget::Move
                     && let Some(id) = self.hit_text_at(document, canvas_point)
@@ -93,6 +94,10 @@ impl Editor {
         intent: PrimaryPointerIntent,
     ) -> (CursorStyle, Option<ElementId>) {
         match intent {
+            PrimaryPointerIntent::BeginMagnifierLens { id } => (
+                CursorStyle::Move,
+                (!self.state.selection.contains(id)).then_some(id),
+            ),
             PrimaryPointerIntent::ToggleSelection { id }
             | PrimaryPointerIntent::BeginElementSelectionMove { id }
             | PrimaryPointerIntent::BeginArrowElementInteraction { id } => (

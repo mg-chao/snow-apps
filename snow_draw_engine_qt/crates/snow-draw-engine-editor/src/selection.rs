@@ -345,6 +345,30 @@ impl Editor {
     ) -> Vec<SelectionRectState> {
         ids.iter()
             .filter_map(|id| {
+                if ids.len() > 1
+                    && let Ok(value) = document.magnifier(*id)
+                {
+                    let source = snow_draw_engine_document::rect_bounds(&value.source_rect());
+                    let mut lens = value.magnified_rect();
+                    lens.stroke_width = 0.0;
+                    let lens = snow_draw_engine_document::rect_bounds(&lens);
+                    let bounds = snow_draw_engine_core::DrawRect::new(
+                        source.min_x.min(lens.min_x),
+                        source.min_y.min(lens.min_y),
+                        source.max_x.max(lens.max_x),
+                        source.max_y.max(lens.max_y),
+                    );
+                    let mut rect = value.source_rect();
+                    rect.center = snow_draw_engine_core::Point::new(
+                        (bounds.min_x + bounds.max_x) / 2.0,
+                        (bounds.min_y + bounds.max_y) / 2.0,
+                    );
+                    rect.width = bounds.max_x - bounds.min_x;
+                    rect.height = bounds.max_y - bounds.min_y;
+                    rect.rotation = 0.0;
+                    rect.highlight_shape = snow_draw_engine_document::HighlightShape::Rectangle;
+                    return Some(SelectionRectState { id: *id, rect });
+                }
                 document
                     .element_rect_proxy(*id)
                     .map(|rect| SelectionRectState { id: *id, rect })

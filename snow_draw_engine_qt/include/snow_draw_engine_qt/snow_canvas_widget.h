@@ -70,6 +70,9 @@ class SnowCanvasWidget : public QWidget {
     void previewCanvasSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     SnowCanvasDistanceStyle canvasDistanceStyle() const;
     SnowCanvasAngleStyle canvasAngleStyle() const;
+    SnowCanvasMagnifierStyle canvasMagnifierStyle() const;
+    bool setCanvasMagnifierStyle(const SnowCanvasMagnifierStyle& style,
+                                 quint32 properties = SnowCanvasMagnifierStyleAllProperties);
     bool setCanvasAngleStyle(
         const SnowCanvasAngleStyle& style,
         quint32 properties = static_cast<quint32>(SnowCanvasAngleStyleProperty::All));
@@ -186,6 +189,8 @@ class SnowCanvasWidget : public QWidget {
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
                              const QRegion& damage);
+    // Repaint changed original pixels and magnifier destinations that sample them.
+    void updateBaseImageContent(const QRegion& damage);
     [[nodiscard]] QTransform canvasToViewTransform() const;
     QRect viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx = 0) const;
 

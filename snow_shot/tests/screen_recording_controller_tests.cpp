@@ -3953,6 +3953,90 @@ void recordingColorSamplingIsConnected(bool nativeDesktop = false) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void recordingMagnifierUnavailableWithoutImageSources() {
+    using namespace snow_shot::storage;
+    const ScreenshotToolbarSettings settings;
+    const DrawingSettings drawingSettings;
+    const DrawingShortcutSettings shortcuts;
+    const auto kind = ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto originalLayout = settings.layout(kind);
+    const auto originalShortcut = shortcuts.shortcuts(QStringLiteral("magnifier"));
+    const auto originalLastTool = settings.lastDrawingTool();
+    const bool originalRemember = drawingSettings.rememberLastUsedTool();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setLayout(kind, originalLayout));
+        static_cast<void>(shortcuts.setShortcuts(QStringLiteral("magnifier"), originalShortcut));
+        static_cast<void>(settings.setLastDrawingTool(originalLastTool));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRemember));
+    });
+    auto savedLayout = originalLayout;
+    for (auto& position : savedLayout.positions)
+        position.removeAll(QStringLiteral("magnifier"));
+    savedLayout.positions.prepend({QStringLiteral("magnifier")});
+    savedLayout.hidden.removeAll(QStringLiteral("magnifier"));
+    require(
+        settings.setLayout(kind, savedLayout) &&
+            shortcuts.setShortcuts(QStringLiteral("magnifier"), {QStringLiteral("Ctrl+Alt+F12")}) &&
+            drawingSettings.setRememberLastUsedTool(true),
+        "save screenshot magnifier preferences before opening recording annotations");
+    savedLayout = settings.layout(kind);
+    ScreenRecordingController controller(testEffectsSource);
+    for (int sessionIndex = 0; sessionIndex < 2; ++sessionIndex) {
+        require(settings.setLastDrawingTool(QStringLiteral("magnifier")),
+                "remember an image-backed tool before opening recording annotations");
+        controller.open(QRect(10, 10, 640, 480));
+        QCoreApplication::processEvents();
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                candidate && candidate->isVisible())
+                area = candidate;
+        }
+        require(area != nullptr, "recording image-source availability fixture opens a canvas");
+        auto* tools = palette();
+        auto* canvas = area->canvas();
+        require(!tools->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotMagnifierButton")) &&
+                    !tools->canActivateDrawingShortcut(QStringLiteral("magnifier")) &&
+                    !tools->activateDrawingShortcut(QStringLiteral("magnifier")) &&
+                    !tools->activateToolShortcut(ScreenshotToolPalette::Tool::Magnifier) &&
+                    !tools->activateRememberedDrawingTool(),
+                "recording cannot expose or activate a tool requiring captured pixels");
+        require(tools->activateDrawingShortcut(QStringLiteral("shape")),
+                "supported recording tools still activate with a stored magnifier layout");
+        QKeyEvent override(QEvent::ShortcutOverride, Qt::Key_F12,
+                           Qt::ControlModifier | Qt::AltModifier);
+        override.ignore();
+        QApplication::sendEvent(canvas, &override);
+        require(!override.isAccepted(), "unavailable recording shortcuts must not claim keys");
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(canvas, &press);
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(canvas, &release);
+        tools->magnifierRequested();
+        require(canvas->canvasTool() == SnowCanvasTool::Shape &&
+                    settings.layout(kind) == savedLayout,
+                "recording capability filtering must preserve screenshot preferences");
+        auto groupedLayout = savedLayout;
+        for (auto& position : groupedLayout.positions) {
+            for (const auto* id : {"magnifier", "spotlight", "highlighter"})
+                position.removeAll(QString::fromLatin1(id));
+        }
+        groupedLayout.positions.prepend({QStringLiteral("magnifier"), QStringLiteral("spotlight"),
+                                         QStringLiteral("highlighter")});
+        groupedLayout.hidden.removeAll(QStringLiteral("spotlight"));
+        groupedLayout.hidden.removeAll(QStringLiteral("highlighter"));
+        require(settings.setLayout(kind, groupedLayout), "save an image-backed tool in a stack");
+        savedLayout = settings.layout(kind);
+        tools->setToolbarLayout(savedLayout);
+        require(!tools->canActivateDrawingShortcut(QStringLiteral("magnifier")),
+                "a layout rebuild cannot enable unsupported recording tools");
+        tools->recordingCloseRequested();
+        waitForIdle(controller);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+}
+
 void recordingActiveToolsReturnToSelect() {
     using Tool = ScreenshotToolPalette::Tool;
     using State = ScreenshotToolPalette::RecordingState;
@@ -4027,6 +4111,9 @@ void recordingActiveToolsReturnToSelect() {
         } else if (state == State::Paused) {
             tools->recordingPauseRequested();
         }
+        require(!tools->canActivateDrawingShortcut(QStringLiteral("magnifier")) &&
+                    !tools->activateDrawingShortcut(QStringLiteral("magnifier")),
+                "magnifiers remain unavailable while recording is idle, active, or paused");
         for (const auto& test : cases) {
             const auto shortcut = QString::fromLatin1(test.shortcut);
             require(tools->activateDrawingShortcut(shortcut) && tools->activeTool() == test.tool &&
@@ -4973,6 +5060,11 @@ int main(int argc, char** argv) {
         ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--magnifier-availability-only"))) {
+        recordingMagnifierUnavailableWithoutImageSources();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--eraser-only"))) {
         recordingEraserTools();
         ApplicationStorage::instance().shutdown();
@@ -5210,6 +5302,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     recordingSecondaryPanelsStayOnScreen();
+    recordingMagnifierUnavailableWithoutImageSources();
     {
         ScreenRecordingController controller(testEffectsSource);
         const QRect region(40, 40, 320, 240);

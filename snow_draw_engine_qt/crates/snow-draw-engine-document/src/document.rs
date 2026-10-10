@@ -895,6 +895,7 @@ pub struct SerialNumberData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ElementData {
     Rectangle(RectangleData),
+    Magnifier(crate::MagnifierData),
     Filter(FilterData),
     PenFilter(PenFilterData),
     Arrow(ArrowData),
@@ -917,6 +918,7 @@ impl ElementData {
     pub fn kind(&self) -> ElementKind {
         match self {
             Self::Rectangle(rect) => rect.element_kind(),
+            Self::Magnifier(_) => ElementKind::Magnifier,
             Self::Filter(filter) => {
                 if filter.auto_region_id.is_some() {
                     ElementKind::AutoFilter
@@ -939,6 +941,7 @@ impl ElementData {
     pub(crate) fn bounds(&self) -> DrawRect {
         match self {
             Self::Rectangle(rect) => rect_bounds(rect),
+            Self::Magnifier(value) => crate::magnifier_interaction_bounds(value),
             Self::Filter(filter) => filter_bounds(filter),
             Self::PenFilter(filter) => pen_filter_bounds(filter),
             Self::Arrow(arrow) => arrow_bounds(arrow),
@@ -953,6 +956,7 @@ impl ElementData {
     pub fn state_rect(&self) -> DrawRect {
         match self {
             Self::Rectangle(rect) => centered_rect(rect.center, rect.width, rect.height),
+            Self::Magnifier(value) => centered_rect(value.source_center, value.width, value.height),
             Self::Filter(filter) => centered_rect(filter.center, filter.width, filter.height),
             Self::PenFilter(filter) => DrawRect::new(
                 filter.x,
@@ -992,6 +996,7 @@ impl ElementData {
     pub fn rotation(&self) -> f64 {
         match self {
             Self::Rectangle(rect) => rect.rotation,
+            Self::Magnifier(value) => value.rotation,
             Self::Filter(filter) => filter.rotation,
             Self::PenFilter(filter) => filter.rotation,
             Self::Arrow(arrow) => arrow.rotation,
@@ -1004,6 +1009,7 @@ impl ElementData {
     pub fn opacity(&self) -> f64 {
         match self {
             Self::Rectangle(rect) => rect.opacity,
+            Self::Magnifier(value) => value.opacity,
             Self::Filter(filter) => filter.opacity,
             Self::PenFilter(filter) => filter.opacity,
             Self::Arrow(arrow) => arrow.opacity,
@@ -1026,6 +1032,7 @@ fn centered_rect(center: Point<f64>, width: f64, height: f64) -> DrawRect {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ElementKind {
     Rectangle,
+    Magnifier,
     Arrow,
     Line,
     FreeDraw,
@@ -1047,6 +1054,7 @@ impl ElementKind {
         match self {
             Self::Filter | Self::AutoFilter | Self::PenFilter => true,
             Self::Rectangle
+            | Self::Magnifier
             | Self::Arrow
             | Self::Line
             | Self::FreeDraw
@@ -1519,6 +1527,13 @@ impl Document {
         }
     }
 
+    pub fn magnifier(&self, id: ElementId) -> Result<&crate::MagnifierData, ErrorCode> {
+        match &self.element(id)?.data {
+            ElementData::Magnifier(value) => Ok(value),
+            _ => Err(ErrorCode::InvalidArgument),
+        }
+    }
+
     pub fn filter(&self, id: ElementId) -> Result<&FilterData, ErrorCode> {
         match &self.element(id)?.data {
             ElementData::Filter(filter) => Ok(filter),
@@ -1568,6 +1583,9 @@ impl Document {
     pub fn element_rect_proxy(&self, id: ElementId) -> Option<RectangleData> {
         if let Ok(rect) = self.rectangle(id) {
             return Some(*rect);
+        }
+        if let Ok(value) = self.magnifier(id) {
+            return Some(value.source_rect());
         }
         if let Ok(filter) = self.filter(id) {
             return Some(filter_rect_proxy(filter));

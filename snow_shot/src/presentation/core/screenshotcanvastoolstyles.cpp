@@ -54,6 +54,7 @@ const QString kArrowKey = QStringLiteral("drawing/arrow_style");
 const QString kLineKey = QStringLiteral("drawing/line_style");
 const QString kDistanceKey = QStringLiteral("drawing/distance_style");
 const QString kAngleKey = QStringLiteral("drawing/angle_style");
+const QString kMagnifierKey = QStringLiteral("drawing/magnifier_style");
 const QString kFreeDrawKey = QStringLiteral("drawing/free_draw_style");
 const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlight_style");
 const QString kPenHighlightKey = QStringLiteral("drawing/pen_highlight_style");
@@ -176,6 +177,41 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     putEnum(&value, QStringLiteral("highlight_shape"), style.highlightShape);
     putEnum(&value, QStringLiteral("shape"), style.shape);
     return value;
+}
+
+QJsonObject magnifierValue(const SnowCanvasMagnifierStyle& style) {
+    QJsonObject value;
+    putEnum(&value, QStringLiteral("shape"), style.shape);
+    value.insert(QStringLiteral("stroke"), colorValue(style.stroke));
+    putDouble(&value, QStringLiteral("stroke_width"), style.strokeWidth);
+    putDouble(&value, QStringLiteral("factor"), style.factor);
+    value.insert(QStringLiteral("show_leader"), style.showLeader);
+    putEnum(&value, QStringLiteral("leader_arrowhead"), style.leaderArrowhead);
+    value.insert(QStringLiteral("corner_radii"), cornerRadiiValue(style.cornerRadii));
+    return value;
+}
+
+void readMagnifierValue(const QJsonObject& object, SnowCanvasMagnifierStyle* style) {
+    if (style == nullptr)
+        return;
+    readEnum(object, QStringLiteral("shape"), static_cast<int>(SnowCanvasRectangleShape::Diamond),
+             &style->shape);
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
+    readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
+    readDouble(object, QStringLiteral("factor"), &style->factor);
+    if (object.value(QStringLiteral("show_leader")).isBool())
+        style->showLeader = object.value(QStringLiteral("show_leader")).toBool();
+    readEnum(object, QStringLiteral("leader_arrowhead"),
+             static_cast<int>(SnowCanvasArrowhead::IndentedTriangle), &style->leaderArrowhead);
+    style->strokeWidth = bounded(style->strokeWidth, 0.0, 72.0);
+    style->factor = bounded(style->factor, 1.0, 10.0);
+    readCornerRadii(object, &style->cornerRadii);
+    style->cornerRadii.topLeft = bounded(style->cornerRadii.topLeft, 0.0, 83.0);
+    style->cornerRadii.topRight = bounded(style->cornerRadii.topRight, 0.0, 83.0);
+    style->cornerRadii.bottomRight = bounded(style->cornerRadii.bottomRight, 0.0, 83.0);
+    style->cornerRadii.bottomLeft = bounded(style->cornerRadii.bottomLeft, 0.0, 83.0);
 }
 
 QJsonObject distanceValue(const SnowCanvasDistanceStyle& style) {
@@ -452,6 +488,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
     readDistanceValue(configuration.value(kDistanceKey).toObject(), &defaults.distance);
     readAngleValue(configuration.value(kAngleKey).toObject(), &defaults.angle);
+    readMagnifierValue(configuration.value(kMagnifierKey).toObject(), &defaults.magnifier);
     readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
     readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
     readShapeValue(configuration.value(kRectangleHighlightKey).toObject(),
@@ -554,6 +591,7 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         {kArrowKey, shapeValue(defaults.arrow)},
         {kDistanceKey, distanceValue(defaults.distance)},
         {kAngleKey, angleValue(defaults.angle)},
+        {kMagnifierKey, magnifierValue(defaults.magnifier)},
         {kLineKey, lineValue(defaults.line)},
         {kFreeDrawKey, shapeValue(defaults.freeDraw)},
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
@@ -622,6 +660,8 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.arrow, kArrowShapeProperties, SnowCanvasShapeKind::Arrow);
     static_cast<void>(canvas.setCanvasDistanceStyle(defaults.distance));
     static_cast<void>(canvas.setCanvasAngleStyle(defaults.angle));
+    static_cast<void>(canvas.applyStyleEdit(
+        SnowCanvasMagnifierEdit{defaults.magnifier, SnowCanvasMagnifierStyleAllProperties, true}));
     applyShape(defaults.line, kLineShapeProperties, SnowCanvasShapeKind::Line);
     applyShape(defaults.freeDraw, kFreeDrawShapeProperties, SnowCanvasShapeKind::FreeDraw);
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,

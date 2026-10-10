@@ -49,6 +49,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setHighlightTool() = 0;
     virtual void setPenHighlightTool() = 0;
     virtual void setSpotlightTool() {}
+    virtual void setMagnifierTool() {}
     virtual void setEraserTool() = 0;
     virtual void setRectangleEraserTool() {}
     virtual void setBrushEraserTool() {}

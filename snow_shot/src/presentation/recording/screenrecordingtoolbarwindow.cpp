@@ -37,6 +37,8 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showSpotlightTool = true;
+    // Magnifiers sample captured images; recording annotations have no image source.
+    options.showMagnifierTool = false;
     options.showEraserTool = true;
     options.showFilterTool = true;
     options.showWatermarkTool = true;

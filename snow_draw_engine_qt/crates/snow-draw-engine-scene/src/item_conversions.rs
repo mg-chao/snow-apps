@@ -83,6 +83,31 @@ pub(crate) fn binding_near_midpoint_dot_item(
     binding_midpoint_dot_item(mid_point, zoom, BINDING_NEAR_MIDPOINT_COLOR)
 }
 
+pub(crate) fn scene_item_from_magnifier(
+    id: ElementId,
+    value: snow_draw_engine_document::MagnifierData,
+) -> SceneDisplayItem {
+    let SceneDisplayItem::Rectangle(mut lens) = scene_item_from_rect(id, value.magnified_rect())
+    else {
+        unreachable!()
+    };
+    lens.fill = ColorRgba8::default();
+    let leader = value
+        .leader()
+        .and_then(|arrow| match scene_item_from_arrow(id, arrow) {
+            SceneDisplayItem::Arrow(arrow) => Some(arrow),
+            _ => None,
+        });
+    SceneDisplayItem::Magnifier(snow_draw_engine_display::MagnifierDisplayItem {
+        lens,
+        source_center: value.source_center,
+        source_width: value.width,
+        source_height: value.height,
+        factor: value.factor,
+        leader,
+    })
+}
+
 pub(crate) fn scene_item_from_rect(id: ElementId, rect: RectangleData) -> SceneDisplayItem {
     SceneDisplayItem::Rectangle(RectangleDisplayItem {
         id: display_item_id(id),
@@ -550,6 +575,14 @@ pub(crate) fn scene_item_from_selection_preview(
             Some((scene_item_from_rect(id, rect), rect_bounds(rect)))
         }
         ElementData::Rectangle(_) => None,
+        ElementData::Magnifier(value) => {
+            let mut preview = *value;
+            preview.opacity = rect.opacity;
+            Some((
+                scene_item_from_magnifier(id, preview),
+                snow_draw_engine_document::magnifier_bounds(&preview),
+            ))
+        }
         ElementData::Filter(filter) => {
             let mut preview = *filter;
             preview.center = rect.center;

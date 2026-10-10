@@ -907,6 +907,13 @@ void completeToolStyleContract() {
             ++updates;
             return true;
         }
+        bool setMagnifierStyleFromToolbar(const SnowCanvasMagnifierStyle& value, quint32 flags,
+                                          bool) {
+            state.magnifierStyle = value;
+            properties = flags;
+            ++updates;
+            return true;
+        }
         bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle& value, quint32 flags) {
             state.distanceStyle = value;
             properties = flags;
@@ -969,6 +976,35 @@ void completeToolStyleContract() {
             "serial-number patches must carry exactly the requested property flags");
     const int previous = styles.updates;
     require(
+        apply(QStringLiteral("magnifier"),
+              {{QStringLiteral("shape"), QStringLiteral("diamond")},
+               {QStringLiteral("factor"), 10.0},
+               {QStringLiteral("show_leader"), false},
+               {QStringLiteral("leader_arrowhead"), QStringLiteral("crowfoot_one_or_many")},
+               {QStringLiteral("corner_radii"), QJsonArray{3, 6, 9, 12}}}) &&
+            styles.state.magnifierStyle.shape == SnowCanvasRectangleShape::Diamond &&
+            styles.state.magnifierStyle.factor == 10.0 && !styles.state.magnifierStyle.showLeader &&
+            styles.state.magnifierStyle.leaderArrowhead == SnowCanvasArrowhead::CrowfootOneOrMany &&
+            styles.state.magnifierStyle.cornerRadii == SnowCanvasCornerRadii{3, 6, 9, 12} &&
+            styles.properties ==
+                (SnowCanvasMagnifierStylePropertyShape | SnowCanvasMagnifierStylePropertyFactor |
+                 SnowCanvasMagnifierStylePropertyShowLeader |
+                 SnowCanvasMagnifierStylePropertyLeaderArrowhead |
+                 SnowCanvasMagnifierStylePropertyCornerRadius),
+        "magnifier automation retains complete styles and exact property masks");
+    require(!apply(QStringLiteral("magnifier"), {{QStringLiteral("factor"), 0.9}}) &&
+                !apply(QStringLiteral("magnifier"), {{QStringLiteral("factor"), 10.1}}) &&
+                !apply(QStringLiteral("magnifier"), {{QStringLiteral("show_leader"), 1}}) &&
+                !apply(QStringLiteral("magnifier"), {{QStringLiteral("stroke_width"), 73}}) &&
+                !apply(QStringLiteral("magnifier"), {{QStringLiteral("corner_radius"), -1}}) &&
+                !apply(QStringLiteral("magnifier"),
+                       {{QStringLiteral("corner_radius"), 2},
+                        {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
+                !apply(QStringLiteral("magnifier"),
+                       {{QStringLiteral("fill"), QJsonArray{0, 0, 0, 255}}}) &&
+                styles.updates == previous + 1,
+            "invalid magnifier automation patches reject before dispatch");
+    require(
         !apply(QStringLiteral("text"),
                {{QStringLiteral("corner_radius"), 2},
                 {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
@@ -982,12 +1018,21 @@ void completeToolStyleContract() {
             !apply(QStringLiteral("rectangle_highlight"),
                    {{QStringLiteral("shape"), QStringLiteral("ellipse")}}) &&
             !apply(QStringLiteral("pen_highlight"), {{QStringLiteral("corner_radius"), 3}}) &&
-            styles.updates == previous,
+            styles.updates == previous + 1,
         "ambiguous or unsupported styles must reject atomically before command dispatch");
+    require(apply(QStringLiteral("magnifier"), {{QStringLiteral("corner_radius"), 6}}) &&
+                styles.state.magnifierStyle.cornerRadii == SnowCanvasCornerRadii{6, 6, 6, 6} &&
+                styles.properties == SnowCanvasMagnifierStylePropertyCornerRadius &&
+                styles.state.magnifierStyle.factor == 10,
+            "uniform magnifier corner patches preserve unrelated properties");
 }
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--magnifier-only"))) {
+        completeToolStyleContract();
+        return 0;
+    }
     serialNumberPatchesPreserveMixedSelectionProperties(false);
     serialNumberPatchesPreserveMixedSelectionProperties(true);
     completeToolStyleContract();

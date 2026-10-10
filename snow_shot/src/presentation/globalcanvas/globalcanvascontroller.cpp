@@ -49,6 +49,8 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
+    // Magnifiers sample captured images; this live annotation surface has none.
+    options.showMagnifierTool = false;
     options.showEraserTool = true;
     options.showFilterTool = true;
     options.showWatermarkTool = true;
@@ -525,9 +527,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             binding.id = QStringLiteral("global-canvas.drawing.") + it.key();
             binding.shortcutBindings = it.value();
             binding.priority = WindowShortcutManager::StandardPriority::DrawingShortcut;
-            binding.canActivate = [this](const auto& context) {
+            binding.canActivate = [this, id = it.key()](const auto& context) {
                 return !transparent && !sampleTarget && !drawing->hasActiveTextEditing() &&
-                       !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget);
+                       !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
+                       palette->canActivateDrawingShortcut(id);
             };
             binding.activate = [this, id = it.key()](const auto&) {
                 return palette->activateDrawingShortcut(id);
@@ -597,6 +600,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             palette->setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
             break;
         case SnowCanvasTool::AutoFilter:
+        case SnowCanvasTool::Magnifier:
             break;
         }
     }

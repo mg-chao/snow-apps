@@ -57,6 +57,9 @@ impl Editor {
         }
         let uses_stroke_cursor = self.state.active_tool.uses_stroke_cursor();
         let mut output = match &self.state.interaction {
+            InteractionState::EditingMagnifier(_) => {
+                self.process_magnifier_pointer_event(document, event)
+            }
             InteractionState::CreatingRectangle(_) => {
                 self.process_rectangle_creation_pointer_event(document, event)
             }

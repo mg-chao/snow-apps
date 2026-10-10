@@ -26,8 +26,9 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("recording.drawing.") + tool.key();
         binding.priority = ShortcutManager::StandardPriority::DrawingShortcut;
-        binding.canActivate = [this](const auto& context) {
-            return canActivate(context) && !m_area->drawingBlocked();
+        binding.canActivate = [this, toolId = tool.key()](const auto& context) {
+            return canActivate(context) && !m_area->drawingBlocked() &&
+                   m_toolbar->palette()->canActivateDrawingShortcut(toolId);
         };
         binding.activate = [this, toolId = tool.key()](const auto&) {
             return m_toolbar->palette()->activateDrawingShortcut(toolId);

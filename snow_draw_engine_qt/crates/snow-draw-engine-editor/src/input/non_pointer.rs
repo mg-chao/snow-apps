@@ -35,6 +35,36 @@ impl Editor {
             });
         }
 
+        if !event.modifiers.ctrl
+            && !event.modifiers.alt
+            && !event.modifiers.meta
+            && (self.state.active_tool == ActiveTool::Magnifier
+                || self.has_homogeneous_magnifier_selection(document))
+        {
+            let steps = match event.delta_kind {
+                WheelDeltaKind::Angle => event.delta.y / 120.0,
+                WheelDeltaKind::Pixel => event.delta.y / 100.0,
+            };
+            let mut style = self.magnifier_style(document);
+            style.factor = ((style.factor + steps * 0.1) * 10.0)
+                .round()
+                .clamp(10.0, 100.0)
+                / 10.0;
+            if let Some(command) = self.set_magnifier_style_patch(
+                document,
+                style,
+                crate::MAGNIFIER_STYLE_PROPERTY_FACTOR,
+                !self.has_homogeneous_magnifier_selection(document),
+            )? {
+                self.queue_command(command);
+            }
+            return Ok(InteractionOutput {
+                consumed: true,
+                capture: PointerCaptureCommand::NoChange,
+                cursor: CursorCommand::NoChange,
+            });
+        }
+
         let delta_y = match event.delta_kind {
             WheelDeltaKind::Pixel => event.delta.y,
             WheelDeltaKind::Angle => event.delta.y / 120.0 * 100.0,

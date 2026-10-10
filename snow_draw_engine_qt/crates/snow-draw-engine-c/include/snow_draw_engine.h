@@ -93,7 +93,8 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_RECTANGLE_ERASER = 15,
     SNOW_ACTIVE_TOOL_BRUSH_ERASER = 16,
     SNOW_ACTIVE_TOOL_DISTANCE = 17,
-    SNOW_ACTIVE_TOOL_ANGLE = 18
+    SNOW_ACTIVE_TOOL_ANGLE = 18,
+    SNOW_ACTIVE_TOOL_MAGNIFIER = 19
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -128,7 +129,9 @@ typedef enum SnowStyleToolbarSource {
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_DISTANCE = 26,
     SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_DISTANCE = 27,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_ANGLE = 28,
-    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE = 29
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE = 29,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_MAGNIFIER = 30,
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_MAGNIFIER = 31
 } SnowStyleToolbarSource;
 #define SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FILTER SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER
 #define SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FILTER                                                  \
@@ -299,7 +302,8 @@ typedef enum SnowSceneDisplayItemKind {
     SNOW_SCENE_DISPLAY_ITEM_ARROW = 5,
     SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER = 6,
     SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER_CONNECTOR = 7,
-    SNOW_SCENE_DISPLAY_ITEM_FILTER = 8
+    SNOW_SCENE_DISPLAY_ITEM_FILTER = 8,
+    SNOW_SCENE_DISPLAY_ITEM_MAGNIFIER = 9
 } SnowSceneDisplayItemKind;
 
 typedef enum SnowBlendMode {
@@ -415,7 +419,9 @@ typedef enum SnowOverlayRectKind {
     SNOW_OVERLAY_RECT_TEXT_ACTUAL_FRAME = 11,
     SNOW_OVERLAY_RECT_TEXT_HOVER_UNDERLINE = 12,
     SNOW_OVERLAY_RECT_ERASER_CURSOR = 13,
-    SNOW_OVERLAY_RECT_BINDING_HIGHLIGHT = 14
+    SNOW_OVERLAY_RECT_BINDING_HIGHLIGHT = 14,
+    SNOW_OVERLAY_RECT_MAGNIFIER_MOVE_HANDLE = 15,
+    SNOW_OVERLAY_RECT_MAGNIFIER_SELECTION_FRAME = 16
 } SnowOverlayRectKind;
 
 typedef enum SnowSnapGuideKind {
@@ -652,6 +658,25 @@ typedef struct SnowAngleStyle {
 #define SNOW_ANGLE_STYLE_MIXED_UNIT SNOW_ANGLE_STYLE_PROPERTY_UNIT
 #define SNOW_ANGLE_STYLE_MIXED_DECIMAL_PLACES SNOW_ANGLE_STYLE_PROPERTY_DECIMAL_PLACES
 
+typedef struct SnowMagnifierStyle {
+    SnowRectangleShape shape;
+    SnowColorRgba8 stroke;
+    double stroke_width;
+    double factor;
+    uint8_t show_leader;
+    uint8_t reserved[3];
+    SnowArrowhead leader_arrowhead;
+    SnowCornerRadii corner_radii;
+} SnowMagnifierStyle;
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_SHAPE (1u << 0)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_STROKE (1u << 1)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_STROKE_WIDTH (1u << 2)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_FACTOR (1u << 3)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_SHOW_LEADER (1u << 4)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_LEADER_ARROWHEAD (1u << 5)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_CORNER_RADII (1u << 6)
+#define SNOW_MAGNIFIER_STYLE_PROPERTY_ALL ((1u << 7) - 1u)
+
 typedef struct SnowStyleToolbarState {
     SnowStyleToolbarSource source;
     uint32_t selected_element_count;
@@ -670,6 +695,8 @@ typedef struct SnowStyleToolbarState {
     uint32_t angle_style_mixed;
     /* Calibrated length before applying the factor; zero without a single valid distance. */
     double distance_measured_length;
+    SnowMagnifierStyle magnifier_style;
+    uint32_t magnifier_style_mixed;
 } SnowStyleToolbarState;
 
 typedef struct SnowStyleDefaults {
@@ -690,6 +717,7 @@ typedef struct SnowStyleDefaults {
     SnowDistanceStyle distance;
     SnowAngleStyle angle;
     SnowCornerRadii spotlight_corner_radii;
+    SnowMagnifierStyle magnifier;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1174,6 +1202,14 @@ typedef struct SnowSerialTextConnection {
     uint8_t reserved[7];
 } SnowSerialTextConnection;
 
+typedef struct SnowMagnifierGeometry {
+    double source_center_x;
+    double source_center_y;
+    double source_width;
+    double source_height;
+    double magnification_factor;
+} SnowMagnifierGeometry;
+
 typedef struct SnowSceneDisplayItem {
     SnowSceneDisplayItemKind kind;
     SnowBlendMode blend_mode;
@@ -1229,6 +1265,7 @@ typedef struct SnowSceneDisplayItem {
     const char* text_utf8;
     uint32_t font_family_utf8_len;
     const char* font_family_utf8;
+    SnowMagnifierGeometry magnifier;
 } SnowSceneDisplayItem;
 
 /* Conservative ink (fill padding plus text stroke halo) for dirty regions. */
@@ -1415,6 +1452,10 @@ SnowError snow_viewport_set_distance_style_patch_ex(SnowRuntime runtime, SnowVie
 SnowError snow_viewport_set_distance_pixel_scale_ex(SnowRuntime runtime, SnowViewport viewport,
                                                     double scale_x, double scale_y,
                                                     SnowChangedViewportList* out_changed_viewports);
+
+SnowError snow_viewport_set_magnifier_style_patch_ex(
+    SnowRuntime runtime, SnowViewport viewport, const SnowMagnifierStyle* style,
+    uint32_t properties, uint8_t creation_defaults, SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_set_angle_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
                                                  const SnowAngleStyle* style, uint32_t properties,

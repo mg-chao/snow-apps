@@ -2875,6 +2875,8 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
              Tool::PenHighlight},
             {&ScreenshotToolPalette::spotlightRequested, SnowCanvasTool::Spotlight,
              Tool::Spotlight},
+            {&ScreenshotToolPalette::magnifierRequested, SnowCanvasTool::Magnifier,
+             Tool::Magnifier},
             {&ScreenshotToolPalette::eraserRequested, SnowCanvasTool::Eraser, Tool::Eraser},
             {&ScreenshotToolPalette::rectangleEraserRequested, SnowCanvasTool::RectangleEraser,
              Tool::RectangleEraser},

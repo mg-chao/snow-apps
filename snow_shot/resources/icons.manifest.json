@@ -711,6 +711,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "MagnificationFactor",
+      "name": "magnification-factor",
+      "source": "../src/presentation/components/icons/resources/magnification-factor.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Markdown",
       "name": "markdown",
       "source": "../src/presentation/components/icons/resources/markdown.svg",
@@ -1207,6 +1215,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ShowLeaderLine",
+      "name": "show-leader-line",
+      "source": "../src/presentation/components/icons/resources/show-leader-line.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "TableRecognition",
       "name": "table-recognition",
       "source": "../src/presentation/components/icons/resources/table-recognition.svg",
@@ -1266,6 +1282,14 @@
       "symbol": "ToolLine",
       "name": "tool-line",
       "source": "../src/presentation/components/icons/resources/tool-line.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ToolMagnifier",
+      "name": "tool-magnifier",
+      "source": "../src/presentation/components/icons/resources/tool-magnifier.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

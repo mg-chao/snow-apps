@@ -30,6 +30,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
+    options.showMagnifierTool = true;
     options.showEraserTool = true;
     options.showFilterTool = true;
     options.showWatermarkTool = true;
@@ -414,6 +415,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::filterRequested, this, [this]() {
         m_commands.setFilterTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Filter);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::magnifierRequested, this, [this]() {
+        m_commands.setMagnifierTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Magnifier);
     });
     connect(&toolPalette, &ScreenshotToolPalette::spotlightRequested, this, [this]() {
         m_commands.setSpotlightTool();

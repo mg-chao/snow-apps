@@ -190,6 +190,13 @@ impl QueryStore {
                             snow_draw_engine_document::ElementData::Rectangle(rect) => {
                                 rectangle_hit_test(rect, point, hit_tolerance)
                             }
+                            snow_draw_engine_document::ElementData::Magnifier(value) => {
+                                snow_draw_engine_document::magnifier_hit_test(
+                                    value,
+                                    point,
+                                    hit_tolerance,
+                                )
+                            }
                             snow_draw_engine_document::ElementData::Filter(filter) => {
                                 filter_hit_test(filter, point, hit_tolerance)
                             }

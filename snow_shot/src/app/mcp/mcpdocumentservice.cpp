@@ -145,6 +145,7 @@ const QHash<QString, SnowCanvasTool> kCanvasTools{
     {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
     {QStringLiteral("distance"), SnowCanvasTool::Distance},
     {QStringLiteral("angle"), SnowCanvasTool::Angle},
+    {QStringLiteral("magnifier"), SnowCanvasTool::Magnifier},
     {QStringLiteral("line"), SnowCanvasTool::Line},
     {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
     {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},

@@ -10,6 +10,7 @@ use snow_draw_engine_core::{
 
 pub const MIN_TEXT_FONT_SIZE: f64 = 6.0;
 pub const MIN_SERIAL_NUMBER_FONT_SIZE: f64 = MIN_TEXT_FONT_SIZE;
+pub(crate) const SHAPE_CONNECTOR_GAP: f64 = 8.0;
 const MIN_SERIAL_NUMBER_BOUND_TEXT_GAP: f64 = 18.0;
 const SERIAL_NUMBER_BOUND_TEXT_GAP_PER_FONT_SIZE: f64 = MIN_SERIAL_NUMBER_BOUND_TEXT_GAP / 21.0;
 const SERIAL_NUMBER_CANONICAL_FONT_SIZE: f64 = 16.0;
@@ -65,6 +66,7 @@ pub fn validate_rectangle(rect: &RectangleData) -> Result<(), ErrorCode> {
 pub fn validate_element_data(data: &ElementData) -> Result<(), ErrorCode> {
     match data {
         ElementData::Rectangle(rect) => validate_rectangle(rect),
+        ElementData::Magnifier(value) => crate::validate_magnifier(value),
         ElementData::Filter(filter) => validate_filter(filter),
         ElementData::PenFilter(filter) => validate_pen_filter(filter),
         ElementData::Arrow(arrow) => validate_arrow(arrow),
@@ -486,7 +488,7 @@ pub fn resolve_serial_paint_text_connection(
     let ux = dx / distance;
     let uy = dy / distance;
     let shape_edge_offset = serial_paint_ray_edge_distance(serial, ux, uy);
-    let start_offset = shape_edge_offset + 8.0;
+    let start_offset = shape_edge_offset + SHAPE_CONNECTOR_GAP;
     if distance <= start_offset + half_line_width {
         return None;
     }
@@ -1308,6 +1310,7 @@ pub(crate) fn element_visible_bounds(element: &ElementRecord) -> Option<DrawRect
         ElementData::Rectangle(rect) if rect.width > 0.0 && rect.height > 0.0 => {
             Some(rect_bounds(rect))
         }
+        ElementData::Magnifier(value) => Some(crate::magnifier_bounds(value)),
         ElementData::Arrow(arrow) if !arrow_is_degenerate(arrow) => Some(arrow_bounds(arrow)),
         ElementData::FreeDraw(free_draw) => Some(crate::free_draw_bounds(free_draw)),
         ElementData::Text(text) if text.width() > 0.0 && text.height() > 0.0 => {

@@ -633,6 +633,8 @@ pub enum UiShapeKind {
     ArrowSegmentHandle,
     EraserCursor,
     BindingHighlight,
+    MagnifierMoveHandle,
+    MagnifierSelectionFrame,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -737,7 +739,18 @@ impl Default for SnapGuideDisplayItem {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct MagnifierDisplayItem {
+    pub lens: RectangleDisplayItem,
+    pub source_center: Point<f64>,
+    pub source_width: f64,
+    pub source_height: f64,
+    pub factor: f64,
+    pub leader: Option<ArrowDisplayItem>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum SceneDisplayItem {
+    Magnifier(MagnifierDisplayItem),
     Rectangle(RectangleDisplayItem),
     Filter(FilterDisplayItem),
     Arrow(ArrowDisplayItem),

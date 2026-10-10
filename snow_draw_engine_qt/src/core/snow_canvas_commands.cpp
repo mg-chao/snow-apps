@@ -350,6 +350,18 @@ MutationResult adjustAngleValue(SnowRuntime runtime, SnowViewport viewport, doub
     return result;
 }
 
+MutationResult setMagnifierStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowMagnifierStyle& style, std::uint32_t properties,
+                                      bool creationDefaults) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success = snow_viewport_set_magnifier_style_patch_ex(
+                         runtime, viewport, &style, properties, creationDefaults ? 1 : 0,
+                         result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setDistancePixelScale(SnowRuntime runtime, SnowViewport viewport, double scaleX,
                                      double scaleY) {
     MutationResult result;

@@ -228,6 +228,45 @@ pub unsafe extern "C" fn snow_viewport_set_spotlight_config_ex(
     })
 }
 
+/// # Safety
+/// Handles must be live and style/output pointers must be readable/writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_magnifier_style_patch_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowMagnifierStyle,
+    properties: u32,
+    creation_defaults: u8,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null() || out_changed_viewports.is_null() || creation_defaults > 1 {
+            return SnowError::InvalidArgument;
+        }
+        if !unsafe {
+            raw_c_enum_is_valid(std::ptr::addr_of!((*style).shape))
+                && raw_c_enum_is_valid(std::ptr::addr_of!((*style).leader_arrowhead))
+                && (*style).show_leader <= 1
+        } {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_magnifier_style_patch(
+                    id,
+                    unsafe { (*style).into() },
+                    properties,
+                    creation_defaults != 0,
+                )
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod spotlight_export_tests {
@@ -307,6 +346,8 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         angle_style: state.angle_style.into(),
                         angle_style_mixed: state.angle_style_mixed,
                         distance_measured_length: state.distance_measured_length,
+                        magnifier_style: state.magnifier_style.into(),
+                        magnifier_style_mixed: state.magnifier_style_mixed,
                     },
                 );
                 Ok(())

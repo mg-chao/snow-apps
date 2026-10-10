@@ -9,7 +9,7 @@ use snow_draw_engine_model::DocumentModel;
 
 use crate::{ApplyTransactionCommand, Editor, EditorCommand, expanded_duplicate_ids};
 
-pub const DRAW_TEMPLATE_SCHEMA_VERSION: u32 = 1;
+pub const DRAW_TEMPLATE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,7 +66,7 @@ impl Editor {
         template: &DrawTemplate,
         center: Point<f64>,
     ) -> Result<EditorCommand, ErrorCode> {
-        if template.schema_version != DRAW_TEMPLATE_SCHEMA_VERSION {
+        if !(1..=DRAW_TEMPLATE_SCHEMA_VERSION).contains(&template.schema_version) {
             return Err(ErrorCode::Unsupported);
         }
         if template.elements.is_empty()
@@ -132,6 +132,11 @@ impl Editor {
                     data.center.y += offset.y;
                     validate_element_data(&ElementData::Rectangle(data))?;
                     transaction.insert_rectangle(new_id, element.meta, data);
+                }
+                ElementData::Magnifier(data) => {
+                    let next = data.translated(offset);
+                    validate_element_data(&ElementData::Magnifier(next))?;
+                    transaction.insert_magnifier(new_id, element.meta, next);
                 }
                 ElementData::Filter(data) => {
                     let mut data = *data;

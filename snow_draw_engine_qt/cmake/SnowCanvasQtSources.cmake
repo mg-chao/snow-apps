@@ -78,6 +78,9 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_renderer.cpp
     src/rendering/snow_canvas_render_plan.h
     src/rendering/snow_canvas_renderer.h
+    src/rendering/snow_canvas_magnifier_renderer.cpp
+    src/rendering/snow_canvas_magnifier_renderer.h
+    include/snow_draw_engine_qt/snow_canvas_image_source_types.h
     src/rendering/snow_canvas_spotlight_renderer.cpp
     src/rendering/snow_canvas_spotlight_renderer.h
     src/rendering/snow_canvas_watermark_renderer.cpp

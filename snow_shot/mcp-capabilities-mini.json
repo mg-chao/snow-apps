@@ -210,7 +210,9 @@
         "DefaultRectangleEraser",
         "DefaultBrushEraser",
         "DefaultAngle",
-        "SelectedAngle"
+        "SelectedAngle",
+        "DefaultMagnifier",
+        "SelectedMagnifier"
       ]
     },
     "canvas_tools": {
@@ -235,7 +237,8 @@
         "Spotlight": "Spotlight",
         "AutoFilter": "AutoFilter",
         "RectangleEraser": "RectangleEraser",
-        "BrushEraser": "BrushEraser"
+        "BrushEraser": "BrushEraser",
+        "Magnifier": "Magnifier"
       }
     },
     "recording_options": {

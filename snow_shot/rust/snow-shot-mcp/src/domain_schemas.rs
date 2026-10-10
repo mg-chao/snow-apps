@@ -123,6 +123,7 @@ struct DocumentMutation<T> {
 #[serde(untagged)]
 #[schemars(extend("type" = "object"))]
 enum DocumentToolStyleMutation {
+    Magnifier(DocumentMutation<MagnifierToolStyle>),
     Standard(Box<DocumentMutation<StandardToolStyle>>),
     BrushEraser(DocumentMutation<BrushEraserToolStyle>),
     Angle(DocumentMutation<AngleToolStyle>),
@@ -210,6 +211,7 @@ input!(DocumentId {
 });
 input!(DocumentPoint { point: [f64; 2] });
 choices!(DocumentCanvasTool {
+    Magnifier,
     Distance,
     Angle,
     Select,

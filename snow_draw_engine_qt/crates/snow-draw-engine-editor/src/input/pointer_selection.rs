@@ -58,6 +58,7 @@ impl Editor {
 
             self.state.interaction = InteractionState::EditingSelection(
                 self.begin_selection_edit_state(BeginSelectionEditRequest {
+                    original_magnifiers: state.original_magnifiers,
                     pointer_id: event.pointer_id,
                     button: state.button,
                     original_elements: state.original_elements,

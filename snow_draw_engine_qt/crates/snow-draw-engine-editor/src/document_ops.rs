@@ -35,6 +35,17 @@ pub(crate) fn append_selection_element_update(
     single_text_resize: bool,
     measured_resize: Option<MeasuredTextResize>,
 ) -> Result<(), ErrorCode> {
+    if let Ok(value) = document.magnifier(preview.id) {
+        let next = value.translated(Point::new(
+            preview.rect.center.x - value.source_center.x,
+            preview.rect.center.y - value.source_center.y,
+        ));
+        snow_draw_engine_document::validate_magnifier(&next)?;
+        if next != *value {
+            transaction.update_magnifier(preview.id, next);
+        }
+        return Ok(());
+    }
     if document.rectangle(preview.id).is_ok() {
         validate_rectangle(&preview.rect)?;
         transaction.update_rectangle(preview.id, preview.rect);
@@ -252,6 +263,9 @@ pub(crate) fn duplicate_selection_transaction(
                 duplicate.center.y += offset.y;
                 validate_rectangle(&duplicate)?;
                 transaction.insert_rectangle(new_id, element.meta, duplicate);
+            }
+            ElementData::Magnifier(value) => {
+                transaction.insert_magnifier(new_id, element.meta, value.translated(offset));
             }
             ElementData::Filter(filter) => {
                 let mut duplicate = *filter;
@@ -996,6 +1010,13 @@ impl Editor {
                     updated.opacity = opacity;
                     if updated != *value {
                         transaction.update_rectangle(*id, updated);
+                    }
+                }
+                ElementData::Magnifier(value) => {
+                    let mut next = *value;
+                    next.opacity = opacity;
+                    if next != *value {
+                        transaction.update_magnifier(*id, next);
                     }
                 }
                 ElementData::Filter(value) => {

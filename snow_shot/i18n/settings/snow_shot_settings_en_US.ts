@@ -492,6 +492,10 @@
             <translation>Line</translation>
         </message>
         <message>
+            <source>Magnifier</source>
+            <translation>Magnifier</translation>
+        </message>
+        <message>
             <source>No hidden tools</source>
             <translation>No hidden tools</translation>
         </message>
@@ -2663,6 +2667,10 @@
         <message>
             <source>MSAA</source>
             <translation>MSAA</translation>
+        </message>
+        <message>
+            <source>Magnifier</source>
+            <translation>Magnifier</translation>
         </message>
         <message>
             <source>Magnifier visibility</source>

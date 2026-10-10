@@ -6,6 +6,7 @@
 #include "../src/presentation/globalcanvas/globalcanvasplatform.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -14,12 +15,14 @@
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
+#include "theme/theme_manager.h"
 #include <QApplication>
 #include <QDir>
 #include <QLineEdit>
 #include <QFontDatabase>
 #include "physical_key_test_support.h"
 #include <QMouseEvent>
+#include <QPainter>
 #include <QScreen>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -781,6 +784,82 @@ void savedToolbarLayout(QApplication& app) {
     require(settings.setLayout(kind, original), "restore drawing layout");
 }
 
+void magnifierUnavailableWithoutImageSources(QApplication& app) {
+    const storage::ScreenshotToolbarSettings settings;
+    const storage::DrawingSettings drawingSettings;
+    const storage::DrawingShortcutSettings shortcuts;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto originalLayout = settings.layout(kind);
+    const auto originalShortcut = shortcuts.shortcuts(QStringLiteral("magnifier"));
+    const auto originalLastTool = settings.lastDrawingTool();
+    const bool originalRemember = drawingSettings.rememberLastUsedTool();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setLayout(kind, originalLayout));
+        static_cast<void>(shortcuts.setShortcuts(QStringLiteral("magnifier"), originalShortcut));
+        static_cast<void>(settings.setLastDrawingTool(originalLastTool));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRemember));
+    });
+    auto savedLayout = originalLayout;
+    for (auto& position : savedLayout.positions)
+        position.removeAll(QStringLiteral("magnifier"));
+    savedLayout.positions.prepend({QStringLiteral("magnifier")});
+    savedLayout.hidden.removeAll(QStringLiteral("magnifier"));
+    require(
+        settings.setLayout(kind, savedLayout) &&
+            shortcuts.setShortcuts(QStringLiteral("magnifier"), {QStringLiteral("Ctrl+Alt+F12")}) &&
+            drawingSettings.setRememberLastUsedTool(true),
+        "save screenshot magnifier preferences before opening a global canvas");
+    savedLayout = settings.layout(kind);
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    for (int session = 0; session < 2; ++session) {
+        require(settings.setLastDrawingTool(QStringLiteral("magnifier")),
+                "remember an image-backed tool before opening a global canvas");
+        controller.activate();
+        app.processEvents();
+        auto* tools = controller.toolbar()->palette();
+        auto* canvas = controller.canvas();
+        require(!tools->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotMagnifierButton")) &&
+                    !tools->canActivateDrawingShortcut(QStringLiteral("magnifier")) &&
+                    !tools->activateDrawingShortcut(QStringLiteral("magnifier")) &&
+                    !tools->activateToolShortcut(ScreenshotToolPalette::Tool::Magnifier) &&
+                    !tools->activateRememberedDrawingTool(),
+                "a global canvas cannot expose or activate a tool requiring captured pixels");
+        PhysicalKeyEvent override(QEvent::ShortcutOverride, Qt::Key_F12,
+                                  Qt::ControlModifier | Qt::AltModifier);
+        override.ignore();
+        QApplication::sendEvent(canvas, &override);
+        require(!override.isAccepted(), "unavailable global canvas shortcuts must not claim keys");
+        PhysicalKeyEvent press(QEvent::KeyPress, Qt::Key_F12,
+                               Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(canvas, &press);
+        PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_F12,
+                                 Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(canvas, &release);
+        tools->magnifierRequested();
+        require(canvas->canvasTool() == SnowCanvasTool::Select &&
+                    settings.layout(kind) == savedLayout,
+                "global canvas capability filtering must preserve screenshot preferences");
+        auto groupedLayout = savedLayout;
+        for (auto& position : groupedLayout.positions) {
+            for (const auto* id : {"magnifier", "spotlight", "highlighter"})
+                position.removeAll(QString::fromLatin1(id));
+        }
+        groupedLayout.positions.prepend({QStringLiteral("magnifier"), QStringLiteral("spotlight"),
+                                         QStringLiteral("highlighter")});
+        groupedLayout.hidden.removeAll(QStringLiteral("spotlight"));
+        groupedLayout.hidden.removeAll(QStringLiteral("highlighter"));
+        require(settings.setLayout(kind, groupedLayout), "save an image-backed tool in a stack");
+        savedLayout = settings.layout(kind);
+        app.processEvents();
+        require(!tools->canActivateDrawingShortcut(QStringLiteral("magnifier")),
+                "a live layout rebuild cannot enable unsupported global canvas tools");
+        controller.shutdown();
+        app.processEvents();
+    }
+}
+
 void templateInsertionAfterNavigation(QApplication& app) {
     SnowCanvasRuntime source;
     SnowCanvasWidget sourceCanvas(source);
@@ -1101,6 +1180,91 @@ void angleCanvasWheel(QApplication& app) {
     controller.shutdown();
 }
 
+void canvasClickThroughButtonStyle(QApplication& app) {
+    using adqt::widgets::AdButton;
+    using presentation::styles::ThemeMode;
+    auto& theme = presentation::styles::ThemeManager::instance();
+    const auto originalMode = theme.themeMode();
+    const auto restoreTheme = qScopeGuard([&]() {
+        theme.setThemeMode(originalMode);
+        adqt::theme::ThemeManager::instance().applyTo(app);
+    });
+    bool failTransition = false;
+    presentation::GlobalCanvasController controller(
+        nullptr,
+        {[&]() { return app.primaryScreen(); }, [&](QWidget*, bool) { return !failTransition; }});
+    controller.activate();
+    auto* palette = controller.toolbar()->palette();
+    auto* toggle = palette->findChild<AdButton*>(QStringLiteral("globalCanvasClickThroughButton"));
+    AdButton* select = nullptr;
+    for (auto* button : palette->findChildren<AdButton*>()) {
+        if (button->accessibleName() == QStringLiteral("Select elements"))
+            select = button;
+    }
+    require(toggle && select, "click-through style test requires both toolbar buttons");
+    const auto background = [](AdButton* button) {
+        QImage image(button->size(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        button->render(&painter);
+        painter.end();
+        return image.pixelColor(qMax(1, image.width() / 8), image.height() / 2);
+    };
+    const auto requireStyle = [&](bool enabled) {
+        require(controller.clickThrough() == enabled && toggle->isChecked() == enabled,
+                "click-through checked state must reflect the committed canvas state");
+        if (enabled)
+            palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+        else
+            palette->clearActiveTool();
+        require(toggle->buttonStyle() == select->buttonStyle() &&
+                    toggle->accentRole() == select->accentRole(),
+                "click-through must use the same active and inactive style as drawing tools");
+        for (const bool hovered : {false, true}) {
+            toggle->setAttribute(Qt::WA_UnderMouse, hovered);
+            select->setAttribute(Qt::WA_UnderMouse, hovered);
+            for (const bool pressed : {false, true}) {
+                toggle->setDown(pressed);
+                select->setDown(pressed);
+                require(
+                    background(toggle) == background(select),
+                    "click-through backgrounds must match drawing tools at rest, hover and press");
+            }
+        }
+        toggle->setDown(false);
+        select->setDown(false);
+        toggle->setAttribute(Qt::WA_UnderMouse, false);
+        select->setAttribute(Qt::WA_UnderMouse, false);
+        const auto scheme = theme.themeColorScheme();
+        const QColor expected = enabled ? scheme.map.colorWhite : scheme.map.colorText;
+        const QImage icon =
+            toggle->icon().pixmap(toggle->iconSize(), QIcon::Normal, QIcon::Off).toImage();
+        bool hasForeground = false;
+        for (int y = 0; y < icon.height(); ++y) {
+            for (int x = 0; x < icon.width(); ++x) {
+                const QColor pixel = icon.pixelColor(x, y);
+                hasForeground |= pixel.alpha() >= 200 && pixel.rgb() == expected.rgb();
+            }
+        }
+        require(hasForeground, "click-through icon must follow the toolbar foreground and theme");
+    };
+    for (const auto mode : {ThemeMode::Light, ThemeMode::Dark, ThemeMode::Light}) {
+        theme.setThemeMode(mode);
+        adqt::theme::ThemeManager::instance().applyTo(app);
+        app.processEvents();
+        requireStyle(false);
+        toggle->click();
+        requireStyle(true);
+        failTransition = true;
+        toggle->click();
+        requireStyle(true);
+        failTransition = false;
+        controller.activate();
+        requireStyle(false);
+    }
+    controller.shutdown();
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
@@ -1138,6 +1302,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--click-through-style-only"))) {
+        canvasClickThroughButtonStyle(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
         angleCanvasWheel(app);
         storage.shutdown();
@@ -1200,6 +1369,11 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--magnifier-availability-only"))) {
+        magnifierUnavailableWithoutImageSources(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--template-navigation-only"))) {
         templateInsertionAfterNavigation(app);
         storage.shutdown();
@@ -1210,6 +1384,7 @@ int main(int argc, char** argv) {
     canvasColorSamplingLifecycle(app);
     textEscapePreservesAnnotations(app);
     savedToolbarLayout(app);
+    magnifierUnavailableWithoutImageSources(app);
     templateInsertionAfterNavigation(app);
     toolbarPlacement(app);
     canvasNavigation(app);
@@ -1217,6 +1392,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    canvasClickThroughButtonStyle(app);
     bool nativeTransparent = false;
     bool failTransition = false;
     int pointerReads = 0;

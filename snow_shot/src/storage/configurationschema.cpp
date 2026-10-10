@@ -48,11 +48,11 @@ QVector<QStringList> editionActionPositions(QVector<QStringList> positions) {
     return positions;
 }
 const QStringList kDrawingToolIds = {
-    QStringLiteral("shape"),         QStringLiteral("arrow"),     QStringLiteral("line"),
-    QStringLiteral("angle"),         QStringLiteral("distance"),  QStringLiteral("free-draw"),
-    QStringLiteral("highlighter"),   QStringLiteral("spotlight"), QStringLiteral("text"),
-    QStringLiteral("serial-number"), QStringLiteral("filter"),    QStringLiteral("eraser"),
-    QStringLiteral("watermark"),
+    QStringLiteral("shape"),       QStringLiteral("arrow"),         QStringLiteral("line"),
+    QStringLiteral("angle"),       QStringLiteral("distance"),      QStringLiteral("free-draw"),
+    QStringLiteral("highlighter"), QStringLiteral("spotlight"),     QStringLiteral("magnifier"),
+    QStringLiteral("text"),        QStringLiteral("serial-number"), QStringLiteral("filter"),
+    QStringLiteral("eraser"),      QStringLiteral("watermark"),
 };
 const QStringList kDrawingToolbarItemIds =
     QStringList{QStringLiteral("select"), QStringLiteral("select-separator")} + kDrawingToolIds +
@@ -108,7 +108,7 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
         {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
          QStringLiteral("arrow")},
         {QStringLiteral("free-draw")},
-        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
+        {QStringLiteral("magnifier"), QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
         {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},
@@ -714,9 +714,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line"),
       QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("free-draw"),
       QStringLiteral("rectangle-highlight"), QStringLiteral("pen-highlight"),
-      QStringLiteral("spotlight"), QStringLiteral("rectangle-filter"), QStringLiteral("pen-filter"),
-      QStringLiteral("text"), QStringLiteral("serial-number"), QStringLiteral("eraser"),
-      QStringLiteral("watermark")}},
+      QStringLiteral("spotlight"), QStringLiteral("magnifier"), QStringLiteral("rectangle-filter"),
+      QStringLiteral("pen-filter"), QStringLiteral("text"), QStringLiteral("serial-number"),
+      QStringLiteral("eraser"), QStringLiteral("watermark")}},
     {QStringLiteral("drawing/remember_last_used_tool"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("drawing/always_show_first_toolbar_group_button"), false,
      ConfigurationValueKind::Boolean},
@@ -724,6 +724,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("drawing/arrow_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/distance_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/angle_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/magnifier_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/line_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/free_draw_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/rectangle_highlight_style"), QJsonObject(),
@@ -778,6 +779,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {},
      2},
     {QStringLiteral("drawing_shortcuts/line"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("drawing_shortcuts/magnifier"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
      std::nullopt,
@@ -2113,7 +2120,8 @@ normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
     // Upgrade only the previous default drawing layout; custom stacks remain intact.
     auto previousDrawingDefaults = defaultPositions;
     QStringList missingAnnotations;
-    for (const QString& id : {QStringLiteral("angle"), QStringLiteral("distance")}) {
+    for (const QString& id :
+         {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("magnifier")}) {
         if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
             missingAnnotations.push_back(id);
             for (auto& position : previousDrawingDefaults)
@@ -2262,6 +2270,41 @@ normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
             positions.prepend({id});
             positioned.insert(id);
         }
+    }
+    // New magnifiers join the highlight stack without moving any customized tools.
+    const QString magnifier = QStringLiteral("magnifier");
+    if (known.contains(magnifier) && !positioned.contains(magnifier) &&
+        !hiddenSet.contains(magnifier)) {
+        qsizetype anchor = -1;
+        bool joined = false;
+        for (qsizetype index = 0; index < positions.size(); ++index) {
+            auto& position = positions[index];
+            const bool highlight = position.contains(QStringLiteral("highlighter"));
+            const bool spotlight = position.contains(QStringLiteral("spotlight"));
+            if (highlight && spotlight) {
+                position.prepend(magnifier);
+                joined = true;
+                break;
+            }
+            if (highlight || spotlight)
+                anchor = index;
+        }
+        if (!joined) {
+            qsizetype insertion = anchor + 1;
+            if (anchor < 0) {
+                insertion = positions.size();
+                for (qsizetype index = 0; index < positions.size(); ++index) {
+                    if (positions.at(index).contains(QStringLiteral("separator")) ||
+                        positions.at(index).contains(QStringLiteral("undo")) ||
+                        positions.at(index).contains(QStringLiteral("redo"))) {
+                        insertion = index;
+                        break;
+                    }
+                }
+            }
+            positions.insert(insertion, QStringList{magnifier});
+        }
+        positioned.insert(magnifier);
     }
     for (const QStringList& defaultPosition : defaultPositions) {
         QStringList missing;

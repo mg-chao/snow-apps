@@ -178,9 +178,46 @@ pub(crate) fn snow_scene_display_item_from_rust(
     omit_arrow_points: bool,
     omit_path_commands: bool,
 ) -> SnowScenePatchItem {
+    if let SceneDisplayItem::Magnifier(item) = value {
+        let mut converted = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Rectangle(item.lens),
+            false,
+            false,
+        );
+        converted.view.kind = SnowSceneDisplayItemKind::Magnifier;
+        converted.view.magnifier = SnowMagnifierGeometry {
+            source_center_x: item.source_center.x,
+            source_center_y: item.source_center.y,
+            source_width: item.source_width,
+            source_height: item.source_height,
+            magnification_factor: item.factor,
+        };
+        if let Some(leader) = &item.leader {
+            let arrow = snow_scene_display_item_from_rust(
+                &SceneDisplayItem::Arrow(leader.clone()),
+                false,
+                false,
+            );
+            converted.view.arrow_point_count = arrow.view.arrow_point_count;
+            converted.view.arrow_path_command_count = arrow.view.arrow_path_command_count;
+            converted.view.arrowhead_primitive_count = arrow.view.arrowhead_primitive_count;
+            converted.view.arrow_type = arrow.view.arrow_type;
+            converted.view.arrow_shaft_type = arrow.view.arrow_shaft_type;
+            converted.view.arrow_ratio = arrow.view.arrow_ratio;
+            converted.view.arrow_start_head = arrow.view.arrow_start_head;
+            converted.view.arrow_end_head = arrow.view.arrow_end_head;
+            converted.view.arrow_stroke_style = arrow.view.arrow_stroke_style;
+            converted.arrow_points = arrow.arrow_points;
+            converted.arrow_path_commands = arrow.arrow_path_commands;
+            converted.arrowhead_primitives = arrow.arrowhead_primitives;
+        }
+        converted.refresh_pointers();
+        return converted;
+    }
     let mut converted = SnowScenePatchItem::default();
     let out = &mut converted.view;
     match value {
+        SceneDisplayItem::Magnifier(_) => unreachable!(),
         SceneDisplayItem::Rectangle(item) => {
             out.kind = SnowSceneDisplayItemKind::DrawRect;
             out.element_id = SnowElementId {
@@ -500,6 +537,8 @@ fn snow_overlay_rect_kind_from_rust(value: UiRectKind) -> SnowOverlayRectKind {
         UiRectKind::ArrowSegmentHandle => SnowOverlayRectKind::ArrowSegmentHandle,
         UiRectKind::EraserCursor => SnowOverlayRectKind::EraserCursor,
         UiRectKind::BindingHighlight => SnowOverlayRectKind::BindingHighlight,
+        UiRectKind::MagnifierMoveHandle => SnowOverlayRectKind::MagnifierMoveHandle,
+        UiRectKind::MagnifierSelectionFrame => SnowOverlayRectKind::MagnifierSelectionFrame,
     }
 }
 

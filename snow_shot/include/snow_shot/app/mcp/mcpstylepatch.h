@@ -57,6 +57,7 @@ inline const QHash<QString, SnowCanvasTool>& mcpCanvasTools() {
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
         {QStringLiteral("distance"), SnowCanvasTool::Distance},
         {QStringLiteral("angle"), SnowCanvasTool::Angle},
+        {QStringLiteral("magnifier"), SnowCanvasTool::Magnifier},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
         {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},
@@ -178,6 +179,11 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     else if (target == QStringLiteral("angle"))
         allowed = {QStringLiteral("stroke"), QStringLiteral("stroke_width"), QStringLiteral("unit"),
                    QStringLiteral("decimal_places")};
+    else if (target == QStringLiteral("magnifier"))
+        allowed = {QStringLiteral("shape"),         QStringLiteral("stroke"),
+                   QStringLiteral("stroke_width"),  QStringLiteral("factor"),
+                   QStringLiteral("show_leader"),   QStringLiteral("leader_arrowhead"),
+                   QStringLiteral("corner_radius"), QStringLiteral("corner_radii")};
     else if (target == QStringLiteral("arrow"))
         allowed = {QStringLiteral("stroke"),           QStringLiteral("stroke_width"),
                    QStringLiteral("stroke_style"),     QStringLiteral("start_arrowhead"),
@@ -218,6 +224,9 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                 if (!radius.isDouble() || !std::isfinite(radius.toDouble()) ||
                     radius.toDouble() < 0 || radius.toDouble() > 8192)
                     return false;
+        } else if (it.key() == QStringLiteral("show_leader")) {
+            if (!it->isBool())
+                return false;
         } else if (textFields.contains(it.key())) {
             if (!it->isString() || it->toString().toUtf8().size() > 65536)
                 return false;
@@ -238,6 +247,10 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                 return false;
             if (it.key() == QStringLiteral("factor") && (value < 0.01 || value > 1000))
                 return false;
+            if (target == QStringLiteral("magnifier") &&
+                ((it.key() == QStringLiteral("factor") && (value < 1 || value > 10)) ||
+                 (it.key() == QStringLiteral("stroke_width") && value > 72)))
+                return false;
             if (it.key() == QStringLiteral("decimal_places") &&
                 (value > 3 || std::floor(value) != value))
                 return false;
@@ -246,7 +259,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                 return false;
         } else {
             const auto key = (it.key() == QStringLiteral("end_arrowhead") ||
-                              it.key() == QStringLiteral("endpoint_style"))
+                              it.key() == QStringLiteral("endpoint_style") ||
+                              it.key() == QStringLiteral("leader_arrowhead"))
                                  ? QStringLiteral("start_arrowhead")
                                  : it.key();
             if (!enums.value(key).contains(it->toString()))
@@ -266,7 +280,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     const auto enumeration = [&](const char* name, int fallback) {
         const auto value = patch.value(QLatin1String(name));
         const auto key = (QString::fromLatin1(name) == QStringLiteral("end_arrowhead") ||
-                          QString::fromLatin1(name) == QStringLiteral("endpoint_style"))
+                          QString::fromLatin1(name) == QStringLiteral("endpoint_style") ||
+                          QString::fromLatin1(name) == QStringLiteral("leader_arrowhead"))
                              ? QStringLiteral("start_arrowhead")
                              : QString::fromLatin1(name);
         return value.isUndefined() ? fallback : enums.value(key).indexOf(value.toString());
@@ -292,7 +307,41 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         }
         return fallback;
     };
-    if (target == QStringLiteral("angle")) {
+    if (target == QStringLiteral("magnifier")) {
+        auto style = state.magnifierStyle;
+        style.cornerRadii = cornerRadii(style.cornerRadii);
+        style.shape = static_cast<SnowCanvasRectangleShape>(
+            enumeration("shape", static_cast<int>(style.shape)));
+        style.stroke = color("stroke", style.stroke);
+        style.strokeWidth = number("stroke_width", style.strokeWidth);
+        style.factor = number("factor", style.factor);
+        style.showLeader = patch.value(QStringLiteral("show_leader")).toBool(style.showLeader);
+        style.leaderArrowhead = static_cast<SnowCanvasArrowhead>(
+            enumeration("leader_arrowhead", static_cast<int>(style.leaderArrowhead)));
+        const QHash<QString, quint32> properties{
+            {QStringLiteral("shape"), SnowCanvasMagnifierStylePropertyShape},
+            {QStringLiteral("stroke"), SnowCanvasMagnifierStylePropertyStrokeColor},
+            {QStringLiteral("stroke_width"), SnowCanvasMagnifierStylePropertyStrokeWidth},
+            {QStringLiteral("factor"), SnowCanvasMagnifierStylePropertyFactor},
+            {QStringLiteral("show_leader"), SnowCanvasMagnifierStylePropertyShowLeader},
+            {QStringLiteral("leader_arrowhead"), SnowCanvasMagnifierStylePropertyLeaderArrowhead}};
+        const quint32 cornerProperties = patch.contains(QStringLiteral("corner_radius")) ||
+                                                 patch.contains(QStringLiteral("corner_radii"))
+                                             ? SnowCanvasMagnifierStylePropertyCornerRadius
+                                             : 0;
+        quint32 flags = cornerProperties;
+        for (auto it = patch.begin(); it != patch.end(); ++it)
+            flags |= properties.value(it.key());
+        const bool creationDefaults =
+            state.source != SnowCanvasStyleToolbarSource::SelectedMagnifier;
+        if constexpr (requires {
+                          canvas.commitStyleEdit(
+                              SnowCanvasMagnifierEdit{style, flags, creationDefaults});
+                      })
+            return canvas.commitStyleEdit(SnowCanvasMagnifierEdit{style, flags, creationDefaults});
+        else
+            return canvas.setMagnifierStyleFromToolbar(style, flags, creationDefaults);
+    } else if (target == QStringLiteral("angle")) {
         auto style = state.angleStyle;
         style.stroke = color("stroke", style.stroke);
         style.strokeWidth = number("stroke_width", style.strokeWidth);
