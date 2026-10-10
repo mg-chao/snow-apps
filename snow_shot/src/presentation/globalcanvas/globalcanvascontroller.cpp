@@ -5,6 +5,7 @@
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
@@ -12,6 +13,7 @@
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
@@ -135,9 +137,19 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         });
         auto& storage = storage::ApplicationStorage::instance();
         if (storage.isInitialized()) {
+            const auto applyDrawingPreferences = [this]() {
+                const auto disabledTools = screenshotQuickSelectionDisabledTools(
+                    storage::DrawingSettings().quickSelectionDisabledTools());
+                if (!runtime.setQuickSelectionDisabledTools(disabledTools)) {
+                    qWarning("Failed to apply full-screen canvas quick-selection preferences");
+                }
+            };
+            applyDrawingPreferences();
             connect(&storage.configuration(), &storage::ConfigurationStore::valueChanged, this,
-                    [this](const QString& key, const QJsonValue&) {
-                        if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
+                    [this, applyDrawingPreferences](const QString& key, const QJsonValue&) {
+                        if (key == QStringLiteral("drawing/quick_selection_disabled_tools")) {
+                            applyDrawingPreferences();
+                        } else if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
                             reloadShortcuts();
                         } else if (key == QStringLiteral("screenshot_toolbar/layout")) {
                             palette->setToolbarLayout(storage::ScreenshotToolbarSettings().layout(

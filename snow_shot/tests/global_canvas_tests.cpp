@@ -1009,6 +1009,84 @@ void canvasRightQuickSelection(QApplication& app) {
     controller.shutdown();
 }
 
+void canvasQuickSelectionSettings(QApplication& app) {
+    const storage::DrawingSettings settings;
+    const QStringList original = settings.quickSelectionDisabledTools();
+    const auto restore = qScopeGuard([&]() {
+        require(settings.setQuickSelectionDisabledTools(original),
+                "restore quick-selection settings");
+    });
+    require(settings.setQuickSelectionDisabledTools({QStringLiteral("free-draw")}),
+            "disable pen quick selection before opening canvas");
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    for (int session = 0; session < 2; ++session) {
+        controller.activate();
+        app.processEvents();
+        auto* canvas = controller.canvas();
+        canvas_quick_selection_test::drawStroke(*canvas);
+        require(!canvas->hasQuickSelectionTargetAt({120, 100}, Qt::LeftButton),
+                "new full-screen sessions apply saved pen quick-selection exclusions");
+        const auto clickStroke = [&]() {
+            require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::FreeDraw),
+                    "restart pen creation without a selection");
+            mouse(canvas, QEvent::MouseButtonPress, {120, 100}, Qt::LeftButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseButtonRelease, {120, 100}, Qt::LeftButton, Qt::NoButton);
+        };
+        clickStroke();
+        require(canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::DefaultFreeDraw,
+                "disabled left quick selection creates instead of selecting a pen stroke");
+        require(canvas->undo(), "remove the dot created while quick selection is disabled");
+
+        require(settings.setQuickSelectionDisabledTools({QStringLiteral("shape")}),
+                "replace live exclusions with the shape tool");
+        require(canvas->hasQuickSelectionTargetAt({120, 100}, Qt::LeftButton),
+                "replacing exclusions immediately enables pen quick selection");
+        clickStroke();
+        require(canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedFreeDraw,
+                "enabled left quick selection selects the existing pen stroke");
+        require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::Shape),
+                "activate shape fixture");
+        mouse(canvas, QEvent::MouseButtonPress, {60, 170}, Qt::LeftButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseMove, {180, 230}, Qt::NoButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseButtonRelease, {180, 230}, Qt::LeftButton, Qt::NoButton);
+        require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::Shape),
+                "clear shape fixture selection");
+        require(!canvas->hasQuickSelectionTargetAt({120, 170}, Qt::LeftButton) &&
+                    canvas->hasQuickSelectionTargetAt({120, 170}, Qt::RightButton),
+                "shape exclusions disable left selection while retaining right selection");
+        require(settings.setQuickSelectionDisabledTools({}), "clear live exclusions");
+        mouse(canvas, QEvent::MouseButtonPress, {120, 170}, Qt::LeftButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseButtonRelease, {120, 170}, Qt::LeftButton, Qt::NoButton);
+        require(canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedRectangle,
+                "clearing exclusions immediately restores shape quick selection");
+
+        require(settings.setQuickSelectionDisabledTools({QStringLiteral("free-draw")}),
+                "disable pen quick selection again while the canvas is open");
+        clickStroke();
+        require(canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::DefaultFreeDraw,
+                "live pen exclusions reach the full-screen canvas input path");
+        require(canvas->undo() && canvas->resetEditingState() &&
+                    canvas->setCanvasTool(SnowCanvasTool::FreeDraw),
+                "remove the second dot and prepare right selection");
+        canvas_quick_selection_test::selectAndDragStroke(*canvas);
+        controller.activate();
+        controller.activate();
+        require(!canvas->hasQuickSelectionTargetAt({120, 135}, Qt::LeftButton) &&
+                    canvas->hasQuickSelectionTargetAt({120, 135}, Qt::RightButton),
+                "click-through transitions preserve quick-selection preferences");
+        controller.toolbar()->palette()->resetCanvasRequested();
+        canvas_quick_selection_test::drawStroke(*canvas);
+        require(!canvas->hasQuickSelectionTargetAt({120, 100}, Qt::LeftButton),
+                "resetting the canvas preserves quick-selection preferences");
+        controller.shutdown();
+    }
+}
+
 void angleCanvasWheel(QApplication& app) {
     presentation::GlobalCanvasController controller(
         nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
@@ -1070,6 +1148,11 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--quick-selection-settings-only"))) {
+        canvasQuickSelectionSettings(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--saved-styles-only"))) {
         savedCanvasStylesSurviveReopening(app);
         storage.shutdown();
@@ -1123,6 +1206,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     savedCanvasStylesSurviveReopening(app);
+    canvasQuickSelectionSettings(app);
     canvasColorSamplingLifecycle(app);
     textEscapePreservesAnnotations(app);
     savedToolbarLayout(app);
