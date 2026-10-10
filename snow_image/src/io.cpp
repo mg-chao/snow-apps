@@ -138,6 +138,10 @@ class MemorySource final : public ByteSource {
         return static_cast<std::uint64_t>(bytes_->size());
     }
 
+    std::optional<std::span<const std::byte>> contiguous_bytes() const override {
+        return std::span<const std::byte>(*bytes_);
+    }
+
     Result<std::size_t> read_at(std::uint64_t offset,
                                 std::span<std::byte> destination) const override {
         if (offset >= bytes_->size()) {
@@ -293,6 +297,29 @@ Result<std::vector<std::byte>> read_all(const ByteSource& source, std::uint64_t 
     } catch (const std::bad_alloc&) {
         return Status::error(ErrorCode::out_of_memory, "Could not allocate the input buffer.");
     }
+}
+
+Result<InputBytes> read_contiguous(const Input& input, std::uint64_t maximum_bytes) {
+    if (!input.source)
+        return Status::error(ErrorCode::invalid_argument, "Input has no byte source.");
+    const auto source_size = input.source->size();
+    if (!source_size)
+        return source_size.error();
+    if (source_size.value() > maximum_bytes ||
+        source_size.value() > std::numeric_limits<std::size_t>::max()) {
+        return Status::error(ErrorCode::limit_exceeded, "Input exceeds the configured byte limit.");
+    }
+    if (const auto view = input.source->contiguous_bytes()) {
+        if (view->size() != source_size.value()) {
+            return Status::error(ErrorCode::io_error,
+                                 "Contiguous input does not match its reported size.");
+        }
+        return InputBytes(input.source, *view);
+    }
+    auto owned = read_all(*input.source, maximum_bytes);
+    if (!owned)
+        return owned.error();
+    return InputBytes(std::move(owned).value());
 }
 
 } // namespace snow::image

@@ -42,6 +42,10 @@ struct MainWindowSkinDiagnostics {
     quint64 cacheHits = 0;
     quint64 pixmapConversions = 0;
     qsizetype retainedBytes = 0;
+    qsizetype decodedSourceBytes = 0;
+    qsizetype preparedFrameBytes = 0;
+    // Decoded sources and idle prepared frames share one deterministic byte budget.
+    qsizetype cacheBytes = 0;
     qsizetype idleFrameBytes = 0;
     int idleFrameCount = 0;
     qsizetype scratchRetainedBytes = 0;
@@ -77,9 +81,11 @@ class MainWindowSkinController final : public QObject {
     // Explicit settings validation stays asynchronous and creates no hidden frame.
     void validate(SkinSurface surface);
 
+    // Image snapshots are created on demand; normal presentation uses the shared pixmap.
     [[nodiscard]] MainWindowSkinFrame frame() const;
     [[nodiscard]] MainWindowSkinFrame frame(QObject* view) const;
     [[nodiscard]] QPixmap pixmap(QObject* view) const;
+    [[nodiscard]] QRectF normalizedPlacement(QObject* view) const;
     [[nodiscard]] bool skinActive() const;
     [[nodiscard]] bool skinActive(QObject* view) const;
     [[nodiscard]] qreal opacity() const;

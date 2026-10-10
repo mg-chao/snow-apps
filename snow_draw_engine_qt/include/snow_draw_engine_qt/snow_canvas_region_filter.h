@@ -4,6 +4,7 @@
 
 #include <QImage>
 #include <QPointF>
+#include <QRect>
 #include <QRegion>
 
 #include <cstddef>
@@ -56,3 +57,15 @@ snowCanvasRegionFilterSupportPixels(const SnowCanvasRegionFilterParameters& para
                                                const SnowCanvasRegionFilterParameters& parameters,
                                                SnowCanvasRegionFilterScratch* scratch = nullptr,
                                                bool singleThreaded = false);
+
+// Writes a Gaussian-filtered sourceRect directly into a crop-sized destination.
+// Both images must be ARGB32 premultiplied; sourceRect must lie entirely inside
+// source and destination.size() must equal sourceRect.size(). No destination
+// initialization or padded destination is needed. The source remains unchanged;
+// shared destination storage is detached and externally overlapping buffers fail.
+// The reduced sampling grid stays anchored in source coordinates.
+[[nodiscard]] bool
+applySnowCanvasGaussianBlurCrop(const QImage& source, QImage& destination, const QRect& sourceRect,
+                                const SnowCanvasRegionFilterParameters& parameters,
+                                SnowCanvasRegionFilterScratch* scratch = nullptr,
+                                bool singleThreaded = false);

@@ -40,6 +40,14 @@ struct DemuxerDeleter final {
 };
 using Demuxer = std::unique_ptr<WebPDemuxer, DemuxerDeleter>;
 
+struct FrameIteratorGuard final {
+    explicit FrameIteratorGuard(WebPIterator* iterator) : iterator(iterator) {}
+    ~FrameIteratorGuard() {
+        WebPDemuxReleaseIterator(iterator);
+    }
+    WebPIterator* iterator;
+};
+
 struct MuxDeleter final {
     void operator()(WebPMux* mux) const noexcept {
         WebPMuxDelete(mux);
@@ -199,7 +207,7 @@ Result<void> decode_packed(std::span<const std::byte> bytes, const WebpFeatures&
     const auto [width, height] = scaled_dimensions(features, options);
     if (row_stride > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
         height > std::numeric_limits<std::size_t>::max() / row_stride ||
-        destination.size() < row_stride * height)
+        destination.size() < row_stride * (height - 1U) + width * format.channel_count())
         return webp_error(ErrorCode::invalid_argument, "WebP packed output storage is invalid.");
     WebPDecoderConfig config;
     if (!WebPInitDecoderConfig(&config))
@@ -226,9 +234,46 @@ Result<void> decode_packed(std::span<const std::byte> bytes, const WebpFeatures&
                : webp_decode_error(status, "Could not decode the static WebP frame.");
 }
 
+Result<std::pair<Demuxer, WebPAnimInfo>> open_animation_demuxer(std::span<const std::byte> bytes,
+                                                                const DecodeLimits& limits) {
+    WebPData data{reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()};
+    Demuxer demuxer(WebPDemux(&data));
+    if (!demuxer)
+        return webp_error(ErrorCode::corrupt_data, "Could not open WebP input.");
+    WebPAnimInfo info{};
+    info.canvas_width = WebPDemuxGetI(demuxer.get(), WEBP_FF_CANVAS_WIDTH);
+    info.canvas_height = WebPDemuxGetI(demuxer.get(), WEBP_FF_CANVAS_HEIGHT);
+    info.loop_count = WebPDemuxGetI(demuxer.get(), WEBP_FF_LOOP_COUNT);
+    info.bgcolor = WebPDemuxGetI(demuxer.get(), WEBP_FF_BACKGROUND_COLOR);
+    info.frame_count = WebPDemuxGetI(demuxer.get(), WEBP_FF_FRAME_COUNT);
+    Result<void> dimensions = validate_dimensions(info.canvas_width, info.canvas_height, limits);
+    if (!dimensions)
+        return dimensions.error();
+    if (info.frame_count == 0 || info.frame_count > limits.maximum_frames) {
+        return webp_error(ErrorCode::limit_exceeded, "WebP frame count exceeds decode limits.");
+    }
+    return std::pair{std::move(demuxer), info};
+}
+
 Result<std::pair<AnimDecoder, WebPAnimInfo>> open_decoder(std::span<const std::byte> bytes,
                                                           const DecodeLimits& limits,
                                                           bool owning_output = true) {
+    // WebPAnimDecoderNew allocates two complete canvases. Inspect and enforce
+    // limits with the demuxer before allowing either pixel allocation.
+    Result<std::pair<Demuxer, WebPAnimInfo>> described = open_animation_demuxer(bytes, limits);
+    if (!described)
+        return described.error();
+    const WebPAnimInfo info = described.value().second;
+    const std::uint64_t frame_bytes =
+        static_cast<std::uint64_t>(info.canvas_width) * info.canvas_height * 4U;
+    if (frame_bytes > limits.maximum_working_bytes)
+        return webp_error(ErrorCode::limit_exceeded,
+                          "WebP animation canvas exceeds the decode working-memory limit.");
+    const std::uint64_t bytes_required = frame_bytes * info.frame_count;
+    if (owning_output && bytes_required > limits.maximum_owned_output_bytes) {
+        return webp_error(ErrorCode::limit_exceeded, "WebP frames exceed the owning decode limit.");
+    }
+    described.value().first.reset();
     WebPData data{reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()};
     WebPAnimDecoderOptions decoder_options;
     if (!WebPAnimDecoderOptionsInit(&decoder_options)) {
@@ -240,51 +285,30 @@ Result<std::pair<AnimDecoder, WebPAnimInfo>> open_decoder(std::span<const std::b
     AnimDecoder decoder(WebPAnimDecoderNew(&data, &decoder_options));
     if (!decoder)
         return webp_error(ErrorCode::corrupt_data, "Could not open WebP input.");
-    WebPAnimInfo info{};
-    if (!WebPAnimDecoderGetInfo(decoder.get(), &info)) {
-        return webp_error(ErrorCode::corrupt_data, "Could not inspect WebP input.");
-    }
-    Result<void> dimensions = validate_dimensions(info.canvas_width, info.canvas_height, limits);
-    if (!dimensions)
-        return dimensions.error();
-    if (info.frame_count == 0 || info.frame_count > limits.maximum_frames) {
-        return webp_error(ErrorCode::limit_exceeded, "WebP frame count exceeds decode limits.");
-    }
-    const std::uint64_t frame_bytes =
-        static_cast<std::uint64_t>(info.canvas_width) * info.canvas_height * 4U;
-    if (frame_bytes > limits.maximum_working_bytes)
-        return webp_error(ErrorCode::limit_exceeded,
-                          "WebP animation canvas exceeds the decode working-memory limit.");
-    const std::uint64_t bytes_required = frame_bytes * info.frame_count;
-    if (owning_output && bytes_required > limits.maximum_owned_output_bytes) {
-        return webp_error(ErrorCode::limit_exceeded, "WebP frames exceed the owning decode limit.");
-    }
     return std::pair{std::move(decoder), info};
 }
 
-Result<DocumentInfo> animation_document_info(WebPAnimDecoder* decoder, const WebPAnimInfo& info) {
-    const WebPDemuxer* demuxer = WebPAnimDecoderGetDemuxer(decoder);
-    if (!demuxer)
-        return webp_error(ErrorCode::corrupt_data, "Could not inspect WebP animation frames.");
+Result<DocumentInfo> animation_document_info(const WebPDemuxer* demuxer, const WebPAnimInfo& info,
+                                             const DecodeOptions& options) {
     WebPIterator iterator{};
     if (!WebPDemuxGetFrame(demuxer, 1, &iterator))
         return webp_error(ErrorCode::corrupt_data, "WebP animation has no readable frames.");
-    struct IteratorGuard final {
-        explicit IteratorGuard(WebPIterator* iterator) : iterator(iterator) {}
-        ~IteratorGuard() {
-            WebPDemuxReleaseIterator(iterator);
-        }
-        WebPIterator* iterator;
-    } guard(&iterator);
+    FrameIteratorGuard guard(&iterator);
+    const bool first_frame_only = options.frame_index == 0;
+    WebpFeatures canvas;
+    canvas.width = info.canvas_width;
+    canvas.height = info.canvas_height;
+    canvas.bitstream.has_animation = 1;
+    const auto [width, height] = scaled_dimensions(canvas, options);
     DocumentInfo document;
     document.format = Format::webp;
-    document.canvas_width = info.canvas_width;
-    document.canvas_height = info.canvas_height;
+    document.canvas_width = width;
+    document.canvas_height = height;
     document.loop_count = info.loop_count;
-    document.frames.reserve(info.frame_count);
+    document.frames.reserve(first_frame_only ? 1U : info.frame_count);
     do {
-        FrameInfo frame{info.canvas_width,
-                        info.canvas_height,
+        FrameInfo frame{width,
+                        height,
                         0,
                         0,
                         std::chrono::milliseconds(std::max(1, iterator.duration)),
@@ -294,17 +318,64 @@ Result<DocumentInfo> animation_document_info(WebPAnimDecoder* decoder, const Web
         frame.blend = FrameBlend::source;
         frame.disposal = FrameDisposal::keep;
         document.frames.push_back(std::move(frame));
+        if (first_frame_only)
+            break;
     } while (WebPDemuxNextFrame(&iterator));
-    if (document.frames.size() != info.frame_count)
+    if (!first_frame_only && document.frames.size() != info.frame_count)
         return webp_error(ErrorCode::truncated_data,
                           "WebP animation frame metadata is incomplete.");
     return document;
 }
 
-Result<std::vector<std::byte>> input_bytes(const Input& input, const DecodeOptions& options) {
+Result<void> decode_first_animation_frame(const WebPDemuxer* demuxer, const WebPAnimInfo& info,
+                                          const DecodeOptions& options,
+                                          const DocumentInfo& document,
+                                          std::span<std::byte> destination, std::size_t row_stride,
+                                          std::stop_token stop) {
+    if (stop.stop_requested())
+        return cancelled_status();
+    WebPIterator iterator{};
+    if (!WebPDemuxGetFrame(demuxer, 1, &iterator))
+        return webp_error(ErrorCode::corrupt_data, "WebP animation has no readable frames.");
+    FrameIteratorGuard guard(&iterator);
+    const std::uint32_t source_x = static_cast<std::uint32_t>(iterator.x_offset);
+    const std::uint32_t source_y = static_cast<std::uint32_t>(iterator.y_offset);
+    const std::uint32_t source_width = static_cast<std::uint32_t>(iterator.width);
+    const std::uint32_t source_height = static_cast<std::uint32_t>(iterator.height);
+    if (iterator.x_offset < 0 || iterator.y_offset < 0 || iterator.width <= 0 ||
+        iterator.height <= 0 || source_width > info.canvas_width ||
+        source_height > info.canvas_height || source_x > info.canvas_width - source_width ||
+        source_y > info.canvas_height - source_height || !iterator.complete) {
+        return webp_error(ErrorCode::corrupt_data, "WebP animation frame bounds are invalid.");
+    }
+    const auto fragment = std::as_bytes(std::span(iterator.fragment.bytes, iterator.fragment.size));
+    Result<WebpFeatures> features = read_features(fragment, options.limits);
+    if (!features)
+        return features.error();
+    if (features.value().width != source_width || features.value().height != source_height)
+        return webp_error(ErrorCode::corrupt_data, "WebP animation frame dimensions are invalid.");
+
+    if (document.canvas_width != info.canvas_width || document.canvas_height != info.canvas_height)
+        return webp_error(ErrorCode::invalid_argument, "WebP animation canvas dimensions changed.");
+    // libwebp's first frame is a key frame on a transparent canvas, regardless
+    // of animation background, blend or disposal. No previous canvas is needed.
+    std::fill(destination.begin(), destination.end(), std::byte{0});
+    const std::size_t offset = static_cast<std::size_t>(source_y) * row_stride + source_x * 4U;
+    // Scaling a fragment separately changes the alpha at fractional canvas
+    // edges. Retain the exact first canvas and let the caller scale it as before.
+    DecodeOptions frame_options = options;
+    frame_options.maximum_extent.reset();
+    Result<void> decoded = decode_packed(fragment, features.value(), frame_options, kRgba8,
+                                         destination.subspan(offset), row_stride);
+    if (!decoded)
+        return decoded;
+    return stop.stop_requested() ? Result<void>{cancelled_status()} : Result<void>{};
+}
+
+Result<InputBytes> input_bytes(const Input& input, const DecodeOptions& options) {
     if (!input.source)
         return webp_error(ErrorCode::invalid_argument, "WebP input is empty.");
-    return read_all(*input.source, options.limits.maximum_input_bytes);
+    return read_contiguous(input, options.limits.maximum_input_bytes);
 }
 
 Result<snow::memory::PixelArray<std::uint8_t>> rgba_pixels(const ImageView& view) {
@@ -684,13 +755,13 @@ Result<DocumentInfo> WebpCodec::inspect(const Input& input, const DecodeOptions&
                                         std::stop_token stop) const {
     if (stop.stop_requested())
         return cancelled_status();
-    Result<std::vector<std::byte>> bytes = input_bytes(input, options);
+    Result<InputBytes> bytes = input_bytes(input, options);
     if (!bytes)
         return bytes.error();
-    Result<WebpFeatures> features = read_features(bytes.value(), options.limits);
+    Result<WebpFeatures> features = read_features(bytes.value().bytes(), options.limits);
     if (!features)
         return features.error();
-    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value(), options);
+    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value().bytes(), options);
     if (!container_metadata)
         return container_metadata.error();
     const PixelFormat format = options.output_format.value_or(kRgba8);
@@ -702,12 +773,12 @@ Result<DocumentInfo> WebpCodec::inspect(const Input& input, const DecodeOptions&
         apply_metadata(&document, std::move(container_metadata).value(), options);
         return document;
     }
-    Result<std::pair<AnimDecoder, WebPAnimInfo>> opened =
-        open_decoder(bytes.value(), options.limits, false);
+    Result<std::pair<Demuxer, WebPAnimInfo>> opened =
+        open_animation_demuxer(bytes.value().bytes(), options.limits);
     if (!opened)
         return opened.error();
     Result<DocumentInfo> document =
-        animation_document_info(opened.value().first.get(), opened.value().second);
+        animation_document_info(opened.value().first.get(), opened.value().second, options);
     if (!document)
         return document.error();
     apply_metadata(&document.value(), std::move(container_metadata).value(), options);
@@ -719,15 +790,15 @@ Result<DocumentDescriptor> WebpCodec::inspect_raster(const Input& input,
                                                      std::stop_token stop) const {
     if (stop.stop_requested())
         return cancelled_status();
-    Result<std::vector<std::byte>> bytes = input_bytes(input, options);
+    Result<InputBytes> bytes = input_bytes(input, options);
     if (!bytes)
         return bytes.error();
-    Result<WebpFeatures> features = read_features(bytes.value(), options.limits);
+    Result<WebpFeatures> features = read_features(bytes.value().bytes(), options.limits);
     if (!features)
         return features.error();
     if (options.raster_layout == RasterLayoutPolicy::native && !options.output_format &&
         native_planar_supported(features.value())) {
-        Result<WebpMetadata> metadata = read_webp_metadata(bytes.value(), options);
+        Result<WebpMetadata> metadata = read_webp_metadata(bytes.value().bytes(), options);
         if (!metadata)
             return metadata.error();
         if (options.orientation == OrientationPolicy::apply &&
@@ -744,13 +815,13 @@ Result<DocumentDescriptor> WebpCodec::inspect_raster(const Input& input,
 
 Result<Document> WebpCodec::decode(const Input& input, const DecodeOptions& options,
                                    std::stop_token stop) const {
-    Result<std::vector<std::byte>> bytes = input_bytes(input, options);
+    Result<InputBytes> bytes = input_bytes(input, options);
     if (!bytes)
         return bytes.error();
-    Result<WebpFeatures> features = read_features(bytes.value(), options.limits);
+    Result<WebpFeatures> features = read_features(bytes.value().bytes(), options.limits);
     if (!features)
         return features.error();
-    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value(), options);
+    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value().bytes(), options);
     if (!container_metadata)
         return container_metadata.error();
     if (features.value().bitstream.has_animation == 0) {
@@ -773,8 +844,8 @@ Result<Document> WebpCodec::decode(const Input& input, const DecodeOptions& opti
         MutableImage pixels = std::move(allocated).value();
         if (stop.stop_requested())
             return cancelled_status();
-        Result<void> decoded = decode_packed(bytes.value(), features.value(), options, format,
-                                             pixels.pixels(), pixels.row_stride());
+        Result<void> decoded = decode_packed(bytes.value().bytes(), features.value(), options,
+                                             format, pixels.pixels(), pixels.row_stride());
         if (!decoded)
             return decoded.error();
         if (stop.stop_requested())
@@ -801,8 +872,56 @@ Result<Document> WebpCodec::decode(const Input& input, const DecodeOptions& opti
     if (options.output_format && *options.output_format != kRgba8)
         return webp_error(ErrorCode::unsupported_feature,
                           "Animated WebP decoding currently requires RGBA8 output.");
+    if (options.frame_index == 0) {
+        Result<std::pair<Demuxer, WebPAnimInfo>> opened =
+            open_animation_demuxer(bytes.value().bytes(), options.limits);
+        if (!opened)
+            return opened.error();
+        Result<DocumentInfo> described =
+            animation_document_info(opened.value().first.get(), opened.value().second, options);
+        if (!described)
+            return described.error();
+        const DocumentInfo& info = described.value();
+        const std::uint64_t output_bytes =
+            static_cast<std::uint64_t>(info.canvas_width) * info.canvas_height * 4U;
+        if (output_bytes > options.limits.maximum_owned_output_bytes)
+            return webp_error(ErrorCode::limit_exceeded,
+                              "WebP output exceeds the owning decode limit.");
+        Result<MutableImage> allocated =
+            MutableImage::allocate(info.canvas_width, info.canvas_height, kRgba8);
+        if (!allocated)
+            return allocated.error();
+        MutableImage pixels = std::move(allocated).value();
+        Result<void> decoded =
+            decode_first_animation_frame(opened.value().first.get(), opened.value().second, options,
+                                         info, pixels.pixels(), pixels.row_stride(), stop);
+        if (!decoded)
+            return decoded.error();
+        Document document;
+        document.format = Format::webp;
+        document.canvas_width = info.canvas_width;
+        document.canvas_height = info.canvas_height;
+        document.loop_count = info.loop_count;
+        document.metadata = container_metadata.value().metadata;
+        document.color = container_metadata.value().color;
+        Frame frame;
+        frame.image = std::move(pixels).freeze();
+        frame.duration = info.frames.front().duration;
+        frame.blend = FrameBlend::source;
+        frame.disposal = FrameDisposal::keep;
+        frame.metadata = document.metadata;
+        frame.color = document.color;
+        document.frames.push_back(std::move(frame));
+        if (options.orientation == OrientationPolicy::apply) {
+            Result<void> oriented =
+                apply_orientation(&document, container_metadata.value().source_orientation, stop);
+            if (!oriented)
+                return oriented.error();
+        }
+        return document;
+    }
     Result<std::pair<AnimDecoder, WebPAnimInfo>> opened =
-        open_decoder(bytes.value(), options.limits);
+        open_decoder(bytes.value().bytes(), options.limits);
     if (!opened)
         return opened.error();
     AnimDecoder decoder = std::move(opened.value().first);
@@ -858,26 +977,80 @@ Result<void> WebpCodec::decode_to_sink(const Input& input, PixelSink& sink,
                                        const DecodeOptions& options, std::stop_token stop) const {
     if (options.orientation == OrientationPolicy::apply)
         return Codec::decode_to_sink(input, sink, options, stop);
-    Result<std::vector<std::byte>> bytes = input_bytes(input, options);
+    Result<InputBytes> bytes = input_bytes(input, options);
     if (!bytes)
         return bytes.error();
-    Result<WebpFeatures> features = read_features(bytes.value(), options.limits);
+    Result<WebpFeatures> features = read_features(bytes.value().bytes(), options.limits);
     if (!features)
         return features.error();
-    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value(), options);
+    Result<WebpMetadata> container_metadata = read_webp_metadata(bytes.value().bytes(), options);
     if (!container_metadata)
         return container_metadata.error();
     if (features.value().bitstream.has_animation != 0) {
         if (options.output_format && *options.output_format != kRgba8)
             return webp_error(ErrorCode::unsupported_feature,
                               "Animated WebP decoding currently requires RGBA8 output.");
+        if (options.frame_index == 0) {
+            Result<std::pair<Demuxer, WebPAnimInfo>> opened =
+                open_animation_demuxer(bytes.value().bytes(), options.limits);
+            if (!opened)
+                return opened.error();
+            Result<DocumentInfo> described =
+                animation_document_info(opened.value().first.get(), opened.value().second, options);
+            if (!described)
+                return described.error();
+            apply_metadata(&described.value(), std::move(container_metadata).value(), options);
+            const DocumentInfo& info = described.value();
+            Result<void> status = sink.begin(info);
+            if (!status)
+                return status;
+            status = sink.begin_frame(0, info.frames.front());
+            if (!status)
+                return status;
+            const std::uint64_t bytes_required =
+                static_cast<std::uint64_t>(info.canvas_width) * info.canvas_height * 4U;
+            if (bytes_required > std::numeric_limits<std::size_t>::max())
+                return webp_error(ErrorCode::limit_exceeded, "WebP output size overflows.");
+            const std::size_t row_stride = static_cast<std::size_t>(info.canvas_width) * 4U;
+            const std::size_t output_bytes = static_cast<std::size_t>(bytes_required);
+            std::span<std::byte> target = sink.frame_storage(0, row_stride, output_bytes);
+            snow::memory::PixelArray<std::byte> owned;
+            if (target.size() != output_bytes) {
+                if (bytes_required > options.limits.maximum_owned_output_bytes ||
+                    bytes_required > options.limits.maximum_working_bytes) {
+                    return webp_error(ErrorCode::limit_exceeded,
+                                      "WebP preview exceeds the decode working-memory limit.");
+                }
+                try {
+                    owned.resize(output_bytes);
+                } catch (const std::bad_alloc&) {
+                    return webp_error(ErrorCode::out_of_memory,
+                                      "Could not allocate WebP preview pixels.");
+                }
+                target = owned;
+            }
+            status = decode_first_animation_frame(opened.value().first.get(), opened.value().second,
+                                                  options, info, target, row_stride, stop);
+            if (!status)
+                return status;
+            if (!owned.empty()) {
+                status = sink.write_rows(0, info.canvas_height, row_stride, owned);
+                if (!status)
+                    return status;
+            }
+            if (stop.stop_requested())
+                return cancelled_status();
+            status = sink.end_frame(0);
+            return status ? sink.end() : status;
+        }
         Result<std::pair<AnimDecoder, WebPAnimInfo>> opened =
-            open_decoder(bytes.value(), options.limits, false);
+            open_decoder(bytes.value().bytes(), options.limits, false);
         if (!opened)
             return opened.error();
         AnimDecoder decoder = std::move(opened.value().first);
         const WebPAnimInfo info = opened.value().second;
-        Result<DocumentInfo> described = animation_document_info(decoder.get(), info);
+        Result<DocumentInfo> described =
+            animation_document_info(WebPAnimDecoderGetDemuxer(decoder.get()), info, options);
         if (!described)
             return described.error();
         apply_metadata(&described.value(), std::move(container_metadata).value(), options);
@@ -961,7 +1134,7 @@ Result<void> WebpCodec::decode_to_sink(const Input& input, PixelSink& sink,
     if (stop.stop_requested())
         return cancelled_status();
     Result<void> decoded =
-        decode_packed(bytes.value(), features.value(), options, format, target, row_stride);
+        decode_packed(bytes.value().bytes(), features.value(), options, format, target, row_stride);
     if (!decoded)
         return decoded.error();
     if (stop.stop_requested())
@@ -981,10 +1154,10 @@ Result<void> WebpCodec::decode_into(const Input& input, RasterWriter& writer,
                                     const DecodeOptions& options, std::stop_token stop) const {
     if (options.raster_layout != RasterLayoutPolicy::native || options.output_format)
         return Codec::decode_into(input, writer, options, stop);
-    Result<std::vector<std::byte>> bytes = input_bytes(input, options);
+    Result<InputBytes> bytes = input_bytes(input, options);
     if (!bytes)
         return bytes.error();
-    Result<WebpFeatures> features = read_features(bytes.value(), options.limits);
+    Result<WebpFeatures> features = read_features(bytes.value().bytes(), options.limits);
     if (!features)
         return features.error();
     if (!native_planar_supported(features.value()))
@@ -992,7 +1165,7 @@ Result<void> WebpCodec::decode_into(const Input& input, RasterWriter& writer,
     Result<DocumentDescriptor> descriptor = native_descriptor(features.value(), options);
     if (!descriptor)
         return descriptor.error();
-    Result<WebpMetadata> metadata = read_webp_metadata(bytes.value(), options);
+    Result<WebpMetadata> metadata = read_webp_metadata(bytes.value().bytes(), options);
     if (!metadata)
         return metadata.error();
     if (options.orientation == OrientationPolicy::apply &&

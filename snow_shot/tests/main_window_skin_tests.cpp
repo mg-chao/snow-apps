@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFile>
+#include <QFileInfo>
 #include <QPointer>
 #include <QTemporaryDir>
 #include <QThread>
@@ -40,12 +41,13 @@ void waitUntil(const std::function<bool()>& condition) {
     require(false, "skin operation must complete within the test timeout");
 }
 
-void writeImage(const QString& path, const QColor& color) {
-    QImage image(120, 80, QImage::Format_ARGB32_Premultiplied);
+void writeImage(const QString& path, const QColor& color, const QSize& size = QSize(120, 80),
+                int compressionLevel = 0) {
+    QImage image(size, QImage::Format_ARGB32_Premultiplied);
     image.fill(color);
     QFile file(path);
     require(file.open(QIODevice::WriteOnly), "open the skin fixture");
-    const auto bytes = snow_shot::image_codec::encodePng(image);
+    const auto bytes = snow_shot::image_codec::encodePng(image, compressionLevel);
     require(!bytes.isEmpty() && file.write(bytes) == bytes.size(), "write the PNG skin fixture");
 }
 
@@ -514,6 +516,20 @@ void independentProfilesAndViews(const QTemporaryDir& directory) {
                 controller.pixmap(&firstToolbar).cacheKey() ==
                     controller.pixmap(&toolbarPopover).cacheKey(),
             "surface images must be independent and identical toolbar rasters must share pixmaps");
+    const qsizetype rasterBytes = (96 * 64 + 96 * 32 + 320 * 96 + 80 * 120) * 4;
+    const auto sharedStorage = controller.diagnostics();
+    require(sharedStorage.preparedFrameBytes == rasterBytes &&
+                sharedStorage.decodedSourceBytes == 2 * 120 * 80 * 4 &&
+                sharedStorage.retainedBytes ==
+                    sharedStorage.decodedSourceBytes + sharedStorage.preparedFrameBytes &&
+                controller.normalizedPlacement(&firstToolbar) ==
+                    controller.frame(&firstToolbar).normalizedPlacement,
+            "each unique prepared raster must retain one pixmap allocation and metadata only");
+    auto snapshot = controller.frame(&firstToolbar);
+    snapshot.image.fill(Qt::yellow);
+    require(controller.frame(&firstToolbar).image.pixelColor(30, 20) == Qt::blue &&
+                controller.diagnostics().preparedFrameBytes == rasterBytes,
+            "editing an image snapshot must not detach or retain a second controller raster");
     const auto painted = controller.diagnostics();
     require(configuration.setValues({{QStringLiteral("interface/skin_opacity"), 60},
                                      {QStringLiteral("interface/skin_mask_opacity"), 35}}),
@@ -829,22 +845,34 @@ void boundedIdleFrameCache(const QTemporaryDir& directory) {
     presentation::MainWindowSkinController controller;
     QObject first;
     QObject second;
-    controller.attach(&first, presentation::SkinSurface::Toolbar, QSize(3000, 2000), 1.0);
+    controller.attach(&first, presentation::SkinSurface::Toolbar, QSize(3000, 3000), 1.0);
     waitUntil([&] { return !controller.diagnostics().busy; });
     controller.detach(&first);
     waitUntil([&] { return !controller.diagnostics().busy; });
-    controller.attach(&second, presentation::SkinSurface::Toolbar, QSize(3001, 2000), 1.0);
+    controller.attach(&second, presentation::SkinSurface::Toolbar, QSize(3001, 3000), 1.0);
     waitUntil([&] { return !controller.diagnostics().busy; });
     controller.detach(&second);
     waitUntil([&] { return !controller.diagnostics().busy; });
-    require(controller.diagnostics().idleFrameBytes <= 64LL * 1024 * 1024,
-            "idle prepared frames and shared pixmaps must stay within the 64 MiB LRU budget");
+    require(
+        controller.diagnostics().cacheBytes <= 64LL * 1024 * 1024 &&
+            controller.diagnostics().idleFrameCount == 1 &&
+            controller.diagnostics().decodedSourceBytes == 0,
+        "decoded sources and idle pixmaps must share the 64 MiB budget with raster LRU eviction");
+    const auto beforeWarmReopen = controller.diagnostics();
+    controller.attach(&second, presentation::SkinSurface::Toolbar, QSize(3001, 3000), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().preparationJobs == beforeWarmReopen.preparationJobs &&
+                controller.diagnostics().decodeJobs == beforeWarmReopen.decodeJobs &&
+                controller.diagnostics().cacheHits == beforeWarmReopen.cacheHits + 1,
+            "a warm prepared frame must reopen without decoding its evicted source pixels");
+    controller.detach(&second);
+    waitUntil([&] { return !controller.diagnostics().busy; });
     const auto beforeEvictedReopen = controller.diagnostics();
-    controller.attach(&first, presentation::SkinSurface::Toolbar, QSize(3000, 2000), 1.0);
+    controller.attach(&first, presentation::SkinSurface::Toolbar, QSize(3000, 3000), 1.0);
     waitUntil([&] { return !controller.diagnostics().busy; });
     require(controller.diagnostics().preparationJobs == beforeEvictedReopen.preparationJobs + 1 &&
-                controller.diagnostics().decodeJobs == 1,
-            "reopening an evicted raster must prepare again while reusing its decoded source");
+                controller.diagnostics().decodeJobs == beforeEvictedReopen.decodeJobs + 1,
+            "reopening an evicted raster and source must decode and prepare exactly once");
     controller.detach(&first);
     waitUntil([&] { return !controller.diagnostics().busy; });
     require(configuration.setValue(QStringLiteral("interface/toolbar_skin_path"), QString()),
@@ -852,6 +880,181 @@ void boundedIdleFrameCache(const QTemporaryDir& directory) {
     controller.reload(presentation::SkinSurface::Toolbar);
     require(controller.diagnostics().retainedBytes == 0,
             "clearing the final profile must release source and idle raster caches");
+}
+
+void boundedDecodedSourceCache(const QTemporaryDir& directory) {
+    const std::array<QString, 3> paths = {
+        directory.filePath(QStringLiteral("source-cache-main.png")),
+        directory.filePath(QStringLiteral("source-cache-toolbar.png")),
+        directory.filePath(QStringLiteral("source-cache-tray.png"))};
+    for (const auto& path : paths)
+        writeImage(path, Qt::green, QSize(3000, 3000));
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValues(
+                {{QStringLiteral("interface/skin_path"), paths[0]},
+                 {QStringLiteral("interface/toolbar_skin_path"), paths[1]},
+                 {QStringLiteral("interface/tray_menu_skin_path"), paths[2]},
+                 {QStringLiteral("interface/skin_opacity"), 100},
+                 {QStringLiteral("interface/skin_blur_level"), 0},
+                 {QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")}}),
+            "configure independent hidden sources whose decoded pixels exceed the cache budget");
+    presentation::MainWindowSkinController controller;
+    for (const auto surface :
+         {presentation::SkinSurface::MainWindow, presentation::SkinSurface::Toolbar,
+          presentation::SkinSurface::TrayMenu}) {
+        controller.validate(surface);
+        waitUntil([&] { return !controller.diagnostics().busy; });
+        const auto hidden = controller.diagnostics();
+        require(hidden.cacheBytes <= 64LL * 1024 * 1024 && hidden.preparedFrameBytes == 0 &&
+                    hidden.preparationJobs == 0 && hidden.pixmapConversions == 0 &&
+                    hidden.executorCount == 0 && !controller.hasError(surface) &&
+                    controller.statusText(surface).isEmpty(),
+                "hidden validation must bound decoded retention without losing ready status");
+    }
+    const auto validated = controller.diagnostics();
+    require(validated.decodeJobs == 3 && validated.decodedSourceBytes == 3000LL * 3000 * 4,
+            "source pressure must evict oldest hidden decoded pixels independently of metadata");
+    for (const auto surface :
+         {presentation::SkinSurface::MainWindow, presentation::SkinSurface::Toolbar,
+          presentation::SkinSurface::TrayMenu})
+        controller.validate(surface);
+    require(controller.diagnostics().decodeJobs == validated.decodeJobs &&
+                !controller.diagnostics().busy,
+            "validated metadata must prevent repeated validation after decoded pixels are evicted");
+    QObject view;
+    controller.attach(&view, presentation::SkinSurface::MainWindow, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == validated.decodeJobs + 1 &&
+                controller.diagnostics().preparationJobs == 1 && controller.skinActive(&view) &&
+                controller.frame(&view).image.pixelColor(10, 10) == Qt::green,
+            "an evicted source must decode once when a new visible raster needs its pixels");
+    controller.detach(&view);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    controller.reload(presentation::SkinSurface::Toolbar);
+    controller.validate(presentation::SkinSurface::Toolbar);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    const auto beforeReopen = controller.diagnostics();
+    require(beforeReopen.cacheBytes <= 64LL * 1024 * 1024 && beforeReopen.idleFrameCount == 1,
+            "later hidden validation must preserve warm rasters while evicting decoded sources");
+    controller.attach(&view, presentation::SkinSurface::MainWindow, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == beforeReopen.decodeJobs &&
+                controller.diagnostics().preparationJobs == beforeReopen.preparationJobs,
+            "warm reopen must use its pixmap even after another hidden source evicts its pixels");
+    controller.detach(&view);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(configuration.setValues({{QStringLiteral("interface/skin_path"), QString()},
+                                     {QStringLiteral("interface/toolbar_skin_path"), QString()},
+                                     {QStringLiteral("interface/tray_menu_skin_path"), QString()}}),
+            "clear the independent source-cache fixtures");
+    controller.reload();
+    require(controller.diagnostics().retainedBytes == 0,
+            "clearing all validated profiles must release decoded and prepared cache allocations");
+}
+
+void evictedSourceRereadRefreshesEveryAttachedView(const QTemporaryDir& directory) {
+    const QString path = directory.filePath(QStringLiteral("evicted-source-generation.png"));
+    writeImage(path, Qt::red, QSize(4096, 4096), 1);
+    require(QFileInfo(path).size() < 64LL * 1024 * 1024,
+            "the 64 MiB decoded-source fixture must fit the encoded skin input limit");
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValues(
+                {{QStringLiteral("interface/skin_path"), path},
+                 {QStringLiteral("interface/toolbar_skin_path"), path},
+                 {QStringLiteral("interface/tray_menu_skin_path"), QString()},
+                 {QStringLiteral("interface/skin_position"), QStringLiteral("center")},
+                 {QStringLiteral("interface/toolbar_skin_position"), QStringLiteral("center")},
+                 {QStringLiteral("interface/skin_opacity"), 100},
+                 {QStringLiteral("interface/skin_blur_level"), 0},
+                 {QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")}}),
+            "configure a shared source that fills the decoded cache budget");
+    presentation::MainWindowSkinController controller;
+    QObject first;
+    QObject warm;
+    QObject resized;
+    controller.attach(&first, presentation::SkinSurface::MainWindow, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    const auto beforeResize = controller.diagnostics();
+    const auto reportResizeState = [&](const char* phase, const QSize& size,
+                                       const presentation::MainWindowSkinDiagnostics& counts) {
+        const auto frameSize = controller.frame(&first).image.size();
+        std::cerr << phase << " viewport=" << size.width() << 'x' << size.height()
+                  << " frame=" << frameSize.width() << 'x' << frameSize.height()
+                  << " decodeJobs=" << counts.decodeJobs
+                  << " preparationJobs=" << counts.preparationJobs
+                  << " decodedSourceBytes=" << counts.decodedSourceBytes
+                  << " preparedFrameBytes=" << counts.preparedFrameBytes
+                  << " idleFrameCount=" << counts.idleFrameCount
+                  << " idleFrameBytes=" << counts.idleFrameBytes
+                  << " cacheBytes=" << counts.cacheBytes
+                  << " status=" << controller.statusText().toStdString() << '\n';
+    };
+    if (beforeResize.decodeJobs != 1 || beforeResize.decodedSourceBytes != 64LL * 1024 * 1024 ||
+        !controller.skinActive(&first) || controller.hasError() ||
+        controller.frame(&first).image.size() != QSize(96, 64)) {
+        reportResizeState("initial large source", QSize(96, 64), beforeResize);
+        require(false, "the near-budget resize fixture must start with one ready 64 MiB source");
+    }
+    for (const QSize size : {QSize(100, 70), QSize(120, 80), QSize(96, 64)}) {
+        controller.setViewport(&first, size, 1.0, true);
+        waitUntil([&] { return !controller.diagnostics().busy; });
+        const auto resizedCounts = controller.diagnostics();
+        if (resizedCounts.decodeJobs != beforeResize.decodeJobs ||
+            resizedCounts.decodedSourceBytes != 64LL * 1024 * 1024 ||
+            resizedCounts.idleFrameCount != 0 || resizedCounts.cacheBytes > 64LL * 1024 * 1024) {
+            reportResizeState("active large-source resize", size, resizedCounts);
+            require(false, "active large-source resizes must evict idle rasters before decoded "
+                           "source pixels");
+        }
+    }
+    require(controller.diagnostics().preparationJobs == beforeResize.preparationJobs + 3,
+            "distinct near-budget viewports must each prepare once while sharing one decode");
+    controller.detach(&first);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    controller.attach(&first, presentation::SkinSurface::MainWindow, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    const auto beforeEdit = controller.diagnostics();
+    require(
+        beforeEdit.decodedSourceBytes == 0 &&
+            controller.frame(&first).image.pixelColor(10, 10) == Qt::red,
+        "idle cache pressure must release decoded pixels while preserving a warm active raster");
+    writeImage(path, Qt::blue, QSize(4096, 4096), 1);
+    require(QFileInfo(path).size() < 64LL * 1024 * 1024,
+            "the edited source fixture must fit the encoded skin input limit");
+    controller.attach(&warm, presentation::SkinSurface::Toolbar, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == beforeEdit.decodeJobs &&
+                controller.frame(&warm).image.pixelColor(10, 10) == Qt::red &&
+                controller.pixmap(&first).cacheKey() == controller.pixmap(&warm).cacheKey(),
+            "a warm raster hit must remain usable without implicitly rereading an edited file");
+    const auto beforeReread = controller.diagnostics();
+    controller.attach(&resized, presentation::SkinSurface::MainWindow, QSize(120, 96), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == beforeReread.decodeJobs + 1 &&
+                controller.diagnostics().preparationJobs == beforeReread.preparationJobs + 2 &&
+                controller.frame(&first).image.pixelColor(10, 10) == Qt::blue &&
+                controller.frame(&warm).image.pixelColor(10, 10) == Qt::blue &&
+                controller.frame(&resized).image.pixelColor(10, 10) == Qt::blue &&
+                controller.pixmap(&first).cacheKey() == controller.pixmap(&warm).cacheKey(),
+            "rereading evicted source pixels must publish one new content generation to every "
+            "attached surface without mixing old and new cached rasters");
+    controller.detach(&resized);
+    controller.detach(&first);
+    controller.detach(&warm);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    const auto beforeReopen = controller.diagnostics();
+    controller.attach(&warm, presentation::SkinSurface::Toolbar, QSize(96, 64), 1.0);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == beforeReopen.decodeJobs &&
+                controller.diagnostics().preparationJobs == beforeReopen.preparationJobs &&
+                controller.frame(&warm).image.pixelColor(10, 10) == Qt::blue,
+            "idle warm reopen must use only the most recently decoded content generation");
+    controller.detach(&warm);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(configuration.setValues({{QStringLiteral("interface/skin_path"), QString()},
+                                     {QStringLiteral("interface/toolbar_skin_path"), QString()}}),
+            "clear the content-generation fixture");
+    controller.reload();
 }
 
 void boundedTinyFrameCache(const QTemporaryDir& directory) {
@@ -1077,6 +1280,8 @@ int main(int argc, char** argv) {
     queuedProfilesReportLoading(temporary);
     explicitValidationWithoutViews(temporary);
     boundedIdleFrameCache(temporary);
+    boundedDecodedSourceCache(temporary);
+    evictedSourceRereadRefreshesEveryAttachedView(temporary);
     boundedTinyFrameCache(temporary);
     appStorage.shutdown();
     return 0;

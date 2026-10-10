@@ -487,11 +487,10 @@ Result<DocumentInfo> JpegCodec::inspect(const Input& input, const DecodeOptions&
                                         std::stop_token stop) const {
     if (stop.stop_requested())
         return cancelled_status();
-    Result<std::vector<std::byte>> bytes =
-        read_all(*input.source, options.limits.maximum_input_bytes);
+    Result<InputBytes> bytes = read_contiguous(input, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value().bytes(), options);
     if (!header)
         return header.error();
     Result<JpegInfo> info =
@@ -506,11 +505,10 @@ Result<DocumentDescriptor> JpegCodec::inspect_raster(const Input& input,
                                                      std::stop_token stop) const {
     if (stop.stop_requested())
         return cancelled_status();
-    Result<std::vector<std::byte>> bytes =
-        read_all(*input.source, options.limits.maximum_input_bytes);
+    Result<InputBytes> bytes = read_contiguous(input, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value().bytes(), options);
     if (!header)
         return header.error();
     Result<JpegInfo> info =
@@ -531,11 +529,10 @@ Result<DocumentDescriptor> JpegCodec::inspect_raster(const Input& input,
 
 Result<Document> JpegCodec::decode(const Input& input, const DecodeOptions& options,
                                    std::stop_token stop) const {
-    Result<std::vector<std::byte>> bytes =
-        read_all(*input.source, options.limits.maximum_input_bytes);
+    Result<InputBytes> bytes = read_contiguous(input, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value().bytes(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);
@@ -644,11 +641,10 @@ ChromaSubsampling resolved_sampling(const EncodeOptions& options) noexcept {
 
 Result<void> JpegCodec::decode_to_sink(const Input& input, PixelSink& sink,
                                        const DecodeOptions& options, std::stop_token stop) const {
-    Result<std::vector<std::byte>> bytes =
-        read_all(*input.source, options.limits.maximum_input_bytes);
+    Result<InputBytes> bytes = read_contiguous(input, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value().bytes(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);
@@ -726,11 +722,10 @@ Result<void> JpegCodec::decode_into(const Input& input, RasterWriter& writer,
     if (options.raster_layout != RasterLayoutPolicy::native || options.output_format) {
         return Codec::decode_into(input, writer, options, stop);
     }
-    Result<std::vector<std::byte>> bytes =
-        read_all(*input.source, options.limits.maximum_input_bytes);
+    Result<InputBytes> bytes = read_contiguous(input, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value().bytes(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);

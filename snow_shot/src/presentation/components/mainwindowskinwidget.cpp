@@ -52,9 +52,8 @@ void MainWindowSkinWidget::setBaseColor(const QColor& color) {
 }
 
 void MainWindowSkinWidget::syncFrame() {
-    const auto frame = m_controller ? m_controller->frame(this) : MainWindowSkinFrame{};
     m_frame = m_controller ? m_controller->pixmap(this) : QPixmap{};
-    m_placement = frame.normalizedPlacement;
+    m_placement = m_controller ? m_controller->normalizedPlacement(this) : QRectF{};
     update();
     emit skinAppearanceChanged();
 }

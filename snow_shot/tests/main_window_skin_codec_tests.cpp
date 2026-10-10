@@ -248,24 +248,26 @@ void append24(QByteArray& bytes, std::uint32_t value) {
         bytes.append(static_cast<char>((value >> (index * 8U)) & 0xffU));
 }
 
-QByteArray webpFrame(const QImage& image) {
+QByteArray webpFrame(const QImage& image, const QPoint& offset = {}) {
+    require(offset.x() >= 0 && offset.y() >= 0 && (offset.x() & 1) == 0 && (offset.y() & 1) == 0,
+            "WebP fixture offsets must be nonnegative even coordinates");
     const QByteArray encoded = snow_shot::image_codec::encodeWebp(image, 100);
     require(!encoded.isEmpty(), "encode static WebP without a Qt WebP plugin");
     QByteArray payload;
-    for (int index = 0; index < 2; ++index)
-        append24(payload, 0);
+    append24(payload, static_cast<std::uint32_t>(offset.x() / 2));
+    append24(payload, static_cast<std::uint32_t>(offset.y() / 2));
     append24(payload, static_cast<std::uint32_t>(image.width() - 1));
     append24(payload, static_cast<std::uint32_t>(image.height() - 1));
     append24(payload, 50);
     payload.append('\0');
-    for (qsizetype offset = 12; offset + 8 <= encoded.size();) {
-        const qsizetype length = read32(encoded, offset + 4, true);
-        const QByteArray type = encoded.mid(offset, 4);
+    for (qsizetype chunkOffset = 12; chunkOffset + 8 <= encoded.size();) {
+        const qsizetype length = read32(encoded, chunkOffset + 4, true);
+        const QByteArray type = encoded.mid(chunkOffset, 4);
         const qsizetype chunkSize = 8 + length + (length & 1);
-        require(chunkSize <= encoded.size() - offset, "valid WebP fixture chunks");
+        require(chunkSize <= encoded.size() - chunkOffset, "valid WebP fixture chunks");
         if (type == QByteArray("VP8 ") || type == QByteArray("VP8L") || type == QByteArray("ALPH"))
-            payload.append(encoded.mid(offset, chunkSize));
-        offset += chunkSize;
+            payload.append(encoded.mid(chunkOffset, chunkSize));
+        chunkOffset += chunkSize;
     }
     return riffChunk("ANMF", payload);
 }
@@ -330,6 +332,57 @@ void firstAnimationFrame(const QTemporaryDir& directory) {
             "animated WebP should provide a static first-frame skin");
     require(webp.image.pixelColor(1, 1).red() > 200 && webp.image.pixelColor(1, 1).blue() < 30,
             "the first WebP frame should be displayed rather than the final frame");
+}
+
+void animatedWebpPreviewPreservesQtScaling(const QTemporaryDir& directory) {
+    const QSize canvas(5003, 73);
+    const QPoint offset(1214, 18);
+    QImage fragment(QSize(19, 13), QImage::Format_RGBA8888);
+    for (int y = 0; y < fragment.height(); ++y) {
+        for (int x = 0; x < fragment.width(); ++x) {
+            fragment.setPixelColor(x, y,
+                                   QColor((x * 31 + y * 17) & 255, (x * 13 + y * 43) & 255,
+                                          (x * 47 + y * 7) & 255, (x * 23 + y * 37) & 255));
+        }
+    }
+    const QColorSpace sourceSpace(QColorSpace::DisplayP3);
+    const QByteArray profile = sourceSpace.iccProfile();
+    require(!profile.isEmpty(), "the animated WebP fixture needs an ICC profile");
+    QByteArray extended = QByteArray::fromHex("32000000");
+    append24(extended, static_cast<std::uint32_t>(canvas.width() - 1));
+    append24(extended, static_cast<std::uint32_t>(canvas.height() - 1));
+    QByteArray contents = "WEBP";
+    contents.append(riffChunk("VP8X", extended));
+    contents.append(riffChunk("ICCP", profile));
+    contents.append(riffChunk("ANIM", QByteArray(6, '\0')));
+    contents.append(webpFrame(fragment, offset));
+    contents.append(webpFrame(solid(Qt::blue, QSize(2, 2))));
+    QByteArray encoded = "RIFF";
+    append32(encoded, static_cast<std::uint32_t>(contents.size()), true);
+    encoded.append(contents);
+
+    // The general decoder still composites complete animation canvases. Preserve
+    // the original preview pipeline even when the skin decoder skips later frames.
+    const QImage fullCanvas =
+        snow_shot::image_codec::decode(encoded, snow::image::Format::webp, "preview.webp");
+    require(fullCanvas.size() == canvas && fullCanvas.colorSpace() == sourceSpace &&
+                fullCanvas.pixelColor(0, 0).alpha() == 0 &&
+                fullCanvas.pixelColor(offset.x() + 1, offset.y() + 1).alpha() > 0,
+            "the reference decoder must retain the transparent canvas and offset alpha fragment");
+    const qreal scale = 4096.0 / canvas.width();
+    const QSize previewSize(4096, qMax(1, qRound(canvas.height() * scale)));
+    const QColorSpace srgb(QColorSpace::SRgb);
+    QImage expected =
+        fullCanvas.scaled(previewSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+            .convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied);
+    expected.setColorSpace(srgb);
+    expected.setDevicePixelRatio(1.0);
+    const auto actual = decodeSkinFile(
+        writeFixture(directory, QStringLiteral("animated-offset-preview.webp"), encoded));
+    require(actual.error == SkinDecodeError::None && actual.image == expected &&
+                actual.image.format() == QImage::Format_ARGB32_Premultiplied &&
+                actual.image.colorSpace() == srgb && actual.image.devicePixelRatio() == 1.0,
+            "large animated WebP skins must preserve full-canvas Qt scaling, color and alpha");
 }
 
 void orientationAndColor(const QTemporaryDir& directory) {
@@ -420,6 +473,7 @@ int main(int argc, char** argv) {
         require(directory.isValid(), "create the skin codec fixture directory");
         supportedFormatsAndPreviewBounds(directory);
         firstAnimationFrame(directory);
+        animatedWebpPreviewPreservesQtScaling(directory);
         orientationAndColor(directory);
         resourceAndFailureClassification(directory);
     } catch (const std::exception& error) {

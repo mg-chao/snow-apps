@@ -680,7 +680,7 @@ SkinDecodeResult decodeSkinFile(const QString& path) {
     try {
         // One extra byte detects a file growing after size() without allowing
         // readAll() to allocate an unbounded buffer.
-        const QByteArray encoded = file.read(inputLimit + 1);
+        QByteArray encoded = file.read(inputLimit + 1);
         if (encoded.size() > inputLimit)
             return {{}, SkinDecodeError::InputTooLarge};
         if (file.error() != QFileDevice::NoError)
@@ -709,6 +709,9 @@ SkinDecodeResult decodeSkinFile(const QString& path) {
                 return {{}, SkinDecodeError::InvalidImage};
             }
         }
+        // The backend no longer needs the encoded file. Release it before
+        // scaling, color conversion and orientation allocate their output.
+        encoded = {};
         QImage image = takeDecodedImage(std::move(output), QImage::Format_RGBA8888);
         if (image.isNull())
             return {{}, SkinDecodeError::ResourceLimit};

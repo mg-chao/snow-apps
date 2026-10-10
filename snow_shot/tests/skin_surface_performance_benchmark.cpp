@@ -12,6 +12,7 @@
 #include "widgets/select.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -20,6 +21,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPainter>
+#include <QPointer>
 #include <QSysInfo>
 #include <QTemporaryDir>
 #include <QThread>
@@ -79,6 +81,9 @@ QJsonObject resourceReport(const Diagnostics& value) {
         {QStringLiteral("preparation_jobs"), static_cast<double>(value.preparationJobs)},
         {QStringLiteral("pixmap_conversions"), static_cast<double>(value.pixmapConversions)},
         {QStringLiteral("retained_bytes"), static_cast<double>(value.retainedBytes)},
+        {QStringLiteral("decoded_source_bytes"), static_cast<double>(value.decodedSourceBytes)},
+        {QStringLiteral("prepared_frame_bytes"), static_cast<double>(value.preparedFrameBytes)},
+        {QStringLiteral("bounded_cache_bytes"), static_cast<double>(value.cacheBytes)},
         {QStringLiteral("idle_frame_bytes"), static_cast<double>(value.idleFrameBytes)},
         {QStringLiteral("idle_frame_count"), value.idleFrameCount},
         {QStringLiteral("scratch_retained_bytes"), static_cast<double>(value.scratchRetainedBytes)},
@@ -103,7 +108,8 @@ void requireNoImageJobs(const Diagnostics& before, const Diagnostics& after) {
 
 struct Surface {
     QString name;
-    QWidget* widget = nullptr;
+    mutable QPointer<QWidget> widget;
+    int trayDepth = -1;
 };
 
 class SurfaceFixture final {
@@ -138,28 +144,11 @@ class SurfaceFixture final {
         }
         tray_ = std::make_unique<presentation::SystemTrayController>();
         tray_->setMenuOptions(snow_shot::storage::TraySettings().menuOptions());
-        for (auto* widget : QApplication::topLevelWidgets()) {
-            if (widget->objectName() == QStringLiteral("systemTrayMenu")) {
-                menus_[0] = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
-                break;
-            }
-        }
-        require(menus_[0] != nullptr, "find the real SystemTrayController menu");
-        menus_[1] = menus_[0]->findChild<adqt::widgets::AdContextMenu*>(
-            QStringLiteral("systemTrayWindowGroupMenu"));
-        menus_[2] = menus_[0]->findChild<adqt::widgets::AdContextMenu*>(
-            QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
-        require(menus_[1] && menus_[2],
-                "find both real tray submenus and their production bindings");
         const std::array<QString, 3> names{QStringLiteral("tray_menu"),
                                            QStringLiteral("tray_group_menu"),
                                            QStringLiteral("tray_delete_group_menu")};
-        for (std::size_t index = 0; index < menus_.size(); ++index) {
-            menus_[index]->setNativeMenuEnabled(false);
-            require(!menus_[index]->actions().isEmpty(),
-                    "each measured tray menu must be populated");
-            surfaces_[rows_.size() + index] = {names[index], menus_[index]};
-        }
+        for (std::size_t index = 0; index < names.size(); ++index)
+            surfaces_[rows_.size() + index] = {names[index], {}, int(index)};
         settle();
     }
 
@@ -168,14 +157,35 @@ class SurfaceFixture final {
     }
 
     void hideMenus() const {
-        for (auto* menu : menus_)
-            menu->hide();
+        if (menu_)
+            menu_->dismissPopup();
+        // Retirement posts deleteLater through a queued call. Drain both stages before
+        // creating the next production menu, so no hidden popup session survives a reopen.
+        QCoreApplication::processEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!menu_, "hiding the tray root must release its popup session");
     }
 
     void show(const Surface& surface) const {
-        if (auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(surface.widget)) {
+        if (surface.trayDepth >= 0) {
             hideMenus();
+            menu_ = tray_->createContextMenu();
+            auto* menu = menu_.data();
+            menu->setNativeMenuEnabled(false);
             menu->popupAt(QPoint(20, 20));
+            const std::array<QString, 2> actions{
+                QStringLiteral("systemTrayWindowGroupAction"),
+                QStringLiteral("systemTrayDeleteSpecifiedGroupAction")};
+            for (int depth = 0; depth < surface.trayDepth; ++depth) {
+                auto* action = menu->findChild<QAction*>(actions[std::size_t(depth)]);
+                require(action && action->menu(), "find the real lazy tray submenu action");
+                menu = qobject_cast<adqt::widgets::AdContextMenu*>(action->menu());
+                require(menu != nullptr, "a real tray submenu must use its production widget");
+                menu->setNativeMenuEnabled(false);
+                menu->popupAt(QPoint(320 + 300 * depth, 20));
+            }
+            require(!menu->actions().isEmpty(), "each measured tray menu must be populated");
+            surface.widget = menu;
         } else {
             surface.widget->show();
         }
@@ -186,7 +196,7 @@ class SurfaceFixture final {
         require(surface.widget->isVisible(), "a measured surface must actually be visible");
         require((controller && controller->skinActive(surface.widget)) == active,
                 "the production surface binding must publish the expected skin state");
-        if (auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(surface.widget)) {
+        if (auto* menu = qobject_cast<adqt::widgets::AdContextMenu*>(surface.widget.data())) {
             require(!menu->nativeMenuEnabled() &&
                         (!menu->backgroundFrame().image.isNull()) == active,
                     "a real custom tray menu must publish its expected background frame");
@@ -206,11 +216,17 @@ class SurfaceFixture final {
     void requireNoFrames() const {
         const auto* controller = presentation::MainWindowSkinController::existingInstance();
         for (const auto& surface : surfaces_) {
+            if (!surface.widget)
+                continue;
             require(!controller || (!controller->skinActive(surface.widget) &&
                                     controller->pixmap(surface.widget).isNull()),
                     "non-rendering surfaces must publish no prepared frame or pixmap");
         }
-        for (auto* menu : menus_) {
+        auto menus = menu_ ? menu_->findChildren<adqt::widgets::AdContextMenu*>()
+                           : QList<adqt::widgets::AdContextMenu*>{};
+        if (menu_)
+            menus.append(menu_);
+        for (auto* menu : menus) {
             require(menu->backgroundFrame().image.isNull(),
                     "non-rendering tray bindings must clear their background frames");
         }
@@ -219,7 +235,7 @@ class SurfaceFixture final {
   private:
     std::array<std::unique_ptr<ScreenshotToolbarPanel>, 4> rows_;
     std::unique_ptr<presentation::SystemTrayController> tray_;
-    std::array<adqt::widgets::AdContextMenu*, 3> menus_{};
+    mutable QPointer<adqt::widgets::AdContextMenu> menu_;
     std::array<Surface, 7> surfaces_;
 };
 
@@ -228,10 +244,9 @@ QJsonObject measure(const SurfaceFixture& fixture, const Surface& surface, int s
     fixture.show(surface);
     settle();
     fixture.requireAppearance(surface, active);
-    auto& widget = *surface.widget;
-    const qreal dpr = widget.devicePixelRatioF();
-    const QSize logicalSize = widget.size();
-    const QSize physicalSize(qRound(widget.width() * dpr), qRound(widget.height() * dpr));
+    const qreal dpr = surface.widget->devicePixelRatioF();
+    const QSize logicalSize = surface.widget->size();
+    const QSize physicalSize(qRound(logicalSize.width() * dpr), qRound(logicalSize.height() * dpr));
     QImage rendered(physicalSize, QImage::Format_ARGB32_Premultiplied);
     require(!rendered.isNull(), "allocate a reusable full physical surface render target");
     rendered.setDevicePixelRatio(dpr);
@@ -244,10 +259,10 @@ QJsonObject measure(const SurfaceFixture& fixture, const Surface& surface, int s
         QElapsedTimer timer;
         timer.start();
         QPainter painter(&rendered);
-        widget.render(&painter);
+        surface.widget->render(&painter);
         painter.end();
         const double paintTime = milliseconds(timer);
-        widget.hide();
+        surface.widget->hide();
         settle();
         timer.restart();
         fixture.show(surface);
@@ -255,13 +270,14 @@ QJsonObject measure(const SurfaceFixture& fixture, const Surface& surface, int s
         const double showTime = milliseconds(timer);
         settle();
         fixture.requireAppearance(surface, active);
-        require(widget.size() == logicalSize,
+        require(surface.widget->size() == logicalSize,
                 "a measured surface must keep the same logical geometry when reopened");
         if (index >= 0) {
             paintTimes.append(paintTime);
             showTimes.append(showTime);
         }
     }
+    const auto& widget = *surface.widget;
     int visibleChildren = 0;
     for (auto* child : widget.findChildren<QWidget*>())
         visibleChildren += child->isVisibleTo(&widget) ? 1 : 0;
@@ -311,6 +327,8 @@ QJsonObject exerciseInactiveChanges(const SurfaceFixture& fixture) {
     QElapsedTimer timer;
     timer.start();
     for (const auto& surface : fixture.surfaces()) {
+        fixture.show(surface);
+        settle();
         const QSize originalSize = surface.widget->size();
         for (int step = 1; step <= 10; ++step)
             surface.widget->resize(originalSize + QSize(step, step));
@@ -403,6 +421,7 @@ int main(int argc, char** argv) {
             {QStringLiteral("controls_per_toolbar_row"), 3},
             {QStringLiteral("real_tray_menus"), 3},
             {QStringLiteral("reopen_includes_ready"), false},
+            {QStringLiteral("tray_reopen_recreates_popup_session"), true},
             {QStringLiteral("tray_owner"), QStringLiteral("SystemTrayController")}};
         {
             SurfaceFixture fixture;

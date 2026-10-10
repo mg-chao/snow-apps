@@ -272,6 +272,173 @@ void fullGaussianDestinationDoesNotNeedSourceCopy() {
     }
 }
 
+void gaussianCropMatchesFullFilteringWithoutPaddedDestination() {
+    for (const QSize size : {QSize(73, 51), QSize(513, 257)}) {
+        for (const bool transparent : {false, true}) {
+            QImage source(size, QImage::Format_ARGB32_Premultiplied);
+            for (int y = 0; y < size.height(); ++y) {
+                for (int x = 0; x < size.width(); ++x) {
+                    source.setPixelColor(x, y,
+                                         QColor((x * 17 + y) % 256, (x + y * 13) % 256,
+                                                (x * 3 + y * 5) % 256,
+                                                transparent ? (x + y * 7) % 256 : 255));
+                }
+            }
+            const QImage original = source.copy();
+            const std::array<QRect, 4> crops = {
+                source.rect(), QRect(0, 0, 17, 13),
+                QRect(size.width() - 19, size.height() - 11, 19, 11),
+                QRect(21, 17, size.width() - 37, size.height() - 29)};
+            SnowCanvasRegionFilterScratch scratch;
+            for (const double sigma : {0.0, 0.5, 3.0, 17.0, 100.0}) {
+                for (const qreal dpr : {1.0, 1.5, 2.0}) {
+                    for (const QPointF gridOrigin :
+                         {QPointF(), QPointF(-13, 21), QPointF(7.5, -4.5)}) {
+                        SnowCanvasRegionFilterParameters parameters;
+                        parameters.logicalSigma = sigma;
+                        parameters.devicePixelRatio = dpr;
+                        parameters.gridOriginInImage = gridOrigin;
+                        QImage expected = snowCanvasAllocateImage(size, source.format());
+                        require(applySnowCanvasRegionFilter(source, expected,
+                                                            QRegion(source.rect()), parameters,
+                                                            nullptr, true),
+                                "the full-frame Gaussian crop reference must succeed");
+                        for (const QRect& crop : crops) {
+                            for (const bool serial : {false, true}) {
+                                QImage actual =
+                                    snowCanvasAllocateImage(crop.size(), source.format());
+                                actual.fill(Qt::magenta);
+                                require(
+                                    applySnowCanvasGaussianBlurCrop(source, actual, crop,
+                                                                    parameters, &scratch, serial),
+                                    "Gaussian crop output must accept a crop-sized destination");
+                                require(
+                                    actual == expected.copy(crop),
+                                    "cropped Gaussian output must exactly match full filtering "
+                                    "across sigma, alpha, dpr, grid phase and execution policy");
+                                require(source == original,
+                                        "cropped Gaussian output must preserve the source image");
+                                scratch.finishFrame();
+                                require(
+                                    scratch.retainedBytes() <= 16U * 1024U * 1024U,
+                                    "cropped Gaussian output must retain bounded reusable scratch");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void gaussianCropValidatesInputsAndSharedStorage() {
+    QImage source(QSize(48, 32), QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(30, 80, 140, 150));
+    const QImage original = source.copy();
+    const QRect crop(7, 5, 20, 13);
+    QImage destination(crop.size(), source.format());
+    destination.fill(Qt::yellow);
+    const QImage preserved = destination.copy();
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.logicalSigma = 3;
+    const auto rejected = [&](const SnowCanvasRegionFilterParameters& invalid) {
+        require(!applySnowCanvasGaussianBlurCrop(source, destination, crop, invalid) &&
+                    destination == preserved && source == original,
+                "invalid Gaussian crop parameters must fail without changing either image");
+    };
+    for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::Grayscale,
+                            SnowCanvasFilterType::Inversion, SnowCanvasFilterType::Emboss,
+                            SnowCanvasFilterType::SmartErase, SnowCanvasFilterType::Brightness,
+                            SnowCanvasFilterType::RestoreBackground}) {
+        auto invalid = parameters;
+        invalid.type = type;
+        rejected(invalid);
+    }
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    for (const double value : {infinity, -infinity, nan}) {
+        auto invalid = parameters;
+        invalid.logicalSigma = value;
+        rejected(invalid);
+        invalid = parameters;
+        invalid.strength = value;
+        rejected(invalid);
+        invalid = parameters;
+        invalid.logicalSamplingRadius = value;
+        rejected(invalid);
+        invalid = parameters;
+        invalid.devicePixelRatio = value;
+        rejected(invalid);
+        invalid = parameters;
+        invalid.gridOriginInImage = QPointF(value, 0);
+        rejected(invalid);
+        invalid.gridOriginInImage = QPointF(0, value);
+        rejected(invalid);
+    }
+    for (const qreal dpr : {0.0, -1.0}) {
+        auto invalid = parameters;
+        invalid.devicePixelRatio = dpr;
+        rejected(invalid);
+    }
+    auto invalid = parameters;
+    invalid.logicalSigma = std::numeric_limits<double>::max();
+    rejected(invalid);
+    invalid = parameters;
+    invalid.gridOriginInImage = QPointF(std::numeric_limits<double>::max(), 0);
+    rejected(invalid);
+    QImage wrongFormat(source.size(), QImage::Format_RGBA8888);
+    require(!applySnowCanvasGaussianBlurCrop(wrongFormat, destination, crop, parameters),
+            "Gaussian crop output must reject unsupported source formats");
+    QImage wrongDestination(crop.size(), QImage::Format_RGBA8888);
+    require(!applySnowCanvasGaussianBlurCrop(source, wrongDestination, crop, parameters),
+            "Gaussian crop output must reject unsupported destination formats");
+    QImage wrongSize(crop.size() + QSize(1, 0), source.format());
+    require(!applySnowCanvasGaussianBlurCrop(source, wrongSize, crop, parameters),
+            "Gaussian crop output must reject mismatched destination dimensions");
+    for (const QRect invalidCrop : {QRect(), QRect(-1, 0, 20, 13), QRect(30, 25, 20, 13)})
+        require(!applySnowCanvasGaussianBlurCrop(source, destination, invalidCrop, parameters),
+                "Gaussian crop output must reject empty and out-of-bounds source rectangles");
+    QImage nullImage;
+    require(
+        !applySnowCanvasGaussianBlurCrop(nullImage, destination, crop, parameters) &&
+            !applySnowCanvasGaussianBlurCrop(source, nullImage, crop, parameters) &&
+            !applySnowCanvasGaussianBlurCrop(source, source, source.rect(), parameters),
+        "Gaussian crop output must reject null images and identical source/destination objects");
+
+    QImage shared = source;
+    QImage expected(source.size(), source.format());
+    require(applySnowCanvasRegionFilter(source, expected, QRegion(source.rect()), parameters) &&
+                applySnowCanvasGaussianBlurCrop(source, shared, source.rect(), parameters),
+            "Gaussian crop output must detach a shared full-sized destination");
+    require(shared == expected && source == original && shared.constBits() != source.constBits(),
+            "shared destination detachment must preserve immutable source storage");
+
+    std::array<uchar, 64 * 48 * 4> externalPixels{};
+    QImage externalSource(externalPixels.data(), 48, 32, 64 * 4, source.format());
+    QImage externalDestination(externalPixels.data() + 4 * 5, 20, 13, 64 * 4, source.format());
+    externalSource.fill(Qt::cyan);
+    const auto externalOriginal = externalPixels;
+    require(
+        !applySnowCanvasGaussianBlurCrop(externalSource, externalDestination, crop, parameters) &&
+            externalPixels == externalOriginal,
+        "Gaussian crop output must reject separately wrapped overlapping external storage");
+
+    using namespace snow_canvas_filter_render;
+    Parameters internal;
+    internal.type = 1;
+    internal.logicalSigma = 3;
+    RenderWorkspace failingWorkspace;
+    failingWorkspace.setAllocationFailureForTests(true);
+    require(!applyGaussianCrop(source, destination, crop, internal, &failingWorkspace) &&
+                destination == preserved && source == original,
+            "cropped Gaussian scratch allocation failure must preserve source and destination");
+    failingWorkspace.setAllocationFailureForTests(false);
+    require(applyGaussianCrop(source, destination, crop, internal, &failingWorkspace),
+            "cropped Gaussian output must recover after scratch allocation failure");
+    require(destination == expected.copy(crop),
+            "allocation recovery must produce the full-frame reference crop");
+}
+
 void regionFilterSupportPixelsMatchesGaussianPlan() {
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
@@ -3697,6 +3864,8 @@ int main(int argc, char** argv) {
         publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
         publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
         fullGaussianDestinationDoesNotNeedSourceCopy();
+        gaussianCropMatchesFullFilteringWithoutPaddedDestination();
+        gaussianCropValidatesInputsAndSharedStorage();
         regionFilterSupportPixelsMatchesGaussianPlan();
         croppedRegionFilterMatchesFullFrameRender();
         return 0;
@@ -3720,6 +3889,8 @@ int main(int argc, char** argv) {
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
     fullGaussianDestinationDoesNotNeedSourceCopy();
+    gaussianCropMatchesFullFilteringWithoutPaddedDestination();
+    gaussianCropValidatesInputsAndSharedStorage();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
     sparseSelectionDamageSkipsUntouchedInteriorFilters();

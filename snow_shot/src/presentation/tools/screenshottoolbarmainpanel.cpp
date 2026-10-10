@@ -185,7 +185,7 @@ void ScreenshotToolbarPanel::syncSkin() {
 void ScreenshotToolbarPanel::syncSkinFrame() {
     const auto frame = m_skinController ? m_skinController->pixmap(this) : QPixmap{};
     const auto placement =
-        m_skinController ? m_skinController->frame(this).normalizedPlacement : QRectF{};
+        m_skinController ? m_skinController->normalizedPlacement(this) : QRectF{};
     const bool frameChanged =
         m_skinFrame.cacheKey() != frame.cacheKey() || m_skinPlacement != placement;
     m_skinFrame = frame;

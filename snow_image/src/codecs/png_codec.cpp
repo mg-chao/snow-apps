@@ -62,7 +62,6 @@ struct PngReadState final {
     DocumentInfo document;
     snow::memory::PixelArray<std::byte> pixels;
     snow::memory::PixelArray<std::byte> row;
-    std::vector<png_bytep> rows;
 };
 
 void read_png_bytes(png_structp png, png_bytep destination, png_size_t count) {
@@ -340,6 +339,7 @@ class OwningPngSink final : public PixelSink {
         active_ = std::move(allocated).value();
         active_info_ = info;
         next_row_ = 0;
+        direct_storage_ = false;
         used_bytes_ += required;
         return {};
     }
@@ -349,6 +349,7 @@ class OwningPngSink final : public PixelSink {
         if (!active_ || frame_index != document_.frames.size() ||
             row_stride != active_->row_stride() || byte_size > active_->pixels().size())
             return {};
+        direct_storage_ = true;
         return active_->pixels().first(byte_size);
     }
 
@@ -377,7 +378,8 @@ class OwningPngSink final : public PixelSink {
     }
 
     Result<void> end_frame(std::uint32_t frame_index) override {
-        if (!active_ || frame_index != document_.frames.size() || next_row_ != active_->height())
+        if (!active_ || frame_index != document_.frames.size() ||
+            (!direct_storage_ && next_row_ != active_->height()))
             return Status::error(ErrorCode::truncated_data,
                                  "PNG decoder ended an incomplete frame.", "libpng");
         Frame frame;
@@ -417,6 +419,7 @@ class OwningPngSink final : public PixelSink {
     FrameInfo active_info_;
     std::optional<MutableImage> active_;
     std::uint32_t next_row_ = 0;
+    bool direct_storage_ = false;
     bool ended_ = false;
 };
 
@@ -775,44 +778,60 @@ Result<void> PngCodec::decode_to_sink(const Input& input, PixelSink& sink,
         }
     }
 
+    if (expected_row_bytes > std::numeric_limits<std::size_t>::max() / height) {
+        png_destroy_read_struct(&png, &info, nullptr);
+        return Status::error(ErrorCode::limit_exceeded, "PNG output size overflows.", "libpng");
+    }
+    const std::size_t image_bytes = static_cast<std::size_t>(expected_row_bytes) * height;
+    std::span<std::byte> storage = sink.frame_storage(0, row_bytes, image_bytes);
+    const bool direct_storage = storage.size() == image_bytes;
     if (interlaced) {
-        const std::uint64_t image_bytes = expected_row_bytes * height;
-        if (image_bytes > options.limits.maximum_working_bytes ||
-            image_bytes > std::numeric_limits<std::size_t>::max()) {
-            png_destroy_read_struct(&png, &info, nullptr);
-            return Status::error(
-                ErrorCode::limit_exceeded,
-                "Interlaced PNG streaming exceeds the configured working-memory limit.", "libpng");
-        }
-        state->pixels.resize(static_cast<std::size_t>(image_bytes));
-        state->rows.resize(height);
-        for (png_uint_32 y = 0; y < height; ++y) {
-            state->rows[y] = reinterpret_cast<png_bytep>(state->pixels.data() +
-                                                         static_cast<std::size_t>(y) * row_bytes);
-        }
-        for (int pass = 0; pass < passes; ++pass) {
-            if (stop.stop_requested()) {
+        if (!direct_storage) {
+            if (image_bytes > options.limits.maximum_working_bytes) {
                 png_destroy_read_struct(&png, &info, nullptr);
-                return cancelled_status();
+                return Status::error(
+                    ErrorCode::limit_exceeded,
+                    "Interlaced PNG streaming exceeds the configured working-memory limit.",
+                    "libpng");
             }
-            png_read_rows(png, state->rows.data(), nullptr, height);
+            state->pixels.resize(image_bytes);
+            storage = state->pixels;
         }
-        {
-            Result<void> status = sink.write_rows(0, height, row_bytes, state->pixels);
+        // Adam7 combines successive passes with the rows already decoded. A sink
+        // may supply uninitialized storage, so establish defined partial rows.
+        std::fill(storage.begin(), storage.end(), std::byte{});
+        for (int pass = 0; pass < passes; ++pass) {
+            for (png_uint_32 y = 0; y < height; ++y) {
+                if (stop.stop_requested()) {
+                    png_destroy_read_struct(&png, &info, nullptr);
+                    return cancelled_status();
+                }
+                png_read_row(png,
+                             reinterpret_cast<png_bytep>(storage.data() +
+                                                         static_cast<std::size_t>(y) * row_bytes),
+                             nullptr);
+            }
+        }
+        if (!direct_storage) {
+            Result<void> status = sink.write_rows(0, height, row_bytes, storage);
             if (!status) {
                 png_destroy_read_struct(&png, &info, nullptr);
                 return status;
             }
         }
     } else {
-        state->row.resize(row_bytes);
+        if (!direct_storage)
+            state->row.resize(row_bytes);
         for (png_uint_32 y = 0; y < height; ++y) {
             if (stop.stop_requested()) {
                 png_destroy_read_struct(&png, &info, nullptr);
                 return cancelled_status();
             }
-            png_read_row(png, reinterpret_cast<png_bytep>(state->row.data()), nullptr);
-            {
+            std::byte* destination = direct_storage
+                                         ? storage.data() + static_cast<std::size_t>(y) * row_bytes
+                                         : state->row.data();
+            png_read_row(png, reinterpret_cast<png_bytep>(destination), nullptr);
+            if (!direct_storage) {
                 Result<void> status = sink.write_rows(y, 1, row_bytes, state->row);
                 if (!status) {
                     png_destroy_read_struct(&png, &info, nullptr);
@@ -821,8 +840,14 @@ Result<void> PngCodec::decode_to_sink(const Input& input, PixelSink& sink,
             }
         }
     }
+    if (stop.stop_requested()) {
+        png_destroy_read_struct(&png, &info, nullptr);
+        return cancelled_status();
+    }
     png_read_end(png, info);
     png_destroy_read_struct(&png, &info, nullptr);
+    if (stop.stop_requested())
+        return cancelled_status();
     Result<void> status = sink.end_frame(0);
     if (!status)
         return status;

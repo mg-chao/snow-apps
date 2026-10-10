@@ -32,7 +32,7 @@ namespace {
 constexpr qint64 MAX_PREPARED_PIXELS = 16LL * 1000 * 1000;
 constexpr qint64 MAX_FILTER_PIXELS = 64LL * 1024 * 1024;
 constexpr int PREPARATION_DEBOUNCE_MS = 80;
-constexpr qsizetype MAX_IDLE_FRAME_BYTES = 64LL * 1024 * 1024;
+constexpr qsizetype MAX_CACHE_BYTES = 64LL * 1024 * 1024;
 constexpr int MAX_IDLE_FRAME_COUNT = 128;
 QPointer<MainWindowSkinController> applicationController;
 
@@ -158,21 +158,21 @@ MainWindowSkinFrame prepareMainWindowSkin(const QImage& source, const QSize& log
                      sampled.adjusted(-padding / imageScale, -padding / imageScale,
                                       padding / imageScale, padding / imageScale));
     if (padding > 0) {
-        QImage filtered = snowCanvasAllocateZeroedImage(prepared.size(), prepared.format());
+        QImage filtered = snowCanvasAllocateZeroedImage(content, prepared.format());
         std::optional<SnowCanvasRegionFilterScratch> temporaryScratch;
         if (scratch == nullptr) {
             temporaryScratch.emplace(0);
             scratch = &*temporaryScratch;
         }
         const bool succeeded =
-            !filtered.isNull() &&
-            applySnowCanvasRegionFilter(prepared, filtered, QRegion(prepared.rect()), parameters,
-                                        scratch, true);
+            !filtered.isNull() && applySnowCanvasGaussianBlurCrop(
+                                      prepared, filtered, QRect(QPoint(padding, padding), content),
+                                      parameters, scratch, true);
         scratch->finishFrame();
         if (!succeeded) {
             return {};
         }
-        prepared = snowCanvasCopyImage(filtered, QRect(QPoint(padding, padding), content));
+        prepared = std::move(filtered);
     }
     const QRectF placement((viewport.width() - content.width()) * factors.x() / viewport.width(),
                            (viewport.height() - content.height()) * factors.y() / viewport.height(),
@@ -191,6 +191,7 @@ struct MainWindowSkinController::Impl {
         bool validationPending = false;
         // Keep validation status when invisible skins release their decoded pixels.
         bool validated = false;
+        quint64 lastUsed = 0;
     };
     struct Profile {
         QString path;
@@ -209,12 +210,11 @@ struct MainWindowSkinController::Impl {
     };
     struct Prepared {
         RasterKey key;
-        MainWindowSkinFrame frame;
+        QRectF normalizedPlacement;
         QPixmap pixmap;
 
         qsizetype bytes() const {
-            // Conservatively account for both the CPU raster and platform pixmap.
-            return frame.image.sizeInBytes() + qint64(pixmap.width()) * pixmap.height() * 4;
+            return qint64(pixmap.width()) * pixmap.height() * 4;
         }
     };
     struct View {
@@ -240,6 +240,7 @@ struct MainWindowSkinController::Impl {
         Request request;
         MainWindowSkinFrame frame;
         image_codec::SkinDecodeError decodeError = image_codec::SkinDecodeError::None;
+        bool decodedFresh = false;
         bool preparationFailed = false;
     };
     struct ResourceCounts {
@@ -338,16 +339,15 @@ struct MainWindowSkinController::Impl {
                 mode == MainWindowSkinDisplayMode::Contain ? SkinPosition::Center
                                                            : selected.position};
     }
-    static MainWindowSkinFrame positionedFrame(const std::shared_ptr<Prepared>& prepared,
-                                               SkinPosition position) {
+    static QRectF positionedPlacement(const std::shared_ptr<Prepared>& prepared,
+                                      SkinPosition position) {
         if (!prepared)
             return {};
-        auto result = prepared->frame;
+        auto result = prepared->normalizedPlacement;
         if (prepared->key.mode == MainWindowSkinDisplayMode::Contain) {
             const auto factors = positionFactors(position);
-            result.normalizedPlacement.moveTo(
-                (1.0 - result.normalizedPlacement.width()) * factors.x(),
-                (1.0 - result.normalizedPlacement.height()) * factors.y());
+            result.moveTo((1.0 - result.width()) * factors.x(),
+                          (1.0 - result.height()) * factors.y());
         }
         return result;
     }
@@ -451,9 +451,41 @@ struct MainWindowSkinController::Impl {
                 ++idleCount;
             }
         }
+        qsizetype sourceBytes = 0;
+        for (const auto& source : sources)
+            sourceBytes += source->image.sizeInBytes();
+        // Unused decoded pixels yield to warm rasters. An attached source instead yields only
+        // after idle rasters, so viewport changes do not repeatedly decode a large image.
+        // Pending preparation bursts pin their source pixels; active pixmaps never evict.
+        const auto evictDecodedSources = [&](bool attachedSources) {
+            while (sourceBytes + idleBytes > MAX_CACHE_BYTES) {
+                std::shared_ptr<Source> oldest;
+                for (const auto& source : sources) {
+                    if (source->image.isNull())
+                        continue;
+                    bool attached = false;
+                    bool pending = false;
+                    for (const auto& view : views) {
+                        if (profile(view.surface).source == source) {
+                            attached = true;
+                            pending = pending || view.pending;
+                        }
+                    }
+                    if (pending || attached != attachedSources)
+                        continue;
+                    if (!oldest || source->lastUsed < oldest->lastUsed)
+                        oldest = source;
+                }
+                if (!oldest)
+                    break;
+                sourceBytes -= oldest->image.sizeInBytes();
+                oldest->image = {};
+            }
+        };
+        evictDecodedSources(false);
         for (auto entry = frames.begin();
              entry != frames.end() &&
-             (idleBytes > MAX_IDLE_FRAME_BYTES || idleCount > MAX_IDLE_FRAME_COUNT);) {
+             (sourceBytes + idleBytes > MAX_CACHE_BYTES || idleCount > MAX_IDLE_FRAME_COUNT);) {
             if (entry->use_count() == 1) {
                 idleBytes -= (*entry)->bytes();
                 --idleCount;
@@ -462,6 +494,7 @@ struct MainWindowSkinController::Impl {
                 ++entry;
             }
         }
+        evictDecodedSources(true);
     }
     std::shared_ptr<Prepared> cached(const RasterKey& key) {
         const auto found = std::find_if(frames.begin(), frames.end(),
@@ -666,6 +699,7 @@ struct MainWindowSkinController::Impl {
             }
             if (auto prepared = cached(keyFor(view))) {
                 ++counts.cacheHits;
+                selected.source->lastUsed = ++sourceUseGeneration;
                 view.prepared = std::move(prepared);
                 view.pending = false;
                 rememberLegacy(view);
@@ -692,6 +726,7 @@ struct MainWindowSkinController::Impl {
         }
         bool notifyLoading = false;
         if (source) {
+            source->lastUsed = ++sourceUseGeneration;
             running = true;
             if (next)
                 lastServedToken = next->token;
@@ -722,6 +757,7 @@ struct MainWindowSkinController::Impl {
                 };
                 try {
                     if (!cancelled() && result.request.decoded.isNull()) {
+                        result.decodedFresh = true;
                         auto decoded = image_codec::decodeSkinFile(result.request.source->path);
                         result.request.decoded = std::move(decoded.image);
                         result.decodeError = decoded.error;
@@ -775,6 +811,22 @@ struct MainWindowSkinController::Impl {
         bool legacyChanged = false;
         bool published = false;
         if (currentSource && !cancelled) {
+            if (source->validated && result.decodedFresh &&
+                result.decodeError == image_codec::SkinDecodeError::None &&
+                !result.request.decoded.isNull()) {
+                // Re-reading evicted pixels may observe a replaced file. Give every view and
+                // cached raster one new content generation, even if file metadata is unchanged.
+                const auto previousGeneration = source->generation;
+                source->generation = ++sourceGeneration;
+                frames.remove_if([previousGeneration](const auto& frame) {
+                    return frame->key.generation == previousGeneration;
+                });
+                result.request.key.generation = source->generation;
+                for (auto& view : views) {
+                    if (profile(view.surface).source == source)
+                        requestPreparation(view, true);
+                }
+            }
             source->image = opacity > 0.0 ? std::move(result.request.decoded) : QImage{};
             source->validated = true;
             source->error = result.decodeError;
@@ -797,8 +849,8 @@ struct MainWindowSkinController::Impl {
                     if (!prepared) {
                         prepared = std::make_shared<Prepared>();
                         prepared->key = result.request.key;
-                        prepared->frame = std::move(result.frame);
-                        prepared->pixmap = QPixmap::fromImage(prepared->frame.image);
+                        prepared->normalizedPlacement = result.frame.normalizedPlacement;
+                        prepared->pixmap = QPixmap::fromImage(std::move(result.frame.image));
                         ++counts.pixmapConversions;
                         if (prepared->pixmap.isNull()) {
                             prepared.reset();
@@ -890,6 +942,7 @@ struct MainWindowSkinController::Impl {
     qreal opacity = 1.0;
     qreal mask = 0.8;
     quint64 sourceGeneration = 0;
+    quint64 sourceUseGeneration = 0;
     quint64 nextViewToken = 0;
     quint64 legacyViewToken = 0;
     quint64 lastServedToken = 0;
@@ -1012,17 +1065,31 @@ void MainWindowSkinController::validate(SkinSurface surface) {
         emit statusChanged();
 }
 MainWindowSkinFrame MainWindowSkinController::frame() const {
-    return Impl::positionedFrame(m_impl->legacyFrame, m_impl->legacyPosition);
+    return m_impl->legacyFrame
+               ? MainWindowSkinFrame{m_impl->legacyFrame->pixmap.toImage(),
+                                     Impl::positionedPlacement(m_impl->legacyFrame,
+                                                               m_impl->legacyPosition)}
+               : MainWindowSkinFrame{};
 }
 MainWindowSkinFrame MainWindowSkinController::frame(QObject* object) const {
     const auto found = m_impl->views.constFind(object);
-    return found == m_impl->views.cend()
+    return found == m_impl->views.cend() || !found->prepared
                ? MainWindowSkinFrame{}
-               : Impl::positionedFrame(found->prepared, m_impl->profile(found->surface).position);
+               : MainWindowSkinFrame{
+                     found->prepared->pixmap.toImage(),
+                     Impl::positionedPlacement(found->prepared,
+                                               m_impl->profile(found->surface).position)};
 }
 QPixmap MainWindowSkinController::pixmap(QObject* object) const {
     const auto found = m_impl->views.constFind(object);
     return found == m_impl->views.cend() || !found->prepared ? QPixmap() : found->prepared->pixmap;
+}
+QRectF MainWindowSkinController::normalizedPlacement(QObject* object) const {
+    const auto found = m_impl->views.constFind(object);
+    return found == m_impl->views.cend()
+               ? QRectF{}
+               : Impl::positionedPlacement(found->prepared,
+                                           m_impl->profile(found->surface).position);
 }
 bool MainWindowSkinController::skinActive() const {
     return bool(m_impl->legacyFrame);
@@ -1070,9 +1137,9 @@ QString MainWindowSkinController::statusText(SkinSurface surface) const {
 MainWindowSkinDiagnostics MainWindowSkinController::diagnostics() const {
     auto result = m_impl->counts;
     for (const auto& source : m_impl->sources)
-        result.retainedBytes += source->image.sizeInBytes();
+        result.decodedSourceBytes += source->image.sizeInBytes();
     for (const auto& prepared : m_impl->frames) {
-        result.retainedBytes += prepared->bytes();
+        result.preparedFrameBytes += prepared->bytes();
         if (prepared.use_count() == 1) {
             result.idleFrameBytes += prepared->bytes();
             ++result.idleFrameCount;
@@ -1089,12 +1156,14 @@ MainWindowSkinDiagnostics MainWindowSkinController::diagnostics() const {
                         [&prepared](const auto& entry) { return entry == prepared; });
         if (!cached) {
             oldFrames.push_back(prepared.get());
-            result.retainedBytes += prepared->bytes();
+            result.preparedFrameBytes += prepared->bytes();
         }
     };
     countOldFrame(m_impl->legacyFrame);
     for (const auto& view : m_impl->views)
         countOldFrame(view.prepared);
+    result.cacheBytes = result.decodedSourceBytes + result.idleFrameBytes;
+    result.retainedBytes = result.decodedSourceBytes + result.preparedFrameBytes;
     if (m_impl->resources) {
         result.executorCount = m_impl->resources->executors.load();
         result.scratchRetainedBytes = m_impl->resources->scratchBytes.load();

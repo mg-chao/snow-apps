@@ -66,3 +66,15 @@ bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
     return snow_canvas_filter_render::applyRegion(
         source, destination, destinationPixels, internalParameters(parameters), workspace, options);
 }
+
+bool applySnowCanvasGaussianBlurCrop(const QImage& source, QImage& destination,
+                                     const QRect& sourceRect,
+                                     const SnowCanvasRegionFilterParameters& parameters,
+                                     SnowCanvasRegionFilterScratch* scratch, bool singleThreaded) {
+    snow_canvas_filter_render::RenderWorkspace* workspace =
+        scratch != nullptr ? &SnowCanvasRegionFilterScratchAccess::workspace(*scratch) : nullptr;
+    snow_canvas_filter_render::ExecutionOptions options;
+    options.singleThreaded = singleThreaded;
+    return snow_canvas_filter_render::applyGaussianCrop(
+        source, destination, sourceRect, internalParameters(parameters), workspace, options);
+}

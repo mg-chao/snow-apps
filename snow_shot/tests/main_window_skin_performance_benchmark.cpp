@@ -222,6 +222,9 @@ int main(int argc, char** argv) {
             {QStringLiteral("cached_paint"), paints},
             {QStringLiteral("load_ui_max_tick_gap_ms"), longestGap},
             {QStringLiteral("retained_cache_bytes"), double(afterPaint.retainedBytes)},
+            {QStringLiteral("decoded_source_bytes"), double(afterPaint.decodedSourceBytes)},
+            {QStringLiteral("prepared_frame_bytes"), double(afterPaint.preparedFrameBytes)},
+            {QStringLiteral("bounded_cache_bytes"), double(afterPaint.cacheBytes)},
             {QStringLiteral("retained_worker_scratch_bytes"),
              double(afterPaint.scratchRetainedBytes)},
             {QStringLiteral("retained_preparation_scratch_bytes"),
@@ -309,6 +312,9 @@ int main(int argc, char** argv) {
             {QStringLiteral("resize_burst_preparation_jobs"),
              double(resized.preparationJobs - reopened.preparationJobs)},
             {QStringLiteral("retained_bytes"), double(resized.retainedBytes)},
+            {QStringLiteral("decoded_source_bytes"), double(resized.decodedSourceBytes)},
+            {QStringLiteral("prepared_frame_bytes"), double(resized.preparedFrameBytes)},
+            {QStringLiteral("bounded_cache_bytes"), double(resized.cacheBytes)},
             {QStringLiteral("idle_frame_bytes"), double(resized.idleFrameBytes)}});
     controller.detach(&mainView);
     controller.detach(&firstToolbar);
@@ -318,10 +324,15 @@ int main(int argc, char** argv) {
     controller.detach(&trayView);
     if (!waitForIdle(application, controller))
         return EXIT_FAILURE;
-    report.insert(QStringLiteral("suspended_idle_frame_bytes"),
-                  double(controller.diagnostics().idleFrameBytes));
-    report.insert(QStringLiteral("suspended_executor_count"),
-                  controller.diagnostics().executorCount);
+    const auto suspended = controller.diagnostics();
+    if (suspended.cacheBytes > 64LL * 1024 * 1024 || suspended.executorCount != 0 ||
+        suspended.scratchRetainedBytes != 0)
+        return EXIT_FAILURE;
+    report.insert(QStringLiteral("suspended_idle_frame_bytes"), double(suspended.idleFrameBytes));
+    report.insert(QStringLiteral("suspended_decoded_source_bytes"),
+                  double(suspended.decodedSourceBytes));
+    report.insert(QStringLiteral("suspended_bounded_cache_bytes"), double(suspended.cacheBytes));
+    report.insert(QStringLiteral("suspended_executor_count"), suspended.executorCount);
     QFile output(arguments.value(outputIndex + 1));
     if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(report).toJson()) < 0)
         return EXIT_FAILURE;

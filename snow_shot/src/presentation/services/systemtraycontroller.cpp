@@ -373,9 +373,9 @@ class TrayMenuSkinBinding final : public QObject {
             menu_->resetBackgroundFrame();
             return;
         }
-        const auto frame = controller_->frame(menu_);
-        menu_->setBackgroundFrame({controller_->pixmap(menu_), frame.normalizedPlacement,
-                                   controller_->opacity(), controller_->maskOpacity()});
+        menu_->setBackgroundFrame({controller_->pixmap(menu_),
+                                   controller_->normalizedPlacement(menu_), controller_->opacity(),
+                                   controller_->maskOpacity()});
     }
 
     adqt::widgets::AdContextMenu* menu_;

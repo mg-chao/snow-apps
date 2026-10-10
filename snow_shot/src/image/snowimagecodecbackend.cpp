@@ -748,6 +748,10 @@ class SkinByteSource final : public snow::image::ByteSource {
   public:
     explicit SkinByteSource(std::span<const std::byte> bytes) : m_bytes(bytes) {}
 
+    std::optional<std::span<const std::byte>> contiguous_bytes() const override {
+        return m_bytes;
+    }
+
     snow::image::Result<std::uint64_t> size() const override {
         return static_cast<std::uint64_t>(m_bytes.size());
     }

@@ -163,6 +163,9 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
 bool applyRegion(const QImage& source, QImage& destination, const QRegion& destinationPixels,
                  const Parameters& parameters, RenderWorkspace* workspace = nullptr,
                  const ExecutionOptions& options = {});
+bool applyGaussianCrop(const QImage& source, QImage& destination, const QRect& sourceRect,
+                       const Parameters& parameters, RenderWorkspace* workspace = nullptr,
+                       const ExecutionOptions& options = {});
 void blendOverSource(QImage& filtered, const QImage& source, double opacity,
                      const ExecutionOptions& options = {},
                      KernelDiagnostics* diagnostics = nullptr);

@@ -1092,18 +1092,20 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
 
 bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const QPoint& maskOrigin,
                 const QRegion& destinationRegion, int constantMix, const Parameters& parameters,
-                RenderWorkspace& workspace, const ExecutionOptions& options) {
+                RenderWorkspace& workspace, const ExecutionOptions& options,
+                const QPoint& destinationOriginInSource = {}) {
     const QRect destinationPixels = destinationRegion.boundingRect();
     const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters);
     const int support = plan.physicalSupportRadius;
     const int factor = plan.reductionFactor;
-    const QRect requestedSourcePixels =
-        destinationPixels.adjusted(-support, -support, support, support).intersected(source.rect());
+    const QRect requestedSourcePixels = destinationPixels.translated(destinationOriginInSource)
+                                            .adjusted(-support, -support, support, support)
+                                            .intersected(source.rect());
     if (requestedSourcePixels.isEmpty()) {
         return true;
     }
     const auto alignDown = [factor](int value, int origin) {
-        int remainder = (value - origin) % factor;
+        int remainder = static_cast<int>((qint64(value) - origin) % factor);
         if (remainder < 0) {
             remainder += factor;
         }
@@ -1160,7 +1162,8 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
     measureStage(instrument, diagnostics.reconstructionNanoseconds, [&] {
         for (const QRect& rect : destinationRegion) {
             diagnostics.parallelJobs += upsampleBilinearComposited(
-                a, destination, mask, maskOrigin, rect, sourcePixels, factor, constantMix,
+                a, destination, mask, maskOrigin, rect,
+                sourcePixels.translated(-destinationOriginInSource), factor, constantMix,
                 options.singleThreaded, useAvx2, &reconstructionAvx2Executed);
         }
     });
@@ -2131,6 +2134,65 @@ bool applyRegion(const QImage& source, QImage& destination, const QRegion& desti
         localWorkspace.finishFrame(true);
     }
     return succeeded;
+}
+
+bool applyGaussianCrop(const QImage& source, QImage& destination, const QRect& sourceRect,
+                       const Parameters& parameters, RenderWorkspace* workspace,
+                       const ExecutionOptions& options) {
+    const double physicalSigma =
+        std::max(0.0, parameters.logicalSigma) * static_cast<double>(parameters.devicePixelRatio);
+    const double maximumInteger = std::numeric_limits<int>::max();
+    // The reduced three-box plan uses integer squared widths. Keep both those
+    // intermediates and source-coordinate expansion representable before dispatch.
+    const double maximumPhysicalSigma = (std::sqrt(maximumInteger / 3.0) - 2.0) * 32.0;
+    const auto validGridCoordinate = [maximumInteger](qreal value) {
+        return std::isfinite(value) && value > -maximumInteger && value < maximumInteger;
+    };
+    if (parameters.type != 1 || source.isNull() || destination.isNull() ||
+        &source == &destination || source.format() != QImage::Format_ARGB32_Premultiplied ||
+        destination.format() != QImage::Format_ARGB32_Premultiplied || sourceRect.isEmpty() ||
+        !source.rect().contains(sourceRect) || destination.size() != sourceRect.size() ||
+        !std::isfinite(parameters.strength) || !std::isfinite(parameters.logicalSigma) ||
+        !std::isfinite(parameters.logicalSamplingRadius) ||
+        !std::isfinite(parameters.devicePixelRatio) || parameters.devicePixelRatio <= 0.0 ||
+        !std::isfinite(physicalSigma) || physicalSigma > maximumPhysicalSigma ||
+        !validGridCoordinate(parameters.gridOriginInImage.x()) ||
+        !validGridCoordinate(parameters.gridOriginInImage.y())) {
+        return false;
+    }
+    const int support = makeGaussianBlurPlan(parameters).physicalSupportRadius;
+    if (support > (std::numeric_limits<int>::max() - std::max(source.width(), source.height())) / 2)
+        return false;
+    RenderWorkspace localWorkspace(0);
+    RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
+    try {
+        const auto overlapsSource = [&] {
+            const auto sourceStart = reinterpret_cast<std::uintptr_t>(source.constBits());
+            const auto destinationStart = reinterpret_cast<std::uintptr_t>(destination.constBits());
+            const auto sourceBytes = static_cast<std::uintptr_t>(source.sizeInBytes());
+            const auto destinationBytes = static_cast<std::uintptr_t>(destination.sizeInBytes());
+            return sourceStart <= destinationStart
+                       ? destinationStart - sourceStart < sourceBytes
+                       : sourceStart - destinationStart < destinationBytes;
+        };
+        if (destination.isDetached() && overlapsSource())
+            return false;
+        if (!snowCanvasDetachImage(destination, workspace != nullptr &&
+                                                    workspace->ownsWritablePixels(destination)))
+            return false;
+        if (overlapsSource())
+            return false;
+        const bool succeeded =
+            blurMasked(source, destination, {}, {}, QRegion(destination.rect()), 255, parameters,
+                       activeWorkspace, options, sourceRect.topLeft());
+        if (workspace == nullptr)
+            localWorkspace.finishFrame(true);
+        return succeeded;
+    } catch (const std::bad_alloc&) {
+        if (workspace == nullptr)
+            localWorkspace.finishFrame(true);
+        return false;
+    }
 }
 
 void blendOverSource(QImage& filtered, const QImage& source, double opacity,
