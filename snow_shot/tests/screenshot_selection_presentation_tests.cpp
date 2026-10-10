@@ -1145,6 +1145,24 @@ void explicitAspectRatioSnapCommitsQueuedDragWork() {
     fixture.flushFrame();
     require(fixture.stateNotifications == 1 && picker->workCounters().samples == 1,
             "a later frame must not replay work consumed by the snap command");
+
+    require(input.releaseSelectionAspectRatioSnapShortcut(),
+            "the snap key must release before a fresh unlock press");
+    fixture.resetCounters();
+    input.handleMouseMove(&fixture.overlay, QPointF(480, 335));
+    const QRectF beforeUnlock = fixture.selection.normalizedSelection();
+    require(fixture.stateNotifications == 0 && picker->workCounters().samples == 0,
+            "the pointer move before unlocking must still be frame paced");
+    require(
+        input.activateSelectionAspectRatioSnapShortcut() &&
+            !fixture.selection.aspectRatioLocked() &&
+            fixture.selection.normalizedSelection() == beforeUnlock &&
+            fixture.displayedSelection() == beforeUnlock && fixture.stateNotifications == 1 &&
+            picker->workCounters().samples == 1,
+        "unlocking must synchronously present the free state and latest sample without resizing");
+    fixture.flushFrame();
+    require(fixture.stateNotifications == 1 && picker->workCounters().samples == 1,
+            "a later frame must not replay work consumed by the unlock command");
 }
 
 void selectionDragPickerWorkIsDiscardedAtInteractionBoundaries() {

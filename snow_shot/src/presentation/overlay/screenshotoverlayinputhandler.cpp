@@ -952,26 +952,62 @@ bool ScreenshotOverlayInputHandler::activateKeepSelectionAspectRatioShortcut(
 }
 
 bool ScreenshotOverlayInputHandler::canActivateSelectionAspectRatioSnapShortcut() const {
+    if (effectDragActive() || m_externalDragActive ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        m_context.selection.regionOperationActive() ||
+        recognitionTool(m_context.interaction.activeTool()) ||
+        !m_context.actions.localShortcutInputAllowed()) {
+        return false;
+    }
+    if (!m_context.interaction.dragging()) {
+        // Smart framing and manual selection can both precede a marquee. Accept the
+        // held shortcut now so the drag consumes it when usable geometry exists.
+        return m_context.interaction.selecting() ||
+               (m_context.interaction.canResizeSelection() && m_context.selection.rectangular() &&
+                m_context.selection.aspectRatioLocked());
+    }
     const auto dragMode = m_context.interaction.dragMode();
-    return m_context.interaction.dragging() && dragMode != ScreenshotSelectionDragMode::None &&
-           dragMode != ScreenshotSelectionDragMode::All && !effectDragActive() &&
-           !m_externalDragActive &&
-           m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
-           !m_context.selection.regionOperationActive() &&
-           (dragMode == ScreenshotSelectionDragMode::Marquee ||
-            m_context.selection.rectangular()) &&
-           !recognitionTool(m_context.interaction.activeTool()) &&
-           m_context.actions.localShortcutInputAllowed();
+    return dragMode != ScreenshotSelectionDragMode::None &&
+           dragMode != ScreenshotSelectionDragMode::All &&
+           (dragMode == ScreenshotSelectionDragMode::Marquee || m_context.selection.rectangular());
 }
 
 bool ScreenshotOverlayInputHandler::activateSelectionAspectRatioSnapShortcut() {
     if (!canActivateSelectionAspectRatioSnapShortcut()) {
         return false;
     }
-    if (m_selectionAspectRatioSnapShortcut) {
+    if (m_selectionAspectRatioSnapShortcut != AspectRatioSnapShortcutState::Released) {
         return true;
     }
-    m_selectionAspectRatioSnapShortcut = true;
+    if (m_context.selection.aspectRatioLocked()) {
+        m_selectionAspectRatioSnapShortcut = AspectRatioSnapShortcutState::Unlocking;
+        m_snappedDuringSelectionDrag = false;
+        static_cast<void>(m_context.selection.setAspectRatioLockEnabled(
+            false, snow_shot::presentation::kScreenshotSelectionMinimumSize));
+        m_context.actions.persistSelectionAspectRatioPreference(
+            ScreenshotSelectionAspectRatioPreset::Free, false);
+        if (m_context.interaction.dragging()) {
+            if (m_context.interaction.dragMode() == ScreenshotSelectionDragMode::Marquee &&
+                m_context.selection.hasPixelSelection()) {
+                // Continue from the snapped rectangle rather than recreating the raw marquee.
+                const bool right = m_lastMoveDragPosition.x() >= m_marqueeAnchor.x();
+                const bool bottom = m_lastMoveDragPosition.y() >= m_marqueeAnchor.y();
+                const auto corner = right ? (bottom ? ScreenshotSelectionDragMode::BottomRight
+                                                    : ScreenshotSelectionDragMode::TopRight)
+                                          : (bottom ? ScreenshotSelectionDragMode::BottomLeft
+                                                    : ScreenshotSelectionDragMode::TopLeft);
+                static_cast<void>(m_context.interaction.enterSelectionDrag(corner));
+            }
+            m_context.selection.rebaseMoveDrag(m_lastMoveDragPosition);
+            m_context.actions.updateColorPickerForSelectionDrag(m_lastMoveDragPosition);
+        }
+        m_context.actions.updateOverlayState();
+        return true;
+    }
+    m_selectionAspectRatioSnapShortcut = AspectRatioSnapShortcutState::Snapping;
+    if (!m_context.interaction.dragging()) {
+        return true;
+    }
     updateSelectionDrag(m_lastMoveDragPosition);
     // Snap is an explicit command; commit its geometry and queued drag sample together.
     if (m_context.actions.requestSelectionDragPresentation)
@@ -980,10 +1016,10 @@ bool ScreenshotOverlayInputHandler::activateSelectionAspectRatioSnapShortcut() {
 }
 
 bool ScreenshotOverlayInputHandler::releaseSelectionAspectRatioSnapShortcut() {
-    if (!m_selectionAspectRatioSnapShortcut) {
+    if (m_selectionAspectRatioSnapShortcut == AspectRatioSnapShortcutState::Released) {
         return false;
     }
-    m_selectionAspectRatioSnapShortcut = false;
+    m_selectionAspectRatioSnapShortcut = AspectRatioSnapShortcutState::Released;
     return true;
 }
 
@@ -1212,6 +1248,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
     if (m_context.interaction.intelligentSelecting()) {
         m_context.actions.pauseIntelligentSelection();
     }
+    cancelSelectionAspectRatioSnapShortcut();
     m_context.interaction.confirmSelection();
     m_selectionWheelSteps.reset();
     m_angleWheelSteps.reset();
@@ -1333,8 +1370,8 @@ QRectF ScreenshotOverlayInputHandler::selectionRectForDrag(ScreenshotSelectionDr
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         !m_context.selection.regionOperationActive() &&
         (dragMode == ScreenshotSelectionDragMode::Marquee || m_context.selection.rectangular());
-    if (m_selectionAspectRatioSnapShortcut && resizingRectangle &&
-        dragMode != ScreenshotSelectionDragMode::All &&
+    if (m_selectionAspectRatioSnapShortcut == AspectRatioSnapShortcutState::Snapping &&
+        resizingRectangle && dragMode != ScreenshotSelectionDragMode::All &&
         dragMode != ScreenshotSelectionDragMode::None) {
         const QRectF unconstrained =
             m_context.selection.selectionRectForDrag(dragMode, position, bounds, minimumSize, 0.0);
@@ -1372,7 +1409,7 @@ QRectF ScreenshotOverlayInputHandler::selectionRectForDrag(ScreenshotSelectionDr
 }
 
 void ScreenshotOverlayInputHandler::finishTransientDrag() {
-    m_selectionAspectRatioSnapShortcut = false;
+    m_selectionAspectRatioSnapShortcut = AspectRatioSnapShortcutState::Released;
     m_moveDragModeBeforeShortcut = ScreenshotSelectionDragMode::None;
     m_marqueeAnchor = QPointF();
     m_lastMoveDragPosition = QPointF();
@@ -1413,7 +1450,7 @@ void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
     restoreScrollingCaptureAfterFailedResize();
     m_moveEntireSelectionShortcut = false;
     m_keepSelectionAspectRatioShortcut = false;
-    m_selectionAspectRatioSnapShortcut = false;
+    m_selectionAspectRatioSnapShortcut = AspectRatioSnapShortcutState::Released;
     m_aspectShortcutUsedForSelectionDrag = false;
     m_cycleColorFormatIfAspectShortcutUnused = false;
     finishTransientDrag();

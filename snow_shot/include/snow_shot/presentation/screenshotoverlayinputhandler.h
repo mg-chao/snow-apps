@@ -257,6 +257,8 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool regionOperationActive() const;
 
   private:
+    enum class AspectRatioSnapShortcutState { Released, Snapping, Unlocking };
+
     void confirmSelection(const std::function<void()>& beforePresentation);
     [[nodiscard]] QPointF virtualPositionForOverlay(const ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) const;
@@ -294,7 +296,8 @@ class ScreenshotOverlayInputHandler final {
     bool m_scrollingCaptureSelectionResize = false;
     bool m_moveEntireSelectionShortcut = false;
     bool m_keepSelectionAspectRatioShortcut = false;
-    bool m_selectionAspectRatioSnapShortcut = false;
+    AspectRatioSnapShortcutState m_selectionAspectRatioSnapShortcut =
+        AspectRatioSnapShortcutState::Released;
     bool m_snappedDuringSelectionDrag = false;
     bool m_aspectShortcutUsedForSelectionDrag = false;
     bool m_cycleColorFormatIfAspectShortcutUnused = false;
