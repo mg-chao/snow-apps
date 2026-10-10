@@ -10916,8 +10916,9 @@ void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
     require(configuration.setValue(key, value) &&
                 screenshotCanvasToolStyleDefaults().spotlightShape ==
                     SnowCanvasRectangleShape::Rectangle &&
-                screenshotCanvasToolStyleDefaults().spotlightCornerRadii == SnowCanvasCornerRadii{},
-            "legacy Spotlight preferences must use Rectangle");
+                screenshotCanvasToolStyleDefaults().spotlightCornerRadii ==
+                    SnowCanvasCornerRadii{6.0, 6.0, 6.0, 6.0},
+            "legacy Spotlight preferences must use Rectangle with six-pixel corners");
     for (const QJsonValue& invalid :
          {QJsonValue(-1), QJsonValue(3), QJsonValue(1.5), QJsonValue(QStringLiteral("1"))}) {
         value.insert(QStringLiteral("shape"), invalid);
@@ -15264,7 +15265,8 @@ void screenshotProductStyleProfileIsComplete() {
                 exact(defaults.watermark.gap, 56.0) && exact(defaults.watermark.opacity, 0.16),
             "watermark defaults should match the Snow Shot product profile");
     require(defaults.spotlight.color == QColor(0, 0, 0, 255) &&
-                exact(defaults.spotlight.opacity, 0.64),
+                exact(defaults.spotlight.opacity, 0.64) &&
+                defaults.spotlightCornerRadii == SnowCanvasCornerRadii{6.0, 6.0, 6.0, 6.0},
             "spotlight defaults should match the Snow Shot product profile");
 }
 
@@ -17400,6 +17402,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--spotlight-shape-only"))) {
+        screenshotProductStyleProfileIsComplete();
         spotlightCornerRadiusEditorReusesShapeBehavior();
         spotlightShapeSelectorMatchesShapeAndRebindsEdits();
         spotlightShapePreferencesRoundTripAndAcceptLegacySettings();

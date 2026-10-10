@@ -103,6 +103,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
 
     defaults.spotlight.color = QColor(0, 0, 0, 255);
     defaults.spotlight.opacity = 0.64;
+    defaults.spotlightCornerRadii = {6.0, 6.0, 6.0, 6.0};
     return defaults;
 }
 
