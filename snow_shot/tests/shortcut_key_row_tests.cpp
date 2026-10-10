@@ -1357,6 +1357,101 @@ void recordingShortcutRecorderAcceptsControlKeysAndEscape() {
     }
 }
 
+void shortcutRecordersOwnFocusNavigationKeysWhileRecording() {
+    using Scope = ShortcutKeyRowConfig::ValidationScope;
+    enum class Entry { Empty, Existing, Added };
+    struct KeyCase {
+        Qt::Key key;
+        Qt::KeyboardModifiers modifiers;
+        QString expected;
+    };
+    const std::array cases{
+        KeyCase{Qt::Key_Tab, Qt::NoModifier, QStringLiteral("Tab")},
+        KeyCase{Qt::Key_Tab, Qt::ShiftModifier, QStringLiteral("Shift+Tab")},
+        KeyCase{Qt::Key_Tab, Qt::ControlModifier, QStringLiteral("Ctrl+Tab")},
+        KeyCase{Qt::Key_Backtab, Qt::ShiftModifier, QStringLiteral("Shift+Backtab")},
+    };
+    for (const Scope scope :
+         {Scope::GlobalShortcut, Scope::ScreenshotShortcut, Scope::DrawingShortcut,
+          Scope::PinnedWindowShortcut, Scope::RecordingShortcut}) {
+        for (const Entry entry : {Entry::Empty, Entry::Existing, Entry::Added}) {
+            PrintScreenRecordingSession session(
+                scope, entry == Entry::Empty ? QStringList() : QStringList{QStringLiteral("F3")});
+            if (entry != Entry::Empty) {
+                const QString control = entry == Entry::Existing
+                                            ? QStringLiteral("shortcutConfigKeyButton")
+                                            : QStringLiteral("shortcutConfigAddButton");
+                session.content->findChild<adqt::widgets::AdButton*>(control)->click();
+                session.flush();
+            }
+            session.content->window()->activateWindow();
+            session.content->setFocus(Qt::OtherFocusReason);
+            session.flush();
+            require(session.content->hasFocus() && QWidget::keyboardGrabber() == session.content,
+                    "each recording entry point must own keyboard input and focus");
+
+            session.supported = false;
+            session.key(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+            session.key(QEvent::KeyRelease, Qt::Key_Tab, Qt::NoModifier);
+            session.flush();
+            require(session.validated == QStringList{QStringLiteral("Tab")} &&
+                        !session.modal->acceptButton()->isEnabled() && session.content->hasFocus(),
+                    "a rejected Tab must reach validation and keep recording without moving focus");
+            session.supported = true;
+
+            for (const auto& test : cases) {
+                PhysicalKeyEvent overrideEvent(QEvent::ShortcutOverride, test.key, test.modifiers);
+                overrideEvent.ignore();
+                QCoreApplication::sendEvent(session.content, &overrideEvent);
+                require(overrideEvent.isAccepted(),
+                        "recording must claim focus navigation shortcut overrides");
+                const auto validationsBeforePress = session.validated.size();
+                session.key(QEvent::KeyPress, test.key, test.modifiers);
+                session.key(QEvent::KeyRelease, test.key, test.modifiers);
+                session.flush();
+                require(session.validated.size() == validationsBeforePress + 1 &&
+                            session.validated.last() == test.expected &&
+                            session.modal->acceptButton()->isEnabled() &&
+                            session.content->hasFocus() &&
+                            QWidget::keyboardGrabber() == session.content,
+                        "Tab and Backtab must record once with their modifiers and retain focus");
+            }
+
+            const auto actions = session.content->findChildren<adqt::widgets::AdButton*>(
+                QStringLiteral("shortcutConfigActionButton"));
+            const auto commit =
+                std::find_if(actions.cbegin(), actions.cend(), [](const auto* action) {
+                    return action->accentRole() == adqt::widgets::AdButton::AccentRole::Green;
+                });
+            require(commit != actions.cend() && (*commit)->isEnabled(),
+                    "the captured navigation key must be confirmable");
+            (*commit)->click();
+            session.flush();
+            require(QWidget::keyboardGrabber() == nullptr && session.saved.isEmpty(),
+                    "confirming a row must release keyboard input and retain the dialog draft");
+
+            const auto validationsAfterRecording = session.validated.size();
+            for (const auto key : {Qt::Key_Tab, Qt::Key_Backtab}) {
+                session.content->setFocus(Qt::OtherFocusReason);
+                const auto modifiers = key == Qt::Key_Tab ? Qt::NoModifier : Qt::ShiftModifier;
+                session.key(QEvent::KeyPress, key, modifiers);
+                session.key(QEvent::KeyRelease, key, modifiers);
+                session.flush();
+                require(!session.content->hasFocus() &&
+                            session.validated.size() == validationsAfterRecording,
+                        "Tab and Backtab must resume normal focus traversal after recording");
+            }
+            session.modal->acceptButton()->click();
+            session.flush();
+            const QStringList expected =
+                entry == Entry::Added ? QStringList{QStringLiteral("F3"), cases.back().expected}
+                                      : QStringList{cases.back().expected};
+            require(portableText(session.saved) == expected,
+                    "captured navigation keys must save through the normal dialog transaction");
+        }
+    }
+}
+
 void nativePrintScreenRecordingPreservesModifiers() {
 #ifdef Q_OS_WIN
     PrintScreenRecordingSession session;
@@ -1915,6 +2010,7 @@ int main(int argc, char** argv) {
     printScreenRecordingPreservesEventOrderAndLifecycle();
     localShortcutRecordersUseOnlyNormalKeyEvents();
     recordingShortcutRecorderAcceptsControlKeysAndEscape();
+    shortcutRecordersOwnFocusNavigationKeysWhileRecording();
     nativePrintScreenRecordingPreservesModifiers();
     drawingRecorderUsesLocalValidationLanguage();
     cancellingDuplicateScreenshotShortcutReleasesKeyboard();

@@ -549,10 +549,22 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     bool event(QEvent* event) override {
-        // A key being recorded belongs to this editor, including the modal's Escape shortcut.
-        if (event->type() == QEvent::ShortcutOverride && m_recordingConfigIndex >= 0) {
-            event->accept();
-            return true;
+        if (m_recordingConfigIndex >= 0) {
+            // QWidget::event handles focus traversal before keyPressEvent. While recording,
+            // all key input belongs to this editor, including navigation and modal shortcuts.
+            switch (event->type()) {
+            case QEvent::ShortcutOverride:
+                event->accept();
+                return true;
+            case QEvent::KeyPress:
+                keyPressEvent(static_cast<QKeyEvent*>(event));
+                return true;
+            case QEvent::KeyRelease:
+                keyReleaseEvent(static_cast<QKeyEvent*>(event));
+                return true;
+            default:
+                break;
+            }
         }
         return QWidget::event(event);
     }
