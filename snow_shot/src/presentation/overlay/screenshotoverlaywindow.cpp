@@ -20,6 +20,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QRegion>
+#include <QScopedValueRollback>
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include <QResizeEvent>
 #include <QVBoxLayout>
@@ -295,6 +296,7 @@ void ScreenshotOverlayWindow::setHistoryLoadingVisible(bool visible) {
 }
 
 void ScreenshotOverlayWindow::resetScreenshotRendering() {
+    retirePresentation();
     setScrollingCaptureMode(false);
     if (m_canvas != nullptr) {
         m_canvas->setTextEditingBounds(std::nullopt);
@@ -599,18 +601,65 @@ ScreenshotCanvasRenderer* ScreenshotOverlayWindow::screenshotRendererForTesting(
 #endif
 
 void ScreenshotOverlayWindow::warmPresentationSurface() {
+    retirePresentation();
     if (m_framePresenter != nullptr) {
         m_framePresenter->warmPresentationSurface();
     }
 }
 
 void ScreenshotOverlayWindow::showPreparedFrame(bool deferFirstPaint) {
+    static_cast<void>(showPreparedFrameForPresentation(beginPresentation(), deferFirstPaint));
+}
+
+quint64 ScreenshotOverlayWindow::beginPresentation() {
+    ++m_presentationGeneration;
+    m_presentationActive = true;
+    return m_presentationGeneration;
+}
+
+quint64 ScreenshotOverlayWindow::presentationGeneration() const {
+    return m_presentationGeneration;
+}
+
+bool ScreenshotOverlayWindow::isPresentationCurrent(quint64 generation) const {
+    return m_presentationActive && generation == m_presentationGeneration;
+}
+
+void ScreenshotOverlayWindow::retirePresentation() {
+    ++m_presentationGeneration;
+    m_presentationActive = false;
+}
+
+bool ScreenshotOverlayWindow::showPreparedFrameForPresentation(quint64 generation,
+                                                               bool deferFirstPaint) {
+    if (!isPresentationCurrent(generation)) {
+        return false;
+    }
+    // The presenter's internal show() publishes this reservation. A separate public
+    // show() starts a new presentation even when the pooled widget remains visible.
+    const QScopedValueRollback<bool> showingPreparedFrame(m_showingPreparedFrame, !isVisible());
     if (m_framePresenter != nullptr) {
         m_framePresenter->presentPreparedFrame(deferFirstPaint);
     }
+    return isPresentationCurrent(generation) && isVisible();
+}
+
+void ScreenshotOverlayWindow::setVisible(bool visible) {
+    // Consume the prepared show's reservation before Qt dispatches Show/focus events;
+    // a reentrant public show() must acquire its own generation.
+    const bool showingPreparedFrame = visible && std::exchange(m_showingPreparedFrame, false);
+    if (!visible) {
+        // hide() can cancel a pending reveal while the widget is already hidden;
+        // QWidget does not emit a Hide event in that case.
+        retirePresentation();
+    } else if (!showingPreparedFrame) {
+        static_cast<void>(beginPresentation());
+    }
+    QWidget::setVisible(visible);
 }
 
 void ScreenshotOverlayWindow::releaseNativeSurface() {
+    retirePresentation();
     clearScrollingResultPreview();
     hide();
     setUpdatesEnabled(false);
@@ -637,6 +686,7 @@ void ScreenshotOverlayWindow::releaseNativeSurface() {
 }
 
 void ScreenshotOverlayWindow::restoreNativeSurface() {
+    retirePresentation();
     setUpdatesEnabled(true);
     if (m_canvas != nullptr) {
         m_canvas->setUpdatesEnabled(true);
@@ -677,6 +727,7 @@ bool ScreenshotOverlayWindow::event(QEvent* event) {
         m_eventSink.leaveEffectEditors();
     }
     if (event != nullptr && event->type() == QEvent::Hide) {
+        retirePresentation();
         clearScrollingResultPreview();
     }
     if (event != nullptr &&

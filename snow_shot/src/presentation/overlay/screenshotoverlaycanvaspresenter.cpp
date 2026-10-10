@@ -130,33 +130,44 @@ void raiseOverlayWindow(ScreenshotOverlayWindow& overlay) {
     overlay.raise();
 }
 
-void activateAndFocusOverlayWindow(ScreenshotOverlayWindow& overlay) {
+void activateAndFocusOverlayWindow(ScreenshotOverlayWindow& overlay, quint64 generation) {
+    if (!overlay.isPresentationCurrent(generation) || !overlay.isVisible()) {
+        return;
+    }
     overlay.activateWindow();
+    if (!overlay.isPresentationCurrent(generation) || !overlay.isVisible()) {
+        return;
+    }
 
     if (overlay.canvas() != nullptr) {
         overlay.canvas()->setFocus(Qt::OtherFocusReason);
     }
-    overlay.commitInitialSelectionCursor();
+    if (overlay.isPresentationCurrent(generation) && overlay.isVisible()) {
+        overlay.commitInitialSelectionCursor();
+    }
 }
 
-void activateOverlayWindow(ScreenshotOverlayWindow& overlay) {
+void activateOverlayWindow(ScreenshotOverlayWindow& overlay, quint64 generation) {
     raiseOverlayWindow(overlay);
-    activateAndFocusOverlayWindow(overlay);
+    activateAndFocusOverlayWindow(overlay, generation);
 }
 
-void scheduleOverlayActivation(ScreenshotOverlayWindow* overlay) {
+void scheduleOverlayActivation(ScreenshotOverlayWindow* overlay, quint64 generation) {
     if (overlay == nullptr) {
         return;
     }
 
-    QTimer::singleShot(0, overlay, [overlay]() {
-        if (overlay == nullptr || !overlay->isVisible()) {
+    QTimer::singleShot(0, overlay, [overlay, generation]() {
+        if (!overlay->isPresentationCurrent(generation) || !overlay->isVisible()) {
             return;
         }
 
-        activateAndFocusOverlayWindow(*overlay);
-        QTimer::singleShot(0, overlay, [overlay]() {
-            if (overlay != nullptr && overlay->isVisible()) {
+        activateAndFocusOverlayWindow(*overlay, generation);
+        if (!overlay->isPresentationCurrent(generation) || !overlay->isVisible()) {
+            return;
+        }
+        QTimer::singleShot(0, overlay, [overlay, generation]() {
+            if (overlay->isPresentationCurrent(generation) && overlay->isVisible()) {
                 overlay->commitInitialSelectionCursor();
             }
         });
@@ -171,13 +182,13 @@ int framePacedActivationDelayMs(const QScreen* screen) {
                            1000.0 / (rate > 0.0 ? rate : kFramePacedFallbackRefreshRate))));
 }
 
-void commitInitialSelectionCursorOn(ScreenshotOverlayWindow* overlay) {
-    if (overlay != nullptr) {
+void commitInitialSelectionCursorOn(ScreenshotOverlayWindow* overlay, quint64 generation) {
+    if (overlay != nullptr && overlay->isPresentationCurrent(generation)) {
         overlay->commitInitialSelectionCursor();
     }
 }
 
-void scheduleFramePacedOverlayActivation(ScreenshotOverlayWindow* overlay) {
+void scheduleFramePacedOverlayActivation(ScreenshotOverlayWindow* overlay, quint64 generation) {
     if (overlay == nullptr) {
         return;
     }
@@ -185,22 +196,19 @@ void scheduleFramePacedOverlayActivation(ScreenshotOverlayWindow* overlay) {
     // while a global-mouse drag runs on hook input. Keep the cursor sprite and
     // the raise() above immediate, but run activation one frame after the
     // reveal so the first paced drag updates are not queued behind it.
-    QTimer::singleShot(framePacedActivationDelayMs(overlay->screen()), overlay, [overlay]() {
-        if (overlay == nullptr || !overlay->isVisible()) {
-            return;
-        }
-
-        activateAndFocusOverlayWindow(*overlay);
-    });
+    QTimer::singleShot(
+        framePacedActivationDelayMs(overlay->screen()), overlay,
+        [overlay, generation]() { activateAndFocusOverlayWindow(*overlay, generation); });
 }
 
-void showOverlayWindow(ScreenshotOverlayWindow& overlay, bool deferFirstPaint) {
-    overlay.showPreparedFrame(deferFirstPaint);
+bool showOverlayWindow(ScreenshotOverlayWindow& overlay, bool deferFirstPaint, quint64 generation) {
+    return overlay.showPreparedFrameForPresentation(generation, deferFirstPaint);
 }
 
 struct ActiveOverlayEntry {
     const CapturedDisplayModel* display = nullptr;
-    ScreenshotOverlayWindow* overlay = nullptr;
+    QPointer<ScreenshotOverlayWindow> overlay;
+    quint64 generation = 0;
 };
 
 QVector<ActiveOverlayEntry> activeOverlayEntries(const ScreenshotDisplaySession& displaySession) {
@@ -231,46 +239,54 @@ qsizetype preferredOverlayEntryIndex(const QVector<ActiveOverlayEntry>& entries,
     return cursorIndex >= 0 || entries.isEmpty() ? cursorIndex : 0;
 }
 
-void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay, bool framePaced) {
-    showOverlayWindow(overlay, framePaced);
+void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay, bool framePaced,
+                                 quint64 generation) {
+    if (!showOverlayWindow(overlay, framePaced, generation)) {
+        return;
+    }
     raiseOverlayWindow(overlay);
     if (framePaced) {
-        commitInitialSelectionCursorOn(&overlay);
-        scheduleFramePacedOverlayActivation(&overlay);
+        commitInitialSelectionCursorOn(&overlay, generation);
+        scheduleFramePacedOverlayActivation(&overlay, generation);
         return;
     }
-    scheduleOverlayActivation(&overlay);
+    scheduleOverlayActivation(&overlay, generation);
 }
 
-void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay, bool framePaced) {
-    if (overlay == nullptr) {
+void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay, bool framePaced,
+                                      quint64 generation) {
+    if (overlay == nullptr || !overlay->isPresentationCurrent(generation)) {
         return;
     }
 
-    QTimer::singleShot(0, overlay, [overlay, framePaced]() {
-        if (overlay == nullptr) {
-            return;
-        }
-
-        showCapturedImageOverlayNow(*overlay, framePaced);
+    QTimer::singleShot(0, overlay, [overlay, framePaced, generation]() {
+        showCapturedImageOverlayNow(*overlay, framePaced, generation);
     });
 }
 
 void showCapturedImageOverlaysForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                                 bool framePaced) {
-    const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
+    QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
     const qsizetype preferredIndex =
         preferredOverlayEntryIndex(entries, displaySession.logicalCursorPosition());
+    // Reserve the whole group before synchronous first-show callbacks can retire it.
+    for (auto& entry : entries) {
+        entry.generation = entry.overlay->beginPresentation();
+    }
 
     if (preferredIndex >= 0 && preferredIndex < entries.size()) {
-        showCapturedImageOverlayNow(*entries.at(preferredIndex).overlay, framePaced);
+        const auto& entry = entries.at(preferredIndex);
+        if (entry.overlay != nullptr) {
+            showCapturedImageOverlayNow(*entry.overlay, framePaced, entry.generation);
+        }
     }
 
     for (qsizetype index = 0; index < entries.size(); ++index) {
         if (index == preferredIndex) {
             continue;
         }
-        showCapturedImageOverlayDeferred(entries.at(index).overlay, framePaced);
+        const auto& entry = entries.at(index);
+        showCapturedImageOverlayDeferred(entry.overlay, framePaced, entry.generation);
     }
 }
 
@@ -293,13 +309,16 @@ void showOverlayWindowsForDisplaySession(const ScreenshotDisplaySession& display
     displaySession.forEachActiveOverlay(
         [mode](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
             const bool wasVisible = overlay->isVisible();
+            const quint64 generation = overlay->beginPresentation();
 
             if (!wasVisible) {
-                showOverlayWindow(*overlay, false);
+                if (!showOverlayWindow(*overlay, false, generation)) {
+                    return;
+                }
             }
 
             if (mode == ScreenshotOverlayShowMode::PreparedPreview) {
-                activateOverlayWindow(*overlay);
+                activateOverlayWindow(*overlay, generation);
             }
         });
 }

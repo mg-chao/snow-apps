@@ -36,6 +36,12 @@
 #include <stdexcept>
 
 namespace selection_presentation_test {
+#if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+enum class FrameBackend { Automatic, QtTimer };
+#else
+using FrameBackend = ScreenshotPresentationFrameScheduler::Backend;
+#endif
+
 class IsolatedStorage final {
   public:
     IsolatedStorage() {
@@ -134,6 +140,20 @@ class HintTranslationObserver final : public QTranslator {
     mutable qint64 requests = 0;
 };
 
+class FrameWakeObserver final : public QObject {
+  public:
+    qint64 wakeups = 0;
+
+  protected:
+    bool eventFilter(QObject* object, QEvent* event) override {
+        if ((event->type() == QEvent::Timer || event->type() == QEvent::WinEventAct) &&
+            (object->objectName() == QStringLiteral("screenshotPresentationFrameTimer") ||
+             object->objectName() == QStringLiteral("screenshotPresentationFrameNotifier")))
+            ++wakeups;
+        return false;
+    }
+};
+
 class PaintObserver final : public QObject {
   public:
     QObject* canvas = nullptr;
@@ -180,7 +200,7 @@ class PaintObserver final : public QObject {
 class Fixture final {
   public:
     explicit Fixture(QSize logicalSize = QSize(1200, 800), bool animation = true,
-                     bool virtualClock = true)
+                     bool virtualClock = true, FrameBackend frameBackend = FrameBackend::Automatic)
         : overlay(events, new SnowCanvasWidget(canvasRuntime)),
           coordinator(events, canvasRuntime, shortcuts), toolbar(coordinator, geometry, displays) {
         static_cast<void>(QCoreApplication::installTranslator(&hintTranslations));
@@ -242,12 +262,16 @@ class Fixture final {
         Q_UNUSED(virtualClock);
 #endif
 #if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        context.frameSchedulerBackend = frameBackend;
         context.presentColorPicker = [this](ScreenshotOverlayWindow* owner,
                                             const QPointF& position) {
             if (colorPickerController)
                 colorPickerController->updateForOverlay(owner, position,
                                                         services->colorPickerContext());
         };
+#else
+        if (frameBackend != FrameBackend::Automatic)
+            throw std::runtime_error("archived presentation runtime cannot select a Qt backend");
 #endif
         services = std::make_unique<ScreenshotPresentationServices>(std::move(context));
         commands.hideColorPickers = [this] {
@@ -271,10 +295,12 @@ class Fixture final {
                  (widget == mainToolbar || mainToolbar->isAncestorOf(widget))))
                 widget->installEventFilter(&paintObserver);
         }
+        QApplication::instance()->installEventFilter(&frameWakeObserver);
         resetCounters();
     }
 
     ~Fixture() {
+        QApplication::instance()->removeEventFilter(&frameWakeObserver);
         services.reset();
         coordinator.destroyUiResources();
         static_cast<void>(QCoreApplication::removeTranslator(&hintTranslations));
@@ -345,6 +371,7 @@ class Fixture final {
         QCoreApplication::processEvents();
     }
     void resetCounters() {
+        frameWakeObserver.wakeups = 0;
         stateNotifications = 0;
         hintTranslations.requests = 0;
         paintObserver.reset();
@@ -377,6 +404,7 @@ class Fixture final {
     ScreenshotUiPreferences preferences;
     HintTranslationObserver hintTranslations;
     PaintObserver paintObserver;
+    FrameWakeObserver frameWakeObserver;
     snow_shot::platform::PhysicalCursor physicalCursor{
         {true, [] { return std::optional<QPoint>{}; }, [](const QPoint&) { return true; }}};
     std::unique_ptr<ScreenshotColorPickerController> colorPickerController;

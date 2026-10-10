@@ -1055,22 +1055,37 @@ void ScreenshotController::Impl::restoreKeyboardOwnerQueued(ScreenshotOverlayWin
         return;
     }
     m_keyboardOwnerOverlay = target;
+    const quint64 presentationGeneration = target->presentationGeneration();
     const QPointer<ScreenshotController> controller(&owner);
-    QTimer::singleShot(0, &owner, [target, controller]() {
-        if (!controller || target == nullptr || !target->isVisible()) {
+    QTimer::singleShot(0, &owner, [target, controller, presentationGeneration]() {
+        if (!controller || target == nullptr ||
+            !target->isPresentationCurrent(presentationGeneration) || !target->isVisible()) {
             return;
         }
         target->raise();
         target->activateWindow();
+        if (target == nullptr || !target->isPresentationCurrent(presentationGeneration) ||
+            !target->isVisible()) {
+            return;
+        }
         if (target->canvas() != nullptr) {
             target->canvas()->setFocus(Qt::OtherFocusReason);
         }
+        if (target == nullptr || !target->isPresentationCurrent(presentationGeneration) ||
+            !target->isVisible()) {
+            return;
+        }
         target->commitInitialSelectionCursor();
-        QTimer::singleShot(0, target, [target, controller]() {
-            if (!controller || target == nullptr || !target->isVisible()) {
+        QTimer::singleShot(0, target, [target, controller, presentationGeneration]() {
+            if (!controller || target == nullptr ||
+                !target->isPresentationCurrent(presentationGeneration) || !target->isVisible()) {
                 return;
             }
             target->activateWindow();
+            if (target == nullptr || !target->isPresentationCurrent(presentationGeneration) ||
+                !target->isVisible()) {
+                return;
+            }
             if (target->canvas() != nullptr) {
                 target->canvas()->setFocus(Qt::OtherFocusReason);
             }

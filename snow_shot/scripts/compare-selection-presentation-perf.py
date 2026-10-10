@@ -29,6 +29,14 @@ CASE_FIELDS = (
     "input_interval_ms",
     "maximum_requested_animation_idle_wait_ms",
 )
+OPTIONAL_CASE_FIELDS = (
+    "selection_toolbar_hidden",
+    "magnifier_included",
+    "magnifier_display_mode",
+    "selection_request_count",
+    "pointer_request_count",
+    "magnifier_request_count",
+)
 COUNTERS = (
     "semantic_notifications",
     "hint_translation_requests",
@@ -36,7 +44,18 @@ COUNTERS = (
     "ui_paints",
     "displayed_geometry_changes",
 )
+OPTIONAL_COUNTERS = (
+    "scheduler_wake_events",
+    "magnifier_paints",
+    "magnifier_move_events",
+    "magnifier_owner_change_events",
+    "magnifier_samples",
+    "magnifier_preview_rebuilds",
+    "magnifier_position_moves",
+    "magnifier_owner_changes",
+)
 DISTRIBUTIONS = ("preparation_ms", "event_processing_ms", "total_ms")
+OPTIONAL_DISTRIBUTIONS = ("submission_ms", "frame_commit_ms")
 
 
 def numeric(value, description):
@@ -67,8 +86,13 @@ def load_report(path, implementation):
         raise ValueError(f"{path}: expected a report object")
     if required(report, "benchmark", str(path)) != "screenshot_selection_presentation":
         raise ValueError(f"{path}: expected screenshot_selection_presentation benchmark")
-    if required(report, "implementation", str(path)) != implementation:
+    actual_implementation = required(report, "implementation", str(path))
+    if actual_implementation not in ("baseline", "optimized"):
+        raise ValueError(f"{path}: unknown implementation={actual_implementation}")
+    if implementation is not None and actual_implementation != implementation:
         raise ValueError(f"{path}: expected implementation={implementation}")
+    if "scheduler_backend" in report and report["scheduler_backend"] not in ("automatic", "qt_timer"):
+        raise ValueError(f"{path}: unknown scheduler_backend")
     for key in CONFIG_FIELDS:
         required(report, key, str(path))
     for key in ("logical_width", "logical_height", "physical_width", "physical_height",
@@ -101,7 +125,22 @@ def load_report(path, implementation):
                 f"{description}: maximum_requested_animation_idle_wait_ms")
         for key in COUNTERS:
             integer(required(case, key, description), f"{description}: {key}")
-        for key in DISTRIBUTIONS:
+        for key in OPTIONAL_COUNTERS:
+            if key in case and case[key] is not None:
+                integer(case[key], f"{description}: {key}")
+        for key in ("selection_toolbar_hidden", "magnifier_included"):
+            if key in case and not isinstance(case[key], bool):
+                raise ValueError(f"{description}: {key} must be boolean")
+        if "magnifier_display_mode" in case and case["magnifier_display_mode"] not in (
+            "excluded", "always_hide", "always_show"
+        ):
+            raise ValueError(f"{description}: unknown magnifier_display_mode")
+        for key in ("selection_request_count", "pointer_request_count", "magnifier_request_count"):
+            if key in case:
+                integer(case[key], f"{description}: {key}")
+                if case[key] > case["iterations"] * case["requests_per_frame"]:
+                    raise ValueError(f"{description}: {key} exceeds the supplied frame workload")
+        for key in DISTRIBUTIONS + tuple(key for key in OPTIONAL_DISTRIBUTIONS if key in case):
             distribution = required(case, key, description)
             for percentile in ("median", "p95", "mean"):
                 numeric(required(distribution, percentile, f"{description}: {key}"),
@@ -144,10 +183,20 @@ def normalized_work(case, count_key, supplied_key):
     return calculated
 
 
-def compare_reports(baseline_path, optimized_path):
-    baseline, baseline_cases = load_report(baseline_path, "baseline")
-    optimized, optimized_cases = load_report(optimized_path, "optimized")
+def compare_reports(baseline_path, optimized_path, *, allow_backend_change=False,
+                    allow_same_implementation=False):
+    baseline, baseline_cases = load_report(
+        baseline_path, None if allow_same_implementation else "baseline")
+    optimized, optimized_cases = load_report(
+        optimized_path, None if allow_same_implementation else "optimized")
     mismatches = [key for key in CONFIG_FIELDS if baseline[key] != optimized[key]]
+    backends = {"baseline": baseline.get("scheduler_backend"),
+                "optimized": optimized.get("scheduler_backend")}
+    backend_changed = backends["baseline"] != backends["optimized"]
+    if ("scheduler_backend" in baseline) != ("scheduler_backend" in optimized):
+        mismatches.append("scheduler_backend metadata presence")
+    elif backend_changed and not allow_backend_change:
+        mismatches.append("scheduler_backend (use --allow-backend-change for a backend comparison)")
     if mismatches:
         raise ValueError("report configuration mismatch: " + ", ".join(mismatches))
     if baseline_cases.keys() != optimized_cases.keys():
@@ -159,7 +208,9 @@ def compare_reports(baseline_path, optimized_path):
     comparisons = []
     for name, old in baseline_cases.items():
         new = optimized_cases[name]
-        mismatches = [key for key in CASE_FIELDS if old[key] != new[key]]
+        input_fields = CASE_FIELDS + tuple(key for key in OPTIONAL_CASE_FIELDS
+                                         if key in old or key in new)
+        mismatches = [key for key in input_fields if old.get(key) != new.get(key)]
         if mismatches:
             raise ValueError(f"{name}: input/configuration mismatch: " + ", ".join(mismatches))
         if old["clock"] == "controlled_monotonic" and old["frame_commit"] == "explicit_frame":
@@ -195,11 +246,14 @@ def compare_reports(baseline_path, optimized_path):
         comparisons.append({
             "scenario": name,
             "mode": mode,
-            "matched_inputs": {key: old[key] for key in CASE_FIELDS},
+            "matched_inputs": {key: old[key] for key in input_fields},
             "costs_ms": {key: {percentile: delta(old[key][percentile], new[key][percentile])
                                 for percentile in ("median", "p95", "mean")}
-                         for key in DISTRIBUTIONS},
-            "counts": {key: delta(old[key], new[key]) for key in COUNTERS},
+                         for key in DISTRIBUTIONS + tuple(key for key in OPTIONAL_DISTRIBUTIONS
+                                                        if key in old and key in new)},
+            "counts": {**{key: delta(old[key], new[key]) for key in COUNTERS},
+                       **{key: optional_delta(old.get(key), new.get(key))
+                          for key in OPTIONAL_COUNTERS if key in old or key in new}},
             "elapsed_ms": delta(old["elapsed_ms"], new["elapsed_ms"]),
             "total_measured_work_ms": delta(old["total_ms"]["mean"] * old["iterations"],
                                             new["total_ms"]["mean"] * new["iterations"]),
@@ -234,6 +288,10 @@ def compare_reports(baseline_path, optimized_path):
     return {
         "comparison": "screenshot_selection_presentation",
         "sources": {"baseline": str(baseline_path.resolve()), "optimized": str(optimized_path.resolve())},
+        "implementation_labels": {"baseline": baseline["implementation"],
+                                  "optimized": optimized["implementation"]},
+        "scheduler_backends": backends,
+        "scheduler_backend_changed": backend_changed,
         "matched_configuration": {key: baseline[key] for key in CONFIG_FIELDS},
         "dpr_from_dimensions": {
             "x": baseline["physical_width"] / baseline["logical_width"],
@@ -246,7 +304,7 @@ def compare_reports(baseline_path, optimized_path):
             "Geometry changes are observed after each event-pump call; multiple intermediate commits during one call can be missed.",
             "Requested idle waits may overshoot under OS scheduling; inspect elapsed time and observed geometry/paint counts.",
             "Qt event processing and paint counts do not measure compositor completion or input-to-photon latency.",
-            "Selector workers and magnifier are excluded by this benchmark.",
+            "Selector workers, native mouse delivery, compositor completion and input-to-photon latency are excluded. Magnifier work is included only where scenario metadata says so.",
         ],
         "summary": summary,
         "scenarios": comparisons,
@@ -260,9 +318,15 @@ def main():
     parser.add_argument("--output", type=Path, help="Save comparison JSON (otherwise writes to stdout)")
     parser.add_argument("--strict-work", action="store_true",
                         help="Exit 2 if a controlled scenario has different geometry or canvas paint counts")
+    parser.add_argument("--allow-backend-change", action="store_true",
+                        help="Compare different explicitly reported scheduler backends with identical workload metadata")
+    parser.add_argument("--allow-same-implementation", action="store_true",
+                        help="Allow two reports from the same implementation, for an explicit backend comparison")
     arguments = parser.parse_args()
     try:
-        report = compare_reports(arguments.baseline, arguments.optimized)
+        report = compare_reports(arguments.baseline, arguments.optimized,
+                                 allow_backend_change=arguments.allow_backend_change,
+                                 allow_same_implementation=arguments.allow_same_implementation)
         encoded = json.dumps(report, indent=2, allow_nan=False) + "\n"
         if arguments.output:
             arguments.output.write_text(encoded, encoding="utf-8")

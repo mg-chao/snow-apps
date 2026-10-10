@@ -6,12 +6,17 @@
 #include <functional>
 #include <memory>
 
-// Retain the native wakeup resource while scheduling absolute monotonic deadlines.
+// Retain the wakeup backend while scheduling absolute monotonic deadlines.
 // Each deadline invokes the callback once; the callback may arm the next deadline.
 class ScreenshotPresentationFrameScheduler final : public QObject {
   public:
+    enum class Backend { Automatic, QtTimer };
+
     ScreenshotPresentationFrameScheduler(std::function<qint64()> monotonicNanoseconds,
                                          std::function<void()> wakeup, QObject* parent = nullptr);
+    ScreenshotPresentationFrameScheduler(std::function<qint64()> monotonicNanoseconds,
+                                         std::function<void()> wakeup, Backend backend,
+                                         QObject* parent = nullptr);
     ~ScreenshotPresentationFrameScheduler() override;
 
     void setDeadline(qint64 deadlineNs);

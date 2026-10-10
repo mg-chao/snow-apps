@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
+#include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
@@ -30,6 +31,7 @@
 #include "widgets/detail/overlay_popup_surface.h"
 
 #include <QApplication>
+#include <QAbstractEventDispatcher>
 #include <QClipboard>
 #include <QBackingStore>
 #include <QDir>
@@ -40,10 +42,12 @@
 #include <QPainter>
 #include <QPointer>
 #include <QScreen>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QTranslator>
 #include <QLabel>
 #include <QWindow>
+#include <QTimerEvent>
 
 #include <cstdlib>
 #include <functional>
@@ -110,6 +114,206 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     void raiseToolbarForCanvasInteraction() override {}
 };
+
+class OverlayRevealFixture final {
+  public:
+    OverlayRevealFixture()
+        : primary(sink, new SnowCanvasWidget(runtime)),
+          secondary(sink, new SnowCanvasWidget(runtime)), coordinator(sink, runtime, shortcuts) {
+        primary.setCaptureGeometry(QRect(0, 0, 160, 100));
+        secondary.setCaptureGeometry(QRect(160, 0, 160, 100));
+        for (auto* overlay : {&primary, &secondary}) {
+            CapturedDisplayModel display;
+            display.logicalRect = overlay->captureGeometry();
+            display.physicalRect = display.logicalRect;
+            display.screen = QGuiApplication::primaryScreen();
+            display.active = true;
+            display.geometryResolved = true;
+            display.logicalToPhysicalScale = 1.0;
+            displays.appendDisplay(display, overlay);
+        }
+        displays.startup = std::make_shared<ScreenshotStartupContext>();
+        displays.startup->phase = ScreenshotStartupContext::Phase::Revealed;
+        displays.startup->logicalPosition = QPoint(10, 10);
+    }
+
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime runtime;
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    ScreenshotOverlayWindow primary;
+    ScreenshotOverlayWindow secondary;
+    ScreenshotDisplaySession displays;
+    ScreenshotOverlayCoordinator coordinator;
+};
+
+void retiredSecondaryRevealCannotShowThePooledOverlay() {
+    for (int retirement = 0; retirement < 4; ++retirement) {
+        OverlayRevealFixture fixture;
+        fixture.coordinator.showOverlayWindows(fixture.displays,
+                                               ScreenshotOverlayShowMode::CapturedImage);
+        require(fixture.primary.isVisible() && fixture.secondary.isHidden(),
+                "captured reveal must defer the secondary monitor until Qt dispatches it");
+        switch (retirement) {
+        case 0:
+            fixture.coordinator.hideOverlayWindowsImmediately(fixture.displays);
+            break;
+        case 1:
+            // A pending secondary reveal is hidden already, so no Hide event is emitted.
+            fixture.secondary.hide();
+            break;
+        case 2:
+            fixture.secondary.resetScreenshotRendering();
+            break;
+        case 3:
+            fixture.secondary.releaseNativeSurface();
+            break;
+        }
+        QCoreApplication::sendPostedEvents(&fixture.secondary, QEvent::MetaCall);
+        require(fixture.secondary.isHidden(),
+                "retiring a pooled overlay must cancel its queued secondary reveal");
+    }
+}
+
+void cancellationDuringFirstShowRetiresTheWholeRevealGroup() {
+    OverlayRevealFixture fixture;
+    class CancelOnShow final : public QObject {
+      public:
+        std::function<void()> cancel;
+        bool canceled = false;
+
+      protected:
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (!canceled && event->type() == QEvent::Show) {
+                canceled = true;
+                cancel();
+            }
+            return false;
+        }
+    } cancellation;
+    cancellation.cancel = [&] {
+        fixture.coordinator.hideOverlayWindowsImmediately(fixture.displays);
+    };
+    fixture.primary.installEventFilter(&cancellation);
+    fixture.coordinator.showOverlayWindows(fixture.displays,
+                                           ScreenshotOverlayShowMode::CapturedImage);
+    require(cancellation.canceled, "the preferred monitor must trigger capture cancellation");
+    QCoreApplication::sendPostedEvents(&fixture.secondary, QEvent::MetaCall);
+    require(fixture.secondary.isHidden(),
+            "cancellation during first show must retire secondary reveals before they are queued");
+}
+
+void reentrantPublicShowOwnsANewPresentation() {
+    OverlayRevealFixture fixture;
+    QWidget focusOwner(&fixture.primary);
+    focusOwner.setFocusPolicy(Qt::StrongFocus);
+    focusOwner.show();
+    class ReplaceOnShow final : public QObject {
+      public:
+        std::function<void()> replace;
+        bool replaced = false;
+
+      protected:
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (!replaced && event->type() == QEvent::Show) {
+                replaced = true;
+                replace();
+            }
+            return false;
+        }
+    } replacement;
+    replacement.replace = [&] {
+        fixture.primary.hide();
+        fixture.primary.show();
+        focusOwner.setFocus(Qt::OtherFocusReason);
+    };
+    fixture.primary.installEventFilter(&replacement);
+    fixture.coordinator.showOverlayWindows(fixture.displays,
+                                           ScreenshotOverlayShowMode::CapturedImage);
+    require(replacement.replaced && fixture.primary.isVisible() &&
+                fixture.primary.isPresentationCurrent(fixture.primary.presentationGeneration()) &&
+                fixture.primary.focusWidget() == &focusOwner,
+            "a reentrant public show must establish its own visible presentation and focus owner");
+    for (int pass = 0; pass < 3; ++pass)
+        QCoreApplication::sendPostedEvents(&fixture.primary, QEvent::MetaCall);
+    require(fixture.primary.focusWidget() == &focusOwner,
+            "activation from the superseded prepared show must not focus its replacement");
+}
+
+void supersededSecondaryRevealCannotFocusTheNextPresentation() {
+    OverlayRevealFixture fixture;
+    fixture.coordinator.showOverlayWindows(fixture.displays,
+                                           ScreenshotOverlayShowMode::CapturedImage);
+    fixture.secondary.hide();
+    fixture.secondary.show();
+    QWidget focusOwner(&fixture.secondary);
+    focusOwner.setFocusPolicy(Qt::StrongFocus);
+    focusOwner.show();
+    focusOwner.setFocus(Qt::OtherFocusReason);
+    require(fixture.secondary.focusWidget() == &focusOwner,
+            "the new presentation must own keyboard focus before dispatch");
+    // The original reveal queues activation, then a cursor commit, in separate Qt passes.
+    for (int pass = 0; pass < 3; ++pass)
+        QCoreApplication::sendPostedEvents(&fixture.secondary, QEvent::MetaCall);
+    require(fixture.secondary.focusWidget() == &focusOwner,
+            "a retired secondary reveal must not activate the reused overlay's next presentation");
+}
+
+QSet<QObject*> registeredTimerOwners() {
+    QSet<QObject*> owners;
+    auto* dispatcher = QAbstractEventDispatcher::instance();
+    for (QObject* child : dispatcher->children()) {
+        if (!dispatcher->registeredTimers(child).isEmpty())
+            owners.insert(child);
+    }
+    return owners;
+}
+
+void delayedActivationCannotFocusTheNextPresentation() {
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime runtime;
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget(runtime));
+    overlay.setCaptureGeometry(QRect(0, 0, 160, 100));
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel display;
+    display.logicalRect = overlay.captureGeometry();
+    display.active = true;
+    displays.appendDisplay(display, &overlay);
+    ScreenshotOverlayCanvasPresenter presenter({});
+    const QSet<QObject*> timersBefore = registeredTimerOwners();
+    presenter.showOverlayWindows(displays, ScreenshotOverlayShowMode::CapturedImageFramePaced);
+    const QSet<QObject*> activationTimers = registeredTimerOwners() - timersBefore;
+    require(activationTimers.size() == 1,
+            "frame-paced reveal must schedule one delayed activation on the Qt dispatcher");
+    QPointer<QObject> activationTimer(*activationTimers.constBegin());
+    const auto timers = QAbstractEventDispatcher::instance()->registeredTimers(activationTimer);
+    require(timers.size() == 1, "the activation callback must own one Qt timer registration");
+
+    overlay.hide();
+    overlay.show();
+    QWidget focusOwner(&overlay);
+    focusOwner.setFocusPolicy(Qt::StrongFocus);
+    focusOwner.show();
+    focusOwner.setFocus(Qt::OtherFocusReason);
+    require(overlay.focusWidget() == &focusOwner,
+            "the reused overlay must begin with its new keyboard owner");
+    // Deliver the real timer event deterministically, without a wall-clock sleep.
+    QTimerEvent timeout(timers.front().timerId);
+    QCoreApplication::sendEvent(activationTimer, &timeout);
+    require(activationTimer.isNull(), "the delayed one-shot activation must retire after delivery");
+    require(overlay.focusWidget() == &focusOwner,
+            "old delayed activation must not move focus after the pooled overlay is shown again");
+}
+
+void currentSecondaryRevealStillShowsAndActivatesTheOverlay() {
+    OverlayRevealFixture fixture;
+    fixture.coordinator.showOverlayWindows(fixture.displays,
+                                           ScreenshotOverlayShowMode::CapturedImage);
+    for (int pass = 0; pass < 3; ++pass)
+        QCoreApplication::sendPostedEvents(&fixture.secondary, QEvent::MetaCall);
+    require(fixture.secondary.isVisible() &&
+                fixture.secondary.focusWidget() == fixture.secondary.canvas(),
+            "a current deferred secondary reveal must still show and focus its canvas");
+}
 
 class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
                                    public ScreenshotSelectionToolbarCommandSink {
@@ -1697,6 +1901,23 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--overlay-preparation-only"))) {
+        {
+            QTemporaryDir directory;
+            require(directory.isValid(), "temporary overlay reveal storage available");
+            auto& storage = snow_shot::storage::ApplicationStorage::instance();
+            require(storage
+                        .initialize({directory.filePath(QStringLiteral("bin")),
+                                     directory.filePath(QStringLiteral("data")), 60000})
+                        .success,
+                    "initialize isolated overlay reveal storage");
+            retiredSecondaryRevealCannotShowThePooledOverlay();
+            cancellationDuringFirstShowRetiresTheWholeRevealGroup();
+            reentrantPublicShowOwnsANewPresentation();
+            supersededSecondaryRevealCannotFocusTheNextPresentation();
+            delayedActivationCannotFocusTheNextPresentation();
+            currentSecondaryRevealStillShowsAndActivatesTheOverlay();
+            storage.shutdown();
+        }
         overlayPreparationCachesContentAndInvalidatesTranslations();
         return 0;
     }

@@ -721,6 +721,48 @@ void pointerUpdatesWithHiddenGuidesRemainAvailableForLaterPresentation() {
             "enabling guides must retain the accepted pointer's fractional local precision");
 }
 
+void qtDeadlineFramesMergeAnimationGuidesAndMagnifierBursts() {
+    Fixture fixture(QSize(1200, 800), true, true,
+                    ScreenshotPresentationFrameScheduler::Backend::QtTimer);
+    enableRedPointerGuides(fixture);
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysShow);
+    fixture.coordinator.setSelectionToolbarHidden(true);
+    fixture.flushFrame();
+    fixture.processEvents();
+    fixture.resetCounters();
+    const QRectF initial = fixture.displayedSelection();
+    QRectF target;
+    QPointF pointer;
+    for (int request = 0; request < 16; ++request) {
+        target = initial.translated(20 + request * 3, 15 + request);
+        pointer = QPointF(800 + request * 3, 500 + request * 3);
+        fixture.requestSelection(target);
+        fixture.requestMagnifier(pointer);
+    }
+    auto* picker = fixture.coordinator.colorPicker();
+    require(picker->workCounters().samples == 0 && fixture.stateNotifications == 0,
+            "mixed input bursts must defer semantic and magnifier work until their shared frame");
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    fixture.processEvents();
+    require(fixture.stateNotifications == 1 && picker->workCounters().samples == 1 &&
+                fixture.paintObserver.canvasPaints == 1,
+            "one shared frame must coalesce mixed input to one semantic notification, sample and "
+            "paint");
+    const QImage image = decorationImage(fixture);
+    require(image.pixelColor(static_cast<int>(pointer.x()), 20) == QColor(Qt::red),
+            "the combined frame must use the latest pointer for its guide");
+    fixture.advanceClock(ScreenshotSmartSelectionTransition::kDurationMs);
+    fixture.flushFrame();
+    fixture.processEvents();
+    require(fixture.displayedSelection() == target && fixture.stateNotifications == 1 &&
+                picker->workCounters().samples == 1,
+            "animation-only frames must reach the latest target without replaying semantic or "
+            "picker work");
+    require(!fixture.services->frameSchedulerForTesting().active(),
+            "the merged Qt deadline scheduler must become idle when animation and input finish");
+}
+
 void pointerOnlyHintVisibilityUsesTheLatestPresentedSelection() {
     Fixture fixture(QSize(1200, 800), false);
     fixture.displays.startup->resumeLiveInput();
@@ -1130,6 +1172,7 @@ int main(int argc, char* argv[]) {
     synchronousFrameWorkSkipsExpiredDeadlines();
     pointerBurstsDoNotPublishSemanticChanges();
     pointerUpdatesWithHiddenGuidesRemainAvailableForLaterPresentation();
+    qtDeadlineFramesMergeAnimationGuidesAndMagnifierBursts();
     pointerOnlyHintVisibilityUsesTheLatestPresentedSelection();
     displayMovementRecomputesTheAnchoredPointerLocalPosition();
     layoutGenerationChangesRefreshTheAnchoredPointer();

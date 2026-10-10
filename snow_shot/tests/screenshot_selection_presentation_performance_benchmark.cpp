@@ -16,6 +16,7 @@
 
 namespace {
 using selection_presentation_test::Fixture;
+using selection_presentation_test::FrameBackend;
 
 enum class Scenario {
     SteadySelection,
@@ -25,6 +26,7 @@ enum class Scenario {
     Retargeting,
     MagnifierVisible,
     MagnifierHidden,
+    CombinedAnimation,
 };
 
 struct Case {
@@ -52,6 +54,8 @@ constexpr std::array kCases{
     Case{"magnifier_visible_16", Scenario::MagnifierVisible, 16},
     Case{"magnifier_hidden_1", Scenario::MagnifierHidden, 1},
     Case{"magnifier_hidden_16", Scenario::MagnifierHidden, 16},
+    Case{"combined_animation_pointer_magnifier_1", Scenario::CombinedAnimation, 1},
+    Case{"combined_animation_pointer_magnifier_16", Scenario::CombinedAnimation, 16},
 };
 
 QJsonObject distribution(std::vector<double> values) {
@@ -75,14 +79,16 @@ QJsonObject distribution(std::vector<double> values) {
 }
 
 QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int iterations, int warmup,
-                    int requestedFrameIntervalMs) {
+                    int requestedFrameIntervalMs, FrameBackend frameBackend) {
     const bool animation = benchmarkCase.scenario == Scenario::AnimationFrames ||
-                           benchmarkCase.scenario == Scenario::Retargeting;
+                           benchmarkCase.scenario == Scenario::Retargeting ||
+                           benchmarkCase.scenario == Scenario::CombinedAnimation;
     const int frameIntervalMs =
         requestedFrameIntervalMs > 0 ? requestedFrameIntervalMs : (animation ? 17 : 8);
-    Fixture fixture(logicalSize, animation, !animation);
+    Fixture fixture(logicalSize, animation, !animation, frameBackend);
     const bool magnifier = benchmarkCase.scenario == Scenario::MagnifierVisible ||
-                           benchmarkCase.scenario == Scenario::MagnifierHidden;
+                           benchmarkCase.scenario == Scenario::MagnifierHidden ||
+                           benchmarkCase.scenario == Scenario::CombinedAnimation;
     if (benchmarkCase.toolbarHidden) {
         fixture.coordinator.setSelectionToolbarHidden(true);
         fixture.processEvents();
@@ -92,7 +98,8 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         fixture.enableColorPicker(benchmarkCase.scenario == Scenario::MagnifierHidden
                                       ? ScreenshotColorPickerDisplayMode::AlwaysHide
                                       : ScreenshotColorPickerDisplayMode::AlwaysShow);
-    if (benchmarkCase.scenario == Scenario::Pointer)
+    if (benchmarkCase.scenario == Scenario::Pointer ||
+        benchmarkCase.scenario == Scenario::CombinedAnimation)
         fixture.enableGuides();
     const QRectF base = fixture.baseSelection();
     const int totalFrames = iterations + warmup;
@@ -134,6 +141,7 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
     qint64 canvasDamagePixels = 0;
     qint64 displayedGeometryChanges = 0;
     qint64 targetRequests = 0;
+    qint64 schedulerWakeups = 0;
     qint64 colorPickerPaints = 0;
     qint64 colorPickerMoveEvents = 0;
     qint64 colorPickerOwnerChangeEvents = 0;
@@ -156,9 +164,10 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         fixture.resetCounters();
         QElapsedTimer preparation;
         preparation.start();
-        const bool requestTarget =
-            benchmarkCase.scenario != Scenario::AnimationFrames || frame % framesPerTarget == 0;
-        if (requestTarget) {
+        const bool requestTarget = (benchmarkCase.scenario != Scenario::AnimationFrames &&
+                                    benchmarkCase.scenario != Scenario::CombinedAnimation) ||
+                                   frame % framesPerTarget == 0;
+        if (requestTarget || benchmarkCase.scenario == Scenario::CombinedAnimation) {
             for (int request = 0; request < benchmarkCase.requestsPerFrame; ++request) {
                 const auto index =
                     static_cast<std::size_t>(frame * benchmarkCase.requestsPerFrame + request);
@@ -177,6 +186,11 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
                 case Scenario::AnimationFrames:
                 case Scenario::Retargeting:
                     fixture.requestSelection(targets[index]);
+                    break;
+                case Scenario::CombinedAnimation:
+                    if (requestTarget)
+                        fixture.requestSelection(targets[index]);
+                    fixture.requestMagnifier(pointers[index]);
                     break;
                 }
             }
@@ -238,6 +252,7 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
             hintTranslationRequests += fixture.hintTranslations.requests;
             canvasPaints += fixture.paintObserver.canvasPaints;
             uiPaints += fixture.paintObserver.uiPaints;
+            schedulerWakeups += fixture.frameWakeObserver.wakeups;
             canvasDamagePixels += fixture.paintObserver.canvasDamagePixels;
             displayedGeometryChanges += frameGeometryChanges;
             colorPickerPaints += fixture.paintObserver.colorPickerPaints;
@@ -268,6 +283,10 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         displayedGeometryChanges > 0
             ? QJsonValue(workMilliseconds / static_cast<double>(displayedGeometryChanges))
             : QJsonValue(QJsonValue::Null);
+    const qint64 inputSamples = static_cast<qint64>(iterations) * benchmarkCase.requestsPerFrame;
+    const bool selectionIncluded = benchmarkCase.scenario != Scenario::Pointer &&
+                                   benchmarkCase.scenario != Scenario::MagnifierVisible &&
+                                   benchmarkCase.scenario != Scenario::MagnifierHidden;
     return {{"scenario", QString::fromLatin1(benchmarkCase.name)},
             {"iterations", iterations},
             {"requests_per_frame", benchmarkCase.requestsPerFrame},
@@ -277,7 +296,13 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
                                        : benchmarkCase.scenario == Scenario::MagnifierHidden
                                            ? "always_hide"
                                            : "always_show"},
-            {"request_count", targetRequests},
+            {"request_count",
+             benchmarkCase.scenario == Scenario::CombinedAnimation ? inputSamples : targetRequests},
+            {"selection_request_count", selectionIncluded ? targetRequests : 0},
+            {"pointer_request_count",
+             magnifier || benchmarkCase.scenario == Scenario::Pointer ? inputSamples : 0},
+            {"magnifier_request_count", magnifier ? inputSamples : 0},
+            {"scheduler_wake_events", schedulerWakeups},
             {"clock", animation ? "real_monotonic" : "controlled_monotonic"},
             {"frame_commit", animation ? "scheduled_timer" : "explicit_frame"},
             {"input_interval_ms", frameIntervalMs},
@@ -349,9 +374,17 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("milliseconds")});
     parser.addOption({QStringLiteral("scenario"), QStringLiteral("Scenario name or all"),
                       QStringLiteral("name"), QStringLiteral("all")});
+    parser.addOption({QStringLiteral("frame-backend"),
+                      QStringLiteral("Presentation wakeup backend: automatic or qt_timer"),
+                      QStringLiteral("backend"), QStringLiteral("automatic")});
     parser.addOption(
         {QStringLiteral("output"), QStringLiteral("JSON output path"), QStringLiteral("path")});
     parser.process(application);
+    const QString backendName = parser.value(QStringLiteral("frame-backend"));
+    if (backendName != QStringLiteral("automatic") && backendName != QStringLiteral("qt_timer"))
+        throw std::runtime_error("frame-backend must be automatic or qt_timer");
+    const auto frameBackend =
+        backendName == QStringLiteral("qt_timer") ? FrameBackend::QtTimer : FrameBackend::Automatic;
     const int iterations = positiveInteger(parser, QStringLiteral("iterations"));
     const int warmup = positiveInteger(parser, QStringLiteral("warmup"));
     const QSize logicalSize(positiveInteger(parser, QStringLiteral("width")),
@@ -366,8 +399,8 @@ int main(int argc, char* argv[]) {
     const QString selected = parser.value(QStringLiteral("scenario"));
     for (const Case& benchmarkCase : kCases) {
         if (selected == QStringLiteral("all") || selected == QLatin1String(benchmarkCase.name))
-            results.append(
-                runCase(benchmarkCase, logicalSize, iterations, warmup, frameIntervalMs));
+            results.append(runCase(benchmarkCase, logicalSize, iterations, warmup, frameIntervalMs,
+                                   frameBackend));
     }
     if (results.isEmpty())
         throw std::runtime_error("unknown selection presentation benchmark scenario");
@@ -375,6 +408,7 @@ int main(int argc, char* argv[]) {
     QJsonObject report{
         {"benchmark", "screenshot_selection_presentation"},
         {"platform", QGuiApplication::platformName()},
+        {"scheduler_backend", backendName},
 #if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
         {"implementation", "baseline"},
 #else
@@ -399,8 +433,9 @@ int main(int argc, char* argv[]) {
          "presentation and the real picker controller/window: baseline updates each input sample "
          "immediately, optimized commits the latest sample with the presentation frame. Picker "
          "paint/move/owner-change event counts are comparable; internal sampling/preview counters "
-         "are unavailable for the baseline and reported as null. Other cases exclude magnifier "
-         "work. Idle waits, selector workers, native mouse delivery, and input-to-photon latency "
+         "are unavailable for the baseline and reported as null. Combined cases include animated "
+         "selection, guides, and magnifier bursts; remaining cases exclude magnifier work. "
+         "Idle waits, selector workers, native mouse delivery, and input-to-photon latency "
          "are excluded from work timings."},
         {"results", results}};
     const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);

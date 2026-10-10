@@ -1,13 +1,10 @@
 #include "snow_shot/presentation/screenshotpresentationframescheduler.h"
 
-#include <QTimer>
-#include <QPointer>
+#include <QChronoTimer>
 
 #ifdef Q_OS_WIN
 #include <QWinEventNotifier>
 #include <qt_windows.h>
-#else
-#include <QChronoTimer>
 #endif
 
 #include <algorithm>
@@ -15,14 +12,17 @@
 #include <utility>
 
 struct ScreenshotPresentationFrameScheduler::Impl {
-    Impl(std::function<qint64()> monotonicClock, std::function<void()> onWakeup)
+    Impl(std::function<qint64()> monotonicClock, std::function<void()> onWakeup, Backend backend)
         : monotonicNanoseconds(std::move(monotonicClock)), wakeup(std::move(onWakeup)) {
         Q_ASSERT(monotonicNanoseconds);
+        timer.setObjectName(QStringLiteral("screenshotPresentationFrameTimer"));
+        timer.setTimerType(Qt::PreciseTimer);
+        timer.setSingleShot(true);
+        QObject::connect(&timer, &QChronoTimer::timeout, &timer, [this] { handleWakeup(); });
 #ifdef Q_OS_WIN
-        fallbackTimer.setObjectName(QStringLiteral("screenshotPresentationFrameTimer"));
-        fallbackTimer.setTimerType(Qt::PreciseTimer);
-        QObject::connect(&fallbackTimer, &QTimer::timeout, &fallbackTimer,
-                         [this] { handleWakeup(); });
+        if (backend == Backend::QtTimer) {
+            return;
+        }
         timerHandle =
             CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                    TIMER_MODIFY_STATE | SYNCHRONIZE);
@@ -40,10 +40,7 @@ struct ScreenshotPresentationFrameScheduler::Impl {
             nativeAvailable = true;
         }
 #else
-        timer.setObjectName(QStringLiteral("screenshotPresentationFrameTimer"));
-        timer.setTimerType(Qt::PreciseTimer);
-        timer.setSingleShot(true);
-        QObject::connect(&timer, &QChronoTimer::timeout, &timer, [this] { handleWakeup(); });
+        Q_UNUSED(backend);
 #endif
     }
 
@@ -69,16 +66,14 @@ struct ScreenshotPresentationFrameScheduler::Impl {
 
     void stop() {
         armed = false;
+        timer.stop();
 #ifdef Q_OS_WIN
-        fallbackTimer.stop();
         if (timerHandle) {
             CancelWaitableTimer(timerHandle);
         }
         if (notifier) {
             notifier->setEnabled(false);
         }
-#else
-        timer.stop();
 #endif
     }
 
@@ -87,15 +82,12 @@ struct ScreenshotPresentationFrameScheduler::Impl {
             return;
         }
         armed = false;
+        timer.stop();
 #ifdef Q_OS_WIN
         if (nativeAvailable) {
             // Keep the notifier registered for the next capture frame deadline.
             CancelWaitableTimer(timerHandle);
-        } else {
-            fallbackTimer.stop();
         }
-#else
-        timer.stop();
 #endif
     }
 
@@ -118,15 +110,12 @@ struct ScreenshotPresentationFrameScheduler::Impl {
             CancelWaitableTimer(timerHandle);
             notifier->setEnabled(false);
         }
-        if (!fallbackTimer.isActive()) {
-            fallbackTimer.start(1);
-        }
-#else
-        timer.setInterval(std::chrono::nanoseconds(remaining));
-        if (!timer.isActive()) {
-            timer.start();
-        }
 #endif
+        // Replacing a deadline must also restart an equal-length interval. Keep the
+        // timer object, but wake only for the remaining deadline instead of polling.
+        timer.stop();
+        timer.setInterval(std::chrono::nanoseconds(remaining));
+        timer.start();
     }
 
     void handleWakeup() {
@@ -134,52 +123,42 @@ struct ScreenshotPresentationFrameScheduler::Impl {
             return;
         }
         if (monotonicNanoseconds() < deadlineNs) {
-#ifdef Q_OS_WIN
-            if (nativeAvailable) {
-                armWakeup();
-            }
-#else
             armWakeup();
-#endif
             return;
         }
         armed = false;
-#ifdef Q_OS_WIN
-        const QPointer<QTimer> fallbackGuard(nativeAvailable ? nullptr : &fallbackTimer);
-#endif
+        // Retire any other pending backend wake before the callback can rearm or destroy us.
+        timer.stop();
         // The callback may destroy its owner. Hold the callable locally and leave
-        // the backend retained for a callback that arms the next frame deadline.
+        // all member access before it.
         const auto callback = wakeup;
         if (callback) {
             callback();
         }
-#ifdef Q_OS_WIN
-        // A callback that re-arms retains the precision timer. If the callback
-        // destroyed its owner, the guard prevents accessing the retired Impl.
-        if (fallbackGuard && !armed) {
-            fallbackGuard->stop();
-        }
-#endif
     }
 
     std::function<qint64()> monotonicNanoseconds;
     std::function<void()> wakeup;
     qint64 deadlineNs = 0;
     bool armed = false;
+    QChronoTimer timer;
 #ifdef Q_OS_WIN
-    QTimer fallbackTimer;
     HANDLE timerHandle = nullptr;
     std::unique_ptr<QWinEventNotifier> notifier;
     bool nativeAvailable = false;
-#else
-    QChronoTimer timer;
 #endif
 };
 
 ScreenshotPresentationFrameScheduler::ScreenshotPresentationFrameScheduler(
     std::function<qint64()> monotonicNanoseconds, std::function<void()> wakeup, QObject* parent)
+    : ScreenshotPresentationFrameScheduler(std::move(monotonicNanoseconds), std::move(wakeup),
+                                           Backend::Automatic, parent) {}
+
+ScreenshotPresentationFrameScheduler::ScreenshotPresentationFrameScheduler(
+    std::function<qint64()> monotonicNanoseconds, std::function<void()> wakeup, Backend backend,
+    QObject* parent)
     : QObject(parent),
-      m_impl(std::make_unique<Impl>(std::move(monotonicNanoseconds), std::move(wakeup))) {}
+      m_impl(std::make_unique<Impl>(std::move(monotonicNanoseconds), std::move(wakeup), backend)) {}
 
 ScreenshotPresentationFrameScheduler::~ScreenshotPresentationFrameScheduler() = default;
 
@@ -201,8 +180,7 @@ bool ScreenshotPresentationFrameScheduler::active() const {
 
 QObject* ScreenshotPresentationFrameScheduler::wakeupObject() const {
 #ifdef Q_OS_WIN
-    return m_impl->nativeAvailable ? static_cast<QObject*>(m_impl->notifier.get())
-                                   : &m_impl->fallbackTimer;
+    return m_impl->nativeAvailable ? static_cast<QObject*>(m_impl->notifier.get()) : &m_impl->timer;
 #else
     return &m_impl->timer;
 #endif

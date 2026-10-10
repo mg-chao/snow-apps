@@ -114,6 +114,13 @@ class ScreenshotOverlayWindow final : public QWidget {
 #endif
     void warmPresentationSurface();
     void showPreparedFrame(bool deferFirstPaint = false);
+    // Deferred reveal/focus work belongs to a presentation, not the pooled widget lifetime.
+    [[nodiscard]] quint64 beginPresentation();
+    [[nodiscard]] quint64 presentationGeneration() const;
+    [[nodiscard]] bool isPresentationCurrent(quint64 generation) const;
+    [[nodiscard]] bool showPreparedFrameForPresentation(quint64 generation,
+                                                        bool deferFirstPaint = false);
+    void setVisible(bool visible) override;
     // Release the native window and backing store while retaining the QObject,
     // canvas, renderer, and signal wiring for the next capture.
     void releaseNativeSurface();
@@ -143,6 +150,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void updateWindowMask();
     void updateScrollingInputTransparency();
     void updateScrollingResultPreviewReadout();
+    void retirePresentation();
 
     ScreenshotOverlayEventSink& m_eventSink;
     QMargins m_captureFrameMargins;
@@ -165,6 +173,9 @@ class ScreenshotOverlayWindow final : public QWidget {
     bool m_canvasClearBackgroundWasEnabled = true;
     bool m_canvasInteractionWasEnabled = true;
     bool m_windowMaskInitialized = false;
+    quint64 m_presentationGeneration = 0;
+    bool m_presentationActive = false;
+    bool m_showingPreparedFrame = false;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     quint64 m_windowMaskApplicationCount = 0;
     quint64 m_transparentClearCount = 0;

@@ -178,6 +178,105 @@ class ComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown clock/frame_commit combination"):
             self.compare(baseline, optimized)
 
+    def test_optional_toolbar_and_magnifier_workloads_must_match(self):
+        metadata = {
+            "selection_toolbar_hidden": False,
+            "magnifier_included": True,
+            "magnifier_display_mode": "always_show",
+            "selection_request_count": 5,
+            "pointer_request_count": 40,
+            "magnifier_request_count": 40,
+        }
+        alternatives = {
+            "selection_toolbar_hidden": True,
+            "magnifier_included": False,
+            "magnifier_display_mode": "always_hide",
+            "selection_request_count": 6,
+            "pointer_request_count": 39,
+            "magnifier_request_count": 39,
+        }
+        for key, value in alternatives.items():
+            with self.subTest(field=key):
+                baseline = report("baseline", animation=True)
+                optimized = report("optimized", animation=True)
+                baseline["results"][0].update(metadata)
+                optimized["results"][0].update(metadata)
+                optimized["results"][0][key] = value
+                with self.assertRaisesRegex(ValueError, f"input/configuration mismatch: {key}"):
+                    self.compare(baseline, optimized)
+
+    def test_optional_metadata_cannot_disappear_from_one_side(self):
+        baseline = report("baseline")
+        optimized = report("optimized")
+        optimized["results"][0]["magnifier_included"] = False
+        with self.assertRaisesRegex(ValueError, "input/configuration mismatch: magnifier_included"):
+            self.compare(baseline, optimized)
+
+    def test_optional_counts_and_timing_breakdown_are_preserved(self):
+        baseline = report("baseline")
+        optimized = report("optimized", cost_ms=0.6)
+        for source, wakeups in ((baseline, 120), (optimized, 40)):
+            case = source["results"][0]
+            case["scheduler_wake_events"] = wakeups
+            case["magnifier_paints"] = 40
+            case["submission_ms"] = distribution(0.01)
+            case["frame_commit_ms"] = distribution(0.02)
+        baseline["results"][0]["magnifier_samples"] = None
+        optimized["results"][0]["magnifier_samples"] = 40
+        case = self.compare(baseline, optimized)["scenarios"][0]
+        self.assertEqual(case["counts"]["scheduler_wake_events"]["reduction"], 80)
+        self.assertEqual(case["counts"]["magnifier_samples"]["optimized"], 40)
+        self.assertIsNone(case["counts"]["magnifier_samples"]["reduction_percent"])
+        self.assertIn("submission_ms", case["costs_ms"])
+        self.assertIn("frame_commit_ms", case["costs_ms"])
+
+    def test_optional_workload_counts_are_validated(self):
+        for key in ("selection_request_count", "pointer_request_count", "magnifier_request_count"):
+            with self.subTest(field=key):
+                optimized = report("optimized")
+                optimized["results"][0][key] = 41
+                with self.assertRaisesRegex(ValueError, f"{key} exceeds the supplied frame workload"):
+                    self.compare(report("baseline"), optimized)
+        optimized = report("optimized")
+        optimized["results"][0]["scheduler_wake_events"] = -1
+        with self.assertRaisesRegex(ValueError, "scheduler_wake_events must be finite and nonnegative"):
+            self.compare(report("baseline"), optimized)
+
+    def test_backend_change_requires_explicit_opt_in(self):
+        baseline = report("baseline")
+        optimized = report("optimized")
+        baseline["scheduler_backend"] = "automatic"
+        optimized["scheduler_backend"] = "qt_timer"
+        with self.assertRaisesRegex(ValueError, "configuration mismatch: scheduler_backend"):
+            self.compare(baseline, optimized)
+        result = self.invoke(baseline, optimized, "--allow-backend-change")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        comparison = json.loads(result.stdout)
+        self.assertTrue(comparison["scheduler_backend_changed"])
+        self.assertEqual(comparison["scheduler_backends"]["optimized"], "qt_timer")
+
+    def test_same_implementation_backend_comparison_requires_both_flags(self):
+        baseline = report("optimized", animation=True)
+        optimized = report("optimized", animation=True)
+        baseline["scheduler_backend"] = "automatic"
+        optimized["scheduler_backend"] = "qt_timer"
+        self.assertEqual(self.invoke(baseline, optimized).returncode, 1)
+        self.assertEqual(self.invoke(baseline, optimized, "--allow-same-implementation").returncode, 1)
+        result = self.invoke(baseline, optimized, "--allow-same-implementation", "--allow-backend-change")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        comparison = json.loads(result.stdout)
+        self.assertEqual(comparison["implementation_labels"],
+                         {"baseline": "optimized", "optimized": "optimized"})
+
+    def test_backend_metadata_presence_and_known_values_are_checked(self):
+        baseline = report("baseline")
+        optimized = report("optimized")
+        optimized["scheduler_backend"] = "qt_timer"
+        self.assertEqual(self.invoke(baseline, optimized, "--allow-backend-change").returncode, 1)
+        optimized["scheduler_backend"] = "unrecognized"
+        with self.assertRaisesRegex(ValueError, "unknown scheduler_backend"):
+            self.compare(baseline, optimized)
+
 
 if __name__ == "__main__":
     unittest.main()

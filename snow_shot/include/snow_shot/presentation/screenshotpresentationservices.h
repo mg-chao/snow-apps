@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTPRESENTATIONSERVICES_H
 
 #include "snow_shot/presentation/screenshotsmartselectiontransition.h"
+#include "snow_shot/presentation/screenshotpresentationframescheduler.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotuipreferences.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
@@ -44,9 +45,9 @@ struct ScreenshotPresentationServicesContext {
     // Optional monotonic clock for deterministic frame scheduling tests.
     std::function<qint64()> monotonicNanoseconds = {};
     std::function<void(ScreenshotOverlayWindow*, const QPointF&)> presentColorPicker = {};
+    ScreenshotPresentationFrameScheduler::Backend frameSchedulerBackend =
+        ScreenshotPresentationFrameScheduler::Backend::Automatic;
 };
-
-class ScreenshotPresentationFrameScheduler;
 
 class ScreenshotPresentationServices final {
   public:

@@ -168,7 +168,8 @@ ScreenshotPresentationServices::ScreenshotPresentationServices(
                 flushPendingFrame();
             else
                 scheduleFrame();
-        });
+        },
+        m_context.frameSchedulerBackend);
     reloadConfiguredShortcuts();
 }
 
