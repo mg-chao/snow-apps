@@ -19,8 +19,9 @@ Run the two executables sequentially after builds and tests finish.
 The offscreen Qt widget is 1280 by 720 at device pixel ratio 1. Inputs go through the widget
 and its Rust engine. Preview and endpoint samples change the displayed integer angle;
 the same-label scenario changes geometry while retaining the formatted text. Wheel
-samples alternate +1 and -1 degree. Assertions verify that wheel and endpoint scenarios
-actually change the newly created angle's second arm and preserve its other two points.
+samples alternate +1 and -1 degree. Assertions verify that wheel scenarios preserve the
+first side, and endpoint scenarios preserve the vertex and opposite direction while
+changing the shared side length.
 Quick selection is disabled for the Angle tool during benchmark setup so creation clicks
 over a populated scene start a draft. The subsequent Select-tool interactions retain the
 ordinary selection policy.
@@ -207,10 +208,10 @@ target-specific style schemas. Unrelated snapshot entries are not repaired here.
 
 Selected angles expose a circular control point at the arc midpoint. Both that control and
 the selected arc body adjust the radius without changing the three angle points. The radius
-stays within the shorter arm, and the horizontal generated label follows the arc along the
+stays within the shared side length, and the horizontal generated label follows the arc along the
 sweep bisector. A chosen radius persists in `AngleAnnotation.arc_radius`; missing values keep
 the previous automatic sizing. Endpoint edits preserve it where it fits, and selection
-resizing scales it with the shorter arm length.
+resizing scales it with the shared side length.
 
 Angle display items now carry a label-overlay flag through the C bridge's previously reserved
 byte. Qt skips all angle-label intersection and exclusion-path work, painting text above the
@@ -248,3 +249,44 @@ The historical Windows measurements above use a different machine and predate th
 behavior. This macOS run does not measure the 10,000-angle case. The focused angle,
 distance, arrow-text, path-culling, and application angle integration CTests passed, along
 with related Rust tests, scoped strict Clippy, and formatting checks.
+
+## Equal side lengths
+
+Angle creation uses three clicks: the first endpoint, the vertex, and a point setting the
+second side direction. The first side defines the shared length; the distance of the third
+point is ignored. Shift snaps the measured counterclockwise sweep to 15-degree increments.
+Dragging either endpoint changes the shared length while retaining the other side direction.
+Dragging the vertex keeps the first endpoint fixed and derives the second endpoint along its
+new direction. Uneven selection stretching preserves the transformed directions and uses
+the transformed first side length for both sides.
+
+Serialized angles retain three points. Legacy documents, undo/redo payloads, imported
+templates, and annotation batches normalize unequal sides using the first side length.
+No separate second-side length is stored. Automatic and chosen arcs use the shared length
+as their limit, and existing 0-degree versus 360-degree identity is preserved.
+
+Geometry queries derive the sweep and directions from ray vectors directly; polar bearings
+are computed only for editing. Three-point edit inputs use fixed arrays. Import normalization
+updates relative points in place, avoiding record copies and retaining translated origins
+outside the generic arrow creation clamp. Failed normalization leaves the record unchanged.
+Templates normalize their transaction-owned angle copies without cloning the entire template.
+The scene draft regression and endpoint benchmark both exercise canonical equal-sided edits.
+
+Windows x64 validation on 2026-10-10 passed the focused Rust angle, annotation synchronization,
+template, and scene regressions, strict Clippy, formatting, and the angle, arrow-text, and
+distance CTests. The Release `windows-msvc-performance` angle benchmark passed before and
+after the optimization with 100 measured iterations, three repeats, and up to 1,000 existing
+angles. Median input p50 values across the three repeats were:
+
+| Scenario (stroke width 2) | Existing angles | Before (ms) | After (ms) |
+| --- | ---: | ---: | ---: |
+| Preview | 0 | 0.0567 | 0.0540 |
+| Wheel | 0 | 0.0861 | 0.0876 |
+| Endpoint | 0 | 0.0757 | 0.0834 |
+| Visible preview | 1,000 | 3.9551 | 3.7213 |
+| Visible wheel | 1,000 | 4.0535 | 4.5559 |
+| Visible endpoint | 1,000 | 4.3083 | 3.4856 |
+
+Timings varied across repeats and scenarios; these measurements do not establish an overall
+latency improvement. The implementation reduces copies, temporary arrays, and trigonometric
+work, while the benchmark verifies the intended interactions and shared-length invariant.

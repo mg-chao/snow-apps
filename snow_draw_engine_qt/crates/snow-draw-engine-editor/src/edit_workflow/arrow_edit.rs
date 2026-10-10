@@ -132,7 +132,10 @@ impl Editor {
             }
             ArrowEditMode::Endpoint(edge) => {
                 let mut drag_target = self.snap_linear_arrow_control_point(drag_target, modifiers);
-                if modifiers.shift && !state.original_arrow.is_elbow() {
+                if modifiers.shift
+                    && !state.original_arrow.is_elbow()
+                    && !state.original_arrow.is_angle()
+                {
                     let points = state.original_arrow.global_points();
                     let reference_index = match edge {
                         ArrowEndpointEdge::Start => 1,
@@ -146,10 +149,11 @@ impl Editor {
                     let index =
                         crate::arrow_endpoint_index(state.original_arrow.points.len(), edge);
                     return ArrowEditPreview {
-                        arrow: crate::angle::angle_with_moved_point(
+                        arrow: snow_draw_engine_document::angle_with_moved_point(
                             &state.original_arrow,
                             index,
                             drag_target,
+                            modifiers.shift,
                         )
                         .unwrap_or_else(|| state.preview_arrow.clone()),
                         reorder_targets: Vec::new(),
@@ -216,6 +220,7 @@ impl Editor {
                 let mut snapped_point =
                     self.snap_linear_arrow_control_point(drag_target, modifiers);
                 if modifiers.shift
+                    && !state.original_arrow.is_angle()
                     && let Some(reference) = state
                         .original_arrow
                         .global_points()
@@ -226,10 +231,11 @@ impl Editor {
                 }
                 if state.original_arrow.is_angle() {
                     return ArrowEditPreview {
-                        arrow: crate::angle::angle_with_moved_point(
+                        arrow: snow_draw_engine_document::angle_with_moved_point(
                             &state.original_arrow,
                             index,
                             snapped_point,
+                            modifiers.shift,
                         )
                         .unwrap_or_else(|| state.preview_arrow.clone()),
                         reorder_targets: Vec::new(),

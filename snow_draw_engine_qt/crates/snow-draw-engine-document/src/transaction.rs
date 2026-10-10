@@ -50,6 +50,22 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub fn normalize_angle_invariants(&mut self) -> Result<(), snow_draw_engine_core::ErrorCode> {
+        for operation in &mut self.operations {
+            match operation {
+                Operation::InsertElement { data, .. }
+                | Operation::UpdateElementData { data, .. } => {
+                    data.normalize_angle_invariant()?;
+                }
+                Operation::RestoreElement { element, .. } => {
+                    element.data.normalize_angle_invariant()?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),

@@ -904,6 +904,16 @@ pub enum ElementData {
 }
 
 impl ElementData {
+    /// Normalize legacy angles at import boundaries, before strict validation.
+    pub fn normalize_angle_invariant(&mut self) -> Result<(), ErrorCode> {
+        if let Self::Arrow(arrow) = self
+            && arrow.is_angle()
+        {
+            crate::normalize_angle_in_place(arrow)?;
+        }
+        Ok(())
+    }
+
     pub fn kind(&self) -> ElementKind {
         match self {
             Self::Rectangle(rect) => rect.element_kind(),
@@ -1130,6 +1140,13 @@ impl ElementData {
 }
 
 impl Document {
+    pub fn normalize_angle_invariants(&mut self) -> Result<(), ErrorCode> {
+        for element in self.slots.iter_mut().flatten() {
+            element.data.normalize_angle_invariant()?;
+        }
+        Ok(())
+    }
+
     pub fn normalize_filter_invariants(&mut self) {
         for element in self.slots.iter_mut().flatten() {
             element.data.normalize_smart_erase();

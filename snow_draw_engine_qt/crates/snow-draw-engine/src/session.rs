@@ -122,13 +122,14 @@ impl Engine {
         if bytes.is_empty() || bytes.len() > MAX_DOCUMENT_SESSION_BYTES {
             return Err(ErrorCode::InvalidArgument);
         }
-        let session: DocumentSession =
+        let mut session: DocumentSession =
             serde_json::from_slice(bytes).map_err(|_| ErrorCode::InvalidArgument)?;
         if !(1..=DOCUMENT_SESSION_SCHEMA_VERSION).contains(&session.schema_version) {
             return Err(ErrorCode::Unsupported);
         }
 
         let model = DocumentModel::from_document(session.document)?;
+        session.history.normalize_angle_invariants()?;
         session.history.validate_session(&model)?;
         let mut editor = snow_draw_engine_editor::EditorSession::from_persisted_with_document(
             session.editor,
@@ -168,13 +169,14 @@ impl Engine {
         if bytes.is_empty() || bytes.len() > MAX_DOCUMENT_SESSION_BYTES {
             return Err(ErrorCode::InvalidArgument);
         }
-        let history: DocumentHistory =
+        let mut history: DocumentHistory =
             serde_json::from_slice(bytes).map_err(|_| ErrorCode::InvalidArgument)?;
         if !(1..=DOCUMENT_HISTORY_SCHEMA_VERSION).contains(&history.schema_version) {
             return Err(ErrorCode::Unsupported);
         }
 
         let model = DocumentModel::from_document(history.document)?;
+        history.history.normalize_angle_invariants()?;
         history.history.validate_session(&model)?;
         let mut engine = Self::try_new(config)?;
         engine.editor.reset_editing_state();

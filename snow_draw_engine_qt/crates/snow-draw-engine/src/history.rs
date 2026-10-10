@@ -43,6 +43,14 @@ pub struct HistoryStore {
 }
 
 impl HistoryStore {
+    pub(crate) fn normalize_angle_invariants(&mut self) -> Result<(), ErrorCode> {
+        for entry in self.undo_stack.iter_mut().chain(self.redo_stack.iter_mut()) {
+            entry.undo.normalize_angle_invariants()?;
+            entry.redo.normalize_angle_invariants()?;
+        }
+        Ok(())
+    }
+
     pub fn validate_session(&self, document: &DocumentModel) -> Result<(), ErrorCode> {
         const MAX_HISTORY_ENTRIES: usize = 100_000;
         if self.undo_stack.len().saturating_add(self.redo_stack.len()) > MAX_HISTORY_ENTRIES {

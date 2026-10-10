@@ -296,7 +296,8 @@ enum Annotation {
         style: DistanceAnnotationStyle,
     },
     Angle {
-        /// Three points ordered as first endpoint, vertex, second endpoint.
+        /// First endpoint, vertex, and a point defining the second side direction.
+        /// Both sides use the first side length; the third point distance is ignored.
         points: [[f64; 2]; 3],
         #[serde(default)]
         style: AngleAnnotationStyle,

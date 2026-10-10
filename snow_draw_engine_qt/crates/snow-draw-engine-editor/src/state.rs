@@ -116,7 +116,7 @@ pub(crate) struct CreateArrowState {
     pub(crate) phase: ArrowCreationPhase,
     pub(crate) distance_pixel_scale: Point<f64>,
     pub(crate) angle_last_view_position: Option<Point<f64>>,
-    pub(crate) angle_wheel_lock: Option<(Point<f64>, ArrowData)>,
+    pub(crate) angle_wheel_lock: Option<(Point<f64>, f64)>,
     pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 

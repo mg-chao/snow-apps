@@ -32,6 +32,15 @@ fn setup() -> (Engine, ViewportId) {
     (engine, viewport)
 }
 fn pointer(engine: &mut Engine, viewport: ViewportId, kind: PointerEventType, point: Point<f64>) {
+    pointer_modified(engine, viewport, kind, point, Modifiers::default());
+}
+fn pointer_modified(
+    engine: &mut Engine,
+    viewport: ViewportId,
+    kind: PointerEventType,
+    point: Point<f64>,
+    modifiers: Modifiers,
+) {
     engine
         .process_input(
             viewport,
@@ -50,7 +59,7 @@ fn pointer(engine: &mut Engine, viewport: ViewportId, kind: PointerEventType, po
                 } else {
                     PointerButtons::default()
                 },
-                modifiers: Modifiers::default(),
+                modifiers,
             }),
         )
         .unwrap();
@@ -133,14 +142,10 @@ fn angle_short_ray_double_click_still_requires_three_clicks() {
     click(&mut engine, viewport, Point::new(0.0, -2.0));
     let id = engine.model.paint_order()[0];
     assert_eq!(label(&engine, id).text, "90\u{00b0}");
-    assert_eq!(
-        engine.model.arrow(id).unwrap().global_points(),
-        vec![
-            Point::new(2.0, 0.0),
-            Point::new(0.0, 0.0),
-            Point::new(0.0, -2.0)
-        ]
-    );
+    let points = engine.model.arrow(id).unwrap().global_points();
+    assert_eq!(points[0], Point::new(2.0, 0.0));
+    assert_eq!(points[1], Point::new(0.0, 0.0));
+    assert!(points[2].x.abs() < 1e-9 && (points[2].y + 2.0).abs() < 1e-9);
 }
 
 #[test]
@@ -1685,4 +1690,235 @@ fn angle_arc_drag_reuses_warm_label_metrics_and_updates_only_the_owned_pair() {
         &unrelated_geometry,
         &unrelated.geometry
     ));
+}
+
+fn shared_length(arrow: &snow_draw_engine_document::ArrowData) -> f64 {
+    let points = arrow.global_points();
+    let length = (points[0].x - points[1].x).hypot(points[0].y - points[1].y);
+    let other = (points[2].x - points[1].x).hypot(points[2].y - points[1].y);
+    assert!((length - other).abs() < 1e-8);
+    length
+}
+
+#[test]
+fn angle_creation_uses_direction_only_and_shift_snaps_relative_to_first_side() {
+    for distance in [1.0, 30.0, 250.0] {
+        let (mut engine, viewport) = setup();
+        let bearing = 23.0_f64.to_radians();
+        click(
+            &mut engine,
+            viewport,
+            Point::new(100.0 * bearing.cos(), 100.0 * bearing.sin()),
+        );
+        click(&mut engine, viewport, Point::new(0.0, 0.0));
+        let second = bearing - 83.0_f64.to_radians();
+        let target = Point::new(distance * second.cos(), distance * second.sin());
+        for kind in [
+            PointerEventType::Move,
+            PointerEventType::Down,
+            PointerEventType::Up,
+        ] {
+            pointer_modified(
+                &mut engine,
+                viewport,
+                kind,
+                target,
+                Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            );
+        }
+        let id = engine.model.paint_order()[0];
+        assert!((shared_length(engine.model.arrow(id).unwrap()) - 100.0).abs() < 1e-8);
+        assert_eq!(label(&engine, id).text, "90°");
+        engine.undo().unwrap();
+        assert!(engine.model.paint_order().is_empty() && !engine.history_state().can_undo);
+    }
+}
+
+#[test]
+fn angle_endpoint_and_vertex_drags_commit_one_step_and_cancel_cleanly() {
+    for (index, target) in [
+        (0, Point::new(180.0, 20.0)),
+        (2, Point::new(20.0, -180.0)),
+        (1, Point::new(-50.0, 20.0)),
+    ] {
+        let (mut engine, viewport) = setup();
+        let id = create(&mut engine, viewport);
+        engine
+            .set_viewport_active_tool(viewport, ActiveTool::Select)
+            .unwrap();
+        engine
+            .select_element_with_viewport_changes(viewport, id)
+            .unwrap();
+        let original = engine.model.arrow(id).unwrap().clone();
+        let start = original.global_points()[index];
+        pointer(&mut engine, viewport, PointerEventType::Down, start);
+        pointer(&mut engine, viewport, PointerEventType::Move, target);
+        assert_eq!(engine.model.arrow(id).unwrap(), &original);
+        engine
+            .process_input(viewport, InputEvent::FocusLost)
+            .unwrap();
+        assert_eq!(engine.model.arrow(id).unwrap(), &original);
+        pointer(&mut engine, viewport, PointerEventType::Down, start);
+        pointer(&mut engine, viewport, PointerEventType::Move, target);
+        pointer(&mut engine, viewport, PointerEventType::Up, target);
+        let edited = engine.model.arrow(id).unwrap().clone();
+        let vertex = if index == 1 {
+            target
+        } else {
+            original.global_points()[1]
+        };
+        let first = if index == 1 {
+            original.global_points()[0]
+        } else {
+            target
+        };
+        assert!(
+            (shared_length(&edited) - (first.x - vertex.x).hypot(first.y - vertex.y)).abs() < 1e-8
+        );
+        if index == 1 {
+            assert_eq!(edited.global_points()[0], original.global_points()[0]);
+        }
+        engine.undo().unwrap();
+        assert_eq!(engine.model.arrow(id).unwrap(), &original);
+        engine.redo().unwrap();
+        assert_eq!(engine.model.arrow(id).unwrap(), &edited);
+        engine.undo().unwrap();
+        engine.undo().unwrap();
+        assert!(engine.model.paint_order().is_empty() && !engine.history_state().can_undo);
+    }
+}
+
+fn make_angles_unequal(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if object
+                .get("linear_kind")
+                .and_then(serde_json::Value::as_str)
+                == Some("Angle")
+            {
+                let points = object.get_mut("points").unwrap().as_array_mut().unwrap();
+                let vertex = points[1].as_array().unwrap().clone();
+                for (endpoint, vertex) in points[2].as_array_mut().unwrap().iter_mut().zip(vertex) {
+                    let origin = vertex.as_f64().unwrap();
+                    *endpoint = json!(origin + (endpoint.as_f64().unwrap() - origin) * 0.5);
+                }
+            }
+            for child in object.values_mut() {
+                make_angles_unequal(child);
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for child in array {
+                make_angles_unequal(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn angle_legacy_session_and_history_normalize_both_stacks_without_losing_entries() {
+    let (mut source, viewport) = setup();
+    let id = create(&mut source, viewport);
+    source
+        .set_viewport_active_tool(viewport, ActiveTool::Select)
+        .unwrap();
+    source
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    source
+        .adjust_viewport_angle_value(viewport, 15.0_f64.to_radians())
+        .unwrap();
+    apply(
+        &mut source,
+        json!([{"type":"angle","points":[[500,0],[400,0],[400,-100]]}]),
+    )
+    .unwrap();
+    source.undo().unwrap();
+    for history_only in [false, true] {
+        let bytes = if history_only {
+            source.serialize_document_history()
+        } else {
+            source.serialize_document_session()
+        }
+        .unwrap();
+        let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        make_angles_unequal(&mut legacy);
+        let counts = (
+            legacy["history"]["undoStack"].as_array().unwrap().len(),
+            legacy["history"]["redoStack"].as_array().unwrap().len(),
+        );
+        let bytes = serde_json::to_vec(&legacy).unwrap();
+        let mut restored = if history_only {
+            Engine::from_serialized_document_history_with_config(&bytes, EngineConfig::default())
+        } else {
+            Engine::from_serialized_document_session_with_config(&bytes, EngineConfig::default())
+        }
+        .unwrap();
+        let edited = restored.model.arrow(id).unwrap().clone();
+        let edited_label = label(&restored, id).clone();
+        assert!((shared_length(&edited) - 100.0).abs() < 1e-8);
+        let saved: serde_json::Value =
+            serde_json::from_slice(&restored.serialize_document_session().unwrap()).unwrap();
+        assert_eq!(
+            (
+                saved["history"]["undoStack"].as_array().unwrap().len(),
+                saved["history"]["redoStack"].as_array().unwrap().len()
+            ),
+            counts
+        );
+        restored.undo().unwrap();
+        assert_eq!(label(&restored, id).text, "90°");
+        assert!((shared_length(restored.model.arrow(id).unwrap()) - 100.0).abs() < 1e-8);
+        restored.redo().unwrap();
+        assert_eq!(restored.model.arrow(id).unwrap(), &edited);
+        assert_eq!(label(&restored, id), &edited_label);
+        restored.redo().unwrap();
+        for owner in restored.model.paint_order() {
+            if let Ok(arrow) = restored.model.arrow(*owner) {
+                shared_length(arrow);
+            }
+        }
+        let saved = restored.serialize_document_session().unwrap();
+        let round_trip =
+            Engine::from_serialized_document_session_with_config(&saved, EngineConfig::default())
+                .unwrap();
+        assert_eq!(round_trip.model.document(), restored.model.document());
+        restored.undo().unwrap();
+        restored.undo().unwrap();
+        restored.undo().unwrap();
+        assert!(restored.model.paint_order().is_empty());
+    }
+}
+
+#[test]
+fn angle_annotation_and_legacy_template_import_derive_the_second_endpoint() {
+    let (mut engine, viewport) = setup();
+    let id = apply(
+        &mut engine,
+        json!([{"type":"angle","points":[[100,0],[0,0],[0,-20]]}]),
+    )
+    .unwrap()[0];
+    assert!((shared_length(engine.model.arrow(id).unwrap()) - 100.0).abs() < 1e-8);
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    let mut template: serde_json::Value =
+        serde_json::from_slice(&engine.serialize_selected_draw_template().unwrap()).unwrap();
+    make_angles_unequal(&mut template);
+    engine
+        .insert_draw_template_with_viewport_changes(
+            viewport,
+            &serde_json::to_vec(&template).unwrap(),
+            Point::new(200.0, 200.0),
+        )
+        .unwrap();
+    let inserted = engine.selected_ids()[0];
+    assert!((shared_length(engine.model.arrow(inserted).unwrap()) - 100.0).abs() < 1e-8);
+    assert_eq!(label(&engine, inserted).text, "90°");
+    let saved = engine.serialize_document_session().unwrap();
+    Engine::from_serialized_document_session_with_config(&saved, EngineConfig::default()).unwrap();
 }

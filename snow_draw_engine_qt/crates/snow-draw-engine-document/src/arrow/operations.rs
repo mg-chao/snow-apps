@@ -67,7 +67,20 @@ pub fn compute_arrow_endpoint_drag(
     context: EngineContext,
     options: ArrowEndpointDragOptions,
 ) -> ArrowEditResult {
-    if arrow.is_generated_annotation() {
+    if arrow.is_angle() {
+        return ArrowEditResult {
+            arrow: crate::angle_with_moved_point(
+                arrow,
+                arrow_endpoint_index(arrow.points.len(), edge),
+                canvas_point,
+                options.angle_locked,
+            )
+            .unwrap_or_else(|| arrow.clone()),
+            reorder_targets: Vec::new(),
+            suggested_binding: None,
+        };
+    }
+    if arrow.is_distance() {
         let mut points = arrow.global_points();
         let index = arrow_endpoint_index(points.len(), edge);
         points[index] = canvas_point;
@@ -83,14 +96,6 @@ pub fn compute_arrow_endpoint_drag(
         .unwrap_or_else(|| arrow.clone());
         updated.rotation = arrow.rotation;
         updated.inherit_linear_metadata_from(arrow);
-        if updated.is_angle() && crate::angle_geometry(&updated).is_none() {
-            if let Some(annotation) = updated.angle.as_mut() {
-                annotation.full_turn = false;
-            }
-            if crate::angle_geometry(&updated).is_none() {
-                updated = arrow.clone();
-            }
-        }
         return ArrowEditResult {
             arrow: updated,
             reorder_targets: Vec::new(),

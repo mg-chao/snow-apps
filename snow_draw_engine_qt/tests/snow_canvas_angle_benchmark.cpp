@@ -88,6 +88,21 @@ QJsonObject selectedAngle(const SnowCanvasRuntime& runtime) {
     return angle;
 }
 
+QPointF globalPoint(const QJsonObject& owner, int index) {
+    const auto point = owner.value(QStringLiteral("points")).toArray().at(index).toArray();
+    return {owner.value(QStringLiteral("x")).toDouble() + point.at(0).toDouble(),
+            owner.value(QStringLiteral("y")).toDouble() + point.at(1).toDouble()};
+}
+
+void requireSideLength(const QJsonObject& owner, double expected) {
+    const QPointF vertex = globalPoint(owner, 1);
+    for (const int index : {0, 2}) {
+        const QPointF side = globalPoint(owner, index) - vertex;
+        require(std::abs(std::hypot(side.x(), side.y()) - expected) < 1e-7,
+                "benchmark angle sides must share the expected length");
+    }
+}
+
 void run(const char* name, Scenario scenario, int count, bool offscreen, int width, int iterations,
          int repeat) {
     SnowCanvasRuntime runtime;
@@ -103,7 +118,7 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
     auto style = canvas.canvasAngleStyle();
     style.strokeWidth = width;
     require(canvas.setCanvasAngleStyle(style), "configure angle width");
-    const QPointF a(840, 360), vertex(640, 360), b(640, 220);
+    const QPointF a(840, 360), vertex(640, 360), b(640, 160);
     const QPointF arcDirection(std::sqrt(0.5), -std::sqrt(0.5));
     if (scenario != Scenario::StaticPaint) {
         click(canvas, a);
@@ -124,17 +139,19 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
         require(canvas.setCanvasTool(SnowCanvasTool::Select), "measure committed angles");
     }
     QApplication::processEvents();
+    QJsonObject originalAngle;
     QJsonArray originalPoints;
     if (scenario == Scenario::Wheel || scenario == Scenario::Endpoint ||
         scenario == Scenario::ArcRadius) {
         require(runtime.selectedElementIds().size() == 1, "benchmark selects one angle");
-        const auto original = selectedAngle(runtime);
-        originalPoints = original.value(QStringLiteral("points")).toArray();
-        require(original.value(QStringLiteral("x")).toDouble() == 200.0 &&
-                    original.value(QStringLiteral("y")).toDouble() == 0.0 &&
+        originalAngle = selectedAngle(runtime);
+        originalPoints = originalAngle.value(QStringLiteral("points")).toArray();
+        require(originalAngle.value(QStringLiteral("x")).toDouble() == 200.0 &&
+                    originalAngle.value(QStringLiteral("y")).toDouble() == 0.0 &&
                     originalPoints == QJsonArray{QJsonArray{0.0, 0.0}, QJsonArray{-200.0, 0.0},
-                                                 QJsonArray{-200.0, -140.0}},
+                                                 QJsonArray{-200.0, -200.0}},
                 "benchmark must select the newly created angle");
+        requireSideLength(originalAngle, 200.0);
     }
     std::vector<double> inputTimes, paintTimes;
     for (int i = 0; i < iterations + 30; ++i) {
@@ -177,10 +194,13 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
         const double theta = 1.1 + ((iterations + 29) % 80) * .01;
         const auto point = vertex + QPointF(140.0 * std::cos(theta), -140.0 * std::sin(theta));
         mouse(canvas, QEvent::MouseButtonRelease, point, Qt::LeftButton);
-        const auto points = selectedAngle(runtime).value(QStringLiteral("points")).toArray();
-        require(points.at(0) == originalPoints.at(0) && points.at(1) == originalPoints.at(1) &&
-                    points.at(2) != originalPoints.at(2),
-                "endpoint benchmark must edit the newly created second arm");
+        const auto edited = selectedAngle(runtime);
+        require((globalPoint(edited, 1) - globalPoint(originalAngle, 1)).manhattanLength() < 1e-7 &&
+                    (globalPoint(edited, 2) - (point - vertex)).manhattanLength() < 1e-7 &&
+                    std::abs(globalPoint(edited, 0).y() - globalPoint(edited, 1).y()) < 1e-7 &&
+                    globalPoint(edited, 0).x() > globalPoint(edited, 1).x(),
+                "endpoint benchmark must keep the vertex and opposite direction while editing");
+        requireSideLength(edited, 140.0);
     }
     if (scenario == Scenario::ArcRadius) {
         const double radius = 40.0 + ((iterations + 29) % 80) * 0.5;

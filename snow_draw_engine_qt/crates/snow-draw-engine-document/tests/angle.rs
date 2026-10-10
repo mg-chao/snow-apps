@@ -62,10 +62,12 @@ fn angle_measures_visual_counterclockwise_sweeps_and_preserves_zero_full_turn_id
     invalid.angle.as_mut().unwrap().full_turn = true;
     assert!(angle_value(&invalid).is_none());
     assert!(validate_arrow(&invalid).is_err());
-    // Unequal ray lengths still represent a complete turn when their directions coincide.
+    // Legacy unequal full turns normalize without losing their full-turn identity.
     let mut full_turn = angle(360.0);
     // The points are relative to A; rebuild to keep the two directions aligned.
     full_turn.points[2] = [-50.0, 0.0];
+    assert!(validate_arrow(&full_turn).is_err());
+    let full_turn = snow_draw_engine_document::normalize_angle(&full_turn).unwrap();
     close(angle_value(&full_turn).unwrap(), TAU);
 }
 
@@ -250,7 +252,7 @@ fn angle_measured_labels_clear_the_arc_and_remain_horizontal_on_the_sweep_bisect
         &[
             Point::new(1.0, 0.0),
             Point::new(0.0, 0.0),
-            Point::new(0.0, -2.0),
+            Point::new(0.0, -1.0),
         ],
         arrow.stroke,
         2.0,
@@ -438,4 +440,274 @@ fn angle_custom_arc_updates_paths_bounds_picking_and_label_anchor_together() {
             if (point[0] - 75.0).abs() < 1e-9 && point[1].abs() < 1e-9));
     }
     assert!(snow_draw_engine_document::angle_arc_control_point(&angle(0.0)).is_none());
+}
+
+fn assert_equal_sides(arrow: &ArrowData, length: f64) {
+    let points = arrow.global_points();
+    for endpoint in [points[0], points[2]] {
+        close(
+            (endpoint.x - points[1].x).hypot(endpoint.y - points[1].y),
+            length,
+        );
+    }
+    assert!(validate_arrow(arrow).is_ok());
+}
+
+#[test]
+fn angle_shape_discards_second_point_distance_and_snaps_relative_sweep() {
+    use snow_draw_engine_document::AngleShape;
+    let bearing = 23.0_f64.to_radians();
+    let first = Point::new(100.0 * bearing.cos(), 100.0 * bearing.sin());
+    let second_bearing = bearing - 83.0_f64.to_radians();
+    for distance in [0.01, 50.0, 1000.0] {
+        let shape = AngleShape::from_points(
+            [
+                first,
+                Point::new(0.0, 0.0),
+                Point::new(
+                    distance * second_bearing.cos(),
+                    distance * second_bearing.sin(),
+                ),
+            ],
+            false,
+        )
+        .unwrap()
+        .snapped();
+        close(shape.side_length, 100.0);
+        close(shape.sweep.to_degrees(), 90.0);
+        let points = shape.points();
+        close(points[2].x.hypot(points[2].y), 100.0);
+        close(points[0].x, first.x);
+        close(points[0].y, first.y);
+    }
+}
+
+#[test]
+fn angle_point_edits_share_length_preserve_opposite_direction_and_vertex_anchor() {
+    use snow_draw_engine_document::angle_with_moved_point;
+    let original = angle(90.0);
+    for (index, target) in [(0, Point::new(180.0, 20.0)), (2, Point::new(20.0, -180.0))] {
+        let edited = angle_with_moved_point(&original, index, target, false).unwrap();
+        assert_equal_sides(&edited, target.x.hypot(target.y));
+        let points = edited.global_points();
+        close(points[index].x, target.x);
+        close(points[index].y, target.y);
+        assert_eq!(points[1], original.global_points()[1]);
+        let other = points[2 - index];
+        let previous = original.global_points()[2 - index];
+        close(other.x * previous.y - other.y * previous.x, 0.0);
+    }
+    let target = Point::new(-50.0, 20.0);
+    let moved = angle_with_moved_point(&original, 1, target, false).unwrap();
+    let points = moved.global_points();
+    assert_eq!(points[0], original.global_points()[0]);
+    assert_eq!(points[1], target);
+    assert_equal_sides(&moved, 150.0_f64.hypot(20.0));
+    let old_direction = Point::new(50.0, -120.0);
+    let new_direction = Point::new(points[2].x - target.x, points[2].y - target.y);
+    close(
+        new_direction.x * old_direction.y - new_direction.y * old_direction.x,
+        0.0,
+    );
+    for index in 0..3 {
+        assert_eq!(
+            angle_with_moved_point(&original, index, original.global_points()[index], false),
+            Some(original.clone())
+        );
+        assert!(
+            angle_with_moved_point(&original, index, Point::new(f64::NAN, 0.0), false).is_none()
+        );
+    }
+    assert!(angle_with_moved_point(&original, 3, target, false).is_none());
+}
+
+#[test]
+fn angle_document_endpoint_api_snaps_measured_angle_without_projecting_length() {
+    use snow_draw_engine_core::arrow::{ArrowEndpointEdge, EngineContext};
+    use snow_draw_engine_document::{
+        AngleShape, ArrowEndpointDragOptions, ElementId, compute_arrow_endpoint_drag,
+    };
+    let bearing = 23.0_f64.to_radians();
+    let shape = AngleShape {
+        vertex: Point::new(0.0, 0.0),
+        side_length: 100.0,
+        first_bearing: bearing,
+        sweep: FRAC_PI_2,
+    };
+    let mut original = ArrowData::from_global_points(
+        &shape.points(),
+        angle(90.0).stroke,
+        2.0,
+        StrokeStyle::Solid,
+        ArrowType::Straight,
+        None,
+        None,
+    )
+    .unwrap();
+    original.inherit_linear_metadata_from(&angle(90.0));
+    for index in 0..3 {
+        assert_eq!(
+            snow_draw_engine_document::angle_with_moved_point(
+                &original,
+                index,
+                original.global_points()[index],
+                true,
+            ),
+            Some(original.clone()),
+            "Shift-clicking an already snapped handle must keep the exact record",
+        );
+    }
+    for (edge, target_bearing, expected) in [
+        (
+            ArrowEndpointEdge::End,
+            bearing - 83.0_f64.to_radians(),
+            90.0,
+        ),
+        (
+            ArrowEndpointEdge::Start,
+            bearing + 10.0_f64.to_radians(),
+            105.0,
+        ),
+    ] {
+        let target = Point::new(150.0 * target_bearing.cos(), 150.0 * target_bearing.sin());
+        let edited = compute_arrow_endpoint_drag(
+            ElementId::default(),
+            &original,
+            edge,
+            target,
+            &[],
+            EngineContext {
+                zoom: 1.0,
+                is_binding_enabled: false,
+                bind_mode: snow_draw_engine_core::arrow::BindMode::Skip,
+                max_coordinate: 1e6,
+            },
+            ArrowEndpointDragOptions {
+                angle_locked: true,
+                ..Default::default()
+            },
+        )
+        .arrow;
+        assert_equal_sides(&edited, 150.0);
+        close(angle_value(&edited).unwrap().to_degrees(), expected);
+        let points = edited.global_points();
+        let opposite = if edge == ArrowEndpointEdge::Start {
+            2
+        } else {
+            0
+        };
+        let old = original.global_points()[opposite];
+        close(points[opposite].x * old.y - points[opposite].y * old.x, 0.0);
+    }
+    let invalid = compute_arrow_endpoint_drag(
+        ElementId::default(),
+        &original,
+        ArrowEndpointEdge::End,
+        Point::new(0.0, 0.0),
+        &[],
+        EngineContext {
+            zoom: 1.0,
+            is_binding_enabled: false,
+            bind_mode: snow_draw_engine_core::arrow::BindMode::Skip,
+            max_coordinate: 1e6,
+        },
+        Default::default(),
+    );
+    assert_eq!(invalid.arrow, original);
+}
+
+#[test]
+fn angle_normalization_is_idempotent_and_rejects_invalid_legacy_geometry() {
+    use snow_draw_engine_document::normalize_angle;
+    for length in [0.01, 100.0, 100000.0] {
+        let mut legacy = angle(90.0);
+        legacy.points[1] = [-length, 0.0];
+        legacy.points[2] = [-length, -length * 2.0];
+        assert!(validate_arrow(&legacy).is_err());
+        let normalized = normalize_angle(&legacy).unwrap();
+        assert_equal_sides(&normalized, length);
+        assert_eq!(
+            &normalized.global_points()[..2],
+            &legacy.global_points()[..2]
+        );
+        close(angle_value(&normalized).unwrap(), FRAC_PI_2);
+        assert_eq!(normalize_angle(&normalized), Some(normalized));
+    }
+    let mut invalid = angle(90.0);
+    invalid.angle.as_mut().unwrap().full_turn = true;
+    assert!(normalize_angle(&invalid).is_none());
+    invalid.angle.as_mut().unwrap().full_turn = false;
+    invalid.points[2] = invalid.points[1];
+    assert!(normalize_angle(&invalid).is_none());
+}
+
+#[test]
+fn angle_legacy_normalization_preserves_translated_origins_and_is_atomic() {
+    use snow_draw_engine_document::{ElementData, normalize_angle};
+    let mut legacy = angle(90.0);
+    legacy.points[2] = [-100.0, -200.0];
+    // Moving an angle changes its origin without rebuilding or clamping its points.
+    legacy.x += 2_000_000.0;
+    legacy.y -= 2_000_000.0;
+    let normalized = normalize_angle(&legacy).unwrap();
+    assert_eq!((normalized.x, normalized.y), (legacy.x, legacy.y));
+    assert_eq!(&normalized.points[..2], &legacy.points[..2]);
+    assert_equal_sides(&normalized, 100.0);
+    close(angle_value(&normalized).unwrap(), FRAC_PI_2);
+    assert_eq!(normalize_angle(&normalized), Some(normalized));
+
+    legacy.stroke_style = StrokeStyle::Dashed;
+    let mut invalid = ElementData::Arrow(legacy);
+    let original = invalid.clone();
+    assert!(invalid.normalize_angle_invariant().is_err());
+    assert_eq!(
+        invalid, original,
+        "failed normalization must preserve the record"
+    );
+}
+
+#[test]
+fn angle_geometry_keeps_directions_and_bisectors_across_bearing_wrap() {
+    use snow_draw_engine_document::AngleShape;
+    for bearing in [-179.0_f64, -23.0, 23.0, 179.0] {
+        for degrees in [0.0_f64, 0.01, 15.0, 90.0, 180.0, 270.0, 359.99, 360.0] {
+            let shape = AngleShape {
+                vertex: Point::new(20.0, -30.0),
+                side_length: 100.0,
+                first_bearing: bearing.to_radians(),
+                sweep: degrees.to_radians(),
+            };
+            let mut arrow = ArrowData::from_global_points(
+                &shape.points(),
+                angle(90.0).stroke,
+                2.0,
+                StrokeStyle::Solid,
+                ArrowType::Straight,
+                None,
+                None,
+            )
+            .unwrap();
+            arrow.inherit_linear_metadata_from(&angle(degrees));
+            let geometry = angle_geometry(&arrow).unwrap();
+            close(geometry.sweep, shape.sweep);
+            close(geometry.maximum_radius, shape.side_length);
+            let points = arrow.global_points();
+            for (endpoint, direction) in [
+                (points[0], geometry.start_direction),
+                (points[2], geometry.end_direction),
+            ] {
+                close(
+                    geometry.vertex.x + shape.side_length * direction.x,
+                    endpoint.x,
+                );
+                close(
+                    geometry.vertex.y + shape.side_length * direction.y,
+                    endpoint.y,
+                );
+            }
+            let bisector_bearing = shape.first_bearing - shape.sweep / 2.0;
+            close(geometry.bisector.x, bisector_bearing.cos());
+            close(geometry.bisector.y, bisector_bearing.sin());
+        }
+    }
 }

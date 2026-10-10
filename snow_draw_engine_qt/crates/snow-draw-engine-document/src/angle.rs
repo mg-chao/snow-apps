@@ -8,6 +8,8 @@ use crate::{
 };
 
 const COINCIDENT_DIRECTION_TOLERANCE: f64 = 1e-12;
+const SIDE_LENGTH_TOLERANCE: f64 = 1e-9;
+const ANGLE_SNAP_STEP: f64 = std::f64::consts::PI / 12.0;
 // A circular cubic spanning at most 90 degrees deviates radially by less
 // than 0.000273 of its radius. Include that envelope in bounds and picking.
 const CUBIC_ARC_RADIUS_PADDING: f64 = 0.0003;
@@ -44,6 +46,269 @@ pub fn validate_angle_annotation(angle: AngleAnnotation) -> Result<(), ErrorCode
     Ok(())
 }
 
+/// Canonical angle geometry. The second side has a direction, never its own length.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AngleShape {
+    pub vertex: Point<f64>,
+    pub side_length: f64,
+    pub first_bearing: f64,
+    pub sweep: f64,
+}
+
+// Rendering and migration use vectors directly; only editing needs a polar bearing.
+struct AngleRays {
+    vertex: Point<f64>,
+    side_length: f64,
+    second_length: f64,
+    start_direction: Point<f64>,
+    end_direction: Point<f64>,
+    sweep: f64,
+}
+
+impl AngleRays {
+    fn read_points(points: [Point<f64>; 3], full_turn: bool) -> Option<(Self, bool)> {
+        if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+            return None;
+        }
+        let [first, vertex, second] = points;
+        let first = Point::new(first.x - vertex.x, first.y - vertex.y);
+        let second = Point::new(second.x - vertex.x, second.y - vertex.y);
+        let side_length = first.x.hypot(first.y);
+        let direction_length = second.x.hypot(second.y);
+        if !side_length.is_finite()
+            || side_length <= 0.0
+            || !direction_length.is_finite()
+            || direction_length <= 0.0
+        {
+            return None;
+        }
+        let start_direction = Point::new(first.x / side_length, first.y / side_length);
+        let end_direction = Point::new(second.x / direction_length, second.y / direction_length);
+        let direction_dx = start_direction.x - end_direction.x;
+        let direction_dy = start_direction.y - end_direction.y;
+        let coincident = direction_dx * direction_dx + direction_dy * direction_dy
+            <= COINCIDENT_DIRECTION_TOLERANCE * COINCIDENT_DIRECTION_TOLERANCE;
+        if full_turn && !coincident {
+            return None;
+        }
+        let equal =
+            (side_length - direction_length).abs() <= SIDE_LENGTH_TOLERANCE * side_length.max(1.0);
+        Some((
+            Self {
+                vertex,
+                side_length,
+                second_length: direction_length,
+                start_direction,
+                end_direction,
+                sweep: if full_turn {
+                    TAU
+                } else if coincident {
+                    0.0
+                } else {
+                    let cross =
+                        start_direction.x * end_direction.y - start_direction.y * end_direction.x;
+                    let dot =
+                        start_direction.x * end_direction.x + start_direction.y * end_direction.y;
+                    (-cross).atan2(dot).rem_euclid(TAU)
+                },
+            },
+            equal,
+        ))
+    }
+
+    fn shape(&self) -> AngleShape {
+        AngleShape {
+            vertex: self.vertex,
+            side_length: self.side_length,
+            first_bearing: self.start_direction.y.atan2(self.start_direction.x),
+            sweep: self.sweep,
+        }
+    }
+}
+
+impl AngleShape {
+    /// The third point supplies only a direction; its distance is discarded.
+    pub fn from_points(points: [Point<f64>; 3], full_turn: bool) -> Option<Self> {
+        AngleRays::read_points(points, full_turn).map(|(rays, _)| rays.shape())
+    }
+
+    pub fn snapped(self) -> Self {
+        Self {
+            sweep: (self.sweep / ANGLE_SNAP_STEP).round() * ANGLE_SNAP_STEP,
+            ..self
+        }
+    }
+
+    fn point_at(self, bearing: f64) -> Point<f64> {
+        let (sin, cos) = bearing.sin_cos();
+        Point::new(
+            self.vertex.x + self.side_length * cos,
+            self.vertex.y + self.side_length * sin,
+        )
+    }
+
+    fn second_point(self, first: Point<f64>) -> Point<f64> {
+        if self.sweep == 0.0 || self.sweep == TAU {
+            first
+        } else {
+            self.point_at(self.first_bearing - self.sweep)
+        }
+    }
+
+    pub fn points(self) -> [Point<f64>; 3] {
+        let first = self.point_at(self.first_bearing);
+        [first, self.vertex, self.second_point(first)]
+    }
+}
+
+fn angle_local_points(arrow: &ArrowData) -> Option<[Point<f64>; 3]> {
+    if !arrow.is_angle() || !arrow.width.is_finite() || !arrow.height.is_finite() {
+        return None;
+    }
+    validate_angle_annotation(arrow.angle?).ok()?;
+    let [first, vertex, second] = arrow.points.as_slice() else {
+        return None;
+    };
+    Some([first, vertex, second].map(|point| Point::new(point[0], point[1])))
+}
+
+fn angle_points(arrow: &ArrowData) -> Option<[Point<f64>; 3]> {
+    Some(angle_local_points(arrow)?.map(|point| Point::new(arrow.x + point.x, arrow.y + point.y)))
+}
+
+fn rebuilt_angle(
+    arrow: &ArrowData,
+    points: [Point<f64>; 3],
+    full_turn: bool,
+    side_length: f64,
+) -> Option<ArrowData> {
+    let geometry = crate::arrow_geom::normalize_arrow_from_global_points(
+        &points.map(|point| [point.x, point.y]),
+        crate::DEFAULT_ARROW_MAX_COORDINATE,
+    );
+    let mut next = arrow.clone();
+    next.x = geometry.x;
+    next.y = geometry.y;
+    next.width = geometry.width;
+    next.height = geometry.height;
+    next.points = geometry.points;
+    let annotation = next.angle.as_mut()?;
+    annotation.full_turn = full_turn;
+    if let Some(radius) = annotation.arc_radius {
+        annotation.arc_radius = Some(radius.min(side_length));
+    }
+    crate::validate_arrow(&next).ok()?;
+    Some(next)
+}
+
+/// Migrate legacy geometry without changing its first side or measured angle.
+/// Already canonical records remain byte-for-byte unchanged.
+pub fn normalize_angle(arrow: &ArrowData) -> Option<ArrowData> {
+    let mut next = arrow.clone();
+    normalize_angle_in_place(&mut next).ok()?;
+    Some(next)
+}
+
+/// Normalize an imported record without reallocating points or changing its origin.
+/// Validation failures leave the record unchanged.
+pub fn normalize_angle_in_place(arrow: &mut ArrowData) -> Result<(), ErrorCode> {
+    let points = angle_local_points(arrow).ok_or(ErrorCode::InvalidArgument)?;
+    let (rays, equal) = AngleRays::read_points(
+        points,
+        arrow.angle.ok_or(ErrorCode::InvalidArgument)?.full_turn,
+    )
+    .ok_or(ErrorCode::InvalidArgument)?;
+    if equal {
+        return crate::validate_arrow(arrow);
+    }
+    let endpoint = if rays.sweep == 0.0 || rays.sweep == TAU {
+        points[0]
+    } else {
+        Point::new(
+            rays.vertex.x + rays.side_length * rays.end_direction.x,
+            rays.vertex.y + rays.side_length * rays.end_direction.y,
+        )
+    };
+    let previous = (arrow.points[2], arrow.width, arrow.height, arrow.angle);
+    arrow.points[2] = [endpoint.x, endpoint.y];
+    (arrow.width, arrow.height) = crate::arrow_geom::compute_bounds_from_points(&arrow.points);
+    if let Some(annotation) = &mut arrow.angle
+        && let Some(radius) = annotation.arc_radius
+    {
+        annotation.arc_radius = Some(radius.min(rays.side_length));
+    }
+    if let Err(error) = crate::validate_arrow(arrow) {
+        arrow.points[2] = previous.0;
+        arrow.width = previous.1;
+        arrow.height = previous.2;
+        arrow.angle = previous.3;
+        return Err(error);
+    }
+    Ok(())
+}
+
+pub fn angle_with_sweep(arrow: &ArrowData, sweep: f64) -> Option<ArrowData> {
+    crate::validate_arrow(arrow).ok()?;
+    if !sweep.is_finite() || !(0.0..=TAU).contains(&sweep) {
+        return None;
+    }
+    let mut points = angle_points(arrow)?;
+    let mut shape = AngleShape::from_points(points, arrow.angle?.full_turn)?;
+    if shape.sweep == sweep {
+        return Some(arrow.clone());
+    }
+    shape.sweep = sweep;
+    points[2] = shape.second_point(points[0]);
+    rebuilt_angle(arrow, points, sweep == TAU, shape.side_length)
+}
+
+pub fn angle_with_moved_point(
+    arrow: &ArrowData,
+    index: usize,
+    point: Point<f64>,
+    snap_sweep: bool,
+) -> Option<ArrowData> {
+    crate::validate_arrow(arrow).ok()?;
+    let mut points = angle_points(arrow)?;
+    if *points.get(index)? == point {
+        let shape = AngleShape::from_points(points, arrow.angle?.full_turn)?;
+        if !snap_sweep
+            || index == 1
+            || (shape.snapped().sweep - shape.sweep).abs() <= COINCIDENT_DIRECTION_TOLERANCE
+        {
+            return Some(arrow.clone());
+        }
+    }
+    points[index] = point;
+    let (rays, _) = AngleRays::read_points(points, false)?;
+    let mut shape = rays.shape();
+    if index == 2 {
+        let length = rays.second_length;
+        if length != shape.side_length {
+            points[0] = Point::new(
+                shape.vertex.x + rays.start_direction.x * length,
+                shape.vertex.y + rays.start_direction.y * length,
+            );
+        }
+        shape.side_length = length;
+    }
+    if snap_sweep && index != 1 {
+        let snapped = shape.snapped();
+        if index == 0 {
+            shape.first_bearing += snapped.sweep - shape.sweep;
+            shape.sweep = snapped.sweep;
+            points[0] = shape.point_at(shape.first_bearing);
+        } else {
+            shape.sweep = snapped.sweep;
+        }
+    }
+    if index != 2 || snap_sweep {
+        points[2] = shape.second_point(points[0]);
+    }
+    let full_turn = shape.sweep == TAU || (shape.sweep == 0.0 && arrow.angle?.full_turn);
+    rebuilt_angle(arrow, points, full_turn, shape.side_length)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AngleGeometry {
     pub vertex: Point<f64>,
@@ -73,41 +338,29 @@ pub fn angle_geometry(arrow: &ArrowData) -> Option<AngleGeometry> {
     {
         return None;
     }
-    let start = Point::new(a[0] - vertex[0], a[1] - vertex[1]);
-    let end = Point::new(b[0] - vertex[0], b[1] - vertex[1]);
-    let start_length = start.x.hypot(start.y);
-    let end_length = end.x.hypot(end.y);
-    if !start_length.is_finite()
-        || !end_length.is_finite()
-        || start_length <= 0.0
-        || end_length <= 0.0
-    {
+    let points = [
+        Point::new(a[0], a[1]),
+        Point::new(vertex[0], vertex[1]),
+        Point::new(b[0], b[1]),
+    ];
+    let (rays, equal) = AngleRays::read_points(points, annotation.full_turn)?;
+    if !equal {
         return None;
     }
-    let start_direction = Point::new(start.x / start_length, start.y / start_length);
-    let end_direction = Point::new(end.x / end_length, end.y / end_length);
-    let coincident = (start_direction.x - end_direction.x)
-        .hypot(start_direction.y - end_direction.y)
-        <= COINCIDENT_DIRECTION_TOLERANCE;
-    if annotation.full_turn && !coincident {
-        return None;
-    }
-    let cross = start_direction.x * end_direction.y - start_direction.y * end_direction.x;
-    let dot = start_direction.x * end_direction.x + start_direction.y * end_direction.y;
-    let sweep = if annotation.full_turn {
-        TAU
-    } else if coincident {
-        0.0
+    let start_direction = rays.start_direction;
+    let end_direction = if rays.sweep == 0.0 || rays.sweep == TAU {
+        start_direction
     } else {
-        (-cross).atan2(dot).rem_euclid(TAU)
+        rays.end_direction
     };
+    let sweep = rays.sweep;
     let (sin, cos) = (sweep / 2.0).sin_cos();
     let bisector = Point::new(
         start_direction.x * cos + start_direction.y * sin,
         start_direction.y * cos - start_direction.x * sin,
     );
     let font_size = annotation_font_size(arrow);
-    let maximum_radius = start_length.min(end_length);
+    let maximum_radius = rays.side_length;
     let automatic_radius =
         (0.30 * maximum_radius).min(24.0_f64.max(1.25 * font_size + arrow.stroke_width));
     let radius = annotation

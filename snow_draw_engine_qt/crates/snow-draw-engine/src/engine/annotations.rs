@@ -60,6 +60,7 @@ enum Annotation {
         style: Style,
     },
     Angle {
+        /// First endpoint, vertex, and second-side direction; both sides use the first length.
         points: [[f64; 2]; 3],
         #[serde(default)]
         style: AngleAnnotationStyle,
@@ -558,7 +559,7 @@ impl Engine {
                         .as_mut()
                         .ok_or(ErrorCode::InvalidArgument)?
                         .full_turn = full_turn;
-                    snow_draw_engine_document::validate_arrow(&data)?;
+                    snow_draw_engine_document::normalize_angle_in_place(&mut data)?;
                     next.index = next
                         .index
                         .checked_add(1)

@@ -92,7 +92,10 @@ impl Editor {
             if element.data.is_background_restore() || !old_ids.insert(element.id) {
                 return Err(ErrorCode::InvalidArgument);
             }
-            validate_element_data(&element.data)?;
+            // Legacy angle geometry is validated after in-place normalization below.
+            if !matches!(&element.data, ElementData::Arrow(arrow) if arrow.is_angle()) {
+                validate_element_data(&element.data)?;
+            }
             let index = u32::try_from(index).map_err(|_| ErrorCode::InvalidArgument)?;
             let new_index = first_id
                 .index
@@ -147,6 +150,9 @@ impl Editor {
                 }
                 ElementData::Arrow(data) => {
                     let mut data = data.clone();
+                    if data.is_angle() {
+                        snow_draw_engine_document::normalize_angle_in_place(&mut data)?;
+                    }
                     data.x += offset.x;
                     data.y += offset.y;
                     data.text_element_id =

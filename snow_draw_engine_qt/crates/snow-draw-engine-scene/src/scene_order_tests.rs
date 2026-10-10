@@ -88,7 +88,9 @@ fn fixture(separator_is_filter: bool) -> (DocumentModel, DocumentSceneCache) {
 
 #[test]
 fn ordinary_angle_drafts_skip_document_order_and_spotlight_inputs() {
-    use snow_draw_engine_document::{AngleAnnotation, LinearElementKind, angle_label};
+    use snow_draw_engine_document::{
+        AngleAnnotation, LinearElementKind, angle_label, angle_with_moved_point,
+    };
     let mut model = DocumentModel::new();
     let mut tx = Transaction::new("offscreen angle document");
     for index in 0..4096 {
@@ -123,7 +125,14 @@ fn ordinary_angle_drafts_skip_document_order_and_spotlight_inputs() {
         let mut arrow = model.arrow(id(0)).unwrap().clone();
         arrow.x -= 5000.0;
         arrow.y -= 5000.0;
-        arrow.points[2][0] += f64::from(step);
+        let endpoint = arrow.global_points()[2];
+        arrow = angle_with_moved_point(
+            &arrow,
+            2,
+            Point::new(endpoint.x + f64::from(step), endpoint.y),
+            false,
+        )
+        .unwrap();
         arrow.text_element_id = Some(id(8193));
         let text = angle_label(&arrow, None).unwrap();
         let presentation = EditorPresentationState {

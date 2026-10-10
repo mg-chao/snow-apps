@@ -7,7 +7,7 @@ use snow_draw_engine_core::{
     arrow::{ArrowType, StrokeStyle},
 };
 use snow_draw_engine_document::{
-    AngleAnnotation, AngleUnit, ArrowData, LinearElementKind, Transaction,
+    AngleAnnotation, AngleShape, AngleUnit, ArrowData, LinearElementKind, Transaction,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -112,39 +112,6 @@ impl AngleStyle {
     }
 }
 
-pub(crate) fn angle_with_moved_point(
-    arrow: &ArrowData,
-    index: usize,
-    point: Point<f64>,
-) -> Option<ArrowData> {
-    let mut points = arrow.global_points();
-    *points.get_mut(index)? = point;
-    let mut next = ArrowData::from_global_points(
-        &points,
-        arrow.stroke,
-        arrow.stroke_width,
-        StrokeStyle::Solid,
-        ArrowType::Straight,
-        None,
-        None,
-    )?;
-    next.inherit_linear_metadata_from(arrow);
-    next.rotation = arrow.rotation;
-    if next.angle.is_some_and(|angle| angle.full_turn)
-        && snow_draw_engine_document::angle_geometry(&next).is_none()
-    {
-        next.angle.as_mut()?.full_turn = false;
-    }
-    if snow_draw_engine_document::validate_arrow(&next).is_err() {
-        return None;
-    }
-    if let Some(radius) = next.angle?.arc_radius {
-        next.angle.as_mut()?.arc_radius =
-            Some(radius.min(snow_draw_engine_document::angle_geometry(&next)?.maximum_radius));
-    }
-    Some(next)
-}
-
 pub(crate) fn angle_with_dragged_arc(
     arrow: &ArrowData,
     start: Point<f64>,
@@ -183,18 +150,7 @@ fn adjusted_angle(arrow: &ArrowData, delta_radians: f64) -> Option<ArrowData> {
     if next_value == current {
         return Some(arrow.clone());
     }
-    let points = arrow.global_points();
-    let vertex = points[1];
-    let first = Point::new(points[0].x - vertex.x, points[0].y - vertex.y);
-    let bearing = first.y.atan2(first.x) - next_value;
-    let length = (points[2].x - vertex.x).hypot(points[2].y - vertex.y);
-    let endpoint = Point::new(
-        vertex.x + length * bearing.cos(),
-        vertex.y + length * bearing.sin(),
-    );
-    let mut next = angle_with_moved_point(arrow, 2, endpoint)?;
-    next.angle.as_mut()?.full_turn = next_value == std::f64::consts::TAU;
-    Some(next)
+    snow_draw_engine_document::angle_with_sweep(arrow, next_value)
 }
 
 impl Editor {
@@ -318,12 +274,6 @@ impl Editor {
                 self.bump_scene_state_revision();
             }
         }
-        if !edits_selection
-            && let crate::InteractionState::CreatingArrow(state) = &mut self.state.interaction
-            && let Some((_, arrow)) = &mut state.angle_wheel_lock
-        {
-            next_default.apply_to_arrow(arrow);
-        }
         if transaction.is_empty() {
             return Ok(None);
         }
@@ -374,7 +324,10 @@ impl Editor {
                 .angle_last_view_position
                 .unwrap_or(state.press_view_position);
             if let crate::InteractionState::CreatingArrow(state) = &mut self.state.interaction {
-                state.angle_wheel_lock = Some((lock_position, next.clone()));
+                state.angle_wheel_lock = Some((
+                    lock_position,
+                    snow_draw_engine_document::angle_value(&next).unwrap(),
+                ));
             }
             self.set_creation_preview(Some(ElementCreationPreview::Arrow(next)), Vec::new());
             return Ok(None);
@@ -440,33 +393,51 @@ impl Editor {
         }
         let point = crate::view_to_canvas(event.position, &self.camera(), self.surface_size());
         let (mut point, guides) = self.snap_arrow_creation_point(document, point, event.modifiers);
-        if event.modifiers.shift {
-            point = crate::lock_linear_point_to_discrete_angle(
-                *state.committed_points.last().unwrap(),
-                point,
-            );
+        if event.modifiers.shift && state.committed_points.len() == 1 {
+            point = crate::lock_linear_point_to_discrete_angle(state.committed_points[0], point);
         }
-        let preview = if let Some((_, arrow)) = &state.angle_wheel_lock {
-            Some(arrow.clone())
+        let style = self.state.default_angle_style;
+        let preview = if let [first, vertex] = state.committed_points.as_slice() {
+            let shape = if let Some((_, sweep)) = state.angle_wheel_lock {
+                AngleShape::from_points([*first, *vertex, *first], false)
+                    .map(|shape| AngleShape { sweep, ..shape })
+            } else {
+                AngleShape::from_points([*first, *vertex, point], false).map(|shape| {
+                    if event.modifiers.shift {
+                        shape.snapped()
+                    } else {
+                        shape
+                    }
+                })
+            };
+            shape.and_then(|shape| {
+                let mut points = shape.points();
+                // Keep the committed first side exact; only the second endpoint is derived.
+                points[0] = *first;
+                let mut arrow = ArrowData::from_global_points(
+                    &points,
+                    style.stroke,
+                    style.stroke_width,
+                    StrokeStyle::Solid,
+                    ArrowType::Straight,
+                    None,
+                    None,
+                )?;
+                style.apply_to_arrow(&mut arrow);
+                arrow.angle.as_mut()?.full_turn = shape.sweep == std::f64::consts::TAU;
+                snow_draw_engine_document::validate_arrow(&arrow).ok()?;
+                Some(arrow)
+            })
         } else {
-            let mut points = state.committed_points.clone();
-            points.push(point);
             ArrowData::from_global_points(
-                &points,
-                self.state.default_angle_style.stroke,
-                self.state.default_angle_style.stroke_width,
+                &[state.committed_points[0], point],
+                style.stroke,
+                style.stroke_width,
                 StrokeStyle::Solid,
                 ArrowType::Straight,
                 None,
                 None,
             )
-            .and_then(|mut arrow| {
-                if points.len() == 3 {
-                    self.state.default_angle_style.apply_to_arrow(&mut arrow);
-                }
-                (points.len() != 3 || snow_draw_engine_document::validate_arrow(&arrow).is_ok())
-                    .then_some(arrow)
-            })
         };
         let mut capture = PointerCaptureCommand::NoChange;
         match event.event_type {
@@ -501,7 +472,10 @@ impl Editor {
             _ => {}
         }
         self.state.interaction = InteractionState::CreatingArrow(state);
-        self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), guides);
+        let preview = preview
+            .map(ElementCreationPreview::Arrow)
+            .or_else(|| self.state.creation_preview.clone());
+        self.set_creation_preview(preview, guides);
         Ok(crate::InteractionOutput {
             consumed: true,
             capture,
@@ -513,6 +487,13 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn angle_with_moved_point(
+        arrow: &ArrowData,
+        index: usize,
+        point: Point<f64>,
+    ) -> Option<ArrowData> {
+        snow_draw_engine_document::angle_with_moved_point(arrow, index, point, false)
+    }
 
     fn angle() -> ArrowData {
         let mut arrow = ArrowData::from_global_points(
@@ -534,11 +515,15 @@ mod tests {
     }
 
     #[test]
-    fn angle_point_edits_preserve_other_points_and_reject_zero_length_rays() {
+    fn angle_point_edits_preserve_first_endpoint_and_reject_zero_length_rays() {
         let original = angle();
         let vertex = angle_with_moved_point(&original, 1, Point::new(-50.0, 20.0)).unwrap();
         assert_eq!(vertex.global_points()[0], original.global_points()[0]);
-        assert_eq!(vertex.global_points()[2], original.global_points()[2]);
+        let points = vertex.global_points();
+        let start = Point::new(points[0].x - points[1].x, points[0].y - points[1].y);
+        let end = Point::new(points[2].x - points[1].x, points[2].y - points[1].y);
+        assert!((start.x.hypot(start.y) - end.x.hypot(end.y)).abs() < 1e-9);
+        assert!((end.x * -120.0 - end.y * 50.0).abs() < 1e-9);
         assert_eq!(vertex.global_points()[1], Point::new(-50.0, 20.0));
         assert_eq!(vertex.points.len(), 3);
         assert!(angle_with_moved_point(&original, 0, Point::new(0.0, 0.0)).is_none());
@@ -653,7 +638,7 @@ mod tests {
             }],
         )
         .unwrap();
-        for (scale_x, scale_y, expected) in [(2.0, 2.0, 120.0), (2.0, 0.5, 30.0)] {
+        for (scale_x, scale_y, expected) in [(2.0, 2.0, 120.0), (2.0, 0.5, 120.0)] {
             let resized = crate::arrow_ops::resized_arrow_for_selection(
                 &original,
                 &bounds,
@@ -671,5 +656,74 @@ mod tests {
         let translated =
             crate::arrow_ops::translated_arrow_for_move(&original, Point::new(20.0, 30.0));
         assert_eq!(translated.angle.unwrap().arc_radius, Some(60.0));
+    }
+    #[test]
+    fn angle_uneven_resize_preserves_directions_and_scales_arc_with_first_side() {
+        use snow_draw_engine_document::{AngleShape, angle_geometry, angle_value, validate_arrow};
+        let shape = AngleShape {
+            vertex: Point::new(20.0, 30.0),
+            side_length: 100.0,
+            first_bearing: 23.0_f64.to_radians(),
+            sweep: 70.0_f64.to_radians(),
+        };
+        let mut original = ArrowData::from_global_points(
+            &shape.points(),
+            angle().stroke,
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        AngleStyle::default().apply_to_arrow(&mut original);
+        original.angle.as_mut().unwrap().arc_radius = Some(25.0);
+        let bounds = crate::SelectionBounds {
+            center: Point::new(0.0, 0.0),
+            width: 400.0,
+            height: 400.0,
+            rotation: 0.0,
+        };
+        for (sx, sy) in [
+            (2.0, 0.5),
+            (-2.0, 0.5),
+            (0.5, 2.0),
+            (-0.5, -2.0),
+            (1.0, 1.0),
+        ] {
+            let next = crate::arrow_ops::resized_arrow_for_selection(
+                &original,
+                &bounds,
+                Point::new(0.0, 0.0),
+                sx,
+                sy,
+            )
+            .unwrap();
+            assert!(validate_arrow(&next).is_ok());
+            let points = original.global_points();
+            let expected = points
+                .iter()
+                .map(|p| Point::new(p.x * sx, p.y * sy))
+                .collect::<Vec<_>>();
+            let first = Point::new(expected[0].x - expected[1].x, expected[0].y - expected[1].y);
+            let second = Point::new(expected[2].x - expected[1].x, expected[2].y - expected[1].y);
+            let geometry = angle_geometry(&next).unwrap();
+            assert!((geometry.maximum_radius - first.x.hypot(first.y)).abs() < 1e-9);
+            assert!(
+                (geometry.end_direction.x * second.y - geometry.end_direction.y * second.x).abs()
+                    < 1e-9
+            );
+            assert!(
+                (next.angle.unwrap().arc_radius.unwrap() - 25.0 * geometry.maximum_radius / 100.0)
+                    .abs()
+                    < 1e-9
+            );
+            let expected_shape =
+                AngleShape::from_points(expected.try_into().unwrap(), false).unwrap();
+            assert!((angle_value(&next).unwrap() - expected_shape.sweep).abs() < 1e-9);
+            if sx == 1.0 && sy == 1.0 {
+                assert_eq!(next, original);
+            }
+        }
     }
 }
