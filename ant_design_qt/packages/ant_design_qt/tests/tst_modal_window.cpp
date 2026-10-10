@@ -200,6 +200,89 @@ class TstModalWindow : public QObject {
     requireOpenProducesVisibleWindow(modal, QStringLiteral("Ownerless detached"));
   }
 
+  void windowModeNativeContentKeepsOpaqueSurface() {
+    for (const bool customFooter : {false, true}) {
+      QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+      owner.setAttribute(Qt::WA_TranslucentBackground);
+      owner.resize(800, 600);
+      owner.show();
+      QVERIFY(QTest::qWaitForWindowExposed(&owner));
+
+      AdModal modal(&owner);
+      modal.setOwnerWindow(&owner);
+      modal.setMode(AdModal::Mode::Window);
+      modal.setWindowModality(Qt::ApplicationModal);
+      modal.setWindowTitle(QStringLiteral("Native content"));
+      auto* content = new QLabel(QStringLiteral("Native control"));
+      // Native controls create their ancestors' handles when they are reparented
+      // out of the modal's parking widget, before the first show().
+      content->winId();
+      if (customFooter) {
+        modal.setFooterWidget(content);
+      } else {
+        modal.setContentWidget(content);
+      }
+
+      modal.open();
+      auto* surface = visibleOverlaySurface(modal.windowTitle());
+      QVERIFY(surface);
+      QCOMPARE(QApplication::activeModalWidget(), surface);
+      QVERIFY(!surface->testAttribute(Qt::WA_TranslucentBackground));
+      QVERIFY2(!surface->windowHandle()->format().hasAlpha(),
+               "opaque modal must not retain a translucent native backing store");
+      // Native descendants can cover the entire top-level client area, leaving
+      // its isExposed() false on Windows while the child surfaces are painted.
+      QVERIFY(QTest::qWaitForWindowExposed(content->windowHandle()));
+      QVERIFY(content->isVisible());
+#ifdef Q_OS_WIN
+      if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const auto hwnd = reinterpret_cast<HWND>(surface->winId());
+        QCOMPARE(GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED, LONG_PTR(0));
+      }
+#endif
+      modal.close();
+      QVERIFY(QApplication::activeModalWidget() == nullptr);
+    }
+  }
+
+  void windowModeKeepsExplicitToolOwner() {
+    QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    owner.setAttribute(Qt::WA_TranslucentBackground);
+    owner.resize(800, 600);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+
+    AdModal modal(&owner);
+    modal.setOwnerWindow(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.setWindowTitle(QStringLiteral("Capture-owned modal"));
+    modal.open();
+    auto* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    QVERIFY(QTest::qWaitForWindowExposed(surface));
+    QCOMPARE(surface->windowHandle()->transientParent(), owner.windowHandle());
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+      const auto modalHandle = reinterpret_cast<HWND>(surface->winId());
+      const auto ownerHandle = reinterpret_cast<HWND>(owner.winId());
+      QCOMPARE(GetWindow(modalHandle, GW_OWNER), ownerHandle);
+      owner.raise();
+      QCoreApplication::processEvents();
+      bool modalAboveOwner = false;
+      for (HWND candidate = GetWindow(ownerHandle, GW_HWNDPREV); candidate;
+           candidate = GetWindow(candidate, GW_HWNDPREV)) {
+        modalAboveOwner |= candidate == modalHandle;
+      }
+      QVERIFY2(modalAboveOwner, "raising the capture owner must not cover its modal");
+    }
+#endif
+    modal.close();
+    modal.open();
+    QCOMPARE(surface->windowHandle()->transientParent(), owner.windowHandle());
+    modal.close();
+  }
+
   void overlayModeFitsNestedFormBeforeShowing() {
     for (const bool centered : {false, true}) {
       for (const int rowCount : {1, 2}) {
@@ -1250,6 +1333,47 @@ class TstModalWindow : public QObject {
     QCOMPARE(surface->parentWidget(), nullptr);
     owner.hide();
     QVERIFY(modal.isOpen());
+    modal.close();
+  }
+
+  void windowModeRetainsExplicitToolOwner() {
+    QWidget ancestor;
+    ancestor.show();
+    QWidget owner(&ancestor, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    owner.show();
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.setWindowTitle(QStringLiteral("Explicit tool owner"));
+    const auto verify = [&] {
+      QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+      QVERIFY(surface);
+      QCOMPARE(surface->parentWidget(), &owner);
+      QCOMPARE(surface->windowHandle()->transientParent(), owner.windowHandle());
+#ifdef Q_OS_WIN
+      if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        QCOMPARE(GetWindow(reinterpret_cast<HWND>(surface->winId()), GW_OWNER),
+                 reinterpret_cast<HWND>(owner.winId()));
+      }
+#endif
+      QCOMPARE(QApplication::activeModalWidget(), surface);
+    };
+    modal.open();
+    verify();
+    modal.setWindowTaskbarVisible(true);
+    verify();
+    modal.close();
+    modal.open();
+    verify();
+    modal.setOwnerWindow(&ancestor);
+    QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    QCOMPARE(surface->windowHandle()->transientParent(), ancestor.windowHandle());
+    modal.setWindowModeDetached(true);
+    surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    QCOMPARE(surface->parentWidget(), nullptr);
+    QCOMPARE(surface->windowHandle()->transientParent(), nullptr);
     modal.close();
   }
 

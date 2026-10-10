@@ -100,6 +100,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void applyQuickSelectionPreferences();
     void applyNativePassThrough(bool enabled);
     [[nodiscard]] bool regionEditingEnabled() const;
+    [[nodiscard]] bool drawingEnabled() const;
     [[nodiscard]] Qt::Edges resizeEdgesAt(const QPointF& position) const;
     void cancelRegionInteraction();
     void finishRegionInteraction();
@@ -118,6 +119,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;
     InputMode m_inputMode = InputMode::PassThrough;
     bool m_drawingBlocked = false;
+    bool m_windowBlocked = false;
     bool m_trimming = false;
     QImage m_previewFrame;
     Qt::MouseButton m_gestureButton = Qt::NoButton;

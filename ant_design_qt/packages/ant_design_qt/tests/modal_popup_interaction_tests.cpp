@@ -170,14 +170,19 @@ class ModalPopupInteractionTest final : public QObject {
     QVERIFY(hoverOpens(tooltip));
 
     outer.setWindowModality(Qt::ApplicationModal);
+    QCOMPARE(outerTarget->window()->windowHandle()->modality(), Qt::ApplicationModal);
     QVERIFY(hoverOpens(tooltip));
     tooltip.setTargetWidget(&unrelated);
     QVERIFY(!hoverOpens(tooltip));
     outer.setWindowModality(Qt::WindowModal);
+#ifndef Q_OS_MACOS
+    QCOMPARE(outerTarget->window()->windowHandle()->modality(), Qt::WindowModal);
+#endif
     QVERIFY(hoverOpens(tooltip));
     tooltip.setTargetWidget(&owner);
     QVERIFY(!hoverOpens(tooltip));
     outer.setWindowModality(Qt::NonModal);
+    QCOMPARE(outerTarget->window()->windowHandle()->modality(), Qt::NonModal);
     QVERIFY(hoverOpens(tooltip));
   }
 

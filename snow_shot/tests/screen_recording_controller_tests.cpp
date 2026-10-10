@@ -2827,6 +2827,13 @@ void recordingSettingsDialog() {
             "recording settings must be a standalone owned popup");
     require(qobject_cast<ScreenRecordingAreaWindow*>(modal->ownerWindow()) != nullptr,
             "recording settings must use the recording area as their placement anchor");
+    auto* recordingArea = qobject_cast<ScreenRecordingAreaWindow*>(modal->ownerWindow());
+    auto* moveHandle =
+        recordingArea->findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    require(recordingArea->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !recordingArea->canvas()->interactionEnabled() && moveHandle &&
+                !moveHandle->isVisible(),
+            "recording preferences must suspend region controls and drawing input");
     requireModalCenteredOnArea(modal, modal->ownerWindow()->frameGeometry(),
                                modal->ownerWindow()->screen());
     auto* form =
@@ -2976,6 +2983,22 @@ void recordingSettingsDialog() {
     modal->accept();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(retired.isNull(), "closing recording settings must release its form and popup windows");
+    require(!recordingArea->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                moveHandle->isVisible(),
+            "closing recording preferences must restore region controls");
+    toolbarPalette->findChild<AdButton*>(QStringLiteral("screenRecordingEffectSettings"))->click();
+    QCoreApplication::processEvents();
+    auto* effects =
+        toolbarPalette->findChild<AdModal*>(QStringLiteral("screenRecordingEffectSettingsModal"));
+    require(effects && effects->isOpen() && effects->ownerWindow() == recordingArea &&
+                recordingArea->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !moveHandle->isVisible(),
+            "effect settings must suspend the same recording input and region controls");
+    effects->accept();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!recordingArea->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                moveHandle->isVisible(),
+            "closing effect settings must restore region controls");
     controller.open(QRect(200, 150, 320, 240));
     button->click();
     modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));

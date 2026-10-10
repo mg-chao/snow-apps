@@ -68,6 +68,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
+#include <QWindow>
 #include <QSlider>
 #include <QSpacerItem>
 #include <QPushButton>
@@ -747,6 +748,14 @@ void recordingEffectSettingsModal() {
         require(!swatch->pixmap().isNull(), "highlight preview must render a swatch");
         require(settings.modal != nullptr && settings.modal->isOpen(),
                 "clicking Settings must build and open the modal");
+        auto* surface = settings.modal->contentWidget()->window();
+        require(surface->isVisible() && surface->windowHandle()->isExposed() &&
+                    !surface->windowHandle()->format().hasAlpha() &&
+                    settings.modal->contentWidget()->isVisible(),
+                "each Settings open must expose an opaque window with visible form content");
+        require(surface->windowHandle()->transientParent() ==
+                    settings.modal->ownerWindow()->windowHandle(),
+                "each Settings open must retain native recording-window ownership");
         require(settings.modal == palette.findChild<adqt::widgets::AdModal*>(
                                       QStringLiteral("screenRecordingEffectSettingsModal")),
                 "the rebuilt modal must keep its object name");
@@ -768,7 +777,8 @@ void recordingEffectSettingsModal() {
         return settings;
     };
 
-    QWidget recordingOwner;
+    QWidget recordingOwner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    recordingOwner.setAttribute(Qt::WA_TranslucentBackground);
     recordingOwner.setGeometry(40, 40, 600, 500);
     recordingOwner.move(QGuiApplication::primaryScreen()->availableGeometry().center() -
                         recordingOwner.rect().center());

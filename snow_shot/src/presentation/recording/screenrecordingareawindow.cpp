@@ -13,6 +13,7 @@
 #include "screenrecordinggeometry.h"
 #include "../resizegeometry.h"
 #include "recordingregiondraghandle.h"
+#include "recordingregioninputrouter.h"
 #include <QApplication>
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/screenshotnative.h"
@@ -39,8 +40,6 @@
 #include <QScopedValueRollback>
 #include <QRegion>
 #include <QtMath>
-#include <functional>
-#include <utility>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #ifndef NOMINMAX
@@ -57,77 +56,6 @@ constexpr qreal kResizeHitWidth = 6.0;
 constexpr int kFrameInset = snow_shot::presentation::recording::screenRecordingPhysicalFrameInset;
 constexpr int kMoveButtonGap = 8;
 } // namespace
-
-// Observe pointer input without creating another native surface. On Windows the
-// low-level callback runs before hit testing, so even opaque annotations pass
-// clicks through when the pointer is outside the controls.
-class RecordingRegionInputRouter final {
-  public:
-    explicit RecordingRegionInputRouter(std::function<void(const QPoint&)> changed)
-        : m_changed(std::move(changed)) {
-#ifdef Q_OS_WIN
-        if (QGuiApplication::platformName() != QStringLiteral("windows"))
-            return;
-        s_observers.append(this);
-        if (!s_mouseHook) {
-            s_mouseHook =
-                SetWindowsHookExW(WH_MOUSE_LL, mouseCallback, GetModuleHandleW(nullptr), 0);
-            if (!s_mouseHook)
-                qWarning("Failed to observe recording region pointer input: %lu", GetLastError());
-        }
-#elif defined(Q_OS_MACOS)
-        if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
-            return;
-        constexpr NSEventMask mask = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged |
-                                     NSEventMaskRightMouseDragged | NSEventMaskOtherMouseDragged |
-                                     NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown |
-                                     NSEventMaskOtherMouseDown | NSEventMaskLeftMouseUp |
-                                     NSEventMaskRightMouseUp | NSEventMaskOtherMouseUp;
-        m_localMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:mask
-                                                               handler:^NSEvent*(NSEvent* event) {
-                                                                 m_changed(QCursor::pos());
-                                                                 return event;
-                                                               }];
-        m_globalMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mask
-                                                                 handler:^(NSEvent*) {
-                                                                   m_changed(QCursor::pos());
-                                                                 }];
-#endif
-    }
-
-    ~RecordingRegionInputRouter() {
-#ifdef Q_OS_WIN
-        s_observers.removeAll(this);
-        if (s_observers.isEmpty() && s_mouseHook) {
-            UnhookWindowsHookEx(s_mouseHook);
-            s_mouseHook = nullptr;
-        }
-#elif defined(Q_OS_MACOS)
-        if (m_localMonitor)
-            [NSEvent removeMonitor:m_localMonitor];
-        if (m_globalMonitor)
-            [NSEvent removeMonitor:m_globalMonitor];
-#endif
-    }
-
-  private:
-    std::function<void(const QPoint&)> m_changed;
-#ifdef Q_OS_WIN
-    static LRESULT CALLBACK mouseCallback(int code, WPARAM message, LPARAM data) {
-        if (code == HC_ACTION) {
-            const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(data);
-            for (RecordingRegionInputRouter* observer : s_observers)
-                observer->m_changed(QPoint(mouse->pt.x, mouse->pt.y));
-        }
-        return CallNextHookEx(s_mouseHook, code, message, data);
-    }
-    static inline QList<RecordingRegionInputRouter*> s_observers;
-    static inline HHOOK s_mouseHook = nullptr;
-#elif defined(Q_OS_MACOS)
-    id m_localMonitor = nil;
-    id m_globalMonitor = nil;
-#endif
-};
 
 namespace {
 QPoint regionPointer(const QPointF& logicalPosition) {
@@ -453,10 +381,10 @@ void ScreenRecordingAreaWindow::layoutRegionDragHandle() {
 }
 
 QRegion ScreenRecordingAreaWindow::regionInteractionRegion() const {
-    if (m_trimming)
-        return QRegion(rect());
     if (!regionEditingEnabled())
         return {};
+    if (m_trimming)
+        return QRegion(rect());
     const qreal horizontalHitWidth = qMin(kResizeHitWidth, m_selectionRect.width() / 4.0);
     const qreal verticalHitWidth = qMin(kResizeHitWidth, m_selectionRect.height() / 4.0);
     const QRect interior(QPoint(qFloor(m_selectionRect.left() + horizontalHitWidth) + 1,
@@ -479,13 +407,14 @@ void ScreenRecordingAreaWindow::updateNativeMouseRouting(const QPoint& desktopPo
     const QPointF local = mapFromGlobal(desktopPosition);
 #endif
     // Keep annotations visible without letting their nonzero alpha intercept
-    // interior clicks. Native mouse routing changes before the next input is delivered.
+    // interior clicks. The observer queues routing work onto the UI thread; the
+    // system mouse hook never waits for these native window operations.
     applyNativePassThrough(!m_regionDragActive &&
                            !regionInteractionRegion().contains(local.toPoint()));
 }
 
 QColor ScreenRecordingAreaWindow::inputSurfaceColor() const {
-    const bool interactive = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
+    const bool interactive = drawingEnabled();
     // Windows passes mouse input through zero-alpha pixels in layered windows.
     return interactive ? QColor(0, 0, 0, 2) : QColor(Qt::transparent);
 }
@@ -516,7 +445,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
             }
         }
     }
-    if (watched != m_canvas || m_inputMode != InputMode::Drawing || m_drawingBlocked) {
+    if (watched != m_canvas || !drawingEnabled()) {
         return QWidget::eventFilter(watched, event);
     }
 
@@ -604,7 +533,7 @@ void ScreenRecordingAreaWindow::applyInputMode() {
     if (windowHandle() != nullptr) {
         windowHandle()->unsetCursor();
     }
-    const bool drawing = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
+    const bool drawing = drawingEnabled();
     const bool interactive = drawing || regionEditingEnabled();
     setAttribute(Qt::WA_TransparentForMouseEvents, !interactive);
     setAttribute(Qt::WA_ShowWithoutActivating, !interactive);
@@ -624,7 +553,7 @@ void ScreenRecordingAreaWindow::applyInputMode() {
 }
 
 bool ScreenRecordingAreaWindow::activateInput() {
-    const bool drawing = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
+    const bool drawing = drawingEnabled();
     if (!isVisible() || (!drawing && !regionEditingEnabled())) {
         return false;
     }
@@ -668,9 +597,14 @@ void ScreenRecordingAreaWindow::setRegionCursor(Qt::Edges edges) {
 }
 
 bool ScreenRecordingAreaWindow::regionEditingEnabled() const {
-    return m_trimming ||
-           (m_inputMode == InputMode::RegionEditing &&
-            m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked);
+    return !m_windowBlocked &&
+           (m_trimming ||
+            (m_inputMode == InputMode::RegionEditing &&
+             m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked));
+}
+
+bool ScreenRecordingAreaWindow::drawingEnabled() const {
+    return m_inputMode == InputMode::Drawing && !m_drawingBlocked && !m_windowBlocked;
 }
 
 Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) const {
@@ -878,6 +812,11 @@ void ScreenRecordingAreaWindow::synchronizeWindowGeometry() {
 }
 
 bool ScreenRecordingAreaWindow::event(QEvent* event) {
+    if (event->type() == QEvent::WindowBlocked || event->type() == QEvent::WindowUnblocked) {
+        m_windowBlocked = event->type() == QEvent::WindowBlocked;
+        cancelRegionInteraction();
+        applyInputMode();
+    }
     if (m_regionEscapeRelease && event->type() == QEvent::KeyRelease &&
         static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
         m_regionEscapeRelease = false;
@@ -990,7 +929,7 @@ bool ScreenRecordingAreaWindow::nativeEvent(const QByteArray& eventType, void* m
                         static_cast<short>(HIWORD(msg->lParam))};
             ScreenToClient(msg->hwnd, &point);
             const QPointF local(point.x / devicePixelRatioF(), point.y / devicePixelRatioF());
-            const bool interactive = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
+            const bool interactive = drawingEnabled();
             *result = interactive || regionInteractionRegion().contains(local.toPoint())
                           ? HTCLIENT
                           : HTTRANSPARENT;
@@ -1012,8 +951,7 @@ void ScreenRecordingAreaWindow::applyNativePassThrough(bool enabled) {
     }
     const LONG_PTR previous = GetWindowLongPtrW(handle, GWL_EXSTYLE);
     LONG_PTR next = enabled ? previous | WS_EX_TRANSPARENT : previous & ~WS_EX_TRANSPARENT;
-    const bool focusable =
-        (m_inputMode == InputMode::Drawing && !m_drawingBlocked) || regionEditingEnabled();
+    const bool focusable = drawingEnabled() || regionEditingEnabled();
     next = focusable ? next & ~WS_EX_NOACTIVATE : next | WS_EX_NOACTIVATE;
     if (next != previous) {
         SetWindowLongPtrW(handle, GWL_EXSTYLE, next);

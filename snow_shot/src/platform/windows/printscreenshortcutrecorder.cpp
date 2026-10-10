@@ -6,8 +6,10 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QPointer>
+#include <QThread>
 #include <QWidget>
 
+#include <atomic>
 #include <utility>
 #include <optional>
 
@@ -19,12 +21,23 @@ namespace snow_shot::platform::windows {
 
 class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstractNativeEventFilter {
   public:
+#ifdef Q_OS_WIN
+    Impl(QWidget& targetWidget, Handler recordHandler, PrintScreenHookApi hookApi)
+        : api(std::move(hookApi)), hookSupported(api.supported ? api.supported()
+                                                               : QGuiApplication::platformName() ==
+                                                                     QStringLiteral("windows")),
+          target(&targetWidget), window(targetWidget.window()), handler(std::move(recordHandler)) {
+#else
     Impl(QWidget& targetWidget, Handler recordHandler)
         : target(&targetWidget), window(targetWidget.window()), handler(std::move(recordHandler)) {
+#endif
         target->installEventFilter(this);
         if (window != target) {
             window->installEventFilter(this);
+            windowDestroyedConnection =
+                connect(window, &QObject::destroyed, this, [this] { stopHook(); });
         }
+        connect(target, &QObject::destroyed, this, [this] { stopHook(); });
         QCoreApplication::instance()->installNativeEventFilter(this);
         startHook();
     }
@@ -39,8 +52,8 @@ class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstract
             return false;
         }
 #ifdef Q_OS_WIN
-        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-            return GetForegroundWindow() == reinterpret_cast<HWND>(window->winId());
+        if (hookSupported) {
+            return api.foregroundWindow() == reinterpret_cast<HWND>(window->winId());
         }
 #endif
         return window->isActiveWindow();
@@ -59,39 +72,84 @@ class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstract
         } else if (std::exchange(printPressed, false)) {
             return;
         }
-        nativeCaptureTimestamp = nativeTimestamp;
+        queueCapture(modifiers, nativeTimestamp ? *nativeTimestamp : noNativeTimestamp);
+    }
 
-        // Never validate or rebuild widgets inside a Windows keyboard hook.
+    void queueCapture(Qt::KeyboardModifiers modifiers, quint64 timestamp) {
+        nativeCaptureTimestamp.store(timestamp);
+        // Shared by the GUI fallback and hook thread. Only publish a snapshot;
+        // validation and widget changes always run through the GUI queue.
         const quint64 captureGeneration = ++generation;
         QMetaObject::invokeMethod(
             this,
             [this, captureGeneration, modifiers]() {
-                if (captureGeneration == generation && isActive()) {
-                    handler(modifiers);
+                if (captureGeneration == generation.load() && isActive()) {
+                    const auto callback = handler;
+                    callback(modifiers);
                 }
             },
             Qt::QueuedConnection);
     }
 
-    bool eventFilter(QObject*, QEvent* event) override {
+    void refreshWindow() {
+        QWidget* const scope = target ? target->window() : nullptr;
+        if (window == scope) {
+            return;
+        }
+        stopHook();
+        if (window && window != target) {
+            window->removeEventFilter(this);
+        }
+        disconnect(windowDestroyedConnection);
+        window = scope;
+        if (window && window != target) {
+            window->installEventFilter(this);
+            windowDestroyedConnection =
+                connect(window, &QObject::destroyed, this, [this] { stopHook(); });
+        }
+        ++generation;
+        printPressed = false;
+        nativeCaptureTimestamp.store(noNativeTimestamp);
+#ifdef Q_OS_WIN
+        ++scopeGeneration;
+#endif
+    }
+
+    bool eventFilter(QObject* watched, QEvent* event) override {
         switch (event->type()) {
         case QEvent::WindowDeactivate:
             if (QGuiApplication::platformName() != QStringLiteral("windows") || !isActive()) {
                 ++generation;
                 printPressed = false;
-                nativeCaptureTimestamp.reset();
+                nativeCaptureTimestamp.store(noNativeTimestamp);
+#ifdef Q_OS_WIN
+                ++scopeGeneration;
+#endif
             }
             break;
         case QEvent::Hide:
             ++generation;
             printPressed = false;
-            nativeCaptureTimestamp.reset();
+            nativeCaptureTimestamp.store(noNativeTimestamp);
             stopHook();
             break;
         case QEvent::WindowActivate:
         case QEvent::Show:
+            refreshWindow();
             startHook();
             break;
+        case QEvent::ParentChange:
+            if (watched == target) {
+                refreshWindow();
+            }
+            break;
+#ifdef Q_OS_WIN
+        case QEvent::WinIdChange:
+            if (hookSupported && window) {
+                captureWindow.store(reinterpret_cast<HWND>(window->internalWinId()));
+            }
+            break;
+#endif
         default:
             break;
         }
@@ -136,34 +194,57 @@ class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstract
 #ifdef Q_OS_WIN
         // Keep the hook for the recording session: Windows can deliver input before
         // Qt processes WindowActivate. Only the native foreground window may capture.
-        if (hook != nullptr || active != nullptr || target == nullptr || !target->isVisible() ||
-            QGuiApplication::platformName() != QStringLiteral("windows")) {
+        if (worker != nullptr || target == nullptr || window == nullptr || !target->isVisible() ||
+            !hookSupported) {
             return;
         }
-        hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW(nullptr), 0);
-        if (hook == nullptr) {
-            qWarning() << "Print Screen recorder keyboard hook failed:" << GetLastError();
-            return;
-        }
-        printPressed = (GetAsyncKeyState(VK_SNAPSHOT) & 0x8000) != 0;
-        active = this;
+        // Publish only native state. The hook must never access QWidget or wait
+        // for the GUI thread, even while it is creating or validating a modal.
+        captureWindow.store(reinterpret_cast<HWND>(window->winId()));
+        worker = new QObject;
+        worker->moveToThread(&thread);
+        connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
+        connect(&thread, &QThread::started, worker, [this] {
+            active = this;
+            hookPrintPressed = (api.asyncKeyState(VK_SNAPSHOT) & 0x8000) != 0;
+            hookScopeGeneration = scopeGeneration.load();
+            hook = api.installHook(WH_KEYBOARD_LL, keyboardHook, GetModuleHandleW(nullptr), 0);
+            if (!hook) {
+                qWarning() << "Print Screen recorder keyboard hook failed:" << GetLastError();
+            }
+        });
+        thread.setObjectName(QStringLiteral("PrintScreenShortcutHook"));
+        thread.start();
+        // Establish interception before the recording session accepts input.
+        QMetaObject::invokeMethod(worker, []{}, Qt::BlockingQueuedConnection);
 #endif
     }
 
     void stopHook() {
 #ifdef Q_OS_WIN
-        if (hook != nullptr) {
-            UnhookWindowsHookEx(hook);
-            hook = nullptr;
-            active = nullptr;
+        captureWindow.store(nullptr);
+        if (worker != nullptr) {
+            QMetaObject::invokeMethod(
+                worker,
+                [this] {
+                    if (hook) {
+                        api.removeHook(hook);
+                    }
+                    hook = nullptr;
+                    active = nullptr;
+                },
+                Qt::BlockingQueuedConnection);
+            thread.quit();
+            thread.wait();
+            worker = nullptr;
         }
 #endif
     }
 
 #ifdef Q_OS_WIN
-    static Qt::KeyboardModifiers nativeModifiers(bool asynchronous) {
-        const auto down = [asynchronous](int key) {
-            return ((asynchronous ? GetAsyncKeyState(key) : GetKeyState(key)) & 0x8000) != 0;
+    Qt::KeyboardModifiers nativeModifiers(bool asynchronous) const {
+        const auto down = [this, asynchronous](int key) {
+            return ((asynchronous ? api.asyncKeyState(key) : GetKeyState(key)) & 0x8000) != 0;
         };
         Qt::KeyboardModifiers modifiers;
         if (down(VK_CONTROL)) {
@@ -183,36 +264,59 @@ class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstract
 
     static LRESULT CALLBACK keyboardHook(int code, WPARAM message, LPARAM data) {
         Impl* const recorder = active;
-        if (code == HC_ACTION && recorder != nullptr && recorder->isActive()) {
+        if (code == HC_ACTION && recorder != nullptr) {
+            const auto scope = recorder->scopeGeneration.load();
+            if (recorder->hookScopeGeneration != scope) {
+                recorder->hookPrintPressed = false;
+                recorder->hookScopeGeneration = scope;
+            }
+            const HWND owner = recorder->captureWindow.load();
+            if (!owner || recorder->api.foregroundWindow() != owner) {
+                ++recorder->generation;
+                recorder->hookPrintPressed = false;
+                recorder->nativeCaptureTimestamp.store(noNativeTimestamp);
+                return recorder->api.nextHook(nullptr, code, message, data);
+            }
             const auto& key = *reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
             const bool pressed = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
             if (key.vkCode == VK_SNAPSHOT &&
                 (pressed || message == WM_KEYUP || message == WM_SYSKEYUP)) {
                 // Print Screen does not change modifier state; sample the modifiers now,
                 // before a queued UI callback can observe their subsequent release.
-                auto modifiers = nativeModifiers(true);
+                auto modifiers = recorder->nativeModifiers(true);
                 if ((key.flags & LLKHF_ALTDOWN) != 0) {
                     modifiers |= Qt::AltModifier;
                 }
-                recorder->record(pressed, false, modifiers, key.time);
+                const bool capture = pressed ? !std::exchange(recorder->hookPrintPressed, true)
+                                             : !std::exchange(recorder->hookPrintPressed, false);
+                if (capture) {
+                    recorder->queueCapture(modifiers, key.time);
+                }
                 return 1;
             }
-        } else if (code == HC_ACTION && recorder != nullptr) {
-            ++recorder->generation;
-            recorder->printPressed = false;
-            recorder->nativeCaptureTimestamp.reset();
         }
-        return CallNextHookEx(nullptr, code, message, data);
+        return recorder ? recorder->api.nextHook(nullptr, code, message, data)
+                        : CallNextHookEx(nullptr, code, message, data);
     }
 
     static thread_local Impl* active;
+    PrintScreenHookApi api;
+    const bool hookSupported;
+    QThread thread;
+    QObject* worker = nullptr;
     HHOOK hook = nullptr;
+    std::atomic<HWND> captureWindow{nullptr};
+    std::atomic<quint64> scopeGeneration{0};
+    quint64 hookScopeGeneration = 0;
+    bool hookPrintPressed = false;
 #endif
     QPointer<QWidget> target;
     QPointer<QWidget> window;
+    QMetaObject::Connection windowDestroyedConnection;
     Handler handler;
-    std::optional<quint32> nativeCaptureTimestamp;
-    quint64 generation = 0;
+    static constexpr quint64 noNativeTimestamp = quint64{1} << 32;
+    std::atomic<quint64> nativeCaptureTimestamp{noNativeTimestamp};
+    std::atomic<quint64> generation{0};
     bool printPressed = false;
 };
 
@@ -220,17 +324,27 @@ class PrintScreenShortcutRecorder::Impl final : public QObject, public QAbstract
 thread_local PrintScreenShortcutRecorder::Impl* PrintScreenShortcutRecorder::Impl::active = nullptr;
 #endif
 
+#ifdef Q_OS_WIN
+PrintScreenShortcutRecorder::PrintScreenShortcutRecorder(QWidget& target, Handler handler)
+    : PrintScreenShortcutRecorder(target, std::move(handler), PrintScreenHookApi{}) {}
+
+PrintScreenShortcutRecorder::PrintScreenShortcutRecorder(QWidget& target, Handler handler,
+                                                         PrintScreenHookApi api)
+    : m_impl(std::make_unique<Impl>(target, std::move(handler), std::move(api))) {}
+#else
 PrintScreenShortcutRecorder::PrintScreenShortcutRecorder(QWidget& target, Handler handler)
     : m_impl(std::make_unique<Impl>(target, std::move(handler))) {}
+#endif
 
 PrintScreenShortcutRecorder::~PrintScreenShortcutRecorder() = default;
 
 bool PrintScreenShortcutRecorder::handleKeyEvent(const QKeyEvent& event) {
     if (event.key() != Qt::Key_Print && event.key() != Qt::Key_SysReq) {
+        const quint64 timestamp = m_impl->nativeCaptureTimestamp.load();
         if (event.type() == QEvent::KeyPress && event.timestamp() != 0 &&
-            m_impl->nativeCaptureTimestamp.has_value()) {
+            timestamp != Impl::noNativeTimestamp) {
             const quint32 elapsed =
-                static_cast<quint32>(event.timestamp()) - *m_impl->nativeCaptureTimestamp;
+                static_cast<quint32>(event.timestamp()) - static_cast<quint32>(timestamp);
             const bool modifier = event.key() == Qt::Key_Control || event.key() == Qt::Key_Shift ||
                                   event.key() == Qt::Key_Alt || event.key() == Qt::Key_Meta ||
                                   event.key() == Qt::Key_AltGr || event.key() == Qt::Key_Super_L ||

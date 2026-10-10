@@ -14,6 +14,7 @@
 #include <QPointer>
 #include <QString>
 #include <QWidget>
+#include <QWindow>
 
 #include <cstdlib>
 #include <iostream>
@@ -32,7 +33,8 @@ void flushEvents() {
 }
 
 void selectionResizeModalUsesApplicationModality(ScreenshotSelectionResizeWorkflow& workflow) {
-    QWidget owner;
+    QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    owner.setAttribute(Qt::WA_TranslucentBackground);
     owner.resize(900, 700);
     owner.show();
     flushEvents();
@@ -54,6 +56,13 @@ void selectionResizeModalUsesApplicationModality(ScreenshotSelectionResizeWorkfl
     require(overlay != nullptr, "resize modal should create its window surface");
     require(overlay->windowModality() == Qt::ApplicationModal && overlay->isModal(),
             "resize modal surface should block every application window");
+    require(overlay->windowHandle()->transientParent() == owner.windowHandle(),
+            "resize modal must retain native capture-window ownership");
+    flushEvents();
+    require(overlay->isVisible() && overlay->windowHandle()->isExposed() &&
+                !overlay->windowHandle()->format().hasAlpha() &&
+                modal->contentWidget()->isVisible(),
+            "resize modal must expose an opaque window and its content above a capture overlay");
 
     modal->reject();
     flushEvents();

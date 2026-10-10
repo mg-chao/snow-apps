@@ -9,9 +9,13 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/recording/recordingcountdownoverlay.h"
 #include "../src/presentation/recording/recordingregiondraghandle.h"
+#include "../src/presentation/recording/recordingregioninputrouter.h"
 #include "../src/presentation/recording/screenrecordinggeometry.h"
 
 #include <QApplication>
+#include <QAbstractEventDispatcher>
+#include <QDialog>
+#include <QSemaphore>
 #include <QtMath>
 #include <QCoreApplication>
 #include <QCloseEvent>
@@ -37,6 +41,7 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include <cstdlib>
+#include <atomic>
 #include <iostream>
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
@@ -49,6 +54,9 @@ class ScreenRecordingAreaWindowTestAccess {
     }
     static bool editable(const ScreenRecordingAreaWindow& area) {
         return area.regionEditingEnabled();
+    }
+    static bool observing(const ScreenRecordingAreaWindow& area) {
+        return area.m_regionInputRouter != nullptr;
     }
     static Qt::Edges edges(const ScreenRecordingAreaWindow& area, QPointF position) {
         return area.resizeEdgesAt(position);
@@ -98,6 +106,190 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+#ifdef Q_OS_WIN
+struct RegionMouseInput {
+    static inline RegionMouseInput* instance = nullptr;
+    static constexpr ULONG_PTR nativeMarker = 0x534E4F57;
+    QSemaphore installed;
+    QSemaphore observed;
+    std::atomic<int> forwarded{0};
+    std::atomic<int> removals{0};
+    DWORD installingThread = 0;
+    DWORD removingThread = 0;
+    bool failInstall = false;
+    bool native = false;
+
+    static HHOOK WINAPI install(int kind, HOOKPROC callback, HINSTANCE, DWORD) {
+        instance->installingThread = GetCurrentThreadId();
+        require(kind == WH_MOUSE_LL, "region observation must use the mouse hook");
+        if (instance->native) {
+            const HHOOK hook = SetWindowsHookExW(kind, callback, GetModuleHandleW(nullptr), 0);
+            require(hook != nullptr, "the native regression hook must install");
+            instance->installed.release();
+            return hook;
+        }
+        if (instance->failInstall) {
+            instance->observed.release();
+            SetLastError(ERROR_ACCESS_DENIED);
+            return nullptr;
+        }
+        QTimer::singleShot(0, QAbstractEventDispatcher::instance(), [callback] {
+            require(callback(-1, WM_MOUSEMOVE, 0) == 17,
+                    "unhandled mouse input must retain the next hook's result");
+            for (const POINT point :
+                 {POINT{20, 30}, POINT{-40, -50}, POINT{-2147483647, 2147483647}}) {
+                MSLLHOOKSTRUCT input{};
+                input.pt = point;
+                require(callback(HC_ACTION, WM_MOUSEMOVE, reinterpret_cast<LPARAM>(&input)) == 17,
+                        "observing movement must never consume system input");
+            }
+            instance->observed.release();
+        });
+        return reinterpret_cast<HHOOK>(static_cast<INT_PTR>(1));
+    }
+
+    static BOOL WINAPI remove(HHOOK hook) {
+        instance->removingThread = GetCurrentThreadId();
+        ++instance->removals;
+        return instance->native ? UnhookWindowsHookEx(hook) : TRUE;
+    }
+
+    static LRESULT WINAPI next(HHOOK hook, int code, WPARAM message, LPARAM data) {
+        ++instance->forwarded;
+        if (instance->native) {
+            if (code == HC_ACTION && message == WM_MOUSEMOVE &&
+                reinterpret_cast<const MSLLHOOKSTRUCT*>(data)->dwExtraInfo == nativeMarker)
+                instance->observed.release();
+            return CallNextHookEx(hook, code, message, data);
+        }
+        return 17;
+    }
+
+    RecordingRegionMouseApi api() {
+        instance = this;
+        return {install, remove, next, [] { return true; }};
+    }
+};
+
+void regionObservationNeverWaitsForTheGui() {
+    const DWORD guiThread = GetCurrentThreadId();
+    for (const bool retireBeforeDelivery : {false, true}) {
+        RegionMouseInput input;
+        int deliveries = 0;
+        auto router = std::make_unique<RecordingRegionInputRouter>(
+            [&](const QPoint& point) {
+                require(GetCurrentThreadId() == guiThread,
+                        "routing must update widgets on the GUI thread");
+                require(point == QPoint(-2147483647, 2147483647),
+                        "coalesced routing must retain the newest signed desktop coordinates");
+                ++deliveries;
+            },
+            input.api());
+        // Deliberately do not pump the GUI: this represents lazy settings creation
+        // or any other synchronous UI work while the recording region is editable.
+        require(input.observed.tryAcquire(1, 1000),
+                "all mouse input must be forwarded even while the GUI is blocked");
+        require(input.installingThread != guiThread && input.forwarded == 4 && deliveries == 0,
+                "system input observation must be isolated from widget updates");
+        if (retireBeforeDelivery)
+            router.reset();
+        QCoreApplication::processEvents();
+        require(deliveries == (retireBeforeDelivery ? 0 : 1),
+                "routing must coalesce movement and discard updates when observation ends");
+        router.reset();
+        require(input.removals == 1 && input.removingThread == input.installingThread,
+                "the owning worker must retire its hook before destruction");
+    }
+    RegionMouseInput failed;
+    failed.failInstall = true;
+    {
+        RecordingRegionInputRouter router(
+            [](const QPoint&) {
+                require(false, "failed hook installation must not publish input");
+            },
+            failed.api());
+        require(failed.observed.tryAcquire(1, 1000), "failed hook startup must complete");
+    }
+    require(failed.removals == 0, "failed startup must not unhook an invalid handle");
+    RegionMouseInput::instance = nullptr;
+}
+
+void nativeRegionObservationNeverWaitsForTheGui() {
+    RegionMouseInput input;
+    input.native = true;
+    POINT saved{};
+    require(GetCursorPos(&saved), "the native regression must save the pointer position");
+    bool observed = false;
+    {
+        RecordingRegionInputRouter router([](const QPoint&) {}, input.api());
+        require(input.installed.tryAcquire(1, 2000), "native mouse observation must start");
+        INPUT movement{};
+        movement.type = INPUT_MOUSE;
+        movement.mi.dx = 1;
+        movement.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE;
+        movement.mi.dwExtraInfo = RegionMouseInput::nativeMarker;
+        require(SendInput(1, &movement, sizeof(movement)) == 1,
+                "the native regression must inject a pointer event");
+        observed = input.observed.tryAcquire(1, 250);
+        if (!observed) {
+            qInfo() << "Native forwarding while GUI blocked:" << input.forwarded.load();
+            QCoreApplication::processEvents();
+            qInfo() << "Native forwarding after GUI resumed:" << input.forwarded.load();
+        }
+    }
+    RegionMouseInput::instance = nullptr;
+    SetCursorPos(saved.x, saved.y);
+    require(observed, "native system mouse input must pass without pumping the GUI event loop");
+}
+#endif
+
+QRect testRecordingRegion();
+
+void modalsSuspendRecordingInputAndRestoreTheRequestedMode() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(testRecordingRegion());
+    area.show();
+    for (const auto mode : {ScreenRecordingAreaWindow::InputMode::RegionEditing,
+                            ScreenRecordingAreaWindow::InputMode::Drawing}) {
+        area.setInputMode(mode);
+        QCoreApplication::processEvents();
+        if (mode == ScreenRecordingAreaWindow::InputMode::RegionEditing)
+            ScreenRecordingAreaWindowTestAccess::begin(area);
+        QDialog modal(&area);
+        modal.setWindowModality(Qt::ApplicationModal);
+        modal.show();
+        QCoreApplication::processEvents();
+        require(!ScreenRecordingAreaWindowTestAccess::editable(area) &&
+                    !ScreenRecordingAreaWindowTestAccess::observing(area) &&
+                    !ScreenRecordingAreaWindowTestAccess::dragging(area) &&
+                    ScreenRecordingAreaWindowTestAccess::inputRegion(area).isEmpty() &&
+                    !area.canvas()->interactionEnabled() && area.inputSurfaceColor().alpha() == 0,
+                "modal opening must cancel drags, retire observation and suspend drawing and "
+                "resize input");
+        require(area.inputMode() == mode, "modal blocking must preserve the requested input mode");
+        modal.hide();
+        QCoreApplication::processEvents();
+        require(ScreenRecordingAreaWindowTestAccess::editable(area) ==
+                        (mode == ScreenRecordingAreaWindow::InputMode::RegionEditing) &&
+                    area.canvas()->interactionEnabled() ==
+                        (mode == ScreenRecordingAreaWindow::InputMode::Drawing),
+                "modal closing must restore the requested recording interaction");
+    }
+    area.setTrimming(true);
+    QDialog modal(&area);
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.show();
+    QCoreApplication::processEvents();
+    require(ScreenRecordingAreaWindowTestAccess::inputRegion(area).isEmpty(),
+            "trimming must also relinquish its input surface while a modal is open");
+    area.setDrawingBlocked(true);
+    area.setTrimming(false);
+    modal.hide();
+    QCoreApplication::processEvents();
+    require(!area.canvas()->interactionEnabled(),
+            "closing a modal must not clear another input block");
 }
 
 void sendMouseEvent(SnowCanvasWidget& canvas, QEvent::Type type, const QPointF& position,
@@ -1126,7 +1318,7 @@ void pressNativeRegionControl(QWidget& target) {
     QCoreApplication::sendEvent(&target, &press);
 }
 
-void moveNativeRegionPointer(QPoint point) {
+INPUT nativeRegionMovement(QPoint point) {
     INPUT input{};
     input.type = INPUT_MOUSE;
     input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
@@ -1134,6 +1326,11 @@ void moveNativeRegionPointer(QPoint point) {
                          GetSystemMetrics(SM_CXVIRTUALSCREEN));
     input.mi.dy = qRound((point.y() - GetSystemMetrics(SM_YVIRTUALSCREEN) + 0.5) * 65536.0 /
                          GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    return input;
+}
+
+void moveNativeRegionPointer(QPoint point) {
+    INPUT input = nativeRegionMovement(point);
     require(SendInput(1, &input, sizeof(input)) == 1,
             "native recording input must deliver a pointer move");
     require(waitForNativeRegionInput([&] {
@@ -1202,6 +1399,11 @@ void nativeRecordingBordersCross() {
                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
         QCoreApplication::sendEvent(&area, &release);
         QCoreApplication::processEvents();
+        if (area.recordingRegion() != QRect(original.topLeft() - QPoint(10, 10), QSize(10, 10)))
+            qInfo() << "Native minimum release" << "expected"
+                    << QRect(original.topLeft() - QPoint(10, 10), QSize(10, 10)) << "actual"
+                    << area.recordingRegion() << "pointer" << QCursor::pos() << "input mode"
+                    << int(area.inputMode());
         require(area.recordingRegion() ==
                         QRect(original.topLeft() - QPoint(10, 10), QSize(10, 10)) &&
                     !ScreenRecordingAreaWindowTestAccess::dragging(area),
@@ -1337,8 +1539,10 @@ void nativeWindowsGeometryAndInteraction() {
         INPUT click{};
         click.type = INPUT_MOUSE;
         click.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-        require(SendInput(1, &click, sizeof(click)) == 1,
-                "the native handle press must be delivered");
+        moveNativeRegionPointer({x, y});
+        INPUT moveAndPress[] = {nativeRegionMovement(buttonPoint), click};
+        require(SendInput(2, moveAndPress, sizeof(INPUT)) == 2,
+                "a move and immediate handle press must be delivered in one input batch");
         const bool buttonCaptured = waitForNativeRegionInput([&] {
             return ScreenRecordingAreaWindowTestAccess::dragging(area) &&
                    QWidget::mouseGrabber() == button && GetCapture() == handle;
@@ -1530,6 +1734,8 @@ int main(int argc, char** argv) {
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (application.arguments().contains(QStringLiteral("--native-geometry-only"))) {
+        nativeRegionObservationNeverWaitsForTheGui();
+        modalsSuspendRecordingInputAndRestoreTheRequestedMode();
         nativeRecordingBordersCross();
         nativeWindowsGeometryAndInteraction();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -1569,6 +1775,10 @@ int main(int argc, char** argv) {
     }
     recordingBorderInput(false);
     logicalRegionDragAndResize();
+#endif
+    modalsSuspendRecordingInputAndRestoreTheRequestedMode();
+#ifdef Q_OS_WIN
+    regionObservationNeverWaitsForTheGui();
 #endif
     trimmingFreezesSizeAndMakesThePreviewDraggable();
     controlledBordersCrossAndCancelWithoutClearingAnnotations();

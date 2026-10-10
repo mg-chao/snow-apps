@@ -2,6 +2,7 @@ if(APPLE)
     set_source_files_properties(src/presentation/core/screenshotgeometry.cpp
         src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/recordingregioninputrouter.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
         tests/global_canvas_tests.cpp
         tests/screen_recording_shortcut_tests.cpp PROPERTIES LANGUAGE OBJCXX)
@@ -3165,6 +3166,16 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(WIN32)
+        add_executable(snow-shot-print-screen-shortcut-recorder-tests
+            tests/print_screen_shortcut_recorder_tests.cpp
+            src/platform/windows/printscreenshortcutrecorder.cpp)
+        target_include_directories(snow-shot-print-screen-shortcut-recorder-tests PRIVATE include)
+        target_link_libraries(snow-shot-print-screen-shortcut-recorder-tests PRIVATE Qt6::Widgets)
+        snow_shot_import_offscreen_platform(snow-shot-print-screen-shortcut-recorder-tests)
+        add_test(NAME snow-shot-print-screen-shortcut-recorder-tests
+            COMMAND snow-shot-print-screen-shortcut-recorder-tests -platform offscreen)
+        set_tests_properties(snow-shot-print-screen-shortcut-recorder-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30)
         add_test(
             NAME snow-shot-shortcut-key-row-native-tests
             COMMAND snow-shot-shortcut-key-row-tests --native-print-screen-only
@@ -9761,7 +9772,9 @@ foreach(_target IN LISTS _overlay_widget_targets)
     if(_sources MATCHES "screenrecordingareawindow.cpp")
         target_sources(${_target} PRIVATE
             src/presentation/recording/recordingregiondraghandle.cpp
-            src/presentation/recording/recordingregiondraghandle.h)
+            src/presentation/recording/recordingregiondraghandle.h
+            src/presentation/recording/recordingregioninputrouter.cpp
+            src/presentation/recording/recordingregioninputrouter.h)
     endif()
     if(WIN32 AND _sources MATCHES "screenshotoverlaywindow.cpp" AND
        NOT _sources MATCHES "src/platform/windows/windowchrome.cpp")
