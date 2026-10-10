@@ -4327,6 +4327,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Network
         Qt6::Widgets
+        Qt6::GuiPrivate
         snow_draw_engine_qt_canvas
         snow_shot_image_codec
         snow_shot_storage
@@ -4334,7 +4335,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     if(WIN32)
         target_link_libraries(snow-shot-pinned-window-tests PRIVATE
-            Qt6::GuiPrivate
             comctl32
             dwmapi
             user32
@@ -4375,6 +4375,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-window-confirmation-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-drawing-close-tests
+        COMMAND snow-shot-pinned-window-tests --drawing-close-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-drawing-close-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30)
     set_tests_properties(snow-shot-pinned-close-persistence-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

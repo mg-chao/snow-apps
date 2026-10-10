@@ -2921,8 +2921,7 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
-    if (event->spontaneous() && !m_closing && !m_inactiveGroupClosing &&
-        snow_shot::storage::PinToScreenSettings().confirmBeforeClosingWindow()) {
+    if (event->spontaneous() && !m_closing && !m_inactiveGroupClosing) {
         event->ignore();
         requestUserClose();
         return;
@@ -8076,6 +8075,10 @@ void ScreenshotPinnedWindow::hideForClosing() {
 
 void ScreenshotPinnedWindow::requestUserClose() {
     if (m_closing) {
+        return;
+    }
+    if (m_editController != nullptr && m_editController->editMode()) {
+        setEditMode(false);
         return;
     }
     if (!snow_shot::storage::PinToScreenSettings().confirmBeforeClosingWindow()) {

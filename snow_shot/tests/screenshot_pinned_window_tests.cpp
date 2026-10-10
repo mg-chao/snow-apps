@@ -159,10 +159,10 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+#include <qpa/qwindowsysteminterface.h>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
-#include <qpa/qwindowsysteminterface.h>
 #include <dwmapi.h>
 #include <commctrl.h>
 #endif
@@ -5933,6 +5933,119 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
 
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin was not deleted");
+}
+
+void pinnedCloseExitsDrawingModeFirst() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool previousConfirmation = settings.confirmBeforeClosingWindow();
+    const auto restoreConfirmation = qScopeGuard(
+        [&] { static_cast<void>(settings.setConfirmBeforeClosingWindow(previousConfirmation)); });
+    const QStringList routes{QStringLiteral("menu"),
+                             QStringLiteral("button"),
+                             QStringLiteral("canvas_shortcut"),
+                             QStringLiteral("toolbar_shortcut"),
+                             QStringLiteral("window_shortcut"),
+                             QStringLiteral("automation"),
+                             QStringLiteral("native")};
+    for (const bool confirm : {false, true}) {
+        require(settings.setConfirmBeforeClosingWindow(confirm),
+                "configure drawing-mode close confirmation");
+        for (const auto& route : routes) {
+            ScreenshotPinnedWindow window;
+            window.setAttribute(Qt::WA_DeleteOnClose, false);
+            auto config = cachedOcrPinConfig(nullptr);
+            config.enableEditing = true;
+            config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            SnowCanvasRuntime editedRuntime;
+            require(
+                !editedRuntime
+                     .applyAnnotationTransaction(
+                         R"({"version":1,"operations":[{"type":"rectangle","bounds":[680,400,24,24]}]})")
+                     .isEmpty(),
+                "drawing-mode close fixture must contain an annotation");
+            config.initialCanvasSession = editedRuntime.serializeDocumentSession();
+            int closes = 0;
+            int closeSignals = 0;
+            config.persistenceCloser = [&](const auto&) { ++closes; };
+            QObject::connect(&window, &ScreenshotPinnedWindow::closingForPersistence,
+                             [&](const auto&, auto) { ++closeSignals; });
+            require(window.present(config), "present drawing-mode close fixture");
+            materializePinnedMenuTree(window);
+            auto* canvas = window.findChild<SnowCanvasWidget*>();
+            auto* drawingAction =
+                window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+            require(canvas && drawingAction, "drawing-mode close fixture exposes its controls");
+            drawingAction->setChecked(true);
+            auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+            require(controller && controller->editMode() && controller->toolbarWindow() &&
+                        controller->toolbarWindow()->isVisible(),
+                    "drawing-mode close fixture opens its drawing toolbar");
+            QPointer<ScreenshotFloatingToolPaletteWindow> toolbar(controller->toolbarWindow());
+            const auto beforeClose = window.persistenceSnapshot();
+            const auto historyBeforeClose =
+                ScreenshotPinnedWindowTestAccess::drawingHistory(window);
+            const auto requestClose = [&] {
+                if (route == QStringLiteral("menu")) {
+                    auto* action =
+                        window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+                    require(action, "drawing-mode close menu action exists");
+                    action->trigger();
+                } else if (route == QStringLiteral("button")) {
+                    auto* button = window.findChild<adqt::widgets::AdButton*>(
+                        QStringLiteral("screenshotPinnedCloseButton"));
+                    require(button, "drawing-mode close button exists");
+                    button->click();
+                } else if (route == QStringLiteral("window_shortcut")) {
+                    triggerWindowCloseShortcut(&window, canvas);
+                } else if (route == QStringLiteral("automation")) {
+                    require(window.automationAction(QStringLiteral("close")),
+                            "drawing-mode close automation command succeeds");
+                } else if (route == QStringLiteral("native")) {
+                    require(window.windowHandle(), "native close fixture exposes its window");
+                    static_cast<void>(
+                        QWindowSystemInterface::handleCloseEvent<
+                            QWindowSystemInterface::SynchronousDelivery>(window.windowHandle()));
+                } else {
+                    QWidget* receiver = route == QStringLiteral("toolbar_shortcut") && toolbar
+                                            ? static_cast<QWidget*>(toolbar.data())
+                                            : canvas;
+                    receiver->activateWindow();
+                    receiver->setFocus();
+                    QCoreApplication::processEvents();
+                    sendShortcut(*receiver, Qt::Key_Escape);
+                    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+                    QCoreApplication::sendEvent(receiver, &release);
+                }
+            };
+            requestClose();
+            QCoreApplication::processEvents();
+            require(window.isVisible() && window.sourcePinAvailable() && !controller->editMode() &&
+                        !drawingAction->isChecked() && (!toolbar || !toolbar->isVisible()) &&
+                        closes == 0 && closeSignals == 0,
+                    "the first close must only exit drawing mode and preserve the pinned window");
+            require(!window.findChild<adqt::widgets::AdModal*>(
+                        QStringLiteral("screenshotPinnedCloseConfirmation")),
+                    "exiting drawing mode must not ask to close the pinned window");
+            const auto afterClose = window.persistenceSnapshot();
+            require(afterClose.canvasSession == beforeClose.canvasSession &&
+                        afterClose.nativeGeometry == beforeClose.nativeGeometry &&
+                        ScreenshotPinnedWindowTestAccess::drawingHistory(window) ==
+                            historyBeforeClose,
+                    "exiting drawing mode must preserve annotations, history and geometry");
+            requestClose();
+            if (confirm) {
+                auto* modal = window.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenshotPinnedCloseConfirmation"));
+                require(modal && modal->isOpen() && window.isVisible() && closes == 0 &&
+                            closeSignals == 0,
+                        "the next close must honor the close confirmation preference");
+                modal->accept();
+            }
+            QCoreApplication::processEvents();
+            require(!window.isVisible() && closes == 1 && closeSignals == 1,
+                    "the next close must close and persist the pinned window once");
+        }
+    }
 }
 
 void pinnedWindowConfirmationPreferences() {
@@ -20408,6 +20521,10 @@ int main(int argc, char* argv[]) {
             pinnedMultiSelectionDontAskAgain();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--drawing-close-only"))) {
+            pinnedCloseExitsDrawingModeFirst();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--multi-selection-capture-loss-only"))) {
             pinnedMultiSelectionCaptureLoss();
             return 0;
@@ -21207,6 +21324,7 @@ int main(int argc, char* argv[]) {
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);
         pinnedControlsHideBelowMinimumNativeSize(sourceRuntime);
         pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);
+        pinnedCloseExitsDrawingModeFirst();
         pinnedDrawingShortcutsToggleActiveTool();
         pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
         pinnedDrawingToolbarMatchesCaptureInteractions(sourceRuntime);
