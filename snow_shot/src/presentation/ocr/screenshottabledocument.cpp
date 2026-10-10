@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshottabledocument.h"
 
 #include <QRegularExpression>
+#include <QBitArray>
 #include <QMimeData>
 #include <QSet>
 #include <QTextCursor>
@@ -13,6 +14,8 @@
 
 namespace {
 const QString tableClipboardFormat = QStringLiteral("application/x-snow-shot-table-html");
+constexpr int maximumTableDimension = 256;
+constexpr int maximumTableCells = 16384;
 
 bool needsSpreadsheetTextPrefix(const QString& text) {
     static const QRegularExpression numericText(QStringLiteral("\\A[+-]?[0-9]+(?:\\.[0-9]+)?\\z"));
@@ -62,25 +65,157 @@ QString escapedCellText(const QString& text) {
 quint64 coordinateKey(int row, int column) {
     return (static_cast<quint64>(static_cast<quint32>(row)) << 32U) | static_cast<quint32>(column);
 }
+
+bool completeTableHtml(const QString& source, QBitArray& cellHeaders) {
+    // QTextDocument repairs incomplete HTML. Extraction must be complete before that tolerant
+    // parser runs, and spans must be bounded before it allocates its table grid.
+    static const QRegularExpression markup(QStringLiteral(
+        "<!--[\\s\\S]*?-->|</?([A-Za-z][A-Za-z0-9]*)\\b(?:[^<>\"']|\"[^\"]*\"|'[^']*')*/?>"));
+    static const QRegularExpression span(
+        QStringLiteral("\\b(rowspan|colspan)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))"),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QSet<QString> inlineTags{
+        QStringLiteral("b"),    QStringLiteral("strong"), QStringLiteral("i"),
+        QStringLiteral("em"),   QStringLiteral("u"),      QStringLiteral("s"),
+        QStringLiteral("sub"),  QStringLiteral("sup"),    QStringLiteral("span"),
+        QStringLiteral("code"), QStringLiteral("p"),      QStringLiteral("div")};
+    QStringList stack;
+    qsizetype position = 0;
+    int tables = 0;
+    int rows = 0;
+    int cells = 0;
+    int nextColumn = 0;
+    int gridRows = 0;
+    int gridColumns = 0;
+    QBitArray occupied(maximumTableDimension * maximumTableDimension);
+    cellHeaders.resize(occupied.size());
+    auto matches = markup.globalMatch(source);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        const auto text = QStringView(source).mid(position, match.capturedStart() - position);
+        const bool inCell =
+            stack.contains(QStringLiteral("td")) || stack.contains(QStringLiteral("th"));
+        if (text.contains(u'<') || (!inCell && !text.trimmed().isEmpty()))
+            return false;
+        position = match.capturedEnd();
+        const QString tag = match.captured(1).toLower();
+        if (tag.isEmpty())
+            continue;
+        const QString token = match.captured();
+        if (token.startsWith(QStringLiteral("</"))) {
+            if (stack.isEmpty() || stack.last() != tag)
+                return false;
+            stack.removeLast();
+            continue;
+        }
+        const QString parent = stack.isEmpty() ? QString() : stack.last();
+        if (tag == QStringLiteral("table")) {
+            if (!stack.isEmpty() || ++tables != 1)
+                return false;
+        } else if (tag == QStringLiteral("thead") || tag == QStringLiteral("tbody") ||
+                   tag == QStringLiteral("tfoot")) {
+            if (parent != QStringLiteral("table"))
+                return false;
+        } else if (tag == QStringLiteral("tr")) {
+            if ((parent != QStringLiteral("table") && parent != QStringLiteral("thead") &&
+                 parent != QStringLiteral("tbody") && parent != QStringLiteral("tfoot")) ||
+                ++rows > maximumTableDimension)
+                return false;
+            nextColumn = 0;
+        } else if (tag == QStringLiteral("td") || tag == QStringLiteral("th")) {
+            if (parent != QStringLiteral("tr") || ++cells > maximumTableCells)
+                return false;
+            int rowSpan = 1;
+            int columnSpan = 1;
+            QSet<QString> attributes;
+            auto spans = span.globalMatch(token);
+            while (spans.hasNext()) {
+                const auto attribute = spans.next();
+                const QString name = attribute.captured(1).toLower();
+                if (attributes.contains(name))
+                    return false;
+                attributes.insert(name);
+                const QString value = attribute.captured(2).isNull()
+                                          ? (attribute.captured(3).isNull() ? attribute.captured(4)
+                                                                            : attribute.captured(3))
+                                          : attribute.captured(2);
+                bool valid = false;
+                const int count = value.toInt(&valid);
+                if (!valid || count < 1 || count > maximumTableDimension)
+                    return false;
+                (name == QStringLiteral("rowspan") ? rowSpan : columnSpan) = count;
+            }
+            const int row = rows - 1;
+            while (nextColumn < maximumTableDimension &&
+                   occupied.testBit(row * maximumTableDimension + nextColumn))
+                ++nextColumn;
+            if (row + rowSpan > maximumTableDimension ||
+                nextColumn + columnSpan > maximumTableDimension)
+                return false;
+            gridRows = std::max(gridRows, row + rowSpan);
+            gridColumns = std::max(gridColumns, nextColumn + columnSpan);
+            if (gridRows * gridColumns > maximumTableCells)
+                return false;
+            cellHeaders.setBit(row * maximumTableDimension + nextColumn,
+                               tag == QStringLiteral("th"));
+            for (int coveredRow = row; coveredRow < row + rowSpan; ++coveredRow) {
+                for (int column = nextColumn; column < nextColumn + columnSpan; ++column) {
+                    const int slot = coveredRow * maximumTableDimension + column;
+                    if (occupied.testBit(slot))
+                        return false;
+                    occupied.setBit(slot);
+                }
+            }
+            nextColumn += columnSpan;
+        } else if (tag == QStringLiteral("br")) {
+            if (!inCell)
+                return false;
+            continue;
+        } else if (!inCell || !inlineTags.contains(tag)) {
+            return false;
+        }
+        if (token.endsWith(QStringLiteral("/>")) || stack.size() >= 32)
+            return false;
+        stack.append(tag);
+    }
+    return tables == 1 && rows > 0 && cells > 0 && gridRows <= rows && stack.isEmpty() &&
+           QStringView(source).mid(position).trimmed().isEmpty();
+}
 } // namespace
 
 ScreenshotTableDocument::ScreenshotTableDocument(int rows, int columns, bool firstRowIsHeader) {
     initializeSlots(rows, columns, firstRowIsHeader);
 }
 
-ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source) {
-    QTextDocument htmlDocument;
+ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
+                                                          bool requireTable) {
+    QBitArray cellHeaders;
+    if (requireTable &&
+        (source.size() > 4 * 1024 * 1024 || !completeTableHtml(source, cellHeaders)))
+        return {};
+    class ResourceFreeDocument final : public QTextDocument {
+        QVariant loadResource(int, const QUrl&) override {
+            return {};
+        }
+    };
+    ResourceFreeDocument htmlDocument;
     htmlDocument.setHtml(source);
 
     QVector<QTextTable*> tables;
     collectTables(htmlDocument.rootFrame(), &tables);
     if (tables.isEmpty()) {
-        return fromPlainText(htmlDocument.toPlainText());
+        return requireTable ? ScreenshotTableDocument{} : fromPlainText(htmlDocument.toPlainText());
     }
 
     const QTextTable* table = tables.constFirst();
-    const bool firstRowHeader = source.contains(
-        QRegularExpression(QStringLiteral("<th\\b"), QRegularExpression::CaseInsensitiveOption));
+    if (requireTable && (tables.size() != 1 || table->rows() > maximumTableDimension ||
+                         table->columns() > maximumTableDimension ||
+                         qint64(table->rows()) * table->columns() > maximumTableCells)) {
+        return {};
+    }
+    const bool firstRowHeader =
+        !requireTable && source.contains(QRegularExpression(
+                             QStringLiteral("<th\\b"), QRegularExpression::CaseInsensitiveOption));
     ScreenshotTableDocument result(table->rows(), table->columns(), firstRowHeader);
     for (int row = 0; row < table->rows(); ++row) {
         for (int column = 0; column < table->columns(); ++column) {
@@ -92,7 +227,9 @@ ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source)
             target.cell.text = tableCellText(sourceCell);
             target.cell.rowSpan = std::max(1, sourceCell.rowSpan());
             target.cell.columnSpan = std::max(1, sourceCell.columnSpan());
-            target.cell.header = firstRowHeader && row == 0;
+            target.cell.header = requireTable
+                                     ? cellHeaders.testBit(row * maximumTableDimension + column)
+                                     : firstRowHeader && row == 0;
             result.applySpan(row, column);
         }
     }

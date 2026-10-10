@@ -2065,6 +2065,10 @@
             <translation>停用/啟用全域快速鍵</translation>
         </message>
         <message>
+            <source>Disabled</source>
+            <translation>停用</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>磁碟限制</translation>
         </message>
@@ -2715,6 +2719,10 @@
         <message>
             <source>Medium V6</source>
             <translation>中型 V6</translation>
+        </message>
+        <message>
+            <source>Memory Optimization Policy</source>
+            <translation>記憶體最佳化策略</translation>
         </message>
         <message>
             <source>Menu options</source>
@@ -3847,6 +3855,18 @@
         <message>
             <source>Small V6</source>
             <translation>小型 V6</translation>
+        </message>
+        <message>
+            <source>Smart Control</source>
+            <translation>智慧控制</translation>
+        </message>
+        <message>
+            <source>Smart Control releases unused heap memory while the app is idle. Active captures and pinned images are kept.</source>
+            <translation>智慧控制會在應用程式閒置時釋放未使用的堆積記憶體。進行中的擷取和貼圖會保留。</translation>
+        </message>
+        <message>
+            <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
+            <translation>智慧控制會在應用程式閒置時縮減常駐記憶體。下次使用時可能會短暫增加回應時間。</translation>
         </message>
         <message>
             <source>Smart Merge</source>

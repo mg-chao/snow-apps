@@ -113,12 +113,16 @@ void ScreenshotSelectorServiceClient::destroyService() {
     }
 
     snow_ui_selector_service_destroy(service);
+    m_refreshActivities.clear();
 }
 
 bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
                                                    const QVector<std::uintptr_t>& excludedHwnds) {
+    auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     if (!ensureService())
         return false;
+
+    m_refreshActivities.insert(requestId, std::move(activity));
 
     m_serviceBackend = static_cast<int>(selectorBackendForCurrentMode());
     const std::uintptr_t* data = excludedHwnds.isEmpty() ? nullptr : excludedHwnds.constData();
@@ -132,7 +136,8 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
         m_displays = snow_shot::platform::detail::selectorDisplayGeometry();
 #endif
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
-    }
+    } else
+        m_refreshActivities.remove(requestId);
     return started;
 }
 
@@ -141,6 +146,9 @@ bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
     const QVector<CapturedDisplayModel>& displays) {
     if (displays.isEmpty() || !ensureService())
         return false;
+
+    m_refreshActivities.insert(requestId,
+                               snow_shot::runtime::RuntimeActivityTracker::shared().acquire());
 
     m_serviceBackend = static_cast<int>(selectorBackendForCurrentMode());
     const std::uintptr_t* data = excludedHwnds.isEmpty() ? nullptr : excludedHwnds.constData();
@@ -169,7 +177,8 @@ bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
             display.image = {};
 #endif
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
-    }
+    } else
+        m_refreshActivities.remove(requestId);
     return started;
 }
 
@@ -220,13 +229,12 @@ void ScreenshotSelectorServiceClient::refreshCallback(std::uint64_t epoch, std::
                                                       void* userdata) {
     auto* client = static_cast<CallbackBridge*>(userdata)->client;
     // The native close barrier keeps the bridge and QObject alive throughout this call.
-    QMetaObject::invokeMethod(
-        client,
-        [client, epoch, ok]() {
-            if (client->m_callbacks.refreshFinished)
-                client->m_callbacks.refreshFinished(epoch, ok != 0);
-        },
-        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(client, snow_shot::runtime::trackRuntimeWork([client, epoch, ok]() {
+                                  client->m_refreshActivities.remove(epoch);
+                                  if (client->m_callbacks.refreshFinished)
+                                      client->m_callbacks.refreshFinished(epoch, ok != 0);
+                              }),
+                              Qt::QueuedConnection);
 }
 
 void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* event,

@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 
@@ -115,7 +116,7 @@ class ScreenshotHistoryTaskExecutor final {
             m_submittedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
         }
         try {
-            m_pool.start(
+            m_pool.start(snow_shot::runtime::trackRuntimeWork(
                 [this, function = std::forward<Function>(function), persistence]() mutable {
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
@@ -129,7 +130,7 @@ class ScreenshotHistoryTaskExecutor final {
                         m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
                     }
                     function();
-                });
+                }));
         } catch (...) {
             // The runnable never started, so mirror complete()'s counter
             // updates to keep pendingJobs() converging to zero.
@@ -364,11 +365,13 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
             }
             QMetaObject::invokeMethod(
                 guarded,
-                [guarded, generation, resolutions = std::move(resolutions), cancellationToken]() {
+                snow_shot::runtime::trackRuntimeWork([guarded, generation,
+                                                      resolutions = std::move(resolutions),
+                                                      cancellationToken]() {
                     if (guarded != nullptr && !cancellationToken->load(std::memory_order_acquire)) {
                         emit guarded->displayAssetsReady(generation, resolutions);
                     }
-                },
+                }),
                 Qt::QueuedConnection);
         });
     }
@@ -422,14 +425,15 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
             }
             QMetaObject::invokeMethod(
                 guarded,
-                [guarded, generation, recordId = record.id, payload = std::move(payload),
-                 cancellationToken]() mutable {
+                snow_shot::runtime::trackRuntimeWork([guarded, generation, recordId = record.id,
+                                                      payload = std::move(payload),
+                                                      cancellationToken]() mutable {
                     if (guarded != nullptr && !cancellationToken->load(std::memory_order_acquire)) {
                         emit guarded->resultImageReady(
                             generation,
                             ScreenshotHistoryResultResolution{recordId, std::move(payload)});
                     }
-                },
+                }),
                 Qt::QueuedConnection);
         });
     }
@@ -637,8 +641,7 @@ class HistoryPreviewLoader final : public adqt::widgets::AdImageLoader {
             reply->attach(loader->load(imageSource, options, reply), {});
         };
         QMetaObject::invokeMethod(
-            reply,
-            [reply, record, dataSource, resolve]() {
+            reply, snow_shot::runtime::trackRuntimeWork([reply, record, dataSource, resolve]() {
                 if (reply->isFinished())
                     return;
                 if (!dataSource) {
@@ -666,7 +669,7 @@ class HistoryPreviewLoader final : public adqt::widgets::AdImageLoader {
                                      });
                     dataSource->requestDisplayAssets({record}, generation);
                 }
-            },
+            }),
             Qt::QueuedConnection);
         return reply;
     }

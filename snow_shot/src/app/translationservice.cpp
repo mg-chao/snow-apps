@@ -157,17 +157,16 @@ void TranslationService::refreshModels(bool force) {
     if (m_client == nullptr || loadingModels())
         return;
     m_catalogAttempted = true;
-    if (!force && m_client->hasBuiltInModels(m_locale.name())) {
-        publishModels(true);
-        return;
-    }
     m_catalogError.clear();
-    m_modelsToken =
-        m_client->fetchChatModels(m_locale.name(), this, [this](SnowShotChatModelsResult result) {
+    m_modelsToken = m_client->ensureChatModels(
+        m_locale.name(), this,
+        [this](SnowShotChatModelsResult result) {
             m_modelsToken = 0;
             m_catalogError = result.error;
             publishModels(result.succeeded());
-        });
+        },
+        force ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
+              : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
     if (m_modelsToken == 0)
         m_catalogError = tr("No translation services are available.");
     emit catalogChanged();

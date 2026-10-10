@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
 #include <opencv2/core.hpp>
@@ -271,6 +272,8 @@ class ScreenshotQrRecognitionService::Impl final {
     using Completion = ScreenshotQrRecognitionPort::Completion;
 
     struct Request {
+        snow_shot::runtime::RuntimeActivityLease activity =
+            snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         RequestToken token = 0;
         ScreenshotQrRecognitionMode mode = ScreenshotQrRecognitionMode::QrAndBarcode;
         QImage image;

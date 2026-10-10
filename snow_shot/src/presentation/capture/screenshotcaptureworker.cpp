@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "screenshotcaptureworker.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "captureframeimage.h"
@@ -62,12 +63,11 @@ void ScreenshotCaptureWorker::refreshLayout(
     const bool ok = ensureSession() && snow_capture_desktop_session_refresh_layout(m_session) != 0;
     if (!coordinator.isNull()) {
         QMetaObject::invokeMethod(
-            coordinator,
-            [coordinator, requestId, ok]() {
+            coordinator, snow_shot::runtime::trackRuntimeWork([coordinator, requestId, ok]() {
                 if (!coordinator.isNull()) {
                     emit coordinator->layoutRefreshed(requestId, ok);
                 }
-            },
+            }),
             Qt::QueuedConnection);
     }
 }
@@ -146,10 +146,10 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.layout_ready");
         QMetaObject::invokeMethod(
             coordinator,
-            [coordinator, prepared = std::move(prepared)]() {
+            snow_shot::runtime::trackRuntimeWork([coordinator, prepared = std::move(prepared)]() {
                 if (coordinator)
                     emit coordinator->layoutReady(prepared);
-            },
+            }),
             Qt::QueuedConnection);
     }
 
@@ -330,14 +330,13 @@ void ScreenshotCaptureWorker::postPrepared(
         return;
     }
 
-    QMetaObject::invokeMethod(
-        coordinator,
-        [coordinator, requestId, ok]() {
-            if (!coordinator.isNull()) {
-                emit coordinator->prepared(requestId, ok);
-            }
-        },
-        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(coordinator,
+                              snow_shot::runtime::trackRuntimeWork([coordinator, requestId, ok]() {
+                                  if (!coordinator.isNull()) {
+                                      emit coordinator->prepared(requestId, ok);
+                                  }
+                              }),
+                              Qt::QueuedConnection);
 }
 
 void ScreenshotCaptureWorker::postCaptureResult(
@@ -356,10 +355,10 @@ void ScreenshotCaptureWorker::postCaptureResult(
 
     QMetaObject::invokeMethod(
         coordinator,
-        [coordinator, result = std::move(result)]() mutable {
+        snow_shot::runtime::trackRuntimeWork([coordinator, result = std::move(result)]() mutable {
             if (!coordinator.isNull()) {
                 emit coordinator->captureFinished(std::move(result));
             }
-        },
+        }),
         Qt::QueuedConnection);
 }

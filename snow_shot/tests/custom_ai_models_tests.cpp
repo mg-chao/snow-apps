@@ -384,13 +384,14 @@ void widgetContracts(QApplication& application) {
                 }
             });
         });
-        const auto waitFor = [](auto predicate) {
+        const auto waitFor = [](auto predicate, const char* message =
+                                                    "asynchronous model list operation completes") {
             QElapsedTimer timer;
             timer.start();
             while (!predicate() && timer.elapsed() < 3000) {
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
             }
-            require(predicate(), "asynchronous model list operation completes");
+            require(predicate(), message);
         };
         const auto respond = [](QTcpSocket* socket, const QByteArray& payload) {
             socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
@@ -410,7 +411,7 @@ void widgetContracts(QApplication& application) {
                 "remote fetch replaces empty results with a visible small Spin like Ant Design");
         require(apiModel->popupFooterWidget() == nullptr,
                 "loading model popup does not reserve an empty status footer");
-        waitFor([&]() { return requests.size() == 1; });
+        waitFor([&]() { return requests.size() == 1; }, "initial model list request is received");
         require(fetchSpin->x() == fetchContent->layout()->contentsMargins().left() &&
                     fetchSpin->width() == fetchSpin->sizeHint().width() &&
                     fetchSpin->geometry().right() < fetchContent->width() / 2,
@@ -420,7 +421,7 @@ void widgetContracts(QApplication& application) {
                 "models use the currently entered base URL and API key");
         respond(requests.last(),
                 R"({"data":[{"id":"remote-model"},{"id":"remote-model"},{"id":""},{}]})");
-        waitFor([&]() { return !apiModel->loading(); });
+        waitFor([&]() { return !apiModel->loading(); }, "initial valid model list completes");
         require(apiModel->options().size() == 1 &&
                     apiModel->options().first().value.toString() ==
                         QStringLiteral("remote-model") &&
@@ -450,19 +451,19 @@ void widgetContracts(QApplication& application) {
         key->setText(QStringLiteral("changed-secret"));
         require(apiModel->options().isEmpty(), "changing API key invalidates cached models");
         apiModel->showPopup();
-        waitFor([&]() { return requests.size() == 2; });
+        waitFor([&]() { return requests.size() == 2; }, "edited API key triggers another request");
         respond(requests.last(), "invalid json");
-        waitFor([&]() { return !apiModel->loading(); });
+        waitFor([&]() { return !apiModel->loading(); }, "invalid JSON model response completes");
         require(!qobject_cast<QLabel*>(apiModel->popupFooterWidget())->text().isEmpty(),
                 "failed model lookup displays retry and custom input guidance");
         apiModel->hidePopup();
         received.clear();
         apiModel->showPopup();
-        waitFor([&]() { return requests.size() == 3; });
+        waitFor([&]() { return requests.size() == 3; }, "failed model response can be retried");
         require(apiModel->popupFooterWidget() == nullptr,
                 "retry removes the previous error footer from popup geometry");
         respond(requests.last(), R"({"data":[]})");
-        waitFor([&]() { return !apiModel->loading(); });
+        waitFor([&]() { return !apiModel->loading(); }, "empty model response completes");
         apiModel->hidePopup();
         apiModel->showPopup();
         require(!apiModel->loading() && apiModel->options().isEmpty(),
@@ -472,11 +473,60 @@ void widgetContracts(QApplication& application) {
         apiModel->hidePopup();
         url->setText(QStringLiteral("http://127.0.0.1:%1/v2/").arg(server.serverPort()));
         apiModel->showPopup();
-        waitFor([&]() { return requests.size() == 4; });
+        waitFor([&]() { return requests.size() == 4; }, "edited base URL starts a new request");
         url->setText(QStringLiteral("http://localhost:1234/v1/"));
         require(!apiModel->loading() && apiModel->options().isEmpty(),
                 "changing connection cancels stale results");
         apiModel->hidePopup();
+        constexpr qsizetype maximumModelResponseBytes = 4 * 1024 * 1024;
+        const auto fetchModels = [&](const QString& path) {
+            apiModel->hidePopup();
+            received.clear();
+            url->setText(
+                QStringLiteral("http://127.0.0.1:%1/%2").arg(server.serverPort()).arg(path));
+            const auto count = requests.size();
+            apiModel->showPopup();
+            waitFor([&]() { return requests.size() == count + 1; },
+                    "bounded response fixture receives the model request");
+            return requests.last();
+        };
+        const auto requireOversizedFailure = [&](QTcpSocket* socket, const char* message) {
+            waitFor([&]() { return !apiModel->loading(); }, message);
+            waitFor([&]() { return socket->state() == QAbstractSocket::UnconnectedState; },
+                    "oversized model response closes the server connection");
+            auto* failure = qobject_cast<QLabel*>(apiModel->popupFooterWidget());
+            require(
+                apiModel->options().isEmpty() && failure != nullptr && !failure->text().isEmpty(),
+                "oversized model lists abort the connection and expose existing retry guidance");
+        };
+        auto* oversizedLength = fetchModels(QStringLiteral("oversized-length/v1"));
+        oversizedLength->write(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+            QByteArray::number(maximumModelResponseBytes + 1) + "\r\n\r\n");
+        requireOversizedFailure(oversizedLength,
+                                "oversized Content-Length stops model loading before the body");
+
+        auto* oversizedChunk = fetchModels(QStringLiteral("oversized-chunk/v1"));
+        const QByteArray oversizedBytes(maximumModelResponseBytes + 1, ' ');
+        oversizedChunk->write("HTTP/1.1 200 OK\r\nContent-Type: "
+                              "application/json\r\nTransfer-Encoding: chunked\r\n\r\n" +
+                              QByteArray::number(oversizedBytes.size(), 16) + "\r\n" +
+                              oversizedBytes + "\r\n");
+        requireOversizedFailure(oversizedChunk,
+                                "oversized chunked data stops model loading before completion");
+
+        auto* exactLength = fetchModels(QStringLiteral("exact-length/v1"));
+        QByteArray exactBytes = R"({"data":[{"id":"bounded-model"}]})";
+        exactBytes.append(maximumModelResponseBytes - exactBytes.size(), ' ');
+        respond(exactLength, exactBytes);
+        waitFor([&]() { return !apiModel->loading(); }, "exact-limit model response completes");
+        require(apiModel->options().size() == 1 &&
+                    apiModel->options().first().value.toString() ==
+                        QStringLiteral("bounded-model") &&
+                    apiModel->popupFooterWidget() == nullptr,
+                "model response at the exact limit succeeds after an oversized fetch");
+        apiModel->hidePopup();
+        url->setText(QStringLiteral("http://localhost:1234/v1/"));
         key->setText(QStringLiteral("portable-secret"));
         apiModel->lineEdit()->setText(QStringLiteral("local-id"));
         emit apiModel->lineEdit()->textEdited(QStringLiteral("local-id"));
@@ -581,11 +631,14 @@ void widgetContracts(QApplication& application) {
         key = modal->contentWidget()->findChild<AdPasswordEdit*>(QStringLiteral("apiKey"));
         url->setText(QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()));
         key->setText(QStringLiteral("changed-secret"));
+        const auto requestsBeforeReopen = requests.size();
         apiModel->showPopup();
         require(apiModel->loading(), "a new editor does not reuse the previous modal's cache");
-        waitFor([&]() { return requests.size() == 5; });
+        waitFor([&]() { return requests.size() == requestsBeforeReopen + 1; },
+                "a reopened editor fetches its own model list");
         respond(requests.last(), R"({"data":[]})");
-        waitFor([&]() { return !apiModel->loading(); });
+        waitFor([&]() { return !apiModel->loading(); },
+                "reopened editor's model response completes");
         apiModel->hidePopup();
         url->setText(original.baseUrl);
         key->setText(original.apiKey);

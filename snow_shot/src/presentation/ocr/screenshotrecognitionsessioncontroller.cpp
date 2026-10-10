@@ -11,9 +11,8 @@
 #include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotocrtexteditingsession.h"
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/languagemanager.h"
-#endif
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 #include "snow_shot/presentation/screenshotimageconversioncontroller.h"
@@ -27,6 +26,9 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDataStream>
+#include <QThreadPool>
 #include <QLocale>
 #include <QMimeData>
 #include <QTextDocument>
@@ -116,6 +118,12 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
     SnowShotApiClient* tableRecognition, ScreenshotRecognitionSessionActions actions,
     QObject* parent)
     : QObject(parent), m_actions(std::move(actions)) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    m_tableModelSelection = snow_shot::storage::ScreenshotRecognitionModelSettings().tableModel();
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_latexModelSelection = snow_shot::storage::ScreenshotRecognitionModelSettings().latexModel();
+#endif
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     m_conversion = new ScreenshotImageConversionController(this);
     connect(m_conversion, &ScreenshotImageConversionController::changed, this, [this]() {
@@ -129,6 +137,38 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
     connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
             &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+                if (!m_savingRecognitionModel &&
+                    (key == QStringLiteral("screenshot_table/model") ||
+                     key == QStringLiteral("screenshot_latex/model"))) {
+                    const Mode changed =
+                        key == QStringLiteral("screenshot_table/model") ? Mode::Table : Mode::Latex;
+                    const auto settings = snow_shot::storage::ScreenshotRecognitionModelSettings();
+                    QString selected;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+                    if (changed == Mode::Table)
+                        selected = settings.tableModel();
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+                    if (changed == Mode::Latex)
+                        selected = settings.latexModel();
+#endif
+                    if (m_active && m_mode == changed) {
+                        setRecognitionModel(selected);
+                    } else {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+                        if (changed == Mode::Table)
+                            m_tableModelSelection = selected;
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+                        if (changed == Mode::Latex)
+                            m_latexModelSelection = selected;
+#endif
+                        updateRecognitionModels();
+                    }
+                    return;
+                }
+#endif
                 if (key == QStringLiteral("text_recognition/show_original_image_preview")) {
                     updateOriginalImagePreview();
                     return;
@@ -230,9 +270,116 @@ void ScreenshotRecognitionSessionController::setProviders(
 #endif
 
         connect(tableRecognition, &QObject::destroyed, this, [this]() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            const bool awaitingModels = m_active &&
+                                        (m_mode == Mode::Table || m_mode == Mode::Latex) &&
+                                        m_recognitionAwaitingModel;
+            m_recognitionModelsToken = 0;
+            m_recognitionModelsLoading = false;
+            ++m_recognitionModelsGeneration;
+#endif
             handleRecognitionProviderDestroyed(Mode::Table);
             handleRecognitionProviderDestroyed(Mode::Latex);
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            if (awaitingModels)
+                failModelRecognition(m_mode == Mode::Table ? tr("Table recognition failed")
+                                                           : tr("LaTeX recognition failed"));
+#endif
         });
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        connect(tableRecognition, &SnowShotApiClient::chatModelsChanged, this,
+                [this] { updateRecognitionModels(); });
+        connect(tableRecognition, &SnowShotApiClient::baseUrlChanged, this, [this] {
+            const bool affected =
+                m_active && (m_mode == Mode::Table || m_mode == Mode::Latex) &&
+                !recognitionModelSelection(m_mode).startsWith(QStringLiteral("custom:"));
+            if (affected) {
+                cancelModelRecognition(m_mode);
+                m_recognitionEffectiveModel.clear();
+                clearContent();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+                m_tableSession.reset();
+#endif
+            }
+            if (m_recognitionModelsToken)
+                m_tableRecognition->cancel(m_recognitionModelsToken);
+            m_recognitionModelsToken = 0;
+            m_recognitionModelsLoading = false;
+            ++m_recognitionModelsGeneration;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+            for (auto it = m_tableEntries.begin(); it != m_tableEntries.end();) {
+                if (it->model.startsWith(QStringLiteral("custom:"))) {
+                    ++it;
+                    continue;
+                }
+                m_tableCache.remove(it.key());
+                m_tableResults.remove(it.key());
+                m_tableEntryTargets.remove(it.key());
+                it = m_tableEntries.erase(it);
+            }
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            for (auto it = m_latexEntries.begin(); it != m_latexEntries.end();) {
+                if (it->model.startsWith(QStringLiteral("custom:"))) {
+                    ++it;
+                    continue;
+                }
+                m_latexCache.remove(it.key());
+                m_latexResults.remove(it.key());
+                m_latexEntryTargets.remove(it.key());
+                it = m_latexEntries.erase(it);
+            }
+#endif
+            if (affected)
+                failModelRecognition(
+                    tr("Recognition service changed. Retry to use the updated settings."));
+            updateRecognitionModels();
+            emit recognitionResultsChanged();
+        });
+        connect(tableRecognition, &SnowShotApiClient::customModelInvalidated, this,
+                [this](const QString& model, bool, bool vision) {
+                    if (!vision)
+                        return;
+                    const bool affected = m_active && recognitionModelSelection(m_mode) == model;
+                    if (affected) {
+                        cancelModelRecognition(m_mode);
+                        clearContent();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+                        m_tableSession.reset();
+#endif
+                    }
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+                    for (auto it = m_tableEntries.begin(); it != m_tableEntries.end();) {
+                        if (it->model != model) {
+                            ++it;
+                            continue;
+                        }
+                        m_tableCache.remove(it.key());
+                        m_tableResults.remove(it.key());
+                        m_tableEntryTargets.remove(it.key());
+                        it = m_tableEntries.erase(it);
+                    }
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+                    for (auto it = m_latexEntries.begin(); it != m_latexEntries.end();) {
+                        if (it->model != model) {
+                            ++it;
+                            continue;
+                        }
+                        m_latexCache.remove(it.key());
+                        m_latexResults.remove(it.key());
+                        m_latexEntryTargets.remove(it.key());
+                        it = m_latexEntries.erase(it);
+                    }
+#endif
+                    if (affected) {
+                        failModelRecognition(
+                            tr("Model configuration changed. Retry to use the updated settings."));
+                    }
+                    updateRecognitionModels();
+                    emit recognitionResultsChanged();
+                });
+#endif
     }
 #else
     Q_UNUSED(tableRecognition)
@@ -275,20 +422,35 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     m_conversion->seed(m_target.key, results.conversions);
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (results.latex && results.latex->succeeded()) {
-        if (!m_latexCache.contains(m_target.key)) {
-            auto session =
-                std::make_shared<ScreenshotOcrTextEditingSession>(results.latex->latex, true);
-            if (results.latexDraft)
-                session->establishHistory(*results.latexDraft);
-            connect(session->document(), &QTextDocument::contentsChanged, this,
-                    [this, key = m_target.key]() { handleLatexDocumentChanged(key); });
-            m_latexResults.insert(m_target.key, *results.latex);
-            m_latexCache.insert(m_target.key, std::move(session));
-        }
-        if (m_active && m_mode == Mode::Latex)
-            applyLatexContents(results.latex->latex);
+    if (results.latexEntries.isEmpty() && results.latex && results.latex->succeeded()) {
+        ScreenshotLatexRecognitionEntry legacy;
+        legacy.model = screenshotDedicatedRecognitionModelId();
+        legacy.result = *results.latex;
+        legacy.draft = results.latexDraft;
+        results.latexEntries.append(std::move(legacy));
+        if (results.latexModelSelection.isEmpty())
+            results.latexModelSelection = screenshotDedicatedRecognitionModelId();
     }
+    if (!results.latexModelSelection.isEmpty())
+        m_latexModelSelection = results.latexModelSelection;
+    for (const auto& entry : results.latexEntries) {
+        if (!entry.isValid() || !recognitionEntryValid(entry.model, entry.modelFingerprint))
+            continue;
+        const QString key = recognitionCacheKey(Mode::Latex, entry.model);
+        if (m_latexCache.contains(key))
+            continue;
+        auto session = std::make_shared<ScreenshotOcrTextEditingSession>(entry.result.latex, true);
+        if (entry.draft)
+            session->establishHistory(*entry.draft);
+        connect(session->document(), &QTextDocument::contentsChanged, this,
+                [this, key] { handleLatexDocumentChanged(key); });
+        m_latexResults.insert(key, entry.result);
+        m_latexEntries.insert(key, entry);
+        m_latexEntryTargets.insert(key, m_target.key);
+        m_latexCache.insert(key, std::move(session));
+    }
+    if (m_active && m_mode == Mode::Latex)
+        applyLatexContents(latexDraft());
 #endif
     bool textInserted = false;
     if (!m_target.hasFormattedText() && results.text.has_value() && results.text->error.isEmpty() &&
@@ -319,14 +481,35 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     }
 
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    if (results.table.has_value() && results.table->succeeded() &&
-        !m_tableCache.contains(m_target.key)) {
-        ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(results.table->html);
-        if (!document.empty()) {
-            m_tableResults.insert(m_target.key, *results.table);
-            m_tableCache.insert(
-                m_target.key, std::make_shared<ScreenshotTableEditingSession>(std::move(document)));
-        }
+    if (results.tableEntries.isEmpty() && results.table && results.table->succeeded()) {
+        ScreenshotTableRecognitionEntry legacy;
+        legacy.model = screenshotDedicatedRecognitionModelId();
+        legacy.result = *results.table;
+        results.tableEntries.append(std::move(legacy));
+        if (results.tableModelSelection.isEmpty())
+            results.tableModelSelection = screenshotDedicatedRecognitionModelId();
+    }
+    if (!results.tableModelSelection.isEmpty() &&
+        results.tableModelSelection != m_tableModelSelection && m_active && m_mode == Mode::Table) {
+        if (content())
+            content()->commitActiveTableEdit();
+        cancelModelRecognition(Mode::Table);
+        m_recognitionEffectiveModel.clear();
+        clearContent(true);
+        m_tableSession.reset();
+        m_tableCacheKey.clear();
+    }
+    if (!results.tableModelSelection.isEmpty())
+        m_tableModelSelection = results.tableModelSelection;
+    for (const auto& entry : results.tableEntries) {
+        if (!entry.isValid() || !recognitionEntryValid(entry.model, entry.modelFingerprint))
+            continue;
+        const QString key = recognitionCacheKey(Mode::Table, entry.model);
+        if (m_tableEntries.contains(key))
+            continue;
+        m_tableResults.insert(key, entry.result);
+        m_tableEntries.insert(key, entry);
+        m_tableEntryTargets.insert(key, m_target.key);
     }
 #endif
 
@@ -347,10 +530,13 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     }
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (m_active && m_mode == Mode::Table) {
-        const auto table = m_tableCache.constFind(m_target.key);
+        const auto table = m_tableCache.constFind(recognitionCacheKey(Mode::Table));
         if (table != m_tableCache.cend()) {
-            m_tableCacheKey = m_target.key;
+            m_tableCacheKey = recognitionCacheKey(Mode::Table);
             applyTableSession(table.value());
+        } else if (m_tableEntries.contains(recognitionCacheKey(Mode::Table))) {
+            cancelModelRecognition(Mode::Table);
+            activateModelResult();
         }
     }
 #endif
@@ -376,11 +562,24 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
     }
     results.key = m_target.key;
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (m_latexResults.contains(m_target.key)) {
-        results.latex = m_latexResults.value(m_target.key);
-        const QString draft = latexDraft();
-        if (draft != results.latex->latex)
-            results.latexDraft = draft;
+    results.latexModelSelection = m_latexModelSelection;
+    results.latexEffectiveModel = resolvedRecognitionModel(Mode::Latex);
+    for (auto it = m_latexEntries.cbegin(); it != m_latexEntries.cend(); ++it) {
+        if (m_latexEntryTargets.value(it.key()) != m_target.key ||
+            !recognitionEntryValid(it->model, it->modelFingerprint))
+            continue;
+        auto entry = it.value();
+        if (const auto session = m_latexCache.value(it.key())) {
+            if (session->text() != entry.result.latex)
+                entry.draft = session->text();
+            else
+                entry.draft.reset();
+        }
+        results.latexEntries.append(entry);
+        if (entry.model == screenshotDedicatedRecognitionModelId()) {
+            results.latex = entry.result;
+            results.latexDraft = entry.draft;
+        }
     }
     results.visibleLatex = m_active && m_mode == Mode::Latex;
 #endif
@@ -394,9 +593,23 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
         results.text->filteredImage = {};
     }
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    if (const auto table = m_tableResults.constFind(m_target.key);
-        table != m_tableResults.cend() && table->succeeded()) {
-        results.table = table.value();
+    results.tableModelSelection = m_tableModelSelection;
+    results.tableEffectiveModel = resolvedRecognitionModel(Mode::Table);
+    for (auto it = m_tableEntries.cbegin(); it != m_tableEntries.cend(); ++it) {
+        if (m_tableEntryTargets.value(it.key()) != m_target.key ||
+            !recognitionEntryValid(it->model, it->modelFingerprint))
+            continue;
+        auto entry = it.value();
+        if (const auto session = m_tableCache.value(it.key())) {
+            const QString draft = session->document.toHtml();
+            if (draft != session->baseline.toHtml())
+                entry.draftHtml = draft;
+            else
+                entry.draftHtml.reset();
+        }
+        results.tableEntries.append(entry);
+        if (entry.model == screenshotDedicatedRecognitionModelId())
+            results.table = entry.result;
     }
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
@@ -436,6 +649,331 @@ bool ScreenshotRecognitionSessionController::hasTarget() const {
     return m_target.isValid();
 }
 
+QString ScreenshotRecognitionSessionController::recognitionModelSelection(Mode mode) const {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (mode == Mode::Table)
+        return m_tableModelSelection;
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (mode == Mode::Latex)
+        return m_latexModelSelection;
+#endif
+    Q_UNUSED(mode)
+    return {};
+}
+
+QString ScreenshotRecognitionSessionController::resolvedRecognitionModel(Mode mode) const {
+    const QString selected = recognitionModelSelection(mode);
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (selected == screenshotDefaultVisionRecognitionModelId()) {
+        if (m_active && mode == m_mode && !m_recognitionEffectiveModel.isEmpty())
+            return m_recognitionEffectiveModel;
+        return m_tableRecognition ? m_tableRecognition->builtInVisionModel() : QString{};
+    }
+#endif
+    return selected;
+}
+
+QString ScreenshotRecognitionSessionController::recognitionCacheKey(Mode mode,
+                                                                    const QString& model) const {
+    const QString effective = model.isEmpty() ? resolvedRecognitionModel(mode) : model;
+    if (effective.isEmpty())
+        return {};
+    QByteArray identity;
+    QDataStream stream(&identity, QIODevice::WriteOnly);
+    QString fingerprint;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_tableRecognition)
+        fingerprint = m_tableRecognition->modelFingerprint(effective);
+#endif
+    stream << m_target.key << static_cast<int>(mode) << effective << fingerprint << 1;
+    return QString::fromLatin1(
+        QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
+}
+
+bool ScreenshotRecognitionSessionController::recognitionEntryValid(
+    const QString& model, const QString& fingerprint) const {
+    if (model == screenshotDedicatedRecognitionModelId() && fingerprint.isEmpty())
+        return true;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_tableRecognition) {
+        if (model.startsWith(QStringLiteral("custom:")) &&
+            !m_tableRecognition->isCustomModel(model))
+            return false;
+        return fingerprint == m_tableRecognition->modelFingerprint(model);
+    }
+#endif
+    return !model.startsWith(QStringLiteral("custom:")) && fingerprint.isEmpty();
+}
+
+void ScreenshotRecognitionSessionController::updateRecognitionModels() const {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (!m_actions.setRecognitionModelState)
+        return;
+    ScreenshotRecognitionModelState state;
+    state.loading = m_recognitionModelsLoading;
+    state.error = m_recognitionModelsError;
+    if (m_tableRecognition)
+        state.models = m_tableRecognition->cachedChatModels();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    state.selection = m_tableModelSelection;
+    state.effectiveModel =
+        m_active && m_mode == Mode::Table ? m_recognitionEffectiveModel : QString{};
+    m_actions.setRecognitionModelState(static_cast<int>(Mode::Table), state);
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    state.selection = m_latexModelSelection;
+    state.effectiveModel =
+        m_active && m_mode == Mode::Latex ? m_recognitionEffectiveModel : QString{};
+    m_actions.setRecognitionModelState(static_cast<int>(Mode::Latex), state);
+#endif
+#endif
+}
+
+bool ScreenshotRecognitionSessionController::recognitionModelAvailable(const QString& model) const {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    return m_tableRecognition &&
+           (model.startsWith(QStringLiteral("custom:")) ||
+            m_tableRecognition->hasBuiltInModels(
+                snow_shot::presentation::LanguageManager::instance().currentLocale().name())) &&
+           std::any_of(m_tableRecognition->cachedChatModels().cbegin(),
+                       m_tableRecognition->cachedChatModels().cend(), [&model](const auto& item) {
+                           return item.id == model && item.supportsVision;
+                       });
+#else
+    Q_UNUSED(model)
+    return false;
+#endif
+}
+
+void ScreenshotRecognitionSessionController::loadRecognitionModels(bool refresh) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || !m_tableRecognition ||
+        m_recognitionModelsToken) {
+        updateRecognitionModels();
+        return;
+    }
+    m_recognitionModelsLoading = true;
+    m_recognitionModelsError.clear();
+    updateRecognitionModels();
+    const quint64 generation = ++m_recognitionModelsGeneration;
+    const QString locale =
+        snow_shot::presentation::LanguageManager::instance().currentLocale().name();
+    m_recognitionModelsToken = m_tableRecognition->ensureChatModels(
+        locale, this,
+        [this, generation](SnowShotChatModelsResult result) {
+            if (generation != m_recognitionModelsGeneration || !m_active)
+                return;
+            m_recognitionModelsToken = 0;
+            m_recognitionModelsLoading = false;
+            if (!result.error.isEmpty() ||
+                !m_tableRecognition->hasBuiltInModels(
+                    snow_shot::presentation::LanguageManager::instance().currentLocale().name())) {
+                m_recognitionModelsError = tr("Unable to load Snow Shot vision models");
+            }
+            updateRecognitionModels();
+            if ((m_mode == Mode::Table || m_mode == Mode::Latex) && m_recognitionAwaitingModel)
+                activateModelResult();
+            updateBusyState();
+        },
+        refresh ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
+                : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
+    if (!m_recognitionModelsToken) {
+        m_recognitionModelsLoading = false;
+        m_recognitionModelsError = tr("Unable to load Snow Shot vision models");
+        updateRecognitionModels();
+    }
+#else
+    Q_UNUSED(refresh)
+#endif
+}
+
+void ScreenshotRecognitionSessionController::cancelModelRecognition(Mode mode) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (mode == m_mode)
+        m_recognitionAwaitingModel = false;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (mode == Mode::Table) {
+        ++m_tableGeneration;
+        if (m_tableParsingCancellation)
+            m_tableParsingCancellation->store(true, std::memory_order_relaxed);
+        m_tableParsingCancellation.reset();
+        if (m_tableRecognition && m_tableRequestToken)
+            m_tableRecognition->cancel(m_tableRequestToken);
+        m_tableRequestToken = 0;
+        m_tableParsing = false;
+    }
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (mode == Mode::Latex) {
+        ++m_latexGeneration;
+        if (m_tableRecognition && m_latexRequestToken)
+            m_tableRecognition->cancel(m_latexRequestToken);
+        m_latexRequestToken = 0;
+    }
+#endif
+    Q_UNUSED(mode)
+}
+
+void ScreenshotRecognitionSessionController::failModelRecognition(const QString& message) {
+    hideRecognitionMessage();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_recognitionAwaitingModel = false;
+#endif
+    showStatus(message, true);
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_mode == Mode::Table)
+        m_tableSession.reset();
+#endif
+    if (content())
+        content()->showRecognitionError(message);
+    updateBusyState();
+    updateTextState();
+}
+
+void ScreenshotRecognitionSessionController::setRecognitionModel(const QString& selection) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || selection.isEmpty() ||
+        selection.size() > 256 || selection == recognitionModelSelection(m_mode) ||
+        std::any_of(selection.cbegin(), selection.cend(), [](QChar character) {
+            return character.isSpace() || character.category() == QChar::Other_Control;
+        }))
+        return;
+    if (content() && m_mode == Mode::Table)
+        content()->commitActiveTableEdit();
+    cancelModelRecognition(m_mode);
+    m_recognitionEffectiveModel.clear();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_mode == Mode::Table)
+        m_tableModelSelection = selection;
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_mode == Mode::Latex)
+        m_latexModelSelection = selection;
+#endif
+    m_savingRecognitionModel = true;
+    const auto settings = snow_shot::storage::ScreenshotRecognitionModelSettings();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_mode == Mode::Table)
+        settings.setTableModel(selection);
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_mode == Mode::Latex)
+        settings.setLatexModel(selection);
+#endif
+    m_savingRecognitionModel = false;
+    clearContent(m_mode == Mode::Table);
+    m_workflowError.clear();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    m_tableSession.reset();
+    m_tableCacheKey.clear();
+#endif
+    updateRecognitionModels();
+    activateModelResult();
+    emit recognitionResultsChanged();
+#else
+    Q_UNUSED(selection)
+#endif
+}
+
+void ScreenshotRecognitionSessionController::retryRecognition() {
+    if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || busy(m_mode))
+        return;
+    m_workflowError.clear();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_recognitionEffectiveModel.clear();
+    const QString model = resolvedRecognitionModel(m_mode);
+    const bool refresh = model != screenshotDedicatedRecognitionModelId() &&
+                         !model.startsWith(QStringLiteral("custom:")) &&
+                         !recognitionModelAvailable(model);
+#else
+    constexpr bool refresh = false;
+#endif
+    if (content())
+        content()->clearRecognitionError();
+    loadRecognitionModels(refresh);
+    activateModelResult();
+}
+
+void ScreenshotRecognitionSessionController::activateModelResult() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (!m_active)
+        return;
+    const bool unresolvedDefault =
+        recognitionModelSelection(m_mode) == screenshotDefaultVisionRecognitionModelId() &&
+        (!m_tableRecognition ||
+         !m_tableRecognition->hasBuiltInModels(
+             snow_shot::presentation::LanguageManager::instance().currentLocale().name()));
+    const QString model = unresolvedDefault ? QString{} : resolvedRecognitionModel(m_mode);
+    if (model.isEmpty()) {
+        if (m_recognitionModelsLoading) {
+            m_recognitionAwaitingModel = true;
+            showRecognitionMessage();
+            updateBusyState();
+        } else {
+            m_recognitionAwaitingModel = false;
+            failModelRecognition(tr("Snow Shot's visual understanding model is unavailable. Choose "
+                                    "another model or retry."));
+        }
+        return;
+    }
+    const QString key = recognitionCacheKey(m_mode, model);
+    m_recognitionEffectiveModel = model;
+    updateRecognitionModels();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_mode == Mode::Table && m_tableCache.contains(key)) {
+        m_recognitionAwaitingModel = false;
+        m_tableCacheKey = key;
+        applyTableSession(m_tableCache.value(key));
+        hideRecognitionMessage();
+        updateBusyState();
+        updateTextState();
+        return;
+    }
+    if (m_mode == Mode::Table && m_tableEntries.contains(key)) {
+        m_recognitionAwaitingModel = false;
+        materializeTableEntry(++m_tableGeneration, key, m_tableEntries.value(key), true);
+        return;
+    }
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_mode == Mode::Latex && m_latexResults.contains(key)) {
+        m_recognitionAwaitingModel = false;
+        applyLatexContents(latexDraft());
+        hideRecognitionMessage();
+        updateBusyState();
+        updateTextState();
+        return;
+    }
+#endif
+    if (model != screenshotDedicatedRecognitionModelId()) {
+        if (!recognitionModelAvailable(model)) {
+            if (m_recognitionModelsLoading && !model.startsWith(QStringLiteral("custom:"))) {
+                m_recognitionAwaitingModel = true;
+                showRecognitionMessage();
+                updateBusyState();
+                return;
+            }
+            failModelRecognition(tr(
+                "The selected recognition model is unavailable. Choose another model or retry."));
+            return;
+        }
+    }
+    m_recognitionAwaitingModel = false;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_mode == Mode::Table)
+        startTableRecognition();
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_mode == Mode::Latex)
+        startLatexRecognition();
+#endif
+    updateBusyState();
+    updateTextState();
+#endif
+}
+
 void ScreenshotRecognitionSessionController::prefetchText() {
     if (!hasTarget() || m_textCache.contains(m_target.key) || m_textRequestToken != 0) {
         return;
@@ -446,6 +984,14 @@ void ScreenshotRecognitionSessionController::prefetchText() {
 void ScreenshotRecognitionSessionController::activate(Mode mode) {
     if (!snow_shot::presentation::editionRecognitionModeAvailable(static_cast<int>(mode)))
         return;
+    if (m_active && m_mode == mode && (mode == Mode::Table || mode == Mode::Latex) && busy(mode)) {
+        updateRecognitionModels();
+        return;
+    }
+    if (m_active && m_mode != mode)
+        cancelModelRecognition(m_mode);
+    if (content() && m_active && m_mode == Mode::Table)
+        content()->commitActiveTableEdit();
     if (!hasTarget()) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return;
@@ -467,6 +1013,9 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
     m_workflowError.clear();
     m_mode = mode;
     m_active = true;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_recognitionEffectiveModel.clear();
+#endif
     ensureContent();
     if (m_actions.setRecognitionVisualState) {
         m_actions.setRecognitionVisualState(true);
@@ -528,37 +1077,10 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         } else {
             startTextRecognition(ScreenshotOcrRequestPriority::Interactive);
         }
-    } else if (mode == Mode::Table) {
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    } else if (mode == Mode::Table || mode == Mode::Latex) {
         setPendingTextRecognitionRendering(false);
-        auto cached = m_tableCache.constFind(m_target.key);
-        if (cached == m_tableCache.cend()) {
-            const auto result = m_tableResults.constFind(m_target.key);
-            if (result != m_tableResults.cend()) {
-                ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(result->html);
-                if (!document.empty()) {
-                    cached = m_tableCache.insert(
-                        m_target.key,
-                        std::make_shared<ScreenshotTableEditingSession>(std::move(document)));
-                }
-            }
-        }
-        if (cached != m_tableCache.cend()) {
-            m_tableCacheKey = m_target.key;
-            applyTableSession(cached.value());
-        } else {
-            startTableRecognition();
-        }
-#endif
-    } else if (mode == Mode::Latex) {
-#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-        setPendingTextRecognitionRendering(false);
-        if (m_latexResults.contains(m_target.key)) {
-            applyLatexContents(m_latexResults.value(m_target.key).latex);
-        } else {
-            startLatexRecognition();
-        }
-#endif
+        loadRecognitionModels();
+        activateModelResult();
     } else if (mode == Mode::Qr) {
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
         setPendingTextRecognitionRendering(false);
@@ -583,6 +1105,17 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
 }
 
 void ScreenshotRecognitionSessionController::deactivate() {
+    if (content() && m_active && m_mode == Mode::Table)
+        content()->commitActiveTableEdit();
+    cancelModelRecognition(Mode::Table);
+    cancelModelRecognition(Mode::Latex);
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_tableRecognition && m_recognitionModelsToken)
+        m_tableRecognition->cancel(m_recognitionModelsToken);
+    m_recognitionModelsToken = 0;
+    m_recognitionModelsLoading = false;
+    ++m_recognitionModelsGeneration;
+#endif
     setShowOriginalImage(false);
     if (!m_active && m_content == nullptr) {
         return;
@@ -647,10 +1180,14 @@ void ScreenshotRecognitionSessionController::invalidate() {
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     m_latexResults.clear();
+    m_latexEntries.clear();
+    m_latexEntryTargets.clear();
     m_latexCache.clear();
 #endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     m_tableResults.clear();
+    m_tableEntries.clear();
+    m_tableEntryTargets.clear();
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_qrResults.clear();
@@ -702,9 +1239,6 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
         it->editing = false;
         it->defaultTransformsApplied = false;
     }
-#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    m_tableCache.clear();
-#endif
     cancelOutstandingRequests();
     ++m_textGeneration;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
@@ -754,13 +1288,17 @@ bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
         return m_textRequestToken != 0 || m_textRenderRequestToken != 0;
     case Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-        return m_tableRequestToken != 0;
+        return m_tableRequestToken != 0 || m_tableParsing ||
+               (m_active && m_mode == mode && m_recognitionAwaitingModel &&
+                m_recognitionModelsLoading);
 #else
         return false;
 #endif
     case Mode::Latex:
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-        return m_latexRequestToken != 0;
+        return m_latexRequestToken != 0 ||
+               (m_active && m_mode == mode && m_recognitionAwaitingModel &&
+                m_recognitionModelsLoading);
 #else
         return false;
 #endif
@@ -880,7 +1418,7 @@ void ScreenshotRecognitionSessionController::redoTableEdit() {
 void ScreenshotRecognitionSessionController::undoTextEdit() {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_active && m_mode == Mode::Latex) {
-        if (const auto session = m_latexCache.value(m_target.key))
+        if (const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex)))
             session->undo();
         return;
     }
@@ -898,7 +1436,7 @@ void ScreenshotRecognitionSessionController::undoTextEdit() {
 void ScreenshotRecognitionSessionController::redoTextEdit() {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_active && m_mode == Mode::Latex) {
-        if (const auto session = m_latexCache.value(m_target.key))
+        if (const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex)))
             session->redo();
         return;
     }
@@ -1052,6 +1590,7 @@ bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
 }
 
 void ScreenshotRecognitionSessionController::synchronizeUiState() const {
+    updateRecognitionModels();
     if (m_actions.setShowOriginalImage) {
         m_actions.setShowOriginalImage(m_showOriginalImage);
     }
@@ -1527,9 +2066,9 @@ QString ScreenshotRecognitionSessionController::originalText() const {
 
 QString ScreenshotRecognitionSessionController::latexDraft() const {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (const auto session = m_latexCache.value(m_target.key))
+    if (const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex)))
         return session->text();
-    return m_latexResults.value(m_target.key).latex;
+    return m_latexResults.value(recognitionCacheKey(Mode::Latex)).latex;
 #else
     return {};
 #endif
@@ -1584,7 +2123,7 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_mode == Mode::Latex) {
-        if (!m_latexResults.contains(m_target.key))
+        if (!m_latexResults.contains(recognitionCacheKey(Mode::Latex)))
             return {};
         mimeData->setText(latexDraft());
         return mimeData;
@@ -1658,7 +2197,7 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
 void ScreenshotRecognitionSessionController::setTextDraft(const QString& text) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_active && m_mode == Mode::Latex) {
-        if (const auto session = m_latexCache.value(m_target.key))
+        if (const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex)))
             static_cast<void>(session->replaceText(text));
         return;
     }
@@ -1796,67 +2335,77 @@ void ScreenshotRecognitionSessionController::startTextRender() {
 
 void ScreenshotRecognitionSessionController::startTableRecognition() {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    if (!hasTarget() || m_tableRecognition == nullptr || m_tableRequestToken != 0 ||
+    if (!hasTarget() || m_tableRequestToken || m_tableParsing)
+        return;
+    if (!m_tableRecognition) {
+        failModelRecognition(tr("Table recognition service is unavailable"));
+        return;
+    }
+    const QString model = resolvedRecognitionModel(Mode::Table);
+    if (model == screenshotDedicatedRecognitionModelId() &&
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
-        if (m_tableRecognition == nullptr) {
-            showStatus(tr("Table recognition service is unavailable"), true);
-        }
+        failModelRecognition(tr("Table recognition is unavailable for screenshots larger than 4K"));
         return;
     }
     const quint64 generation = ++m_tableGeneration;
-    const QString key = m_target.key;
+    const QString key = recognitionCacheKey(Mode::Table, model);
     showRecognitionMessage();
+    if (content())
+        content()->clearRecognitionError();
     const auto callbackCompleted = std::make_shared<bool>(false);
-    m_tableRequestToken = m_tableRecognition->extractTable(
-        m_target.image, this,
-        [this, generation, key, callbackCompleted](SnowShotTableResult result) {
-            *callbackCompleted = true;
-            if (generation == m_tableGeneration) {
-                m_tableRequestToken = 0;
-            }
-            handleTableOutput(generation, key, std::move(result));
-        });
-    if (*callbackCompleted) {
+    const auto completion = [this, generation, key, callbackCompleted](SnowShotTableResult result) {
+        *callbackCompleted = true;
+        if (generation == m_tableGeneration)
+            m_tableRequestToken = 0;
+        handleTableOutput(generation, key, std::move(result));
+    };
+    m_tableRequestToken =
+        model == screenshotDedicatedRecognitionModelId()
+            ? m_tableRecognition->extractTable(m_target.image, this, completion)
+            : m_tableRecognition->extractTableVision(m_target.image, model, this, completion);
+    if (*callbackCompleted)
         m_tableRequestToken = 0;
-    }
     updateBusyState();
-    if (m_tableRequestToken == 0 && !*callbackCompleted) {
-        showStatus(tr("Table recognition request could not be prepared"), true);
-        hideRecognitionMessage();
-    }
+    if (!m_tableRequestToken && !*callbackCompleted)
+        failModelRecognition(tr("Table recognition request could not be prepared"));
 #endif
 }
 
 void ScreenshotRecognitionSessionController::startLatexRecognition() {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (!hasTarget() || m_tableRecognition == nullptr || m_latexRequestToken != 0 ||
+    if (!hasTarget() || m_latexRequestToken)
+        return;
+    if (!m_tableRecognition) {
+        failModelRecognition(tr("LaTeX recognition service is unavailable"));
+        return;
+    }
+    const QString model = resolvedRecognitionModel(Mode::Latex);
+    if (model == screenshotDedicatedRecognitionModelId() &&
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
-        if (m_tableRecognition == nullptr) {
-            showStatus(tr("LaTeX recognition service is unavailable"), true);
-        }
+        failModelRecognition(tr("LaTeX recognition is unavailable for screenshots larger than 4K"));
         return;
     }
     const quint64 generation = ++m_latexGeneration;
-    const QString key = m_target.key;
+    const QString key = recognitionCacheKey(Mode::Latex, model);
     showRecognitionMessage();
+    if (content())
+        content()->clearRecognitionError();
     const auto callbackCompleted = std::make_shared<bool>(false);
-    m_latexRequestToken = m_tableRecognition->extractLatex(
-        m_target.image, this,
-        [this, generation, key, callbackCompleted](SnowShotLatexResult result) {
-            *callbackCompleted = true;
-            if (generation == m_latexGeneration) {
-                m_latexRequestToken = 0;
-            }
-            handleLatexOutput(generation, key, std::move(result));
-        });
-    if (*callbackCompleted) {
+    const auto completion = [this, generation, key, callbackCompleted](SnowShotLatexResult result) {
+        *callbackCompleted = true;
+        if (generation == m_latexGeneration)
+            m_latexRequestToken = 0;
+        handleLatexOutput(generation, key, std::move(result));
+    };
+    m_latexRequestToken =
+        model == screenshotDedicatedRecognitionModelId()
+            ? m_tableRecognition->extractLatex(m_target.image, this, completion)
+            : m_tableRecognition->extractLatexVision(m_target.image, model, this, completion);
+    if (*callbackCompleted)
         m_latexRequestToken = 0;
-    }
     updateBusyState();
-    if (m_latexRequestToken == 0 && !*callbackCompleted) {
-        showStatus(tr("LaTeX recognition request could not be prepared"), true);
-        hideRecognitionMessage();
-    }
+    if (!m_latexRequestToken && !*callbackCompleted)
+        failModelRecognition(tr("LaTeX recognition request could not be prepared"));
 #endif
 }
 
@@ -1943,37 +2492,18 @@ void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generatio
                                                                const QString& key,
                                                                SnowShotTableResult result) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    if (generation != m_tableGeneration || key != m_target.key) {
+    if (generation != m_tableGeneration || key != recognitionCacheKey(Mode::Table))
         return;
-    }
     if (!result.succeeded()) {
-        if (m_active && m_mode == Mode::Table) {
-            showStatus(result.error.isEmpty() ? tr("Table recognition failed") : result.error,
-                       true);
-        }
-        hideRecognitionMessage();
-        updateBusyState();
+        failModelRecognition(result.error.isEmpty() ? tr("Table recognition failed")
+                                                    : result.error);
         return;
     }
-    ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(result.html);
-    if (document.empty()) {
-        if (m_active && m_mode == Mode::Table) {
-            showStatus(tr("No table cells were recognized"), false);
-        }
-        hideRecognitionMessage();
-        updateBusyState();
-        return;
-    }
-    auto session = std::make_shared<ScreenshotTableEditingSession>(std::move(document));
-    m_tableResults.insert(key, result);
-    m_tableCache.insert(key, session);
-    if (m_active && m_mode == Mode::Table) {
-        m_tableCacheKey = key;
-        applyTableSession(session);
-    }
-    hideRecognitionMessage();
-    updateBusyState();
-    emit recognitionResultsChanged();
+    ScreenshotTableRecognitionEntry entry;
+    entry.model = resolvedRecognitionModel(Mode::Table);
+    entry.modelFingerprint = m_tableRecognition->modelFingerprint(entry.model);
+    entry.result = std::move(result);
+    materializeTableEntry(generation, key, std::move(entry), false);
 #else
     Q_UNUSED(generation)
     Q_UNUSED(key)
@@ -1981,11 +2511,109 @@ void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generatio
 #endif
 }
 
+void ScreenshotRecognitionSessionController::materializeTableEntry(
+    quint64 generation, const QString& key, ScreenshotTableRecognitionEntry entry,
+    bool allowSynchronous) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (m_tableParsing || generation != m_tableGeneration)
+        return;
+    m_tableParsing = true;
+    const auto cancelled = std::make_shared<std::atomic_bool>(false);
+    m_tableParsingCancellation = cancelled;
+    const QString target = m_target.key;
+    const QPointer<ScreenshotRecognitionSessionController> guard(this);
+    using Documents = std::pair<ScreenshotTableDocument, std::optional<ScreenshotTableDocument>>;
+    const auto parse = [entry, cancelled]() -> Documents {
+        if (cancelled->load(std::memory_order_relaxed))
+            return {};
+        const bool vision = entry.model != screenshotDedicatedRecognitionModelId();
+        auto baseline = ScreenshotTableDocument::fromHtml(entry.result.html, vision);
+        if (baseline.empty() || cancelled->load(std::memory_order_relaxed))
+            return {};
+        std::optional<ScreenshotTableDocument> draft;
+        if (entry.draftHtml) {
+            draft = ScreenshotTableDocument::fromHtml(*entry.draftHtml, vision);
+            if (draft->empty() || cancelled->load(std::memory_order_relaxed))
+                return {};
+        }
+        return {std::move(baseline), std::move(draft)};
+    };
+    auto complete = [guard, cancelled, generation, key, target,
+                     entry](Documents documents) mutable {
+        if (!guard || cancelled->load(std::memory_order_relaxed) ||
+            generation != guard->m_tableGeneration || target != guard->m_target.key)
+            return;
+        guard->m_tableParsing = false;
+        guard->m_tableParsingCancellation.reset();
+        if (key != guard->recognitionCacheKey(Mode::Table) ||
+            !guard->recognitionEntryValid(entry.model, entry.modelFingerprint)) {
+            guard->failModelRecognition(
+                tr("Recognition service changed. Retry to use the updated settings."));
+            return;
+        }
+        if (documents.first.empty()) {
+            guard->m_tableEntries.remove(key);
+            guard->m_tableResults.remove(key);
+            guard->m_tableEntryTargets.remove(key);
+            guard->m_tableCache.remove(key);
+            guard->failModelRecognition(tr("No table cells were recognized"));
+            emit guard->recognitionResultsChanged();
+            return;
+        }
+        // QUndoStack belongs to the GUI thread; workers return only value documents.
+        auto session = std::make_shared<ScreenshotTableEditingSession>(std::move(documents.first));
+        if (documents.second)
+            session->document = std::move(*documents.second);
+        guard->m_tableResults.insert(key, entry.result);
+        guard->m_tableEntries.insert(key, std::move(entry));
+        guard->m_tableEntryTargets.insert(key, target);
+        guard->m_tableCache.insert(key, session);
+        if (guard->m_active && guard->m_mode == Mode::Table) {
+            guard->m_tableCacheKey = key;
+            guard->applyTableSession(session);
+        }
+        guard->hideRecognitionMessage();
+        guard->updateBusyState();
+        guard->updateTextState();
+        emit guard->recognitionResultsChanged();
+    };
+    constexpr qsizetype synchronousSourceBytes = 32 * 1024;
+    const qsizetype sourceBytes =
+        (entry.result.html.size() + (entry.draftHtml ? entry.draftHtml->size() : 0)) *
+        static_cast<qsizetype>(sizeof(QChar));
+    if (allowSynchronous && sourceBytes <= synchronousSourceBytes) {
+        complete(parse());
+        return;
+    }
+    showRecognitionMessage();
+    updateBusyState();
+    QThreadPool::globalInstance()->start([parse, complete, cancelled]() mutable {
+        if (cancelled->load(std::memory_order_relaxed))
+            return;
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
+        auto documents = parse();
+        if (cancelled->load(std::memory_order_relaxed))
+            return;
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [complete = std::move(complete), documents = std::move(documents)]() mutable {
+                complete(std::move(documents));
+            },
+            Qt::QueuedConnection);
+    });
+#else
+    Q_UNUSED(generation)
+    Q_UNUSED(key)
+    Q_UNUSED(entry)
+    Q_UNUSED(allowSynchronous)
+#endif
+}
+
 void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generation,
                                                                const QString& key,
                                                                SnowShotLatexResult result) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (generation != m_latexGeneration || key != m_target.key)
+    if (generation != m_latexGeneration || key != recognitionCacheKey(Mode::Latex))
         return;
     if (result.succeeded()) {
         auto session = std::make_shared<ScreenshotOcrTextEditingSession>(result.latex, true);
@@ -1994,13 +2622,20 @@ void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generatio
         // A result can arrive after an active target was seeded. The editor borrows
         // that cached document until applyLatexContents binds the replacement.
         const auto previousSession = m_latexCache.value(key);
+        ScreenshotLatexRecognitionEntry entry;
+        entry.model = resolvedRecognitionModel(Mode::Latex);
+        entry.modelFingerprint = m_tableRecognition->modelFingerprint(entry.model);
+        entry.result = result;
+        m_latexEntries.insert(key, std::move(entry));
+        m_latexEntryTargets.insert(key, m_target.key);
         m_latexResults.insert(key, result);
         m_latexCache.insert(key, std::move(session));
         if (m_active && m_mode == Mode::Latex)
             applyLatexContents(result.latex);
         emit recognitionResultsChanged();
     } else if (m_active && m_mode == Mode::Latex) {
-        showStatus(result.error.isEmpty() ? tr("LaTeX recognition failed") : result.error, true);
+        failModelRecognition(result.error.isEmpty() ? tr("LaTeX recognition failed")
+                                                    : result.error);
     }
     hideRecognitionMessage();
     updateBusyState();
@@ -2015,8 +2650,10 @@ void ScreenshotRecognitionSessionController::applyLatexContents(const QString& s
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     Q_UNUSED(source)
     ensureContent();
+    if (content())
+        content()->clearRecognitionError();
     if (content() != nullptr) {
-        if (const auto session = m_latexCache.value(m_target.key)) {
+        if (const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex))) {
             content()->showLatexEditor(
                 session->document(),
                 [weakSession = std::weak_ptr<ScreenshotOcrTextEditingSession>(session)] {
@@ -2033,7 +2670,7 @@ void ScreenshotRecognitionSessionController::applyLatexContents(const QString& s
 
 void ScreenshotRecognitionSessionController::handleLatexDocumentChanged(const QString& key) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (key == m_target.key) {
+    if (key == recognitionCacheKey(Mode::Latex)) {
         updateTextState();
         emit recognitionResultsChanged();
     }
@@ -2090,6 +2727,8 @@ void ScreenshotRecognitionSessionController::ensureContent() {
         m_content = m_actions.ensureContent();
         if (m_content != nullptr) {
             m_content->setShowOriginalImage(m_showOriginalImage);
+            connect(m_content, &ScreenshotRecognitionWindow::recognitionRetryRequested, this,
+                    &ScreenshotRecognitionSessionController::retryRecognition);
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
             connect(m_content, &ScreenshotRecognitionWindow::imageConversionRetryRequested,
                     m_conversion, &ScreenshotImageConversionController::retry);
@@ -2099,11 +2738,12 @@ void ScreenshotRecognitionSessionController::ensureContent() {
     updateOriginalImagePreview();
 }
 
-void ScreenshotRecognitionSessionController::clearContent() {
+void ScreenshotRecognitionSessionController::clearContent(bool retainTableEditor) {
     if (m_content != nullptr) {
+        m_content->clearRecognitionError();
         m_content->clearOcrPresentation();
         m_content->clearFormattedText();
-        m_content->clearTableSession();
+        m_content->clearTableSession(retainTableEditor);
         m_content->clearQrContents();
         m_content->clearImageConversion();
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
@@ -2146,6 +2786,8 @@ void ScreenshotRecognitionSessionController::applyTableSession(
     }
     m_tableSession = session;
     ensureContent();
+    if (content())
+        content()->clearRecognitionError();
     if (content() != nullptr) {
         content()->setTableSession(session);
         updateTableState(content()->tableCommandState());
@@ -2301,7 +2943,7 @@ void ScreenshotRecognitionSessionController::updateTextState() const {
     }
     if (m_actions.setLatexEditingState) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-        const auto session = m_latexCache.value(m_target.key);
+        const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex));
         const bool latexAvailable = m_active && m_mode == Mode::Latex && session != nullptr;
         m_actions.setLatexEditingState(latexAvailable, latexAvailable && session->canUndo(),
                                        latexAvailable && session->canRedo());
@@ -2334,7 +2976,7 @@ void ScreenshotRecognitionSessionController::updateOriginalImagePreview() const 
     }
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     m_content->setLatexPreviewEnabled(m_active && m_mode == Mode::Latex &&
-                                      m_latexCache.contains(m_target.key));
+                                      m_latexCache.contains(recognitionCacheKey(Mode::Latex)));
 #endif
     const bool textActive = m_active && m_mode == Mode::Text;
     if (!textActive) {
@@ -2435,6 +3077,8 @@ void ScreenshotRecognitionSessionController::showStatus(const QString& message, 
 
 void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
     cancelTranslationRequests();
+    cancelModelRecognition(Mode::Table);
+    cancelModelRecognition(Mode::Latex);
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_tableRecognition && m_latexRequestToken)
         m_tableRecognition->cancel(m_latexRequestToken);
@@ -2506,8 +3150,12 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         break;
     case Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-        requestWasPending = m_tableRequestToken != 0;
+        requestWasPending = m_tableRequestToken != 0 || m_tableParsing;
         m_tableRequestToken = 0;
+        if (m_tableParsingCancellation)
+            m_tableParsingCancellation->store(true, std::memory_order_relaxed);
+        m_tableParsingCancellation.reset();
+        m_tableParsing = false;
         ++m_tableGeneration;
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -2553,7 +3201,10 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
                                 : mode == Mode::Latex ? tr("LaTeX recognition failed")
                                 : mode == Mode::Table ? tr("Table recognition failed")
                                                       : tr("Barcode recognition failed");
-        showStatus(message, true);
+        if (m_mode == mode && (mode == Mode::Table || mode == Mode::Latex))
+            failModelRecognition(message);
+        else
+            showStatus(message, true);
     }
 }
 
@@ -2580,8 +3231,8 @@ QJsonObject ScreenshotRecognitionSessionController::workflowState() const {
     const QString error = m_workflowError;
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    const bool latexEditing =
-        m_active && m_mode == Mode::Latex && m_latexCache.contains(m_target.key);
+    const bool latexEditing = m_active && m_mode == Mode::Latex &&
+                              m_latexCache.contains(recognitionCacheKey(Mode::Latex));
 #else
     constexpr bool latexEditing = false;
 #endif
@@ -2596,6 +3247,10 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
     QJsonObject result;
     if (!m_active)
         return result;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if ((m_mode == Mode::Table || m_mode == Mode::Latex) && m_recognitionAwaitingModel)
+        return result;
+#endif
     if (m_mode == Mode::Text && hasTextResult()) {
         result.insert(QStringLiteral("kind"), QStringLiteral("text"));
         result.insert(QStringLiteral("text"), textDraft());
@@ -2646,7 +3301,7 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
     }
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    else if (m_mode == Mode::Latex && m_latexResults.contains(m_target.key)) {
+    else if (m_mode == Mode::Latex && m_latexResults.contains(recognitionCacheKey(Mode::Latex))) {
         result = {{QStringLiteral("kind"), QStringLiteral("latex")},
                   {QStringLiteral("text"), latexDraft()}};
     }
@@ -2681,7 +3336,7 @@ bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& par
     }
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_mode == Mode::Latex) {
-        const auto session = m_latexCache.value(m_target.key);
+        const auto session = m_latexCache.value(recognitionCacheKey(Mode::Latex));
         if (!session)
             return false;
         if (action == QStringLiteral("set_text"))

@@ -43,6 +43,8 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setQrEnabled(bool enabled);
     void setQrBusy(bool busy);
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
+    void setRecognitionModelState(ScreenshotToolPalette::Tool tool,
+                                  const ScreenshotRecognitionModelState& state);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
     void setShowOriginalImage(bool show);

@@ -168,12 +168,20 @@
             <translation>LaTeX recognition failed</translation>
         </message>
         <message>
+            <source>LaTeX recognition is unavailable for screenshots larger than 4K</source>
+            <translation>LaTeX recognition is unavailable for screenshots larger than 4K</translation>
+        </message>
+        <message>
             <source>LaTeX recognition request could not be prepared</source>
             <translation>LaTeX recognition request could not be prepared</translation>
         </message>
         <message>
             <source>LaTeX recognition service is unavailable</source>
             <translation>LaTeX recognition service is unavailable</translation>
+        </message>
+        <message>
+            <source>Model configuration changed. Retry to use the updated settings.</source>
+            <translation>Model configuration changed. Retry to use the updated settings.</translation>
         </message>
         <message>
             <source>No barcode was recognized</source>
@@ -192,6 +200,10 @@
             <translation>Preparing text recognition components (%1%)</translation>
         </message>
         <message>
+            <source>Recognition service changed. Retry to use the updated settings.</source>
+            <translation>Recognition service changed. Retry to use the updated settings.</translation>
+        </message>
+        <message>
             <source>Recognizing LaTeX formula</source>
             <translation>Recognizing LaTeX formula</translation>
         </message>
@@ -208,12 +220,20 @@
             <translation>Recognizing text</translation>
         </message>
         <message>
+            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</source>
+            <translation>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</translation>
+        </message>
+        <message>
             <source>Some text could not be translated</source>
             <translation>Some text could not be translated</translation>
         </message>
         <message>
             <source>Table recognition failed</source>
             <translation>Table recognition failed</translation>
+        </message>
+        <message>
+            <source>Table recognition is unavailable for screenshots larger than 4K</source>
+            <translation>Table recognition is unavailable for screenshots larger than 4K</translation>
         </message>
         <message>
             <source>Table recognition request could not be prepared</source>
@@ -236,12 +256,20 @@
             <translation>Text recognition request could not be prepared</translation>
         </message>
         <message>
+            <source>The selected recognition model is unavailable. Choose another model or retry.</source>
+            <translation>The selected recognition model is unavailable. Choose another model or retry.</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>Translation failed</translation>
         </message>
         <message>
             <source>Translation service is unavailable</source>
             <translation>Translation service is unavailable</translation>
+        </message>
+        <message>
+            <source>Unable to load Snow Shot vision models</source>
+            <translation>Unable to load Snow Shot vision models</translation>
         </message>
         <message>
             <source>Unable to read the selected screenshot</source>
@@ -297,6 +325,14 @@
         <message>
             <source>Rendering formula...</source>
             <translation>Rendering formula...</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>Retry</translation>
+        </message>
+        <message>
+            <source>Retry recognition</source>
+            <translation>Retry recognition</translation>
         </message>
         <message>
             <source>Select All</source>

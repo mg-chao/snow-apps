@@ -279,6 +279,16 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                         palette->setLatexEditingState(available, canUndo, canRedo);
                 }
             },
+            [this](int mode, const ScreenshotRecognitionModelState& state) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
+                    toolbar->setRecognitionModelState(
+                        mode == static_cast<int>(
+                                    ScreenshotRecognitionSessionController::Mode::Table)
+                            ? ScreenshotToolPalette::Tool::Table
+                            : ScreenshotToolPalette::Tool::Latex,
+                        state);
+                }
+            },
         },
         this);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textEditingChanged, this,
@@ -348,6 +358,10 @@ void ScreenshotOcrController::activateQr() {
 
 void ScreenshotOcrController::activateLatex() {
     activateMode(Mode::Latex);
+}
+
+void ScreenshotOcrController::setRecognitionModel(const QString& selection) {
+    m_session->setRecognitionModel(selection);
 }
 
 void ScreenshotOcrController::activateImageConversion(SnowShotImageConversionFormat format) {

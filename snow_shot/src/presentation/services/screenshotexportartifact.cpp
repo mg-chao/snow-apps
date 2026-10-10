@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -49,11 +50,12 @@ void dispatchResult(QObject* receiver, Callback callback, Result result) {
     }
     static_cast<void>(QMetaObject::invokeMethod(
         receiver,
-        [guardedReceiver, callback = std::move(callback), result = std::move(result)]() mutable {
+        snow_shot::runtime::trackRuntimeWork([guardedReceiver, callback = std::move(callback),
+                                              result = std::move(result)]() mutable {
             if (!guardedReceiver.isNull()) {
                 callback(std::move(result));
             }
-        },
+        }),
         Qt::QueuedConnection));
 }
 
@@ -103,11 +105,12 @@ void dispatchRowSource(QObject* receiver, ScreenshotExportArtifact::RowSourceCal
     }
     static_cast<void>(QMetaObject::invokeMethod(
         receiver,
-        [guardedReceiver, callback = std::move(callback), source = std::move(source),
-         error = std::move(error)]() mutable {
+        snow_shot::runtime::trackRuntimeWork([guardedReceiver, callback = std::move(callback),
+                                              source = std::move(source),
+                                              error = std::move(error)]() mutable {
             if (!guardedReceiver.isNull())
                 callback(std::move(source), std::move(error));
-        },
+        }),
         Qt::QueuedConnection));
 }
 
@@ -989,14 +992,15 @@ bool ScreenshotExportArtifact::requestQuickSave(QObject* receiver,
         const QPointer<ScreenshotExportArtifact> guarded(this);
         return QMetaObject::invokeMethod(
             receiver,
-            [guarded, callback = std::move(callback)]() mutable {
+            snow_shot::runtime::trackRuntimeWork([guarded,
+                                                  callback = std::move(callback)]() mutable {
                 if (guarded && !guarded->isCancelled()) {
                     callback(ScreenshotExportTaskResult::failure(
                         ScreenshotExportFailureStage::File,
                         QCoreApplication::translate("ScreenshotExportArtifact",
                                                     "The image save directory is not configured")));
                 }
-            },
+            }),
             Qt::QueuedConnection);
     }
     return requestAutomaticSave(

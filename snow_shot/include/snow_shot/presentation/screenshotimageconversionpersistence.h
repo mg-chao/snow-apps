@@ -7,30 +7,43 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+#include <algorithm>
 #endif
 
 namespace snow_shot::presentation {
 inline constexpr quint32 kImageConversionPayloadMarker = 0x53494356;
 inline constexpr quint8 kImageConversionPayloadVersion = 1;
-inline constexpr qsizetype kMaximumImageConversionPayload = 16 * 1024 * 1024;
+inline constexpr qsizetype kMaximumImageConversionPayload = kMaximumImageConversionCacheBytes;
 
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 [[nodiscard]] inline QByteArray
 encodeImageConversions(const ScreenshotRecognitionResults& results) {
     QJsonArray entries;
     QSet<int> formats;
-    for (const auto& entry : results.conversions) {
+    QVector<ScreenshotImageConversionEntry> saved;
+    // Reserve the envelope and retain the newest results if JSON exceeds the payload budget.
+    qsizetype payloadBytes = 128;
+    for (qsizetype index = results.conversions.size(); index > 0; --index) {
+        const auto& entry = results.conversions.at(index - 1);
         const int format = static_cast<int>(entry.format);
-        if (!entry.isValid() || formats.contains(format)) {
+        if (!entry.isValid() || saved.size() >= kMaximumImageConversionEntries ||
+            std::any_of(saved.cbegin(), saved.cend(), [&entry](const auto& previous) {
+                return sameImageConversionRequest(previous, entry);
+            })) {
             continue;
         }
+        const QJsonObject item{{QStringLiteral("format"), format},
+                               {QStringLiteral("model"), entry.model},
+                               {QStringLiteral("source"), entry.source},
+                               {QStringLiteral("prompt_version"), entry.promptVersion},
+                               {QStringLiteral("model_fingerprint"), entry.modelFingerprint}};
+        const qsizetype itemBytes = QJsonDocument(item).toJson(QJsonDocument::Compact).size() + 1;
+        if (itemBytes > kMaximumImageConversionPayload - payloadBytes)
+            continue;
+        payloadBytes += itemBytes;
+        saved.prepend(entry);
         formats.insert(format);
-        entries.push_back(
-            QJsonObject{{QStringLiteral("format"), format},
-                        {QStringLiteral("model"), entry.model},
-                        {QStringLiteral("source"), entry.source},
-                        {QStringLiteral("prompt_version"), entry.promptVersion},
-                        {QStringLiteral("model_fingerprint"), entry.modelFingerprint}});
+        entries.prepend(item);
     }
     if (entries.isEmpty()) {
         return {};
@@ -57,7 +70,7 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
         return;
     }
     const auto entries = root.value(QStringLiteral("entries")).toArray();
-    if (entries.size() > 2) {
+    if (entries.size() > kMaximumImageConversionEntries) {
         return;
     }
     QVector<ScreenshotImageConversionEntry> parsed;
@@ -65,7 +78,7 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
     for (const auto& value : entries) {
         const auto item = value.toObject();
         const int format = item.value(QStringLiteral("format")).toInt(-1);
-        if (format < 0 || format > 1 || formats.contains(format)) {
+        if (format < 0 || format > 1) {
             continue;
         }
         ScreenshotImageConversionEntry entry{
@@ -74,7 +87,10 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
             item.value(QStringLiteral("source")).toString(),
             item.value(QStringLiteral("prompt_version")).toInt(-1),
             item.value(QStringLiteral("model_fingerprint")).toString()};
-        if (entry.isValid()) {
+        if (entry.isValid() &&
+            std::none_of(parsed.cbegin(), parsed.cend(), [&entry](const auto& previous) {
+                return sameImageConversionRequest(previous, entry);
+            })) {
             parsed.push_back(std::move(entry));
             formats.insert(format);
         }

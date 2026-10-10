@@ -3,6 +3,7 @@
 #include "../pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshothistorytypes.h"
@@ -199,12 +200,12 @@ class ScreenshotPinnedWindowPool final : public QObject {
             return;
         }
         m_prewarmScheduled = true;
-        QTimer::singleShot(0, this, [this]() {
-            m_prewarmScheduled = false;
-            if (m_spare == nullptr) {
-                prewarm(m_targetScreen.data());
-            }
-        });
+        QTimer::singleShot(0, this, snow_shot::runtime::trackRuntimeWork([this]() {
+                               m_prewarmScheduled = false;
+                               if (m_spare == nullptr) {
+                                   prewarm(m_targetScreen.data());
+                               }
+                           }));
     }
 
   private:
@@ -578,6 +579,7 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
 }
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
+    const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     m_selectionController.reset();
     m_restoreAlive->store(false);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -1260,48 +1262,50 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     m_restoringIds.insert(id, std::move(restoring));
     auto* repositoryGuard = &repository;
     const auto alive = m_restoreAlive;
-    storage.pinnedFullImagePool().start([this, alive, repositoryGuard, id, generation]() {
-        snow_shot::platform::applyApplicationQoSToCurrentThread();
-        auto loaded = repositoryGuard->loadRecord(id);
-        QMetaObject::invokeMethod(
-            &snow_shot::storage::ApplicationStorage::instance(),
-            [this, alive, repositoryGuard, id, generation, loaded = std::move(loaded)]() mutable {
-                if (!alive->load() || !m_restoringIds.contains(id) ||
-                    m_restoringIds.value(id).generation != generation)
-                    return;
-                auto& storage = snow_shot::storage::ApplicationStorage::instance();
-                if (!storage.isInitialized() || &storage.pinnedWindows() != repositoryGuard) {
-                    m_restoringIds.remove(id);
-                    return;
-                }
-                const auto found = storage.pinnedWindows().summary(id);
-                if (!found || found->pending || found->hidden ||
-                    (m_groupManager && found->groupId != m_groupManager->activeGroupId()) ||
-                    (loaded && loaded->groupId != found->groupId)) {
-                    cancelRestore(id);
-                    return;
-                }
-                if (!loaded) {
-                    cancelRestore(id);
-                    if (m_restoreFailure)
-                        m_restoreFailure();
-                    return;
-                }
-                if (auto* window = liveWindow(id)) {
-                    cancelRestore(id);
-                    window->showFromManagement();
-                    return;
-                }
-                loaded->hidden = false;
-                if (!presentRestoredRecord(std::move(*loaded)) && m_restoringIds.contains(id) &&
-                    m_restoringIds.value(id).generation == generation) {
-                    cancelRestore(id);
-                    if (m_restoreFailure)
-                        m_restoreFailure();
-                }
-            },
-            Qt::QueuedConnection);
-    });
+    storage.pinnedFullImagePool().start(
+        snow_shot::runtime::trackRuntimeWork([this, alive, repositoryGuard, id, generation]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            auto loaded = repositoryGuard->loadRecord(id);
+            QMetaObject::invokeMethod(
+                &snow_shot::storage::ApplicationStorage::instance(),
+                snow_shot::runtime::trackRuntimeWork([this, alive, repositoryGuard, id, generation,
+                                                      loaded = std::move(loaded)]() mutable {
+                    if (!alive->load() || !m_restoringIds.contains(id) ||
+                        m_restoringIds.value(id).generation != generation)
+                        return;
+                    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+                    if (!storage.isInitialized() || &storage.pinnedWindows() != repositoryGuard) {
+                        m_restoringIds.remove(id);
+                        return;
+                    }
+                    const auto found = storage.pinnedWindows().summary(id);
+                    if (!found || found->pending || found->hidden ||
+                        (m_groupManager && found->groupId != m_groupManager->activeGroupId()) ||
+                        (loaded && loaded->groupId != found->groupId)) {
+                        cancelRestore(id);
+                        return;
+                    }
+                    if (!loaded) {
+                        cancelRestore(id);
+                        if (m_restoreFailure)
+                            m_restoreFailure();
+                        return;
+                    }
+                    if (auto* window = liveWindow(id)) {
+                        cancelRestore(id);
+                        window->showFromManagement();
+                        return;
+                    }
+                    loaded->hidden = false;
+                    if (!presentRestoredRecord(std::move(*loaded)) && m_restoringIds.contains(id) &&
+                        m_restoringIds.value(id).generation == generation) {
+                        cancelRestore(id);
+                        if (m_restoreFailure)
+                            m_restoreFailure();
+                    }
+                }),
+                Qt::QueuedConnection);
+        }));
     return true;
 }
 

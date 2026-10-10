@@ -2019,6 +2019,26 @@ ScreenshotToolbarLayout ScreenshotToolbarSettings::layout(ScreenshotToolbarLayou
             stringList(object.value(QStringLiteral("hidden")))};
 }
 
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+QString ScreenshotRecognitionModelSettings::tableModel() const {
+    return cache().value(QStringLiteral("screenshot_table/model")).toString();
+}
+
+bool ScreenshotRecognitionModelSettings::setTableModel(const QString& model) const {
+    return cache().setValue(QStringLiteral("screenshot_table/model"), model);
+}
+#endif
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+QString ScreenshotRecognitionModelSettings::latexModel() const {
+    return cache().value(QStringLiteral("screenshot_latex/model")).toString();
+}
+
+bool ScreenshotRecognitionModelSettings::setLatexModel(const QString& model) const {
+    return cache().setValue(QStringLiteral("screenshot_latex/model"), model);
+}
+#endif
+
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 QString ScreenshotImageConversionSettings::visionModel() const {
     return cache().value(QStringLiteral("screenshot_conversion/vision_model")).toString();

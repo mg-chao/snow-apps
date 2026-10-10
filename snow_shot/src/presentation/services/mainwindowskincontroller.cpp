@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include "snow_shot/storage/applicationstorage.h"
 #include "snowimageqtcodec.h"
@@ -432,11 +433,12 @@ struct MainWindowSkinController::Impl {
             retirement.executor = std::move(executor);
             const auto completed = retirement.finished;
             Executor* retired = retirement.executor.get();
-            retirement.thread = std::thread([retired, completed] {
-                retired->pool.waitForDone();
-                retired->releaseScratch();
-                completed->store(true);
-            });
+            retirement.thread =
+                std::thread(snow_shot::runtime::trackRuntimeWork([retired, completed] {
+                    retired->pool.waitForDone();
+                    retired->releaseScratch();
+                    completed->store(true);
+                }));
         }
         pollRetirements();
     }
@@ -711,8 +713,9 @@ struct MainWindowSkinController::Impl {
                 ++counts.preparationJobs;
             QObject* application = QCoreApplication::instance();
             Executor* worker = executor.get();
-            worker->pool.start([request = std::move(request), receiver, application,
-                                worker]() mutable {
+            worker->pool.start(snow_shot::runtime::trackRuntimeWork([request = std::move(request),
+                                                                     receiver, application,
+                                                                     worker]() mutable {
                 Result result{std::move(request), {}};
                 const auto cancelled = [&] {
                     return result.request.cancelled && result.request.cancelled->load();
@@ -743,14 +746,14 @@ struct MainWindowSkinController::Impl {
                         result.preparationFailed = true;
                 }
                 worker->updateScratchCount();
-                QMetaObject::invokeMethod(
-                    application,
-                    [receiver, result = std::move(result)]() mutable {
-                        if (receiver)
-                            receiver->m_impl->finish(std::move(result));
-                    },
-                    Qt::QueuedConnection);
-            });
+                QMetaObject::invokeMethod(application,
+                                          snow_shot::runtime::trackRuntimeWork(
+                                              [receiver, result = std::move(result)]() mutable {
+                                                  if (receiver)
+                                                      receiver->m_impl->finish(std::move(result));
+                                              }),
+                                          Qt::QueuedConnection);
+            }));
         }
         armPreparationTimer();
         trimCache();

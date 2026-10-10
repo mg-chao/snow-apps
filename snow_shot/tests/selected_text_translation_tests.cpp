@@ -35,19 +35,27 @@ class FakeCaptureBackend final : public SelectedTextCaptureBackend {
 };
 
 void captureOnlyHandsOffCompletedText() {
+    const auto idleCount =
+        snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
     auto state = std::make_shared<CaptureState>();
     SelectedTextTranslationController controller(std::make_unique<FakeCaptureBackend>(state));
     QString delivered;
     int successes = 0;
-    QObject::connect(&controller, &SelectedTextTranslationController::textReady, &controller,
-                     [&](const QString& text) {
-                         delivered = text;
-                         ++successes;
-                     });
+    QObject::connect(
+        &controller, &SelectedTextTranslationController::textReady, &controller,
+        [&](const QString& text) {
+            require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount >
+                        idleCount,
+                    "capture handoff must retain its memory activity reservation");
+            delivered = text;
+            ++successes;
+        });
     controller.capture();
     controller.capture();
     require(state->starts == 1 && successes == 0,
             "submit immediately without activating a page or replacing a pending capture");
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > idleCount,
+            "pending selected-text capture must block memory trimming");
     waitUntil([&]() { return state->polls > 1; }, "poll pending capture without blocking Qt");
     require(successes == 0, "pending capture must not navigate or notify");
     const QString text =
@@ -59,6 +67,9 @@ void captureOnlyHandsOffCompletedText() {
     controller.capture();
     require(successes == 2 && delivered == QStringLiteral("next") && state->starts == 2,
             "a completed capture permits another explicit request");
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount ==
+                idleCount,
+            "completed selected-text capture must release memory activity");
 }
 
 void unusableCapturesHandOffEmptyText() {

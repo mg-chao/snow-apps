@@ -1942,7 +1942,7 @@
         </message>
         <message>
             <source>Customize the pinned window toolbar</source>
-            <translation>自定义贴图窗口工具栏</translation>
+            <translation>自定义固定到屏幕窗口的工具栏</translation>
         </message>
         <message>
             <source>Customize the quick-set buttons for annotation fill colors</source>
@@ -2063,6 +2063,10 @@
         <message>
             <source>Disable/Enable global hotkeys</source>
             <translation>禁用/启用全局快捷键</translation>
+        </message>
+        <message>
+            <source>Disabled</source>
+            <translation>禁用</translation>
         </message>
         <message>
             <source>Disk limit</source>
@@ -2717,6 +2721,10 @@
             <translation>中型 V6</translation>
         </message>
         <message>
+            <source>Memory Optimization Policy</source>
+            <translation>内存优化策略</translation>
+        </message>
+        <message>
             <source>Menu options</source>
             <translation>菜单选项</translation>
         </message>
@@ -3030,7 +3038,7 @@
         </message>
         <message>
             <source>Pinned window locked border</source>
-            <translation>贴图窗口锁定边框</translation>
+            <translation>固定到屏幕窗口的锁定边框</translation>
         </message>
         <message>
             <source>Pinned window locked shadow</source>
@@ -3590,7 +3598,7 @@
         </message>
         <message>
             <source>Set the border color of locked pinned screenshots</source>
-            <translation>设置已锁定贴图的边框颜色</translation>
+            <translation>设置已锁定并固定到屏幕的截图的边框颜色</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -3642,7 +3650,7 @@
         </message>
         <message>
             <source>Set the shadow color of locked pinned screenshots</source>
-            <translation>设置已锁定贴图的阴影颜色</translation>
+            <translation>设置已锁定并固定到屏幕的截图的阴影颜色</translation>
         </message>
         <message>
             <source>Set the shadow color of pinned screenshots</source>
@@ -3786,7 +3794,7 @@
         </message>
         <message>
             <source>Show the border on new pinned windows</source>
-            <translation>在新建贴图窗口中显示边框</translation>
+            <translation>在新建的固定到屏幕窗口中显示边框</translation>
         </message>
         <message>
             <source>Show the captured mouse cursor by default in new normal screenshots.</source>
@@ -3798,7 +3806,7 @@
         </message>
         <message>
             <source>Show the shadow on new pinned windows</source>
-            <translation>在新建贴图窗口中显示阴影</translation>
+            <translation>在新建的固定到屏幕窗口中显示阴影</translation>
         </message>
         <message>
             <source>Show the sub-toolbar for the Edit Selection tool</source>
@@ -3847,6 +3855,18 @@
         <message>
             <source>Small V6</source>
             <translation>小型 V6</translation>
+        </message>
+        <message>
+            <source>Smart Control</source>
+            <translation>智能控制</translation>
+        </message>
+        <message>
+            <source>Smart Control releases unused heap memory while the app is idle. Active captures and pinned images are kept.</source>
+            <translation>智能控制会在应用空闲时释放未使用的堆内存。正在进行的捕获和已固定到屏幕的图像会保留。</translation>
+        </message>
+        <message>
+            <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
+            <translation>智能控制会在应用空闲时缩减驻留内存。下次使用时可能会短暂增加响应时间。</translation>
         </message>
         <message>
             <source>Smart Merge</source>

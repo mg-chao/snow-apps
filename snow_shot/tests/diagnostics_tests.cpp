@@ -1,5 +1,6 @@
 #include "../src/presentation/capture/screenshotscrollingdiagnostics.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -41,6 +42,51 @@ DiagnosticsOptions optionsFor(const QString& directory) {
     options.installMessageHandler = false;
     options.mirrorToConsole = false;
     return options;
+}
+void diagnosticTasksDistinguishBackgroundAndRequestedWork() {
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
+    DiagnosticsService service;
+    std::atomic_bool armed{false};
+    std::promise<void> entered;
+    auto blocked = entered.get_future();
+    std::promise<void> release;
+    auto resumed = release.get_future().share();
+    auto options = optionsFor(directory.path());
+    options.appendFile = [&](const QString& path, const QByteArray& bytes) {
+        if (armed.exchange(false)) {
+            entered.set_value();
+            resumed.wait();
+        }
+        QFile file(path);
+        return file.open(QIODevice::WriteOnly | QIODevice::Append) &&
+               file.write(bytes) == bytes.size();
+    };
+    require(service.initialize(options), "activity logger initializes");
+    require(service.flush(), "activity logger settles startup");
+    const auto before = snow_shot::runtime::RuntimeActivityTracker::shared().snapshot();
+    armed.store(true);
+    service.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("blocked.write"));
+    const bool reached = blocked.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    const auto writing = snow_shot::runtime::RuntimeActivityTracker::shared().snapshot();
+    auto exported = service.exportDay(QDate::currentDate());
+    const auto queued = snow_shot::runtime::RuntimeActivityTracker::shared().snapshot();
+    release.set_value();
+    const auto result = exported.get();
+    require(service.flush(), "activity logger flushes completed tasks");
+    service.shutdown();
+    const auto after = snow_shot::runtime::RuntimeActivityTracker::shared().snapshot();
+    require(reached && writing.activeCount > 0, "native log writing retains an activity lease");
+    require(queued.activeCount > writing.activeCount,
+            "accepted log export reserves activity while waiting behind another task");
+    require(result.success, "protected queued log export succeeds");
+    require(after.activeCount == 0, "completed diagnostic work releases every activity lease");
+    require(writing.idlePeriod == before.idlePeriod && writing.lastActivity == before.lastActivity,
+            "background diagnostic writing preserves the user's quiet period");
+    require(queued.idlePeriod > writing.idlePeriod && queued.lastActivity >= writing.lastActivity,
+            "accepted diagnostic archive export restarts inactivity before execution");
+    require(after.idlePeriod > queued.idlePeriod && after.lastActivity >= queued.lastActivity,
+            "actual archive export completion restarts inactivity after execution");
 }
 void scrollingMetadataAndReportCadence() {
     using snow_shot::capture_detail::ScrollingCaptureDiagnostics;
@@ -532,6 +578,7 @@ void handlerLifecycleAndMissingCollector() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
+        diagnosticTasksDistinguishBackgroundAndRequestedWork();
         scrollingMetadataAndReportCadence();
         displayMetadata();
         concurrentRecordsAndSnapshots();

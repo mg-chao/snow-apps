@@ -1,4 +1,5 @@
 #pragma once
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QHash>
 #include <QJsonArray>
@@ -43,6 +44,8 @@ class McpJobRegistry final : public QObject {
         qint64 expires = 0;
         QJsonObject input;
         qsizetype inputBytes = 0;
+        runtime::RuntimeActivityLease activity =
+            runtime::RuntimeActivityTracker::shared().acquire();
     };
     bool finish(const QString& id, const QString& status, QJsonObject result);
     void trim();

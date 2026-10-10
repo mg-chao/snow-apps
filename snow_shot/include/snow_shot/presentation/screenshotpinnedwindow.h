@@ -222,6 +222,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         return m_groupId;
     }
     [[nodiscard]] QJsonObject automationState() const;
+    [[nodiscard]] bool blocksMemoryTrimming() const;
     [[nodiscard]] bool automationUpdate(const QJsonObject& properties, QString* error);
     [[nodiscard]] bool automationAction(const QString& action);
     [[nodiscard]] QJsonObject automationEdit(const QString& action, const QJsonObject& payload,

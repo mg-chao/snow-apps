@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "screenshotocrtransport.h"
 
@@ -419,6 +420,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     enum class BufferState { Empty, Attaching, Ready, Detaching };
 
     struct Job {
+        snow_shot::runtime::RuntimeActivityLease activity =
+            snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         Job() {
             elapsed.start();
         }
@@ -549,12 +552,12 @@ class ScreenshotOcrRecognitionService::Impl final {
         environment.insert(QStringLiteral("SNOW_SHOT_CRASHPAD_PIPE"), diagnostics.crashPipeName());
         environment.insert(QStringLiteral("SNOW_SHOT_DIAGNOSTICS_SESSION"),
                            diagnostics.status().sessionId);
-        QMetaObject::invokeMethod(
-            m_transport,
-            [transport = m_transport, assets = m_assets, environment]() {
-                transport->start(assets, environment);
-            },
-            Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_transport,
+                                  snow_shot::runtime::trackRuntimeWork(
+                                      [transport = m_transport, assets = m_assets, environment]() {
+                                          transport->start(assets, environment);
+                                      }),
+                                  Qt::QueuedConnection);
         QTimer::singleShot(5000, m_owner, [this, valid]() {
             if (valid() && m_transport != nullptr && !processReady() && !processStopping())
                 processFailed("ready_timeout");
@@ -565,14 +568,18 @@ class ScreenshotOcrRecognitionService::Impl final {
     void sendFrame(const QByteArray& frame) {
         if (m_transport != nullptr)
             QMetaObject::invokeMethod(
-                m_transport, [transport = m_transport, frame]() { transport->send(frame); },
+                m_transport,
+                snow_shot::runtime::trackRuntimeWork(
+                    [transport = m_transport, frame]() { transport->send(frame); }),
                 Qt::QueuedConnection);
     }
 
     void stopTransport(bool force) {
         if (m_transport != nullptr)
             QMetaObject::invokeMethod(
-                m_transport, [transport = m_transport, force]() { transport->stop(force); },
+                m_transport,
+                snow_shot::runtime::trackRuntimeWork(
+                    [transport = m_transport, force]() { transport->stop(force); }),
                 Qt::QueuedConnection);
     }
 
@@ -789,13 +796,13 @@ class ScreenshotOcrRecognitionService::Impl final {
                     m_bufferState = BufferState::Attaching;
                     ++m_bufferGeneration;
                     m_transferSequence = 0;
-                    QMetaObject::invokeMethod(
-                        m_transport,
-                        [transport = m_transport, bytes = m_slotBytes,
-                         generation = m_bufferGeneration]() {
-                            transport->allocateBuffer(bytes, generation);
-                        },
-                        Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(m_transport,
+                                              snow_shot::runtime::trackRuntimeWork(
+                                                  [transport = m_transport, bytes = m_slotBytes,
+                                                   generation = m_bufferGeneration]() {
+                                                      transport->allocateBuffer(bytes, generation);
+                                                  }),
+                                              Qt::QueuedConnection);
                 } else if (m_bufferState == BufferState::Ready) {
                     const qsizetype bytes = static_cast<qsizetype>(nextImage->imageSize.width()) *
                                             nextImage->imageSize.height() * 4;
@@ -806,10 +813,11 @@ class ScreenshotOcrRecognitionService::Impl final {
                         const auto sequence = ++m_transferSequence;
                         QMetaObject::invokeMethod(
                             m_transport,
-                            [transport = m_transport, image = nextImage->request.image, sequence,
-                             token = nextImage->token]() {
-                                transport->submit(image, sequence, token);
-                            },
+                            snow_shot::runtime::trackRuntimeWork(
+                                [transport = m_transport, image = nextImage->request.image,
+                                 sequence, token = nextImage->token]() {
+                                    transport->submit(image, sequence, token);
+                                }),
                             Qt::QueuedConnection);
                     }
                 }
@@ -916,7 +924,9 @@ class ScreenshotOcrRecognitionService::Impl final {
         } else if (kind == kBufferDetached && id == m_bufferGeneration &&
                    m_bufferState == BufferState::Detaching) {
             QMetaObject::invokeMethod(
-                m_transport, [transport = m_transport]() { transport->releaseBuffer(); },
+                m_transport, snow_shot::runtime::trackRuntimeWork([transport = m_transport]() {
+                    transport->releaseBuffer();
+                }),
                 Qt::QueuedConnection);
             m_bufferState = BufferState::Empty;
             m_slotBytes = 0;

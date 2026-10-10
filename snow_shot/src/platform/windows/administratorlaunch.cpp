@@ -1,6 +1,7 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -434,6 +435,7 @@ LaunchResult launchHelper(const QString& pipe) {
                                   : LaunchResult{nullptr, GetLastError()};
 }
 AdministratorResult withHelper(const QByteArray& operation, const std::function<bool()>& persist) {
+    const auto activity = runtime::RuntimeActivityTracker::shared().acquire();
     QLocalServer server;
     server.setSocketOptions(QLocalServer::UserAccessOption);
     const QString pipe =

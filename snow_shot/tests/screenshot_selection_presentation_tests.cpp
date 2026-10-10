@@ -408,6 +408,192 @@ void anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate() {
             "discarded epoch work must remain canceled on subsequent frame attempts");
 }
 
+void anEpochChangeReleasesShapedSelectionSnapshots() {
+    Fixture fixture(QSize(320, 240), false);
+    fixture.interaction.enterOverlayVisible(false);
+    std::weak_ptr<const void> storage;
+    {
+        QPainterPath path;
+        path.addEllipse(QRectF(40, 30, 160, 120));
+        const auto region = ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+        storage = region.storageLifetimeForTesting();
+        fixture.selection.setSelectionRegion(region);
+        fixture.services->updateOverlayState();
+    }
+    require(!storage.expired(), "the active shaped selection must retain its source geometry");
+
+    ++fixture.captureState.sessionId;
+    fixture.captureState.sessionState = ScreenshotSessionState::IdlePrepared;
+    fixture.interaction.reset();
+    fixture.selection.reset();
+    fixture.overlay.resetScreenshotRendering();
+    fixture.resetCounters();
+    fixture.flushFrame();
+    require(storage.expired(),
+            "an ended epoch must release presentation snapshots after model and renderer cleanup");
+    fixture.processEvents();
+    require(fixture.stateNotifications == 0 && !fixture.overlay.hasScreenshotSelection(),
+            "retiring selection snapshots must not publish or replay the ended capture");
+}
+
+void resetReleasesPendingAndCommittedShapedSelections() {
+    for (const bool committed : {false, true}) {
+        Fixture fixture(QSize(320, 240), false);
+        std::weak_ptr<const void> storage;
+        std::optional<ScreenshotRegionGeometry> exported;
+        {
+            QPainterPath path;
+            path.addEllipse(QRectF(40, 30, 160, 120));
+            const auto region =
+                ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+            storage = region.storageLifetimeForTesting();
+            fixture.selection.setSelectionRegion(region);
+            fixture.services->updateOverlayState();
+            require(fixture.stateNotifications == 0,
+                    "a shaped smart target must still be pending before its presentation frame");
+            if (committed) {
+                fixture.flushFrame();
+                exported = fixture.selection.selectionRegion();
+            }
+        }
+        require(!storage.expired(), "pending and committed selections must own their geometry");
+        ++fixture.captureState.sessionId;
+        fixture.captureState.sessionState = ScreenshotSessionState::IdlePrepared;
+        fixture.interaction.reset();
+        fixture.selection.reset();
+        fixture.overlay.resetScreenshotRendering();
+        fixture.resetCounters();
+        fixture.services->resetPresentation();
+        if (exported) {
+            require(exported->contains(QPointF(120, 90)) && !exported->contains(QPointF(20, 20)),
+                    "resetting presentation must preserve an independently owned export snapshot");
+            exported.reset();
+        }
+        require(storage.expired(),
+                "explicit teardown must immediately release pending and committed region storage");
+        fixture.services->resetPresentation();
+        fixture.processEvents();
+        fixture.advanceClock(200);
+        fixture.flushFrame();
+        require(fixture.stateNotifications == 0 && !fixture.overlay.hasScreenshotSelection(),
+                "repeated teardown and queued frames must leave the ending capture retired");
+    }
+}
+
+void resetRetainsTheIdleSchedulerAndAllowsTheNextCapture() {
+    Fixture fixture(QSize(320, 240), false);
+    PresentationTimerObserver observer;
+    const auto& scheduler = fixture.services->frameSchedulerForTesting();
+    fixture.requestPointer(QPointF(100, 150));
+    fixture.advanceClock(17);
+    require(observer.waitForNextTimeout() && observer.timer && !scheduler.active(),
+            "the capture's frame scheduler must be idle after delivering its frame");
+    const QPointer<QObject> retainedBackend = observer.timer;
+
+    fixture.services->resetPresentation();
+    require(retainedBackend && scheduler.wakeupObject() == retainedBackend && !scheduler.active(),
+            "teardown must retain the stopped scheduler backend for reuse");
+    fixture.services->updatePointerPresentation(&fixture.overlay, QPointF(80, 60));
+    fixture.services->requestColorPickerPresentation(&fixture.overlay, QPointF(80, 60));
+    require(!scheduler.active(),
+            "pointer and picker input before a new presentation must not restart the scheduler");
+
+    ++fixture.captureState.sessionId;
+    fixture.displays.startup->sessionId = fixture.captureState.sessionId;
+    const QRectF nextSelection = fixture.baseSelection().translated(10, 15);
+    fixture.resetCounters();
+    fixture.requestSelection(nextSelection);
+    require(fixture.displayedSelection() == nextSelection && fixture.stateNotifications == 1,
+            "the next capture must synchronously present and notify its first selection");
+    fixture.requestPointer(QPointF(90, 70));
+    fixture.advanceClock(17);
+    require(observer.waitForNextTimeout() && observer.timer == retainedBackend,
+            "the next capture must reuse the original scheduler backend");
+    require(fixture.displayedSelection() == nextSelection && fixture.stateNotifications == 1,
+            "new pointer frames must preserve the new capture's selection and semantic state");
+    fixture.requestPointer(QPointF(100, 80));
+    require(scheduler.active(), "new pointer work must arm a presentation deadline");
+    fixture.services->resetPresentation();
+    require(!scheduler.active(), "teardown must also cancel an active presentation deadline");
+}
+
+QString sampledColor(Fixture& fixture, const QPointF& localPosition) {
+    const auto& display = fixture.displays.displayAt(0);
+    const QPointF canvasPosition = fixture.geometry.canvasPositionForOverlayLocalPoint(
+        fixture.displays, &fixture.overlay, localPosition);
+    const QPoint physicalPosition =
+        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, canvasPosition);
+    return display.image
+        .pixelColor(physicalPosition.x() - display.physicalRect.x(),
+                    physicalPosition.y() - display.physicalRect.y())
+        .name(QColor::HexRgb)
+        .toUpper();
+}
+
+void resetDiscardsQueuedPickerInputUntilTheNextCapture() {
+    Fixture fixture(QSize(320, 240), false);
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysHide);
+    auto* picker = fixture.coordinator.colorPicker();
+    const auto& scheduler = fixture.services->frameSchedulerForTesting();
+    const QPointF latest(180, 120);
+    fixture.requestMagnifier(latest);
+    require(scheduler.active() && picker->workCounters().samples == 0,
+            "picker input must queue a sample at the next presentation deadline");
+
+    // Keep the model active and the session unchanged so cancellation must come from teardown.
+    fixture.services->resetPresentation();
+    fixture.services->flushColorPickerPresentation();
+    fixture.requestMagnifier(QPointF(200, 140));
+    fixture.services->flushColorPickerPresentation();
+    fixture.advanceClock(200);
+    fixture.flushFrame();
+    fixture.processEvents();
+    require(!scheduler.active() && picker->workCounters().samples == 0 &&
+                fixture.stateNotifications == 0,
+            "teardown must discard queued picker input and reject input before reinitialization");
+
+    ++fixture.captureState.sessionId;
+    fixture.displays.startup->sessionId = fixture.captureState.sessionId;
+    fixture.services->updateOverlayState();
+    fixture.resetCounters();
+    fixture.requestMagnifier(latest);
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    require(picker->workCounters().samples == 1 &&
+                picker->currentColorText() == sampledColor(fixture, latest) && !scheduler.active(),
+            "the next capture must resume picker sampling without replaying the retired input");
+}
+
+void semanticNotificationCanResetPresentationAndStartTheNextCapture() {
+    Fixture fixture(QSize(320, 240), false);
+    const auto& scheduler = fixture.services->frameSchedulerForTesting();
+    fixture.onStateChanged = [&] { fixture.services->resetPresentation(); };
+    fixture.requestSelection(fixture.baseSelection().translated(10, 15));
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    require(fixture.stateNotifications == 1 && !scheduler.active(),
+            "semantic teardown must cancel pending work without reentering the active frame");
+    fixture.onStateChanged = {};
+    fixture.advanceClock(200);
+    fixture.flushFrame();
+    fixture.processEvents();
+    require(fixture.stateNotifications == 1 && !scheduler.active(),
+            "a frame retired by its semantic callback must not publish another notification");
+
+    ++fixture.captureState.sessionId;
+    fixture.displays.startup->sessionId = fixture.captureState.sessionId;
+    const QRectF nextSelection = fixture.baseSelection().translated(20, 25);
+    fixture.resetCounters();
+    fixture.requestSelection(nextSelection);
+    require(fixture.displayedSelection() == nextSelection && fixture.stateNotifications == 1,
+            "the next capture must present synchronously after reentrant semantic teardown");
+    fixture.requestPointer(QPointF(90, 70));
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    require(!scheduler.active() && fixture.stateNotifications == 1,
+            "the next capture must resume pointer scheduling without old semantic work");
+}
+
 void theFrameSchedulerRetainsItsBackendWithoutIdleWakeupsAndStopsAtEpochExit() {
     Fixture fixture(QSize(1200, 800), false);
     PresentationTimerObserver observer;
@@ -663,19 +849,6 @@ void shortcutContentStillRetranslatesOnLanguageChange() {
     require(fixture.hintTranslations.requests == 0,
             "later frames must reuse the newly translated shortcut content");
 }
-QString sampledColor(Fixture& fixture, const QPointF& localPosition) {
-    const auto& display = fixture.displays.displayAt(0);
-    const QPointF canvasPosition = fixture.geometry.canvasPositionForOverlayLocalPoint(
-        fixture.displays, &fixture.overlay, localPosition);
-    const QPoint physicalPosition =
-        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, canvasPosition);
-    return display.image
-        .pixelColor(physicalPosition.x() - display.physicalRect.x(),
-                    physicalPosition.y() - display.physicalRect.y())
-        .name(QColor::HexRgb)
-        .toUpper();
-}
-
 ScreenshotOverlayInputActions pickerInputActions(Fixture& fixture) {
     ScreenshotOverlayInputActions actions;
     actions.updateColorPickerForOverlay = [&fixture](ScreenshotOverlayWindow* owner,
@@ -948,6 +1121,11 @@ int main(int argc, char* argv[]) {
     hiddenSelectionToolbarDefersPresentationUntilReveal();
     modeAndSessionChangesCancelOldAnimation();
     anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate();
+    anEpochChangeReleasesShapedSelectionSnapshots();
+    resetReleasesPendingAndCommittedShapedSelections();
+    resetRetainsTheIdleSchedulerAndAllowsTheNextCapture();
+    resetDiscardsQueuedPickerInputUntilTheNextCapture();
+    semanticNotificationCanResetPresentationAndStartTheNextCapture();
     theFrameSchedulerRetainsItsBackendWithoutIdleWakeupsAndStopsAtEpochExit();
     synchronousFrameWorkSkipsExpiredDeadlines();
     pointerBurstsDoNotPublishSemanticChanges();

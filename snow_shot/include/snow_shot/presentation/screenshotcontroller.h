@@ -66,6 +66,7 @@ class ScreenshotController : public QObject {
     void setCaptureSuspended(bool suspended);
     [[nodiscard]] bool captureAcquisitionActive() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
+    [[nodiscard]] bool blocksMemoryTrimming() const;
     [[nodiscard]] bool beginGlobalMouseCapture(
         snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
         const QPointF& position,

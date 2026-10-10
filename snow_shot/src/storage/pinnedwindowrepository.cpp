@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
@@ -1176,6 +1177,7 @@ struct PinnedWindowRepository::Impl final {
     quint64 membershipRevision = 0;
     quint64 visibilityRevision = 0;
     bool dirty = false;
+    snow_shot::runtime::RuntimeActivityLease writeActivity;
     std::chrono::steady_clock::time_point dirtySince;
     bool flushRequested = false;
     bool stopping = false;
@@ -1253,8 +1255,10 @@ struct PinnedWindowRepository::Impl final {
         ++revision;
         if (membershipChanged)
             ++membershipRevision;
-        if (!dirty)
+        if (!dirty) {
+            writeActivity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
             dirtySince = std::chrono::steady_clock::now();
+        }
         dirty = true;
         condition.notify_one();
         if (changed)
@@ -1427,6 +1431,7 @@ PinnedWindowRepository::PinnedWindowRepository(
                     if (impl->revision == snapshot.revision) {
                         impl->dirty = false;
                         impl->flushRequested = false;
+                        impl->writeActivity = {};
                     } else {
                         impl->dirtySince = std::chrono::steady_clock::now();
                     }
@@ -1436,6 +1441,7 @@ PinnedWindowRepository::PinnedWindowRepository(
                     if (impl->stopping) {
                         impl->dirty = false;
                         impl->flushRequested = false;
+                        impl->writeActivity = {};
                         impl->condition.notify_all();
                         break;
                     }

@@ -882,6 +882,35 @@ SettingsItemDefinition applicationQoSItem() {
 }
 #endif
 
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+SettingsItemDefinition memoryOptimizationPolicyItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::MemoryOptimizationPolicy;
+    payload.options = {
+        {QStringLiteral("smart_control"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Smart Control"))},
+        {QStringLiteral("disabled"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disabled"))},
+    };
+    return {
+        QStringLiteral("system.memory-optimization-policy"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Memory Optimization Policy")),
+#ifdef Q_OS_MACOS
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Smart Control releases unused heap memory while the app is "
+                                       "idle. Active captures and pinned images are kept.")),
+#else
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Smart Control trims resident memory while the app is idle. "
+                                       "The next use may briefly take longer.")),
+#endif
+        {},
+        QStringLiteral("system/memory_optimization_policy"),
+        payload,
+    };
+}
+#endif
+
 SettingsItemDefinition proxyItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -2936,9 +2965,14 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Core application settings")),
               SettingsSectionReset::SystemSettings,
 #ifdef Q_OS_MACOS
-              {applicationQoSItem()},
+              {applicationQoSItem(), memoryOptimizationPolicyItem()},
 #else
-              {applicationPriorityItem()},
+              {
+                  applicationPriorityItem(),
+#ifdef Q_OS_WIN
+                  memoryOptimizationPolicyItem(),
+#endif
+              },
 #endif
               SettingsSectionItemLayout::VerticalList},
          },
@@ -4476,6 +4510,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ApplicationPriority:
                         expectedKey = QStringLiteral("system/application_priority");
+                        break;
+                    case SettingsSelectBinding::MemoryOptimizationPolicy:
+                        expectedKey = QStringLiteral("system/memory_optimization_policy");
                         break;
                     case SettingsSelectBinding::Proxy:
                         expectedKey = QStringLiteral("network/proxy");

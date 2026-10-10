@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
@@ -273,7 +274,8 @@ class ScreenshotHistoryValidationQueue final {
                     return result;
                 }
             }
-            m_jobs.push_back(Job{std::move(draft), std::move(promise)});
+            m_jobs.push_back(Job{std::move(draft), std::move(promise),
+                                 snow_shot::runtime::RuntimeActivityTracker::shared().acquire()});
         }
         m_condition.notify_one();
         return result;
@@ -289,6 +291,7 @@ class ScreenshotHistoryValidationQueue final {
     struct Job {
         snow_shot::storage::CaptureHistoryDraft draft;
         std::shared_ptr<std::promise<snow_shot::storage::CaptureHistoryPublishResult>> promise;
+        snow_shot::runtime::RuntimeActivityLease activity;
     };
 
     void complete(const std::shared_ptr<PublishPromise>& promise, PublishResult result) {
@@ -550,41 +553,47 @@ bool ScreenshotHistoryService::navigateTo(int index) {
     m_navigationInProgress = true;
     m_context.loadingStateChanged(true);
     try {
-        m_pendingLoads.push_back(std::async(std::launch::async, [this, generation, index, entryId,
-                                                                 metadata = std::move(metadata),
-                                                                 pendingWrite]() mutable {
-            snow_shot::platform::applyApplicationQoSToCurrentThread();
-            std::optional<ScreenshotHistoryEntry> loadedEntry;
-            try {
-                if (pendingWrite.valid()) {
-                    const auto published = pendingWrite.get();
-                    if (published.storage.success) {
-                        metadata = published.record;
-                    } else {
-                        metadata.id.clear();
-                    }
-                }
-                if (!metadata.id.isEmpty()) {
-                    const auto payload = m_repository->load(metadata);
-                    if (payload.has_value()) {
-                        loadedEntry = presentationEntry(metadata, *payload);
-                        if (!loadedEntry.has_value()) {
-                            m_repository->reportReadFailure(
-                                metadata, QStringLiteral("Unable to restore the history canvas"));
+        m_pendingLoads.push_back(std::async(
+            std::launch::async,
+            snow_shot::runtime::trackRuntimeWork([this, generation, index, entryId,
+                                                  metadata = std::move(metadata),
+                                                  pendingWrite]() mutable {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                std::optional<ScreenshotHistoryEntry> loadedEntry;
+                try {
+                    if (pendingWrite.valid()) {
+                        const auto published = pendingWrite.get();
+                        if (published.storage.success) {
+                            metadata = published.record;
+                        } else {
+                            metadata.id.clear();
                         }
                     }
+                    if (!metadata.id.isEmpty()) {
+                        const auto payload = m_repository->load(metadata);
+                        if (payload.has_value()) {
+                            loadedEntry = presentationEntry(metadata, *payload);
+                            if (!loadedEntry.has_value()) {
+                                m_repository->reportReadFailure(
+                                    metadata,
+                                    QStringLiteral("Unable to restore the history canvas"));
+                            }
+                        }
+                    }
+                } catch (...) {
+                    loadedEntry.reset();
                 }
-            } catch (...) {
-                loadedEntry.reset();
-            }
 
-            QMetaObject::invokeMethod(
-                this,
-                [this, generation, index, entryId, loadedEntry = std::move(loadedEntry)]() mutable {
-                    finishPersistentNavigation(generation, index, entryId, std::move(loadedEntry));
-                },
-                Qt::QueuedConnection);
-        }));
+                QMetaObject::invokeMethod(this,
+                                          snow_shot::runtime::trackRuntimeWork(
+                                              [this, generation, index, entryId,
+                                               loadedEntry = std::move(loadedEntry)]() mutable {
+                                                  finishPersistentNavigation(
+                                                      generation, index, entryId,
+                                                      std::move(loadedEntry));
+                                              }),
+                                          Qt::QueuedConnection);
+            })));
     } catch (...) {
         m_navigationInProgress = false;
         m_context.loadingStateChanged(false);

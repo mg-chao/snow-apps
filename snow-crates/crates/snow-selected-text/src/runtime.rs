@@ -254,6 +254,16 @@ impl SelectedTextService {
         ))
     }
 
+    /// Remains true until native acquisition and cleanup finish, including after cancellation.
+    pub fn is_busy(&self) -> bool {
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            self.runtime.busy.load(Ordering::Acquire)
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        false
+    }
+
     /// Capture foreground context now; perform cross-process acquisition on workers.
     pub fn start_capture(&self, options: CaptureOptions) -> Result<CaptureRequest, SelectionError> {
         #[cfg(any(windows, target_os = "macos"))]
@@ -426,6 +436,31 @@ mod tests {
             assert!(!runtime.busy.load(Ordering::Acquire));
         }
         assert!(entered.try_recv().is_err());
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn service_busy_tracks_native_work_after_canceled_request_is_dropped() {
+        let (runtime, entered, release) = blocked();
+        let service = SelectedTextService {
+            runtime: Arc::new(runtime),
+        };
+        assert!(!service.is_busy());
+        let request = service
+            .runtime
+            .submit(CaptureOptions::default(), source)
+            .unwrap();
+        entered.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(service.is_busy());
+        request.cancel();
+        drop(request);
+        assert!(service.is_busy());
+        release.send(()).unwrap();
+        let end = Instant::now() + Duration::from_secs(2);
+        while service.is_busy() && Instant::now() < end {
+            std::thread::yield_now();
+        }
+        assert!(!service.is_busy());
     }
 
     #[test]

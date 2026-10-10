@@ -24,6 +24,7 @@ struct ScreenshotCapturePresentationCallbacks {
     std::function<void()> updateColorPicker;
     std::function<void()> capturePresented;
     std::function<void()> beforeCapturePresented = []() {};
+    std::function<void()> resetPresentation = []() {};
 };
 
 struct ScreenshotCaptureWorkflowContext {

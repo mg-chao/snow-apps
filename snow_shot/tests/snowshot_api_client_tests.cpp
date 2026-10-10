@@ -1,7 +1,9 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snowimageqtcodec.h"
+#include "boundednetworkresponse.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -12,6 +14,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QNetworkProxy>
 #include <QStringList>
 #include <QTcpServer>
@@ -42,6 +45,15 @@ class SnowShotApiClientTestAccess {
     static qsizetype customQueued(const SnowShotApiClient& client) {
         return client.m_customChatQueue.size();
     }
+    static void visionTimeout(SnowShotApiClient& client, int milliseconds) {
+        client.m_visionTimeoutMs = milliseconds;
+    }
+    static qsizetype requests(const SnowShotApiClient& client) {
+        return client.m_requests.size();
+    }
+    static qsizetype catalogs(const SnowShotApiClient& client) {
+        return client.m_pendingModelCatalogs.size();
+    }
 };
 
 namespace {
@@ -52,7 +64,8 @@ void require(bool condition, const char* message) {
     }
 }
 
-QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
+QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response,
+                              bool closeConnection = true) {
     QByteArray request;
     QEventLoop loop;
     QTimer timeout;
@@ -78,7 +91,8 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
             }
             socket->write(response);
             socket->flush();
-            socket->disconnectFromHost();
+            if (closeConnection)
+                socket->disconnectFromHost();
             loop.quit();
         });
     });
@@ -86,6 +100,150 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
     loop.exec();
     require(timeout.isActive(), "local API test server timed out waiting for a request");
     return request;
+}
+
+void jsonResponsesAreBoundedDuringTransfer() {
+    enum class Kind { Table, Latex, Catalog, TextTranslation };
+    constexpr qsizetype maximumBytes = snow_shot::network::kMaximumJsonResponseBytes;
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    for (const auto kind : {Kind::Table, Kind::Latex, Kind::Catalog, Kind::TextTranslation}) {
+        for (int scenario = 0; scenario < 3; ++scenario) {
+            translation_tests::flushEvents();
+            const auto baseline = activity.snapshot().activeCount;
+            QTcpServer server;
+            require(server.listen(QHostAddress::LocalHost), "bounded JSON server listens");
+            const auto url = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+            SnowShotApiClient client(url);
+            QObject receiver;
+            bool completed = false;
+            bool succeeded = false;
+            bool replyFinished = false;
+            QString error;
+            const auto completion = [&](auto result) {
+                require(!completed, "bounded JSON request completes exactly once");
+                completed = true;
+                succeeded = result.succeeded();
+                error = result.error;
+            };
+            QObject::connect(&server, &QTcpServer::newConnection, &receiver, [&] {
+                auto* reply = client.findChild<QNetworkReply*>();
+                require(reply != nullptr, "bounded JSON transport retains its reply");
+                QObject::connect(reply, &QNetworkReply::finished, &receiver, [&] {
+                    require(completed && SnowShotApiClientTestAccess::requests(client) == 0,
+                            "bounded JSON reply outlives its completed request");
+                    require(activity.snapshot().activeCount > baseline,
+                            "bounded JSON reply cleanup must still block memory trimming");
+                    replyFinished = true;
+                });
+            });
+            QImage image(16, 16, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            SnowShotApiClient::RequestToken token = 0;
+            QByteArray validBody;
+            switch (kind) {
+            case Kind::Table:
+                token = client.extractTable(image, &receiver, completion);
+                validBody = R"({"data":{"html":"<table><tr><td>value</td></tr></table>"}})";
+                break;
+            case Kind::Latex:
+                token = client.extractLatex(image, &receiver, completion);
+                validBody = R"({"data":{"latex":"x+y"}})";
+                break;
+            case Kind::Catalog:
+                token = client.ensureChatModels(QStringLiteral("en_US"), &receiver, completion);
+                validBody =
+                    R"({"data":[{"model":"vision","name":"Vision","supports_vision":true}]})";
+                break;
+            case Kind::TextTranslation: {
+                snow_shot::TextTranslationConfiguration config;
+                config.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                config.name = QStringLiteral("Bounded provider");
+                config.endpoint = url + QStringLiteral("/translate");
+                client.setTextTranslationConfigurations({config});
+                token = client.streamTranslation(
+                    {config.selectionId(), QStringLiteral("auto"), QStringLiteral("en"),
+                     QStringLiteral("text")},
+                    &receiver, [](const QString&) {}, completion);
+                validBody = R"({"translations":[{"text":"translated"}]})";
+                break;
+            }
+            }
+            require(token != 0, "bounded JSON request is accepted");
+            QByteArray response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
+            if (scenario == 0) {
+                response += "Content-Length: " + QByteArray::number(maximumBytes + 1) + "\r\n\r\n";
+            } else if (scenario == 1) {
+                const QByteArray oversized(maximumBytes + 1, ' ');
+                response += "Transfer-Encoding: chunked\r\n\r\n" +
+                            QByteArray::number(oversized.size(), 16) + "\r\n" + oversized + "\r\n";
+                // Deliberately omit the terminating chunk: receipt must fail before completion.
+            } else {
+                validBody += QByteArray(maximumBytes - validBody.size(), ' ');
+                response += "Content-Length: " + QByteArray::number(validBody.size()) +
+                            "\r\nConnection: close\r\n\r\n" + validBody;
+            }
+            waitForHttpRequest(server, response, scenario == 2);
+            require(QThreadPool::globalInstance()->waitForDone(5000), "JSON preparation settles");
+            translation_tests::waitUntil([&] { return replyFinished; }, "bounded JSON completion");
+            require(succeeded == (scenario == 2), "JSON limit accepts the exact boundary only");
+            if (scenario != 2) {
+                require(error.contains(QStringLiteral("too large")),
+                        "oversized JSON reports the size error instead of cancellation or parsing");
+                const QPointer<QTcpSocket> socket = server.findChild<QTcpSocket*>();
+                translation_tests::waitUntil(
+                    [&] { return !socket || socket->state() == QAbstractSocket::UnconnectedState; },
+                    "oversized unfinished JSON aborts the connection");
+            }
+            require(SnowShotApiClientTestAccess::requests(client) == 0 &&
+                        SnowShotApiClientTestAccess::catalogs(client) == 0,
+                    "JSON completion releases requests and catalog subscribers");
+            translation_tests::flushEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(activity.snapshot().activeCount == baseline,
+                    "bounded JSON response cleanup releases its memory activity");
+        }
+    }
+}
+
+void boundedResponsesMeasureDecodedBodiesAndFollowRedirects() {
+    for (const bool oversized : {false, true}) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "compressed response server listens");
+        QNetworkAccessManager manager;
+        auto* reply = manager.get(QNetworkRequest(
+            QUrl(QStringLiteral("http://127.0.0.1:%1/compressed").arg(server.serverPort()))));
+        auto* response = new snow_shot::network::BoundedNetworkResponse(reply, 32);
+        bool finished = false;
+        QObject::connect(reply, &QNetworkReply::finished, &server, [&] { finished = true; });
+        const auto compressed = QByteArray::fromBase64(
+            oversized ? "H4sIAAAAAAAC/6uoIAAArNO/byEAAAA=" : "H4sIAAAAAAAC/6uowA8AiD3OACAAAAA=");
+        waitForHttpRequest(server, "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: " +
+                                       QByteArray::number(compressed.size()) +
+                                       "\r\nConnection: close\r\n\r\n" + compressed);
+        translation_tests::waitUntil([&] { return finished; }, "compressed response finishes");
+        require(response->tooLarge() == oversized,
+                "response limits measure decoded bytes rather than compressed Content-Length");
+        require(oversized ? response->body().isEmpty() : response->body() == QByteArray(32, 'x'),
+                "exact decoded limit succeeds and rejected bodies are discarded");
+    }
+
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "redirect response server listens");
+    QNetworkAccessManager manager;
+    auto* reply = manager.get(QNetworkRequest(
+        QUrl(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort()))));
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, 32);
+    bool finished = false;
+    QObject::connect(reply, &QNetworkReply::finished, &server, [&] { finished = true; });
+    waitForHttpRequest(server, "HTTP/1.1 307 Temporary Redirect\r\nLocation: /final\r\n"
+                               "Content-Length: 33\r\nConnection: close\r\n\r\n" +
+                                   QByteArray(33, 'x'));
+    const auto request = waitForHttpRequest(
+        server, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+    translation_tests::waitUntil([&] { return finished; }, "redirected response finishes");
+    require(request.startsWith("GET /final ") && reply->error() == QNetworkReply::NoError &&
+                !response->tooLarge() && response->body() == "{}",
+            "discarded redirect bodies do not reject a small final response");
 }
 
 void tablePreparationIsAsynchronousAndLifetimeSafe() {
@@ -145,8 +303,12 @@ void tablePreparationIsAsynchronousAndLifetimeSafe() {
             timeoutLoop.exec();
             require(completions == 1, "deadline includes blocked preparation");
         }
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "encoding must block memory trimming after cancellation or owner destruction");
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued encoded-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");
@@ -240,6 +402,8 @@ void latexPreparationIsAsynchronousAndLifetimeSafe() {
         }
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued LaTeX-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");
@@ -284,8 +448,10 @@ void failedRequestsIdentifyTheirKindWithoutContent() {
     options.installMessageHandler = false;
     auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
     require(diagnostics.initialize(options), "network diagnostics must initialize");
-    const QStringList kinds{QStringLiteral("table_extract"), QStringLiteral("chat_models"),
-                            QStringLiteral("translation"), QStringLiteral("image_conversion")};
+    const QStringList kinds{
+        QStringLiteral("table_extract"),        QStringLiteral("chat_models"),
+        QStringLiteral("translation"),          QStringLiteral("image_conversion"),
+        QStringLiteral("table_vision_extract"), QStringLiteral("latex_vision_extract")};
     for (const auto& kind : kinds) {
         QTcpServer server;
         require(server.listen(QHostAddress::LocalHost), "diagnostic HTTP server must listen");
@@ -308,6 +474,15 @@ void failedRequestsIdentifyTheirKindWithoutContent() {
         } else if (kind == QStringLiteral("chat_models")) {
             token = client.fetchChatModels(QStringLiteral("private-locale-marker"), &client,
                                            completion);
+        } else if (kind == QStringLiteral("table_vision_extract") ||
+                   kind == QStringLiteral("latex_vision_extract")) {
+            QImage source(8, 8, QImage::Format_RGBA8888);
+            source.fill(Qt::white);
+            token = kind == QStringLiteral("table_vision_extract")
+                        ? client.extractTableVision(source, QStringLiteral("private-model-marker"),
+                                                    &client, completion)
+                        : client.extractLatexVision(source, QStringLiteral("private-model-marker"),
+                                                    &client, completion);
         } else if (kind == QStringLiteral("image_conversion")) {
             QImage source(8, 8, QImage::Format_RGBA8888);
             source.fill(Qt::white);
@@ -1433,6 +1608,850 @@ void oldCatalogCannotReplaceNewServerModels() {
             "late completion cannot publish an obsolete catalog to other consumers");
 }
 
+void ensuredCatalogsAreLazySharedAndIndependentlyCancellable() {
+    translation_tests::Server server;
+    server.holdModels = true;
+    SnowShotApiClient client(server.url());
+    QObject firstReceiver, secondReceiver;
+    int firstCompletions = 0, secondCompletions = 0;
+    require(server.modelRequests == 0 && client.cachedChatModels().isEmpty(),
+            "constructing a client never discovers models");
+    const auto first = client.ensureChatModels(QStringLiteral("en_US"), &firstReceiver,
+                                               [&](auto) { ++firstCompletions; });
+    const auto second =
+        client.ensureChatModels(QStringLiteral("en_US"), &secondReceiver, [&](auto result) {
+            require(result.succeeded(), "shared catalog succeeds");
+            ++secondCompletions;
+        });
+    require(first != 0 && second != 0 && first != second,
+            "catalog subscribers own independent request tokens");
+    translation_tests::waitUntil([&] { return server.modelRequests == 1; },
+                                 "concurrent discovery sends only one request");
+    client.cancel(first);
+    require(SnowShotApiClientTestAccess::catalogs(client) == 1,
+            "cancelling one subscriber retains discovery for the other");
+    server.respondModels();
+    translation_tests::waitUntil([&] { return secondCompletions == 1; },
+                                 "remaining subscriber receives shared catalog");
+    require(firstCompletions == 0 && client.builtInVisionModel() == QStringLiteral("general"),
+            "cancelled subscriber receives nothing and builtin default follows server order");
+    bool cached = false;
+    const auto cachedToken =
+        client.ensureChatModels(QStringLiteral("en_US"), &firstReceiver, [&](auto result) {
+            require(result.succeeded(), "cached catalog succeeds");
+            cached = true;
+        });
+    require(cachedToken != 0 && !cached, "cached delivery is asynchronous");
+    translation_tests::waitUntil([&] { return cached; }, "cached catalog is delivered");
+    require(server.modelRequests == 1 && SnowShotApiClientTestAccess::requests(client) == 0,
+            "cache reuse avoids network and releases subscribers");
+    const auto cancelledCache = client.ensureChatModels(QStringLiteral("en_US"), &firstReceiver,
+                                                        [&](auto) { ++firstCompletions; });
+    client.cancel(cancelledCache);
+    translation_tests::flushEvents();
+    require(firstCompletions == 0, "queued cache completion respects cancellation");
+
+    auto* destroyedReceiver = new QObject;
+    const auto localeToken = client.ensureChatModels(QStringLiteral("zh_CN"), destroyedReceiver,
+                                                     [&](auto) { ++firstCompletions; });
+    require(localeToken != 0, "another locale starts independent discovery");
+    translation_tests::waitUntil([&] { return server.modelRequests == 2; },
+                                 "locale mismatch does not reuse localized catalog");
+    const auto pending = server.pendingModels.first();
+    delete destroyedReceiver;
+    translation_tests::waitUntil(
+        [&] { return !pending || pending->state() == QAbstractSocket::UnconnectedState; },
+        "last destroyed subscriber aborts underlying discovery");
+    require(SnowShotApiClientTestAccess::requests(client) == 0 &&
+                SnowShotApiClientTestAccess::catalogs(client) == 0 && firstCompletions == 0,
+            "discovery cancellation releases every owner and subscriber");
+}
+
+void refreshedCatalogsShareRequestsAndRespectCancellation() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QObject receiver;
+    bool loaded = false;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto) { loaded = true; }) != 0,
+            "initial catalog request starts");
+    translation_tests::waitUntil([&] { return loaded; }, "initial catalog loads before refresh");
+    server.holdModels = true;
+    server.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("updated")},
+                               {QStringLiteral("name"), QStringLiteral("Updated vision")},
+                               {QStringLiteral("supports_vision"), true}}};
+    int cancelledCompletions = 0, refreshedCompletions = 0;
+    const auto completed = [&](SnowShotChatModelsResult result) {
+        require(result.succeeded() && result.models.first().id == QStringLiteral("updated"),
+                "every refresh subscriber receives the updated catalog");
+        ++refreshedCompletions;
+    };
+    const auto cancelled = client.ensureChatModels(
+        QStringLiteral("en_US"), &receiver, [&](auto) { ++cancelledCompletions; },
+        SnowShotApiClient::ChatModelsCachePolicy::Refresh);
+    const auto refreshed =
+        client.ensureChatModels(QStringLiteral("en_US"), &receiver, completed,
+                                SnowShotApiClient::ChatModelsCachePolicy::Refresh);
+    const auto joined = client.ensureChatModels(QStringLiteral("en_US"), &receiver, completed);
+    require(cancelled && refreshed && joined && cancelled != refreshed && refreshed != joined,
+            "refresh and ordinary subscribers own independent tokens");
+    translation_tests::waitUntil([&] { return server.modelRequests == 2; },
+                                 "concurrent refreshes share one additional request");
+    client.cancel(cancelled);
+    server.respondModels();
+    translation_tests::waitUntil([&] { return refreshedCompletions == 2; },
+                                 "remaining refresh subscribers complete");
+    require(cancelledCompletions == 0 && server.modelRequests == 2 &&
+                client.builtInVisionModel() == QStringLiteral("updated") &&
+                SnowShotApiClientTestAccess::requests(client) == 0 &&
+                SnowShotApiClientTestAccess::catalogs(client) == 0,
+            "refresh cancellation preserves other subscribers and retires the shared request");
+    bool cached = false;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        require(result.models.first().id ==
+                                                    QStringLiteral("updated"),
+                                                "normal discovery reuses the refreshed catalog");
+                                        cached = true;
+                                    }) != 0,
+            "refreshed catalog remains reusable");
+    translation_tests::waitUntil([&] { return cached; },
+                                 "refreshed cache completes asynchronously");
+    require(server.modelRequests == 2, "normal discovery after refresh performs no extra request");
+}
+
+void ensuredCatalogsAndFingerprintsFollowTheServer() {
+    translation_tests::Server oldServer, newServer;
+    oldServer.holdModels = true;
+    newServer.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("new-vision")},
+                               {QStringLiteral("name"), QStringLiteral("New vision")},
+                               {QStringLiteral("supports_vision"), true}}};
+    SnowShotApiClient client(oldServer.url());
+    snow_shot::CustomAiModelConfiguration custom{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                 QStringLiteral("Local vision"),
+                                                 oldServer.url(),
+                                                 {},
+                                                 QStringLiteral("provider-vision"),
+                                                 true};
+    client.setCustomModels({custom});
+    require(client.builtInVisionModel().isEmpty(),
+            "a custom vision model never becomes the builtin default");
+    const QString originalFingerprint = client.modelFingerprint(QStringLiteral("same-id"));
+    const QString customFingerprint = client.modelFingerprint(custom.selectionId());
+    QObject receiver;
+    bool oldDone = false, newDone = false;
+    SnowShotChatModelsResult lateResult;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        lateResult = result;
+                                        oldDone = true;
+                                    }) != 0,
+            "old ensured catalog starts");
+    translation_tests::waitUntil([&] { return oldServer.modelRequests == 1; },
+                                 "old ensured catalog is held");
+    require(client.setBaseUrl(newServer.url()), "server switches for ensured discovery");
+    require(client.modelFingerprint(QStringLiteral("same-id")) != originalFingerprint &&
+                client.modelFingerprint(custom.selectionId()) == customFingerprint,
+            "builtin fingerprints bind server identity while custom identities remain independent");
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        require(result.succeeded(), "new catalog succeeds");
+                                        newDone = true;
+                                    }) != 0,
+            "new server starts an independent ensured catalog");
+    translation_tests::waitUntil([&] { return newDone; }, "new ensured catalog finishes");
+    oldServer.respondModels();
+    translation_tests::waitUntil([&] { return oldDone; }, "old ensured request settles");
+    require(client.builtInVisionModel() == QStringLiteral("new-vision") &&
+                lateResult.models.first().id == QStringLiteral("new-vision"),
+            "late ensured responses never publish models from the former server");
+
+    bool staleCacheDone = false;
+    SnowShotChatModelsResult staleCache;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        staleCache = result;
+                                        staleCacheDone = true;
+                                    }) != 0,
+            "cached subscriber accepted before server change");
+    require(client.setBaseUrl(oldServer.url()), "server changes before queued cache delivery");
+    translation_tests::waitUntil([&] { return staleCacheDone; }, "stale cache subscriber settles");
+    require(!staleCache.succeeded() && staleCache.code == QStringLiteral("catalog_changed"),
+            "queued cache delivery cannot silently supply a different server's catalog");
+}
+
+void obsoleteLocalesCannotReplaceTheCurrentCatalog() {
+    translation_tests::Server server;
+    server.holdModels = true;
+    SnowShotApiClient client(server.url());
+    QObject receiver;
+    bool oldDone = false, currentDone = false;
+    SnowShotChatModelsResult oldResult;
+    int catalogChanges = 0;
+    QObject::connect(&client, &SnowShotApiClient::chatModelsChanged, &receiver,
+                     [&] { ++catalogChanges; });
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        oldResult = result;
+                                        oldDone = true;
+                                    }) != 0,
+            "first locale catalog starts");
+    require(client.ensureChatModels(QStringLiteral("zh_CN"), &receiver,
+                                    [&](auto result) {
+                                        require(result.succeeded(),
+                                                "current locale catalog succeeds");
+                                        currentDone = true;
+                                    }) != 0,
+            "current locale catalog starts independently");
+    translation_tests::waitUntil([&] { return server.modelRequests == 2; },
+                                 "both localized catalogs are pending");
+    const auto respond = [&](const QByteArray& locale, const QString& model) {
+        const auto pending = std::find_if(
+            server.pendingModels.cbegin(), server.pendingModels.cend(),
+            [&locale](const auto& socket) {
+                return socket && socket->property("request").toByteArray().toLower().contains(
+                                     "accept-language: " + locale.toLower() + "\r\n");
+            });
+        require(pending != server.pendingModels.cend(),
+                "find the held catalog by requested locale");
+        const auto socket = *pending;
+        const QByteArray body =
+            QJsonDocument(
+                QJsonObject{{QStringLiteral("data"),
+                             QJsonArray{QJsonObject{{QStringLiteral("model"), model},
+                                                    {QStringLiteral("name"), model},
+                                                    {QStringLiteral("supports_vision"), true}}}}})
+                .toJson(QJsonDocument::Compact);
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                      QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        socket->disconnectFromHost();
+    };
+    respond("zh_CN", QStringLiteral("current-vision"));
+    translation_tests::waitUntil([&] { return currentDone; }, "current locale finishes first");
+    respond("en_US", QStringLiteral("old-vision"));
+    translation_tests::waitUntil([&] { return oldDone; },
+                                 "obsolete locale still completes its subscriber");
+    require(oldResult.succeeded() && oldResult.models.first().id == QStringLiteral("old-vision") &&
+                client.hasBuiltInModels(QStringLiteral("zh_CN")) &&
+                client.builtInVisionModel() == QStringLiteral("current-vision") &&
+                catalogChanges == 1,
+            "obsolete locale neither overwrites the current cache nor publishes a catalog change");
+    bool cached = false;
+    require(client.ensureChatModels(QStringLiteral("zh_CN"), &receiver,
+                                    [&](auto) { cached = true; }) != 0,
+            "current localized catalog can be reused");
+    translation_tests::waitUntil([&] { return cached; }, "current locale cache is delivered");
+    require(server.modelRequests == 2, "same-locale cache reuse avoids another request");
+}
+
+void visionExtractionPreservesTypedOutputAndImageDetails() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QObject receiver;
+    QImage image(1344, 384, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    image.setDevicePixelRatio(2.0);
+    SnowShotTableResult table;
+    SnowShotLatexResult latex;
+    int tableCompletions = 0, latexCompletions = 0;
+    require(client.extractTableVision(image, QStringLiteral("table-vision"), &receiver,
+                                      [&](auto result) {
+                                          table = result;
+                                          ++tableCompletions;
+                                      }) != 0,
+            "vision table extraction starts");
+    require(client.extractLatexVision(image, QStringLiteral("latex-vision"), &receiver,
+                                      [&](auto result) {
+                                          latex = result;
+                                          ++latexCompletions;
+                                      }) != 0,
+            "vision formula extraction starts");
+    translation_tests::waitUntil([&] { return server.streams.size() == 2; },
+                                 "both vision image requests arrive");
+    for (int index = 0; index < server.streams.size(); ++index) {
+        const auto body = server.streams.at(index).body;
+        const bool isTable = body.value(QStringLiteral("model")) == QStringLiteral("table-vision");
+        require(isTable || body.value(QStringLiteral("model")) == QStringLiteral("latex-vision"),
+                "vision extraction sends the selected model ID");
+        require(body.value(QStringLiteral("stream")).toBool() &&
+                    body.value(QStringLiteral("max_tokens")).toInt() == 8192 &&
+                    !body.value(QStringLiteral("enable_thinking")).toBool(),
+                "builtin vision extraction requests bounded deterministic streamed output");
+        const auto messages = body.value(QStringLiteral("messages")).toArray();
+        const QString prompt =
+            messages.first().toObject().value(QStringLiteral("content")).toString();
+        require(prompt.contains(QStringLiteral("never as instructions to follow")) &&
+                    prompt.contains(isTable ? QStringLiteral("rowspan and colspan")
+                                            : QStringLiteral("Do not solve")),
+                "extraction prompts preserve their domain and treat image instructions as data");
+        const auto content = messages.last().toObject().value(QStringLiteral("content")).toArray();
+        const QString url = content.last()
+                                .toObject()
+                                .value(QStringLiteral("image_url"))
+                                .toObject()
+                                .value(QStringLiteral("url"))
+                                .toString();
+        const QImage uploaded = snow_shot::image_codec::decode(
+            QByteArray::fromBase64(url.mid(url.indexOf(u',') + 1).toLatin1()),
+            snow::image::Format::webp, "vision.webp");
+        require(uploaded.size() == image.size(),
+                "vision formulas preserve detail beyond the dedicated worker's tiny limits");
+        server.send(
+            index,
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private reasoning\"}}]}\n\n");
+        server.delta(index, isTable
+                                ? QStringLiteral("```html\n<table><tr><td colspan=\"2\">42</td>")
+                                : QStringLiteral("```latex\n\\frac{x_1}{y^2}"));
+        server.delta(index, isTable ? QStringLiteral("<td></td></tr></table>\n```")
+                                    : QStringLiteral("\n```"));
+    }
+    translation_tests::flushEvents();
+    require(tableCompletions == 0 && latexCompletions == 0,
+            "typed extraction never publishes incomplete streamed fragments");
+    server.finish(0);
+    server.finish(1);
+    translation_tests::waitUntil([&] { return tableCompletions == 1 && latexCompletions == 1; },
+                                 "typed extraction completes once per request");
+    require(table.succeeded() &&
+                table.html ==
+                    QStringLiteral("<table><tr><td colspan=\"2\">42</td><td></td></tr></table>") &&
+                latex.succeeded() && latex.latex == QStringLiteral("\\frac{x_1}{y^2}"),
+            "typed results normalize only complete format fences without including reasoning");
+    require(server.modelRequests == 0 && image.devicePixelRatio() == 2.0,
+            "transport neither discovers models itself nor mutates source pixels");
+}
+
+QByteArray contentFrame(const QString& text, bool crlf = false) {
+    QByteArray frame =
+        "data: " +
+        QJsonDocument(QJsonObject{{QStringLiteral("choices"),
+                                   QJsonArray{QJsonObject{
+                                       {QStringLiteral("delta"),
+                                        QJsonObject{{QStringLiteral("content"), text}}}}}}})
+            .toJson(QJsonDocument::Compact) +
+        "\n\n";
+    if (crlf)
+        frame.replace("\n", "\r\n");
+    return frame;
+}
+
+void chatStreamsYieldBetweenBatchesAndCancelSafely() {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        translation_tests::flushEvents();
+        const auto baseline = activity.snapshot().activeCount;
+        translation_tests::Server server;
+        auto client = std::make_unique<SnowShotApiClient>(server.url());
+        auto receiver = std::make_unique<QObject>();
+        QString source;
+        int deltas = 0, completions = 0;
+        bool heartbeat = false;
+        SnowShotApiClient::RequestToken token = 0;
+        token = client->streamTranslation(
+            {QStringLiteral("builtin"), {}, {}, QStringLiteral("Hello")}, receiver.get(),
+            [&](const QString& delta) {
+                source += delta;
+                ++deltas;
+                if (deltas != 1)
+                    return;
+                QMetaObject::invokeMethod(
+                    QCoreApplication::instance(),
+                    [&] {
+                        require(deltas <= 64 && completions == 0,
+                                "UI dispatch must run before a large SSE burst finishes draining");
+                        heartbeat = true;
+                        if (scenario == 1)
+                            client->cancel(token);
+                        else if (scenario == 2)
+                            receiver.reset();
+                        else if (scenario == 3)
+                            client.reset();
+                        if (scenario == 1 || scenario == 2) {
+                            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                            require(
+                                activity.snapshot().activeCount > baseline,
+                                "queued stream drains block trimming after canceled reply cleanup");
+                        }
+                    },
+                    Qt::QueuedConnection);
+            },
+            [&](auto result) {
+                require(result.succeeded(), "the drained complete stream succeeds");
+                ++completions;
+            });
+        require(token != 0, "batched stream starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "batched stream arrives");
+        QByteArray burst;
+        constexpr int frames = 512;
+        for (int index = 0; index < frames; ++index)
+            burst += contentFrame(QStringLiteral("x"), index % 2 != 0);
+        burst += "data: [DONE]\n\n";
+        server.send(0, burst);
+        server.streams.first().socket->disconnectFromHost();
+        translation_tests::waitUntil([&] { return heartbeat; },
+                                     "the stream yields to a queued UI heartbeat");
+        if (scenario == 0) {
+            translation_tests::waitUntil([&] { return completions == 1; },
+                                         "all queued stream frames drain before completion");
+            require(deltas == frames && source == QString(frames, u'x'),
+                    "batch boundaries preserve every LF and CRLF stream delta in order");
+        } else {
+            const int stoppedAt = deltas;
+            translation_tests::flushEvents();
+            translation_tests::flushEvents();
+            require(deltas == stoppedAt && completions == 0 &&
+                        (!client || SnowShotApiClientTestAccess::requests(*client) == 0),
+                    "cancellation and consumer destruction suppress queued drains and completion");
+        }
+        translation_tests::flushEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(activity.snapshot().activeCount == baseline,
+                "completed and canceled stream drains release their memory activity");
+    }
+}
+
+void largeFragmentedStreamEventsPublishExactlyOnce() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    const QString expected(128 * 1024, u'x');
+    QString source;
+    int deltas = 0;
+    bool completed = false;
+    require(client.streamTranslation(
+                {QStringLiteral("builtin"), {}, {}, QStringLiteral("Hello")}, &client,
+                [&](const QString& delta) {
+                    source += delta;
+                    ++deltas;
+                },
+                [&](auto result) {
+                    require(result.succeeded(), "a fragmented large stream event succeeds");
+                    completed = true;
+                }) != 0,
+            "fragmented large stream starts");
+    translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                 "fragmented large stream arrives");
+    const QByteArray event = contentFrame(expected, true);
+    constexpr qsizetype part = 4096;
+    for (qsizetype offset = 0; offset < event.size(); offset += part) {
+        server.send(0, event.mid(offset, part));
+        translation_tests::flushEvents();
+        if (offset + part < event.size())
+            require(deltas == 0 && !completed,
+                    "partial event bodies are retained without parsing or publishing");
+    }
+    server.finish(0);
+    translation_tests::waitUntil([&] { return completed; },
+                                 "fragmented large stream event completes");
+    require(deltas == 1 && source == expected,
+            "a fragmented CRLF event emits its complete content exactly once");
+}
+
+void visionQueuedDrainsCheckElapsedDeadlineBeforeTimerDelivery() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    int completions = 0;
+    SnowShotTableResult result;
+    require(client.extractTableVision(image, QStringLiteral("vision"), &client,
+                                      [&](auto value) {
+                                          result = value;
+                                          ++completions;
+                                      }) != 0,
+            "queued deadline extraction starts");
+    translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                 "queued deadline extraction arrives");
+    auto* reply = client.findChild<QNetworkReply*>();
+    require(reply != nullptr, "the extraction transport is live");
+    QObject::connect(reply, &QIODevice::readyRead, &client, [&] {
+        // The parser's earlier readyRead connection has drained at most one batch. Expire the
+        // elapsed budget without firing the original 120s timer before the queued continuation.
+        SnowShotApiClientTestAccess::visionTimeout(client, 0);
+    });
+    QByteArray burst = contentFrame(QStringLiteral("<table><tr><td>"));
+    for (int index = 0; index < 512; ++index)
+        burst += contentFrame(QStringLiteral("x"));
+    burst += contentFrame(QStringLiteral("</td></tr></table>")) + "data: [DONE]\n\n";
+    server.send(0, burst);
+    server.streams.first().socket->disconnectFromHost();
+    translation_tests::waitUntil([&] { return completions == 1; },
+                                 "a queued parser batch honors elapsed expiry");
+    require(!result.succeeded() && result.code == QStringLiteral("recognition_timeout") &&
+                result.html.isEmpty(),
+            "elapsed expiry precedes queued stream draining and typed completion");
+    translation_tests::flushEvents();
+    require(completions == 1 && SnowShotApiClientTestAccess::requests(client) == 0,
+            "queued drains and late finished events cannot revive an expired extraction");
+}
+
+void typedVisionStreamsCompleteAfterEveryQueuedFrame() {
+    for (const bool table : {true, false}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QString source;
+        int completions = 0;
+        const auto completion = [&](auto result) {
+            require(result.succeeded(), "typed extraction succeeds after batched SSE processing");
+            if constexpr (requires { result.html; })
+                source = result.html;
+            else
+                source = result.latex;
+            ++completions;
+        };
+        require(
+            (table ? client.extractTableVision(image, QStringLiteral("vision"), &client, completion)
+                   : client.extractLatexVision(image, QStringLiteral("vision"), &client,
+                                               completion)) != 0,
+            "typed batched extraction starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "typed batched extraction arrives");
+        const QString prefix = table ? QStringLiteral("<table><tr><td>") : QStringLiteral("x^{");
+        const QString suffix = table ? QStringLiteral("</td></tr></table>") : QStringLiteral("}");
+        constexpr int frames = 2048;
+        QByteArray burst = contentFrame(prefix);
+        for (int index = 0; index < frames; ++index)
+            burst += contentFrame(QStringLiteral("1"), index % 2 != 0);
+        burst += contentFrame(suffix) + "data: [DONE]\n\n";
+        server.send(0, burst);
+        server.streams.first().socket->disconnectFromHost();
+        translation_tests::waitUntil([&] { return completions == 1; },
+                                     "typed extraction drains before publishing its final result");
+        require(source == prefix + QString(frames, u'1') + suffix,
+                "the typed final result includes every queued frame exactly once");
+        translation_tests::flushEvents();
+        require(completions == 1, "late transport completion cannot publish twice");
+    }
+}
+
+void visionExtractionRejectsIncompleteAndInvalidResponses() {
+    const QString tableSource = QStringLiteral("<table><tr><td>x</td></tr></table>");
+    for (int scenario = 0; scenario < 9; ++scenario) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        bool completed = false;
+        SnowShotTableResult result;
+        require(client.extractTableVision(image, QStringLiteral("vision"), &client,
+                                          [&](auto value) {
+                                              result = value;
+                                              completed = true;
+                                          }) != 0,
+                "invalid response extraction starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "invalid response request arrives");
+        if (scenario == 0)
+            server.delta(0, QStringLiteral("Here is the table:\n") + tableSource);
+        else if (scenario == 1)
+            server.delta(0, QStringLiteral("<p>not a table</p>"));
+        else if (scenario == 2)
+            server.delta(0, tableSource);
+        else if (scenario == 3) {
+            server.delta(0, tableSource);
+            server.send(0, "data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{}}]}\n\n");
+        } else if (scenario == 4)
+            server.send(0, "data: invalid-json\n\n");
+        if (scenario >= 6) {
+            server.delta(0, tableSource);
+            server.send(0, "data: [DONE]\n\n");
+            if (scenario == 6)
+                server.send(0, "data: [DONE]\n\n");
+            else if (scenario == 7)
+                server.send(0, "data: {\"choices\":");
+            else
+                server.send(0, contentFrame(QStringLiteral("late content")));
+            server.streams.first().socket->disconnectFromHost();
+        } else if (scenario == 2)
+            server.streams.first().socket->disconnectFromHost();
+        else if (!server.disconnected(0))
+            server.finish(0);
+        translation_tests::waitUntil([&] { return completed; }, "invalid vision stream completes");
+        require(
+            !result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
+            "invalid fragments, incomplete streams, and empty output never become usable tables");
+    }
+}
+
+void visionPreparationRetainsMemoryActivity() {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    translation_tests::flushEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    const auto baseline = activity.snapshot().activeCount;
+    for (const bool table : {false, true}) {
+        for (int scenario = 0; scenario < 6; ++scenario) {
+            translation_tests::Server server;
+            auto client = std::make_unique<SnowShotApiClient>(server.url());
+            auto receiver = std::make_unique<QObject>();
+            QSemaphore entered, release;
+            SnowShotApiClientTestAccess::prepare(*client, [&](const QImage&) {
+                entered.release();
+                release.acquire();
+                return QByteArray();
+            });
+            if (scenario == 4)
+                SnowShotApiClientTestAccess::visionTimeout(*client, 20);
+            QImage image(16, 16, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            int completions = 0;
+            const auto completion = [&](const auto& result) {
+                require(!result.succeeded(), "empty or expired vision preparation fails");
+                require(activity.snapshot().activeCount > baseline,
+                        "vision completion remains protected from memory trimming");
+                if (scenario == 4)
+                    require(result.code == QStringLiteral("recognition_timeout"),
+                            "vision preparation retains its absolute deadline");
+                ++completions;
+                if (scenario == 5)
+                    client.reset();
+            };
+            const auto token = table ? client->extractTableVision(image, QStringLiteral("vision"),
+                                                                  receiver.get(), completion)
+                                     : client->extractLatexVision(image, QStringLiteral("vision"),
+                                                                  receiver.get(), completion);
+            require(token != 0 && entered.tryAcquire(1, 5000), "vision preparation is pending");
+            if (scenario == 1)
+                client->cancel(token);
+            else if (scenario == 2)
+                receiver.reset();
+            else if (scenario == 3)
+                client.reset();
+            else if (scenario == 4)
+                translation_tests::waitUntil([&] { return completions == 1; },
+                                             "vision deadline expires during preparation");
+            require(activity.snapshot().activeCount > baseline,
+                    "vision encoding blocks trimming after cancellation, destruction, or timeout");
+            release.release();
+            require(QThreadPool::globalInstance()->waitForDone(5000), "vision worker settles");
+            require(activity.snapshot().activeCount > baseline,
+                    "queued vision delivery blocks trimming after its request ends");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
+                    "vision consumers receive exactly one completion or none after cancellation");
+            require(server.streams.isEmpty(),
+                    "failed or canceled vision preparation never uploads");
+            receiver.reset();
+            client.reset();
+            translation_tests::flushEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(activity.snapshot().activeCount == baseline,
+                    "vision preparation releases all activity after its queued delivery settles");
+        }
+    }
+}
+
+void visionExtractionDeadlinesCoverPreparationAndCustomQueues() {
+    for (const bool table : {false, true}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QSemaphore entered, release;
+        SnowShotApiClientTestAccess::prepare(client, [&](const QImage&) {
+            entered.release();
+            release.acquire();
+            return QByteArray("encoded-after-deadline");
+        });
+        SnowShotApiClientTestAccess::visionTimeout(client, 20);
+        QString code;
+        bool completed = false;
+        const auto completion = [&](const auto& result) {
+            require(!result.succeeded(), "late preparation never succeeds");
+            code = result.code;
+            completed = true;
+        };
+        const auto token =
+            table ? client.extractTableVision(image, QStringLiteral("vision"), &client, completion)
+                  : client.extractLatexVision(image, QStringLiteral("vision"), &client, completion);
+        require(token != 0 && entered.tryAcquire(1, 5000), "vision codec preparation is pending");
+        translation_tests::waitUntil([&] { return completed; },
+                                     "deadline includes image preparation");
+        release.release();
+        QThreadPool::globalInstance()->waitForDone(5000);
+        translation_tests::flushEvents();
+        require(code == QStringLiteral("recognition_timeout") && server.streams.isEmpty() &&
+                    SnowShotApiClientTestAccess::requests(client) == 0,
+                "expired preparation cannot post or retain a request");
+    }
+
+    translation_tests::Server server;
+    server.streamPath = QByteArray("/v1/chat/completions");
+    SnowShotApiClient client(server.url());
+    snow_shot::CustomAiModelConfiguration model{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                QStringLiteral("Queued vision"),
+                                                server.url() + QStringLiteral("/v1"),
+                                                QStringLiteral("private-key"),
+                                                QStringLiteral("provider-id"),
+                                                true,
+                                                false,
+                                                1};
+    client.setCustomModels({model});
+    QObject receiver;
+    require(client.streamTranslation(
+                {model.selectionId(), {}, {}, QStringLiteral("busy")}, &receiver,
+                [](const QString&) {}, [](auto) {}) != 0,
+            "translation occupies custom model capacity");
+    translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                 "custom translation occupies the queue");
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    SnowShotApiClientTestAccess::visionTimeout(client, 100);
+    bool completed = false;
+    require(client.extractLatexVision(
+                image, model.selectionId(), &receiver,
+                [&](auto result) {
+                    require(!result.succeeded() &&
+                                result.code == QStringLiteral("recognition_timeout"),
+                            "queued extraction preserves its absolute deadline");
+                    completed = true;
+                }) != 0,
+            "custom vision extraction queues behind translation");
+    translation_tests::waitUntil(
+        [&] { return SnowShotApiClientTestAccess::customQueued(client) == 1; },
+        "vision extraction shares custom model capacity");
+    translation_tests::waitUntil([&] { return completed; }, "custom queue time consumes deadline");
+    require(server.streams.size() == 1 && SnowShotApiClientTestAccess::customQueued(client) == 0,
+            "expired custom extraction leaves no queued upload");
+    server.delta(0, QStringLiteral("ready"));
+    server.finish(0);
+    translation_tests::waitUntil([&] { return SnowShotApiClientTestAccess::requests(client) == 0; },
+                                 "occupying translation finishes");
+
+    SnowShotApiClientTestAccess::visionTimeout(client, 120000);
+    model.supportsReasoning = true;
+    client.setCustomModels({model});
+    SnowShotTableResult customResult;
+    bool customCompleted = false;
+    require(client.extractTableVision(image, model.selectionId(), &receiver,
+                                      [&](auto result) {
+                                          customResult = result;
+                                          customCompleted = true;
+                                      }) != 0,
+            "custom extraction resumes after the shared capacity becomes available");
+    translation_tests::waitUntil([&] { return server.streams.size() == 2; },
+                                 "custom vision request reaches its own endpoint");
+    const auto& stream = server.streams.last();
+    require(
+        stream.headers.toLower().contains("authorization: bearer private-key") &&
+            stream.body.value(QStringLiteral("model")) == QStringLiteral("provider-id") &&
+            stream.body.value(QStringLiteral("enable_thinking")).toBool() &&
+            !stream.body.contains(QStringLiteral("max_tokens")) &&
+            !stream.body.contains(QStringLiteral("temperature")),
+        "custom extraction scopes credentials, uses the provider model, and honors its options");
+    server.delta(1, QStringLiteral("<table><tr><td>custom</td></tr></table>"));
+    server.finish(1);
+    translation_tests::waitUntil([&] { return customCompleted; },
+                                 "custom typed extraction finishes");
+    require(customResult.succeeded(), "custom vision output uses the same typed result contract");
+    model.supportsVision = false;
+    client.setCustomModels({model});
+    require(client.extractTableVision(image, model.selectionId(), &receiver, [](auto) {}) == 0 &&
+                client.extractLatexVision(image, model.selectionId(), &receiver, [](auto) {}) == 0,
+            "custom text-only models cannot enter either image extraction workflow");
+}
+
+void visionExtractionCannotOutrunAnExpiredTimerEvent() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    SnowShotApiClientTestAccess::visionTimeout(client, 20);
+    bool completed = false;
+    SnowShotLatexResult result;
+    require(client.extractLatexVision(image, QStringLiteral("vision"), &client,
+                                      [&](auto value) {
+                                          result = value;
+                                          completed = true;
+                                      }) != 0,
+            "stalled event loop extraction starts");
+    require(QThreadPool::globalInstance()->waitForDone(5000),
+            "image preparation posts completion before the UI thread resumes");
+    QThread::msleep(30);
+    // Deliver the codec's queued invocation before expired timer events. This reproduces
+    // the ordering possible when the main thread was occupied by another UI operation.
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    require(completed && !result.succeeded() &&
+                result.code == QStringLiteral("recognition_timeout"),
+            "wall-clock expiry wins even when preparation runs before the timer event");
+    translation_tests::flushEvents();
+    require(server.streams.isEmpty() && SnowShotApiClientTestAccess::requests(client) == 0,
+            "expired preparation does not upload after a stalled event loop");
+}
+
+void visionLatexResponsesMustContainCompleteSource() {
+    struct Scenario {
+        QString input;
+        bool valid;
+    };
+    const Scenario scenarios[] = {
+        {QStringLiteral("\\frac{x_1}{y^2}"), true},
+        {QStringLiteral("\\text{literal \\{ braces \\} and <table>markup</table>}"), true},
+        {QStringLiteral("\\unsupportedcommand[optional]{x}"), true},
+        {QStringLiteral("\\begin{aligned}a&=b\\\\c&=d\\end{aligned}"), true},
+        {QStringLiteral("\\begin{matrix}\\begin{aligned}a&=b\\end{aligned}\\end{matrix}"), true},
+        {QStringLiteral("\\verb|{| + x"), true},
+        {QStringLiteral("\\begin{verbatim}{literal\\end{verbatim}"), true},
+        {QStringLiteral("\\frac{x}{y} % comment has } \\begin{ignored}\n+1"), true},
+        {QStringLiteral("x < y > z"), true},
+        {QStringLiteral("\\{x \\mid x > 0\\}"), true},
+        {QStringLiteral("$$x^2$$"), true},
+        {QStringLiteral("\\[x+y\\]"), true},
+        {QStringLiteral("\\frac{x}{y"), false},
+        {QStringLiteral("x}"), false},
+        {QStringLiteral("\\begin{aligned}x&=y"), false},
+        {QStringLiteral("\\end{aligned}x"), false},
+        {QStringLiteral("\\begin{aligned}x\\end{matrix}"), false},
+        {QStringLiteral("\\begin{matrix}\\begin{aligned}x\\end{matrix}\\end{aligned}"), false},
+        {QStringLiteral("\\begin{aligned}{x\\end{aligned}}"), false},
+        {QStringLiteral("\\verb|incomplete"), false},
+        {QStringLiteral("```latex\nx^2"), false},
+        {QStringLiteral("```latex\nx^2\n```\nExtra commentary\n```"), false},
+        {QStringLiteral("Here is the formula: x^2"), false},
+        {QStringLiteral("The extracted equation is x^2"), false},
+        {QStringLiteral("<p>x^2</p>"), false},
+        {QStringLiteral("{\"latex\":\"x^2\"}"), false},
+        {QStringLiteral("% only a comment"), false},
+        {QStringLiteral("$x^2"), false},
+        {QStringLiteral("\\[x+y"), false},
+        {QStringLiteral("x+y\\)"), false},
+        {QStringLiteral("x\\"), false},
+    };
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    int index = 0;
+    for (const auto& scenario : scenarios) {
+        bool completed = false;
+        SnowShotLatexResult result;
+        require(client.extractLatexVision(image, QStringLiteral("vision"), &client,
+                                          [&](auto value) {
+                                              result = value;
+                                              completed = true;
+                                          }) != 0,
+                "LaTeX source contract request starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == index + 1; },
+                                     "LaTeX source contract request arrives");
+        server.delta(index, scenario.input);
+        server.finish(index);
+        translation_tests::waitUntil([&] { return completed; }, "LaTeX source contract finishes");
+        require(result.succeeded() == scenario.valid,
+                "LaTeX responses reject incomplete source and obvious response wrappers");
+        if (scenario.valid) {
+            require(result.latex == scenario.input,
+                    "valid source including unsupported commands and literal text stays intact");
+        } else {
+            require(result.latex.isEmpty() && result.code == QStringLiteral("invalid_latex"),
+                    "unusable source never enters the formula editor as a successful result");
+        }
+        ++index;
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
 
@@ -1464,8 +2483,24 @@ int main(int argc, char** argv) {
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
     customServerDefaultsAndValidation();
+    jsonResponsesAreBoundedDuringTransfer();
+    boundedResponsesMeasureDecodedBodiesAndFollowRedirects();
     requestsKeepTheirOriginalServer();
     oldCatalogCannotReplaceNewServerModels();
+    ensuredCatalogsAreLazySharedAndIndependentlyCancellable();
+    refreshedCatalogsShareRequestsAndRespectCancellation();
+    ensuredCatalogsAndFingerprintsFollowTheServer();
+    obsoleteLocalesCannotReplaceTheCurrentCatalog();
+    visionExtractionPreservesTypedOutputAndImageDetails();
+    chatStreamsYieldBetweenBatchesAndCancelSafely();
+    largeFragmentedStreamEventsPublishExactlyOnce();
+    visionQueuedDrainsCheckElapsedDeadlineBeforeTimerDelivery();
+    typedVisionStreamsCompleteAfterEveryQueuedFrame();
+    visionExtractionRejectsIncompleteAndInvalidResponses();
+    visionPreparationRetainsMemoryActivity();
+    visionExtractionDeadlinesCoverPreparationAndCustomQueues();
+    visionExtractionCannotOutrunAnExpiredTimerEvent();
+    visionLatexResponsesMustContainCompleteSource();
     tablePreparationIsAsynchronousAndLifetimeSafe();
     latexPreparationIsAsynchronousAndLifetimeSafe();
     latexUploadDimensions();

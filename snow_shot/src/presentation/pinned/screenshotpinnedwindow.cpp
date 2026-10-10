@@ -10,6 +10,10 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #include "snow_shot/presentation/screenshotprintservice.h"
 #include "../services/screenshotprintinteractionguard.h"
 #include "snow_shot/presentation/automationrevision.h"
@@ -55,6 +59,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 #include "snow_shot/presentation/screenshotimageconversionpersistence.h"
+#include "snow_shot/presentation/screenshotrecognitionmodelpersistence.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -203,6 +208,7 @@ QList<QKeyCombination> standardKeyCombinations(QKeySequence::StandardKey standar
 QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& source) {
     auto results = source;
     sanitizeEditionRecognitionResults(results);
+    snow_shot::presentation::promoteLegacyRecognitionModels(results);
     if (results.isEmpty()) {
         return {};
     }
@@ -226,7 +232,11 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& sourc
     }
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (results.table.has_value()) {
-        stream << results.table->html << results.table->error << results.table->code
+        // JSON model entries preserve empty text, but not QString's null representation.
+        // Canonicalize empty legacy fields so binary snapshots remain stable after restoration.
+        stream << results.table->html
+               << (results.table->error.isEmpty() ? QStringLiteral("") : results.table->error)
+               << (results.table->code.isEmpty() ? QStringLiteral("") : results.table->code)
                << results.table->httpStatus;
     }
 #endif
@@ -262,7 +272,16 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& sourc
         stream << quint32(0x4C415458) << quint8(2) << results.latex->latex << results.visibleLatex
                << results.latexDraft.has_value();
         if (results.latexDraft)
-            stream << *results.latexDraft;
+            stream << (results.latexDraft->isEmpty() ? QStringLiteral("") : *results.latexDraft);
+    }
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    const QByteArray models = snow_shot::presentation::encodeRecognitionModels(results);
+    if (!models.isEmpty()) {
+        stream << snow_shot::presentation::kRecognitionModelPayloadMarker
+               << snow_shot::presentation::kRecognitionModelPayloadVersion
+               << quint32(models.size());
+        stream.writeRawData(models.constData(), static_cast<int>(models.size()));
     }
 #endif
     return bytes;
@@ -320,6 +339,30 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         quint32 marker = 0;
         quint8 version = 0;
         stream >> marker >> version;
+        if (marker == snow_shot::presentation::kRecognitionModelPayloadMarker) {
+            quint32 size = 0;
+            stream >> size;
+            if (stream.status() != QDataStream::Ok ||
+                size > snow_shot::presentation::kMaximumRecognitionModelPayload ||
+                size > stream.device()->bytesAvailable()) {
+                return results;
+            }
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            QByteArray payload(static_cast<qsizetype>(size), Qt::Uninitialized);
+            if (stream.readRawData(payload.data(), static_cast<int>(size)) !=
+                static_cast<int>(size)) {
+                return results;
+            }
+            if (version == snow_shot::presentation::kRecognitionModelPayloadVersion) {
+                snow_shot::presentation::decodeRecognitionModels(payload, results);
+            }
+#else
+            if (stream.skipRawData(static_cast<int>(size)) != static_cast<int>(size)) {
+                return results;
+            }
+#endif
+            continue;
+        }
         if (marker == quint32(0x4C415458) && (version == 1 || version == 2)) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
             SnowShotLatexResult latex;
@@ -433,8 +476,11 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         }
 #endif
     }
-    return stream.status() == QDataStream::Ok && stream.atEnd() ? results
-                                                                : ScreenshotRecognitionResults{};
+    if (stream.status() != QDataStream::Ok || !stream.atEnd()) {
+        return {};
+    }
+    snow_shot::presentation::promoteLegacyRecognitionModels(results);
+    return results;
 }
 
 namespace pinned_platform = snow_shot::presentation;
@@ -2100,6 +2146,14 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
 
 bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* message,
                                          qintptr* result) {
+#ifdef Q_OS_WIN
+    if (message) {
+        const auto* native = static_cast<const MSG*>(message);
+        if (native->message == WM_ENTERSIZEMOVE || native->message == WM_EXITSIZEMOVE ||
+            native->message == WM_MOVING || native->message == WM_SIZING)
+            snow_shot::runtime::RuntimeActivityTracker::shared().markActivity();
+    }
+#endif
     if (m_mouseReleaseAction.handleNativeEvent(message, result))
         return true;
     if (!m_closing && m_platform->handleNativeEvent(eventType, message, result))
@@ -4540,6 +4594,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     });
     connect(toolbar, &ScreenshotToolPalette::imageConversionSettingsRequested, this,
             [this]() { m_recognitionSession->openImageConversionSettings(); });
+    connect(toolbar, &ScreenshotToolPalette::recognitionModelChanged, this,
+            [this](const QString& selection) {
+                if (m_recognitionSession != nullptr)
+                    m_recognitionSession->setRecognitionModel(selection);
+            });
 
     connect(toolbar, &ScreenshotToolPalette::showOriginalImageRequested, this, [this](bool show) {
         if (m_recognitionSession != nullptr) {
@@ -4805,7 +4864,7 @@ bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
     switch (static_cast<ScreenshotRecognitionSessionController::Mode>(mode)) {
     case ScreenshotRecognitionSessionController::Mode::Latex:
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-        return (results.latex && results.latex->succeeded()) ||
+        return !results.latexEntries.isEmpty() || (results.latex && results.latex->succeeded()) ||
                (m_ocrSupported && m_tableRecognition != nullptr);
 #else
         return false;
@@ -4824,7 +4883,8 @@ bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
                (m_ocrSupported && m_recognition != nullptr);
     case ScreenshotRecognitionSessionController::Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-        return (hasCacheKey && results.table.has_value() && results.table->succeeded()) ||
+        return (hasCacheKey && (!results.tableEntries.isEmpty() ||
+                                (results.table.has_value() && results.table->succeeded()))) ||
                (m_ocrSupported && m_tableRecognition != nullptr);
 #else
         return false;
@@ -5204,6 +5264,18 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
                     if (auto* palette = m_editController->toolbarWindow()->palette())
                         palette->setLatexEditingState(available, canUndo, canRedo);
+                }
+            },
+            [this](int mode, const ScreenshotRecognitionModelState& state) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette()) {
+                        palette->setRecognitionModelState(
+                            mode == static_cast<int>(
+                                        ScreenshotRecognitionSessionController::Mode::Table)
+                                ? ScreenshotToolPalette::Tool::Table
+                                : ScreenshotToolPalette::Tool::Latex,
+                            state);
+                    }
                 }
             },
         },
@@ -6001,6 +6073,26 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
     m_contentReplacementJob = {};
 }
 
+bool ScreenshotPinnedWindow::blocksMemoryTrimming() const {
+    if (m_closing || !m_firstContentFramePublished || m_materializationLoading ||
+        m_deferredPresentationSetupScheduled || m_firstFramePaintPending ||
+        (m_editController && m_editController->editMode()) || m_hiddenTextSelection ||
+        m_systemSizingActive || m_windowDragActive || m_auxiliaryWindowInteractionActive ||
+        m_selectionGeometryActive || m_interactionPlacement || m_pinchActive || m_fileDragActive ||
+        m_exportDragPreparing || (m_dragExport && m_dragExport->dragging()) ||
+        (m_nativeGeometryController && m_nativeGeometryController->hasInteractiveTransaction()) ||
+        m_geometryAnimating || m_attentionPending || m_printPending || m_quickSavePending ||
+        m_cloudUploadPreparing || m_cloudUploadJob)
+        return true;
+    if (m_hideToTop && m_hideToTop->animation().state() != QAbstractAnimation::Stopped)
+        return true;
+    for (const auto* animation : findChildren<QAbstractAnimation*>()) {
+        if (animation->state() != QAbstractAnimation::Stopped)
+            return true;
+    }
+    return false;
+}
+
 bool ScreenshotPinnedWindow::acceptsDrop(const QDropEvent& event) const {
     return !(m_dragExport && m_dragExport->dragging()) && m_firstContentFramePublished &&
            !m_originalImage.isNull() && isVisible() && !m_closing && !m_clickThroughActive &&
@@ -6368,7 +6460,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,

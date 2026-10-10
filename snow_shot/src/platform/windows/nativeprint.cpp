@@ -2,6 +2,7 @@
 #include "nativeprintdocument.h"
 #include "nativeprintdialog.h"
 #include "nativeprintdiagnostics.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -45,6 +46,9 @@ bool isWindows11() {
 }
 
 class ModernJob final : public std::enable_shared_from_this<ModernJob> {
+    snow_shot::runtime::RuntimeActivityLease m_activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+
   public:
     void start(QWidget* owner, QImage image, Service::Completion completion) {
         m_completion = std::move(completion);
@@ -197,6 +201,7 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
         QMetaObject::invokeMethod(
             qApp,
             [self, result = std::move(result)]() mutable {
+                const auto activity = std::move(self->m_activity);
                 Service::Completion completion;
                 PrintTask task{nullptr};
                 winrt::com_ptr<ScreenshotWindowsPrintDocument> document;
@@ -260,42 +265,54 @@ class PhotoPrintDataObject : public winrt::implements<PhotoPrintDataObject, IDat
         : m_directory(std::move(directory)), m_data(std::move(data)), m_job(std::move(job)) {
         // Shell apartment caches may keep this object alive until process exit,
         // when COM no longer guarantees running its final Release/destructor.
-        m_shutdown = QObject::connect(qApp, &QObject::destroyed,
-                                      [directory = m_directory] { directory->remove(); });
+        m_shutdown = QObject::connect(qApp, &QObject::destroyed, [directory = m_directory] {
+            const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+            directory->remove();
+        });
     }
     ~PhotoPrintDataObject();
 
     HRESULT __stdcall GetData(FORMATETC* format, STGMEDIUM* medium) noexcept override {
-        return m_data->GetData(format, medium);
+        return withActivity([&] { return m_data->GetData(format, medium); });
     }
     HRESULT __stdcall GetDataHere(FORMATETC* format, STGMEDIUM* medium) noexcept override {
-        return m_data->GetDataHere(format, medium);
+        return withActivity([&] { return m_data->GetDataHere(format, medium); });
     }
     HRESULT __stdcall QueryGetData(FORMATETC* format) noexcept override {
-        return m_data->QueryGetData(format);
+        return withActivity([&] { return m_data->QueryGetData(format); });
     }
     HRESULT __stdcall GetCanonicalFormatEtc(FORMATETC* input, FORMATETC* output) noexcept override {
-        return m_data->GetCanonicalFormatEtc(input, output);
+        return withActivity([&] { return m_data->GetCanonicalFormatEtc(input, output); });
     }
     HRESULT __stdcall SetData(FORMATETC* format, STGMEDIUM* medium,
                               BOOL release) noexcept override {
-        return m_data->SetData(format, medium, release);
+        return withActivity([&] { return m_data->SetData(format, medium, release); });
     }
     HRESULT __stdcall EnumFormatEtc(DWORD direction, IEnumFORMATETC** formats) noexcept override {
-        return m_data->EnumFormatEtc(direction, formats);
+        return withActivity([&] { return m_data->EnumFormatEtc(direction, formats); });
     }
     HRESULT __stdcall DAdvise(FORMATETC* format, DWORD flags, IAdviseSink* sink,
                               DWORD* connection) noexcept override {
-        return m_data->DAdvise(format, flags, sink, connection);
+        return withActivity([&] { return m_data->DAdvise(format, flags, sink, connection); });
     }
     HRESULT __stdcall DUnadvise(DWORD connection) noexcept override {
-        return m_data->DUnadvise(connection);
+        return withActivity([&] { return m_data->DUnadvise(connection); });
     }
     HRESULT __stdcall EnumDAdvise(IEnumSTATDATA** connections) noexcept override {
-        return m_data->EnumDAdvise(connections);
+        return withActivity([&] { return m_data->EnumDAdvise(connections); });
     }
 
   private:
+    template <typename Callback> static HRESULT withActivity(Callback&& callback) noexcept {
+        try {
+            // Shell may access the cached snapshot after the wizard has completed.
+            const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+            return std::forward<Callback>(callback)();
+        } catch (...) {
+            return winrt::to_hresult();
+        }
+    }
+
     std::shared_ptr<QTemporaryDir> m_directory;
     QMetaObject::Connection m_shutdown;
     winrt::com_ptr<IDataObject> m_data;
@@ -343,17 +360,19 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
                     self->startWizard(path, api);
                 }
             });
-        watcher->setFuture(
-            QtConcurrent::run([image, directory = m_directory, cancelled = m_cancelled, path] {
+        watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork(
+            [image, directory = m_directory, cancelled = m_cancelled, path] {
                 if (cancelled->load(std::memory_order_acquire) || !directory->isValid())
                     return false;
                 const bool saved = image.save(path, "PNG");
                 return saved && !cancelled->load(std::memory_order_acquire);
-            }));
+            })));
     }
 
   private:
     void startWizard(const QString& path, ScreenshotWindowsPrintDialogApi api) {
+        // Native calls can pump events and close the wizard before setup returns.
+        const auto activity = m_activity;
         const auto self = shared_from_this();
         const char* stage = "CoInitializeEx";
         try {
@@ -435,13 +454,13 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
         // Final Release may run on the wizard thread. Cleanup, COM balancing and
         // the application's completion must run on the initiating GUI thread.
         QMetaObject::invokeMethod(
-            qApp,
-            [self = shared_from_this()] {
-                self->finish(self->m_result.value_or(
-                    Service::Result{self->m_owner && self->m_handedOff ? Service::Status::HandedOff
+            qApp, snow_shot::runtime::trackRuntimeWork([self = shared_from_this()]() mutable {
+                const auto job = std::move(self);
+                job->finish(job->m_result.value_or(Service::Result{job->m_owner && job->m_handedOff
+                                                                       ? Service::Status::HandedOff
                                                                        : Service::Status::Cancelled,
-                                    {}}));
-            },
+                                                                   {}}));
+            }),
             Qt::QueuedConnection);
     }
 
@@ -501,6 +520,8 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
     void finish(Service::Result result) {
         if (!m_completion)
             return;
+        // Completion ends the interaction even when Shell keeps its data object alive.
+        const auto activity = std::move(m_activity);
         auto completion = std::move(m_completion);
         if (!m_owner)
             result = {Service::Status::Cancelled, {}};
@@ -519,6 +540,8 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
     }
 
     static inline std::unordered_map<HWINEVENTHOOK, std::weak_ptr<PhotoPrintJob>> s_jobs;
+    snow_shot::runtime::RuntimeActivityLease m_activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     QPointer<QWidget> m_owner;
     HWND m_ownerHandle = nullptr;
     HWND m_window = nullptr;
@@ -534,8 +557,13 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
 };
 
 PhotoPrintDataObject::~PhotoPrintDataObject() {
+    const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+    const auto job = std::move(m_job);
     QObject::disconnect(m_shutdown);
-    m_job->dataReleased();
+    // Release the native data and snapshot while cleanup is still tracked.
+    m_data = nullptr;
+    m_directory.reset();
+    job->dataReleased();
 }
 } // namespace
 

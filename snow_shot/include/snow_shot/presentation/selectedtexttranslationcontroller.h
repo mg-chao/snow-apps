@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SELECTEDTEXTTRANSLATIONCONTROLLER_H
 
 #include <QObject>
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include <QString>
 #include <QTimer>
 
@@ -58,6 +59,7 @@ class SelectedTextTranslationController final : public QObject {
     QTimer m_pollTimer;
     bool m_pending = false;
     bool m_shutdown = false;
+    runtime::RuntimeActivityLease m_activity;
 };
 } // namespace snow_shot::presentation
 

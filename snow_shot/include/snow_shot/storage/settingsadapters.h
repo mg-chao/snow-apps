@@ -381,6 +381,20 @@ struct ScreenshotTranslationConfiguration {
                            const ScreenshotTranslationConfiguration& second) = default;
 };
 
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+class ScreenshotRecognitionModelSettings final {
+  public:
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    [[nodiscard]] QString tableModel() const;
+    bool setTableModel(const QString& model) const;
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    [[nodiscard]] QString latexModel() const;
+    bool setLatexModel(const QString& model) const;
+#endif
+};
+#endif
+
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 class ScreenshotImageConversionSettings final {
   public:

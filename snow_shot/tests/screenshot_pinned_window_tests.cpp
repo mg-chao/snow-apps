@@ -12,6 +12,7 @@
 #include "../../test-support/virtualmemory.h"
 #include "../../test-support/memorysnapshot.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
 #include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
@@ -55,6 +56,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include "snow_shot/presentation/screenshotrecognitionmodelpersistence.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
@@ -2980,6 +2982,225 @@ void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
             "invalidating initialized recognition must not revive the original cached result");
 }
 
+void pinnedRecognitionModelsSurviveTransferAndRestart() {
+    namespace persistence = snow_shot::presentation;
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    IdleOcrRecognition recognition;
+    const snow_shot::storage::ScreenshotRecognitionModelSettings settings;
+    const QString savedTable = settings.tableModel();
+    const QString savedLatex = settings.latexModel();
+    const auto restoreSettings = qScopeGuard([&] {
+        settings.setTableModel(savedTable);
+        settings.setLatexModel(savedLatex);
+    });
+    settings.setTableModel(QStringLiteral("global-table-model"));
+    settings.setLatexModel(QStringLiteral("global-latex-model"));
+
+    auto config = cachedOcrPinConfig(&recognition);
+    config.automaticTextRecognition = false;
+    config.recognitionResults.text.reset();
+    ScreenshotTableDocument table = ScreenshotTableDocument::fromHtml(QStringLiteral(
+        "<table><tr><th>A</th><th>B</th></tr><tr><td>C</td><td>D</td></tr></table>"));
+    auto edited = table;
+    require(edited.merge({0, 0, 0, 1}) && edited.setCellText(1, 0, QStringLiteral("Edited table")),
+            "prepare merged table draft with an edited cell");
+    auto& results = config.recognitionResults;
+    results.tableEntries = {
+        {QStringLiteral("dedicated"),
+         {},
+         1,
+         SnowShotTableResult{table.toHtml(), {}, {}, 0},
+         edited.toHtml()},
+        {QStringLiteral("vision-other"),
+         {},
+         1,
+         SnowShotTableResult{QStringLiteral("<table><tr><td>Vision</td></tr></table>"), {}, {}, 0},
+         QStringLiteral("<table><tr><td>Edited vision</td></tr></table>")}};
+    results.latexEntries = {{QStringLiteral("dedicated"),
+                             {},
+                             1,
+                             SnowShotLatexResult{QStringLiteral("x^2"), {}, {}, 0},
+                             QString()},
+                            {QStringLiteral("vision-other"),
+                             {},
+                             1,
+                             SnowShotLatexResult{QStringLiteral("y^2"), {}, {}, 0},
+                             QStringLiteral("y^3")}};
+    results.tableModelSelection = QStringLiteral("dedicated");
+    results.latexModelSelection = QStringLiteral("dedicated");
+    const QByteArray canonical = persistence::encodeRecognitionModels(results);
+    auto reordered = results;
+    std::reverse(reordered.tableEntries.begin(), reordered.tableEntries.end());
+    std::reverse(reordered.latexEntries.begin(), reordered.latexEntries.end());
+    require(!canonical.isEmpty() && persistence::encodeRecognitionModels(reordered) == canonical,
+            "model payload ordering is deterministic across cache insertion orders");
+    ScreenshotRecognitionResults decoded;
+    persistence::decodeRecognitionModels(canonical, decoded);
+    require(decoded.tableEntries.size() == 2 && decoded.latexEntries.size() == 2 &&
+                decoded.latexEntries.first().draft.has_value() &&
+                decoded.latexEntries.first().draft->isEmpty() &&
+                persistence::encodeRecognitionModels(decoded) == canonical,
+            "multiple model baselines and an explicitly empty formula draft round-trip");
+    reordered.tableModelSelection = reordered.latexModelSelection = QStringLiteral("vision-other");
+    const QJsonObject selectedLast =
+        QJsonDocument::fromJson(persistence::encodeRecognitionModels(reordered)).object();
+    require(selectedLast.value(QStringLiteral("tables"))
+                        .toArray()
+                        .first()
+                        .toObject()
+                        .value(QStringLiteral("model"))
+                        .toString() == QStringLiteral("dedicated") &&
+                selectedLast.value(QStringLiteral("latex"))
+                        .toArray()
+                        .first()
+                        .toObject()
+                        .value(QStringLiteral("model"))
+                        .toString() == QStringLiteral("dedicated"),
+            "prioritizing selected results preserves canonical serialized model ordering");
+
+    QByteArray payload;
+    for (bool restore : {false, true}) {
+        config.restorePersistentState = restore;
+        if (restore) {
+            config.persistedRecognitionResults = payload;
+            config.recognitionResults = {};
+        }
+        QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+        const auto cleanup = qScopeGuard([&] {
+            if (window) {
+                window->close();
+                static_cast<void>(processUntilDeleted(window, 2000));
+            }
+        });
+        require(window->present(config), "pin with multiple recognition models presents");
+        auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+        require(session != nullptr, "model-aware pin creates its recognition session");
+        translation_tests::waitUntil([&] { return session->hasTarget(); },
+                                     "deferred model-aware recognition setup completes");
+        require(session && !session->active() && recognition.requests == 0 &&
+                    settings.tableModel() == QStringLiteral("global-table-model") &&
+                    settings.latexModel() == QStringLiteral("global-latex-model"),
+                "model-aware pin restoration remains inactive and preserves global preferences");
+        const auto snapshot = session->recognitionResultsSnapshot();
+        require(snapshot.tableEntries.size() == 2 && snapshot.latexEntries.size() == 2 &&
+                    snapshot.tableModelSelection == QStringLiteral("dedicated") &&
+                    snapshot.latexModelSelection == QStringLiteral("dedicated"),
+                "pin transfer and restart retain all model entries and local selections");
+        const QByteArray beforeCommands = window->persistenceSnapshot().recognitionResults;
+        const auto roundTripped = ScreenshotPinnedWindow::decodeRecognitionSnapshot(beforeCommands);
+        require(roundTripped.tableEntries.size() == 2 && roundTripped.latexEntries.size() == 2,
+                "pinned binary codec includes every model entry");
+        if (restore)
+            require(beforeCommands == payload, "model-aware pin payload round-trips exactly");
+        payload = beforeCommands;
+        session->activate(Mode::Table);
+        require(session->workflowResult().value(QStringLiteral("html")).toString() ==
+                    edited.toHtml(),
+                "pinned table restoration uses the edited draft including merged cells");
+        require(
+            session->editWorkflow({{QStringLiteral("action"), QStringLiteral("reset_table")}}) &&
+                session->workflowResult().value(QStringLiteral("html")).toString() ==
+                    table.toHtml(),
+            "pinned table draft keeps the recognized reset baseline");
+        session->activate(Mode::Latex);
+        require(session->recognitionClipboardMimeData() &&
+                    session->recognitionClipboardMimeData()->text().isEmpty(),
+                "pinned LaTeX restoration retains an explicitly empty draft");
+    }
+
+    {
+        const QString sharedLargeSource(4 * 1024 * 1024, QChar(u'x'));
+        ScreenshotRecognitionResults bounded;
+        bounded.tableModelSelection = QStringLiteral("z-selected-table");
+        bounded.latexModelSelection = QStringLiteral("z-selected-latex");
+        for (const QString& model :
+             {QStringLiteral("a-other-table"), QStringLiteral("b-other-table"),
+              bounded.tableModelSelection}) {
+            bounded.tableEntries.append(
+                {model, {}, 1, {sharedLargeSource, {}, {}, 0}, sharedLargeSource});
+        }
+        for (const QString& model :
+             {QStringLiteral("a-other-latex"), QStringLiteral("b-other-latex"),
+              bounded.latexModelSelection}) {
+            bounded.latexEntries.append(
+                {model, {}, 1, {sharedLargeSource, {}, {}, 0}, std::nullopt});
+        }
+        const QByteArray boundedPayload = persistence::encodeRecognitionModels(bounded);
+        require(!boundedPayload.isEmpty() &&
+                    boundedPayload.size() <= persistence::kMaximumRecognitionModelPayload,
+                "multiple large shared source/draft entries produce a bounded model payload");
+        ScreenshotRecognitionResults restored;
+        persistence::decodeRecognitionModels(boundedPayload, restored);
+        require(restored.tableModelSelection == bounded.tableModelSelection &&
+                    restored.latexModelSelection == bounded.latexModelSelection &&
+                    restored.tableEntries.size() == 1 && restored.latexEntries.size() == 1 &&
+                    restored.tableEntries.first().model == bounded.tableModelSelection &&
+                    restored.latexEntries.first().model == bounded.latexModelSelection &&
+                    restored.tableEntries.first().draftHtml == sharedLargeSource,
+                "payload admission prioritizes both selected models and preserves local choices");
+        bounded.tableEffectiveModel = bounded.tableModelSelection;
+        bounded.latexEffectiveModel = bounded.latexModelSelection;
+        bounded.tableModelSelection = bounded.latexModelSelection =
+            screenshotDefaultVisionRecognitionModelId();
+        const QByteArray aliasPayload = persistence::encodeRecognitionModels(bounded);
+        ScreenshotRecognitionResults aliasRestored;
+        persistence::decodeRecognitionModels(aliasPayload, aliasRestored);
+        require(!aliasPayload.isEmpty() &&
+                    aliasPayload.size() <= persistence::kMaximumRecognitionModelPayload &&
+                    aliasRestored.tableModelSelection == bounded.tableModelSelection &&
+                    aliasRestored.latexModelSelection == bounded.latexModelSelection &&
+                    aliasRestored.tableEntries.size() == 1 &&
+                    aliasRestored.latexEntries.size() == 1 &&
+                    aliasRestored.tableEntries.first().model == bounded.tableEffectiveModel &&
+                    aliasRestored.latexEntries.first().model == bounded.latexEffectiveModel &&
+                    aliasRestored.tableEntries.first().draftHtml == sharedLargeSource &&
+                    aliasRestored.tableEffectiveModel.isEmpty() &&
+                    aliasRestored.latexEffectiveModel.isEmpty(),
+                "a semantic vision alias retains its concrete selected caches without persisting "
+                "admission hints");
+    }
+    {
+        const QString escapedSource(4 * 1024 * 1024, QChar(u'"'));
+        ScreenshotRecognitionResults bounded;
+        bounded.tableModelSelection = QStringLiteral("over-budget");
+        bounded.latexModelSelection = QStringLiteral("unavailable-latex");
+        bounded.tableEntries.append(
+            {bounded.tableModelSelection, {}, 1, {escapedSource, {}, {}, 0}, escapedSource});
+        const QByteArray boundedPayload = persistence::encodeRecognitionModels(bounded);
+        ScreenshotRecognitionResults restored;
+        persistence::decodeRecognitionModels(boundedPayload, restored);
+        require(!boundedPayload.isEmpty() &&
+                    boundedPayload.size() <= persistence::kMaximumRecognitionModelPayload &&
+                    restored.tableEntries.isEmpty() &&
+                    restored.tableModelSelection == bounded.tableModelSelection &&
+                    restored.latexModelSelection == bounded.latexModelSelection,
+                "an entry exceeding the JSON budget still preserves both model selections");
+    }
+
+    const QByteArray malformed = QByteArrayLiteral(
+        "{\"tables\":[{\"model\":\"dedicated\",\"html\":\"x\",\"prompt_version\":2}],"
+        "\"latex\":[{\"model\":\"dedicated\",\"latex\":\"x\",\"draft\":false,\"prompt_version\":1}]"
+        "}");
+    ScreenshotRecognitionResults invalid;
+    persistence::decodeRecognitionModels(malformed, invalid);
+    require(invalid.isEmpty(), "unknown prompt versions and non-string drafts are rejected");
+    QJsonArray tooMany;
+    for (qsizetype index = 0; index <= persistence::kMaximumRecognitionModelEntries; ++index)
+        tooMany.append(QJsonObject{});
+    persistence::decodeRecognitionModels(
+        QJsonDocument(QJsonObject{{QStringLiteral("latex"), tooMany}}).toJson(), invalid);
+    require(invalid.isEmpty(), "oversized model entry arrays are rejected");
+    QByteArray oversized;
+    QDataStream stream(&oversized, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_6_11);
+    stream << QStringLiteral("oversized") << quint8(0) << quint8(0) << quint8(0)
+           << persistence::kRecognitionModelPayloadMarker
+           << persistence::kRecognitionModelPayloadVersion
+           << quint32(persistence::kMaximumRecognitionModelPayload + 1);
+    require(ScreenshotPinnedWindow::decodeRecognitionSnapshot(oversized).isEmpty(),
+            "oversized binary model blocks are rejected before allocating their body");
+}
+
 void pinnedLatexSurvivesTransferAndRestart() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     IdleOcrRecognition recognition;
@@ -3006,8 +3227,15 @@ void pinnedLatexSurvivesTransferAndRestart() {
                 }
             });
             require(window->present(config), "LaTeX pin presents");
-            waitForUi(100);
             auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+            // Target seeding follows deferred first-frame preparation.
+            QElapsedTimer preparation;
+            preparation.start();
+            while ((!session || !session->hasTarget()) && preparation.elapsed() < 5000) {
+                waitForUi(5);
+                session =
+                    window ? window->findChild<ScreenshotRecognitionSessionController*>() : nullptr;
+            }
             require(session && session->hasTarget() && !session->active() &&
                         !session->recognitionResultsSnapshot().visibleLatex &&
                         session->cachedRecognitionResults().latex.has_value(),
@@ -11627,7 +11855,9 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*restoredWindow, QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
     const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(40, 30), QSize(120, 120));
-    require(restoredWindow->currentNativeGeometry() == expectedThumbnailGeometry,
+    require(restoredWindow->currentNativeGeometry() ==
+                    snow_shot::presentation::pinnedOuterRect(expectedThumbnailGeometry) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry == expectedThumbnailGeometry,
             "restored thumbnail pinned window should present at the saved thumbnail geometry");
     // The scale menu is reachable while the thumbnail is showing, and it
     // describes the geometry the window will return to.
@@ -11641,15 +11871,17 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     thumbnailAction->setChecked(false);
 
     const QRect expectedGeometry(physical.topLeft() + QPoint(200, 120), QSize(400, 200));
+    const QRect expectedOuterGeometry = snow_shot::presentation::pinnedOuterRect(expectedGeometry);
     QElapsedTimer settled;
     settled.start();
-    while (restoredWindow->currentNativeGeometry() != expectedGeometry &&
+    while (restoredWindow->currentNativeGeometry() != expectedOuterGeometry &&
            settled.elapsed() < 2000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
-    require(restoredWindow->currentNativeGeometry() == expectedGeometry,
+    require(restoredWindow->currentNativeGeometry() == expectedOuterGeometry &&
+                restoredWindow->persistenceSnapshot().nativeGeometry == expectedGeometry,
             "leaving thumbnail mode should apply the saved pre-thumbnail geometry");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
             "the scale menu should still describe the saved scale after leaving thumbnail mode");
@@ -11669,7 +11901,9 @@ void restoredFractionalScaleCopiesTheDisplayedViewport(SnowCanvasRuntime&) {
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
     const QSize displayedSize = record.nativeGeometry.size();
-    require(restoredWindow->currentNativeGeometry().size() == displayedSize,
+    require(restoredWindow->currentNativeGeometry() ==
+                    snow_shot::presentation::pinnedOuterRect(record.nativeGeometry) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry.size() == displayedSize,
             "fractional-scale restore should present at the saved physical size");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 57%"),
             "fractional scale should only round in the user-facing readout");
@@ -11703,7 +11937,9 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
 
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
-    require(restoredWindow->currentNativeGeometry().size() == QSize(1092, 547),
+    require(restoredWindow->currentNativeGeometry().size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(1092, 547)) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry.size() == QSize(1092, 547),
             "same-DPI restore should present at the saved geometry");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 110%"),
             "same-DPI restore should report the saved scale");
@@ -11721,7 +11957,8 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
     waitForUi(50);
 
     const QSize expectedSize(qRound(basis.width() * 1.2), qRound(basis.height() * 1.2));
-    const QSize actualSize = restoredWindow->currentNativeGeometry().size();
+    const QSize actualSize =
+        snow_shot::presentation::pinnedContentRect(restoredWindow->currentNativeGeometry()).size();
     require(qAbs(actualSize.width() - expectedSize.width()) <= 1 &&
                 qAbs(actualSize.height() - expectedSize.height()) <= 1 &&
                 scaleLabel->text() == QStringLiteral("Scale: 120%"),
@@ -17055,11 +17292,15 @@ void pinnedHideCancelsRestoreAndRejectsStaleCallbacks() {
                 "Show queues restoration without creating a shell synchronously");
         require(services.toggleAllWindowsVisibility() && repository.loadRecord(id)->hidden,
                 "Hide cancels an in-flight restore before it has a shell");
+        require(runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "canceled queued restoration retains its activity lease until loading unwinds");
         if (showAgain)
             services.showAllWindows();
         gate->release();
         releaseWorker.dismiss();
         require(pool.waitForDone(5000), "queued payload loads complete");
+        require(runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued restore delivery retains activity after the loading worker finishes");
         if (showAgain) {
             wait(
                 [&] {
@@ -20076,6 +20317,48 @@ void pinnedAngleWheel() {
         *canvas, [&] { return ScreenshotPinnedWindowTestAccess::dragDocument(window); });
 }
 
+void pinnedMemoryIdleSafety() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, cachedOcrPinConfig(nullptr));
+    window.show();
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(), "a prepared static pin permits memory trimming");
+
+    Access::editSelectionOffscreen(window, true);
+    require(window.blocksMemoryTrimming(), "an open pin editing session blocks memory trimming");
+    Access::editSelectionOffscreen(window, false);
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(), "closing pin editing restores memory trim eligibility");
+
+    Access::beginAuxiliaryInteraction(window);
+    require(window.blocksMemoryTrimming(), "an auxiliary pin interaction blocks memory trimming");
+    Access::endAuxiliaryInteraction(window);
+    require(!window.blocksMemoryTrimming(), "settled auxiliary pin interaction permits trimming");
+
+    auto& geometry = Access::nativeController(window);
+    require(geometry.beginMove(QPoint(40, 40)),
+            "begin a deterministic native pin move transaction");
+    require(window.blocksMemoryTrimming(), "an admitted native pin move blocks memory trimming");
+    geometry.cancelPendingInteraction();
+    require(!window.blocksMemoryTrimming(), "cancelled native pin move restores trim eligibility");
+
+    Access::enableLockAttentionFixture(window);
+    window.shakeForAttention();
+    auto* animation =
+        window.findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
+    require(animation && animation->state() == QAbstractAnimation::Running,
+            "pin attention fixture starts its actual bounded animation");
+    animation->pause();
+    require(window.blocksMemoryTrimming(), "a paused pin animation remains an active interaction");
+    animation->resume();
+    animation->setCurrentTime(animation->duration());
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(),
+            "a settled static pin permits trimming after animation");
+    window.hide();
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -20092,6 +20375,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--memory-idle-only"))) {
+            pinnedMemoryIdleSafety();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--show-shadow-only"))) {
             pinnedShadowStateAndMarginsOffscreen();
             return 0;
@@ -20717,6 +21004,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--latex-only"))) {
             pinnedLatexSurvivesTransferAndRestart();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-models-only"))) {
+            pinnedRecognitionModelsSurviveTransferAndRestart();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {
