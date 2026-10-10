@@ -756,7 +756,6 @@ impl RectangleData {
         self.fill = ColorRgba8::default();
         self.stroke = ColorRgba8::default();
         self.stroke_width = 0.0;
-        self.corner_radii = CornerRadii::default();
         self.fill_style = FillStyle::Solid;
         self.stroke_style = StrokeStyle::Solid;
         self.opacity = 1.0;
@@ -768,8 +767,7 @@ impl RectangleData {
     }
 
     pub fn supports_corner_radius(&self) -> bool {
-        self.rectangle_kind == RectangleElementKind::Rectangle
-            && self.highlight_shape == HighlightShape::Rectangle
+        !self.is_highlight() && self.highlight_shape == HighlightShape::Rectangle
     }
 
     pub fn element_kind(&self) -> ElementKind {

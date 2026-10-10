@@ -142,6 +142,8 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasSpotlightConfig spotlightConfig;
     SnowCanvasRectangleShape creationSpotlightShape = SnowCanvasRectangleShape::Rectangle;
     SnowCanvasRectangleShape spotlightShape = SnowCanvasRectangleShape::Rectangle;
+    SnowCanvasCornerRadii creationSpotlightCornerRadii;
+    SnowCanvasCornerRadii spotlightCornerRadii;
     bool showingSelectedSpotlight = false;
     quint32 spotlightShapeMixed = 0;
     bool m_arrowControlsActive = false;

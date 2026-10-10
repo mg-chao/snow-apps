@@ -1,5 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use snow_draw_engine_core::{ErrorCode, Point, SnapGuide, arrow::ArrowEndpointEdge};
+use snow_draw_engine_core::{CornerRadii, ErrorCode, Point, SnapGuide, arrow::ArrowEndpointEdge};
 use snow_draw_engine_document::{
     ArrowData, ArrowSuggestedBinding, ElementId, ElementKind, FilterData, PenFilterData,
     RectangleData, SerialNumberData, SerialNumberNumericType, TextData,
@@ -458,6 +458,7 @@ pub(crate) struct EditorState {
     pub(crate) arrow_text_measurement_generation: u64,
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
     pub(crate) default_spotlight_shape: snow_draw_engine_document::HighlightShape,
+    pub(crate) default_spotlight_corner_radii: CornerRadii,
     pub(crate) default_arrow_style: ArrowStyle,
     pub(crate) default_distance_style: crate::DistanceStyle,
     pub(crate) default_angle_style: crate::AngleStyle,
@@ -577,6 +578,7 @@ impl EditorState {
             arrow_text_measurement_generation: 0,
             default_rectangle_shape_style: default_styles.rectangle,
             default_spotlight_shape: default_styles.spotlight_shape,
+            default_spotlight_corner_radii: default_styles.spotlight_corner_radii,
             default_distance_style: default_styles.distance,
             default_angle_style: default_styles.angle,
             distance_creation_generation: 0,

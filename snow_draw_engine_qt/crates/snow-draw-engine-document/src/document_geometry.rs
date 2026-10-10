@@ -52,8 +52,7 @@ pub fn validate_rectangle(rect: &RectangleData) -> Result<(), ErrorCode> {
         && (rect.opacity != 1.0
             || rect.fill.a != 0
             || rect.stroke.a != 0
-            || rect.stroke_width != 0.0
-            || rect.corner_radii != CornerRadii::default())
+            || rect.stroke_width != 0.0)
     {
         return Err(ErrorCode::InvalidArgument);
     }
@@ -938,7 +937,19 @@ pub fn rectangle_hit_test(rect: &RectangleData, point: Point<f64>, hit_tolerance
         }
         return match rect.highlight_shape {
             crate::HighlightShape::Rectangle => {
-                local.x.abs() <= half_width && local.y.abs() <= half_height
+                let outset = hit_tolerance.max(0.0);
+                let radii = CornerRadii {
+                    top_left: rect.corner_radii.top_left + outset,
+                    top_right: rect.corner_radii.top_right + outset,
+                    bottom_right: rect.corner_radii.bottom_right + outset,
+                    bottom_left: rect.corner_radii.bottom_left + outset,
+                };
+                rounded_rect_contains_local_point(
+                    half_width * 2.0,
+                    half_height * 2.0,
+                    normalize_corner_radii(half_width * 2.0, half_height * 2.0, radii),
+                    local,
+                )
             }
             crate::HighlightShape::Ellipse => {
                 (local.x / half_width).powi(2) + (local.y / half_height).powi(2) <= 1.0
@@ -2220,6 +2231,47 @@ mod tests {
         assert!(filter_hit_test(&filter, filter.center, 0.0));
         assert!(!filter_hit_test(&filter, Point::new(60.0, 20.0), 0.0));
         assert!(filter_hit_test(&filter, Point::new(60.0, 20.0), 30.0));
+    }
+
+    #[test]
+    fn spotlight_rounded_corners_hit_test_and_validate_like_shapes() {
+        let rect = RectangleData {
+            rectangle_kind: crate::RectangleElementKind::Rectangle,
+            highlight_shape: crate::HighlightShape::Rectangle,
+            center: Point::new(50.0, 50.0),
+            width: 40.0,
+            height: 40.0,
+            rotation: 0.0,
+            corner_radii: CornerRadii {
+                top_left: 16.0,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: 0.0,
+            },
+            fill: ColorRgba8::default(),
+            fill_style: FillStyle::Solid,
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+            stroke_style: StrokeStyle::Solid,
+            opacity: 1.0,
+        }
+        .into_spotlight();
+        assert!(validate_rectangle(&rect).is_ok());
+        assert!(!rectangle_hit_test(&rect, Point::new(31.0, 31.0), 0.0));
+        assert!(rectangle_hit_test(&rect, Point::new(36.0, 36.0), 0.0));
+        assert!(rectangle_hit_test(&rect, Point::new(69.0, 31.0), 0.0));
+        assert!(!rectangle_hit_test(&rect, Point::new(29.0, 50.0), 0.0));
+        assert!(rectangle_hit_test(&rect, Point::new(29.0, 50.0), 2.0));
+        for radius in [-1.0, f64::NAN, f64::INFINITY, 41.0] {
+            let invalid = RectangleData {
+                corner_radii: CornerRadii::splat(radius),
+                ..rect
+            };
+            assert_eq!(
+                validate_rectangle(&invalid),
+                Err(ErrorCode::InvalidArgument)
+            );
+        }
     }
 
     #[test]

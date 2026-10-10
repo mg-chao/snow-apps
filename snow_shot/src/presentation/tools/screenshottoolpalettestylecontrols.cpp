@@ -238,7 +238,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::PenHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleBrushWidth};
     case Tool::Spotlight:
-        return {kRoleShapeKind, kRoleMaskColor, kRoleOpacity};
+        return {kRoleShapeKind, kRoleMaskColor, kRoleOpacity, kRoleCornerRadius};
     case Tool::Text:
         return {kRoleForegroundColor, kRoleTextFont, kRoleTextEmphasis, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
@@ -1322,6 +1322,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleShapeKind);
         stageComponent(kRoleMaskColor, kSignatureMaskColor, m_spotlightColorEditor);
         stageWidget(kRoleOpacity);
+        stageWidget(kRoleCornerRadius);
         break;
     case Tool::Text:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_textColorEditor);
@@ -1649,37 +1650,41 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     registerEditor(m_shapeFillEditor.get());
 
     if (includeShapeOnlyEditors) {
-        if (host.addItemSpacing) {
-            host.addItemSpacing(layout);
-        }
-
-        m_cornerRadiusEditor = dynamic_cast<CornerRadiusEditorButton*>(
-            takeReusableWidget(kRoleCornerRadius, kSignatureCornerRadius, layout, controls));
-        if (m_cornerRadiusEditor == nullptr) {
-            m_cornerRadiusEditor = createScreenshotToolPaletteCornerRadiusEditor(
-                controls, "Corner radius (scroll to adjust)",
-                custom_outlined_icons::SelectionRadius(), m_state.m_rectangleStyle.cornerRadius(),
-                metrics);
-            layout->addWidget(m_cornerRadiusEditor);
-        } else {
-            configureScreenshotToolPaletteTooltip(
-                m_cornerRadiusEditor,
-                ScreenshotToolPaletteTranslationText("Corner radius (scroll to adjust)"));
-            configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
-        }
-        m_cornerRadiusEditor->setProperty("screenshotStyleEditorRoot", true);
-        m_cornerRadiusEditor->setProperty("screenshotStyleEditorRole", kRoleCornerRadius);
-        m_cornerRadiusEditor->setProperty("screenshotStyleEditorSignature", kSignatureCornerRadius);
-        m_cornerRadiusEditor->setObjectName(
-            QStringLiteral("screenshotSelectionCornerRadiusButton"));
-        QObject::connect(m_cornerRadiusEditor, &adqt::widgets::AdButton::clicked, controls,
-                         [this]() { setCornerRadius(defaultCornerRadius()); });
+        buildCornerRadiusEditor(controls, m_state.m_rectangleStyle.cornerRadius(), host, metrics);
     }
 
     registerShapeEntries();
     updateRectangleStyleControls();
     result.controls = controls;
     return result;
+}
+
+void ScreenshotToolPaletteStyleControls::buildCornerRadiusEditor(
+    QWidget* controls, int radius, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    if (host.addItemSpacing) {
+        host.addItemSpacing(layout);
+    }
+    m_cornerRadiusEditor = dynamic_cast<CornerRadiusEditorButton*>(
+        takeReusableWidget(kRoleCornerRadius, kSignatureCornerRadius, layout, controls));
+    if (m_cornerRadiusEditor == nullptr) {
+        m_cornerRadiusEditor = createScreenshotToolPaletteCornerRadiusEditor(
+            controls, "Corner radius (scroll to adjust)", custom_outlined_icons::SelectionRadius(),
+            radius, metrics);
+        layout->addWidget(m_cornerRadiusEditor);
+    } else {
+        configureScreenshotToolPaletteTooltip(
+            m_cornerRadiusEditor,
+            ScreenshotToolPaletteTranslationText("Corner radius (scroll to adjust)"));
+        configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
+    }
+    m_cornerRadiusEditor->setProperty("screenshotStyleEditorRoot", true);
+    m_cornerRadiusEditor->setProperty("screenshotStyleEditorRole", kRoleCornerRadius);
+    m_cornerRadiusEditor->setProperty("screenshotStyleEditorSignature", kSignatureCornerRadius);
+    m_cornerRadiusEditor->setObjectName(QStringLiteral("screenshotSelectionCornerRadiusButton"));
+    QObject::connect(m_cornerRadiusEditor, &adqt::widgets::AdButton::clicked, controls,
+                     [this]() { setCornerRadius(defaultCornerRadius()); });
 }
 
 QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
@@ -2597,6 +2602,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSpotlightFamily(
         m_spotlightOpacityEditor.slider->setAccessibleDescription(
             QStringLiteral("%1%").arg(opacityConfig.initialValue));
     }
+    buildCornerRadiusEditor(controls, qRound(m_state.spotlightCornerRadii.topLeft), host, metrics);
+    updateSpotlightShapeControls();
     return controls;
 }
 
@@ -3753,7 +3760,7 @@ void ScreenshotToolPaletteStyleControls::registerShapeEntries() {
         {ShapeCornerRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.shape.corner_refresh");
-             if (m_cornerRadiusEditor != nullptr) {
+             if (m_cornerRadiusEditor != nullptr && m_spotlightShapeButtonGroup == nullptr) {
                  m_cornerRadiusEditor->setCornerRadius(activeShapeStyle().cornerRadius());
                  m_cornerRadiusEditor->setMixed(mixed(SnowCanvasShapeStylePropertyCornerRadius));
              }
@@ -4419,9 +4426,11 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     m_parkedEditors.clear();
 
     if (destination != Tool::Shape) {
-        m_cornerRadiusEditor = nullptr;
         m_shapeControlsContainer = nullptr;
         m_shapeButtonGroup = nullptr;
+    }
+    if (destination != Tool::Shape && !keepSpotlight) {
+        m_cornerRadiusEditor = nullptr;
     }
     if (!keepSpotlight) {
         m_spotlightShapeControlsContainer = nullptr;
@@ -4708,7 +4717,10 @@ bool ScreenshotToolPaletteStyleControls::handleCornerRadiusWheel(const QPoint& g
         return false;
     }
 
-    setCornerRadius(m_state.m_rectangleStyle.cornerRadius() + (direction > 0 ? 1 : -1));
+    const int current = m_spotlightShapeButtonGroup != nullptr
+                            ? qRound(m_state.spotlightCornerRadii.topLeft)
+                            : m_state.m_rectangleStyle.cornerRadius();
+    setCornerRadius(current + (direction > 0 ? 1 : -1));
     return true;
 }
 
@@ -4880,6 +4892,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.watermark = m_state.creationWatermarkConfig;
     defaults.spotlight = m_state.creationSpotlightConfig;
     defaults.spotlightShape = m_state.creationSpotlightShape;
+    defaults.spotlightCornerRadii = m_state.creationSpotlightCornerRadii;
     return defaults;
 }
 
@@ -4903,6 +4916,7 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.creationWatermarkConfig = defaults.watermark;
     m_state.creationSpotlightConfig = defaults.spotlight;
     m_state.creationSpotlightShape = defaults.spotlightShape;
+    m_state.creationSpotlightCornerRadii = defaults.spotlightCornerRadii;
 }
 
 void ScreenshotToolPaletteStyleControls::setRectangleStyle(const SnowCanvasShapeStyle& style) {
@@ -5266,6 +5280,23 @@ void ScreenshotToolPaletteStyleControls::setFillStyle(SnowCanvasFillStyle fillSt
 }
 
 void ScreenshotToolPaletteStyleControls::setCornerRadius(int cornerRadius) {
+    if (m_spotlightShapeButtonGroup != nullptr) {
+        SnowCanvasShapeStyle style;
+        style.cornerRadii = m_state.spotlightCornerRadii;
+        ScreenshotToolPaletteRectangleStyleModel model;
+        model.setRectangleStyle(style);
+        const bool mixed =
+            (m_state.spotlightShapeMixed & SnowCanvasShapeStyleMixedCornerRadii) != 0;
+        if (!model.setCornerRadius(cornerRadius) && !mixed)
+            return;
+        style.cornerRadii = model.rectangleStyle().cornerRadii;
+        m_state.spotlightCornerRadii = style.cornerRadii;
+        m_state.spotlightShapeMixed &= ~SnowCanvasShapeStyleMixedCornerRadii;
+        updateSpotlightShapeControls();
+        notifyShapeStyleChanged(style, SnowCanvasShapeStylePropertyCornerRadius,
+                                SnowCanvasShapeKind::Spotlight);
+        return;
+    }
     const bool wasMixed = hasMixedProperty(SnowCanvasShapeStylePropertyCornerRadius);
     if (!m_state.m_rectangleStyle.setCornerRadius(cornerRadius) && !wasMixed) {
         return;
@@ -5292,19 +5323,26 @@ void ScreenshotToolPaletteStyleControls::setShape(SnowCanvasRectangleShape shape
 void ScreenshotToolPaletteStyleControls::updateSpotlightShapeControls() {
     if (m_spotlightShapeButtonGroup == nullptr)
         return;
+    if (m_cornerRadiusEditor != nullptr) {
+        m_cornerRadiusEditor->setCornerRadius(qRound(m_state.spotlightCornerRadii.topLeft));
+        m_cornerRadiusEditor->setMixed(
+            (m_state.spotlightShapeMixed & SnowCanvasShapeStyleMixedCornerRadii) != 0);
+    }
     const QSignalBlocker blocker(m_spotlightShapeButtonGroup);
     const auto shape = m_state.spotlightShape;
-    m_spotlightShapeButtonGroup->setCheckedId(m_state.spotlightShapeMixed != 0             ? -1
-                                              : shape == SnowCanvasRectangleShape::Ellipse ? 1
-                                              : shape == SnowCanvasRectangleShape::Diamond ? 2
-                                                                                           : 0);
+    m_spotlightShapeButtonGroup->setCheckedId(
+        (m_state.spotlightShapeMixed & SnowCanvasShapeStyleMixedShape) != 0 ? -1
+        : shape == SnowCanvasRectangleShape::Ellipse                        ? 1
+        : shape == SnowCanvasRectangleShape::Diamond                        ? 2
+                                                                            : 0);
 }
 
 void ScreenshotToolPaletteStyleControls::setSpotlightShape(SnowCanvasRectangleShape shape) {
-    if (m_state.spotlightShape == shape && m_state.spotlightShapeMixed == 0)
+    if (m_state.spotlightShape == shape &&
+        (m_state.spotlightShapeMixed & SnowCanvasShapeStyleMixedShape) == 0)
         return;
     m_state.spotlightShape = shape;
-    m_state.spotlightShapeMixed = 0;
+    m_state.spotlightShapeMixed &= ~SnowCanvasShapeStyleMixedShape;
     updateSpotlightShapeControls();
     SnowCanvasShapeStyle style;
     style.shape = shape;
@@ -6124,11 +6162,16 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         m_state.showingSelectedSpotlight =
             state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight;
         m_state.spotlightShape = state.shapeStyle.shape;
-        m_state.spotlightShapeMixed = m_state.showingSelectedSpotlight
-                                          ? state.shapeStyleMixed & SnowCanvasShapeStyleMixedShape
-                                          : 0;
-        if (!m_state.showingSelectedSpotlight)
+        m_state.spotlightCornerRadii = state.shapeStyle.cornerRadii;
+        m_state.spotlightShapeMixed =
+            m_state.showingSelectedSpotlight
+                ? state.shapeStyleMixed &
+                      (SnowCanvasShapeStyleMixedShape | SnowCanvasShapeStyleMixedCornerRadii)
+                : 0;
+        if (!m_state.showingSelectedSpotlight) {
             m_state.creationSpotlightShape = state.shapeStyle.shape;
+            m_state.creationSpotlightCornerRadii = state.shapeStyle.cornerRadii;
+        }
         updateSpotlightShapeControls();
         return;
     }

@@ -149,4 +149,5 @@ pub struct SnowSpotlightCutout {
     pub rotation: f64,
     pub shape: u8,
     pub reserved: [u8; 7],
+    pub corner_radii: SnowCornerRadii,
 }

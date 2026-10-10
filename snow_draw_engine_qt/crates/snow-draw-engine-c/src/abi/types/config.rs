@@ -386,7 +386,8 @@ mod spotlight_abi_tests {
         assert_eq!(std::mem::size_of::<SnowSpotlightConfig>(), 16);
         assert_eq!(std::mem::offset_of!(SnowSpotlightConfig, color), 0);
         assert_eq!(std::mem::offset_of!(SnowSpotlightConfig, opacity), 8);
-        assert_eq!(std::mem::size_of::<SnowSpotlightCutout>(), 48);
+        assert_eq!(std::mem::size_of::<SnowSpotlightCutout>(), 80);
+        assert_eq!(std::mem::offset_of!(SnowSpotlightCutout, corner_radii), 48);
         assert_eq!(std::mem::offset_of!(SnowSpotlightCutout, rotation), 32);
         assert_eq!(std::mem::offset_of!(SnowSpotlightCutout, shape), 40);
         assert_eq!(SnowSerialNumberType::OutlinedCircle as i32, 0);
@@ -468,6 +469,7 @@ pub struct SnowStyleDefaults {
     pub spotlight_shape: SnowRectangleShape,
     pub distance: SnowDistanceStyle,
     pub angle: SnowAngleStyle,
+    pub spotlight_corner_radii: SnowCornerRadii,
 }
 
 #[repr(C)]

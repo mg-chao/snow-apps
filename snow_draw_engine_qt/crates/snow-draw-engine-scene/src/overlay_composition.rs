@@ -784,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_spotlight_hides_corner_radius_handles() {
+    fn selected_spotlight_shows_corner_radius_handles() {
         let spotlight = rect(100.0, 40.0).into_spotlight();
         let presentation = EditorPresentationState {
             selection_bounds: Some(SelectionBounds {
@@ -803,7 +803,7 @@ mod tests {
 
         let items = compose_overlay_items(SnapConfig::default(), &presentation, frame_view());
 
-        assert!(!items.iter().any(|item| matches!(
+        assert!(items.iter().any(|item| matches!(
             item,
             OverlayDisplayItem::Rectangle(rect)
                 if rect.kind == UiShapeKind::SelectionCornerRadiusHandle

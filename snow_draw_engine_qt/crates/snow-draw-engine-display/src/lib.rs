@@ -81,6 +81,7 @@ pub struct DisplaySpotlightCutout {
     pub height: f64,
     pub rotation: f64,
     pub shape: DisplayRectangleShape,
+    pub corner_radii: snow_draw_engine_core::CornerRadii,
 }
 
 impl Default for DisplaySpotlightConfig {

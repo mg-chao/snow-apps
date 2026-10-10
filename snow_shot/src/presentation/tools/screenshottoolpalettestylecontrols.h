@@ -453,6 +453,9 @@ class ScreenshotToolPaletteStyleControls final {
                        const ScreenshotToolPaletteButtonMetrics& metrics, bool spotlight);
     void updateSpotlightShapeControls();
     void setSpotlightShape(SnowCanvasRectangleShape shape);
+    void buildCornerRadiusEditor(QWidget* controls, int radius,
+                                 const ScreenshotToolPaletteStyleFamilyHost& host,
+                                 const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshWatermarkOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshSpotlightOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void notifyWatermarkConfigChanged(quint32 properties) const;

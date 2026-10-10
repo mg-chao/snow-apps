@@ -1099,6 +1099,7 @@ pub(crate) fn runtime_config_from_c(
     Ok(RuntimeConfig {
         style_defaults: StyleDefaults {
             editor: snow_draw_engine::EditorStyleDefaults {
+                spotlight_corner_radii: defaults.spotlight_corner_radii.into(),
                 spotlight_shape: match defaults.spotlight_shape {
                     SnowRectangleShape::Rectangle => snow_draw_engine::HighlightShape::Rectangle,
                     SnowRectangleShape::Ellipse => snow_draw_engine::HighlightShape::Ellipse,
@@ -1234,6 +1235,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
                 snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
                 snow_draw_engine::HighlightShape::Diamond => SnowRectangleShape::Diamond,
             },
+            spotlight_corner_radii: value.editor.spotlight_corner_radii.into(),
         }
     }
 }
@@ -1817,10 +1819,12 @@ mod tests {
         expected.watermark.opacity = 0.24;
         expected.spotlight.opacity = 0.62;
         expected.editor.spotlight_shape = snow_draw_engine::HighlightShape::Diamond;
+        expected.editor.spotlight_corner_radii = snow_draw_engine::CornerRadii::splat(17.0);
 
         let c_defaults: SnowStyleDefaults = expected.clone().into();
         assert_eq!(c_defaults.rectangle.fill.a, 0);
         assert_eq!(c_defaults.spotlight_shape, SnowRectangleShape::Diamond);
+        assert_eq!(c_defaults.spotlight_corner_radii.top_left, 17.0);
         assert_eq!(
             c_defaults.rectangle_filter.filter_type,
             SnowFilterType::Emboss

@@ -32,6 +32,8 @@ pub struct PersistedEditorSession {
     config: EngineConfig,
     #[serde(default)]
     spotlight_shape: snow_draw_engine_document::HighlightShape,
+    #[serde(default)]
+    spotlight_corner_radii: snow_draw_engine_core::CornerRadii,
     rectangle: RectangleShapeStyle,
     arrow: ArrowStyle,
     #[serde(default)]
@@ -182,6 +184,7 @@ impl EditorSession {
         PersistedEditorSession {
             config: self.editor.config,
             spotlight_shape: state.default_spotlight_shape,
+            spotlight_corner_radii: state.default_spotlight_corner_radii,
             rectangle: state.default_rectangle_shape_style,
             arrow: state.default_arrow_style,
             distance: state.default_distance_style,
@@ -219,6 +222,7 @@ impl EditorSession {
         let state = &mut session.editor.state;
         state.default_rectangle_shape_style = persisted.rectangle;
         state.default_spotlight_shape = persisted.spotlight_shape;
+        state.default_spotlight_corner_radii = persisted.spotlight_corner_radii;
         state.default_arrow_style = persisted.arrow;
         state.default_distance_style = persisted.distance;
         state.default_angle_style = persisted.angle;
@@ -981,6 +985,10 @@ mod borrowed_view_query_tests {
 
 pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<(), ErrorCode> {
     super::style::validate_rectangle_shape_style(defaults.rectangle)?;
+    super::style::validate_rectangle_shape_style(RectangleShapeStyle {
+        corner_radii: defaults.spotlight_corner_radii,
+        ..defaults.rectangle
+    })?;
     super::style::validate_arrow_style(defaults.arrow)?;
     crate::validate_distance_style(defaults.distance)?;
     crate::validate_angle_style(defaults.angle)?;
@@ -1051,6 +1059,7 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
             == snow_draw_engine_document::CanvasFilterType::RestoreBackground
         || !finite_non_negative(persisted.rectangle.stroke_width)
         || !valid_corner_radii(persisted.rectangle.corner_radii)
+        || !valid_corner_radii(persisted.spotlight_corner_radii)
         || !finite_non_negative(persisted.arrow.stroke_width)
         || !valid_shape(persisted.line)
         || !valid_shape(persisted.free_draw)

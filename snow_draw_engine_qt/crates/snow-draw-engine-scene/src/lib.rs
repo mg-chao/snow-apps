@@ -774,6 +774,7 @@ fn display_decoration_with_spotlight(
 
 fn spotlight_cutout(rect: RectangleData) -> DisplaySpotlightCutout {
     DisplaySpotlightCutout {
+        corner_radii: rect.corner_radii,
         center_x: rect.center.x,
         center_y: rect.center.y,
         width: rect.width,

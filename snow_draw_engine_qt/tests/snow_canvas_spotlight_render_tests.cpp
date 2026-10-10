@@ -150,6 +150,38 @@ void spotlightTypesRenderDistinctHolesAndMixedOverlaps() {
             "mixed spotlight holes must form a union without refilling overlaps");
 }
 
+void spotlightRoundedCornersMatchShapeGeometry() {
+    SnowSpotlightCutout item = cutout(50, 50, 40, 40);
+    item.corner_radii = SnowCornerRadii{16, 0, 0, 0};
+    const QImage image = render(&item, 1);
+    require(isDefaultMaskPixel(image.pixel(31, 31)) &&
+                image.pixelColor(36, 36) == QColor(Qt::white) &&
+                image.pixelColor(68, 31) == QColor(Qt::white),
+            "spotlight rectangles must render independent rounded corners like shapes");
+    item.rotation = std::acos(-1.0) / 2.0;
+    const QImage rotated = render(&item, 1);
+    require(isDefaultMaskPixel(rotated.pixel(68, 31)) &&
+                rotated.pixelColor(31, 31) == QColor(Qt::white),
+            "spotlight corner radii must rotate with the cutout");
+    item.rotation = 0;
+    SceneDisplayInfo zoomed = sceneInfo();
+    zoomed.camera_zoom = 2;
+    const QImage projected =
+        render(&item, 1, QRectF(0, 0, 100, 100), QRegion(QRect(0, 0, 100, 100)), true, zoomed);
+    require(isDefaultMaskPixel(projected.pixel(12, 12)) &&
+                projected.pixelColor(24, 24) == QColor(Qt::white),
+            "spotlight corner radii must scale with camera zoom");
+    SnowSpotlightCutout overlap[] = {item, cutout(35, 35, 20, 20)};
+    const QImage unionImage = render(overlap, 2);
+    require(unionImage.pixelColor(31, 31) == QColor(Qt::white),
+            "overlapping spotlight cutouts must reveal rounded corners covered by another hole");
+    item.corner_radii = SnowCornerRadii{100, 100, 100, 100};
+    const QImage clamped = render(&item, 1);
+    require(isDefaultMaskPixel(clamped.pixel(31, 31)) &&
+                clamped.pixelColor(50, 50) == QColor(Qt::white),
+            "spotlight radii must clamp to fit small cutouts");
+}
+
 void spotlightTypeSurvivesDisplayPatchesAndExport() {
     for (const auto shape : {SNOW_RECTANGLE_SHAPE_RECTANGLE, SNOW_RECTANGLE_SHAPE_ELLIPSE,
                              SNOW_RECTANGLE_SHAPE_DIAMOND}) {
@@ -157,6 +189,7 @@ void spotlightTypeSurvivesDisplayPatchesAndExport() {
         require(snow_runtime_style_defaults_default(&defaults) == SNOW_OK,
                 "spotlight export fixture must load valid runtime defaults");
         defaults.spotlight_shape = shape;
+        defaults.spotlight_corner_radii = SnowCornerRadii{16, 12, 8, 4};
         SnowRuntimeConfig runtimeConfig{&defaults};
         ScopedRuntimeHandle runtime;
         require(snow_runtime_create_with_config(&runtimeConfig, runtime.outParam()) == SNOW_OK,
@@ -190,8 +223,9 @@ void spotlightTypeSurvivesDisplayPatchesAndExport() {
         }
         SnowCanvasDisplayCache cache;
         require(cache.sync(runtime.get(), viewport.get()) && cache.spotlightCutoutCount() == 1 &&
-                    cache.spotlightCutouts()[0].shape == static_cast<std::uint8_t>(shape),
-                "dedicated spotlight display patches must retain the selected type");
+                    cache.spotlightCutouts()[0].shape == static_cast<std::uint8_t>(shape) &&
+                    cache.spotlightCutouts()[0].corner_radii.top_left == 16,
+                "dedicated spotlight display patches must retain the selected type and radii");
         const QImage expected = render(cache.spotlightCutouts(), 1, QRectF(0, 0, 100, 100),
                                        QRegion(QRect(0, 0, 100, 100)), true, cache.sceneInfo());
         QImage background(100, 100, QImage::Format_ARGB32_Premultiplied);
@@ -532,6 +566,7 @@ int main(int argc, char** argv) {
     snow_canvas_render_diagnostics::setEnabled(true);
     defaultMaskHasExactOpacityAndTransparentHole();
     spotlightTypesRenderDistinctHolesAndMixedOverlaps();
+    spotlightRoundedCornersMatchShapeGeometry();
     spotlightTypeSurvivesDisplayPatchesAndExport();
     overlappingAndRotatedCutoutsUseAPathUnion();
     renderAreaAndExposureLimitMaskWork();

@@ -234,6 +234,7 @@ std::vector<SnowSpotlightCutout> makeCutouts(const Scenario& scenario) {
             (index % 7 - 3) * 0.11,
             static_cast<std::uint8_t>(SNOW_DISPLAY_RECT_SHAPE_RECTANGLE),
             {},
+            {},
         });
     }
     return out;

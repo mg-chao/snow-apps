@@ -457,7 +457,7 @@ fn validate_shape_style_patch(patch: ShapeStylePatch) -> Result<(), ErrorCode> {
         | ShapeKind::FreeDraw
         | ShapeKind::RectangleHighlight
         | ShapeKind::PenHighlight => validate_line_style(patch.style),
-        ShapeKind::Spotlight => Ok(()),
+        ShapeKind::Spotlight => validate_rectangle_shape_style(patch.style.rectangle_shape_style()),
     }
 }
 
@@ -1243,6 +1243,7 @@ impl Editor {
             .or_else(|| {
                 (self.state.active_tool == ActiveTool::Spotlight).then(|| ShapeStyle {
                     shape: self.state.default_spotlight_shape,
+                    corner_radii: self.state.default_spotlight_corner_radii,
                     ..ShapeStyle::from_rectangle_shape_style(
                         self.state.default_rectangle_shape_style,
                     )
@@ -1804,14 +1805,25 @@ impl Editor {
                     patch.apply_to_line(self.state.default_pen_highlight_style);
             }
             ShapeKind::Spotlight => {
-                self.state.default_spotlight_shape = patch.style.shape;
+                if patch.active_properties() & SHAPE_STYLE_PROPERTY_SHAPE != 0 {
+                    self.state.default_spotlight_shape = patch.style.shape;
+                }
+                if patch.active_properties() & SHAPE_STYLE_PROPERTY_CORNER_RADII != 0 {
+                    self.state.default_spotlight_corner_radii = patch.style.corner_radii;
+                }
                 if let Some(ElementCreationPreview::Rectangle(preview)) =
                     self.state.creation_preview.as_mut()
                     && preview.is_spotlight()
-                    && preview.highlight_shape != patch.style.shape
                 {
-                    preview.highlight_shape = patch.style.shape;
-                    self.bump_scene_state_revision();
+                    let updated = rectangle_with_style(
+                        preview,
+                        patch
+                            .apply_to_rectangle_shape(RectangleShapeStyle::from_rectangle(preview)),
+                    );
+                    if *preview != updated {
+                        *preview = updated;
+                        self.bump_scene_state_revision();
+                    }
                 }
             }
         }
@@ -2370,11 +2382,13 @@ mod tests {
         );
         assert_eq!(
             ShapeKind::Spotlight.supported_properties(),
-            SHAPE_STYLE_PROPERTY_SHAPE
+            SHAPE_STYLE_PROPERTY_SHAPE | SHAPE_STYLE_PROPERTY_CORNER_RADII
         );
         for bit in 0..14 {
             let properties = 1 << bit;
-            if properties != SHAPE_STYLE_PROPERTY_SHAPE {
+            if properties != SHAPE_STYLE_PROPERTY_SHAPE
+                && properties != SHAPE_STYLE_PROPERTY_CORNER_RADII
+            {
                 assert_eq!(
                     editor.set_shape_style_patch(
                         &document,

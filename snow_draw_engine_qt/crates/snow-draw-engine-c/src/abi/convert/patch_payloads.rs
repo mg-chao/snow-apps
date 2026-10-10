@@ -150,6 +150,7 @@ pub(crate) fn snow_spotlight_cutout_from_rust(
     value: snow_draw_engine::DisplaySpotlightCutout,
 ) -> SnowSpotlightCutout {
     SnowSpotlightCutout {
+        corner_radii: value.corner_radii.into(),
         center_x: value.center_x,
         center_y: value.center_y,
         width: value.width,
@@ -570,6 +571,7 @@ mod tests {
                     start: 2,
                     delete_count: 1,
                     insert_items: vec![DisplaySpotlightCutout {
+                        corner_radii: snow_draw_engine::CornerRadii::splat(5.0),
                         shape: snow_draw_engine::DisplayRectangleShape::Diamond,
                         center_x: 10.0,
                         center_y: 20.0,
@@ -612,6 +614,7 @@ mod tests {
         assert_eq!(payload.spotlight_cutouts.len(), 1);
         assert_eq!(payload.spotlight_cutouts[0].center_x, 10.0);
         assert_eq!(payload.spotlight_cutouts[0].rotation, 0.5);
+        assert_eq!(payload.spotlight_cutouts[0].corner_radii.top_left, 5.0);
         assert_eq!(
             payload.spotlight_cutouts[0].shape,
             SnowDisplayRectShape::Diamond as u8

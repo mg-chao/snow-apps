@@ -856,6 +856,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.spotlight = toEngineSpotlightConfig(defaults.spotlight);
     engineDefaults.brush_eraser = SnowBrushEraserStyle{defaults.brushEraser.strokeWidth};
     engineDefaults.spotlight_shape = static_cast<SnowRectangleShape>(defaults.spotlightShape);
+    engineDefaults.spotlight_corner_radii = toEngineCornerRadii(defaults.spotlightCornerRadii);
     engineDefaults.distance = toEngineDistanceStyle(defaults.distance);
     engineDefaults.angle = toEngineAngleStyle(defaults.angle);
     return true;

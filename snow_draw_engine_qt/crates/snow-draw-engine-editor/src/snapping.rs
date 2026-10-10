@@ -276,6 +276,11 @@ impl Editor {
         if spotlight {
             preview = preview.map(|mut rect| {
                 rect.highlight_shape = self.state.default_spotlight_shape;
+                rect.corner_radii = snow_draw_engine_document::normalize_corner_radii(
+                    rect.width,
+                    rect.height,
+                    self.state.default_spotlight_corner_radii,
+                );
                 rect.into_spotlight()
             });
         }

@@ -421,12 +421,13 @@ void readWatermarkValue(const QJsonObject& object, SnowCanvasWatermarkConfig* co
     readDouble(object, QStringLiteral("opacity"), &config->opacity);
 }
 
-QJsonObject spotlightValue(const SnowCanvasSpotlightConfig& config,
-                           SnowCanvasRectangleShape shape) {
+QJsonObject spotlightValue(const SnowCanvasSpotlightConfig& config, SnowCanvasRectangleShape shape,
+                           const SnowCanvasCornerRadii& radii) {
     QJsonObject value;
     value.insert(QStringLiteral("color"), colorValue(config.color));
     putDouble(&value, QStringLiteral("opacity"), config.opacity);
     putEnum(&value, QStringLiteral("shape"), shape);
+    value.insert(QStringLiteral("corner_radii"), cornerRadiiValue(radii));
     return value;
 }
 
@@ -466,6 +467,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readSpotlightValue(configuration.value(kSpotlightKey).toObject(), &defaults.spotlight);
     readEnum(configuration.value(kSpotlightKey).toObject(), QStringLiteral("shape"),
              static_cast<int>(SnowCanvasRectangleShape::Diamond), &defaults.spotlightShape);
+    readCornerRadii(configuration.value(kSpotlightKey).toObject(), &defaults.spotlightCornerRadii);
     double sharedStrength = screenshotCanvasStyleDefaults().rectangleFilter.strength;
     const auto readStrength = [&](const QString& key) {
         double value = 0.0;
@@ -528,6 +530,14 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     defaults.watermark.gap = bounded(defaults.watermark.gap, 10.0, 200.0);
     defaults.watermark.opacity = bounded(defaults.watermark.opacity, 0.0, 1.0);
     defaults.spotlight.opacity = bounded(defaults.spotlight.opacity, 0.0, 1.0);
+    defaults.spotlightCornerRadii.topLeft =
+        bounded(defaults.spotlightCornerRadii.topLeft, 0.0, 83.0);
+    defaults.spotlightCornerRadii.topRight =
+        bounded(defaults.spotlightCornerRadii.topRight, 0.0, 83.0);
+    defaults.spotlightCornerRadii.bottomRight =
+        bounded(defaults.spotlightCornerRadii.bottomRight, 0.0, 83.0);
+    defaults.spotlightCornerRadii.bottomLeft =
+        bounded(defaults.spotlightCornerRadii.bottomLeft, 0.0, 83.0);
     return defaults;
 }
 
@@ -555,7 +565,8 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         {kTextKey, textValue(defaults.text)},
         {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
         {kWatermarkKey, watermarkValue(defaults.watermark)},
-        {kSpotlightKey, spotlightValue(defaults.spotlight, defaults.spotlightShape)},
+        {kSpotlightKey, spotlightValue(defaults.spotlight, defaults.spotlightShape,
+                                       defaults.spotlightCornerRadii)},
     };
     storage::ConfigurationStore& configuration = storage.configuration();
     if (QThread::currentThread() != configuration.thread()) {
@@ -618,7 +629,10 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.penHighlight, kPenHighlightProperties, SnowCanvasShapeKind::PenHighlight);
     SnowCanvasShapeStyle spotlightStyle;
     spotlightStyle.shape = defaults.spotlightShape;
-    applyShape(spotlightStyle, SnowCanvasShapeStylePropertyShape, SnowCanvasShapeKind::Spotlight);
+    spotlightStyle.cornerRadii = defaults.spotlightCornerRadii;
+    applyShape(spotlightStyle,
+               SnowCanvasShapeStylePropertyShape | SnowCanvasShapeStylePropertyCornerRadius,
+               SnowCanvasShapeKind::Spotlight);
     static_cast<void>(canvas.setCanvasTextStyle(defaults.text));
     // Saved appearance must preserve every numeric type's session sequence.
     static_cast<void>(canvas.applyStyleEdit(

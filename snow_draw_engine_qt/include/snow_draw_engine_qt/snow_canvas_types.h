@@ -611,6 +611,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasSpotlightConfig spotlight;
     SnowCanvasBrushEraserStyle brushEraser;
     SnowCanvasRectangleShape spotlightShape = SnowCanvasRectangleShape::Rectangle;
+    SnowCanvasCornerRadii spotlightCornerRadii;
     SnowCanvasDistanceStyle distance;
     SnowCanvasAngleStyle angle;
 };
@@ -622,7 +623,8 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.penFilter == rhs.penFilter && lhs.text == rhs.text &&
            lhs.serialNumber == rhs.serialNumber && lhs.watermark == rhs.watermark &&
            lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser &&
-           lhs.spotlightShape == rhs.spotlightShape && lhs.distance == rhs.distance &&
+           lhs.spotlightShape == rhs.spotlightShape &&
+           lhs.spotlightCornerRadii == rhs.spotlightCornerRadii && lhs.distance == rhs.distance &&
            lhs.angle == rhs.angle;
 }
 

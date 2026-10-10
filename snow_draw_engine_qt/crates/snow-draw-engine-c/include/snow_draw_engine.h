@@ -689,6 +689,7 @@ typedef struct SnowStyleDefaults {
     SnowRectangleShape spotlight_shape;
     SnowDistanceStyle distance;
     SnowAngleStyle angle;
+    SnowCornerRadii spotlight_corner_radii;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1091,6 +1092,7 @@ typedef struct SnowSpotlightCutout {
     double rotation;
     uint8_t shape;
     uint8_t reserved[7];
+    SnowCornerRadii corner_radii;
 } SnowSpotlightCutout;
 
 #define SNOW_ARROW_POINT_CAPACITY 64

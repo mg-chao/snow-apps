@@ -279,6 +279,8 @@ inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
                 case SnowCanvasShapeKind::Spotlight:
                     if ((patch.properties & SnowCanvasShapeStylePropertyShape) != 0)
                         defaults.spotlightShape = patch.style.shape;
+                    if ((patch.properties & SnowCanvasShapeStylePropertyCornerRadius) != 0)
+                        defaults.spotlightCornerRadii = patch.style.cornerRadii;
                     break;
                 }
                 if (target != nullptr)

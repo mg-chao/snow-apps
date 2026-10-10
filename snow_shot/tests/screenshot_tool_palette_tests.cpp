@@ -2130,8 +2130,11 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
     verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 4, 3);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
-    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 2, 6);
-    verify(Tool::Shape, Tool::Spotlight, {"shape-kind"}, 4, 2);
+    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 3, 6);
+    verify(Tool::Shape, Tool::Spotlight, {"shape-kind", "corner-radius"}, 3, 2);
+    verify(Tool::Spotlight, Tool::Shape, {"shape-kind", "corner-radius"}, 2, 3);
+    verify(Tool::Spotlight, Tool::Text, {"corner-radius"}, 3, 6);
+    verify(Tool::Text, Tool::Spotlight, {"corner-radius"}, 6, 3);
     verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 6);
     verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 6, 6);
 }
@@ -10885,20 +10888,24 @@ void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
     auto styles = screenshotCanvasStyleDefaults();
     styles.rectangle.shape = SnowCanvasRectangleShape::Ellipse;
     styles.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    styles.spotlightCornerRadii = SnowCanvasCornerRadii{17, 12, 8, 4};
     require(persistScreenshotCanvasToolStyles(styles), "Spotlight shape defaults must persist");
-    require(screenshotCanvasToolStyleDefaults().spotlightShape ==
-                    SnowCanvasRectangleShape::Diamond &&
-                screenshotCanvasToolStyleDefaults().rectangle.shape ==
-                    SnowCanvasRectangleShape::Ellipse,
-            "Spotlight and Shape must round-trip independent defaults");
+    require(
+        screenshotCanvasToolStyleDefaults().spotlightShape == SnowCanvasRectangleShape::Diamond &&
+            screenshotCanvasToolStyleDefaults().rectangle.shape ==
+                SnowCanvasRectangleShape::Ellipse &&
+            screenshotCanvasToolStyleDefaults().spotlightCornerRadii == styles.spotlightCornerRadii,
+        "Spotlight and Shape must round-trip independent defaults");
     const QString key = QStringLiteral("drawing/spotlight_style");
     QJsonObject value = configuration.snapshot().value(key).toObject();
     require(value.value(QStringLiteral("shape")).toInt(-1) == 2,
             "the Spotlight shape must use the existing three-value enum");
     value.remove(QStringLiteral("shape"));
+    value.remove(QStringLiteral("corner_radii"));
     require(configuration.setValue(key, value) &&
                 screenshotCanvasToolStyleDefaults().spotlightShape ==
-                    SnowCanvasRectangleShape::Rectangle,
+                    SnowCanvasRectangleShape::Rectangle &&
+                screenshotCanvasToolStyleDefaults().spotlightCornerRadii == SnowCanvasCornerRadii{},
             "legacy Spotlight preferences must use Rectangle");
     for (const QJsonValue& invalid :
          {QJsonValue(-1), QJsonValue(3), QJsonValue(1.5), QJsonValue(QStringLiteral("1"))}) {
@@ -10908,6 +10915,72 @@ void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
                         SnowCanvasRectangleShape::Rectangle,
                 "invalid Spotlight shapes must use Rectangle");
     }
+}
+
+void spotlightCornerRadiusEditorReusesShapeBehavior() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showSpotlightTool = true;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    options.styleDefaults.spotlightCornerRadii = SnowCanvasCornerRadii{17, 17, 17, 17};
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(Tool::Shape);
+    QPointer<CornerRadiusEditorButton> editor = dynamic_cast<CornerRadiusEditorButton*>(
+        palette.findChild<QWidget*>(QStringLiteral("screenshotSelectionCornerRadiusButton")));
+    require(editor != nullptr, "Shape must expose the shared corner radius editor");
+    const QSize referenceSize = editor->size();
+    const int shapeRadius = qRound(editor->value());
+    int edits = 0;
+    SnowCanvasShapeStyle lastStyle;
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::shapeStyleChanged,
+        [&](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {
+            require(properties == SnowCanvasShapeStylePropertyCornerRadius &&
+                        kind == SnowCanvasShapeKind::Spotlight,
+                    "Spotlight radius edits must change only its corner radii");
+            ++edits;
+            lastStyle = style;
+        });
+    for (int iteration = 0; iteration < 4; ++iteration) {
+        palette.setActiveTool(Tool::Spotlight);
+        palette.show();
+        QCoreApplication::processEvents();
+        auto* radius = dynamic_cast<CornerRadiusEditorButton*>(
+            palette.findChild<QWidget*>(QStringLiteral("screenshotSelectionCornerRadiusButton")));
+        require(radius == editor && radius->size() == referenceSize &&
+                    radius->cursor().shape() == Qt::SplitVCursor && radius->value() == 17,
+                "Spotlight must reuse Shape's radius editor with its independent value");
+        SnowCanvasStyleToolbarState state;
+        state.source = SnowCanvasStyleToolbarSource::SelectedSpotlight;
+        state.shapeStyle.cornerRadii = SnowCanvasCornerRadii{23, 23, 23, 23};
+        state.shapeStyleMixed = SnowCanvasShapeStyleMixedCornerRadii;
+        const int before = edits;
+        palette.setStyleToolbarState(state);
+        require(edits == before && radius->valueText() == QStringLiteral("-") &&
+                    radius->value() == 23,
+                "selected Spotlight radii must synchronize silently and display mixed state");
+        const QPoint local = radius->rect().center();
+        QWheelEvent wheel(QPointF(local), radius->mapToGlobal(local), QPoint(), QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        require(palette.handleToolbarWheel(&wheel) && edits == before + 1 &&
+                    radius->value() == 24 && radius->valueText() == QStringLiteral("24") &&
+                    lastStyle.cornerRadii == SnowCanvasCornerRadii{24, 24, 24, 24},
+                "Spotlight scrolling must adjust the radius one pixel and resolve mixed state");
+        radius->click();
+        require(edits == before + 2 && radius->value() == shapeRadius,
+                "Spotlight radius clicks must restore the same default as Shape");
+        palette.setActiveTool(Tool::Shape);
+        require(editor != nullptr && editor->value() == shapeRadius,
+                "Spotlight radius edits must preserve Shape's independent default");
+        auto defaults = palette.creationStyleDefaults();
+        defaults.spotlightCornerRadii = SnowCanvasCornerRadii{17, 17, 17, 17};
+        palette.setCreationStyleDefaults(defaults);
+    }
+    palette.setActiveTool(Tool::Spotlight);
+    require(palette.setPhysicalScale(1.5) &&
+                editor->size() == QSize(qRound(referenceSize.width() * 1.5),
+                                        qRound(referenceSize.height() * 1.5)),
+            "Spotlight radius controls must use Shape's physical scale metrics");
 }
 
 void shapeSelectorIsExclusiveToTheShapeTool() {
@@ -17278,6 +17351,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--spotlight-shape-only"))) {
+        spotlightCornerRadiusEditorReusesShapeBehavior();
         spotlightShapeSelectorMatchesShapeAndRebindsEdits();
         spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
         shapeSelectorIsTheLeftmostStyleGroup();
@@ -17466,6 +17540,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsTheLeftmostStyleGroup();
     spotlightShapeSelectorMatchesShapeAndRebindsEdits();
     spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
+    spotlightCornerRadiusEditorReusesShapeBehavior();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     distanceSettingsExposeIndependentPropertiesAndHoverWheel();

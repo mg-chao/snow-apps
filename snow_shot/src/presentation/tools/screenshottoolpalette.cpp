@@ -4127,6 +4127,11 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         return false;
     }
     if (m_activeTool == Tool::Spotlight) {
+        if (m_styleControls->handleCornerRadiusWheel(event->globalPosition().toPoint(),
+                                                     direction)) {
+            event->accept();
+            return true;
+        }
         if (m_spotlightOpacitySlider == nullptr || !m_spotlightOpacitySlider->isEnabled()) {
             return false;
         }

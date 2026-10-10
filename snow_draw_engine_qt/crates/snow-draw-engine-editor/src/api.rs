@@ -282,7 +282,7 @@ impl ShapeKind {
                     | SHAPE_STYLE_PROPERTY_STROKE_WIDTH
             }
             Self::PenHighlight => SHAPE_STYLE_PROPERTY_STROKE | SHAPE_STYLE_PROPERTY_STROKE_WIDTH,
-            Self::Spotlight => SHAPE_STYLE_PROPERTY_SHAPE,
+            Self::Spotlight => SHAPE_STYLE_PROPERTY_SHAPE | SHAPE_STYLE_PROPERTY_CORNER_RADII,
         }
     }
 }

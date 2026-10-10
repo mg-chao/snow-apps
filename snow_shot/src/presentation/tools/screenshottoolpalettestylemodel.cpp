@@ -63,6 +63,8 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     spotlightConfig = defaults.spotlight;
     creationSpotlightShape = defaults.spotlightShape;
     spotlightShape = defaults.spotlightShape;
+    creationSpotlightCornerRadii = defaults.spotlightCornerRadii;
+    spotlightCornerRadii = defaults.spotlightCornerRadii;
     showingSelectedSpotlight = false;
     spotlightShapeMixed = 0;
     m_showingSelectedStyle = false;

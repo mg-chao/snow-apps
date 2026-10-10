@@ -904,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn spotlight_corner_radius_controls_are_not_hittable() {
+    fn spotlight_corner_radius_controls_are_hittable() {
         let bounds = selection_bounds();
         let spotlight = text_rect(bounds).into_spotlight();
         let handle = rect_local_to_canvas(
@@ -915,7 +915,7 @@ mod tests {
 
         let target = selection_hit_target(&bounds, Some(&spotlight), None, 4.0, 0.0, 1.0, handle);
 
-        assert_ne!(
+        assert_eq!(
             target,
             Some(SelectionHitTarget::CornerRadius(RectCorner::TopLeft))
         );
