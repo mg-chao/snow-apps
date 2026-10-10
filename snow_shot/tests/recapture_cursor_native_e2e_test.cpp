@@ -19,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 #include <qt_windows.h>
 
@@ -219,6 +220,40 @@ struct ShutdownStorage {
     }
 };
 
+// Move in the first posted batch after desktop handover, before CursorRefresh's
+// second batch commits capture. This reproduces movement without a shape change.
+class CursorHandoverObserver final : public QObject {
+  public:
+    explicit CursorHandoverObserver(std::function<void()> observed)
+        : observed_(std::move(observed)) {
+        require(active_ == nullptr, "only one handover observer may be active");
+        hook_ = SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE, nullptr, cursorChanged,
+                                0, 0, WINEVENT_OUTOFCONTEXT);
+        require(hook_ != nullptr, "could not observe desktop cursor handover");
+        active_ = this;
+    }
+    ~CursorHandoverObserver() override {
+        UnhookWinEvent(hook_);
+        active_ = nullptr;
+    }
+
+  private:
+    static void CALLBACK cursorChanged(HWINEVENTHOOK hook, DWORD event, HWND, LONG object, LONG,
+                                       DWORD thread, DWORD) {
+        auto* observer = active_;
+        if (!observer || observer->hook_ != hook || !observer->observed_ ||
+            object != OBJID_CURSOR || thread == GetCurrentThreadId() ||
+            (event != EVENT_OBJECT_NAMECHANGE && event != EVENT_OBJECT_SHOW &&
+             event != EVENT_OBJECT_HIDE))
+            return;
+        QTimer::singleShot(0, observer, std::exchange(observer->observed_, {}));
+    }
+
+    inline static CursorHandoverObserver* active_ = nullptr;
+    HWINEVENTHOOK hook_ = nullptr;
+    std::function<void()> observed_;
+};
+
 ScreenshotCaptureResult capture(ScreenshotCaptureCoordinator& coordinator) {
     QEventLoop loop;
     ScreenshotCaptureResult result;
@@ -345,6 +380,16 @@ void runRecapture(QApplication& app) {
     POINT nativePoint{point.x(), point.y()};
     require(WindowFromPoint(nativePoint) == reinterpret_cast<HWND>(overlay.winId()),
             "overlay did not intercept native input before recapture");
+    const bool moveAfterHandover =
+        app.arguments().contains(QStringLiteral("--move-after-handover"));
+    bool movedAfterHandover = false;
+    std::unique_ptr<CursorHandoverObserver> handoverObserver;
+    if (moveAfterHandover) {
+        handoverObserver = std::make_unique<CursorHandoverObserver>([&] {
+            stationaryPointer.confine(point + QPoint(3, 0));
+            movedAfterHandover = true;
+        });
+    }
     CursorRefresh refresh(&app);
     if (app.arguments().contains(QStringLiteral("--hide-overlay"))) {
         overlay.hide();
@@ -394,6 +439,18 @@ void runRecapture(QApplication& app) {
             verifyCursor(diagnostic, point, artifacts + QStringLiteral("/timeout.png")));
     }
     require(refreshed, "native cursor readiness failed");
+    require(!moveAfterHandover || (movedAfterHandover && capturePoint == point + QPoint(3, 0)),
+            "handover movement must occur before sampling the current cursor");
+    if (moveAfterHandover) {
+        bool cursorAtCurrentPoint = false;
+        for (const auto& display : result.displays) {
+            cursorAtCurrentPoint |=
+                !display.cursorPatch.isNull() &&
+                display.physicalRect.topLeft() + display.cursorPixelRect.topLeft() == capturePoint;
+        }
+        require(cursorAtCurrentPoint,
+                "cursor pixels must use the acquired position after movement");
+    }
     require(!app.arguments().contains(QStringLiteral("--change-after-ready")) || laterCursorChanged,
             "snapshot fixture must change the live cursor during capture");
     const bool correct =

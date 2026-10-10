@@ -3425,6 +3425,8 @@ if(SNOW_SHOT_BUILD_TESTS)
                  COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --change-after-ready)
         add_test(NAME snow-shot-recapture-class-cursor-native-e2e-test
                  COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --native-target)
+        add_test(NAME snow-shot-recapture-cursor-handover-movement-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --native-target --move-after-handover)
         add_test(NAME snow-shot-recapture-cursor-hidden-native-e2e-test
                  COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --hide-overlay)
         add_test(NAME snow-shot-recapture-cursor-own-window-native-e2e-test
@@ -3439,6 +3441,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow-shot-recapture-cursor-movement-native-e2e-test
             snow-shot-recapture-cursor-snapshot-native-e2e-test
             snow-shot-recapture-class-cursor-native-e2e-test
+            snow-shot-recapture-cursor-handover-movement-native-e2e-test
             snow-shot-recapture-cursor-hidden-native-e2e-test
             snow-shot-recapture-cursor-own-window-native-e2e-test
             snow-shot-recapture-cursor-unchanged-native-e2e-test

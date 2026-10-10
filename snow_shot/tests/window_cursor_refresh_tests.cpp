@@ -167,43 +167,49 @@ void foreignCursorHandoverDuringWindowHidingIsRetained() {
             ++fixture.target.position.rx();
         fixture.start();
         fixture.dispatchQueuedCompletion();
-        require(fixture.completions == (moved ? 0 : 1),
-                "a foreign cursor selected during hiding is ready only at the observed target");
-        if (moved) {
-            fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 22);
-            fixture.dispatchQueuedCompletion();
-            require(fixture.ready, "a new desktop update must complete the moved target");
-        }
+        require(fixture.ready && fixture.completions == 1,
+                "handover during hiding must survive movement before capture preparation");
     }
 }
 
-void pointerMovementRequiresDispatchAtTheNewTarget() {
-    for (const bool changeWindow : {false, true}) {
-        RefreshFixture fixture;
-        fixture.start();
-        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
-        if (changeWindow)
-            ++fixture.target.window;
-        else
+void pointerMovementDoesNotDiscardCursorHandover() {
+    for (const bool local : {false, true}) {
+        for (const bool changeWindow : {false, true}) {
+            RefreshFixture fixture;
+            fixture.target.thread = local ? 11 : 22;
+            fixture.start();
+            if (local)
+                fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+            else
+                fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 33);
+            // Moving after handover need not change the cursor shape. In particular,
+            // another process's mouse dispatch cannot produce a local acknowledgement.
             ++fixture.target.position.rx();
+            if (changeWindow) {
+                ++fixture.target.window;
+                ++fixture.target.thread;
+            }
+            fixture.dispatchQueuedCompletion();
+            require(fixture.ready && fixture.completions == 1 && fixture.flushes == 1 &&
+                        fixture.disarms == 1,
+                    "capture must sample the current cursor without revalidating its old target");
+            fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 33);
+            fixture.dispatchQueuedCompletion();
+            require(fixture.completions == 1, "later cursor updates must not capture twice");
+        }
+
+        RefreshFixture fixture;
+        fixture.target.thread = local ? 11 : 22;
+        fixture.start();
+        fixture.moveDuringFlush = true;
+        if (local)
+            fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        else
+            fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 33);
         fixture.dispatchQueuedCompletion();
-        require(fixture.completions == 0,
-                "a queued completion must not snapshot a cursor at an unacknowledged position");
-        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
-        fixture.dispatchQueuedCompletion();
-        require(fixture.ready && fixture.completions == 1,
-                "input at the new target must complete the pending capture");
+        require(fixture.ready && fixture.completions == 1 && fixture.flushes == 1,
+                "movement during composition must not discard completed cursor handover");
     }
-    RefreshFixture fixture;
-    fixture.start();
-    fixture.moveDuringFlush = true;
-    fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
-    fixture.dispatchQueuedCompletion();
-    require(fixture.completions == 0,
-            "movement during composition must also wait for input at the new position");
-    fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
-    fixture.dispatchQueuedCompletion();
-    require(fixture.ready, "input after movement during composition must complete normally");
 }
 
 void pendingPreparationCanBeCancelledAndReportsNativeFailures() {
@@ -257,7 +263,7 @@ int main(int argc, char** argv) {
     localMouseDispatchCompletesWithoutCursorChanges();
     foreignCursorUpdatesStillWaitForTheDesktop();
     foreignCursorHandoverDuringWindowHidingIsRetained();
-    pointerMovementRequiresDispatchAtTheNewTarget();
+    pointerMovementDoesNotDiscardCursorHandover();
     pendingPreparationCanBeCancelledAndReportsNativeFailures();
     return 0;
 }

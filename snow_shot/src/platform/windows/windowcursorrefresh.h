@@ -18,7 +18,6 @@ struct CursorRefreshTarget {
     quintptr window = 0;
     quint32 thread = 0;
     QPoint position;
-    bool operator==(const CursorRefreshTarget&) const = default;
 };
 
 // Native input dispatch acknowledges a local target even when its cursor is unchanged.
@@ -59,9 +58,8 @@ class CursorRefreshOperation final : public QObject {
             }
         });
         // Hiding the editor can route input to a foreign window before start().
-        // Its already observed desktop update is valid only at that same target.
-        if (desktopNotification_ && acknowledgedTarget_ == backend_.target())
-            acknowledge(acknowledgedTarget_);
+        if (desktopNotification_)
+            acknowledge();
     }
     void cursorChanged(quint32 event, qint32 object, quint32 sourceThread) {
         if (cancelled_ || (started_ && !completed_))
@@ -71,9 +69,8 @@ class CursorRefreshOperation final : public QObject {
                                       target.thread))
             return;
         desktopNotification_ = true;
-        acknowledgedTarget_ = target;
         if (completed_)
-            acknowledge(target);
+            acknowledge();
     }
     void mouseDispatched(quintptr receiver, const QPoint& position) {
         if (!completed_)
@@ -81,12 +78,11 @@ class CursorRefreshOperation final : public QObject {
         const auto target = backend_.target();
         if (receiver && receiver == target.window && position == target.position &&
             target.thread == backend_.callerThread)
-            acknowledge(target);
+            acknowledge();
     }
 
   private:
-    void acknowledge(const CursorRefreshTarget& target) {
-        acknowledgedTarget_ = target;
+    void acknowledge() {
         if (completionQueued_)
             return;
         completionQueued_ = true;
@@ -96,14 +92,12 @@ class CursorRefreshOperation final : public QObject {
         QTimer::singleShot(0, this, [this] {
             QTimer::singleShot(0, this, [this] {
                 completionQueued_ = false;
-                if (!completed_ || acknowledgedTarget_ != backend_.target())
+                if (!completed_)
                     return;
-                if (!backend_.flush()) {
-                    finish(false);
-                    return;
-                }
-                if (acknowledgedTarget_ == backend_.target())
-                    finish(true);
+                // Handover is an observation, not a lock on the pointer's position/window.
+                // Capture samples and owns the current cursor after this callback. Movement
+                // need not change its shape or produce another desktop cursor notification.
+                finish(backend_.flush());
             });
         });
     }
@@ -115,7 +109,6 @@ class CursorRefreshOperation final : public QObject {
             completed(ready);
     }
     Backend backend_;
-    CursorRefreshTarget acknowledgedTarget_;
     std::function<void(bool)> completed_;
     bool cancelled_ = false;
     bool started_ = false;

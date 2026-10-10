@@ -22,6 +22,7 @@ void bringWindowToForeground(QWidget* window);
 // Arm before input surfaces become transparent/hidden, then request a native mouse update.
 // Local targets complete after native mouse dispatch; foreign targets complete on a
 // desktop cursor update (1 s deadline). Windows may publish that event from DWM.
+// Once observed, handover survives pointer movement; the caller samples the current cursor.
 // Destruction cancels the operation. The callback is suppressed if its context is destroyed.
 class CursorRefresh final {
   public:
