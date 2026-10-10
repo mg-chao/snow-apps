@@ -709,6 +709,15 @@ impl Editor {
             }
         }
 
+        if let Some(center) = snow_draw_engine_document::angle_arc_control_point(arrow) {
+            handles.push(ArrowHandleState {
+                kind: ArrowHandleKind::AngleArc,
+                center,
+                anchor: None,
+                fixed_segment: false,
+            });
+        }
+
         let focus_points = if arrow.start_binding.is_some() || arrow.end_binding.is_some() {
             visible_arrow_focus_points(
                 arrow_id,
@@ -813,6 +822,12 @@ impl Editor {
             return Some(ArrowHitTarget::Point(index));
         }
 
+        if let Some(center) = snow_draw_engine_document::angle_arc_control_point(arrow)
+            && point_distance(center, canvas_point) <= turning_radius
+        {
+            return Some(ArrowHitTarget::AngleArc);
+        }
+
         let focus_points = if arrow.start_binding.is_some() || arrow.end_binding.is_some() {
             visible_arrow_focus_points(
                 arrow_id,
@@ -843,6 +858,16 @@ impl Editor {
             } else {
                 ArrowHitTarget::Label
             });
+        }
+
+        if arrow.stroke.a != 0
+            && snow_draw_engine_document::angle_arc_hit_test(
+                arrow,
+                canvas_point,
+                arrow.stroke_width / 2.0 + element_hit_tolerance(self.camera().zoom),
+            )
+        {
+            return Some(ArrowHitTarget::AngleArc);
         }
 
         arrow_hit_test(

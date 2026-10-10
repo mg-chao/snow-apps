@@ -278,6 +278,70 @@ mod tests {
     }
 
     #[test]
+    fn angle_arc_controls_keep_point_priority_and_separate_arc_drag_from_arm_move() {
+        use snow_draw_engine_document::{angle_arc_control_point, angle_geometry};
+        let mut document = DocumentModel::new();
+        let mut arrow = test_arrow(&[
+            Point::new(100.0, 0.0),
+            Point::new(0.0, 0.0),
+            Point::new(0.0, -100.0),
+        ]);
+        crate::AngleStyle::default().apply_to_arrow(&mut arrow);
+        let id = insert_arrow(&mut document, arrow.clone());
+        let editor = selected_arrow_editor(&document, id);
+        let control = angle_arc_control_point(&arrow).unwrap();
+        assert_eq!(
+            editor.arrow_hit_target(&document, id, &arrow, control),
+            Some(ArrowHitTarget::AngleArc)
+        );
+        let arc_body = Point::new(
+            27.0 * 20.0_f64.to_radians().cos(),
+            -27.0 * 20.0_f64.to_radians().sin(),
+        );
+        assert_eq!(
+            editor.arrow_hit_target(&document, id, &arrow, arc_body),
+            Some(ArrowHitTarget::AngleArc)
+        );
+        assert_eq!(
+            editor.arrow_hit_target(&document, id, &arrow, Point::new(80.0, 0.0)),
+            Some(ArrowHitTarget::Move)
+        );
+        arrow.angle.as_mut().unwrap().arc_radius = Some(1.0);
+        assert_eq!(
+            editor.arrow_hit_target(
+                &document,
+                id,
+                &arrow,
+                angle_arc_control_point(&arrow).unwrap()
+            ),
+            Some(ArrowHitTarget::Point(1)),
+            "vertex stays editable when the arc handle overlaps it"
+        );
+        arrow.angle.as_mut().unwrap().arc_radius = Some(100.0);
+        assert_eq!(
+            editor.arrow_hit_target(&document, id, &arrow, Point::new(100.0, 0.0)),
+            Some(ArrowHitTarget::Endpoint(ArrowEndpointEdge::Start))
+        );
+        let handles = editor.arrow_handle_states(&document, id, &arrow);
+        assert_eq!(
+            handles
+                .iter()
+                .filter(|handle| handle.kind == crate::ArrowHandleKind::AngleArc)
+                .count(),
+            1
+        );
+        let mut zero = arrow.clone();
+        zero.points[2] = zero.points[0];
+        assert!(angle_arc_control_point(&zero).is_none());
+        zero.angle.as_mut().unwrap().full_turn = true;
+        let geometry = angle_geometry(&zero).unwrap();
+        assert!(
+            (angle_arc_control_point(&zero).unwrap().x - geometry.vertex.x + geometry.radius).abs()
+                < 1e-9
+        );
+    }
+
+    #[test]
     fn selected_arrow_controls_win_over_an_overlapping_bound_label() {
         let mut document = DocumentModel::new();
         let arrow_id = document.allocate_element_id();

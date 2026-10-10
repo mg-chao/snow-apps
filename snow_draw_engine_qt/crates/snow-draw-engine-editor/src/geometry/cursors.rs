@@ -13,6 +13,7 @@ pub(crate) fn arrow_edit_label(mode: ArrowEditMode) -> &'static str {
     match mode {
         ArrowEditMode::Move => "move arrow",
         ArrowEditMode::Label => "move arrow text",
+        ArrowEditMode::AngleArc => "adjust angle arc radius",
         ArrowEditMode::Endpoint(_) => "drag arrow endpoint",
         ArrowEditMode::Point(_) => "drag arrow point",
         ArrowEditMode::FocusPoint(_) => "drag arrow focus point",
@@ -51,6 +52,7 @@ pub(crate) fn hover_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorSty
             CursorStyle::Grab
         }
         ArrowHitTarget::Segment(_) => CursorStyle::Move,
+        ArrowHitTarget::AngleArc => CursorStyle::Grab,
     }
 }
 
@@ -61,6 +63,7 @@ pub(crate) fn active_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorSt
             CursorStyle::Crosshair
         }
         ArrowHitTarget::Segment(_) => CursorStyle::Move,
+        ArrowHitTarget::AngleArc => CursorStyle::Grabbing,
     }
 }
 
@@ -71,6 +74,7 @@ pub(crate) fn active_cursor_for_arrow_mode(mode: ArrowEditMode) -> CursorStyle {
             CursorStyle::Crosshair
         }
         ArrowEditMode::Segment(_) => CursorStyle::Move,
+        ArrowEditMode::AngleArc => CursorStyle::Grabbing,
     }
 }
 

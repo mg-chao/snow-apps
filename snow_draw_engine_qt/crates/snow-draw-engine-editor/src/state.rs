@@ -284,6 +284,7 @@ pub(crate) struct PendingArrowMoveState {
 pub(crate) enum ArrowHitTarget {
     Move,
     Label,
+    AngleArc,
     Endpoint(ArrowEndpointEdge),
     Point(usize),
     FocusPoint(ArrowEndpointEdge),
@@ -294,6 +295,7 @@ pub(crate) enum ArrowHitTarget {
 pub(crate) enum ArrowEditMode {
     Move,
     Label,
+    AngleArc,
     Endpoint(ArrowEndpointEdge),
     Point(usize),
     FocusPoint(ArrowEndpointEdge),

@@ -375,3 +375,67 @@ fn angle_document_synchronizes_owned_label_layout_style_content_and_history() {
     assert!(document.element(owner_id).is_err());
     assert!(document.element(text_id).is_err());
 }
+
+#[test]
+fn angle_arc_radius_validates_and_legacy_annotations_keep_automatic_geometry() {
+    let legacy: AngleAnnotation =
+        serde_json::from_str(r#"{"unit":"degrees","decimal_places":0,"full_turn":false}"#).unwrap();
+    assert_eq!(legacy.arc_radius, None);
+    for radius in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(
+            validate_angle_annotation(AngleAnnotation {
+                arc_radius: Some(radius),
+                ..legacy
+            })
+            .is_err()
+        );
+        let mut invalid = angle(90.0);
+        invalid.angle = Some(AngleAnnotation {
+            arc_radius: Some(radius),
+            ..legacy
+        });
+        assert!(angle_geometry(&invalid).is_none());
+        assert!(validate_arrow(&invalid).is_err());
+    }
+    let mut arrow = angle(90.0);
+    close(angle_geometry(&arrow).unwrap().radius, 27.0);
+    for (requested, expected) in [(10.0, 10.0), (80.0, 80.0), (200.0, 100.0)] {
+        arrow.angle.as_mut().unwrap().arc_radius = Some(requested);
+        close(angle_geometry(&arrow).unwrap().radius, expected);
+        assert!(validate_arrow(&arrow).is_ok());
+        let encoded = serde_json::to_string(&arrow).unwrap();
+        let restored: ArrowData = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(restored, arrow);
+    }
+}
+
+#[test]
+fn angle_custom_arc_updates_paths_bounds_picking_and_label_anchor_together() {
+    for degrees in [45.0, 90.0, 180.0, 270.0, 360.0] {
+        let mut arrow = angle(degrees);
+        let layout = TextLayoutSize::new(80.0, 24.0);
+        let old = angle_label(&arrow, Some(layout)).unwrap();
+        arrow.angle.as_mut().unwrap().arc_radius = Some(75.0);
+        let geometry = angle_geometry(&arrow).unwrap();
+        let control = snow_draw_engine_document::angle_arc_control_point(&arrow).unwrap();
+        close(control.x, geometry.vertex.x + 75.0 * geometry.bisector.x);
+        close(control.y, geometry.vertex.y + 75.0 * geometry.bisector.y);
+        assert!(snow_draw_engine_document::angle_arc_hit_test(
+            &arrow, control, 0.1
+        ));
+        assert!(arrow_hit_test(&arrow, control, 0.1));
+        let bounds = arrow_bounds(&arrow);
+        assert!(control.x >= bounds.min_x && control.x <= bounds.max_x);
+        assert!(control.y >= bounds.min_y && control.y <= bounds.max_y);
+        let moved = angle_label(&arrow, Some(layout)).unwrap();
+        close(moved.center.x - old.center.x, 48.0 * geometry.bisector.x);
+        close(moved.center.y - old.center.y, 48.0 * geometry.bisector.y);
+        assert_eq!(moved.layout, old.layout);
+        assert_eq!(moved.text, old.text);
+        assert_eq!(moved.rotation, 0.0);
+        let arc_start = arrow.path_commands()[3];
+        assert!(matches!(arc_start, ArrowPathCommand::MoveTo { point }
+            if (point[0] - 75.0).abs() < 1e-9 && point[1].abs() < 1e-9));
+    }
+    assert!(snow_draw_engine_document::angle_arc_control_point(&angle(0.0)).is_none());
+}

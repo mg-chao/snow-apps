@@ -92,6 +92,17 @@ impl Editor {
             canvas_point.y + state.drag_offset.y,
         );
         match state.mode {
+            ArrowEditMode::AngleArc => ArrowEditPreview {
+                arrow: crate::angle::angle_with_dragged_arc(
+                    &state.original_arrow,
+                    state.start_canvas_position,
+                    canvas_point,
+                )
+                .unwrap_or_else(|| state.preview_arrow.clone()),
+                reorder_targets: Vec::new(),
+                next_mode: None,
+                suggested_binding: None,
+            },
             ArrowEditMode::Move => ArrowEditPreview {
                 arrow: translated_arrow_for_move(
                     &state.original_arrow,

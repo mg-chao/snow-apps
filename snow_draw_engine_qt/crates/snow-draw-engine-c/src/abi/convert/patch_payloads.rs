@@ -252,6 +252,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
             }
         }
         SceneDisplayItem::Arrow(item) => {
+            out.arrow_text_overlay = u8::from(item.bound_text_overlay);
             if let Some(bounds) = item.label_bounds {
                 out.arrow_text_bounds = [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y];
             }
@@ -521,6 +522,21 @@ mod tests {
         RectangleDisplayItem, ReplaceRangeOp, SerialNumberDisplayItem, StrokeStyle,
         TextDisplayItem, UiFocusConnectionDisplayItem, UiRectangleDisplayItem, ViewportPatch,
     };
+
+    #[test]
+    fn angle_label_overlay_flag_survives_the_display_bridge() {
+        for overlay in [false, true] {
+            let item = snow_scene_display_item_from_rust(
+                &SceneDisplayItem::Arrow(snow_draw_engine::ArrowDisplayItem {
+                    bound_text_overlay: overlay,
+                    ..Default::default()
+                }),
+                false,
+                false,
+            );
+            assert_eq!(item.view.arrow_text_overlay, u8::from(overlay));
+        }
+    }
 
     #[test]
     fn patch_protocol_layout_and_decoration_payload_are_stable() {

@@ -850,7 +850,7 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
     }
     painter.setOpacity(qBound(0.0, item.opacity, 1.0));
     const ArrowRenderProjection projection = arrowProjectionForScene(displayInfo);
-    if (item.has_bound_text_element != 0 &&
+    if (item.has_bound_text_element != 0 && item.arrow_text_overlay == 0 &&
         item.needsArrowTextClip(
             2.0 /
             (projection.view.cameraZoom *

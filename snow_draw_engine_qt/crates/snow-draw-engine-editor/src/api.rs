@@ -530,6 +530,7 @@ pub struct SelectionArrowState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArrowHandleKind {
     Endpoint,
+    AngleArc,
     LoopStart,
     LoopEnd,
     FocusPoint,

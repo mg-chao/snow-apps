@@ -53,9 +53,10 @@ warm frames. CSV files contain p50 and p95 in milliseconds for each independent 
 - Smart Erase synchronization extracts only its own committed regions and previews. Its
   sparse membership cache follows scene deltas, so angle inputs do not enumerate unrelated
   generated labels or walk the document solely to discover that no Smart Erase region exists.
-- Short owned paths reject chunks directly by bounds. Label clipping is skipped only after
-  a conservative, cached stroke intersection check; stroke width, geometry, label bounds,
-  zoom, and device pixel ratio participate in invalidation.
+- Short owned paths reject chunks directly by bounds. Angle labels overlay complete geometry
+  and bypass label clipping. Ordinary arrow and distance labels retain the conservative,
+  cached stroke intersection check; stroke width, geometry, label bounds, zoom, and device
+  pixel ratio participate in its invalidation.
 - Text layouts remain cached; layout memo entries are removed with their owners. Path and
   clip caches are bounded by live display items rather than pointer-event history.
 
@@ -201,3 +202,49 @@ snapshot omissions are also outside this change. The dedicated `--angle-only` ch
 validates the new entries in both full and mini capability documents, including exact
 three-point cardinality, optional `full_turn`, unit enums, precision bounds, and strict
 target-specific style schemas. Unrelated snapshot entries are not repaired here.
+
+## Arc radius dragging and label overlay (2026-10-10)
+
+Selected angles expose a circular control point at the arc midpoint. Both that control and
+the selected arc body adjust the radius without changing the three angle points. The radius
+stays within the shorter arm, and the horizontal generated label follows the arc along the
+sweep bisector. A chosen radius persists in `AngleAnnotation.arc_radius`; missing values keep
+the previous automatic sizing. Endpoint edits preserve it where it fits, and selection
+resizing scales it with the shorter arm length.
+
+Angle display items now carry a label-overlay flag through the C bridge's previously reserved
+byte. Qt skips all angle-label intersection and exclusion-path work, painting text above the
+complete arms and arc. Ordinary arrow and distance label clipping remains covered by the
+existing regressions. Offscreen angle tests check uninterrupted strokes in widget rendering
+and transparent exports, handle and arc-body dragging at zoom 0.75 and 2, reflex/full-turn
+angles, and exact undo/redo restoration.
+
+The new `angle-arc-radius`, `angle-offscreen-arc-radius`, and `angle-visible-arc-radius`
+benchmark scenarios keep the formatted label unchanged while varying the radius. Their
+commit assertions verify the chosen radius and unchanged angle points. A separate warm
+128-angle Rust regression checks that each radius preview emits exactly two scene items and
+one geometry update, requests no new label layout, and retains unrelated cached geometry.
+
+Reproduce the native macOS check with the Release performance preset:
+
+```sh
+cmake --build --preset build-snow-shot-macos-arm64-performance --target snow-canvas-angle-benchmark
+build/snow-shot-macos-arm64-performance/snow_draw_engine_qt/snow-canvas-angle-benchmark 100 3 1000 > build/angle-arc-macos.csv
+```
+
+All 90 rows completed with assertions enabled on an Apple M4 running macOS 27.0.1
+(build 26A434), using the repository's shared Qt 6.12.0. This run used 100 measured
+iterations per repeat, three repeats, and populations up to 1,000 annotations. The table
+reports the median of the three per-repeat percentile values, in milliseconds. Paint time
+is the subsequent event-processing interval, as described above.
+
+| Arc-drag population | Input p50 | Input p95 | Event processing p50 | Event processing p95 |
+| --- | ---: | ---: | ---: | ---: |
+| No existing angles | 0.0085 | 0.0088 | 0.0328 | 0.0364 |
+| 1,000 offscreen angles | 0.0081 | 0.0091 | 0.0325 | 0.0366 |
+| 1,000 visible angles | 0.7241 | 0.7609 | 0.8118 | 0.8565 |
+
+The historical Windows measurements above use a different machine and predate the overlay
+behavior. This macOS run does not measure the 10,000-angle case. The focused angle,
+distance, arrow-text, path-culling, and application angle integration CTests passed, along
+with related Rust tests, scoped strict Clippy, and formatting checks.

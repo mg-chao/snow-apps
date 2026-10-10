@@ -138,6 +138,42 @@ pub(crate) fn angle_with_moved_point(
     if snow_draw_engine_document::validate_arrow(&next).is_err() {
         return None;
     }
+    if let Some(radius) = next.angle?.arc_radius {
+        next.angle.as_mut()?.arc_radius =
+            Some(radius.min(snow_draw_engine_document::angle_geometry(&next)?.maximum_radius));
+    }
+    Some(next)
+}
+
+pub(crate) fn angle_with_dragged_arc(
+    arrow: &ArrowData,
+    start: Point<f64>,
+    point: Point<f64>,
+) -> Option<ArrowData> {
+    let geometry = snow_draw_engine_document::angle_geometry(arrow)?;
+    let radial = Point::new(start.x - geometry.vertex.x, start.y - geometry.vertex.y);
+    let length = radial.x.hypot(radial.y);
+    let direction = if length > 0.0 {
+        Point::new(radial.x / length, radial.y / length)
+    } else {
+        geometry.bisector
+    };
+    let displacement = (point.x - start.x) * direction.x + (point.y - start.y) * direction.y;
+    if !displacement.is_finite() {
+        return None;
+    }
+    let unchanged_tolerance = f64::EPSILON * geometry.radius.max(1.0) * 8.0;
+    if displacement.abs() <= unchanged_tolerance {
+        return Some(arrow.clone());
+    }
+    let radius = (geometry.radius + displacement)
+        .clamp(geometry.automatic_radius.min(1.0), geometry.maximum_radius);
+    // Retain the exact original record for clicks and drags returning to their origin.
+    if (radius - geometry.radius).abs() <= unchanged_tolerance {
+        return Some(arrow.clone());
+    }
+    let mut next = arrow.clone();
+    next.angle.as_mut()?.arc_radius = Some(radius);
     Some(next)
 }
 
@@ -538,5 +574,102 @@ mod tests {
         let zero = adjusted_angle(&full_turn, -std::f64::consts::TAU).unwrap();
         assert!(!zero.angle.unwrap().full_turn);
         assert_eq!(snow_draw_engine_document::angle_value(&zero), Some(0.0));
+    }
+    #[test]
+    fn angle_arc_drag_preserves_rays_and_uses_the_grabbed_radial_direction() {
+        let original = angle();
+        let start = Point::new(24.0, -12.0);
+        let length = start.x.hypot(start.y);
+        let direction = Point::new(start.x / length, start.y / length);
+        let next = angle_with_dragged_arc(
+            &original,
+            start,
+            Point::new(start.x + 30.0 * direction.x, start.y + 30.0 * direction.y),
+        )
+        .unwrap();
+        assert_eq!(next.global_points(), original.global_points());
+        assert!((next.angle.unwrap().arc_radius.unwrap() - 57.0).abs() < 1e-9);
+        let tangent = Point::new(start.x - direction.y * 10.0, start.y + direction.x * 10.0);
+        assert_eq!(
+            angle_with_dragged_arc(&original, start, tangent).unwrap(),
+            original
+        );
+        assert_eq!(
+            angle_with_dragged_arc(&original, start, start).unwrap(),
+            original
+        );
+        let mut small = original.clone();
+        small.angle.as_mut().unwrap().arc_radius = Some(0.5);
+        assert_eq!(angle_with_dragged_arc(&small, start, start).unwrap(), small);
+        assert!(angle_with_dragged_arc(&original, start, Point::new(f64::NAN, 0.0)).is_none());
+        assert_eq!(
+            angle_with_dragged_arc(&original, start, Point::new(1000.0, -1000.0))
+                .unwrap()
+                .angle
+                .unwrap()
+                .arc_radius,
+            Some(100.0)
+        );
+        assert_eq!(
+            angle_with_dragged_arc(&original, start, Point::new(-1000.0, 1000.0))
+                .unwrap()
+                .angle
+                .unwrap()
+                .arc_radius,
+            Some(1.0)
+        );
+    }
+
+    #[test]
+    fn angle_chosen_radius_survives_style_wheel_and_point_edits_and_scales_on_resize() {
+        let mut original = angle();
+        original.angle.as_mut().unwrap().arc_radius = Some(60.0);
+        let longer = angle_with_moved_point(&original, 2, Point::new(0.0, -200.0)).unwrap();
+        assert_eq!(longer.angle.unwrap().arc_radius, Some(60.0));
+        let shorter = angle_with_moved_point(&original, 2, Point::new(0.0, -20.0)).unwrap();
+        assert_eq!(shorter.angle.unwrap().arc_radius, Some(20.0));
+        let vertex = angle_with_moved_point(&original, 1, Point::new(50.0, 0.0)).unwrap();
+        assert_eq!(vertex.angle.unwrap().arc_radius, Some(50.0));
+        assert_eq!(
+            adjusted_angle(&original, 0.1)
+                .unwrap()
+                .angle
+                .unwrap()
+                .arc_radius,
+            Some(60.0)
+        );
+        let mut styled = original.clone();
+        AngleStyle {
+            stroke_width: 24.0,
+            ..Default::default()
+        }
+        .apply_to_arrow(&mut styled);
+        assert_eq!(styled.angle.unwrap().arc_radius, Some(60.0));
+        let bounds = crate::selection_bounds_from_selection(
+            &[],
+            &[SelectionArrowState {
+                id: Default::default(),
+                arrow: original.clone(),
+            }],
+        )
+        .unwrap();
+        for (scale_x, scale_y, expected) in [(2.0, 2.0, 120.0), (2.0, 0.5, 30.0)] {
+            let resized = crate::arrow_ops::resized_arrow_for_selection(
+                &original,
+                &bounds,
+                Point::new(0.0, 0.0),
+                scale_x,
+                scale_y,
+            )
+            .unwrap();
+            assert!((resized.angle.unwrap().arc_radius.unwrap() - expected).abs() < 1e-9);
+        }
+        let rotated =
+            crate::arrow_ops::rotated_arrow_for_selection(&original, Point::new(0.0, 0.0), 0.5)
+                .unwrap();
+        assert_eq!(rotated.angle.unwrap().arc_radius, Some(60.0));
+        let translated =
+            crate::arrow_ops::translated_arrow_for_move(&original, Point::new(20.0, 30.0));
+        assert_eq!(translated.angle.unwrap().arc_radius, Some(60.0));
     }
 }

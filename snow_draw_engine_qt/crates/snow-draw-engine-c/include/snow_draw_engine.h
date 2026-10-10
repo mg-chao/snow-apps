@@ -1218,7 +1218,8 @@ typedef struct SnowSceneDisplayItem {
     uint8_t has_bound_text_element;
     uint8_t rect_shape;
     uint8_t serial_number_type;
-    uint8_t reserved2[1];
+    /* Angle labels overlay uninterrupted geometry; zero retains label clipping. */
+    uint8_t arrow_text_overlay;
     uint32_t bound_text_element_generation;
     /* Canvas-space label exclusion rectangle, used only by arrows. */
     double arrow_text_bounds[4];

@@ -20,7 +20,7 @@ pub enum AngleUnit {
     Radians,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AngleAnnotation {
     pub unit: AngleUnit,
     pub decimal_places: u8,
@@ -28,10 +28,17 @@ pub struct AngleAnnotation {
     /// reach a complete turn without storing a redundant numeric angle.
     #[serde(default)]
     pub full_turn: bool,
+    /// Canvas-space radius chosen by the user; absent values retain automatic sizing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arc_radius: Option<f64>,
 }
 
 pub fn validate_angle_annotation(angle: AngleAnnotation) -> Result<(), ErrorCode> {
-    if angle.decimal_places > 3 {
+    if angle.decimal_places > 3
+        || angle
+            .arc_radius
+            .is_some_and(|radius| !radius.is_finite() || radius <= 0.0)
+    {
         return Err(ErrorCode::InvalidArgument);
     }
     Ok(())
@@ -45,11 +52,14 @@ pub struct AngleGeometry {
     /// Visual counterclockwise sweep in the downward-positive canvas, in radians.
     pub sweep: f64,
     pub radius: f64,
+    pub automatic_radius: f64,
+    pub maximum_radius: f64,
     pub bisector: Point<f64>,
 }
 
 pub fn angle_geometry(arrow: &ArrowData) -> Option<AngleGeometry> {
     let annotation = arrow.angle?;
+    validate_angle_annotation(annotation).ok()?;
     let [a, vertex, b] = arrow.points.as_slice() else {
         return None;
     };
@@ -97,8 +107,13 @@ pub fn angle_geometry(arrow: &ArrowData) -> Option<AngleGeometry> {
         start_direction.y * cos - start_direction.x * sin,
     );
     let font_size = annotation_font_size(arrow);
-    let radius = (0.30 * start_length.min(end_length))
-        .min(24.0_f64.max(1.25 * font_size + arrow.stroke_width));
+    let maximum_radius = start_length.min(end_length);
+    let automatic_radius =
+        (0.30 * maximum_radius).min(24.0_f64.max(1.25 * font_size + arrow.stroke_width));
+    let radius = annotation
+        .arc_radius
+        .unwrap_or(automatic_radius)
+        .min(maximum_radius);
     let vertex = Point::new(arrow.x + vertex[0], arrow.y + vertex[1]);
     if !vertex.x.is_finite() || !vertex.y.is_finite() {
         return None;
@@ -109,6 +124,8 @@ pub fn angle_geometry(arrow: &ArrowData) -> Option<AngleGeometry> {
         end_direction,
         sweep,
         radius,
+        automatic_radius,
+        maximum_radius,
         bisector,
     })
 }
@@ -120,6 +137,16 @@ pub fn angle_value(arrow: &ArrowData) -> Option<f64> {
 
 pub fn angle_arc_radius(arrow: &ArrowData) -> Option<f64> {
     Some(angle_geometry(arrow)?.radius)
+}
+
+pub fn angle_arc_control_point(arrow: &ArrowData) -> Option<Point<f64>> {
+    let geometry = angle_geometry(arrow)?;
+    (geometry.sweep > 0.0).then(|| {
+        Point::new(
+            geometry.vertex.x + geometry.radius * geometry.bisector.x,
+            geometry.vertex.y + geometry.radius * geometry.bisector.y,
+        )
+    })
 }
 
 pub fn angle_label_text(arrow: &ArrowData) -> Option<String> {
@@ -289,7 +316,7 @@ pub(crate) fn angle_arc_bounds(arrow: &ArrowData) -> Option<DrawRect> {
     ))
 }
 
-pub(crate) fn angle_arc_hit_test(arrow: &ArrowData, point: Point<f64>, tolerance: f64) -> bool {
+pub fn angle_arc_hit_test(arrow: &ArrowData, point: Point<f64>, tolerance: f64) -> bool {
     let Some(geometry) = angle_geometry(arrow) else {
         return false;
     };

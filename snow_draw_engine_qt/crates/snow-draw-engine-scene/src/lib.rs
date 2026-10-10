@@ -1694,6 +1694,7 @@ mod tests {
         SceneDisplayItem::Arrow(ArrowDisplayItem {
             bound_text_id: None,
             label_bounds: None,
+            bound_text_overlay: false,
             id: DisplayItemId {
                 index: 91,
                 generation: 3,

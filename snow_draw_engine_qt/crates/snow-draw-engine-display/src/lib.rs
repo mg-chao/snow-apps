@@ -370,6 +370,7 @@ pub struct ArrowDisplayItem {
     pub id: DisplayItemId,
     pub bound_text_id: Option<DisplayItemId>,
     pub label_bounds: Option<snow_draw_engine_core::DrawRect>,
+    pub bound_text_overlay: bool,
     pub points: Vec<[f64; 2]>,
     pub path_commands: Vec<ArrowPathCommand>,
     pub geometry: Arc<PathGeometry>,
@@ -496,6 +497,7 @@ impl Default for ArrowDisplayItem {
         Self {
             bound_text_id: None,
             label_bounds: None,
+            bound_text_overlay: false,
             id: DisplayItemId::default(),
             points: Vec::new(),
             path_commands: Vec::new(),

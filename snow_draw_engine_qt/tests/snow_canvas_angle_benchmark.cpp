@@ -35,8 +35,9 @@ void click(SnowCanvasWidget& canvas, QPointF point) {
 
 double percentile(std::vector<double> values, double fraction) {
     std::sort(values.begin(), values.end());
-    return values[std::min(values.size() - 1,
-                           static_cast<std::size_t>(std::ceil(values.size() * fraction) - 1))];
+    return values[std::min(
+        values.size() - 1,
+        static_cast<std::size_t>(std::ceil(static_cast<double>(values.size()) * fraction) - 1))];
 }
 
 void populate(SnowCanvasRuntime& runtime, int count, bool offscreen) {
@@ -64,7 +65,7 @@ void populate(SnowCanvasRuntime& runtime, int count, bool offscreen) {
     }
 }
 
-enum class Scenario { Preview, SameLabel, Wheel, Endpoint, StaticPaint };
+enum class Scenario { Preview, SameLabel, Wheel, Endpoint, ArcRadius, StaticPaint };
 
 QJsonObject selectedAngle(const SnowCanvasRuntime& runtime) {
     const auto payload = runtime.serializeSelectedDrawTemplate();
@@ -103,23 +104,29 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
     style.strokeWidth = width;
     require(canvas.setCanvasAngleStyle(style), "configure angle width");
     const QPointF a(840, 360), vertex(640, 360), b(640, 220);
+    const QPointF arcDirection(std::sqrt(0.5), -std::sqrt(0.5));
     if (scenario != Scenario::StaticPaint) {
         click(canvas, a);
         click(canvas, vertex);
         mouse(canvas, QEvent::MouseMove, b);
-        if (scenario == Scenario::Wheel || scenario == Scenario::Endpoint) {
+        if (scenario == Scenario::Wheel || scenario == Scenario::Endpoint ||
+            scenario == Scenario::ArcRadius) {
             click(canvas, b);
             require(canvas.setCanvasTool(SnowCanvasTool::Select), "select angle");
             click(canvas, {790, 360});
             if (scenario == Scenario::Endpoint)
                 mouse(canvas, QEvent::MouseButtonPress, b, Qt::LeftButton, Qt::LeftButton);
+            if (scenario == Scenario::ArcRadius)
+                mouse(canvas, QEvent::MouseButtonPress, vertex + arcDirection * 27.0,
+                      Qt::LeftButton, Qt::LeftButton);
         }
     } else {
         require(canvas.setCanvasTool(SnowCanvasTool::Select), "measure committed angles");
     }
     QApplication::processEvents();
     QJsonArray originalPoints;
-    if (scenario == Scenario::Wheel || scenario == Scenario::Endpoint) {
+    if (scenario == Scenario::Wheel || scenario == Scenario::Endpoint ||
+        scenario == Scenario::ArcRadius) {
         require(runtime.selectedElementIds().size() == 1, "benchmark selects one angle");
         const auto original = selectedAngle(runtime);
         originalPoints = original.value(QStringLiteral("points")).toArray();
@@ -136,6 +143,9 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
         if (scenario == Scenario::Wheel) {
             require(canvas.adjustAngleValue((i % 2 == 0 ? 1 : -1) * 0.017453292519943295),
                     "adjust selected angle");
+        } else if (scenario == Scenario::ArcRadius) {
+            mouse(canvas, QEvent::MouseMove, vertex + arcDirection * (40.0 + (i % 80) * 0.5),
+                  Qt::NoButton, Qt::LeftButton);
         } else if (scenario != Scenario::StaticPaint) {
             const double theta = scenario == Scenario::SameLabel
                                      ? 1.5707963267948966 + (i % 2) * .001
@@ -172,6 +182,18 @@ void run(const char* name, Scenario scenario, int count, bool offscreen, int wid
                     points.at(2) != originalPoints.at(2),
                 "endpoint benchmark must edit the newly created second arm");
     }
+    if (scenario == Scenario::ArcRadius) {
+        const double radius = 40.0 + ((iterations + 29) % 80) * 0.5;
+        mouse(canvas, QEvent::MouseButtonRelease, vertex + arcDirection * radius, Qt::LeftButton);
+        const auto edited = selectedAngle(runtime);
+        require(edited.value(QStringLiteral("points")).toArray() == originalPoints &&
+                    std::abs(edited.value(QStringLiteral("angle"))
+                                 .toObject()
+                                 .value(QStringLiteral("arc_radius"))
+                                 .toDouble() -
+                             radius) < 1e-7,
+                "arc benchmark adjusts radius without changing any angle points");
+    }
     std::cout << name << ',' << width << ',' << count << ',' << repeat << ','
               << percentile(inputTimes, .5) << ',' << percentile(inputTimes, .95) << ','
               << percentile(paintTimes, .5) << ',' << percentile(paintTimes, .95) << std::endl;
@@ -196,6 +218,7 @@ int main(int argc, char** argv) {
         run("angle-same-label", Scenario::SameLabel, 0, false, 2, iterations, repeat);
         run("angle-wheel", Scenario::Wheel, 0, false, 2, iterations, repeat);
         run("angle-endpoint", Scenario::Endpoint, 0, false, 2, iterations, repeat);
+        run("angle-arc-radius", Scenario::ArcRadius, 0, false, 2, iterations, repeat);
         for (int count : {100, 1000, 10000}) {
             if (count > maximumCount)
                 continue;
@@ -204,11 +227,15 @@ int main(int argc, char** argv) {
                 repeat);
             run("angle-offscreen-wheel", Scenario::Wheel, count, true, 2, iterations, repeat);
             run("angle-offscreen-endpoint", Scenario::Endpoint, count, true, 2, iterations, repeat);
+            run("angle-offscreen-arc-radius", Scenario::ArcRadius, count, true, 2, iterations,
+                repeat);
             run("angle-visible-preview", Scenario::Preview, count, false, 2, iterations, repeat);
             run("angle-visible-same-label", Scenario::SameLabel, count, false, 2, iterations,
                 repeat);
             run("angle-visible-wheel", Scenario::Wheel, count, false, 2, iterations, repeat);
             run("angle-visible-endpoint", Scenario::Endpoint, count, false, 2, iterations, repeat);
+            run("angle-visible-arc-radius", Scenario::ArcRadius, count, false, 2, iterations,
+                repeat);
             run("angle-visible-paint", Scenario::StaticPaint, count, false, 2, iterations, repeat);
         }
     }

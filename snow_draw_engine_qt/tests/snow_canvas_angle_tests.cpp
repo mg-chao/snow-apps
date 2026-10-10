@@ -406,6 +406,108 @@ void heterogeneousStyleEditChangesOnlyCreationDefaults() {
             "heterogeneous style edits preserve selected records and change only future defaults");
 }
 
+QPointF globalPoint(const QJsonObject& owner, int index) {
+    const auto point = owner.value(QStringLiteral("points")).toArray().at(index).toArray();
+    return {owner.value(QStringLiteral("x")).toDouble() + point.at(0).toDouble(),
+            owner.value(QStringLiteral("y")).toDouble() + point.at(1).toDouble()};
+}
+
+void arcHandleAndBodyDragAtDifferentZooms() {
+    for (const double degrees : {90.0, 270.0, 360.0}) {
+        for (const double zoom : {0.75, 2.0}) {
+            for (const bool body : {false, true}) {
+                SnowCanvasRuntime runtime;
+                SnowCanvasWidget canvas(runtime);
+                prepare(canvas);
+                if (degrees == 360.0) {
+                    click(canvas, {500, 180});
+                    click(canvas, {300, 180});
+                    mouse(canvas, QEvent::MouseMove, {440, 180});
+                    require(canvas.adjustAngleValue(360 * radiansPerDegree),
+                            "make full turn draft");
+                    click(canvas, {440, 180});
+                } else {
+                    angle(canvas, {300 + 120 * std::cos(degrees * radiansPerDegree),
+                                   180 - 120 * std::sin(degrees * radiansPerDegree)});
+                }
+                require(canvas.setCanvasTool(SnowCanvasTool::Select), "select radius fixture");
+                click(canvas, {420, 180});
+                require(canvas.setViewportCamera(0, 0, zoom), "set radius fixture zoom");
+                const auto original = only(runtime, QStringLiteral("Arrow"));
+                const auto originalText = only(runtime, QStringLiteral("Text"));
+                const QPointF vertex = globalPoint(original, 1);
+                const double bearing = (body ? 25.0 : degrees / 2.0) * radiansPerDegree;
+                const QPointF radial(std::cos(bearing), -std::sin(bearing));
+                const QPointF start = canvas.canvasToViewTransform().map(vertex + radial * 27.0);
+                const QPointF end = canvas.canvasToViewTransform().map(vertex + radial * 67.0);
+                mouse(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+                mouse(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+                require(only(runtime, QStringLiteral("Arrow")) == original,
+                        "arc drag leaves committed geometry unchanged during preview");
+                mouse(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton);
+                const auto edited = only(runtime, QStringLiteral("Arrow"));
+                const auto editedText = only(runtime, QStringLiteral("Text"));
+                require(std::abs(edited.value(QStringLiteral("angle"))
+                                     .toObject()
+                                     .value(QStringLiteral("arc_radius"))
+                                     .toDouble() -
+                                 67.0) < 1e-7,
+                        "handle and arc body change only the radius at each zoom");
+                require(edited.value(QStringLiteral("points")) ==
+                                original.value(QStringLiteral("points")) &&
+                            globalPoint(edited, 1) == vertex &&
+                            label(runtime) == QString::number(degrees, 'f', 0) + QChar(0x00b0),
+                        "arc drag preserves arms, vertex and angle value");
+                const auto oldCenter = originalText.value(QStringLiteral("center")).toObject();
+                const auto newCenter = editedText.value(QStringLiteral("center")).toObject();
+                require(std::abs(newCenter.value(QStringLiteral("x")).toDouble() -
+                                 oldCenter.value(QStringLiteral("x")).toDouble() -
+                                 40.0 * std::cos(degrees / 2.0 * radiansPerDegree)) < 1e-7 &&
+                            std::abs(newCenter.value(QStringLiteral("y")).toDouble() -
+                                     oldCenter.value(QStringLiteral("y")).toDouble() +
+                                     40.0 * std::sin(degrees / 2.0 * radiansPerDegree)) < 1e-7 &&
+                            editedText.value(QStringLiteral("width")) ==
+                                originalText.value(QStringLiteral("width")),
+                        "label follows arc while retaining measured layout");
+                require(canvas.undo() && only(runtime, QStringLiteral("Arrow")) == original &&
+                            only(runtime, QStringLiteral("Text")) == originalText,
+                        "one undo restores arc and label exactly");
+                require(canvas.redo() && only(runtime, QStringLiteral("Arrow")) == edited,
+                        "redo restores the chosen arc radius");
+            }
+        }
+    }
+}
+
+void labelsOverlayUninterruptedAngleLines() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    prepare(canvas);
+    angle(canvas, {440, 180});
+    const auto text = only(runtime, QStringLiteral("Text"));
+    const auto center = text.value(QStringLiteral("center")).toObject();
+    const QPointF viewCenter =
+        canvas.canvasToViewTransform().map(QPointF(center.value(QStringLiteral("x")).toDouble(),
+                                                   center.value(QStringLiteral("y")).toDouble()));
+    const int left =
+        int(std::ceil(viewCenter.x() - text.value(QStringLiteral("width")).toDouble() / 2.0));
+    const int right =
+        int(std::floor(viewCenter.x() + text.value(QStringLiteral("width")).toDouble() / 2.0));
+    QImage widgetImage(canvas.size(), QImage::Format_ARGB32_Premultiplied);
+    widgetImage.fill(Qt::transparent);
+    canvas.render(&widgetImage);
+    const auto exported = runtime.renderToImage({-300, -180, 600, 360}, {600, 360}, {});
+    require(left > 300 && right < 440, "label overlaps the first arm in the fixture");
+    for (int x = left; x <= right; ++x) {
+        require(exported.pixelColor(x, 180).alpha() > 200,
+                "transparent export retains the line throughout the angle label bounds");
+        const QColor ink = widgetImage.pixelColor(x, 180);
+        require(ink.red() > 200 && ink.green() < 70 && ink.blue() < 90,
+                "widget painting retains the line beneath the overlaid angle label");
+    }
+    require(exported.pixelColor(20, 20).alpha() == 0, "overlay export preserves transparency");
+}
+
 void savePreview(const QString& path) {
     QImage montage(1200, 720, QImage::Format_ARGB32_Premultiplied);
     montage.fill(QColor(QStringLiteral("#fafafa")));
@@ -455,6 +557,8 @@ int main(int argc, char** argv) {
     selectedStyleKeepsCreationDefaults();
     heterogeneousStyleEditChangesOnlyCreationDefaults();
     arcAndLabelSelectAndEraseTheOwnedPair();
+    arcHandleAndBodyDragAtDifferentZooms();
+    labelsOverlayUninterruptedAngleLines();
     if (argc > 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--preview"))
         savePreview(QString::fromLocal8Bit(argv[2]));
     std::cout << "Angle canvas tests passed\n";

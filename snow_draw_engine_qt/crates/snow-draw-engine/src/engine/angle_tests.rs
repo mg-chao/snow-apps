@@ -1507,3 +1507,182 @@ fn angle_input_stage_profile() {
         stages.map(|seconds| seconds * 1000.0 / 60.0)
     );
 }
+
+#[test]
+fn angle_arc_drag_commits_one_history_step_and_restores_canceled_and_legacy_states() {
+    use snow_draw_engine_document::{angle_arc_control_point, angle_geometry};
+    let (mut engine, viewport) = setup();
+    let id = create(&mut engine, viewport);
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::Select)
+        .unwrap();
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    let original = engine.model.arrow(id).unwrap().clone();
+    let original_text = label(&engine, id).clone();
+    let start = angle_arc_control_point(&original).unwrap();
+    let direction = angle_geometry(&original).unwrap().bisector;
+    let end = Point::new(start.x + 30.0 * direction.x, start.y + 30.0 * direction.y);
+    click(&mut engine, viewport, start);
+    engine.undo().unwrap();
+    assert!(
+        engine.model.paint_order().is_empty(),
+        "clicking the handle creates no history entry"
+    );
+    engine.redo().unwrap();
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    pointer(&mut engine, viewport, PointerEventType::Down, start);
+    pointer(&mut engine, viewport, PointerEventType::Move, end);
+    assert_eq!(
+        engine.model.arrow(id).unwrap(),
+        &original,
+        "drag is a transient preview"
+    );
+    engine
+        .process_input(viewport, InputEvent::FocusLost)
+        .unwrap();
+    assert_eq!(engine.model.arrow(id).unwrap(), &original);
+    assert_eq!(label(&engine, id), &original_text);
+    pointer(&mut engine, viewport, PointerEventType::Down, start);
+    pointer(&mut engine, viewport, PointerEventType::Move, end);
+    pointer(&mut engine, viewport, PointerEventType::Up, end);
+    let edited = engine.model.arrow(id).unwrap().clone();
+    let edited_text = label(&engine, id).clone();
+    assert_eq!(edited.points, original.points);
+    assert!((edited.angle.unwrap().arc_radius.unwrap() - 57.0).abs() < 1e-9);
+    assert_eq!(edited_text.text, original_text.text);
+    assert_eq!(edited_text.layout, original_text.layout);
+    assert!((edited_text.center.x - original_text.center.x - 30.0 * direction.x).abs() < 1e-9);
+    let mut restored = Engine::from_serialized_document_session_with_config(
+        &engine.serialize_document_session().unwrap(),
+        EngineConfig::default(),
+    )
+    .unwrap();
+    restored.undo().unwrap();
+    assert_eq!(restored.model.arrow(id).unwrap(), &original);
+    assert_eq!(label(&restored, id), &original_text);
+    restored.redo().unwrap();
+    assert_eq!(restored.model.arrow(id).unwrap(), &edited);
+    assert_eq!(label(&restored, id), &edited_text);
+    restored.undo().unwrap();
+    restored.undo().unwrap();
+    assert!(
+        restored.model.paint_order().is_empty(),
+        "one drag adds exactly one history entry"
+    );
+    engine
+        .duplicate_selected_with_viewport_changes(viewport, Point::new(0.0, 120.0))
+        .unwrap();
+    assert_eq!(
+        engine.model.arrow(engine.selected_ids()[0]).unwrap().angle,
+        edited.angle
+    );
+}
+
+#[test]
+fn angle_arc_drag_reuses_warm_label_metrics_and_updates_only_the_owned_pair() {
+    use snow_draw_engine_document::{angle_arc_control_point, angle_geometry};
+    let (mut engine, viewport) = setup();
+    let operations: Vec<_> = (0..128)
+        .map(|index| {
+            let x = if index == 0 {
+                0.0
+            } else {
+                10000.0 + f64::from(index)
+            };
+            json!({"type":"angle","points":[[x+100.0,0],[x,0],[x,-100.0]]})
+        })
+        .collect();
+    let ids = apply(&mut engine, json!(operations)).unwrap();
+    let metrics: Vec<_> = engine
+        .arrow_text_layout_requests(viewport)
+        .unwrap()
+        .iter()
+        .map(|request| {
+            (
+                request.text_id,
+                request.key,
+                TextLayoutSize::new(64.0, 24.0),
+                64.0,
+            )
+        })
+        .collect();
+    engine
+        .apply_arrow_text_measurements(viewport, &metrics)
+        .unwrap();
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::Select)
+        .unwrap();
+    engine
+        .select_element_with_viewport_changes(viewport, ids[0])
+        .unwrap();
+    let original = engine.model.arrow(ids[0]).unwrap().clone();
+    let unrelated_text = label(&engine, ids[1]).clone();
+    let SceneDisplayItem::Arrow(unrelated) = engine.scene_cache.entry(ids[1]).unwrap() else {
+        panic!("angle cache entry");
+    };
+    let unrelated_geometry = unrelated.geometry.clone();
+    let text_id = engine.model.bound_text_id_for_arrow(ids[0]).unwrap();
+    let start = angle_arc_control_point(&original).unwrap();
+    let direction = angle_geometry(&original).unwrap().bisector;
+    pointer(&mut engine, viewport, PointerEventType::Down, start);
+    for delta in [10.0, 20.0] {
+        let cursor = engine
+            .viewport_slot(viewport)
+            .unwrap()
+            .composer
+            .current_cursor();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            Point::new(start.x + delta * direction.x, start.y + delta * direction.y),
+        );
+        let patch = engine.acquire_patch(viewport, Some(cursor)).unwrap();
+        assert!(!patch.scene.reset);
+        assert_eq!(patch.path_geometry_ops.len(), 1);
+        assert_eq!(patch.path_geometry_ops[0].id.index, ids[0].index);
+        let changed: Vec<_> = patch
+            .scene
+            .ops
+            .iter()
+            .flat_map(|op| &op.insert_items)
+            .collect();
+        assert_eq!(changed.len(), 2);
+        assert!(changed.iter().all(|item| match item {
+            SceneDisplayItem::Arrow(arrow) =>
+                arrow.id.index == ids[0].index && arrow.bound_text_overlay,
+            SceneDisplayItem::Text(text) => text.id.index == text_id.index,
+            _ => false,
+        }));
+        assert!(
+            engine
+                .arrow_text_layout_requests(viewport)
+                .unwrap()
+                .is_empty()
+        );
+    }
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        Point::new(start.x + 20.0 * direction.x, start.y + 20.0 * direction.y),
+    );
+    assert!(
+        engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(label(&engine, ids[1]), &unrelated_text);
+    let SceneDisplayItem::Arrow(unrelated) = engine.scene_cache.entry(ids[1]).unwrap() else {
+        panic!("angle cache entry");
+    };
+    assert!(std::sync::Arc::ptr_eq(
+        &unrelated_geometry,
+        &unrelated.geometry
+    ));
+}
