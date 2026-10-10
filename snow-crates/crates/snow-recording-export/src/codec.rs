@@ -348,84 +348,112 @@ pub(crate) fn select_software_h264_codec(priority: SoftwareH264Priority) -> Opti
 }
 
 pub(crate) fn select_hardware_codec(codec: VideoCodec) -> Option<ffmpeg::Codec> {
+    hardware_codec_candidates(codec).into_iter().next()
+}
+
+/// CPU input can try each vendor before Media Foundation. Registration alone
+/// does not establish that the machine has the hardware required to open it.
+pub(crate) fn hardware_codec_candidates(codec: VideoCodec) -> Vec<ffmpeg::Codec> {
     #[cfg(target_os = "macos")]
     {
         ffmpeg::encoder::find_by_name(match codec {
             VideoCodec::H264 => "h264_videotoolbox",
             VideoCodec::H265 => "hevc_videotoolbox",
         })
+        .into_iter()
+        .collect()
     }
     #[cfg(not(target_os = "macos"))]
     {
         match codec {
-            VideoCodec::H264 => select_hardware_h264_codec(),
-            VideoCodec::H265 => None,
+            VideoCodec::H264 => ["h264_nvenc", "h264_amf", "h264_qsv", "h264_mf"]
+                .into_iter()
+                .filter_map(ffmpeg::encoder::find_by_name)
+                .collect(),
+            VideoCodec::H265 => Vec::new(),
         }
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
-    // Preserve the CPU-input callers' Media Foundation preference. Direct GPU
-    // recording separately selects the encoder matching its D3D11 adapter.
-    ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"]
-        .into_iter()
-        .find_map(ffmpeg::encoder::find_by_name)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum VideoEncoderPurpose {
+    Output,
+    RecordingSource,
 }
 
 pub(crate) fn open_video_encoder(
-    video_encoder: ffmpeg::codec::encoder::video::Video,
+    mut video_encoder: ffmpeg::codec::encoder::video::Video,
     codec: &ffmpeg::Codec,
     video_config: &VideoEncodeConfig,
+    purpose: VideoEncoderPurpose,
+    fps: u32,
+    hardware_surface_capacity: Option<usize>,
 ) -> Result<ffmpeg::encoder::video::Encoder> {
     // Recording exports while capture runs, but is not a network livestream.
     // Let the selected preset use B-frames, lookahead and frame workers; stop
     // drains that finite codec tail instead of re-encoding the whole recording.
-    if should_use_x264_options(codec) {
-        let mut options = ffmpeg::Dictionary::new();
+    let source = purpose == VideoEncoderPurpose::RecordingSource;
+    let mut options = ffmpeg::Dictionary::new();
+    if source || is_hardware_video_encoder(codec) {
+        // All hardware outputs share a GOP of two nominal seconds. FFmpeg's
+        // default of 12 frames inflated continuously animated overlays.
+        let gop = fps
+            .saturating_mul(if source { 1 } else { 2 })
+            .min(i32::MAX as u32);
+        video_encoder.set_gop(gop);
+        video_encoder.set_max_b_frames(0);
+    }
+    if should_use_x264_options(codec) || should_use_x265_options(codec) {
         options.set("preset", x264_preset_for(video_config.speed));
         options.set(
             "crf",
             &quality_to_h264_crf(video_config.quality).to_string(),
         );
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open video encoder with h264 options: {err}"
-            ))
-        });
+        if source {
+            options.set("tune", "zerolatency");
+            if should_use_x264_options(codec) {
+                options.set("rc-lookahead", "0");
+            } else {
+                options.set("x265-params", "bframes=0:rc-lookahead=0");
+            }
+        }
+    } else if apply_hardware_encoder_options(
+        &mut options,
+        codec.name(),
+        video_config.quality,
+        purpose,
+    ) {
+        if codec.name().ends_with("_videotoolbox") && cfg!(target_arch = "aarch64") {
+            // Apple Silicon accepts normalized quality; zero disables that mode.
+            // Intel VideoToolbox retains the explicit bitrate fallback.
+            unsafe {
+                (*video_encoder.as_mut_ptr()).global_quality =
+                    i32::from(video_config.quality.clamp(1, 100));
+            }
+        }
+        if let Some(capacity) = hardware_surface_capacity {
+            if codec.name().contains("nvenc") {
+                options.set("surfaces", &capacity.to_string());
+            } else if codec.name().contains("amf") {
+                options.set("query_timeout", "100");
+            }
+        }
     }
-    if should_use_x265_options(codec) {
-        let mut options = ffmpeg::Dictionary::new();
-        options.set("preset", video_config.speed.as_x264_preset());
-        options.set(
-            "crf",
-            &quality_to_h264_crf(video_config.quality).to_string(),
-        );
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open video encoder with h265 options: {err}"
-            ))
-        });
-    }
-    let mut options = ffmpeg::Dictionary::new();
-    if apply_hardware_encoder_options(&mut options, codec, video_config.quality) {
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open hardware video encoder with recording options: {err}"
-            ))
-        });
-    }
-    video_encoder
-        .open_as(*codec)
-        .map_err(|err| ScreenRecorderError::Export(format!("failed to open video encoder: {err}")))
+    video_encoder.open_as_with(*codec, options).map_err(|err| {
+        ScreenRecorderError::Export(format!(
+            "failed to open video encoder {}: {err}",
+            codec.name()
+        ))
+    })
 }
 
 pub(crate) fn apply_hardware_encoder_options(
     options: &mut ffmpeg::Dictionary<'_>,
-    codec: &ffmpeg::Codec,
+    name: &str,
     quality: u8,
+    purpose: VideoEncoderPurpose,
 ) -> bool {
-    let name = codec.name().to_ascii_lowercase();
+    let source = purpose == VideoEncoderPurpose::RecordingSource;
     let qp = quality_to_h264_crf(quality).to_string();
     // Preserve each live encoder's speed policy while passing the requested
     // quality. Hardware queues remain bounded and non-reordering for recovery.
@@ -437,16 +465,17 @@ pub(crate) fn apply_hardware_encoder_options(
         return true;
     }
     if name.contains("nvenc") {
-        options.set("preset", "p1");
+        options.set("preset", if source { "p1" } else { "p4" });
         options.set("tune", "ull");
         options.set("rc", "constqp");
         options.set("qp", &qp);
+        options.set("rc-lookahead", "0");
         options.set("bf", "0");
         options.set("delay", "0");
         return true;
     }
     if name.contains("qsv") {
-        options.set("preset", "veryfast");
+        options.set("preset", if source { "veryfast" } else { "medium" });
         options.set("global_quality", &qp);
         options.set("look_ahead", "0");
         options.set("async_depth", "1");
@@ -455,18 +484,21 @@ pub(crate) fn apply_hardware_encoder_options(
     }
     if name.contains("amf") {
         options.set("usage", "ultralowlatency");
-        options.set("quality", "speed");
+        options.set("quality", if source { "speed" } else { "balanced" });
         options.set("rc", "cqp");
         options.set("qp_i", &qp);
         options.set("qp_p", &qp);
+        options.set("preanalysis", "0");
+        options.set("preencode", "0");
         options.set("bf", "0");
         return true;
     }
     if name.contains("mf") {
         // FFmpeg Media Foundation defaults to a software MFT unless requested.
         options.set("hw_encoding", "1");
+        options.set("rate_control", "quality");
+        options.set("quality", &quality.min(100).to_string());
         options.set("bf", "0");
-        options.set("g", "60");
         return true;
     }
     false
@@ -531,5 +563,71 @@ pub(crate) fn auto_thread_count_from_physical_cores() -> usize {
         logical
     } else {
         physical.min(logical).max(1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardware_output_quality_is_explicit_for_every_supported_encoder() {
+        for (name, keys) in [
+            ("h264_nvenc", &["qp"][..]),
+            ("h264_qsv", &["global_quality"][..]),
+            ("h264_amf", &["qp_i", "qp_p"][..]),
+            ("h264_mf", &["quality"][..]),
+        ] {
+            let mut lower = ffmpeg::Dictionary::new();
+            let mut higher = ffmpeg::Dictionary::new();
+            assert!(apply_hardware_encoder_options(
+                &mut lower,
+                name,
+                40,
+                VideoEncoderPurpose::Output
+            ));
+            assert!(apply_hardware_encoder_options(
+                &mut higher,
+                name,
+                80,
+                VideoEncoderPurpose::Output
+            ));
+            for key in keys {
+                let low: u8 = lower.get(key).unwrap().parse().unwrap();
+                let high: u8 = higher.get(key).unwrap().parse().unwrap();
+                assert!(
+                    if name == "h264_mf" {
+                        high > low
+                    } else {
+                        high < low
+                    },
+                    "{name}: {key}"
+                );
+            }
+            assert_eq!(higher.get("bf"), Some("0"));
+        }
+        let mut mf = ffmpeg::Dictionary::new();
+        apply_hardware_encoder_options(&mut mf, "h264_mf", 80, VideoEncoderPurpose::Output);
+        assert_eq!(mf.get("hw_encoding"), Some("1"));
+        assert_eq!(mf.get("rate_control"), Some("quality"));
+        assert_eq!(mf.get("quality"), Some("80"));
+    }
+
+    #[test]
+    fn final_output_presets_are_shared_and_clean_sources_remain_fast() {
+        for (name, key, output, source) in [
+            ("h264_nvenc", "preset", "p4", "p1"),
+            ("h264_amf", "quality", "balanced", "speed"),
+            ("h264_qsv", "preset", "medium", "veryfast"),
+        ] {
+            for (purpose, expected) in [
+                (VideoEncoderPurpose::Output, output),
+                (VideoEncoderPurpose::RecordingSource, source),
+            ] {
+                let mut options = ffmpeg::Dictionary::new();
+                apply_hardware_encoder_options(&mut options, name, 80, purpose);
+                assert_eq!(options.get(key), Some(expected));
+            }
+        }
     }
 }

@@ -15,6 +15,226 @@ struct Fixture {
 }
 
 #[test]
+fn deferred_static_output_holds_composed_images_without_losing_audio_or_endpoint() {
+    let fixture = fixture(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H264,
+        false,
+        true,
+        false,
+    );
+    let mut metadata = fixture.metadata.clone();
+    metadata.render.playback_overlay = PlaybackOverlay::None;
+    let result = render_bundle(
+        &fixture.bundle,
+        fixture.config.clone(),
+        metadata,
+        &CancellationToken::default(),
+        |_, _, _, _| {},
+    )
+    .unwrap();
+    let (frames, width, height, duration) = decode_frames(&result.output_path);
+    assert_eq!((width, height, frames.len()), (32, 24, 2));
+    assert!((duration - 1.001).abs() < 0.002);
+    let mut input = ffmpeg::format::input(&result.output_path).unwrap();
+    let video = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+    let index = video.index();
+    let time_base = video.time_base();
+    let mut pts: Vec<_> = input
+        .packets()
+        .filter(|(stream, _)| stream.index() == index)
+        .map(|(_, packet)| packet.pts().unwrap().rescale(time_base, (1, 30)))
+        .collect();
+    pts.sort_unstable();
+    assert_eq!(pts, [0, 15]);
+    let audio: Vec<_> = input
+        .streams()
+        .filter(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
+        .collect();
+    assert_eq!(audio.len(), 2);
+    for stream in audio {
+        assert!((stream.duration().rescale(stream.time_base(), (1, 48_000)) - 48_048).abs() <= 1);
+    }
+    assert!(fixture.bundle.exists());
+}
+
+#[test]
+fn deferred_progress_holds_repeated_pixel_widths_and_preserves_the_final_fill() {
+    for codec in [crate::VideoCodec::H264, crate::VideoCodec::H265] {
+        let fixture = fixture_with_source(
+            crate::ExportFormat::Mp4,
+            codec,
+            (16, 24),
+            false,
+            codec == crate::VideoCodec::H265,
+            (0, 13),
+            false,
+        );
+        let result = render_bundle(
+            &fixture.bundle,
+            fixture.config,
+            fixture.metadata,
+            &CancellationToken::default(),
+            |_, _, _, _| {},
+        )
+        .unwrap();
+        let (frames, width, height, duration) = decode_frames(&result.output_path);
+        assert!(
+            frames.len() <= 19,
+            "repeated progress widths must be held: {}",
+            frames.len()
+        );
+        assert!((duration - 1.001).abs() < 0.002);
+        let offset = ((height - 1) * width + width - 2) as usize * 4;
+        if codec == crate::VideoCodec::H264 {
+            assert!(frames.first().unwrap()[offset] < 100);
+            assert!(frames.last().unwrap()[offset] > 180);
+        }
+        // HDR contains BT.2020/PQ red rather than full-range sRGB channel values.
+        let last = &frames.last().unwrap()[offset..offset + 4];
+        assert!(
+            last[0] > last[1] && last[0] > last[2],
+            "{codec:?}: final progress pixel {:?}",
+            last
+        );
+        let mut input = ffmpeg::format::input(&result.output_path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        assert_eq!(
+            stream.duration().rescale(stream.time_base(), (1, 1_000)),
+            1001
+        );
+        let index = stream.index();
+        let time_base = stream.time_base();
+        let pts: Vec<_> = input
+            .packets()
+            .filter(|(stream, _)| stream.index() == index)
+            .map(|(_, packet)| packet.pts().unwrap().rescale(time_base, (1, 30)))
+            .collect();
+        assert!(
+            pts.contains(&13),
+            "source and cursor changes during a repeated bar width must survive: {pts:?}"
+        );
+    }
+}
+
+#[test]
+fn deferred_hdr_static_output_holds_pq_images_and_keeps_the_exact_endpoint() {
+    let fixture = fixture(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H265,
+        false,
+        false,
+        true,
+    );
+    let mut metadata = fixture.metadata;
+    metadata.render.playback_overlay = PlaybackOverlay::None;
+    let result = render_bundle(
+        &fixture.bundle,
+        fixture.config.clone(),
+        metadata,
+        &CancellationToken::default(),
+        |_, _, _, _| {},
+    )
+    .unwrap();
+    let (frames, _, _, duration) = decode_frames(&result.output_path);
+    assert_eq!(frames.len(), 2);
+    assert!((duration - 1.001).abs() < 0.002);
+    assert!(
+        crate::clip::ClipSource::open(&result.output_path, Some(fixture.config))
+            .unwrap()
+            .hdr
+    );
+}
+
+#[test]
+fn deferred_playback_time_holds_each_second_without_missing_the_final_badge() {
+    let fixture = fixture_with_source(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H264,
+        (320, 72),
+        false,
+        false,
+        (0, 15),
+        false,
+    );
+    let mut metadata = fixture.metadata;
+    metadata.render.playback_overlay = PlaybackOverlay::PlaybackTime { rgba: [255; 4] };
+    let result = render_bundle(
+        &fixture.bundle,
+        fixture.config,
+        metadata,
+        &CancellationToken::default(),
+        |_, _, _, _| {},
+    )
+    .unwrap();
+    let (frames, _, _, duration) = decode_frames(&result.output_path);
+    assert_eq!(frames.len(), 3);
+    assert!((duration - 1.001).abs() < 0.002);
+    let mut input = ffmpeg::format::input(&result.output_path).unwrap();
+    let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+    let index = stream.index();
+    let time_base = stream.time_base();
+    let mut pts: Vec<_> = input
+        .packets()
+        .filter(|(stream, _)| stream.index() == index)
+        .map(|(_, packet)| packet.pts().unwrap().rescale(time_base, (1, 30)))
+        .collect();
+    pts.sort_unstable();
+    assert_eq!(pts, [0, 15, 30]);
+}
+
+#[test]
+fn deferred_static_holds_preserve_animation_delays_and_the_avi_frame_grid() {
+    for format in [
+        crate::ExportFormat::Gif,
+        crate::ExportFormat::Apng,
+        crate::ExportFormat::Webp,
+        crate::ExportFormat::Avi,
+    ] {
+        let fixture = fixture(format, crate::VideoCodec::H264, false, false, false);
+        let mut metadata = fixture.metadata;
+        metadata.render.playback_overlay = PlaybackOverlay::None;
+        let result = render_bundle(
+            &fixture.bundle,
+            fixture.config,
+            metadata,
+            &CancellationToken::default(),
+            |_, _, _, _| {},
+        )
+        .unwrap();
+        if format == crate::ExportFormat::Avi {
+            let avi = inspect_avi(&result.output_path);
+            assert_eq!(avi.packets.len(), 2);
+            assert_eq!(avi.stream_frames, 31);
+            continue;
+        }
+        let (frames, width, height, duration) = decode_frames(&result.output_path);
+        assert_eq!((width, height, frames.len()), (32, 24, 2), "{format:?}");
+        let bytes = std::fs::read(&result.output_path).unwrap();
+        let duration = match format {
+            crate::ExportFormat::Gif => duration,
+            crate::ExportFormat::Apng => bytes
+                .windows(30)
+                .filter(|chunk| &chunk[..4] == b"fcTL")
+                .map(|chunk| {
+                    f64::from(u16::from_be_bytes(chunk[24..26].try_into().unwrap()))
+                        / f64::from(u16::from_be_bytes(chunk[26..28].try_into().unwrap()))
+                })
+                .sum(),
+            crate::ExportFormat::Webp => bytes
+                .windows(24)
+                .filter(|chunk| &chunk[..4] == b"ANMF")
+                .map(|chunk| {
+                    f64::from(u32::from_le_bytes([chunk[20], chunk[21], chunk[22], 0])) / 1000.0
+                })
+                .sum(),
+            _ => unreachable!(),
+        };
+        assert!((duration - 1.001).abs() < 0.011, "{format:?}: {duration}");
+    }
+}
+
+#[test]
 fn trimmed_deferred_render_restarts_progress_and_retains_the_source() {
     let fixture = fixture(
         crate::ExportFormat::Mp4,
@@ -781,7 +1001,7 @@ fn exact_composed_pixel_reuse_preserves_cfr_and_decoded_frames() {
             .join(format!("reuse-{reuse}.mp4"));
         let mut encoder = StreamingEncoder::builder(config.clone()).create().unwrap();
         if reuse {
-            encoder.set_reuse_identical_rgba(true);
+            encoder.set_frame_reuse(crate::streaming::VideoFrameReuse::ReuseConversion);
         }
         let mut pixels = vec![0; 32 * 24 * 4];
         for pts in 0..31 {
@@ -854,8 +1074,12 @@ fn animation_guard_avoids_scans_until_idle_without_changing_decoded_frames() {
             pixels.clear();
             pixels.extend((0..32 * 24).flat_map(|_| [20, 30, 40, 255]));
             effects.apply_rgba(&mut pixels, frame).unwrap();
-            encoder.set_reuse_identical_rgba(
-                guard && reusable_effect_frame(&effects, &metadata, frame.timestamp_ms),
+            encoder.set_frame_reuse(
+                if guard && reusable_effect_frame(&effects, &metadata, frame.timestamp_ms) {
+                    crate::streaming::VideoFrameReuse::ReuseConversion
+                } else {
+                    crate::streaming::VideoFrameReuse::Encode
+                },
             );
             pixels = encoder
                 .push_owned_rgba_frame_at_pts(frame.pts, pixels)
@@ -877,28 +1101,34 @@ fn animation_guard_avoids_scans_until_idle_without_changing_decoded_frames() {
 }
 
 #[test]
-fn hdr_history_skips_busy_copies_and_recaches_after_animation() {
-    let mut pixels = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB48LE, 2, 2);
+fn hdr_history_swaps_owned_pixels_and_recaches_after_animation() {
+    let mut pixels = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB48LE, 16, 16);
     let mut previous = Some(ffmpeg::frame::Video::new(
         ffmpeg::format::Pixel::RGB48LE,
-        2,
-        2,
+        16,
+        16,
     ));
-    pixels.data_mut(0).fill(1);
     let mut valid = false;
-    cache_rgb48(&pixels, &mut previous, &mut valid, true);
+    pixels.data_mut(0).fill(1);
+    let first_storage = pixels.data(0).as_ptr();
+    cache_rgb48(&mut pixels, &mut previous, &mut valid, true);
     assert!(valid);
-    assert!(equal_rgb48(&pixels, previous.as_ref().unwrap()));
-    pixels.data_mut(0).fill(2);
-    cache_rgb48(&pixels, &mut previous, &mut valid, false);
-    assert!(!valid);
-    // A known animated frame must not copy over the reusable history buffer.
+    assert_eq!(previous.as_ref().unwrap().data(0).as_ptr(), first_storage);
     assert_eq!(previous.as_ref().unwrap().data(0)[0], 1);
-    cache_rgb48(&pixels, &mut previous, &mut valid, true);
+    pixels.data_mut(0).fill(2);
+    cache_rgb48(&mut pixels, &mut previous, &mut valid, false);
+    assert!(!valid);
+    assert_eq!(previous.as_ref().unwrap().data(0)[0], 1);
+    let next_storage = pixels.data(0).as_ptr();
+    cache_rgb48(&mut pixels, &mut previous, &mut valid, true);
     assert!(valid);
+    assert_eq!(previous.as_ref().unwrap().data(0).as_ptr(), next_storage);
+    assert_eq!(previous.as_ref().unwrap().data(0)[0], 2);
+    pixels.data_mut(0).fill(2);
     assert!(equal_rgb48(&pixels, previous.as_ref().unwrap()));
     pixels.data_mut(0)[6] = 3;
     assert!(!equal_rgb48(&pixels, previous.as_ref().unwrap()));
+    assert_eq!(previous.as_ref().unwrap().data(0)[6], 2);
 }
 
 #[test]

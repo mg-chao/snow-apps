@@ -10,10 +10,11 @@ use snow_recording_model::{VideoCodec, VideoEncodeConfig};
 use uuid::Uuid;
 
 use crate::codec::{
-    choose_audio_channel_layout, choose_audio_codec, choose_audio_sample_format,
-    choose_audio_sample_rate, choose_video_pixel_format, configure_codec_threads,
-    drain_audio_packets_with_callback, effective_audio_bitrate_kbps, effective_video_config,
-    ensure_video_frame_writable, is_hardware_h264_encoder, open_audio_encoder, open_video_encoder,
+    VideoEncoderPurpose, choose_audio_channel_layout, choose_audio_codec,
+    choose_audio_sample_format, choose_audio_sample_rate, choose_video_pixel_format,
+    configure_codec_threads, drain_audio_packets_with_callback, effective_audio_bitrate_kbps,
+    effective_video_config, ensure_video_frame_writable, hardware_codec_candidates,
+    is_hardware_h264_encoder, open_audio_encoder, open_video_encoder,
     opened_video_encoder_uses_hardware, select_video_codec,
 };
 use crate::config::{ExportExecutionMode, ExportFormat, SoftwareH264Priority};
@@ -28,6 +29,19 @@ use crate::video_quality::smart_quality_bitrate_bps;
 pub const DIRECT_STAGING_PREFIX: &str = ".snow-recording-direct-";
 const STALE_STAGING_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 mod recovery;
+
+/// Reuse policy for fully composed RGBA input. Coalescing retains presentation
+/// time by extending the pending image until the next changed image or endpoint.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VideoFrameReuse {
+    /// Encode every submitted image.
+    #[default]
+    Encode,
+    /// Keep every PTS while reusing converted pixels for identical adjacent images.
+    ReuseConversion,
+    /// Hold identical images until a changed image or the recording endpoint.
+    Coalesce,
+}
 
 /// Failure points available only to tests and the opt-in recording benchmark.
 #[cfg(any(test, feature = "bench-experiments"))]
@@ -244,67 +258,6 @@ pub fn scaled_output_dimensions(
     )
 }
 
-fn open_recording_source_encoder(
-    mut encoder: ffmpeg::codec::encoder::video::Video,
-    codec: &ffmpeg::Codec,
-    video: &VideoEncodeConfig,
-    fps: u32,
-) -> Result<ffmpeg::encoder::video::Encoder> {
-    encoder.set_gop(fps);
-    encoder.set_max_b_frames(0);
-    let mut options = ffmpeg::Dictionary::new();
-    let name = codec.name();
-    let qp = crate::video_quality::quality_to_h264_crf(video.quality).to_string();
-    if matches!(name, "libx264" | "libx265") {
-        options.set("preset", "veryfast");
-        options.set("crf", &qp);
-        options.set("tune", "zerolatency");
-        if name == "libx264" {
-            options.set("rc-lookahead", "0");
-        } else {
-            options.set("x265-params", "bframes=0:rc-lookahead=0");
-        }
-    } else if name.contains("nvenc") {
-        options.set("preset", "p1");
-        options.set("tune", "ull");
-        options.set("rc", "constqp");
-        options.set("qp", &qp);
-        options.set("rc-lookahead", "0");
-        options.set("delay", "0");
-    } else if name.contains("qsv") {
-        options.set("preset", "veryfast");
-        options.set("global_quality", &qp);
-        options.set("look_ahead", "0");
-        options.set("async_depth", "1");
-    } else if name.contains("amf") {
-        options.set("usage", "ultralowlatency");
-        options.set("quality", "speed");
-        options.set("rc", "cqp");
-        options.set("qp_i", &qp);
-        options.set("qp_p", &qp);
-    } else if name.contains("mf") {
-        options.set("hw_encoding", "1");
-        options.set("rate_control", "quality");
-        options.set("quality", &video.quality.to_string());
-    } else if name.ends_with("_videotoolbox") {
-        options.set("allow_sw", "0");
-        options.set("realtime", "1");
-        // VideoToolbox uses a normalized 0..100 quality when global_quality is set.
-        // Intel implementations can ignore it and retain the explicit source bitrate.
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            (*encoder.as_mut_ptr()).global_quality = i32::from(video.quality);
-        }
-    }
-    options.set("g", &fps.to_string());
-    options.set("bf", "0");
-    encoder.open_as_with(*codec, options).map_err(|error| {
-        RecordingExportError::Encode(format!(
-            "failed to open clean-source encoder {name}: {error}"
-        ))
-    })
-}
-
 impl StreamingEncoderConfig {
     pub fn validate(&self) -> std::result::Result<(), String> {
         if self.output_path.as_os_str().is_empty() {
@@ -406,6 +359,7 @@ pub(crate) unsafe fn swscale_thread_count(
 
 struct PendingFrame {
     pts: i64,
+    last_observed_pts: i64,
     rgba: RasterBuffer,
     gpu: Option<ffmpeg::frame::Video>,
     reuse_cpu_pixels: bool,
@@ -454,7 +408,7 @@ pub struct StreamingEncoder {
     height: u32,
     fps: u32,
     pending: Option<PendingFrame>,
-    reuse_identical_rgba: bool,
+    frame_reuse: VideoFrameReuse,
     admitted_frames: u64,
     spare_rgba: RasterBuffer,
     pending_timed_durations: VideoPacketDurations,
@@ -777,13 +731,25 @@ impl StreamingEncoder {
             #[cfg(windows)]
             if let Some(frames) = &hardware_frames {
                 frames.configure(&mut encoder)?;
-                return frames.open(encoder, codec, effective_video.quality);
             }
-            if recording_source {
-                open_recording_source_encoder(encoder, &codec, &effective_video, config.fps)
-            } else {
-                open_video_encoder(encoder, &codec, &effective_video)
-            }
+            #[cfg(not(windows))]
+            let surface_capacity = None;
+            #[cfg(windows)]
+            let surface_capacity = hardware_frames
+                .as_ref()
+                .map(|_| crate::gpu::HardwareFrames::LIVE_CAPACITY);
+            open_video_encoder(
+                encoder,
+                &codec,
+                &effective_video,
+                if recording_source {
+                    VideoEncoderPurpose::RecordingSource
+                } else {
+                    VideoEncoderPurpose::Output
+                },
+                config.fps,
+                surface_capacity,
+            )
         };
 
         let primary = if force_hardware_failure && is_hardware_h264_encoder(&video_codec) {
@@ -797,37 +763,72 @@ impl StreamingEncoder {
             Ok(encoder) => encoder,
             Err(primary_error)
                 if !gpu_enabled
-                    && config.execution_mode != ExportExecutionMode::HardwareOnly
                     && config.prefer_hardware_h264
                     && is_hardware_h264_encoder(&video_codec) =>
             {
-                video_codec = select_video_codec(
-                    &output,
-                    &staging_path,
-                    config.format,
-                    config.codec,
-                    false,
-                    ExportExecutionMode::SoftwareOnly,
-                    config.software_h264_priority,
-                )?;
-                pixel_format = choose_video_pixel_format(
-                    config.format,
-                    video_codec.video().map_err(|error| {
-                        RecordingExportError::Encode(format!(
-                            "fallback streaming codec is not a video encoder: {error}"
-                        ))
-                    })?,
-                    cpu_input_format_hint,
-                    ExportExecutionMode::SoftwareOnly,
-                );
-                if cpu_hdr_input {
-                    pixel_format = crate::hdr::pixel_format(
-                        video_codec
-                            .video()
-                            .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
-                    )?;
+                let mut opened_hardware = None;
+                if !force_hardware_failure {
+                    for candidate in hardware_codec_candidates(config.codec) {
+                        if candidate.name() == video_codec.name() {
+                            continue;
+                        }
+                        let pixel = choose_video_pixel_format(
+                            config.format,
+                            candidate
+                                .video()
+                                .map_err(|error| RecordingExportError::Encode(error.to_string()))?,
+                            cpu_input_format_hint,
+                            config.execution_mode,
+                        );
+                        let pixel = if cpu_hdr_input {
+                            crate::hdr::pixel_format(candidate.video().map_err(|error| {
+                                RecordingExportError::Encode(error.to_string())
+                            })?)?
+                        } else {
+                            pixel
+                        };
+                        if let Ok(encoder) = make_encoder(candidate, pixel) {
+                            opened_hardware = Some((candidate, pixel, encoder));
+                            break;
+                        }
+                    }
                 }
-                make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
+                if let Some((codec, pixel, encoder)) = opened_hardware {
+                    video_codec = codec;
+                    pixel_format = pixel;
+                    encoder
+                } else {
+                    if config.execution_mode == ExportExecutionMode::HardwareOnly {
+                        return Err(primary_error);
+                    }
+                    video_codec = select_video_codec(
+                        &output,
+                        &staging_path,
+                        config.format,
+                        config.codec,
+                        false,
+                        ExportExecutionMode::SoftwareOnly,
+                        config.software_h264_priority,
+                    )?;
+                    pixel_format = choose_video_pixel_format(
+                        config.format,
+                        video_codec.video().map_err(|error| {
+                            RecordingExportError::Encode(format!(
+                                "fallback streaming codec is not a video encoder: {error}"
+                            ))
+                        })?,
+                        cpu_input_format_hint,
+                        ExportExecutionMode::SoftwareOnly,
+                    );
+                    if cpu_hdr_input {
+                        pixel_format = crate::hdr::pixel_format(
+                            video_codec
+                                .video()
+                                .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
+                        )?;
+                    }
+                    make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
+                }
             }
             Err(error) => return Err(error),
         };
@@ -988,7 +989,7 @@ impl StreamingEncoder {
             height: config.height,
             fps,
             pending: None,
-            reuse_identical_rgba: false,
+            frame_reuse: VideoFrameReuse::Encode,
             admitted_frames: 0,
             spare_rgba: RasterBuffer::new(),
             pending_timed_durations: VideoPacketDurations::default(),
@@ -1172,22 +1173,46 @@ impl StreamingEncoder {
                 .admissions
                 .push((pts, std::time::Instant::now()));
         }
+        // Leave room for the exclusive next tick in bounded animation delays.
+        // libwebp also rejects input timestamp gaps beyond its 24-bit duration.
+        let max_hold_ticks = match self.format {
+            ExportFormat::Gif => u128::from(u16::MAX) * u128::from(self.fps) / 100,
+            ExportFormat::Webp => 0xff_ffff * u128::from(self.fps) / 1000,
+            _ => u128::MAX,
+        };
         let mut reuse_cpu_pixels = false;
         if let Some(pending) = self.pending.as_mut() {
+            // A coalesced image already covers later observations. Replacing
+            // its earlier start would retroactively alter that visible interval.
+            if pts < pending.last_observed_pts && pending.last_observed_pts > pending.pts {
+                return Err(RecordingExportError::InvalidConfig(
+                    "video PTS moved backward".into(),
+                ));
+            }
             if pts <= pending.pts {
                 pending.reuse_cpu_pixels = false;
                 self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
                 return Ok(std::mem::replace(&mut pending.rgba, rgba));
             }
-            // Exact composed pixels, including cursor, effects, keycaps and
-            // playback overlays. Every rational PTS is still submitted; only
-            // the identical color conversion is reused.
-            if self.reuse_identical_rgba && pending.gpu.is_none() && pts == pending.pts + 1 {
+            // Compare complete visible pixels, including every overlay. A held
+            // frame can span many slots; its start PTS must remain unchanged.
+            if self.frame_reuse != VideoFrameReuse::Encode
+                && pending.gpu.is_none()
+                && (self.frame_reuse == VideoFrameReuse::Coalesce || pts == pending.pts + 1)
+            {
                 #[cfg(feature = "bench-timing")]
                 {
                     self.report.timings.cpu_reuse_checks += 1;
                 }
                 reuse_cpu_pixels = pending.rgba == rgba;
+                if reuse_cpu_pixels
+                    && self.frame_reuse == VideoFrameReuse::Coalesce
+                    && ((pts - pending.pts) as u128) < max_hold_ticks
+                {
+                    pending.last_observed_pts = pts;
+                    self.report.coalesced_frames = self.report.coalesced_frames.saturating_add(1);
+                    return Ok(rgba);
+                }
             }
             let duration = pts.saturating_sub(pending.pts).max(1);
             if let Err(error) = self.encode_pending(duration) {
@@ -1201,6 +1226,7 @@ impl StreamingEncoder {
         self.admitted_frames += 1;
         self.pending = Some(PendingFrame {
             pts,
+            last_observed_pts: pts,
             rgba,
             gpu: None,
             reuse_cpu_pixels,
@@ -1208,8 +1234,8 @@ impl StreamingEncoder {
         Ok(std::mem::take(&mut self.spare_rgba))
     }
 
-    pub(crate) fn set_reuse_identical_rgba(&mut self, enabled: bool) {
-        self.reuse_identical_rgba = enabled;
+    pub fn set_frame_reuse(&mut self, policy: VideoFrameReuse) {
+        self.frame_reuse = policy;
     }
 
     /// Submit PCM to a single-track output. Multi-track outputs require explicit routing.
@@ -1402,7 +1428,7 @@ impl StreamingEncoder {
         let pts = i64::try_from(pts)
             .map_err(|_| RecordingExportError::InvalidConfig("video PTS overflow".into()))?;
         if let Some(pending) = &mut self.pending {
-            if pts < pending.pts {
+            if pts < pending.last_observed_pts {
                 return Err(RecordingExportError::InvalidConfig(
                     "video PTS moved backward".into(),
                 ));
@@ -1418,6 +1444,7 @@ impl StreamingEncoder {
         self.admitted_frames += 1;
         self.pending = Some(PendingFrame {
             pts,
+            last_observed_pts: pts,
             rgba: RasterBuffer::new(),
             gpu: Some(native),
             reuse_cpu_pixels: false,
@@ -1498,6 +1525,7 @@ impl StreamingEncoder {
         self.admitted_frames += 1;
         self.pending = Some(PendingFrame {
             pts,
+            last_observed_pts: pts,
             rgba: RasterBuffer::new(),
             gpu: Some(native),
             reuse_cpu_pixels: false,
@@ -1611,7 +1639,11 @@ impl StreamingEncoder {
             self.report.timings.packet(packet.pts());
             packet.set_stream(self.stream_index);
             packet.rescale_ts(self.encoder.time_base(), self.stream_time_base);
-            if let Some(duration_us) = self.final_duration_us {
+            // AVI retains its fixed-rate grid. Rounding a sparse final hold to
+            // the nearest tick would discard the last partial presentation slot.
+            if let Some(duration_us) = self.final_duration_us
+                && self.format != ExportFormat::Avi
+            {
                 use ffmpeg::Rescale;
                 let end = (duration_us.min(i64::MAX as u64) as i64)
                     .rescale(ffmpeg::Rational(1, 1_000_000), self.stream_time_base);
@@ -1750,7 +1782,7 @@ impl StreamingEncoder {
         if self
             .pending
             .as_ref()
-            .is_some_and(|frame| endpoint <= frame.pts)
+            .is_some_and(|frame| endpoint <= frame.last_observed_pts)
         {
             return Err(RecordingExportError::InvalidConfig(
                 "video endpoint must follow the last submitted PTS".into(),
@@ -1768,8 +1800,11 @@ impl StreamingEncoder {
             return Err(RecordingExportError::ExportCanceled);
         }
         if self.recovery.is_some() {
-            let endpoint =
-                end_pts.unwrap_or_else(|| self.pending.as_ref().map_or(1, |frame| frame.pts + 1));
+            let endpoint = end_pts.unwrap_or_else(|| {
+                self.pending
+                    .as_ref()
+                    .map_or(1, |frame| frame.last_observed_pts + 1)
+            });
             return self.finish_recoverable(endpoint, cancellation);
         }
         let result = self.finish_stream(end_pts, cancellation);
@@ -1788,13 +1823,15 @@ impl StreamingEncoder {
     ) -> Result<StreamingEncoderReport> {
         #[cfg(feature = "bench-timing")]
         let finish_started = std::time::Instant::now();
+        let endpoint = end_pts.unwrap_or_else(|| {
+            self.pending
+                .as_ref()
+                .map_or(1, |frame| frame.last_observed_pts + 1)
+        });
         let duration = self
             .pending
             .as_ref()
-            .and_then(|frame| end_pts.map(|end| end.saturating_sub(frame.pts).max(1)))
-            .unwrap_or(1);
-        let endpoint =
-            end_pts.unwrap_or_else(|| self.pending.as_ref().map_or(1, |frame| frame.pts + 1));
+            .map_or(1, |frame| endpoint.saturating_sub(frame.pts).max(1));
         if self.format == ExportFormat::Apng {
             let last_us = self.final_duration_us.map_or_else(
                 || (duration as u64).saturating_mul(1_000_000) / u64::from(self.fps),
@@ -2607,6 +2644,7 @@ fn is_direct_staging_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffmpeg::Rescale;
     use ffmpeg::codec::packet::Mut;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3642,6 +3680,134 @@ mod tests {
         };
         assert!((seconds(packets[1].0) - 0.3).abs() < 0.001);
         assert!((seconds(packets[1].0 + packets[1].1) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn coalesced_images_keep_changed_pts_and_implicit_final_hold() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("coalesced.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+        encoder.set_frame_reuse(VideoFrameReuse::Coalesce);
+        let mut pixels = vec![0; 16 * 16 * 4];
+        for pts in 0..31 {
+            let value = if pts < 7 {
+                80
+            } else if pts < 15 {
+                140
+            } else {
+                200
+            };
+            pixels.resize(16 * 16 * 4, value);
+            pixels.fill(value);
+            pixels = encoder.push_owned_rgba_frame_at_pts(pts, pixels).unwrap();
+        }
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 3);
+        assert_eq!(report.coalesced_frames, 28);
+        assert_eq!(decoded_video_frame_count(&path).0, 3);
+        let mut input = ffmpeg::format::input(&path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let index = stream.index();
+        let time_base = stream.time_base();
+        assert_eq!(stream.duration().rescale(time_base, (1, 10)), 31);
+        let mut pts: Vec<_> = input
+            .packets()
+            .filter(|(stream, _)| stream.index() == index)
+            .map(|(_, packet)| packet.pts().unwrap().rescale(time_base, (1, 10)))
+            .collect();
+        pts.sort_unstable();
+        assert_eq!(pts, [0, 7, 15]);
+    }
+
+    #[test]
+    fn coalesced_observations_still_bound_the_exclusive_endpoint() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("invalid-end.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Mp4)).unwrap();
+        encoder.set_frame_reuse(VideoFrameReuse::Coalesce);
+        encoder
+            .push_rgba_frame_at_pts(0, &[80; 16 * 16 * 4])
+            .unwrap();
+        encoder
+            .push_rgba_frame_at_pts(7, &[80; 16 * 16 * 4])
+            .unwrap();
+        for pts in [0, 5] {
+            assert!(matches!(
+                encoder.push_rgba_frame_at_pts(pts, &[120; 16 * 16 * 4]),
+                Err(RecordingExportError::InvalidConfig(_))
+            ));
+        }
+        let prepared = ffmpeg::frame::Video::new(encoder.input_pixel_format(), 16, 16);
+        assert!(matches!(
+            encoder.push_prepared_video_frame_at_pts(0, prepared),
+            Err(RecordingExportError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            encoder.finish_at_pts(7),
+            Err(RecordingExportError::InvalidConfig(_))
+        ));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn coalesced_gif_holds_split_before_the_delay_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("long-hold.gif");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(path.clone(), ExportFormat::Gif)).unwrap();
+        encoder.set_frame_reuse(VideoFrameReuse::Coalesce);
+        for pts in 0..6601 {
+            encoder
+                .push_rgba_frame_at_pts(pts, &[80; 16 * 16 * 4])
+                .unwrap();
+        }
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 2);
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut reader = options
+            .read_info(std::fs::File::open(path).unwrap())
+            .unwrap();
+        let mut delays = Vec::new();
+        while let Some(frame) = reader.read_next_frame().unwrap() {
+            delays.push(frame.delay);
+        }
+        assert_eq!(
+            delays.iter().map(|&delay| u64::from(delay)).sum::<u64>(),
+            66_010
+        );
+        assert!(delays.iter().all(|&delay| delay > 0));
+    }
+
+    #[test]
+    fn coalesced_webp_holds_split_before_the_timestamp_gap_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("long-hold.webp");
+        let mut config = encoder_config(path.clone(), ExportFormat::Webp);
+        config.fps = 1;
+        let mut encoder = StreamingEncoder::create(config).unwrap();
+        encoder.set_frame_reuse(VideoFrameReuse::Coalesce);
+        for pts in 0..16_781 {
+            encoder
+                .push_rgba_frame_at_pts(pts, &[80; 16 * 16 * 4])
+                .unwrap();
+        }
+        let report = encoder.finish().unwrap();
+        assert_eq!(report.encoded_frames, 2);
+        let bytes = fs::read(path).unwrap();
+        let delays: Vec<_> = bytes
+            .windows(24)
+            .filter(|chunk| &chunk[..4] == b"ANMF")
+            .map(|chunk| u32::from_le_bytes([chunk[20], chunk[21], chunk[22], 0]))
+            .collect();
+        assert!(delays.len() >= 2);
+        assert!(delays.iter().all(|&delay| delay > 0));
+        assert_eq!(
+            delays.iter().map(|&delay| u64::from(delay)).sum::<u64>(),
+            16_781_000
+        );
     }
 
     #[test]

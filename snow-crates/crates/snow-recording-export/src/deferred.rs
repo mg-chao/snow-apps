@@ -405,12 +405,6 @@ pub fn render_bundle_range(
         builder = builder.hdr10_cpu_input();
     }
     let mut encoder = builder.create()?;
-    // A progress bar changes its geometry on most slots. Avoid a full-canvas
-    // equality scan in that common continuously changing output domain.
-    let reuse_pixels = !matches!(
-        metadata.render.playback_overlay,
-        snow_recording_model::PlaybackOverlay::ProgressBar { .. }
-    );
     let mut video = SequentialVideoSource::open(
         path,
         source.timeline,
@@ -445,7 +439,7 @@ pub fn render_bundle_range(
     let mut hdr_encoded = output_hdr.then(|| {
         ffmpeg::frame::Video::new(encoder.input_pixel_format(), config.width, config.height)
     });
-    let mut previous_hdr = (output_hdr && reuse_pixels).then(|| {
+    let mut previous_hdr = output_hdr.then(|| {
         ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB48LE, config.width, config.height)
     });
     let mut hdr_valid = false;
@@ -458,6 +452,7 @@ pub fn render_bundle_range(
         stage_times[0] = started.elapsed();
     }
     let mut previous_telemetry = Instant::now();
+    let mut previous_progress_width = None;
     for output_frame in timeline.iter() {
         let frame = snow_recording_model::RenderFrame {
             timestamp_ms: source
@@ -482,6 +477,16 @@ pub fn render_bundle_range(
                 .observe(&event)
                 .map_err(snow_recording_model::RecordingModelError::Decode)
         })?;
+        let progress_width = match metadata.render.playback_overlay {
+            snow_recording_model::PlaybackOverlay::ProgressBar { .. } => Some(
+                snow_recording_effects::playback::progress_bar_width(config.width, frame.progress),
+            ),
+            _ => None,
+        };
+        // A changed progress width is already proof of changed pixels. Compare
+        // complete composed images only when the bar could actually be held.
+        let playback_unchanged = progress_width == previous_progress_width;
+        previous_progress_width = progress_width;
         if let Some(conversion) = &mut hdr_conversion {
             let rgb = hdr_rgb.as_mut().expect("HDR composition frame");
             video.copy_rgb48(rgb)?;
@@ -490,13 +495,13 @@ pub fn render_bundle_range(
                 .map_err(RecordingExportError::Export)?;
             blend_hdr_tiles(rgb, &tiles);
             let converted = hdr_encoded.as_mut().expect("HDR encode frame");
-            let reusable =
-                reuse_pixels && reusable_effect_frame(&effects, &metadata, frame.timestamp_ms);
+            let reusable = reusable_effect_frame(&effects, &metadata, frame.timestamp_ms);
             #[cfg(feature = "bench-timing")]
-            if reusable && hdr_valid {
+            if reusable && playback_unchanged && hdr_valid {
                 hdr_reuse_checks += 1;
             }
             let unchanged = reusable
+                && playback_unchanged
                 && previous_hdr
                     .as_ref()
                     .is_some_and(|previous| hdr_valid && equal_rgb48(rgb, previous));
@@ -517,7 +522,9 @@ pub fn render_bundle_range(
             }
             #[cfg(feature = "bench-timing")]
             let stage_started = Instant::now();
-            encoder.push_prepared_video_frame_ref_at_pts(frame.pts, converted)?;
+            if !unchanged {
+                encoder.push_prepared_video_frame_ref_at_pts(frame.pts, converted)?;
+            }
             #[cfg(feature = "bench-timing")]
             {
                 stage_times[3] += stage_started.elapsed();
@@ -529,8 +536,14 @@ pub fn render_bundle_range(
                 .map_err(RecordingExportError::Export)?;
             // Known changing animations cannot reuse prepared pixels. For
             // other slots, exact complete-pixel equality remains authoritative.
-            encoder.set_reuse_identical_rgba(
-                reuse_pixels && reusable_effect_frame(&effects, &metadata, frame.timestamp_ms),
+            encoder.set_frame_reuse(
+                if playback_unchanged
+                    && reusable_effect_frame(&effects, &metadata, frame.timestamp_ms)
+                {
+                    crate::streaming::VideoFrameReuse::Coalesce
+                } else {
+                    crate::streaming::VideoFrameReuse::Encode
+                },
             );
             #[cfg(feature = "bench-timing")]
             {
@@ -581,13 +594,14 @@ pub fn render_bundle_range(
             report.timings.cpu_conversions
         };
         eprintln!(
-            "deferred prepared pixels: slots={total}, conversions={conversions}, reused={}, equality_checks={}, equality_guard={reuse_pixels}",
+            "deferred prepared pixels: slots={total}, conversions={conversions}, reused={}, equality_checks={}, coalesced={}",
             total.saturating_sub(conversions),
             if output_hdr {
                 hdr_reuse_checks
             } else {
                 report.timings.cpu_reuse_checks
             },
+            total.saturating_sub(report.encoded_frames),
         );
     }
     #[cfg(feature = "bench-timing")]
@@ -650,17 +664,8 @@ fn equal_rgb48(a: &ffmpeg::frame::Video, b: &ffmpeg::frame::Video) -> bool {
     })
 }
 
-fn copy_rgb48(source: &ffmpeg::frame::Video, output: &mut ffmpeg::frame::Video) {
-    let width = source.width() as usize * 6;
-    let output_stride = output.stride(0);
-    for y in 0..source.height() as usize {
-        output.data_mut(0)[y * output_stride..y * output_stride + width]
-            .copy_from_slice(&source.data(0)[y * source.stride(0)..y * source.stride(0) + width]);
-    }
-}
-
 fn cache_rgb48(
-    pixels: &ffmpeg::frame::Video,
+    pixels: &mut ffmpeg::frame::Video,
     previous: &mut Option<ffmpeg::frame::Video>,
     valid: &mut bool,
     reusable: bool,
@@ -669,7 +674,9 @@ fn cache_rgb48(
     // after animation settles before comparing again, avoiding a full copy while busy.
     *valid = false;
     if reusable && let Some(previous) = previous.as_mut() {
-        copy_rgb48(pixels, previous);
+        // The composition buffer and history exchange ownership; no canvas
+        // copy is needed, and the encoder retains only converted immutable pixels.
+        std::mem::swap(pixels, previous);
         *valid = true;
     }
 }

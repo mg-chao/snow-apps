@@ -92,49 +92,10 @@ impl HardwareFrames {
     }
 
     /// One submitted frame of codec delay, one deferred duration frame, one
-    /// frame being composed, and two driver references. Lookahead/B-frames are
-    /// disabled below, so capacity cannot grow with the recording duration.
+    /// frame being composed, and two driver references. The shared codec policy
+    /// disables lookahead/B-frames, so capacity cannot grow with recording duration.
     pub(crate) const LIVE_CAPACITY: usize = 5;
 
-    pub(crate) fn open(
-        &self,
-        encoder: ffmpeg::codec::encoder::video::Video,
-        codec: ffmpeg::Codec,
-        quality: u8,
-    ) -> Result<ffmpeg::encoder::video::Encoder> {
-        let qp = crate::video_quality::quality_to_h264_crf(quality).to_string();
-        let mut options = ffmpeg::Dictionary::new();
-        options.set("bf", "0");
-        match self.codec_name() {
-            "h264_nvenc" => {
-                options.set("preset", "p4");
-                options.set("tune", "ull");
-                options.set("rc", "constqp");
-                options.set("qp", &qp);
-                options.set("rc-lookahead", "0");
-                options.set("delay", "0");
-                options.set("surfaces", &Self::LIVE_CAPACITY.to_string());
-            }
-            "h264_amf" => {
-                options.set("usage", "ultralowlatency");
-                options.set("quality", "balanced");
-                options.set("rc", "cqp");
-                options.set("qp_i", &qp);
-                options.set("qp_p", &qp);
-                options.set("preanalysis", "0");
-                options.set("preencode", "0");
-                options.set("query_timeout", "100");
-            }
-            "h264_qsv" => {
-                options.set("preset", "medium");
-                options.set("look_ahead", "0");
-                options.set("async_depth", "1");
-                options.set("global_quality", &qp);
-            }
-            _ => unreachable!(),
-        }
-        encoder.open_as_with(codec, options).map_err(failure)
-    }
     pub(crate) fn new(config: GpuInputConfig, size: (u32, u32), capacity: usize) -> Result<Self> {
         let device = config.device;
         let native_encoder = snow_d3d11::h264_encoder(device.identity().vendor)
@@ -229,7 +190,6 @@ impl HardwareFrames {
                 .unwrap_or(&self.device_ref)
                 .reference()?;
             (*context).hw_frames_ctx = self.mapped.as_ref().unwrap_or(&self.native).reference()?;
-            (*context).max_b_frames = 0;
             (*context).color_range = AVColorRange::AVCOL_RANGE_MPEG;
             (*context).colorspace = AVColorSpace::AVCOL_SPC_BT709;
             (*context).color_primaries = AVColorPrimaries::AVCOL_PRI_BT709;

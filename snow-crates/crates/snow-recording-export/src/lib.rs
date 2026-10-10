@@ -39,7 +39,7 @@ pub use export::{
 pub use hdr::preserves_hdr_output;
 pub use streaming::{
     StreamingAudioConfig, StreamingEncoder, StreamingEncoderBuilder, StreamingEncoderConfig,
-    StreamingEncoderReport, cleanup_stale_staging_files, scaled_output_dimensions,
+    StreamingEncoderReport, VideoFrameReuse, cleanup_stale_staging_files, scaled_output_dimensions,
 };
 
 #[cfg(target_os = "macos")]

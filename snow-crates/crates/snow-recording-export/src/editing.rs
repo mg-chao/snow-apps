@@ -8460,38 +8460,4 @@ mod tests {
         );
         assert_eq!(input.duration().rescale((1, 1_000_000), (1, 30)), 35);
     }
-
-    #[test]
-    fn hardware_quality_targets_follow_requested_quality() {
-        ensure_ffmpeg_initialized().unwrap();
-        for (name, keys) in [
-            ("h264_nvenc", &["qp"][..]),
-            ("h264_qsv", &["global_quality"][..]),
-            ("h264_amf", &["qp_i", "qp_p"][..]),
-        ] {
-            let Some(codec) = ffmpeg::encoder::find_by_name(name) else {
-                continue;
-            };
-            let mut lower = ffmpeg::Dictionary::new();
-            let mut higher = ffmpeg::Dictionary::new();
-            assert!(apply_hardware_encoder_options(&mut lower, &codec, 40));
-            assert!(apply_hardware_encoder_options(&mut higher, &codec, 80));
-            for key in keys {
-                assert!(
-                    higher.get(key).unwrap().parse::<u8>().unwrap()
-                        < lower.get(key).unwrap().parse::<u8>().unwrap(),
-                    "{name}: {key}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn media_foundation_hardware_selection_is_explicit() {
-        if let Some(codec) = ffmpeg::encoder::find_by_name("h264_mf") {
-            let mut options = ffmpeg::Dictionary::new();
-            assert!(apply_hardware_encoder_options(&mut options, &codec, 80));
-            assert_eq!(options.get("hw_encoding"), Some("1"));
-        }
-    }
 }
