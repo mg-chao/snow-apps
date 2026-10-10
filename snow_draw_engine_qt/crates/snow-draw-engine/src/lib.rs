@@ -29,11 +29,12 @@ pub use snow_draw_engine_editor::{
     DISTANCE_STYLE_PROPERTY_STROKE, DISTANCE_STYLE_PROPERTY_STROKE_WIDTH,
     DISTANCE_STYLE_PROPERTY_UNIT, DistanceStyle, DocumentSyncSnapshot, EditorCommand,
     EditorSession, EditorSessionSnapshot, EditorStyleDefaults, EditorUpdate, EditorViewState,
-    EditorViewportState, FILTER_STYLE_PROPERTY_ALL, FilterStyle, HistoryState, RectangleShapeStyle,
-    SelectionBounds, SelectionRectState, SerialNumberStyle, SerialNumberToolbarState, ShapeKind,
-    ShapeStyle, ShapeStylePatch, SnapGuideTargets, StyleToolbarSource, StyleToolbarState,
-    TEXT_STYLE_ALL_PROPERTIES, TextCommitTarget, TextDraftCommit, TextLayoutOverride, TextStyle,
-    validate_angle_style,
+    EditorViewportState, FILTER_STYLE_PROPERTY_ALL, FilterStyle, HistoryState,
+    MAGNIFIER_STYLE_PROPERTY_ALL, MAGNIFIER_STYLE_PROPERTY_CORNER_RADII, MagnifierStyle,
+    RectangleShapeStyle, SelectionBounds, SelectionRectState, SerialNumberStyle,
+    SerialNumberToolbarState, ShapeKind, ShapeStyle, ShapeStylePatch, SnapGuideTargets,
+    StyleToolbarSource, StyleToolbarState, TEXT_STYLE_ALL_PROPERTIES, TextCommitTarget,
+    TextDraftCommit, TextLayoutOverride, TextStyle, validate_angle_style, validate_magnifier_style,
 };
 pub use snow_draw_engine_interaction::*;
 

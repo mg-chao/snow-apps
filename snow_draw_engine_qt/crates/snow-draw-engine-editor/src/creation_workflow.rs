@@ -507,6 +507,9 @@ impl Editor {
                 filter.rotation = rect.rotation;
                 ElementCreationPreview::Filter(filter)
             })
+        } else if self.active_tool() == ActiveTool::Magnifier {
+            preview
+                .map(|rect| ElementCreationPreview::Magnifier(self.magnifier_creation_data(rect)))
         } else {
             preview.map(ElementCreationPreview::Rectangle)
         };
@@ -542,6 +545,24 @@ impl Editor {
         self.cancel_interaction();
 
         if let Some(rect) = preview {
+            if self.active_tool() == ActiveTool::Magnifier {
+                let value = self.magnifier_creation_data(rect);
+                snow_draw_engine_document::validate_magnifier(&value)?;
+                let mut transaction = Transaction::new("create magnifier");
+                transaction.insert_magnifier(
+                    document.peek_next_element_id(),
+                    ElementMeta::default(),
+                    value,
+                );
+                self.queue_command(EditorCommand::ApplyTransaction(
+                    ApplyTransactionCommand::new(transaction),
+                ));
+                return Ok(InteractionOutput {
+                    consumed: true,
+                    capture: self.release_capture_command(),
+                    cursor: CursorCommand::Set(self.tool_policy().default_cursor),
+                });
+            }
             if matches!(
                 self.active_tool(),
                 ActiveTool::RectangleFilter | ActiveTool::RectangleEraser

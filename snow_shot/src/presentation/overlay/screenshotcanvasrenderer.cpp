@@ -1038,6 +1038,7 @@ void ScreenshotCanvasRenderer::setRenderMode(RenderMode mode) {
         m_scrollingResultPreviewCanvasRect = {};
         m_scrollingCropGuide.reset();
     }
+    refreshBaseImageSources();
     invalidateCachedContent();
     if (m_renderMode == RenderMode::ScrollingCapture && m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->hide();
@@ -1073,10 +1074,12 @@ void ScreenshotCanvasRenderer::setScrollingResultPreview(QImage image, const QRe
     m_scrollingResultPreviewImage = std::move(image);
     m_scrollingResultPreviewCanvasRect = target;
     m_scrollingCropGuide = cropGuide;
+    refreshBaseImageSources();
     invalidateCachedContent(originalChanged);
-    if (!damage.isEmpty()) {
+    if (originalChanged)
+        m_canvas.updateBaseImageContent(damage);
+    else if (!damage.isEmpty())
         m_canvas.update(damage);
-    }
 }
 
 void ScreenshotCanvasRenderer::clearScrollingResultPreview() {
@@ -1087,17 +1090,17 @@ void ScreenshotCanvasRenderer::clearScrollingResultPreview() {
     m_scrollingResultPreviewImage = {};
     m_scrollingResultPreviewCanvasRect = {};
     m_scrollingCropGuide.reset();
+    refreshBaseImageSources();
     invalidateCachedContent();
-    if (!damage.isEmpty()) {
-        m_canvas.update(damage);
-    }
+    m_canvas.updateBaseImageContent(damage);
 }
 
 bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
     return !m_scrollingResultPreviewImage.isNull();
 }
 
-void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage) {
+void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage,
+                                              const ScreenshotImageSource& samplingSource) {
     QList<QRectF> opaqueRects;
     // DPR normalization can detach the QImage. Check the shared source key first
     // so every overlay reuses the answer for the same captured pixel buffer.
@@ -1116,6 +1119,8 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, cons
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
+    m_samplingImageSource = samplingSource.isValid() ? samplingSource : m_imageSource;
+    refreshBaseImageSources();
     m_opaqueImageCanvasRects = std::move(opaqueRects);
     m_opaqueCoverageValid = false;
     QList<SnowCanvasBaseImageSource> baseSources;
@@ -1582,6 +1587,8 @@ void ScreenshotCanvasRenderer::reset() {
                           m_selectionState.toolbarHovered || !m_selectionState.borderVisible ||
                           m_ocrPresentation != nullptr || m_guideLinesVisible;
     m_imageSource = {};
+    m_samplingImageSource = {};
+    m_baseImageSources.clear();
     m_opaqueImageCanvasRects.clear();
     m_opaqueImageViewCoverage = {};
     m_opaqueCoverageValid = false;
@@ -1641,6 +1648,30 @@ std::uint64_t ScreenshotCanvasRenderer::contentRevision() const {
 
 std::uint64_t ScreenshotCanvasRenderer::originalBackgroundRevision() const {
     return m_originalBackgroundRevision;
+}
+
+QList<SnowCanvasBaseImageSource> ScreenshotCanvasRenderer::baseImageSources() const {
+    return m_baseImageSources;
+}
+
+void ScreenshotCanvasRenderer::refreshBaseImageSources() {
+    m_baseImageSources.clear();
+    if (m_renderMode == RenderMode::ScrollingCapture) {
+        if (hasScrollingResultPreview())
+            m_baseImageSources.append(
+                {m_scrollingResultPreviewImage, m_scrollingResultPreviewCanvasRect, {}});
+    } else if (m_samplingImageSource.isMaterialized()) {
+        m_baseImageSources.append({m_samplingImageSource.materializedImage,
+                                   m_samplingImageSource.materializedCanvasRect,
+                                   {}});
+    } else if (m_samplingImageSource.isLayered()) {
+        m_baseImageSources.reserve(m_samplingImageSource.layers.size());
+        for (const auto& layer : m_samplingImageSource.layers) {
+            if (layer.isValid())
+                m_baseImageSources.append(
+                    {layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+        }
+    }
 }
 
 std::optional<SnowCanvasFilterRenderReference>

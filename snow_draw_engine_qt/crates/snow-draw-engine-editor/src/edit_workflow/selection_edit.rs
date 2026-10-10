@@ -69,6 +69,7 @@ impl Editor {
         };
 
         EditSelectionState {
+            original_magnifiers: request.original_magnifiers,
             duplicate: false,
             pointer_id: request.pointer_id,
             button: request.button,
@@ -207,7 +208,15 @@ impl Editor {
         } else {
             None
         };
+        let magnifiers = self.selection_magnifier_previews(document, &state);
+        for value in &magnifiers {
+            snow_draw_engine_document::validate_magnifier(&value.magnifier)?;
+            transaction.update_magnifier(value.id, value.magnifier);
+        }
         for preview in state.preview_elements {
+            if magnifiers.iter().any(|value| value.id == preview.id) {
+                continue;
+            }
             if Some(preview.id) == active_text_id {
                 self.update_active_text_draft_selection_rect(
                     active_text_original_rect.unwrap_or(preview.rect),
@@ -979,6 +988,7 @@ mod tests {
             opacity: 1.0,
         };
         let state = EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,
@@ -1504,6 +1514,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,
@@ -1576,6 +1587,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,
@@ -1654,6 +1666,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,
@@ -1827,6 +1840,7 @@ mod tests {
             )
             .unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,

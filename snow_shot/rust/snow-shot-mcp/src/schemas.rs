@@ -89,6 +89,7 @@ struct Selection {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum CanvasTool {
+    Magnifier,
     Distance,
     Angle,
     Move,
@@ -726,6 +727,8 @@ bounded_style_number!(DistanceDecimals, u8, "integer", 0, 3);
 bounded_style_number!(DistanceStrokeWidth, f64, "number", 1.0, 72.0);
 bounded_style_number!(AngleDecimals, u8, "integer", 0, 3);
 bounded_style_number!(AngleStrokeWidth, f64, "number", 1.0, 72.0);
+bounded_style_number!(MagnifierFactor, f64, "number", 1.0, 10.0);
+bounded_style_number!(MagnifierStrokeWidth, f64, "number", 0.0, 72.0);
 bounded_style_number!(ArrowRatio, f64, "number", 0.5, 3.0);
 bounded_style_number!(CornerRadius, f64, "number", 0.0, 8192.0);
 bounded_style_number!(SerialNumber, u64, "integer", 0_u64, 9007199254740991_u64);
@@ -782,6 +785,21 @@ struct AngleAnnotationStyle {
     decimal_places: Option<AngleDecimals>,
 }
 
+#[derive(Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+struct MagnifierStylePatch {
+    shape: Option<ShapeVariant>,
+    stroke: Option<[u8; 4]>,
+    stroke_width: Option<MagnifierStrokeWidth>,
+    factor: Option<MagnifierFactor>,
+    show_leader: Option<bool>,
+    leader_arrowhead: Option<Arrowhead>,
+    corner_radius: Option<CornerRadius>,
+    /// Per-corner radii in top-left, top-right, bottom-right, bottom-left order.
+    /// Mutually exclusive with corner_radius; enforced by the application.
+    corner_radii: Option<[CornerRadius; 4]>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Arrowhead {
@@ -814,6 +832,7 @@ enum FilterKind {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ToolStyle {
+    Magnifier(MagnifierToolStyle),
     Standard(Box<StandardToolStyle>),
     BrushEraser(BrushEraserToolStyle),
     Angle(AngleToolStyle),
@@ -825,6 +844,7 @@ enum ToolStyle {
 #[serde(untagged)]
 #[schemars(extend("type" = "object"))]
 enum ScreenshotToolStyleMutation {
+    Magnifier(Mutation<MagnifierToolStyle>),
     Standard(Box<Mutation<StandardToolStyle>>),
     BrushEraser(Mutation<BrushEraserToolStyle>),
     Angle(Mutation<AngleToolStyle>),
@@ -839,6 +859,17 @@ enum AngleTarget {
 struct AngleToolStyle {
     target: AngleTarget,
     style: AngleAnnotationStyle,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum MagnifierTarget {
+    Magnifier,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MagnifierToolStyle {
+    target: MagnifierTarget,
+    style: MagnifierStylePatch,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1299,6 +1330,73 @@ mod tests {
                 Some(json!({
                     "document_id":"d","expected_revision":1,"tool":"distance"
                 }))
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn magnifier_schemas_validate_tools_and_independent_style_bounds() {
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool", "session_id"),
+            ("snow_shot_document_set_tool", "document_id"),
+        ] {
+            assert!(
+                schema(
+                    name,
+                    Some(json!({owner:"owned", "expected_revision":1,
+                "tool":"magnifier"}))
+                )
+                .is_ok(),
+                "{name}"
+            );
+        }
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool_style", "session_id"),
+            ("snow_shot_document_set_tool_style", "document_id"),
+        ] {
+            for shape in ["rectangle", "ellipse", "diamond"] {
+                for factor in [1.0, 2.0, 10.0] {
+                    assert!(
+                        schema(
+                            name,
+                            Some(json!({owner:"owned", "expected_revision":1,
+                        "target":"magnifier", "style":{"shape":shape, "factor":factor,
+                        "stroke_width":0.0, "stroke":[245,34,45,255], "show_leader":false,
+                        "leader_arrowhead":"indented_triangle", "corner_radii":[3,6,9,12]}}))
+                        )
+                        .is_ok(),
+                        "{name}"
+                    );
+                }
+            }
+            for style in [
+                json!({"factor":0.9}),
+                json!({"factor":10.1}),
+                json!({"stroke_width":73.0}),
+                json!({"show_leader":1}),
+                json!({"fill":[0,0,0,255]}),
+                json!({"leader_arrowhead":"unsupported"}),
+                json!({"corner_radius":-1.0}),
+                json!({"corner_radii":[1,2,3]}),
+            ] {
+                assert!(
+                    schema(
+                        name,
+                        Some(json!({owner:"owned", "expected_revision":1,
+                    "target":"magnifier", "style":style}))
+                    )
+                    .is_err(),
+                    "{name}: {style}"
+                );
+            }
+        }
+        assert!(
+            schema(
+                "snow_shot_pinned_edit",
+                Some(json!({"id":"pinned",
+            "expected_revision":1, "action":"tool_style", "payload":{
+            "target":"magnifier", "style":{"factor":2.0, "show_leader":true}}}))
             )
             .is_ok()
         );

@@ -34,6 +34,7 @@ pub enum ActiveTool {
     BrushEraser,
     Distance,
     Angle,
+    Magnifier,
 }
 
 impl ActiveTool {
@@ -71,7 +72,8 @@ impl ActiveTool {
             | Self::SerialNumber
             | Self::Spotlight
             | Self::Distance
-            | Self::Angle => false,
+            | Self::Angle
+            | Self::Magnifier => false,
         }
     }
 }
@@ -159,6 +161,8 @@ pub enum StyleToolbarSource {
     SelectedDistance,
     DefaultAngle,
     SelectedAngle,
+    DefaultMagnifier,
+    SelectedMagnifier,
 }
 
 impl StyleToolbarSource {
@@ -359,6 +363,8 @@ pub struct StyleToolbarState {
     pub distance_style_mixed: u32,
     pub angle_style: crate::AngleStyle,
     pub angle_style_mixed: u32,
+    pub magnifier_style: crate::MagnifierStyle,
+    pub magnifier_style_mixed: u32,
     pub distance_measured_length: f64,
 }
 
@@ -404,6 +410,7 @@ pub struct FreeDrawPreview {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ElementCreationPreview {
     Rectangle(RectangleData),
+    Magnifier(snow_draw_engine_document::MagnifierData),
     Filter(FilterData),
     PenFilter(PenFilterPreview),
     FreeDraw(Arc<FreeDrawPreview>),
@@ -439,6 +446,8 @@ pub struct EditorPresentationState {
     pub active_text_draft: Option<ActiveTextDraftPresentation>,
     pub arrow_text_previews: Vec<(ElementId, TextData)>,
     pub preview_arrows: Vec<SelectionArrowState>,
+    pub preview_magnifiers: Vec<crate::SelectionMagnifierState>,
+    pub selected_magnifiers: Vec<crate::SelectionMagnifierState>,
     pub preview_elements: Vec<SelectionRectState>,
     pub preview_text_paints: Vec<TextPreviewPaint>,
     pub auto_filter_highlights: Vec<RectangleData>,

@@ -31,6 +31,8 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.distance.strokeWidth = 2.0;
     defaults.angle.stroke = red;
     defaults.angle.strokeWidth = 2.0;
+    defaults.magnifier.stroke = red;
+    defaults.magnifier.strokeWidth = 2.0;
 
     defaults.line.fill = transparent;
     defaults.line.fillStyle = SnowCanvasFillStyle::Solid;
@@ -118,6 +120,7 @@ inline QSet<SnowCanvasTool> screenshotQuickSelectionDisabledTools(const QStringL
         {QStringLiteral("rectangle-highlight"), SnowCanvasTool::RectangleHighlight},
         {QStringLiteral("pen-highlight"), SnowCanvasTool::PenHighlight},
         {QStringLiteral("spotlight"), SnowCanvasTool::Spotlight},
+        {QStringLiteral("magnifier"), SnowCanvasTool::Magnifier},
         {QStringLiteral("rectangle-filter"), SnowCanvasTool::RectangleFilter},
         {QStringLiteral("pen-filter"), SnowCanvasTool::PenFilter},
         {QStringLiteral("text"), SnowCanvasTool::Text},

@@ -150,15 +150,56 @@ def check_angle_contracts(matrix):
         assert re.search(rf"\bAngle\({re.escape(kind)}\)", union), f"{name} has no typed Angle style branch"
 
 
+def check_magnifier_contracts(matrix):
+    qt_types = read("../snow_draw_engine_qt/include/snow_draw_engine_qt/snow_canvas_types.h")
+    schemas = read("rust/snow-shot-mcp/src/schemas.rs")
+    domains = read("rust/snow-shot-mcp/src/domain_schemas.rs")
+    assert "Magnifier" in enum_members(qt_types, "SnowCanvasTool")
+    assert "Magnifier" in enum_members(schemas, "CanvasTool")
+    assert re.search(r"\bMagnifier\s*,", block(domains, r"choices!\(DocumentCanvasTool\s*\{(.*?)\}\);"))
+    reviewed = matrix["surface_contracts"]
+    assert reviewed["canvas_tools"]["members"].get("Magnifier") == "Magnifier"
+    for source in ("DefaultMagnifier", "SelectedMagnifier"):
+        assert source in enum_members(qt_types, "SnowCanvasStyleToolbarSource")
+        assert reviewed["canvas_style_sources"]["members"].count(source) == 1
+    for path in ("include/snow_shot/app/mcp/mcpstylepatch.h", "src/app/mcp/mcpdocumentservice.cpp"):
+        assert re.search(r'\{QStringLiteral\("magnifier"\),\s*SnowCanvasTool::Magnifier\}', read(path))
+    fields = {name for name in re.findall(r"^\s*([a-z_]+)\s*:",
+        block(schemas, r"struct MagnifierStylePatch\s*\{(.*?)\}"), re.M)}
+    expected = {"shape", "stroke", "stroke_width", "factor", "show_leader", "leader_arrowhead",
+                "corner_radius", "corner_radii"}
+    assert fields == expected
+    allowed = block(read("include/snow_shot/app/mcp/mcpstylepatch.h"),
+        r'else if \(target == QStringLiteral\("magnifier"\)\)\s*allowed = \{(.*?)\};')
+    assert set(re.findall(r'QStringLiteral\("([a-z_]+)"\)', allowed)) == expected
+    assert re.search(r'bounded_style_number!\(MagnifierFactor,\s*f64,\s*"number",\s*1\.0,\s*10\.0\)', schemas)
+    assert re.search(r'bounded_style_number!\(MagnifierStrokeWidth,\s*f64,\s*"number",\s*0\.0,\s*72\.0\)', schemas)
+    assert enum_members(schemas, "MagnifierTarget") == {"Magnifier"}
+    for source, name, kind in ((schemas, "ToolStyle", "MagnifierToolStyle"),
+                               (schemas, "ScreenshotToolStyleMutation", "Mutation<MagnifierToolStyle>"),
+                               (domains, "DocumentToolStyleMutation", "DocumentMutation<MagnifierToolStyle>")):
+        assert re.search(rf"\bMagnifier\({re.escape(kind)}\)", block(source, rf"enum {name}\s*\{{(.*?)\}}"))
+
+
 def main():
     global MINI
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mini", action="store_true", help="Check the compiled Mini contract")
     parser.add_argument("--angle-only", action="store_true",
                         help="Check only Angle entries and schemas in both full and Mini contracts")
+    parser.add_argument("--magnifier-only", action="store_true",
+                        help="Check only Magnifier tool and style contracts in full and Mini variants")
     parser.add_argument("--execution-reports", nargs="+", type=Path,
                         help="Require every tool and resource to appear in passing real-IPC driver reports")
     args = parser.parse_args()
+    if args.magnifier_only:
+        if args.mini or args.angle_only or args.execution_reports:
+            parser.error("--magnifier-only checks both variants and cannot be combined with other modes")
+        for MINI in (False, True):
+            matrix = json.loads(read("mcp-capabilities-mini.json" if MINI else "mcp-capabilities.json"))
+            check_magnifier_contracts(matrix)
+        print("MCP Magnifier capability agreement passed for full and Mini tool and style contracts.")
+        return
     if args.angle_only:
         if args.mini or args.execution_reports:
             parser.error("--angle-only checks both variants and cannot be combined with other modes")

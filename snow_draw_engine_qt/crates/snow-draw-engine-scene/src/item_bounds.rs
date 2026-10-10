@@ -63,6 +63,24 @@ pub(crate) fn scene_display_item_bounds(
                 item.stroke_width,
             ),
         },
+        SceneDisplayItem::Magnifier(item) => {
+            let lens =
+                scene_display_item_bounds(&SceneDisplayItem::Rectangle(item.lens), frame_view);
+            let leader = item
+                .leader
+                .as_ref()
+                .and_then(|leader| draw_path_item_bounds(frame_view, leader));
+            match (lens, leader) {
+                (Some(a), Some(b)) => Some(DirtyRegion::new(
+                    a.min_x.min(b.min_x),
+                    a.min_y.min(b.min_y),
+                    a.max_x.max(b.max_x),
+                    a.max_y.max(b.max_y),
+                )),
+                (a, None) => a,
+                (None, b) => b,
+            }
+        }
         SceneDisplayItem::Filter(item) => draw_rect_bounds(
             frame_view,
             item.center_x,

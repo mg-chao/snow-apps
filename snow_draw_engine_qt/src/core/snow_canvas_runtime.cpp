@@ -491,6 +491,18 @@ bool SnowCanvasRuntimeEditor::adjustAngleValue(double deltaRadians) {
     });
 }
 
+bool SnowCanvasRuntimeEditor::setMagnifierStyleFromToolbar(const SnowCanvasMagnifierStyle& style,
+                                                           quint32 properties,
+                                                           bool creationDefaults) {
+    if (!snow_canvas_types::validMagnifierStyle(style))
+        return false;
+    const auto value = snow_canvas_types::toEngineMagnifierStyle(style);
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_magnifier_style_patch_ex(r, v, &value, properties,
+                                                          creationDefaults ? 1 : 0, changed);
+    });
+}
+
 bool SnowCanvasRuntimeEditor::setDistanceCreationPixelScale(const QSizeF& scale) {
     return m_impl->mutate([&](auto r, auto v, auto changed) {
         return snow_viewport_set_distance_pixel_scale_ex(r, v, scale.width(), scale.height(),

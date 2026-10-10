@@ -284,6 +284,10 @@
             <translation>Current distance stroke width</translation>
         </message>
         <message>
+            <source>Current magnifier stroke width</source>
+            <translation>Current magnifier stroke width</translation>
+        </message>
+        <message>
             <source>Current pen filter stroke width</source>
             <translation>Current pen filter stroke width</translation>
         </message>
@@ -656,6 +660,10 @@
             <translation>LaTeX-Specific Model</translation>
         </message>
         <message>
+            <source>Leader line type</source>
+            <translation>Leader line type</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>
@@ -678,6 +686,30 @@
         <message>
             <source>Lowercase letters</source>
             <translation>Lowercase letters</translation>
+        </message>
+        <message>
+            <source>Magnification factor (scroll to adjust)</source>
+            <translation>Magnification factor (scroll to adjust)</translation>
+        </message>
+        <message>
+            <source>Magnifier</source>
+            <translation>Magnifier</translation>
+        </message>
+        <message>
+            <source>Magnifier shape</source>
+            <translation>Magnifier shape</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke color</source>
+            <translation>Magnifier stroke color</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke color %1</source>
+            <translation>Magnifier stroke color %1</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke width %1</source>
+            <translation>Magnifier stroke width %1</translation>
         </message>
         <message>
             <source>Mask color</source>
@@ -1046,6 +1078,10 @@
         <message>
             <source>Show keystrokes in recording</source>
             <translation>Show keystrokes in recording</translation>
+        </message>
+        <message>
+            <source>Show leader line</source>
+            <translation>Show leader line</translation>
         </message>
         <message>
             <source>Show original image</source>

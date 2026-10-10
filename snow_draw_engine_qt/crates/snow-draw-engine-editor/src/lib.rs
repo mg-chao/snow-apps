@@ -6,6 +6,8 @@ mod auto_filter_workflow;
 pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
+mod magnifier;
+pub use magnifier::*;
 mod angle;
 mod defaults;
 pub use angle::*;
@@ -333,6 +335,7 @@ impl Editor {
             InteractionState::PendingSelectionMove(_)
                 | InteractionState::EditingSelection(_)
                 | InteractionState::EditingArrow(_)
+                | InteractionState::EditingMagnifier(_)
                 | InteractionState::CreatingSerialNumber(_)
                 | InteractionState::CreatingFreeDraw(_)
         );

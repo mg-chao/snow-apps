@@ -64,6 +64,13 @@ impl Editor {
                 self.camera().zoom,
                 canvas_point,
             )
+            && (target != SelectionHitTarget::Move
+                || !self
+                    .state
+                    .selection
+                    .ids
+                    .iter()
+                    .any(|id| document.magnifier(*id).is_ok()))
         {
             return CanvasHit::SelectionHandle(target);
         }
@@ -75,7 +82,34 @@ impl Editor {
             return CanvasHit::ArrowHandle(target);
         }
 
+        if include_selection_handles {
+            for id in &self.state.selection.ids {
+                if let Some(value) = self.magnifier_snapshot(document, *id) {
+                    let grip = crate::magnifier_move_grip(value, self.camera().zoom);
+                    let half = 9.0 / self.camera().zoom.max(0.0001);
+                    if (canvas_point.x - grip.x).abs() <= half
+                        && (canvas_point.y - grip.y).abs() <= half
+                    {
+                        return CanvasHit::MagnifierLens(*id);
+                    }
+                }
+            }
+        }
+
         if !policy.quick_selection_enabled {
+            if include_selection_handles {
+                for id in &self.state.selection.ids {
+                    if let Some(value) = self.magnifier_snapshot(document, *id) {
+                        let tolerance = element_hit_tolerance(self.camera().zoom);
+                        if rectangle_hit_test(&value.source_rect(), canvas_point, tolerance) {
+                            return CanvasHit::EligibleElement(*id, ElementKind::Magnifier);
+                        }
+                        if rectangle_hit_test(&value.magnified_rect(), canvas_point, tolerance) {
+                            return CanvasHit::MagnifierLens(*id);
+                        }
+                    }
+                }
+            }
             return CanvasHit::Empty;
         }
 
@@ -109,6 +143,29 @@ impl Editor {
                         if rectangle_hit_test(rect, canvas_point, hit_tolerance) =>
                     {
                         rect.element_kind()
+                    }
+                    ElementData::Magnifier(value) => {
+                        if !Self::selection_scope_matches_document(
+                            document,
+                            policy.selection_scope,
+                            *id,
+                            ElementKind::Magnifier,
+                        ) {
+                            continue;
+                        }
+                        let value = self.magnifier_snapshot(document, *id).unwrap_or(*value);
+                        if rectangle_hit_test(&value.source_rect(), canvas_point, hit_tolerance) {
+                            return CanvasHit::EligibleElement(*id, ElementKind::Magnifier);
+                        }
+                        if rectangle_hit_test(&value.magnified_rect(), canvas_point, hit_tolerance)
+                        {
+                            return if include_selection_handles {
+                                CanvasHit::MagnifierLens(*id)
+                            } else {
+                                CanvasHit::EligibleElement(*id, ElementKind::Magnifier)
+                            };
+                        }
+                        continue;
                     }
                     ElementData::Filter(filter)
                         if filter_hit_test(filter, canvas_point, hit_tolerance) =>
@@ -168,6 +225,21 @@ impl Editor {
             ) {
                 return CanvasHit::EligibleElement(hit_id, kind);
             }
+        }
+        if include_selection_handles
+            && selection_box_visible
+            && let Some(bounds) = self.selection_bounds_snapshot(document)
+            && selection_hit_target(
+                &bounds,
+                single_rect.as_ref(),
+                single_text_rect.as_ref(),
+                selection_frame_padding,
+                selection_corner_handle_outset,
+                self.camera().zoom,
+                canvas_point,
+            ) == Some(SelectionHitTarget::Move)
+        {
+            return CanvasHit::SelectionHandle(SelectionHitTarget::Move);
         }
         CanvasHit::Empty
     }

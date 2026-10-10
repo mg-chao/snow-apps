@@ -13,6 +13,11 @@ pub(crate) fn compose_scene_items(
         camera: frame_view.camera,
         surface: frame_view.surface,
     });
+    let preview_magnifiers: HashMap<_, _> = presentation
+        .preview_magnifiers
+        .iter()
+        .map(|value| (value.id, value.magnifier))
+        .collect();
     let preview_rects: HashMap<_, _> = presentation
         .preview_elements
         .iter()
@@ -48,6 +53,7 @@ pub(crate) fn compose_scene_items(
     let mut extra: Vec<_> = preview_rects
         .keys()
         .chain(preview_arrows.keys())
+        .chain(preview_magnifiers.keys())
         .chain(active_existing_text.iter().map(|(id, _)| id))
         .chain(presentation.free_draw_replacement.iter().map(|(id, _)| id))
         .copied()
@@ -85,6 +91,13 @@ pub(crate) fn compose_scene_items(
             emitted_preview_ids.insert(*id, true);
             if bounds_visible(text_bounds(active_text), viewport) {
                 items.push(scene_item_from_text(*id, active_text.clone()));
+            }
+            continue;
+        }
+        if let Some(value) = preview_magnifiers.get(id) {
+            emitted_preview_ids.insert(*id, true);
+            if bounds_visible(snow_draw_engine_document::magnifier_bounds(value), viewport) {
+                items.push(scene_item_from_magnifier(*id, *value));
             }
             continue;
         }
@@ -129,6 +142,17 @@ pub(crate) fn compose_scene_items(
         }
     }
 
+    for preview in &presentation.preview_magnifiers {
+        if !emitted_preview_ids.contains_key(&preview.id)
+            && bounds_visible(
+                snow_draw_engine_document::magnifier_bounds(&preview.magnifier),
+                viewport,
+            )
+        {
+            items.push(scene_item_from_magnifier(preview.id, preview.magnifier));
+            emitted_preview_ids.insert(preview.id, true);
+        }
+    }
     for preview in &presentation.preview_elements {
         if emitted_preview_ids.contains_key(&preview.id) {
             continue;
@@ -156,6 +180,11 @@ pub(crate) fn compose_scene_items(
     if let Some(preview) = presentation.creation_preview.as_ref() {
         let id = model.peek_next_element_id();
         match preview {
+            ElementCreationPreview::Magnifier(value)
+                if bounds_visible(snow_draw_engine_document::magnifier_bounds(value), viewport) =>
+            {
+                items.push(scene_item_from_magnifier(id, *value));
+            }
             ElementCreationPreview::Rectangle(rect)
                 if !rect.is_spotlight() && bounds_visible(rect_bounds(*rect), viewport) =>
             {
@@ -562,6 +591,12 @@ fn remap_copy_display_ids(item: &mut SceneDisplayItem, ids: &[ElementId]) {
         *id = display_item_id(ids[id.index as usize]);
     };
     match item {
+        SceneDisplayItem::Magnifier(item) => {
+            remap(&mut item.lens.id);
+            if let Some(leader) = &mut item.leader {
+                remap(&mut leader.id);
+            }
+        }
         SceneDisplayItem::Rectangle(item) => remap(&mut item.id),
         SceneDisplayItem::Filter(item) => remap(&mut item.id),
         SceneDisplayItem::Text(item) => remap(&mut item.id),
@@ -765,6 +800,7 @@ fn scene_element_id(item: &SceneDisplayItem) -> Option<ElementId> {
     let id = match item {
         SceneDisplayItem::Arrow(item) => item.id,
         SceneDisplayItem::Text(item) => item.id,
+        SceneDisplayItem::Magnifier(item) => item.lens.id,
         SceneDisplayItem::Rectangle(item) => item.id,
         SceneDisplayItem::Filter(item) => item.id,
         SceneDisplayItem::Stroke | SceneDisplayItem::Image => return None,

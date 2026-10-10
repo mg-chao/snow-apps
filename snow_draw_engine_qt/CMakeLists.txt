@@ -122,6 +122,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-magnifier-benchmark tests/snow_canvas_magnifier_benchmark.cpp)
+    target_include_directories(snow-canvas-magnifier-benchmark PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include")
+    target_link_libraries(snow-canvas-magnifier-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-magnifier-benchmark)
     add_executable(snow-canvas-image-memory-benchmark
         tests/snow_canvas_image_memory_benchmark.cpp)
     target_link_libraries(snow-canvas-image-memory-benchmark PRIVATE snow_canvas_image)
@@ -238,6 +244,30 @@ endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     enable_testing()
+    add_executable(snow-canvas-magnifier-render-tests tests/snow_canvas_magnifier_render_tests.cpp)
+    target_include_directories(snow-canvas-magnifier-render-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include")
+    target_link_libraries(snow-canvas-magnifier-render-tests PRIVATE
+        snow_draw_engine_qt_canvas snow_test_cli_guard_qt)
+    snow_shot_import_offscreen_platform(snow-canvas-magnifier-render-tests)
+    add_test(NAME snow-canvas-magnifier-render-tests COMMAND snow-canvas-magnifier-render-tests)
+    snow_shot_offscreen_qpa_environment(_snow_canvas_magnifier_qpa_environment)
+    set_tests_properties(snow-canvas-magnifier-render-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_snow_canvas_magnifier_qpa_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(snow-canvas-magnifier-interaction-tests
+        tests/snow_canvas_magnifier_interaction_tests.cpp)
+    target_link_libraries(snow-canvas-magnifier-interaction-tests PRIVATE
+        snow_draw_engine_qt_canvas snow_test_cli_guard_qt)
+    snow_shot_import_offscreen_platform(snow-canvas-magnifier-interaction-tests)
+    add_test(NAME snow-canvas-magnifier-interaction-tests
+        COMMAND snow-canvas-magnifier-interaction-tests)
+    set_tests_properties(snow-canvas-magnifier-interaction-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_snow_canvas_magnifier_qpa_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(snow-canvas-image-tests tests/snow_canvas_image_tests.cpp)
     target_link_libraries(snow-canvas-image-tests PRIVATE snow_canvas_image snow_pixel_buffer)
     add_test(NAME snow-canvas-image-tests COMMAND snow-canvas-image-tests)

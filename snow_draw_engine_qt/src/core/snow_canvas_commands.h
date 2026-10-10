@@ -109,6 +109,9 @@ MutationResult setDistanceStylePatch(SnowRuntime runtime, SnowViewport viewport,
                                      const SnowDistanceStyle& style, std::uint32_t properties);
 MutationResult setAngleStylePatch(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowAngleStyle& style, std::uint32_t properties);
+MutationResult setMagnifierStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowMagnifierStyle& style, std::uint32_t properties,
+                                      bool creationDefaults);
 MutationResult adjustAngleValue(SnowRuntime runtime, SnowViewport viewport, double deltaRadians);
 MutationResult setDistancePixelScale(SnowRuntime runtime, SnowViewport viewport, double scaleX,
                                      double scaleY);

@@ -37,6 +37,7 @@ enum class ScreenshotActiveTool {
     TextTranslation,
     Distance,
     Angle,
+    Magnifier,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {

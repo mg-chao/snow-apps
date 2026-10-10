@@ -127,6 +127,8 @@ struct SceneRenderRequest {
     const SceneExecutionPlan* executionPlan = nullptr;
     const std::vector<SnowSceneRenderRun>* renderPlan = nullptr;
     bool enableOriginalBackgroundCache = false;
+    // Canvas-space originals remain independent of viewport/filter scratch rasters.
+    const QList<SnowCanvasBaseImageSource>* baseImageSources = nullptr;
 };
 
 QColor toQColor(const SnowColorRgba8& color);

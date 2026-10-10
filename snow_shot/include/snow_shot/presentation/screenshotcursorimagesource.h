@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCURSORIMAGESOURCE_H
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshottypes.h"
 
@@ -38,6 +39,15 @@ screenshotDisplayImageSource(const CapturedDisplayModel& display, bool cursorVis
         return ScreenshotImageSource::fromLayers(screenshotDisplayImageLayers(display, true));
     return ScreenshotImageSource::fromImage(
         display.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(display));
+}
+
+[[nodiscard]] inline ScreenshotImageSource
+screenshotDisplaySessionImageSource(const ScreenshotDisplaySession& displays) {
+    QList<ScreenshotImageLayer> layers;
+    displays.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
+        layers.append(screenshotDisplayImageLayers(display, displays.cursorVisible));
+    });
+    return ScreenshotImageSource::fromLayers(std::move(layers));
 }
 
 #endif

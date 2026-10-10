@@ -24,6 +24,7 @@ pub(crate) enum ToolSelectionScope {
     ArrowOnly,
     DistanceOnly,
     AngleOnly,
+    MagnifierOnly,
     LineOnly,
     FreeDrawOnly,
     RectangleHighlightOnly,
@@ -223,6 +224,7 @@ pub(crate) enum SelectionEditMode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EditSelectionState {
+    pub(crate) original_magnifiers: Vec<crate::SelectionMagnifierState>,
     pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) button: PointerButton,
@@ -236,6 +238,7 @@ pub(crate) struct EditSelectionState {
 }
 
 pub(crate) struct BeginSelectionEditRequest {
+    pub(crate) original_magnifiers: Vec<crate::SelectionMagnifierState>,
     pub(crate) pointer_id: u32,
     pub(crate) button: PointerButton,
     pub(crate) original_elements: Vec<SelectionRectState>,
@@ -260,6 +263,7 @@ pub(crate) struct BeginSelectionInteractionRequest {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PendingSelectionMoveState {
+    pub(crate) original_magnifiers: Vec<crate::SelectionMagnifierState>,
     pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
     pub(crate) button: PointerButton,
@@ -316,6 +320,7 @@ pub(crate) struct EditArrowState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CanvasHit {
+    MagnifierLens(ElementId),
     SelectionHandle(SelectionHitTarget),
     ArrowHandle(ArrowHitTarget),
     EligibleElement(ElementId, ElementKind),
@@ -324,6 +329,7 @@ pub(crate) enum CanvasHit {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PrimaryPointerIntent {
+    BeginMagnifierLens { id: ElementId },
     ToggleSelection { id: ElementId },
     BeginSelectionInteraction { target: SelectionHitTarget },
     BeginSelectedArrowInteraction { target: ArrowHitTarget },
@@ -443,6 +449,16 @@ pub(crate) enum InteractionState {
     PendingArrowMove(PendingArrowMoveState),
     EditingSelection(EditSelectionState),
     EditingArrow(EditArrowState),
+    EditingMagnifier(EditMagnifierState),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct EditMagnifierState {
+    pub pointer_id: u32,
+    pub id: ElementId,
+    pub original: snow_draw_engine_document::MagnifierData,
+    pub preview: snow_draw_engine_document::MagnifierData,
+    pub start: Point<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -464,6 +480,7 @@ pub(crate) struct EditorState {
     pub(crate) default_arrow_style: ArrowStyle,
     pub(crate) default_distance_style: crate::DistanceStyle,
     pub(crate) default_angle_style: crate::AngleStyle,
+    pub(crate) default_magnifier_style: crate::MagnifierStyle,
     pub(crate) distance_creation_generation: u32,
     pub(crate) default_line_style: ShapeStyle,
     pub(crate) default_free_draw_style: ShapeStyle,
@@ -583,6 +600,7 @@ impl EditorState {
             default_spotlight_corner_radii: default_styles.spotlight_corner_radii,
             default_distance_style: default_styles.distance,
             default_angle_style: default_styles.angle,
+            default_magnifier_style: default_styles.magnifier,
             distance_creation_generation: 0,
             default_arrow_style: ArrowStyle {
                 arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(

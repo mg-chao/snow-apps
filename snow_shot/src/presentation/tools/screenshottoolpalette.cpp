@@ -147,6 +147,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Spotlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Magnifier"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Serial number"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter"),
@@ -287,6 +288,7 @@ bool hasSelectedCanvasElements(const SnowCanvasStyleToolbarState& state) {
            state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight ||
            state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight ||
            state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight ||
+           state.source == SnowCanvasStyleToolbarSource::SelectedMagnifier ||
            state.source == SnowCanvasStyleToolbarSource::SelectedRectangleFilter ||
            state.source == SnowCanvasStyleToolbarSource::SelectedPenFilter ||
            state.source == SnowCanvasStyleToolbarSource::SelectedText ||
@@ -345,6 +347,7 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::RectangleHighlight:
     case ScreenshotToolPalette::Tool::PenHighlight:
     case ScreenshotToolPalette::Tool::Spotlight:
+    case ScreenshotToolPalette::Tool::Magnifier:
     case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
     case ScreenshotToolPalette::Tool::PenFilter:
@@ -560,6 +563,8 @@ ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
         return ScreenshotToolPalette::Tool::PenHighlight;
     case toolbar_layout::Item::Spotlight:
         return ScreenshotToolPalette::Tool::Spotlight;
+    case toolbar_layout::Item::Magnifier:
+        return ScreenshotToolPalette::Tool::Magnifier;
     case toolbar_layout::Item::Text:
         return ScreenshotToolPalette::Tool::Text;
     case toolbar_layout::Item::SerialNumber:
@@ -600,6 +605,8 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("highlighter");
     case ScreenshotToolPalette::Tool::Spotlight:
         return QStringLiteral("spotlight");
+    case ScreenshotToolPalette::Tool::Magnifier:
+        return QStringLiteral("magnifier");
     case ScreenshotToolPalette::Tool::Text:
         return QStringLiteral("text");
     case ScreenshotToolPalette::Tool::SerialNumber:
@@ -620,8 +627,9 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
 }
 
 QString drawingShortcutToolIdForItemId(const QString& itemId) {
-    if (itemId == QStringLiteral("line") || itemId == QStringLiteral("spotlight") ||
-        itemId == QStringLiteral("distance") || itemId == QStringLiteral("angle")) {
+    if (itemId == QStringLiteral("magnifier") || itemId == QStringLiteral("line") ||
+        itemId == QStringLiteral("spotlight") || itemId == QStringLiteral("distance") ||
+        itemId == QStringLiteral("angle")) {
         return itemId;
     }
     if (itemId == QStringLiteral("select")) {
@@ -666,6 +674,9 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     }
     if (source == QStringLiteral("Line")) {
         return QStringLiteral("line");
+    }
+    if (source == QStringLiteral("Magnifier")) {
+        return QStringLiteral("magnifier");
     }
     if (source == QStringLiteral("Spotlight")) {
         return QStringLiteral("spotlight");
@@ -811,9 +822,9 @@ initialToolbarLayout(const ScreenshotToolPalette::Options& options) {
         options.showShapeTool || options.showArrowTool || options.showDistanceTool ||
         options.showAngleTool || options.showLineTool || options.showFreeDrawTool ||
         options.showHighlightTool || options.showRectangleHighlightTool ||
-        options.showPenHighlightTool || options.showSpotlightTool || options.showTextTool ||
-        options.showSerialNumberTool || options.showFilterTool || options.showEraserTool ||
-        options.showWatermarkTool;
+        options.showPenHighlightTool || options.showSpotlightTool || options.showMagnifierTool ||
+        options.showTextTool || options.showSerialNumberTool || options.showFilterTool ||
+        options.showEraserTool || options.showWatermarkTool;
     return hasDrawingTools ? std::optional(toolbar_layout::normalizedLayout(
                                  snow_shot::storage::ScreenshotToolbarLayout{}))
                            : std::nullopt;
@@ -1032,6 +1043,11 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                     return m_watermarkTemplateModalOwnerWindow
                                ? m_watermarkTemplateModalOwnerWindow.data()
                                : window();
+                },
+                [this](const SnowCanvasMagnifierStyle& style, quint32 properties) {
+                    static_cast<void>(submitStyleEdit(SnowCanvasMagnifierEdit{
+                        style, properties,
+                        !m_styleControls->styleState().showingSelectedMagnifier}));
                 },
             },
             m_styleDefaults, options.watermarkTemplateClock);
@@ -1387,6 +1403,10 @@ bool ScreenshotToolPalette::stepSelectionOpacity(int direction) {
     setSelectionOpacity(next / 100.0);
     emit selectionOpacityChanged(m_selectionOpacity);
     return true;
+}
+
+bool ScreenshotToolPalette::stepMagnifierFactor(int direction) {
+    return m_styleControls->stepMagnifierFactor(direction);
 }
 
 bool ScreenshotToolPalette::stepSpotlightOpacity(int direction) {
@@ -1972,6 +1992,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::PenHighlight:
         activeButton = drawingToolEntryButton(tool);
         break;
+    case Tool::Magnifier:
     case Tool::Spotlight:
         activeButton = drawingToolEntryButton(tool);
         break;
@@ -2959,8 +2980,9 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_style_toolbar_state");
     m_styleControls->setStyleToolbarState(state);
     const bool hasSelectedElements = hasSelectedCanvasElements(state);
-    m_selectionOpacityAvailable =
-        hasSelectedElements && state.source != SnowCanvasStyleToolbarSource::SelectedSpotlight;
+    m_selectionOpacityAvailable = hasSelectedElements &&
+                                  state.source != SnowCanvasStyleToolbarSource::SelectedSpotlight &&
+                                  state.source != SnowCanvasStyleToolbarSource::SelectedMagnifier;
     updateSelectionActionAvailability(hasSelectedElements, state.selectedElementCount);
     // Canvas style state and palette tool state are delivered independently.
     // Style state synchronizes values, but only a style-capable active tool may
@@ -3141,6 +3163,9 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         }
         setSelectionOpacity(opacity, mixed);
         activeStyleTool = Tool::Shape;
+    } else if (state.source == SnowCanvasStyleToolbarSource::DefaultMagnifier ||
+               state.source == SnowCanvasStyleToolbarSource::SelectedMagnifier) {
+        activeStyleTool = Tool::Magnifier;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultAngle ||
                state.source == SnowCanvasStyleToolbarSource::SelectedAngle) {
         activeStyleTool = Tool::Angle;
@@ -3445,9 +3470,10 @@ QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
     const QWidget* controlGroups[] = {
         m_rectangleStyleControlsWidget,    m_arrowStyleControlsWidget,
         m_distanceStyleControlsWidget,     m_angleStyleControlsWidget,
-        m_highlightStyleControlsWidget,    m_penHighlightStyleControlsWidget,
-        m_spotlightStyleControlsWidget,    m_textStyleControlsWidget,
-        m_serialNumberStyleControlsWidget, m_watermarkStyleControlsWidget,
+        m_magnifierStyleControlsWidget,    m_highlightStyleControlsWidget,
+        m_penHighlightStyleControlsWidget, m_spotlightStyleControlsWidget,
+        m_textStyleControlsWidget,         m_serialNumberStyleControlsWidget,
+        m_watermarkStyleControlsWidget,
     };
     for (const QWidget* group : controlGroups) {
         if (group == nullptr) {
@@ -4126,6 +4152,13 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
     if (m_activeTool == Tool::Move) {
         return false;
     }
+    if (m_activeTool == Tool::Magnifier ||
+        source == SnowCanvasStyleToolbarSource::SelectedMagnifier) {
+        if (!m_styleControls->handleMagnifierWheel(event->globalPosition().toPoint(), direction))
+            return false;
+        event->accept();
+        return true;
+    }
     if (m_activeTool == Tool::Spotlight) {
         if (m_styleControls->handleCornerRadiusWheel(event->globalPosition().toPoint(),
                                                      direction)) {
@@ -4596,6 +4629,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
         return m_highlighterButton;
     case toolbar_layout::Item::Spotlight:
         return m_spotlightButton;
+    case toolbar_layout::Item::Magnifier:
+        return m_magnifierButton;
     case toolbar_layout::Item::Text:
         return m_textButton;
     case toolbar_layout::Item::SerialNumber:
@@ -4689,6 +4724,9 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
         break;
     case Tool::PenHighlight:
         emit penHighlightRequested();
+        break;
+    case Tool::Magnifier:
+        emit magnifierRequested();
         break;
     case Tool::Spotlight:
         emit spotlightRequested();
@@ -5983,6 +6021,13 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         connect(m_highlighterButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::PenHighlight); });
     }
+    if (options.showMagnifierTool) {
+        m_magnifierButton = addToolButton("Magnifier", custom_outlined_icons::ToolMagnifier());
+        m_magnifierButton->setObjectName(QStringLiteral("screenshotMagnifierButton"));
+        addButton(m_magnifierButton);
+        connect(m_magnifierButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Magnifier); });
+    }
     if (options.showSpotlightTool) {
         m_spotlightButton = addToolButton("Spotlight", custom_outlined_icons::ToolSpotlight());
         m_spotlightButton->setObjectName(QStringLiteral("screenshotSpotlightButton"));
@@ -6287,6 +6332,8 @@ ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
         tool = Tool::Distance;
     } else if (toolId == QStringLiteral("line")) {
         tool = Tool::Line;
+    } else if (toolId == QStringLiteral("magnifier")) {
+        tool = Tool::Magnifier;
     } else if (toolId == QStringLiteral("spotlight")) {
         tool = Tool::Spotlight;
     } else if (toolId == QStringLiteral("brush")) {
@@ -6436,10 +6483,15 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 
     if (options.showGlobalCanvasActions) {
         m_globalCanvasClickThroughButton =
-            addActionButton("Click-through", custom_outlined_icons::Mouse());
+            addToolButton("Click-through", custom_outlined_icons::Mouse());
         m_globalCanvasClickThroughButton->setObjectName(
             QStringLiteral("globalCanvasClickThroughButton"));
         m_globalCanvasClickThroughButton->setCheckable(true);
+        m_globalCanvasClickThroughButton->setCheckedUsesActiveStyle(false);
+        connect(m_globalCanvasClickThroughButton, &adqt::widgets::AdButton::toggled, this,
+                [this](bool enabled) {
+                    setScreenshotToolPaletteButtonActive(m_globalCanvasClickThroughButton, enabled);
+                });
         addButton(m_globalCanvasClickThroughButton);
         connect(m_globalCanvasClickThroughButton, &adqt::widgets::AdButton::clicked, this,
                 &ScreenshotToolPalette::globalCanvasClickThroughRequested);
@@ -7551,6 +7603,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_arrowStyleControlsWidget = nullptr;
     m_distanceStyleControlsWidget = nullptr;
     m_angleStyleControlsWidget = nullptr;
+    m_magnifierStyleControlsWidget = nullptr;
     m_highlightStyleControlsWidget = nullptr;
     m_penHighlightStyleControlsWidget = nullptr;
     m_spotlightStyleControlsWidget = nullptr;
@@ -7792,6 +7845,7 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     clearRemoved(m_arrowStyleControlsWidget);
     clearRemoved(m_distanceStyleControlsWidget);
     clearRemoved(m_angleStyleControlsWidget);
+    clearRemoved(m_magnifierStyleControlsWidget);
     clearRemoved(m_highlightStyleControlsWidget);
     clearRemoved(m_penHighlightStyleControlsWidget);
     clearRemoved(m_spotlightStyleControlsWidget);
@@ -9252,6 +9306,12 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         registerStyleFamily(*shapeControlsSlot, {tool});
         return;
     }
+    if (tool == Tool::Magnifier && m_magnifierStyleControlsWidget == nullptr) {
+        m_magnifierStyleControlsWidget = m_styleControls->buildMagnifierFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
+            styleButtonMetrics(m_physicalScale));
+        registerStyleFamily(m_magnifierStyleControlsWidget, {Tool::Magnifier});
+    }
     if (tool == Tool::Angle && m_angleStyleControlsWidget == nullptr) {
         m_angleStyleControlsWidget = m_styleControls->buildAngleFamily(
             m_rectangleStylePanel, makeHost(m_highlightModeGroups),
@@ -9721,25 +9781,16 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
 void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeButton) {
     m_activeToolButton = activeButton;
     adqt::widgets::AdButton* buttons[] = {
-        m_moveButton,
-        m_selectButton,
-        m_shapeButton,
-        m_arrowButton,
-        m_distanceButton,
-        m_angleButton,
-        m_lineButton,
-        m_freeDrawButton,
-        m_highlighterButton,
-        m_spotlightButton,
-        m_eraserButton,
-        m_filterButton,
-        m_watermarkButton,
-        m_textButton,
-        m_serialNumberButton,
-        m_ocrButton,
-        m_textTranslationButton,
-        m_tableButton,
-        m_scrollingScreenshotButton,
+        m_moveButton,        m_selectButton,
+        m_shapeButton,       m_arrowButton,
+        m_distanceButton,    m_angleButton,
+        m_lineButton,        m_freeDrawButton,
+        m_highlighterButton, m_spotlightButton,
+        m_magnifierButton,   m_eraserButton,
+        m_filterButton,      m_watermarkButton,
+        m_textButton,        m_serialNumberButton,
+        m_ocrButton,         m_textTranslationButton,
+        m_tableButton,       m_scrollingScreenshotButton,
     };
 
     for (adqt::widgets::AdButton* button : buttons) {

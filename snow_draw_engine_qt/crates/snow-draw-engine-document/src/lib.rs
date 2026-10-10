@@ -36,6 +36,8 @@ pub use auto_filter::*;
 pub use distance::*;
 mod document_geometry;
 mod free_draw;
+mod magnifier;
+pub use magnifier::*;
 mod serial_number_format;
 mod transaction;
 pub use serial_number_format::{SerialNumberNumericType, format_serial_number};

@@ -541,6 +541,16 @@ QPainterPath arrowPathFromCommands(const ViewProjection& projection,
 QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowSceneDisplayItem& item) {
     const ViewProjection projection = sceneProjection(displayInfo);
     switch (item.kind) {
+    case SNOW_SCENE_DISPLAY_ITEM_MAGNIFIER: {
+        SnowSceneDisplayItem lens = item;
+        lens.kind = SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT;
+        QRectF bounds = sceneItemBounds(displayInfo, lens);
+        if (item.arrow_point_count >= 2) {
+            lens.kind = SNOW_SCENE_DISPLAY_ITEM_ARROW;
+            bounds = bounds.united(sceneItemBounds(displayInfo, lens));
+        }
+        return bounds;
+    }
     case SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT:
     case SNOW_SCENE_DISPLAY_ITEM_FILTER: {
         const QPointF center = canvasToView(projection, item.center_x, item.center_y);

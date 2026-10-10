@@ -886,6 +886,10 @@ impl Editor {
             ActiveTool::RectangleFilter | ActiveTool::AutoFilter
         ) {
             StyleToolbarSource::DefaultRectangleFilter
+        } else if self.has_homogeneous_magnifier_selection(document) {
+            StyleToolbarSource::SelectedMagnifier
+        } else if self.state.active_tool == ActiveTool::Magnifier {
+            StyleToolbarSource::DefaultMagnifier
         } else if self.state.active_tool == ActiveTool::Angle {
             StyleToolbarSource::DefaultAngle
         } else if self.state.active_tool == ActiveTool::Distance {

@@ -94,6 +94,8 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void()> visibleContentChanged;
     std::function<void(adqt::widgets::AdColorPicker* picker)> canvasColorSamplingRequested;
     std::function<QWidget*()> watermarkTemplateModalOwnerWindow;
+    std::function<void(const SnowCanvasMagnifierStyle& style, quint32 properties)>
+        magnifierStyleChanged;
 };
 
 // Palette-owned row services used by the family builders. The palette supplies
@@ -218,6 +220,9 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* buildDistanceFamily(QWidget* panel,
                                                const ScreenshotToolPaletteStyleFamilyHost& host,
                                                const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] QWidget* buildMagnifierFamily(QWidget* panel,
+                                                const ScreenshotToolPaletteStyleFamilyHost& host,
+                                                const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] QWidget* buildAngleFamily(QWidget* panel,
                                             const ScreenshotToolPaletteStyleFamilyHost& host,
                                             const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -262,6 +267,8 @@ class ScreenshotToolPaletteStyleControls final {
     void setDistanceControlsActive(bool active);
     void setAngleControlsActive(bool active);
     [[nodiscard]] bool handleDistanceWheel(const QPoint& globalPosition, int direction);
+    [[nodiscard]] bool handleMagnifierWheel(const QPoint& globalPosition, int direction);
+    [[nodiscard]] bool stepMagnifierFactor(int direction);
     void setTextControlsActive(bool active);
     void clearTextStylePopupInteractions();
     [[nodiscard]] bool stepTextFontSize(int direction);
@@ -358,6 +365,11 @@ class ScreenshotToolPaletteStyleControls final {
     void registerArrowEntries();
     void registerDistanceEntries();
     void updateDistanceStyleControls();
+    template <typename Apply> void commitMagnifierProperty(quint32 property, Apply apply);
+    void updateMagnifierStyleControls();
+    void setMagnifierFactor(double factor);
+    void setMagnifierStrokeWidth(double width);
+    void setMagnifierCornerRadius(int radius);
     void registerAngleEntries();
     void updateAngleStyleControls(quint32 properties = 0xffffffffu);
     void registerTextEntries();
@@ -525,6 +537,13 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penFilterStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushEraserStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_distanceColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_magnifierColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_magnifierWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_magnifierLeaderEditor;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_magnifierShapeGroup;
+    QPointer<IconNumericValuePreviewButton> m_magnifierFactorEditor;
+    QPointer<CornerRadiusEditorButton> m_magnifierCornerRadiusEditor;
+    QPointer<adqt::widgets::AdButton> m_magnifierLeaderToggle;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_angleColorEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_angleWidthEditor;
     QPointer<adqt::widgets::AdRadioButtonGroup> m_angleUnitGroup;

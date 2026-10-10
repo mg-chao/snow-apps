@@ -125,6 +125,10 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasAngleStyle angleStyle;
     quint32 angleStyleMixed = 0;
     bool showingSelectedAngle = false;
+    SnowCanvasMagnifierStyle creationMagnifierStyle;
+    SnowCanvasMagnifierStyle magnifierStyle;
+    quint32 magnifierStyleMixed = 0;
+    bool showingSelectedMagnifier = false;
     bool angleControlsActive = false;
     ScreenshotToolPaletteTextStyleModel m_creationTextStyle;
     ScreenshotToolPaletteTextStyleModel m_textStyle;

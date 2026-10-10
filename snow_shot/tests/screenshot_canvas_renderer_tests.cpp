@@ -7,6 +7,7 @@
 #include "close_release_native_test_support.h"
 #include "screenshot_guide_targets_test_support.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
+#include "snow_shot/presentation/screenshotcursorimagesource.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
@@ -898,6 +899,255 @@ void originalEraserSourceExcludesPresentationOverlays() {
     renderer.setScrollingResultPreview(filtered, bounds, Qt::Vertical);
     require(renderer.originalBackgroundRevision() != scrollingRevision && paint(true) == filtered,
             "replacing the source image must invalidate pristine image tiles");
+}
+
+void magnifierSourcesTrackOriginalImageLayersAndCaptureModes() {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    QImage original(160, 120, QImage::Format_ARGB32_Premultiplied);
+    original.fill(QColor(30, 90, 160));
+    const QRectF bounds(0, 0, 160, 120);
+    renderer.setImage(original, bounds);
+    renderer.setImageViewportPhysicalSize(original.size());
+    auto sources = renderer.baseImageSources();
+    require(sources.size() == 1 && sources[0].image.cacheKey() == original.cacheKey() &&
+                sources[0].canvasRect == bounds,
+            "magnifier sources must share original pixels independently of physical placement");
+    QImage replacement(original.size(), original.format());
+    replacement.fill(Qt::red);
+    renderer.setOcrFilteredImage(replacement, bounds);
+    renderer.setMaskVisible(true);
+    renderer.setGuideLines({30, 30}, Qt::red, Qt::red);
+    require(renderer.baseImageSources()[0].image.cacheKey() == original.cacheKey(),
+            "OCR previews, selection masks and guides must not become magnifier source pixels");
+    QImage cursor(10, 10, original.format());
+    cursor.fill(Qt::yellow);
+    const QRectF coverage(20, 20, 30, 40);
+    renderer.setImageSource(ScreenshotImageSource::fromLayers(
+        {{original, bounds, coverage},
+         {cursor, QRectF(25, 25, 10, 10), QRectF(25, 25, 10, 10), false}}));
+    sources = renderer.baseImageSources();
+    require(sources.size() == 2 && sources[0].coverage == coverage &&
+                sources[1].image.cacheKey() == cursor.cacheKey(),
+            "magnifier sources must retain layer coverage and captured cursor paint order");
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+    require(renderer.baseImageSources().isEmpty(),
+            "scrolling mode must not sample the previous screenshot without a preview");
+    renderer.setScrollingResultPreview(replacement, bounds, Qt::Horizontal);
+    require(renderer.baseImageSources().size() == 1 &&
+                renderer.baseImageSources()[0].image.cacheKey() == replacement.cacheKey(),
+            "scrolling magnifiers must sample the live preview excluding crop guides");
+    renderer.setScrollingResultPreview(replacement, bounds, Qt::Vertical);
+    require(renderer.baseImageSources()[0].image.cacheKey() == replacement.cacheKey(),
+            "changing a scrolling crop guide must keep original magnifier pixels shared");
+    renderer.clearScrollingResultPreview();
+    require(renderer.baseImageSources().isEmpty(), "cleared scrolling preview must remove sources");
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::PinnedResult);
+    renderer.setImage(original, bounds);
+    renderer.setPinnedViewportRect({10, 10, 140, 100});
+    require(renderer.baseImageSources()[0].canvasRect == bounds,
+            "pinned display clipping must not trim original magnifier source coordinates");
+    renderer.reset();
+    require(renderer.baseImageSources().isEmpty(), "capture reset must release magnifier sources");
+}
+
+void magnifiersSampleEveryCapturedDisplayWithoutChangingLocalBackgrounds() {
+    for (const int sourceDensity : {1, 2}) {
+        NoopOverlayEventSink sink;
+        SnowCanvasRuntime runtime;
+        auto* leftCanvas = new SnowCanvasWidget(runtime);
+        auto* rightCanvas = new SnowCanvasWidget(runtime);
+        ScreenshotOverlayWindow left(sink, leftCanvas);
+        ScreenshotOverlayWindow right(sink, rightCanvas);
+        CapturedDisplayModel leftDisplay;
+        leftDisplay.active = true;
+        leftDisplay.canvasRect = QRect(-200, 0, 200, 140);
+        leftDisplay.logicalRect = QRect(0, 0, 200, 140);
+        leftDisplay.image =
+            QImage(QSize(200, 140) * sourceDensity, QImage::Format_ARGB32_Premultiplied);
+        leftDisplay.image.fill(Qt::green);
+        leftDisplay.cursorPixelRect =
+            QRect(25 * sourceDensity, 55 * sourceDensity, 10 * sourceDensity, 10 * sourceDensity);
+        leftDisplay.cursorPatch =
+            QImage(leftDisplay.cursorPixelRect.size(), leftDisplay.image.format());
+        leftDisplay.cursorPatch.fill(Qt::yellow);
+        CapturedDisplayModel rightDisplay;
+        rightDisplay.active = true;
+        rightDisplay.canvasRect = QRect(0, 0, 200, 140);
+        rightDisplay.logicalRect = QRect(200, 0, 200, 140);
+        rightDisplay.image = QImage(200, 140, leftDisplay.image.format());
+        rightDisplay.image.fill(Qt::blue);
+        ScreenshotDisplaySession displays;
+        displays.appendDisplay(leftDisplay, &left);
+        displays.appendDisplay(rightDisplay, &right);
+        ScreenshotOverlayCanvasPresenter presenter(
+            [](ScreenshotOverlayWindow* overlay) { return overlay; });
+        require(!displays.hasImageSources(),
+                "exercise a fresh capture rather than restored history");
+        presenter.applyDisplayModels(displays);
+        left.show();
+        right.show();
+        QApplication::processEvents();
+        auto* leftRenderer = static_cast<ScreenshotCanvasRenderer*>(leftCanvas->customRenderer());
+        auto* rightRenderer = static_cast<ScreenshotCanvasRenderer*>(rightCanvas->customRenderer());
+        require(leftRenderer->imageSourceSnapshot().isMaterialized() &&
+                    rightRenderer->imageSourceSnapshot().isMaterialized() &&
+                    leftRenderer->imageSourceSnapshot().materializedImage.cacheKey() ==
+                        leftDisplay.image.cacheKey() &&
+                    rightRenderer->imageSourceSnapshot().materializedImage.cacheKey() ==
+                        rightDisplay.image.cacheKey() &&
+                    leftRenderer->baseImageSources().size() == 2 &&
+                    rightRenderer->baseImageSources().size() == 2,
+                "every overlay must share capture sampling sources while retaining its local "
+                "background");
+        leftCanvas->setInteractionEnabled(true);
+        require(leftCanvas->setCanvasTool(SnowCanvasTool::Magnifier),
+                "activate cross-display magnifier");
+        const auto drag = [&](QPointF start, QPointF end) {
+            using namespace canvas_quick_selection_test;
+            require(
+                mouse(*leftCanvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton),
+                "start magnifier drag");
+            mouse(*leftCanvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+            require(
+                mouse(*leftCanvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton),
+                "finish magnifier drag");
+        };
+        drag({20, 50}, {40, 70});
+        drag({30, 60}, {30, 60});
+        drag({30, 104}, {260, 104});
+        require(leftCanvas->resetEditingStatePreservingTool(),
+                "clear cross-display lens selection");
+        leftCanvas->setInteractionEnabled(false);
+        rightCanvas->setInteractionEnabled(false);
+        for (const double dpr : {1.0, 1.25, 2.0}) {
+            const auto image = renderCanvas(*rightCanvas, dpr);
+            require(image.pixelColor(qFloor(60 * dpr), qFloor(60 * dpr)) == QColor(Qt::green) &&
+                        image.pixelColor(qFloor(150 * dpr), qFloor(100 * dpr)) == QColor(Qt::blue),
+                    "a lens on the other display must sample original pixels without changing its "
+                    "background");
+        }
+        displays.cursorVisible = true;
+        presenter.applyDisplayModels(displays);
+        require(renderCanvas(*rightCanvas).pixelColor(60, 60) == QColor(Qt::yellow),
+                "captured cursor layers must be available to a lens on another display");
+        displays.cursorVisible = false;
+        const ScreenshotImageSource sampling = screenshotDisplaySessionImageSource(displays);
+        right.setScreenshotImageSource(screenshotDisplayImageSource(rightDisplay, false),
+                                       screenshotCursorCanvasRect(leftDisplay), sampling);
+        QApplication::processEvents();
+        require(
+            renderCanvas(*rightCanvas).pixelColor(60, 60) == QColor(Qt::green),
+            "remote cursor damage must invalidate magnifier sampling and repaint its destination");
+        right.resetScreenshotRendering();
+        require(rightRenderer->baseImageSources().isEmpty(),
+                "reset releases shared capture sampling sources");
+    }
+}
+
+void materializedMagnifierBypassesPhysicalViewportPlacement() {
+    SnowCanvasWidget canvas;
+    canvas.resize(160, 120);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(80, 60, 1), "configure screenshot magnifier camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    QImage original(160, 120, QImage::Format_ARGB32_Premultiplied);
+    original.fill(Qt::blue);
+    {
+        QPainter painter(&original);
+        painter.fillRect(QRect(20, 20, 20, 20), Qt::green);
+    }
+    renderer.setImage(original, QRectF(0, 0, 160, 120));
+    renderer.setImageViewportPhysicalSize(original.size());
+    canvas.setCustomRenderer(&renderer);
+    require(canvas.setCanvasTool(SnowCanvasTool::Magnifier), "activate screenshot magnifier");
+    for (const auto& [type, point, button, buttons] :
+         {std::tuple{QEvent::MouseButtonPress, QPointF(20, 20), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseMove, QPointF(40, 40), Qt::NoButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseButtonRelease, QPointF(40, 40), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::NoButton)}}) {
+        QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+    }
+    for (const double dpr : {1.0, 1.25, 2.0}) {
+        const QImage output = renderCanvas(canvas, dpr);
+        require(output.pixelColor(qFloor(15 * dpr), qFloor(15 * dpr)) == QColor(Qt::green),
+                "materialized magnifiers must enlarge source pixels at every display DPR");
+    }
+    canvas.setCustomRenderer(nullptr);
+}
+
+void originalImageDamageRepaintsDistantMagnifiers() {
+    SnowCanvasWidget canvas;
+    canvas.resize(200, 140);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(100, 70, 1), "configure distant magnifier camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    QImage original(200, 140, QImage::Format_ARGB32_Premultiplied);
+    original.fill(Qt::blue);
+    renderer.setImage(original, QRectF(0, 0, 200, 140));
+    canvas.setCustomRenderer(&renderer);
+    require(canvas.setCanvasTool(SnowCanvasTool::Magnifier), "activate distant magnifier");
+    const auto drag = [&](const QPointF& start, const QPointF& end) {
+        for (const auto& [type, point, button, buttons] :
+             {std::tuple{QEvent::MouseButtonPress, start, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseMove, end, Qt::NoButton, Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseButtonRelease, end, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::NoButton)}}) {
+            QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+            QApplication::sendEvent(&canvas, &event);
+        }
+    };
+    drag({20, 20}, {40, 40});
+    drag({30, 30}, {30, 30});
+    drag({30, 74}, {130, 74});
+    QApplication::processEvents();
+    CanvasPaintRegionObserver observer;
+    canvas.installEventFilter(&observer);
+    observer.begin();
+    QImage changed = original.copy();
+    {
+        QPainter painter(&changed);
+        painter.fillRect(QRect(20, 20, 20, 20), Qt::green);
+    }
+    renderer.setImageSource(ScreenshotImageSource::fromImage(changed, QRectF(0, 0, 200, 140)),
+                            QRectF(20, 20, 20, 20));
+    QApplication::processEvents();
+    require(observer.region().contains(QPoint(130, 30)),
+            "source-image damage must repaint distant magnifier destinations");
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+    const QImage scrollingOriginal = original.copy(0, 0, 60, 60);
+    const QImage scrollingChanged = changed.copy(0, 0, 60, 60);
+    renderer.setScrollingResultPreview(scrollingOriginal, QRectF(0, 0, 60, 60));
+    QApplication::processEvents();
+    observer.begin();
+    renderer.setScrollingResultPreview(scrollingChanged, QRectF(0, 0, 60, 60));
+    QApplication::processEvents();
+    require(observer.region().contains(QPoint(130, 30)),
+            "scrolling preview replacements must repaint lenses outside preview damage");
+    renderer.setScrollingResultPreview(scrollingOriginal, QRectF(0, 0, 60, 60));
+    require(canvas.setCanvasFilterStyle({SnowCanvasFilterType::Mosaic, 0.65, 1, 30},
+                                        SnowCanvasFilterStylePropertyType |
+                                            SnowCanvasFilterStylePropertyStrength |
+                                            SnowCanvasFilterStylePropertyOpacity) &&
+                canvas.setCanvasTool(SnowCanvasTool::RectangleFilter),
+            "configure a filter following the distant lens");
+    drag({110, 10}, {150, 50});
+    require(canvas.resetEditingStatePreservingTool(), "clear filter fixture selection");
+    canvas.setInteractionEnabled(false);
+    require(renderCanvas(canvas).pixelColor(130, 30) == QColor(Qt::blue),
+            "the filter must initially replay the original blue magnifier pixels");
+    renderer.setScrollingResultPreview(scrollingChanged, QRectF(0, 0, 60, 60));
+    QApplication::processEvents();
+    require(renderCanvas(canvas).pixelColor(130, 30) == QColor(Qt::green),
+            "scrolling source changes must invalidate magnifier pixels in later filter caches");
+    canvas.removeEventFilter(&observer);
+    canvas.setCustomRenderer(nullptr);
 }
 
 void pinnedFiltersUseTheSourceResolution() {
@@ -6146,6 +6396,73 @@ void overlayRightQuickSelection() {
             "color sampling cancellation keeps priority over element selection");
 }
 
+void overlayMagnifierWheelPreservesCreationStyle() {
+    ScreenshotCaptureState capture;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotDisplaySession displays;
+    interaction.enterOverlayVisible(true);
+    selection.setSelectionRect(QRectF(0, 0, 400, 300));
+    interaction.confirmSelection();
+    ScreenshotOverlayInputActions actions;
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime runtime;
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget(runtime));
+    overlay.resize(400, 300);
+    QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    overlay.setScreenshotImage(image, QRectF(image.rect()));
+    overlay.show();
+    QApplication::processEvents();
+    auto* canvas = overlay.canvas();
+    canvas->setInteractionEnabled(true);
+    require(canvas->setViewportCamera(200, 150, 1) &&
+                canvas->setCanvasTool(SnowCanvasTool::Magnifier),
+            "activate the screenshot magnifier wheel fixture");
+    interaction.setCanvasTool(ScreenshotActiveTool::Magnifier);
+    bool creationDefaults = false;
+    QObject::connect(canvas, &SnowCanvasWidget::styleEditCommitted, &overlay,
+                     [&](const SnowCanvasStyleEdit& edit) {
+                         const auto* patch = std::get_if<SnowCanvasMagnifierEdit>(&edit);
+                         require(patch != nullptr &&
+                                     patch->properties == SnowCanvasMagnifierStylePropertyFactor,
+                                 "overlay wheels must commit only the magnifier factor");
+                         creationDefaults = patch->creationDefaults;
+                     });
+    const auto wheel = [&] {
+        QWheelEvent event(QPointF(30, 30), canvas->mapToGlobal(QPoint(30, 30)), QPoint(),
+                          QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        return handler.handleWheel(&overlay, event);
+    };
+    require(wheel() && creationDefaults && canvas->canvasMagnifierStyle().factor == 2.1,
+            "an unselected overlay magnifier wheel must adjust creation defaults");
+    const auto drag = [&](const QPointF& start, const QPointF& end) {
+        for (const auto& [type, point, button, buttons] :
+             {std::tuple{QEvent::MouseButtonPress, start, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseMove, end, Qt::NoButton, Qt::MouseButtons(Qt::LeftButton)},
+              std::tuple{QEvent::MouseButtonRelease, end, Qt::LeftButton,
+                         Qt::MouseButtons(Qt::NoButton)}}) {
+            QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+            QApplication::sendEvent(canvas, &event);
+        }
+    };
+    drag({20, 20}, {40, 40});
+    drag({30, 30}, {30, 30});
+    require(canvas->canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedMagnifier,
+            "source-region selection must expose the magnifier style");
+    require(wheel() && !creationDefaults && canvas->canvasMagnifierStyle().factor == 2.2,
+            "a selected overlay magnifier wheel must adjust the selected element");
+    require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::Magnifier) &&
+                canvas->canvasMagnifierStyle().factor == 2.1,
+            "selected overlay wheel edits must preserve the future magnifier factor");
+}
+
 void overlayAngleWheel() {
     ScreenshotCaptureState capture;
     ScreenshotInteractionState interaction;
@@ -6760,6 +7077,13 @@ void runScreenshotCursorBenchmark();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--magnifier-only"))) {
+        magnifierSourcesTrackOriginalImageLayersAndCaptureModes();
+        magnifiersSampleEveryCapturedDisplayWithoutChangingLocalBackgrounds();
+        materializedMagnifierBypassesPhysicalViewportPlacement();
+        originalImageDamageRepaintsDistantMagnifiers();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--pointer-presentation-only"))) {
         pointerPresentationRespectsOverlayInputGate();
         return 0;
@@ -6855,6 +7179,10 @@ int main(int argc, char** argv) {
         hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
         compoundSelectionDamageCoversChangedPixels();
         nonRectangularSelectionDraftLeavesInteriorUnchanged();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--magnifier-wheel-only"))) {
+        overlayMagnifierWheelPreservesCreationStyle();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--angle-wheel-only"))) {

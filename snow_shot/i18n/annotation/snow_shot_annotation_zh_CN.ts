@@ -284,6 +284,10 @@
             <translation>当前距离描边宽度</translation>
         </message>
         <message>
+            <source>Current magnifier stroke width</source>
+            <translation>当前放大镜描边宽度</translation>
+        </message>
+        <message>
             <source>Current pen filter stroke width</source>
             <translation>当前画笔滤镜描边宽度</translation>
         </message>
@@ -656,6 +660,10 @@
             <translation>LaTeX 专用模型</translation>
         </message>
         <message>
+            <source>Leader line type</source>
+            <translation>引线类型</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直线</translation>
         </message>
@@ -678,6 +686,30 @@
         <message>
             <source>Lowercase letters</source>
             <translation>小写字母</translation>
+        </message>
+        <message>
+            <source>Magnification factor (scroll to adjust)</source>
+            <translation>放大倍数（滚动调整）</translation>
+        </message>
+        <message>
+            <source>Magnifier</source>
+            <translation>放大镜</translation>
+        </message>
+        <message>
+            <source>Magnifier shape</source>
+            <translation>放大镜形状</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke color</source>
+            <translation>放大镜描边颜色</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke color %1</source>
+            <translation>放大镜描边颜色 %1</translation>
+        </message>
+        <message>
+            <source>Magnifier stroke width %1</source>
+            <translation>放大镜描边宽度 %1</translation>
         </message>
         <message>
             <source>Mask color</source>
@@ -1046,6 +1078,10 @@
         <message>
             <source>Show keystrokes in recording</source>
             <translation>在录制中显示按键</translation>
+        </message>
+        <message>
+            <source>Show leader line</source>
+            <translation>显示引线</translation>
         </message>
         <message>
             <source>Show original image</source>

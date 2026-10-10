@@ -148,6 +148,16 @@ impl Editor {
             .map(<[SelectionRectState]>::to_vec)
             .unwrap_or_default();
         let mut preview_arrows = self.preview_selection_arrows(document);
+        let mut preview_magnifiers = match &self.state.interaction {
+            InteractionState::EditingSelection(state) => {
+                self.selection_magnifier_previews(document, state)
+            }
+            InteractionState::EditingMagnifier(state) => vec![crate::SelectionMagnifierState {
+                id: state.id,
+                magnifier: state.preview,
+            }],
+            _ => Vec::new(),
+        };
         if let InteractionState::CreatingSerialNumber(state) = &self.state.interaction
             && let Some((id, text)) = &state.text
             && let Some(mut rect) = document.element_rect_proxy(*id)
@@ -207,6 +217,7 @@ impl Editor {
             );
             preview_elements.clear();
             preview_arrows.clear();
+            preview_magnifiers.clear();
             crate::document_ops::duplicate_selection_transaction(
                 document,
                 &self.state.selection.ids,
@@ -235,6 +246,17 @@ impl Editor {
                 .or_else(|| self.state.creation_preview.clone()),
             active_text_draft: self.active_text_draft_display_presentation(),
             preview_arrows,
+            preview_magnifiers,
+            selected_magnifiers: self
+                .state
+                .selection
+                .ids
+                .iter()
+                .filter_map(|id| {
+                    self.magnifier_snapshot(document, *id)
+                        .map(|magnifier| crate::SelectionMagnifierState { id: *id, magnifier })
+                })
+                .collect(),
             preview_elements,
             preview_text_paints: self.selection_preview_text_paints(document),
             marquee: self.state.ui.marquee,
@@ -480,6 +502,9 @@ impl Editor {
             return None;
         }
         let id = self.state.selection.ids[0];
+        if let Some(value) = self.magnifier_snapshot(document, id) {
+            return Some((id, value.source_rect()));
+        }
         if document.rectangle(id).is_err() {
             return None;
         }
@@ -1405,6 +1430,7 @@ mod tests {
         let mut editor = editor_with_surface();
         editor.select_element(&document, text_id).unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,
@@ -1476,6 +1502,7 @@ mod tests {
         let mut editor = editor_with_surface();
         editor.select_element(&document, text_id).unwrap();
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
+            original_magnifiers: Vec::new(),
             duplicate: false,
             pointer_id: 1,
             button: snow_draw_engine_interaction::PointerButton::Primary,

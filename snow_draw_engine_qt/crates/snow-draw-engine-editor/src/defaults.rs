@@ -18,6 +18,7 @@ pub struct EditorStyleDefaults {
     pub arrow: ArrowStyle,
     pub distance: crate::DistanceStyle,
     pub angle: crate::AngleStyle,
+    pub magnifier: crate::MagnifierStyle,
     pub line: ShapeStyle,
     pub free_draw: ShapeStyle,
     pub rectangle_highlight: ShapeStyle,
@@ -46,6 +47,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
     EditorStyleDefaults {
         distance: crate::DistanceStyle::default(),
         angle: crate::AngleStyle::default(),
+        magnifier: crate::MagnifierStyle::default(),
         spotlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
         spotlight_corner_radii: CornerRadii::default(),
         rectangle: RectangleShapeStyle {

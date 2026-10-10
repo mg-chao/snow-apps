@@ -492,6 +492,10 @@
             <translation>直線</translation>
         </message>
         <message>
+            <source>Magnifier</source>
+            <translation>放大鏡</translation>
+        </message>
+        <message>
             <source>No hidden tools</source>
             <translation>沒有隱藏的工具</translation>
         </message>
@@ -2663,6 +2667,10 @@
         <message>
             <source>MSAA</source>
             <translation>MSAA</translation>
+        </message>
+        <message>
+            <source>Magnifier</source>
+            <translation>放大鏡</translation>
         </message>
         <message>
             <source>Magnifier visibility</source>

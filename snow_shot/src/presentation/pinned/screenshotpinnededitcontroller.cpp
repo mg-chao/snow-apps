@@ -53,6 +53,7 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
+    options.showMagnifierTool = true;
     options.showEraserTool = true;
     options.showFilterTool = true;
     options.showWatermarkTool = true;
@@ -416,6 +417,8 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { activateCanvasTool(SnowCanvasTool::RectangleHighlight); });
         connect(toolbar, &ScreenshotToolPalette::penHighlightRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::PenHighlight); });
+        connect(toolbar, &ScreenshotToolPalette::magnifierRequested, this,
+                [this]() { activateCanvasTool(SnowCanvasTool::Magnifier); });
         connect(toolbar, &ScreenshotToolPalette::spotlightRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Spotlight); });
         connect(toolbar, &ScreenshotToolPalette::rectangleEraserRequested, this,
@@ -893,6 +896,9 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasTool() {
         break;
     case SnowCanvasTool::PenHighlight:
         host->setActiveTool(ScreenshotToolPalette::Tool::PenHighlight);
+        break;
+    case SnowCanvasTool::Magnifier:
+        host->setActiveTool(ScreenshotToolPalette::Tool::Magnifier);
         break;
     case SnowCanvasTool::Spotlight:
         host->setActiveTool(ScreenshotToolPalette::Tool::Spotlight);

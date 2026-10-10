@@ -90,6 +90,10 @@ void ScreenshotToolCommandWorkflow::setFilterTool() {
     setRectangleFilterTool();
 }
 
+void ScreenshotToolCommandWorkflow::setMagnifierTool() {
+    setCanvasTool(ScreenshotActiveTool::Magnifier, SnowCanvasTool::Magnifier);
+}
+
 void ScreenshotToolCommandWorkflow::setSpotlightTool() {
     setCanvasTool(ScreenshotActiveTool::Spotlight, SnowCanvasTool::Spotlight);
 }

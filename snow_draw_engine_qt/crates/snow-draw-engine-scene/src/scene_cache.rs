@@ -278,6 +278,10 @@ impl DocumentSceneCache {
                     .element_bounds(id)
                     .unwrap_or_else(|_| free_draw_bounds(free_draw)),
             }),
+            ElementData::Magnifier(value) => Some(CachedSceneEntry {
+                item: crate::item_conversions::scene_item_from_magnifier(id, *value),
+                bounds: snow_draw_engine_document::magnifier_bounds(value),
+            }),
             ElementData::Text(text) if state.rect.width() > 0.0 && state.rect.height() > 0.0 => {
                 Some(CachedSceneEntry {
                     item: scene_item_from_text(id, text.clone()),

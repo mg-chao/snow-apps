@@ -8,6 +8,10 @@ std::uint64_t SnowCanvasCustomRenderer::originalBackgroundRevision() const {
     return contentRevision();
 }
 
+QList<SnowCanvasBaseImageSource> SnowCanvasCustomRenderer::baseImageSources() const {
+    return {};
+}
+
 void SnowCanvasCustomRenderer::clearRenderState() {}
 
 std::optional<SnowCanvasFilterRenderReference>

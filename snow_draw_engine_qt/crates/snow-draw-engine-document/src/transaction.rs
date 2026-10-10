@@ -87,6 +87,26 @@ impl Transaction {
         })
     }
 
+    pub fn insert_magnifier(
+        &mut self,
+        id: ElementId,
+        meta: ElementMeta,
+        value: crate::MagnifierData,
+    ) -> &mut Self {
+        self.push(Operation::InsertElement {
+            id,
+            meta,
+            data: ElementData::Magnifier(value),
+        })
+    }
+
+    pub fn update_magnifier(&mut self, id: ElementId, value: crate::MagnifierData) -> &mut Self {
+        self.push(Operation::UpdateElementData {
+            id,
+            data: ElementData::Magnifier(value),
+        })
+    }
+
     pub fn insert_filter(
         &mut self,
         id: ElementId,

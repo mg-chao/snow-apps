@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -44,6 +45,77 @@ void filterStyleParticipatesInToolbarStateDiffs() {
     require(snow_canvas_types::toCanvasStyleToolbarState(brushChanged.styleToolbarState)
                     .brushEraserStyle.strokeWidth == 42.0,
             "C/Qt state conversion must preserve independent brush width");
+}
+
+void magnifierStylePatchesAndSynchronization() {
+    SnowCanvasMagnifierStyle style;
+    require(style.factor == 2.0 && style.showLeader && style.strokeWidth == 2.0 &&
+                style.cornerRadii == SnowCanvasCornerRadii{6, 6, 6, 6},
+            "magnifier has independent usable defaults");
+    style.shape = SnowCanvasRectangleShape::Diamond;
+    style.stroke = QColor(12, 34, 56, 78);
+    style.factor = 7.3;
+    style.showLeader = false;
+    style.leaderArrowhead = SnowCanvasArrowhead::CrowfootOneOrMany;
+    style.cornerRadii = {3, 6, 9, 12};
+    require(snow_canvas_types::toCanvasMagnifierStyle(
+                snow_canvas_types::toEngineMagnifierStyle(style)) == style,
+            "magnifier style preserves every field across the C ABI");
+
+    snow_canvas_state::Snapshot before;
+    auto after = before;
+    after.styleToolbarState.magnifier_style = snow_canvas_types::toEngineMagnifierStyle(style);
+    require(snow_canvas_state::diffSnapshots(before, after).styleToolbarChanged,
+            "magnifier appearance changes synchronize the toolbar");
+    before = after;
+    after.styleToolbarState.magnifier_style.corner_radii.bottom_right = 15;
+    require(snow_canvas_state::diffSnapshots(before, after).styleToolbarChanged,
+            "magnifier corner changes synchronize the toolbar independently");
+    before = after;
+    after.styleToolbarState.magnifier_style_mixed = SnowCanvasMagnifierStylePropertyFactor;
+    require(snow_canvas_state::diffSnapshots(before, after).styleToolbarChanged,
+            "mixed magnifier values synchronize the toolbar");
+    require(
+        snow_canvas_types::toCanvasStyleToolbarState(after.styleToolbarState).magnifierStyleMixed ==
+            SnowCanvasMagnifierStylePropertyFactor,
+        "mixed magnifier properties survive conversion");
+
+    SnowCanvasRuntime runtime;
+    SnowCanvasRuntimeEditor editor(runtime, SnowCanvasTool::Magnifier);
+    require(editor.isValid(), "magnifier runtime editor can activate the tool");
+    const auto initial = editor.canvasStyleToolbarState().magnifierStyle;
+    require(editor.setMagnifierStyleFromToolbar(style, SnowCanvasMagnifierStylePropertyFactor),
+            "magnifier factor patch succeeds");
+    auto expected = initial;
+    expected.factor = style.factor;
+    require(editor.canvasStyleToolbarState().magnifierStyle == expected,
+            "factor patches preserve unrelated magnifier properties");
+    require(!runtime.canUndo(), "creation style changes do not create annotation history");
+    require(
+        editor.setMagnifierStyleFromToolbar(style, SnowCanvasMagnifierStylePropertyCornerRadius),
+        "magnifier corner patch succeeds");
+    expected.cornerRadii = style.cornerRadii;
+    require(editor.canvasStyleToolbarState().magnifierStyle == expected,
+            "corner patches preserve unrelated magnifier properties");
+    style.factor = std::numeric_limits<double>::infinity();
+    require(!editor.setMagnifierStyleFromToolbar(style, SnowCanvasMagnifierStylePropertyFactor),
+            "nonfinite magnification is rejected");
+    style.factor = 10.1;
+    require(!editor.setMagnifierStyleFromToolbar(style, SnowCanvasMagnifierStylePropertyFactor),
+            "out-of-range magnification is rejected");
+    require(editor.canvasStyleToolbarState().magnifierStyle == expected,
+            "invalid patches leave magnifier styles intact");
+
+    SnowCanvasStyleDefaults defaults;
+    style.factor = 4.0;
+    snowCanvasMergeStyleEdit(
+        defaults, SnowCanvasMagnifierEdit{style, SnowCanvasMagnifierStylePropertyFactor, false});
+    require(defaults.magnifier.factor == 2.0,
+            "selected-element magnifier patches cannot overwrite remembered defaults");
+    snowCanvasMergeStyleEdit(
+        defaults, SnowCanvasMagnifierEdit{style, SnowCanvasMagnifierStylePropertyFactor, true});
+    require(defaults.magnifier.factor == 4.0 && defaults.magnifier.showLeader,
+            "remembered defaults merge only explicitly edited properties");
 }
 
 template <typename T> void requireEqualPair(const T& value, const char* message) {
@@ -602,6 +674,7 @@ void serializedSnapshotsOwnBytesAndPreserveUndoAndRedo() {
 } // namespace
 
 int main() {
+    magnifierStylePatchesAndSynchronization();
     serialNumberStrokePatchesPreserveOtherProperties();
     filterStyleParticipatesInToolbarStateDiffs();
     publicCanvasDtosUseExactCompleteEquality();

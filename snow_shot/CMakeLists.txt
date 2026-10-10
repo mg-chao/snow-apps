@@ -3584,6 +3584,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-multi-region-tests COMMAND snow-shot-multi-region-tests)
     add_test(NAME snow-shot-region-overlay-input-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --region-input-only -platform offscreen)
+    add_test(NAME snow-shot-screenshot-magnifier-wheel-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --magnifier-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-magnifier-wheel-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-screenshot-angle-wheel-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --angle-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-angle-wheel-tests PROPERTIES
@@ -3996,6 +4001,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-screenshot-cursor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
+    add_test(NAME snow-shot-magnifier-image-source-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --magnifier-only -platform offscreen)
+    set_tests_properties(snow-shot-magnifier-image-source-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-selection-shortcut-hint-stages-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --shortcut-hints-only -platform offscreen)
@@ -5194,6 +5202,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-mcp-tests)
     add_test(NAME snow-shot-mcp-tests COMMAND snow-shot-mcp-tests -platform offscreen)
+    add_test(NAME snow-shot-magnifier-mcp-style-tests
+        COMMAND snow-shot-mcp-tests --magnifier-only -platform offscreen)
+    set_tests_properties(snow-shot-magnifier-mcp-style-tests PROPERTIES TIMEOUT 30 LABELS unit)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME snow-shot-magnifier-mcp-capabilities-tests
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_mcp_capabilities.py"
+                --magnifier-only)
+        set_tests_properties(snow-shot-magnifier-mcp-capabilities-tests PROPERTIES TIMEOUT 30 LABELS unit)
+    endif()
     if(SNOW_SHOT_ENABLE_MCP)
         add_test(NAME snow-shot-mcp-stdio-tests
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_stdio_tests.py"
@@ -5342,6 +5359,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-tool-palette-distance-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --distance-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-tool-palette-distance-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-screenshot-tool-palette-magnifier-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --magnifier-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-tool-palette-magnifier-tests
         PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screenshot-tool-palette-angle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --angle-only -platform offscreen)
@@ -5690,6 +5711,17 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
+    add_test(NAME snow-shot-global-canvas-magnifier-availability-tests
+        COMMAND snow-shot-global-canvas-tests --magnifier-availability-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-magnifier-availability-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-global-canvas-click-through-style-tests
+        COMMAND snow-shot-global-canvas-tests --click-through-style-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-click-through-style-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-global-canvas-angle-wheel-tests
         COMMAND snow-shot-global-canvas-tests --angle-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-angle-wheel-tests PROPERTIES
@@ -7139,6 +7171,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-screen-recording-controller-tests)
+    add_test(NAME snow-shot-recording-magnifier-availability-tests
+        COMMAND snow-shot-screen-recording-controller-tests --magnifier-availability-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-magnifier-availability-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-screen-recording-controller-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

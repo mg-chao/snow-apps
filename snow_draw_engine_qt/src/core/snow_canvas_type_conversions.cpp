@@ -108,6 +108,8 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool) {
         return SnowCanvasTool::Distance;
     case SNOW_ACTIVE_TOOL_ANGLE:
         return SnowCanvasTool::Angle;
+    case SNOW_ACTIVE_TOOL_MAGNIFIER:
+        return SnowCanvasTool::Magnifier;
     }
     return SnowCanvasTool::Select;
 }
@@ -152,6 +154,8 @@ SnowActiveTool toEngineTool(SnowCanvasTool tool) {
         return SNOW_ACTIVE_TOOL_DISTANCE;
     case SnowCanvasTool::Angle:
         return SNOW_ACTIVE_TOOL_ANGLE;
+    case SnowCanvasTool::Magnifier:
+        return SNOW_ACTIVE_TOOL_MAGNIFIER;
     }
     return SNOW_ACTIVE_TOOL_SELECT;
 }
@@ -218,6 +222,10 @@ SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource s
         return SnowCanvasStyleToolbarSource::DefaultAngle;
     case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE:
         return SnowCanvasStyleToolbarSource::SelectedAngle;
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_MAGNIFIER:
+        return SnowCanvasStyleToolbarSource::DefaultMagnifier;
+    case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_MAGNIFIER:
+        return SnowCanvasStyleToolbarSource::SelectedMagnifier;
     }
     return SnowCanvasStyleToolbarSource::DefaultRectangle;
 }
@@ -503,6 +511,43 @@ bool validAngleStyle(const SnowCanvasAngleStyle& style) {
            style.decimalPlaces <= 3;
 }
 
+bool validMagnifierStyle(const SnowCanvasMagnifierStyle& style) {
+    for (double radius : {style.cornerRadii.topLeft, style.cornerRadii.topRight,
+                          style.cornerRadii.bottomRight, style.cornerRadii.bottomLeft}) {
+        if (!std::isfinite(radius) || radius < 0.0)
+            return false;
+    }
+    return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 0.0 &&
+           style.strokeWidth <= 72.0 && std::isfinite(style.factor) && style.factor >= 1.0 &&
+           style.factor <= 10.0 &&
+           enumInRange(style.shape, SnowCanvasRectangleShape::Rectangle,
+                       SnowCanvasRectangleShape::Diamond) &&
+           enumInRange(style.leaderArrowhead, SnowCanvasArrowhead::None,
+                       SnowCanvasArrowhead::IndentedTriangle);
+}
+
+SnowCanvasMagnifierStyle toCanvasMagnifierStyle(const SnowMagnifierStyle& style) {
+    return {static_cast<SnowCanvasRectangleShape>(style.shape),
+            toQColor(style.stroke),
+            style.stroke_width,
+            style.factor,
+            style.show_leader != 0,
+            toCanvasArrowhead(style.leader_arrowhead),
+            toCanvasCornerRadii(style.corner_radii)};
+}
+
+SnowMagnifierStyle toEngineMagnifierStyle(const SnowCanvasMagnifierStyle& style) {
+    SnowMagnifierStyle result{};
+    result.shape = static_cast<SnowRectangleShape>(style.shape);
+    result.stroke = toEngineColor(style.stroke);
+    result.stroke_width = style.strokeWidth;
+    result.factor = style.factor;
+    result.show_leader = style.showLeader ? 1 : 0;
+    result.leader_arrowhead = toEngineArrowhead(style.leaderArrowhead);
+    result.corner_radii = toEngineCornerRadii(style.cornerRadii);
+    return result;
+}
+
 SnowCanvasAngleStyle toCanvasAngleStyle(const SnowAngleStyle& style) {
     return {toQColor(style.stroke), style.stroke_width,
             static_cast<SnowCanvasAngleUnit>(style.unit), style.decimal_places};
@@ -649,6 +694,8 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
         toCanvasAngleStyle(state.angle_style),
         state.angle_style_mixed,
         state.distance_measured_length,
+        toCanvasMagnifierStyle(state.magnifier_style),
+        state.magnifier_style_mixed,
     };
 }
 
@@ -829,7 +876,8 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
         }
     }
 
-    if (!validDistanceStyle(defaults.distance) || !validAngleStyle(defaults.angle))
+    if (!validDistanceStyle(defaults.distance) || !validAngleStyle(defaults.angle) ||
+        !validMagnifierStyle(defaults.magnifier))
         return false;
     engineDefaults = SnowStyleDefaults{};
     engineDefaults.rectangle = toEngineShapeStyle(defaults.rectangle);
@@ -859,6 +907,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.spotlight_corner_radii = toEngineCornerRadii(defaults.spotlightCornerRadii);
     engineDefaults.distance = toEngineDistanceStyle(defaults.distance);
     engineDefaults.angle = toEngineAngleStyle(defaults.angle);
+    engineDefaults.magnifier = toEngineMagnifierStyle(defaults.magnifier);
     return true;
 }
 

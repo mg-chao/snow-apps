@@ -1038,7 +1038,10 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
     }
 
     unsafe {
-        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.unit))
+        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).magnifier.shape))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).magnifier.leader_arrowhead))
+            && (*defaults).magnifier.show_leader <= 1
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.unit))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).angle.unit))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.endpoint_style))
             && (*defaults).distance.decimal_places <= 3
@@ -1116,6 +1119,7 @@ pub(crate) fn runtime_config_from_c(
                 brush_eraser: defaults.brush_eraser.into(),
                 distance: defaults.distance.into(),
                 angle: defaults.angle.into(),
+                magnifier: defaults.magnifier.into(),
                 text: TextStyle {
                     color: defaults.text.color.into(),
                     font_size: defaults.text.font_size,
@@ -1181,6 +1185,42 @@ pub(crate) fn runtime_config_from_c(
     })
 }
 
+impl From<SnowMagnifierStyle> for snow_draw_engine::MagnifierStyle {
+    fn from(value: SnowMagnifierStyle) -> Self {
+        Self {
+            shape: match value.shape {
+                SnowRectangleShape::Rectangle => snow_draw_engine::HighlightShape::Rectangle,
+                SnowRectangleShape::Ellipse => snow_draw_engine::HighlightShape::Ellipse,
+                SnowRectangleShape::Diamond => snow_draw_engine::HighlightShape::Diamond,
+            },
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            factor: value.factor,
+            show_leader: value.show_leader != 0,
+            leader_arrowhead: snow_arrowhead_to_rust(value.leader_arrowhead),
+            corner_radii: value.corner_radii.into(),
+        }
+    }
+}
+impl From<snow_draw_engine::MagnifierStyle> for SnowMagnifierStyle {
+    fn from(value: snow_draw_engine::MagnifierStyle) -> Self {
+        Self {
+            shape: match value.shape {
+                snow_draw_engine::HighlightShape::Rectangle => SnowRectangleShape::Rectangle,
+                snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
+                snow_draw_engine::HighlightShape::Diamond => SnowRectangleShape::Diamond,
+            },
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            factor: value.factor,
+            show_leader: u8::from(value.show_leader),
+            reserved: [0; 3],
+            leader_arrowhead: snow_arrowhead_from_rust(value.leader_arrowhead),
+            corner_radii: value.corner_radii.into(),
+        }
+    }
+}
+
 impl From<StyleDefaults> for SnowStyleDefaults {
     fn from(value: StyleDefaults) -> Self {
         let rectangle = value.editor.rectangle;
@@ -1230,6 +1270,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             brush_eraser: value.editor.brush_eraser.into(),
             distance: value.editor.distance.into(),
             angle: value.editor.angle.into(),
+            magnifier: value.editor.magnifier.into(),
             spotlight_shape: match value.editor.spotlight_shape {
                 snow_draw_engine::HighlightShape::Rectangle => SnowRectangleShape::Rectangle,
                 snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
@@ -1259,6 +1300,8 @@ impl Default for SnowStyleToolbarState {
             angle_style: SnowAngleStyle::default(),
             angle_style_mixed: 0,
             distance_measured_length: 0.0,
+            magnifier_style: SnowMagnifierStyle::default(),
+            magnifier_style_mixed: 0,
         }
     }
 }
@@ -1308,6 +1351,7 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
         SnowActiveTool::Distance => ActiveTool::Distance,
         SnowActiveTool::Angle => ActiveTool::Angle,
+        SnowActiveTool::Magnifier => ActiveTool::Magnifier,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1332,6 +1376,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
         ActiveTool::Distance => SnowActiveTool::Distance,
         ActiveTool::Angle => SnowActiveTool::Angle,
+        ActiveTool::Magnifier => SnowActiveTool::Magnifier,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1339,7 +1384,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 19] = [
+    const TOOLS: [SnowActiveTool; 20] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1359,6 +1404,7 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::BrushEraser,
         SnowActiveTool::Distance,
         SnowActiveTool::Angle,
+        SnowActiveTool::Magnifier,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {
@@ -1399,6 +1445,8 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
         StyleToolbarSource::SelectedDistance => SnowStyleToolbarSource::SelectedDistance,
         StyleToolbarSource::DefaultAngle => SnowStyleToolbarSource::DefaultAngle,
         StyleToolbarSource::SelectedAngle => SnowStyleToolbarSource::SelectedAngle,
+        StyleToolbarSource::DefaultMagnifier => SnowStyleToolbarSource::DefaultMagnifier,
+        StyleToolbarSource::SelectedMagnifier => SnowStyleToolbarSource::SelectedMagnifier,
         StyleToolbarSource::DefaultRectangleFilter => {
             SnowStyleToolbarSource::DefaultRectangleFilter
         }

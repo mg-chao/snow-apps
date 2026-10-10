@@ -50,6 +50,7 @@ enum class Item {
     FreeDraw,
     Highlighter,
     Spotlight,
+    Magnifier,
     Text,
     SerialNumber,
     Filter,
@@ -69,6 +70,7 @@ enum class Icon {
     FreeDraw,
     Highlight,
     Spotlight,
+    Magnifier,
     Text,
     SerialNumber,
     Filter,
@@ -140,6 +142,8 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlight"), Icon::Highlight},
         {Item::Spotlight, "spotlight",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Spotlight"), Icon::Spotlight},
+        {Item::Magnifier, "magnifier",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Magnifier"), Icon::Magnifier},
         {Item::Text, "text", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Text"),
          Icon::Text},
         {Item::SerialNumber, "serial-number",
@@ -411,7 +415,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
          QStringLiteral("arrow")},
         {QStringLiteral("free-draw")},
-        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
+        {QStringLiteral("magnifier"), QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
         {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},
@@ -687,7 +691,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     }
     auto previousDrawingDefaults = defaultLayout;
     QStringList missingAnnotations;
-    for (const QString& id : {QStringLiteral("angle"), QStringLiteral("distance")}) {
+    for (const QString& id :
+         {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("magnifier")}) {
         if (known.contains(id) && !positioned.contains(id) && !hidden.contains(id)) {
             missingAnnotations.push_back(id);
             for (auto& position : previousDrawingDefaults)
@@ -716,6 +721,41 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
             result.positions.prepend({itemId});
             positioned.insert(itemId);
         }
+    }
+    const QString magnifier = QStringLiteral("magnifier");
+    if (known.contains(magnifier) && !positioned.contains(magnifier) &&
+        !hidden.contains(magnifier)) {
+        qsizetype anchor = -1;
+        bool joined = false;
+        for (qsizetype index = 0; index < result.positions.size(); ++index) {
+            auto& position = result.positions[index];
+            const bool hasHighlight = position.contains(QStringLiteral("highlighter"));
+            const bool hasSpotlight = position.contains(QStringLiteral("spotlight"));
+            if (hasHighlight && hasSpotlight) {
+                position.prepend(magnifier);
+                joined = true;
+                break;
+            }
+            if (hasHighlight || hasSpotlight)
+                anchor = index;
+        }
+        if (!joined) {
+            qsizetype insertion = anchor + 1;
+            if (anchor < 0) {
+                insertion = result.positions.size();
+                for (qsizetype index = 0; index < result.positions.size(); ++index) {
+                    const auto& position = result.positions[index];
+                    if (position.contains(QStringLiteral("separator")) ||
+                        position.contains(QStringLiteral("undo")) ||
+                        position.contains(QStringLiteral("redo"))) {
+                        insertion = index;
+                        break;
+                    }
+                }
+            }
+            result.positions.insert(insertion, {magnifier});
+        }
+        positioned.insert(magnifier);
     }
     for (const QStringList& defaultPosition : defaultLayout) {
         QStringList missing;
@@ -908,6 +948,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolHighlight();
     case Icon::Spotlight:
         return custom::ToolSpotlight();
+    case Icon::Magnifier:
+        return custom::ToolMagnifier();
     case Icon::Text:
         return custom::ToolText();
     case Icon::SerialNumber:

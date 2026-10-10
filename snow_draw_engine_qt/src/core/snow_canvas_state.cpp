@@ -90,7 +90,15 @@ bool styleToolbarStatesEqual(const SnowStyleToolbarState& lhs, const SnowStyleTo
            lhs.angle_style.unit == rhs.angle_style.unit &&
            lhs.angle_style.decimal_places == rhs.angle_style.decimal_places &&
            lhs.angle_style_mixed == rhs.angle_style_mixed &&
-           lhs.distance_measured_length == rhs.distance_measured_length;
+           lhs.distance_measured_length == rhs.distance_measured_length &&
+           lhs.magnifier_style.shape == rhs.magnifier_style.shape &&
+           colorsEqual(lhs.magnifier_style.stroke, rhs.magnifier_style.stroke) &&
+           lhs.magnifier_style.stroke_width == rhs.magnifier_style.stroke_width &&
+           lhs.magnifier_style.factor == rhs.magnifier_style.factor &&
+           lhs.magnifier_style.show_leader == rhs.magnifier_style.show_leader &&
+           lhs.magnifier_style.leader_arrowhead == rhs.magnifier_style.leader_arrowhead &&
+           cornerRadiiEqual(lhs.magnifier_style.corner_radii, rhs.magnifier_style.corner_radii) &&
+           lhs.magnifier_style_mixed == rhs.magnifier_style_mixed;
 }
 
 bool watermarkConfigsEqual(const SnowWatermarkConfig& lhs, const SnowWatermarkConfig& rhs) {

@@ -1,17 +1,12 @@
 #pragma once
 
+#include "snow_canvas_image_source_types.h"
+
 #include <QImage>
 #include <QByteArray>
 #include <QList>
 #include <QRectF>
 #include <memory>
-
-// Original image pixels only. coverage may restrict a layer to a subrectangle.
-struct SnowCanvasBaseImageSource {
-    QImage image;
-    QRectF canvasRect;
-    QRectF coverage;
-};
 
 // Immutable, implicitly shared appearance captured with a document for worker exports.
 class SnowCanvasSmartEraseSnapshot {

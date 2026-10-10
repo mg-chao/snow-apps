@@ -33,19 +33,19 @@ QList<CanvasExportSource> exportSourcesForSelection(const ScreenshotDisplaySessi
                                                     const QRect& selection) {
     QList<CanvasExportSource> sources;
     sources.reserve(displaySession.size());
-    const ScreenshotHalfOpenRect selectionRect = ScreenshotHalfOpenRect::fromRect(selection);
-    displaySession.forEachImageSource([&sources, &selectionRect, &displaySession](
-                                          qsizetype, const CapturedDisplayModel& display) {
-        const QRectF canvasRect = ScreenshotGeometryMapper::displayImageSourceCanvasRect(display);
-        if (display.image.isNull() ||
-            !selectionRect.intersects(ScreenshotHalfOpenRect::fromRectF(canvasRect))) {
-            return;
-        }
+    Q_UNUSED(selection);
+    // A magnifier visible inside the export can sample a display outside its crop.
+    // Keep shared original layers; the output painter clips ordinary background drawing.
+    displaySession.forEachImageSource(
+        [&sources, &displaySession](qsizetype, const CapturedDisplayModel& display) {
+            if (display.image.isNull()) {
+                return;
+            }
 
-        for (const auto& layer :
-             screenshotDisplayImageLayers(display, displaySession.cursorVisible))
-            sources.push_back(CanvasExportSource{layer.image, layer.destinationCanvasRect});
-    });
+            for (const auto& layer :
+                 screenshotDisplayImageLayers(display, displaySession.cursorVisible))
+                sources.push_back(CanvasExportSource{layer.image, layer.destinationCanvasRect});
+        });
     return sources;
 }
 

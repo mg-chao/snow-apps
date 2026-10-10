@@ -114,7 +114,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 
     void setRenderMode(RenderMode mode);
     void setImage(QImage image, const QRectF& canvasRect);
-    void setImageSource(ScreenshotImageSource source, const QRectF& damage = {});
+    // Sampling can use captures outside this overlay's background viewport.
+    void setImageSource(ScreenshotImageSource source, const QRectF& damage = {},
+                        const ScreenshotImageSource& samplingSource = {});
     [[nodiscard]] ScreenshotImageSource imageSourceSnapshot() const {
         return m_imageSource;
     }
@@ -182,6 +184,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 
     [[nodiscard]] std::uint64_t contentRevision() const override;
     [[nodiscard]] std::uint64_t originalBackgroundRevision() const override;
+    [[nodiscard]] QList<SnowCanvasBaseImageSource> baseImageSources() const override;
     [[nodiscard]] std::optional<SnowCanvasFilterRenderReference>
     filterRenderReference() const override;
     [[nodiscard]] RenderMode renderMode() const;
@@ -241,6 +244,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                   const QRect& viewport);
     };
     void invalidateCachedContent(bool originalChanged = true);
+    void refreshBaseImageSources();
     void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
                          bool originalOnly);
     [[nodiscard]] QRectF pinnedViewportForContext(const SnowCanvasRenderContext& context) const;
@@ -258,6 +262,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     std::uint64_t m_contentRevision = 0;
     std::uint64_t m_originalBackgroundRevision = 0;
     ScreenshotImageSource m_imageSource;
+    ScreenshotImageSource m_samplingImageSource;
+    QList<SnowCanvasBaseImageSource> m_baseImageSources;
     // Source opacity is checked once per image, independently of moving selection damage.
     QList<QRectF> m_opaqueImageCanvasRects;
     mutable QRegion m_opaqueImageViewCoverage;

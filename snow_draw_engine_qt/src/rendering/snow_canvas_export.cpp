@@ -124,7 +124,8 @@ bool hasDocumentDrawing(const SnowCanvasDisplayCache& displayCache) {
 
 void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
                         const QImage& background, SnowCanvasDisplayCache& displayCache,
-                        const SnowCanvasSmartEraseSnapshot& smartErase) {
+                        const SnowCanvasSmartEraseSnapshot& smartErase,
+                        const QList<SnowCanvasBaseImageSource>& baseImageSources) {
     const SceneDisplayInfo sceneInfo =
         sceneInfoForExport(displayCache.sceneInfo(), projection.canvasRect);
     const WatermarkDisplayInfo watermarkInfo =
@@ -168,6 +169,7 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
     request.clearBackgroundEnabled = false;
     request.smartErase = smartErase;
     request.executionPlan = &executionPlan;
+    request.baseImageSources = &baseImageSources;
     snow_canvas_renderer::renderSceneItems(request);
     snow_canvas_compositor::Frame decorations;
     decorations.sceneInfo = &sceneInfo;
@@ -216,6 +218,10 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
     SnowCanvasViewport viewport;
     SnowCanvasDisplayCache displayCache;
     snow_canvas_state::Store state;
+    QList<SnowCanvasBaseImageSource> baseImageSources;
+    baseImageSources.reserve(sources.size());
+    for (const auto& source : sources)
+        baseImageSources.append({source.image, source.canvasRect, {}});
     const bool synchronized =
         synchronizeRuntimeScene(runtime, projection, viewport, displayCache, state);
     if (!synchronized || (!requiresBackgroundRaster(displayCache) &&
@@ -224,7 +230,8 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         if (synchronized) {
             ++g_renderDiagnostics.directSourceFastPathCount;
             if (hasDocumentDrawing(displayCache))
-                renderRuntimeScene(painter, projection, {}, displayCache, smartErase);
+                renderRuntimeScene(painter, projection, {}, displayCache, smartErase,
+                                   baseImageSources);
         } else {
             ++g_renderDiagnostics.unsynchronizedFallbackCount;
         }
@@ -245,7 +252,8 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
     }
     if (synchronized) {
         ++g_renderDiagnostics.fullCompositorPathCount;
-        renderRuntimeScene(painter, projection, background, displayCache, smartErase);
+        renderRuntimeScene(painter, projection, background, displayCache, smartErase,
+                           baseImageSources);
     } else {
         ++g_renderDiagnostics.unsynchronizedFallbackCount;
         painter.drawImage(QRect(QPoint(0, 0), outputSize), background);

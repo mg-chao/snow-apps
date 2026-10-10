@@ -100,6 +100,7 @@ class ScreenshotToolPalette final : public QWidget,
         BrushEraser,
         Distance,
         Angle,
+        Magnifier,
     };
 
     enum class MoveToolPresentation {
@@ -240,6 +241,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showRectangleHighlightTool = false;
         bool showPenHighlightTool = false;
         bool showSpotlightTool = false;
+        bool showMagnifierTool = false;
         bool showEraserTool = false;
         bool showFilterTool = false;
         bool showWatermarkTool = false;
@@ -312,6 +314,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool stepStrokeWidth(int direction);
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
+    bool stepMagnifierFactor(int direction);
     bool stepFilterIntensity(int direction);
     void setAutoFilterAvailable(bool available);
     bool stepPenFilterStrokeWidth(int direction);
@@ -488,6 +491,7 @@ class ScreenshotToolPalette final : public QWidget,
     void highlightRequested();
     void penHighlightRequested();
     void spotlightRequested();
+    void magnifierRequested();
     void eraserRequested();
     void rectangleEraserRequested();
     void brushEraserRequested();
@@ -871,6 +875,7 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* m_arrowStyleControlsWidget = nullptr;
     QWidget* m_distanceStyleControlsWidget = nullptr;
     QWidget* m_angleStyleControlsWidget = nullptr;
+    QWidget* m_magnifierStyleControlsWidget = nullptr;
     QWidget* m_highlightStyleControlsWidget = nullptr;
     QWidget* m_penHighlightStyleControlsWidget = nullptr;
     QWidget* m_spotlightStyleControlsWidget = nullptr;
@@ -905,6 +910,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_freeDrawButton = nullptr;
     adqt::widgets::AdButton* m_highlighterButton = nullptr;
     adqt::widgets::AdButton* m_spotlightButton = nullptr;
+    adqt::widgets::AdButton* m_magnifierButton = nullptr;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_highlightModeGroups;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_filterModeGroups;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_eraserModeGroups;
