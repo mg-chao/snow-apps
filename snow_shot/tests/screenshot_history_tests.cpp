@@ -5554,7 +5554,9 @@ void customRegionInputTransactions() {
     ScreenshotInteractionState interaction;
     interaction.enterOverlayVisible(false);
     int confirmations = 0, completions = 0, hitTests = 0;
+    bool inputAllowed = true;
     ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [&] { return inputAllowed; };
     actions.selectionConfirmed = [&] { ++confirmations; };
     actions.activateScreenshotShortcut = [&](const QString&) {
         ++completions;
@@ -5657,6 +5659,70 @@ void customRegionInputTransactions() {
     require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier) &&
                 selection.regionType() == ScreenshotRegionType::Polyline,
             "region cycling restores the type needed by the following shape transaction");
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier, true) &&
+                selection.regionType() == ScreenshotRegionType::Polyline,
+            "holding the cycling shortcut must not repeat selection-type changes");
+#ifdef Q_OS_MACOS
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::ControlModifier) &&
+                !dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Polyline,
+            "the macOS default must use physical Control rather than Command or Option");
+#endif
+    const storage::ScreenshotShortcutSettings settings;
+    const auto nextDefault = settings.shortcuts(QStringLiteral("next_selection_type"));
+    const auto previousDefault = settings.shortcuts(QStringLiteral("previous_selection_type"));
+    require(settings.setShortcuts(QStringLiteral("next_selection_type"),
+                                  {QStringLiteral("Alt+F6"), QStringLiteral("Alt+F7")}) &&
+                settings.setShortcuts(QStringLiteral("previous_selection_type"),
+                                      {QStringLiteral("Alt+F8"), QStringLiteral("Alt+F9")}),
+            "customize both region cycling directions while the overlay is alive");
+    require(
+        !dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier) &&
+            !dispatchShortcut(shortcutWindow, Qt::Key_Backtab, cycleModifier | Qt::ShiftModifier) &&
+            selection.regionType() == ScreenshotRegionType::Polyline,
+        "rebinding must remove both previous cycling shortcuts immediately");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve &&
+                dispatchShortcut(shortcutWindow, Qt::Key_F7, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Freehand &&
+                dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Rectangle,
+            "both custom forward shortcuts must cycle and wrap through every region type");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_F8, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Freehand &&
+                dispatchShortcut(shortcutWindow, Qt::Key_F9, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "both custom reverse shortcuts must cycle and wrap backward");
+    inputAllowed = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "configured cycling must honor blocked local input");
+    inputAllowed = true;
+    handler.setExternalDragActive(true);
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "configured cycling must remain unavailable during an external drag");
+    handler.setExternalDragActive(false);
+    const auto suspension = shortcuts.suspendInput();
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_F8, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "modal input suspension must block configured cycling");
+    shortcuts.resumeInput(suspension);
+    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "cycling must remain unavailable while using an annotation tool");
+    interaction.setMoveTool(true, false);
+    require(settings.setShortcuts(QStringLiteral("next_selection_type"), {}) &&
+                !dispatchShortcut(shortcutWindow, Qt::Key_F6, Qt::AltModifier) &&
+                dispatchShortcut(shortcutWindow, Qt::Key_F8, Qt::AltModifier) &&
+                selection.regionType() == ScreenshotRegionType::Polyline,
+            "disabling forward cycling must preserve the configured reverse action");
+    require(settings.setShortcuts(QStringLiteral("previous_selection_type"), {}) &&
+                !dispatchShortcut(shortcutWindow, Qt::Key_F8, Qt::AltModifier) &&
+                settings.setShortcuts(QStringLiteral("next_selection_type"), nextDefault) &&
+                settings.setShortcuts(QStringLiteral("previous_selection_type"), previousDefault),
+            "clearing both directions must disable cycling and defaults must be restorable");
     interaction.enterOverlayVisible(false);
     selection.clearSelection();
     handler.handleMousePress(nullptr, QPointF(20, 20));

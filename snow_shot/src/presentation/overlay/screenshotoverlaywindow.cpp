@@ -72,6 +72,7 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     layout->addWidget(m_canvas);
 
     m_regionTypeControl = new ScreenshotRegionTypeControl(this, true);
+    m_regionTypeControl->installEventFilter(this);
     m_regionTypeControl->hide();
     m_framePresenter = std::make_unique<ScreenshotOverlayFramePresenter>(*this);
 
@@ -779,6 +780,8 @@ bool ScreenshotOverlayWindow::event(QEvent* event) {
 }
 
 bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_regionTypeControl && event != nullptr && event->type() == QEvent::Resize)
+        layoutRegionTypeControl();
     if (watched == m_canvas && event != nullptr) {
         if (event->type() == QEvent::Leave)
             m_eventSink.leaveEffectEditors();

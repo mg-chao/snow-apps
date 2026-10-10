@@ -2817,6 +2817,10 @@
             <translation>下一条截图历史</translation>
         </message>
         <message>
+            <source>Next selection type</source>
+            <translation>下一种选区类型</translation>
+        </message>
+        <message>
             <source>No action</source>
             <translation>不执行操作</translation>
         </message>
@@ -3095,6 +3099,10 @@
         <message>
             <source>Previous screenshot history</source>
             <translation>上一条截图历史</translation>
+        </message>
+        <message>
+            <source>Previous selection type</source>
+            <translation>上一种选区类型</translation>
         </message>
         <message>
             <source>Primary Target Language</source>

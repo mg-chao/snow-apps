@@ -15,6 +15,7 @@
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
+#include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -880,6 +881,19 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      2},
     {QStringLiteral("screenshot_shortcuts/switch_selection_between_window_and_window_sub_element"),
      QJsonArray{QStringLiteral("Tab")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screenshot_shortcuts/next_selection_type"),
+     QJsonArray{QKeySequence(screenshotRegionTypeCycleKey()).toString(QKeySequence::PortableText)},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screenshot_shortcuts/previous_selection_type"),
+     QJsonArray{
+         QKeySequence(screenshotRegionTypeCycleKey(true)).toString(QKeySequence::PortableText)},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},

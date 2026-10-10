@@ -833,6 +833,10 @@ target_include_directories(snow_shot_window_shortcuts PUBLIC
 )
 target_link_libraries(snow_shot_window_shortcuts PUBLIC Qt6::Widgets)
 target_link_libraries(snow_shot_window_shortcuts PUBLIC snow_shot_shortcuts)
+if(APPLE)
+    target_sources(snow_shot_window_shortcuts PRIVATE src/platform/macos/windowshortcutinput.mm)
+    target_link_libraries(snow_shot_window_shortcuts PRIVATE "-framework AppKit")
+endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotTranslations.cmake")
 
@@ -1895,6 +1899,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-local-shortcut-migration-tests
+        COMMAND snow-shot-application-storage-tests --local-shortcut-migration-only)
+    set_tests_properties(snow-shot-local-shortcut-migration-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-update-settings-tests
         COMMAND snow-shot-application-storage-tests --update-settings-only)
     set_tests_properties(snow-shot-update-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30
@@ -9830,6 +9838,16 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-window-shortcut-input-tests
+        tests/macos_window_shortcut_input_tests.mm)
+    target_link_libraries(snow-shot-macos-window-shortcut-input-tests PRIVATE
+        snow_shot_window_shortcuts "-framework AppKit")
+    snow_shot_import_offscreen_platform(snow-shot-macos-window-shortcut-input-tests)
+    add_test(NAME snow-shot-macos-window-shortcut-input-tests
+        COMMAND snow-shot-macos-window-shortcut-input-tests -platform offscreen)
+    set_tests_properties(snow-shot-macos-window-shortcut-input-tests PROPERTIES
+        LABELS "unit;macos" TIMEOUT 30)
+
     add_executable(snow-shot-macos-region-shortcut-native-tests
         tests/macos_region_shortcut_native_tests.mm)
     target_include_directories(snow-shot-macos-region-shortcut-native-tests PRIVATE include)

@@ -27,6 +27,7 @@
 #include "snow_shot/presentation/screenshotuipreferences.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "theme/theme_manager.h"
@@ -5511,6 +5512,87 @@ void regionEventsRemainOwnedByOverlay() {
     require(!control->isVisible(), "pointer movement over a region icon hides the hint");
     overlay.setRegionTypeControlVisible(false, ScreenshotRegionType::Polyline, {}, outside);
     require(!control->isVisible(), "disabled area type hint remains hidden");
+
+    const snow_shot::storage::ScreenshotShortcutSettings settings;
+    const QString nextId = QStringLiteral("next_selection_type");
+    const QString previousId = QStringLiteral("previous_selection_type");
+    const auto nextDefault = settings.shortcuts(nextId);
+    const auto previousDefault = settings.shortcuts(previousId);
+    const auto display = [](const auto& bindings) {
+        return snow_shot::shortcuts::formatShortcutListDisplayText(bindings);
+    };
+    const auto nextHint = [&display](const auto& bindings) {
+        return QStringLiteral("%1 to switch region type").arg(display(bindings));
+    };
+    overlay.resize(1280, 720);
+    QApplication::processEvents();
+    require(control->width() <=
+                std::max(150,
+                         hintLabel->fontMetrics().boundingRect(nextHint(nextDefault)).width() + 32),
+            "the floating region hint must use the next hint's natural width on a wide overlay");
+    require(hintLabel->text() == nextHint(nextDefault),
+            "the floating region hint must display only the configured next cycling shortcut");
+    const snow_shot::shortcuts::ShortcutBindingList nextCustom{QStringLiteral("Alt+F6"),
+                                                               QStringLiteral("Alt+F7")};
+    const snow_shot::shortcuts::ShortcutBindingList previousCustom{QStringLiteral("Alt+F8")};
+    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, {}, outside);
+    require(settings.setShortcuts(nextId, nextCustom) &&
+                settings.setShortcuts(previousId, previousCustom) &&
+                hintLabel->text() == nextHint(nextCustom),
+            "the next cycling hint must follow live settings without showing the previous hint");
+    overlay.resize(200, 240);
+    QApplication::processEvents();
+    require(overlay.rect().contains(control->geometry()) &&
+                hintLabel->height() >= hintLabel->heightForWidth(hintLabel->width()),
+            "a long custom hint must wrap without clipping inside a narrow overlay");
+
+    class RegionHintTranslator final : public QTranslator {
+      public:
+        QString prefix = QStringLiteral("Localized next:\n");
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotRegionTypeControl" &&
+                QByteArray(source) == "%1 to switch region type")
+                return prefix + QStringLiteral("%1");
+            return {};
+        }
+    } translator;
+    qApp->installTranslator(&translator);
+    QEvent language(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(control, &language);
+    require(hintLabel->text() == translator.prefix + display(nextCustom),
+            "the next cycling hint must retranslate on LanguageChange");
+    overlay.resize(1280, 720);
+    QApplication::processEvents();
+    require(
+        control->width() <=
+            std::max(
+                {150,
+                 hintLabel->fontMetrics().boundingRect(translator.prefix.chopped(1)).width() + 32,
+                 hintLabel->fontMetrics().boundingRect(display(nextCustom)).width() + 32}),
+        "translated line breaks must measure the widest line instead of adding line widths");
+    translator.prefix = QStringLiteral("Refreshed next: ");
+    snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+    require(hintLabel->text() == translator.prefix + display(nextCustom),
+            "keyboard-layout display refresh must rebuild the cached next cycling hint");
+    qApp->removeTranslator(&translator);
+    QCoreApplication::sendEvent(control, &language);
+    require(settings.setShortcuts(nextId, {}) && hintLabel->isHidden() &&
+                hintLabel->text().isEmpty(),
+            "disabling next cycling must hide its hint even when previous cycling is enabled");
+    require(settings.setShortcuts(previousId, {}) && hintLabel->isHidden() &&
+                hintLabel->text().isEmpty(),
+            "changing previous cycling must leave the disabled next hint hidden");
+    require(settings.setShortcuts(nextId, nextDefault) && !hintLabel->isHidden() &&
+                hintLabel->text() == nextHint(nextDefault),
+            "restoring next cycling must show its hint when previous cycling is disabled");
+    require(settings.setShortcuts(previousId, previousDefault) &&
+                hintLabel->text() == nextHint(nextDefault),
+            "restoring previous cycling must not add a hint line");
+    overlay.resize(200, 240);
+    QApplication::processEvents();
+    require(overlay.rect().contains(control->geometry()),
+            "restoring the default next hint must retain the narrow overlay layout");
 }
 
 void canvasDragKeepsMouseEventsAcrossSelectionBorder() {

@@ -475,9 +475,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 262,
+    require(itemIds.size() == 264,
             qPrintable(QStringLiteral(
-                           "catalog must contain 262 shared settings on every platform; found %1")
+                           "catalog must contain 264 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -1369,29 +1369,32 @@ void builtInCatalogIsCompleteAndValid() {
          "screenshot_shortcuts/selection_aspect_ratio_snap"},
         {8, "screenshot-shortcut.switch_selection_between_window_and_window_sub_element",
          "screenshot_shortcuts/switch_selection_between_window_and_window_sub_element"},
-        {9, "screenshot-shortcut.previous_screenshot_history",
+        {9, "screenshot-shortcut.next_selection_type", "screenshot_shortcuts/next_selection_type"},
+        {10, "screenshot-shortcut.previous_selection_type",
+         "screenshot_shortcuts/previous_selection_type"},
+        {11, "screenshot-shortcut.previous_screenshot_history",
          "screenshot_shortcuts/previous_screenshot_history"},
-        {10, "screenshot-shortcut.next_screenshot_history",
+        {12, "screenshot-shortcut.next_screenshot_history",
          "screenshot_shortcuts/next_screenshot_history"},
-        {11, "screenshot-shortcut.select_previously_selected_area",
+        {13, "screenshot-shortcut.select_previously_selected_area",
          "screenshot_shortcuts/select_previously_selected_area"},
-        {12, "screenshot-shortcut.toggle_cursor_visibility",
+        {14, "screenshot-shortcut.toggle_cursor_visibility",
          "screenshot_shortcuts/toggle_cursor_visibility"},
-        {13, "screenshot-shortcut.recapture", "screenshot_shortcuts/recapture"},
-        {14, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
-        {15, "screenshot-shortcut.toggle_coordinate_mode",
+        {15, "screenshot-shortcut.recapture", "screenshot_shortcuts/recapture"},
+        {16, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
+        {17, "screenshot-shortcut.toggle_coordinate_mode",
          "screenshot_shortcuts/toggle_coordinate_mode"},
-        {16, "screenshot-shortcut.toggle_guides", "screenshot_shortcuts/toggle_guides"},
-        {17, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
-        {18, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
-        {19, "screenshot-shortcut.scrolling_screenshot",
+        {18, "screenshot-shortcut.toggle_guides", "screenshot_shortcuts/toggle_guides"},
+        {19, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
+        {20, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
+        {21, "screenshot-shortcut.scrolling_screenshot",
          "screenshot_shortcuts/scrolling_screenshot"},
-        {20, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
-        {21, "screenshot-shortcut.print", "screenshot_shortcuts/print"},
-        {22, "screenshot-shortcut.upload_to_cloud", "screenshot_shortcuts/upload_to_cloud"},
-        {23, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {24, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {25, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {22, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
+        {23, "screenshot-shortcut.print", "screenshot_shortcuts/print"},
+        {24, "screenshot-shortcut.upload_to_cloud", "screenshot_shortcuts/upload_to_cloud"},
+        {25, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {26, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {27, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -1405,7 +1408,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 26 &&
+            screenshotShortcuts->items.size() == 28 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -1420,34 +1423,38 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotShortcuts->items.at(8).title.translated() ==
                 QStringLiteral("Select window/window sub-element") &&
             screenshotShortcuts->items.at(9).title.translated() ==
-                QStringLiteral("Previous screenshot history") &&
+                QStringLiteral("Next selection type") &&
             screenshotShortcuts->items.at(10).title.translated() ==
-                QStringLiteral("Next screenshot history") &&
+                QStringLiteral("Previous selection type") &&
             screenshotShortcuts->items.at(11).title.translated() ==
-                QStringLiteral("Select previously selected area") &&
+                QStringLiteral("Previous screenshot history") &&
             screenshotShortcuts->items.at(12).title.translated() ==
+                QStringLiteral("Next screenshot history") &&
+            screenshotShortcuts->items.at(13).title.translated() ==
+                QStringLiteral("Select previously selected area") &&
+            screenshotShortcuts->items.at(14).title.translated() ==
                 QStringLiteral("Toggle cursor visibility") &&
-            screenshotShortcuts->items.at(13).title.translated() == QStringLiteral("Recapture") &&
-            screenshotShortcuts->items.at(14).title.translated() == QStringLiteral("Copy color") &&
-            screenshotShortcuts->items.at(15).title.translated() ==
-                QStringLiteral("Toggle Global/Relative Coordinates") &&
-            screenshotShortcuts->items.at(16).title.translated() ==
-                QStringLiteral("Toggle Guides") &&
+            screenshotShortcuts->items.at(15).title.translated() == QStringLiteral("Recapture") &&
+            screenshotShortcuts->items.at(16).title.translated() == QStringLiteral("Copy color") &&
             screenshotShortcuts->items.at(17).title.translated() ==
-                QStringLiteral("Pin to screen") &&
+                QStringLiteral("Toggle Global/Relative Coordinates") &&
             screenshotShortcuts->items.at(18).title.translated() ==
-                QStringLiteral("Video recording") &&
+                QStringLiteral("Toggle Guides") &&
             screenshotShortcuts->items.at(19).title.translated() ==
+                QStringLiteral("Pin to screen") &&
+            screenshotShortcuts->items.at(20).title.translated() ==
+                QStringLiteral("Video recording") &&
+            screenshotShortcuts->items.at(21).title.translated() ==
                 QStringLiteral("Scrolling screenshot") &&
-            screenshotShortcuts->items.at(20).title.translated() == QStringLiteral("Quick save") &&
-            screenshotShortcuts->items.at(21).title.translated() == QStringLiteral("Print") &&
-            screenshotShortcuts->items.at(22).title.translated() ==
-                QStringLiteral("Upload to Cloud") &&
-            screenshotShortcuts->items.at(23).title.translated() ==
-                QStringLiteral("Save as file") &&
+            screenshotShortcuts->items.at(22).title.translated() == QStringLiteral("Quick save") &&
+            screenshotShortcuts->items.at(23).title.translated() == QStringLiteral("Print") &&
             screenshotShortcuts->items.at(24).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Upload to Cloud") &&
             screenshotShortcuts->items.at(25).title.translated() ==
+                QStringLiteral("Save as file") &&
+            screenshotShortcuts->items.at(26).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(27).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(

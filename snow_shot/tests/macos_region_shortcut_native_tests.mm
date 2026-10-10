@@ -105,10 +105,10 @@ int main(int argc, char** argv) {
     overlay.setFocus();
     const bool active =
         waitFor([&] { return overlay.isActiveWindow() && [NSApp keyWindow] != nil; });
-    const bool forwardPosted = active && postKey(48, kCGEventFlagMaskAlternate);
+    const bool forwardPosted = active && postKey(48, kCGEventFlagMaskControl);
     const bool forwardDelivered = forwardPosted && waitFor([&] { return forwardCount == 1; });
     const bool reversePosted =
-        forwardDelivered && postKey(48, kCGEventFlagMaskAlternate | kCGEventFlagMaskShift);
+        forwardDelivered && postKey(48, kCGEventFlagMaskControl | kCGEventFlagMaskShift);
     const bool reverseDelivered = reversePosted && waitFor([&] { return reverseCount == 1; });
     const bool selectDelivered = reverseDelivered && postKey(0, kCGEventFlagMaskCommand) &&
                                  waitFor([&] { return selects == 1; });
@@ -121,9 +121,9 @@ int main(int argc, char** argv) {
     }
 
     require(active, "native overlay did not own keyboard focus");
-    require(forwardPosted && reversePosted, "native Option+Tab events could not be posted");
+    require(forwardPosted && reversePosted, "native Control+Tab events could not be posted");
     require(forwardDelivered && reverseDelivered && forwardCount == 1 && reverseCount == 1,
-            "native Option+Tab and Option+Shift+Tab must reach the region shortcuts");
+            "native Control+Tab and Control+Shift+Tab must reach the region shortcuts");
     require(selectDelivered && closeDelivered, "native A and fixed close must dispatch physically");
     std::cout << "macOS native region shortcuts passed\n";
 }

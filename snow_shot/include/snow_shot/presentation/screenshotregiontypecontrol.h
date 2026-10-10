@@ -3,19 +3,18 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
-#include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "widgets/button.h"
 
 #include <QCoreApplication>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
@@ -72,6 +71,8 @@ class ScreenshotRegionTypeControl final : public QWidget {
                     this, [this](const QString& key, const QJsonValue& value) {
                         if (key == QStringLiteral("screenshot_selection/region_type"))
                             setType(screenshotRegionTypeFromId(value.toString()));
+                        else if (key == QStringLiteral("screenshot_shortcuts/next_selection_type"))
+                            retranslate();
                     });
         if (m_floating) {
             const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
@@ -87,10 +88,12 @@ class ScreenshotRegionTypeControl final : public QWidget {
         const auto base = QWidget::sizeHint();
         if (!m_hint)
             return base;
-        const int width =
-            std::min(maximumWidth(),
-                     std::max(base.width(),
-                              m_hint->fontMetrics().boundingRect(m_hint->text()).width() + 32));
+        // Preserve the original single-line width while honoring translated line breaks.
+        const auto metrics = m_hint->fontMetrics();
+        int hintWidth = 0;
+        for (const auto& line : m_hint->text().split(QLatin1Char('\n')))
+            hintWidth = std::max(hintWidth, metrics.boundingRect(line).width());
+        const int width = std::min(maximumWidth(), std::max(base.width(), hintWidth + 32));
         return QSize(width, layout()->hasHeightForWidth() ? layout()->heightForWidth(width)
                                                           : base.height());
     }
@@ -175,13 +178,17 @@ class ScreenshotRegionTypeControl final : public QWidget {
             m_buttons[static_cast<std::size_t>(i)]->setToolTip(text);
             m_buttons[static_cast<std::size_t>(i)]->setAccessibleName(text);
         }
-        if (m_hint)
-            m_hint->setText(QCoreApplication::translate("ScreenshotRegionTypeControl",
-                                                        "%1 to switch region type")
-                                .arg(snow_shot::shortcuts::formatShortcutDisplayText(
-                                    snow_shot::shortcuts::bindingFromPortableText(
-                                        QKeySequence(screenshotRegionTypeCycleKey())
-                                            .toString(QKeySequence::PortableText)))));
+        if (m_hint) {
+            const snow_shot::storage::ScreenshotShortcutSettings settings;
+            const auto bindings = settings.shortcuts(QStringLiteral("next_selection_type"));
+            m_hint->setText(
+                bindings.isEmpty()
+                    ? QString()
+                    : QCoreApplication::translate("ScreenshotRegionTypeControl",
+                                                  "%1 to switch region type")
+                          .arg(snow_shot::shortcuts::formatShortcutListDisplayText(bindings)));
+            m_hint->setVisible(!bindings.isEmpty());
+        }
         adjustSize();
     }
     std::array<adqt::widgets::AdButton*, 4> m_buttons{};

@@ -6,6 +6,7 @@
 #include "snow_shot/storage/configurationschema.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
@@ -66,6 +67,60 @@ void printShortcutsReset(settings::SettingsRuntimeSession& session) {
                         configuration.snapshot() == before,
                     "reset must restore customized and disabled print shortcuts to Ctrl+P");
         }
+    }
+}
+
+void selectionTypeShortcutsPersistValidateAndReset(settings::SettingsRuntimeSession& session,
+                                                   settings::BuiltInSettingsBackend& backend,
+                                                   const QString& configurationPath) {
+    constexpr auto scope = settings::SettingsLocalShortcutScope::Screenshot;
+    const QStringList ids{QStringLiteral("next_selection_type"),
+                          QStringLiteral("previous_selection_type")};
+#ifdef Q_OS_MACOS
+    const QStringList expectedDefaults{QStringLiteral("Meta+Tab"),
+                                       QStringLiteral("Meta+Shift+Tab")};
+#else
+    const QStringList expectedDefaults{QStringLiteral("Ctrl+Tab"),
+                                       QStringLiteral("Ctrl+Shift+Tab")};
+#endif
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    for (int index = 0; index < ids.size(); ++index) {
+        const QString& id = ids.at(index);
+        const auto defaults = session.localShortcuts(scope, id);
+        require(defaults.size() == 1 &&
+                    defaults.constFirst().portableText == expectedDefaults.at(index),
+                "selection-type shortcuts must expose the platform's Control+Tab defaults");
+#ifdef Q_OS_MACOS
+        require(shortcuts::macVirtualKeyForBinding(defaults.constFirst()) == 48 &&
+                    shortcuts::effectiveIdentity(defaults.constFirst())
+                        .modifiers.testFlag(Qt::MetaModifier),
+                "macOS selection-type defaults must use physical Control and Tab");
+#endif
+        shortcuts::ShortcutBindingList custom{QStringLiteral("G"), QStringLiteral("Ctrl+Alt+G")};
+#ifdef Q_OS_MACOS
+        custom.first().physicalKeys.insert(shortcuts::ShortcutPlatform::MacOS, 5);
+#endif
+        require(session.applyLocalShortcuts(scope, id, custom) &&
+                    session.localShortcuts(scope, id) == custom,
+                "both cycling directions must support two custom shortcuts");
+        const auto otherDefaults = session.localShortcuts(scope, ids.at(1 - index));
+        require(!session.validateLocalShortcut(scope, id, otherDefaults.constFirst()).supported &&
+                    !backend.applyLocalShortcuts(scope, id, otherDefaults) &&
+                    !backend.applyLocalShortcuts(scope, id, {QStringLiteral("C")}) &&
+                    !backend.applyLocalShortcuts(scope, id, {QStringLiteral("Backspace")}) &&
+                    session.localShortcuts(scope, id) == custom,
+                "conflicting and reserved cycling shortcuts must preserve the existing settings");
+        require(configuration.flushNow().success, "persist custom selection-type shortcuts");
+        storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+        require(shortcuts::shortcutBindingsFromJson(
+                    reloaded.value(QStringLiteral("screenshot_shortcuts/") + id), true) == custom,
+                "custom selection-type shortcuts must survive configuration reload");
+        require(session.applyLocalShortcuts(scope, id, {}) &&
+                    session.localShortcuts(scope, id).isEmpty(),
+                "clearing a selection-type shortcut must disable that direction");
+        require(session.reset(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
+                    session.localShortcuts(scope, id) == defaults,
+                "reset must restore the platform's selection-type shortcut defaults");
     }
 }
 
@@ -200,6 +255,10 @@ int main(int argc, char** argv) {
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         screenshotSaveHotkeysReset(session);
         printShortcutsReset(session);
+        selectionTypeShortcutsPersistValidateAndReset(
+            session, backend,
+            QDir(applicationStorage.configurationDirectory())
+                .filePath(QStringLiteral("config.json")));
         allLocalShortcutSectionsReset(session);
         conflictingResetRemainsAtomic(session);
         annotationResetPreservesPrintShortcut(session);

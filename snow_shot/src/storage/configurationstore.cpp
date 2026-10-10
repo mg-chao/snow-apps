@@ -8,6 +8,7 @@
 
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -18,6 +19,7 @@
 #include <QJsonParseError>
 #include <QMutexLocker>
 #include <QSaveFile>
+#include <QSet>
 #include <QThread>
 
 #include <algorithm>
@@ -85,6 +87,54 @@ QMap<QString, QJsonValue> overlayFromDocument(const QJsonObject& document) {
     return overlay;
 }
 
+void reconcileLocalShortcutDefaults(MaterializedConfiguration& result,
+                                    const QSet<QString>& defaultedKeys, bool mutateDocument,
+                                    bool replaceAll) {
+    if (defaultedKeys.isEmpty())
+        return;
+
+    QMap<QString, shortcuts::ShortcutBindingList> assignedByScope;
+    QStringList defaultedLocalKeys;
+    const auto bindingsForKey = [&result](const QString& key) {
+        return shortcuts::shortcutBindingsFromJson(
+            result.values.value(key), key.startsWith(QStringLiteral("screenshot_shortcuts/")), -1,
+            nullptr, nullptr, key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
+    };
+    // Reserve every explicit binding first, including entries later in the schema.
+    // Only missing or invalid local settings may yield their default alternatives.
+    for (const auto& entry : ConfigurationSchema::entries()) {
+        if (entry.valueKind != ConfigurationValueKind::ShortcutList ||
+            entry.key.startsWith(QStringLiteral("global_shortcuts/")))
+            continue;
+        if (defaultedKeys.contains(entry.key)) {
+            defaultedLocalKeys.push_back(entry.key);
+        } else {
+            assignedByScope[entry.key.section(u'/', 0, 0)].append(bindingsForKey(entry.key));
+        }
+    }
+    for (const QString& key : defaultedLocalKeys) {
+        auto& assigned = assignedByScope[key.section(u'/', 0, 0)];
+        const auto defaults = bindingsForKey(key);
+        shortcuts::ShortcutBindingList retained;
+        for (const auto& binding : defaults) {
+            if (std::any_of(assigned.cbegin(), assigned.cend(), [&binding](const auto& existing) {
+                    return shortcuts::bindingsConflict(existing, binding);
+                }))
+                continue;
+            retained.push_back(binding);
+            assigned.push_back(binding);
+        }
+        if (retained.size() == defaults.size())
+            continue;
+        const QJsonArray value = shortcuts::shortcutBindingsToJson(retained);
+        result.values.insert(key, value);
+        if (mutateDocument) {
+            insertPath(&result.document, key, value);
+            result.dirty = result.dirty || !replaceAll;
+        }
+    }
+}
+
 MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValue>& overlay,
                                                    QJsonObject document, int schemaVersion,
                                                    ConfigurationCompatibility compatibility,
@@ -93,6 +143,7 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
     result.document = std::move(document);
     const bool mutateDocument = compatibility != ConfigurationCompatibility::FutureVersion;
     const bool replaceAll = policy == ConfigurationOverlayPolicy::ReplaceAll;
+    QSet<QString> defaultedShortcutKeys;
 
     for (const ConfigurationSchemaEntry& entry : ConfigurationSchema::entries()) {
         if (entry.key == kSchemaVersionKey) {
@@ -102,6 +153,8 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         const bool present = overlay.contains(entry.key);
         if (!present) {
             result.values.insert(entry.key, entry.defaultValue);
+            if (entry.valueKind == ConfigurationValueKind::ShortcutList)
+                defaultedShortcutKeys.insert(entry.key);
             if (mutateDocument) {
                 insertPath(&result.document, entry.key, entry.defaultValue);
                 if (!replaceAll) {
@@ -170,6 +223,8 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
             ConfigurationSchema::normalize(entry.key, raw);
         if (!normalized.valid) {
             result.values.insert(entry.key, entry.defaultValue);
+            if (entry.valueKind == ConfigurationValueKind::ShortcutList)
+                defaultedShortcutKeys.insert(entry.key);
             if (mutateDocument) {
                 insertPath(&result.document, entry.key, entry.defaultValue);
                 if (!replaceAll) {
@@ -187,6 +242,8 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
             }
         }
     }
+
+    reconcileLocalShortcutDefaults(result, defaultedShortcutKeys, mutateDocument, replaceAll);
 
     int resolvedVersion = schemaVersion;
     const int currentVersion = ConfigurationSchema::currentVersion();

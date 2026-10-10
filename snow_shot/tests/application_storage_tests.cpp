@@ -1700,6 +1700,123 @@ void shortcutSchemaMigrationAndPhysicalMetadataRoundTrip() {
             "structured shortcut bindings must round-trip without losing physical metadata");
 }
 
+void localShortcutDefaultsPreserveConfiguredBindings() {
+    const QString nextKey = QStringLiteral("screenshot_shortcuts/next_selection_type");
+    const QString previousKey = QStringLiteral("screenshot_shortcuts/previous_selection_type");
+    const QString quickSaveKey = QStringLiteral("screenshot_shortcuts/quick_save");
+    const QString saveKey = QStringLiteral("screenshot_shortcuts/save_as_file");
+    const QJsonValue nextDefault = storage::ConfigurationSchema::defaultValue(nextKey);
+    const QJsonValue previousDefault = storage::ConfigurationSchema::defaultValue(previousKey);
+
+    for (int conflicts = 0; conflicts < 4; ++conflicts) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "shortcut migration needs an isolated directory");
+        QMap<QString, QJsonValue> legacy;
+        for (const auto& entry : storage::ConfigurationSchema::entries())
+            legacy.insert(entry.key, entry.defaultValue);
+        legacy.remove(nextKey);
+        legacy.remove(previousKey);
+        if ((conflicts & 1) != 0)
+            legacy.insert(quickSaveKey, nextDefault);
+        if ((conflicts & 2) != 0)
+            legacy.insert(saveKey, previousDefault);
+
+        QJsonObject document = storage::ConfigurationSchema::completeDefaultDocument();
+        auto screenshot = document.value(QStringLiteral("screenshot_shortcuts")).toObject();
+        screenshot.remove(QStringLiteral("next_selection_type"));
+        screenshot.remove(QStringLiteral("previous_selection_type"));
+        screenshot.insert(QStringLiteral("quick_save"), legacy.value(quickSaveKey));
+        screenshot.insert(QStringLiteral("save_as_file"), legacy.value(saveKey));
+        document.insert(QStringLiteral("screenshot_shortcuts"), screenshot);
+        const QString path = temporary.filePath(QStringLiteral("config.json"));
+        writeBytes(path, QJsonDocument(document).toJson());
+
+        const auto verify = [&](const storage::ConfigurationStore& store) {
+            require(store.value(nextKey) ==
+                            ((conflicts & 1) != 0 ? QJsonValue(QJsonArray{}) : nextDefault) &&
+                        store.value(previousKey) ==
+                            ((conflicts & 2) != 0 ? QJsonValue(QJsonArray{}) : previousDefault) &&
+                        store.value(quickSaveKey) == legacy.value(quickSaveKey) &&
+                        store.value(saveKey) == legacy.value(saveKey),
+                    "missing cycling defaults must yield to saved bindings independently");
+        };
+        {
+            storage::ConfigurationStore store(path, true, true, 60000);
+            verify(store);
+            require(store.isDirty() && store.flushNow().success,
+                    "resolved cycling defaults must be persisted during upgrade");
+        }
+        {
+            storage::ConfigurationStore reloaded(path, true, true, 60000);
+            verify(reloaded);
+            require(!reloaded.isDirty(), "resolved shortcut defaults must be stable on reload");
+        }
+        const QString importPath = temporary.filePath(QStringLiteral("import.json"));
+        {
+            storage::ConfigurationStore imported(importPath, true, true, 60000);
+            require(imported.applySnapshot(legacy), "legacy shortcut snapshots must import");
+            verify(imported);
+            require(imported.flushNow().success, "resolved snapshot defaults must persist");
+        }
+        storage::ConfigurationStore importedReloaded(importPath, true, true, 60000);
+        verify(importedReloaded);
+
+        const QString executable = temporary.filePath(QStringLiteral("bin"));
+        require(QDir().mkpath(executable), "shortcut migration executable directory exists");
+        auto& appStorage = initialize(executable, temporary.path());
+        verify(appStorage.configuration());
+        require(storage::ScreenshotShortcutSettings().setShortcuts(
+                    QStringLiteral("toggle_coordinate_mode"), {QStringLiteral("Alt+F10")}),
+                "upgrading shortcuts must preserve unrelated settings edits");
+        appStorage.shutdown();
+
+        if (conflicts == 3) {
+            document.insert(QStringLiteral("storage"),
+                            QJsonObject{{QStringLiteral("schema_version"),
+                                         storage::ConfigurationSchema::currentVersion() + 1}});
+            const QByteArray bytes = QJsonDocument(document).toJson();
+            const QString futurePath = temporary.filePath(QStringLiteral("future.json"));
+            writeBytes(futurePath, bytes);
+            storage::ConfigurationStore future(futurePath, true, true, 60000);
+            verify(future);
+            require(!future.isWritable() && !future.isDirty() && readBytes(futurePath) == bytes,
+                    "future configurations must remain read-only while filling missing defaults");
+        }
+    }
+
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "local shortcut default variants need isolated storage");
+    storage::ConfigurationStore store(temporary.filePath(QStringLiteral("variants.json")), true,
+                                      true, 60000);
+    const QString moveKey = QStringLiteral("screenshot_shortcuts/move_tool");
+    const QJsonArray customNext{shortcutObject(QStringLiteral("Alt+F6"))};
+    const QMap<QString, QJsonValue> variants{
+        {nextKey, customNext},
+        {previousKey, QJsonArray{}},
+        {quickSaveKey, QJsonArray{shortcutObject(QStringLiteral("M"))}},
+        {QStringLiteral("drawing_shortcuts/shape"), nextDefault},
+        {QStringLiteral("pin_to_screen_shortcuts/drawing_mode"), nextDefault},
+    };
+    require(store.applySnapshot(variants) && store.value(nextKey) == customNext &&
+                store.value(previousKey) == QJsonArray{} &&
+                store.value(moveKey) == QJsonArray{shortcutObject(QStringLiteral("Ctrl+E"))},
+            "explicit cycling choices must survive while only conflicting default alternatives "
+            "are omitted");
+    require(store.applySnapshot(
+                {{QStringLiteral("pin_to_screen_shortcuts/drawing_mode"), nextDefault}}) &&
+                store.value(nextKey) == nextDefault && store.value(previousKey) == previousDefault,
+            "saved shortcuts in other scopes must not suppress screenshot defaults");
+    require(store.applySnapshot({{nextKey, 42}, {quickSaveKey, nextDefault}}) &&
+                store.value(nextKey) == QJsonArray{} && store.value(quickSaveKey) == nextDefault,
+            "repairing an invalid shortcut must not introduce a conflicting default");
+#ifdef Q_OS_MACOS
+    const QJsonArray physicalTab{shortcutObject(QStringLiteral("Meta+K"), 48)};
+    require(store.applySnapshot({{quickSaveKey, physicalTab}}) &&
+                store.value(nextKey) == QJsonArray{} && store.value(quickSaveKey) == physicalTab,
+            "default conflicts must compare physical key metadata rather than display text");
+#endif
+}
+
 void recordingPostProcessingPreferencesPersistAndValidate() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "create isolated post-processing settings storage");
@@ -2017,7 +2134,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 32 &&
+        screenshotDefaults.size() == 34 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -2120,7 +2237,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
 
     const shortcuts::ShortcutBindingMap defaults = drawingShortcuts.allShortcuts();
     require(
-        defaults.size() == 12 && defaults.contains(QStringLiteral("line")) &&
+        defaults.size() == 14 && defaults.contains(QStringLiteral("line")) &&
             defaults.value(QStringLiteral("line")).isEmpty() &&
             defaults.contains(QStringLiteral("spotlight")) &&
             defaults.value(QStringLiteral("spotlight")).isEmpty() &&
@@ -2132,7 +2249,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("9")} &&
             drawingShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !drawingShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "drawing shortcut adapter must expose all twelve tools with empty new defaults");
+        "drawing shortcut adapter must expose all fourteen tools with empty new defaults");
 
     require(drawingShortcuts.setSelect({QStringLiteral("Ctrl+Shift+V")}) &&
                 portable(drawingShortcuts.select()) == QStringList{QStringLiteral("Ctrl+Shift+V")},
@@ -2162,7 +2279,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     incomplete.remove(QStringLiteral("watermark"));
     require(!drawingShortcuts.setAllShortcutsAtomic(incomplete) &&
                 drawingShortcuts.allShortcuts() == beforeCollision,
-            "atomic drawing shortcut updates must require all twelve tools");
+            "atomic drawing shortcut updates must require all fourteen tools");
 
     shortcuts::ShortcutBindingMap emptyAssignment = beforeCollision;
     emptyAssignment.insert(QStringLiteral("shape"), {});
@@ -3066,6 +3183,10 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
+    if (application.arguments().contains(QStringLiteral("--local-shortcut-migration-only"))) {
+        localShortcutDefaultsPreserveConfiguredBindings();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--shortcut-settings-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         settingsAdaptersRoundTripAndRejectInvalidValues();
@@ -3115,6 +3236,7 @@ int main(int argc, char** argv) {
     pinnedDestroyShortcutMigratesPreviousDefault();
     obsoleteClickThroughShortcutIsIgnored();
     shortcutSchemaMigrationAndPhysicalMetadataRoundTrip();
+    localShortcutDefaultsPreserveConfiguredBindings();
     invalidTrayClickSettingsUseIndependentDefaults();
     legacyTrayHotkeyCommandMigratesToQuickAction();
     trayClickSettingsSurviveRestart();

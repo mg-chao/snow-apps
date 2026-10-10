@@ -18,6 +18,10 @@
 #include <algorithm>
 #include <utility>
 
+#ifdef Q_OS_MACOS
+#include "../../platform/macos/windowshortcutinput_p.h"
+#endif
+
 namespace snow_shot::presentation {
 namespace {
 
@@ -111,7 +115,14 @@ struct WindowShortcutManager::Impl {
 
     explicit Impl(WindowShortcutManager& manager)
         : q(manager), m_unreleasedKeys(applicationKeyState().keys),
-          m_keyStateRevisions(applicationKeyState().revisions) {}
+          m_keyStateRevisions(applicationKeyState().revisions) {
+#ifdef Q_OS_MACOS
+        m_nativeInput = platform::macos::makeWindowShortcutInputFilter(
+            [this](QWidget* receiver, QKeyEvent& event) {
+                return q.eventFilter(receiver, &event);
+            });
+#endif
+    }
 
     // Physical keys whose press was observed through this filter without a
     // matching release, and keys that were still held when keyboard input last
@@ -406,6 +417,9 @@ struct WindowShortcutManager::Impl {
     quint64 m_nextOrder = 1;
     InputSuspensionHandle m_nextSuspensionHandle = 1;
     QSet<InputSuspensionHandle> m_inputSuspensions;
+#ifdef Q_OS_MACOS
+    std::unique_ptr<QAbstractNativeEventFilter> m_nativeInput;
+#endif
 };
 
 WindowShortcutManager::WindowShortcutManager(QObject* parent)

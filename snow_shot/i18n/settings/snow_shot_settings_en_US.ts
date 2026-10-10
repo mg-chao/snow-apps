@@ -2817,6 +2817,10 @@
             <translation>Next screenshot history</translation>
         </message>
         <message>
+            <source>Next selection type</source>
+            <translation>Next selection type</translation>
+        </message>
+        <message>
             <source>No action</source>
             <translation>No action</translation>
         </message>
@@ -3095,6 +3099,10 @@
         <message>
             <source>Previous screenshot history</source>
             <translation>Previous screenshot history</translation>
+        </message>
+        <message>
+            <source>Previous selection type</source>
+            <translation>Previous selection type</translation>
         </message>
         <message>
             <source>Primary Target Language</source>

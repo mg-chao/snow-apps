@@ -5,7 +5,6 @@
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
-#include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -182,19 +181,6 @@ struct ScreenshotOverlayShortcutController::Impl {
         close.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
         static_cast<void>(shortcutManager.addBinding(&q, std::move(close)));
 #endif
-        for (bool reverse : {false, true}) {
-            static_cast<void>(shortcutManager.addBinding(
-                &q, fixedBinding(
-                        reverse ? QStringLiteral("screenshot.region_previous")
-                                : QStringLiteral("screenshot.region_next"),
-                        {screenshotRegionTypeCycleKey(reverse)},
-                        ShortcutManager::StandardPriority::WindowCommand,
-                        [this] {
-                            return actions.localShortcutInputAllowed() &&
-                                   (interaction.selecting() || interaction.moveToolActive());
-                        },
-                        [this, reverse] { return inputHandler.cycleRegionType(reverse); })));
-        }
         static_cast<void>(shortcutManager.addBinding(
             &q, fixedBinding(
                     QStringLiteral("screenshot.region_remove_vertex"),
@@ -239,6 +225,19 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     void registerConfiguredBindings() {
+        for (bool reverse : {false, true}) {
+            const QString actionId = reverse ? QStringLiteral("previous_selection_type")
+                                             : QStringLiteral("next_selection_type");
+            auto binding = fixedBinding(
+                QStringLiteral("screenshot.configured.") + actionId, {},
+                ShortcutManager::StandardPriority::WindowCommand,
+                [this] {
+                    return actions.localShortcutInputAllowed() &&
+                           (interaction.selecting() || interaction.moveToolActive());
+                },
+                [this, reverse] { return inputHandler.cycleRegionType(reverse); });
+            screenshotBindings.insert(actionId, shortcutManager.addBinding(&q, std::move(binding)));
+        }
         const QStringList screenshotIds = {
             QStringLiteral("move_tool"),
             QStringLiteral("move_cursor_up"),

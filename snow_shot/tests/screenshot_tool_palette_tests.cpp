@@ -17,6 +17,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -16997,24 +16998,62 @@ void regionSwitcherRetranslatesAndRenders() {
                         scheme.map.colorBgContainer,
                     "floating region surface uses the drawing toolbar container background");
             auto* hint = floating.findChild<QLabel*>();
-            require(hint &&
-                        hint->text() == QCoreApplication::translate("ScreenshotRegionTypeControl",
-                                                                    "%1 to switch region type")
-                                            .arg(QKeySequence(screenshotRegionTypeCycleKey())
-                                                     .toString(QKeySequence::NativeText)),
-                    "region hint must show the active platform shortcut in every language");
+            require(hint && hint->text() ==
+                                QCoreApplication::translate("ScreenshotRegionTypeControl",
+                                                            "%1 to switch region type")
+                                    .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                                        snow_shot::storage::ScreenshotShortcutSettings().shortcuts(
+                                            QStringLiteral("next_selection_type")))),
+                    "region hint must show the configured next shortcut in every language");
             require(hint &&
                         hint->heightForWidth(hint->width()) ==
                             hint->heightForWidth(hint->width() * 2) &&
                         hint->palette().color(QPalette::WindowText) ==
                             scheme.map.colorTextSecondary,
                     "floating hint stays on one line and uses the secondary theme text color");
+            // Recreate the pre-configuration layout with the same shortcut text.
+            ScreenshotRegionTypeControl original(nullptr, true);
+            original.layout()->itemAt(0)->layout()->setAlignment({});
+            auto* originalHint = original.findChild<QLabel*>();
+            require(originalHint != nullptr, "the original region layout exposes its hint");
+            originalHint->setText(
+                QCoreApplication::translate("ScreenshotRegionTypeControl",
+                                            "%1 to switch region type")
+                    .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                        snow_shot::storage::ScreenshotShortcutSettings().shortcuts(
+                            QStringLiteral("next_selection_type")))));
+            const QSize originalBase = original.QWidget::sizeHint();
+            const int originalWidth = std::max(
+                originalBase.width(),
+                originalHint->fontMetrics().boundingRect(originalHint->text()).width() + 32);
+            original.resize(originalWidth, original.layout()->heightForWidth(originalWidth));
+            original.show();
+            original.layout()->activate();
+            require(floating.size() == original.size() &&
+                        hint->geometry() == originalHint->geometry() &&
+                        hint->font() == originalHint->font(),
+                    "configured next shortcuts must preserve the original hint size, text layout, "
+                    "and font");
+            for (const auto* id : {"rectangle", "polyline", "curve", "freehand"}) {
+                const auto name = QStringLiteral("screenshotRegionType_") + QLatin1StringView(id);
+                const auto* actualButton = floating.findChild<adqt::widgets::AdButton*>(name);
+                const auto* originalButton = original.findChild<adqt::widgets::AdButton*>(name);
+                require(actualButton && originalButton &&
+                            actualButton->geometry() == originalButton->geometry() &&
+                            actualButton->iconSize() == originalButton->iconSize(),
+                        "configured next shortcuts must preserve the original icon distribution "
+                        "and sizes");
+            }
             if (!snapshots.isEmpty()) {
                 const auto suffix =
                     locale + (dark ? QStringLiteral("-dark") : QStringLiteral("-light"));
                 require(floating.grab().save(QDir(snapshots).filePath(
                             QStringLiteral("region-switcher-") + suffix + QStringLiteral(".png"))),
                         "save floating switcher snapshot");
+                require(original.grab().save(
+                            QDir(snapshots).filePath(QStringLiteral("region-switcher-original-") +
+                                                     suffix + QStringLiteral(".png"))),
+                        "save original floating switcher snapshot");
                 require(palette.actionPanel()->grab().save(QDir(snapshots).filePath(
                             QStringLiteral("region-toolbar-") + suffix + QStringLiteral(".png"))),
                         "save Move toolbar snapshot");
