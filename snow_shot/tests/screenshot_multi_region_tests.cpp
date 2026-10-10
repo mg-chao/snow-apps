@@ -138,6 +138,212 @@ void animatedMarqueeUsesDisplayedGeometry() {
     check(Operation::Add, QRect(10, 10, 40, 40), QRect(60, 10, 20, 30), QRect(110, 10, 30, 30));
     check(Operation::Subtract, QRect(0, 0, 100, 100), QRect(20, 0, 40, 100), QRect(60, 0, 40, 100));
 }
+
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+bool sharesVectorStorage(const std::weak_ptr<const void>& left,
+                         const std::weak_ptr<const void>& right) {
+    return !left.expired() && !right.expired() && !left.owner_before(right) &&
+           !right.owner_before(left);
+}
+
+void animatedMarqueeReusesVectorSnapshots() {
+    using Operation = ScreenshotSelectionModel::RegionOperation;
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0.25, 0.5, 160, 120));
+    const QPoint translation(13, 17);
+    const auto confirmed = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)
+                               .translated(translation);
+    for (const auto operation : {Operation::Add, Operation::Subtract}) {
+        const QRect target =
+            operation == Operation::Add ? QRect(140, 60, 80, 40) : QRect(60, 50, 35, 30);
+        const QRect frame = target.translated(2, 3);
+        ScreenshotSelectionModel model;
+        model.setSelectionRegion(confirmed);
+        model.beginRegionOperation(operation);
+        model.setSelectionRect(target);
+
+        const auto displayed = model.selectionRegionForMarquee(QRectF(target));
+        const auto capture = model.selectionRegion();
+        require(sharesVectorStorage(displayed.storageLifetimeForTesting(),
+                                    capture.storageLifetimeForTesting()),
+                "display and capture must share the same composed vector snapshot");
+        const auto expected =
+            operation == Operation::Add ? confirmed.united(target) : confirmed.subtracted(target);
+        require(capture == expected && capture.toJson() == expected.toJson(),
+                "cached composition preserves the exact translated vector operands");
+
+        const auto intermediate = model.selectionRegionForMarquee(QRectF(frame));
+        require(sharesVectorStorage(displayed.storageLifetimeForTesting(),
+                                    model.selectionRegion().storageLifetimeForTesting()) &&
+                    sharesVectorStorage(
+                        intermediate.storageLifetimeForTesting(),
+                        model.selectionRegionForMarquee(QRectF(frame)).storageLifetimeForTesting()),
+                "alternating target and displayed frame must retain both snapshots");
+        require(model.pixelSelection() == target && model.confirmedRegion() == confirmed,
+                "display frames must not mutate the capture operand or confirmed geometry");
+
+        const QRectF subpixel(QPointF(target.topLeft()) + QPointF(0.2, 0.3),
+                              QSizeF(target.size()) - QSizeF(0.4, 0.6));
+        require(screenshotPixelRectForSelection(subpixel) == target,
+                "subpixel fixture must resolve to the same outward-rounded pixels");
+        model.setSelectionRect(subpixel);
+        require(sharesVectorStorage(displayed.storageLifetimeForTesting(),
+                                    model.selectionRegion().storageLifetimeForTesting()) &&
+                    sharesVectorStorage(
+                        displayed.storageLifetimeForTesting(),
+                        model.selectionRegionForMarquee(subpixel).storageLifetimeForTesting()),
+                "marquee changes within the same pixels must reuse the vector snapshot");
+
+        const auto canonical = capture.path();
+        for (const qreal scale : {2.0, 1.25, 3.0, 1.5, 1.0}) {
+            const auto fresh =
+                ScreenshotRegionGeometry::fromJson(expected.translated(-translation).toJson());
+            require(model.selectionRegionForMarquee(subpixel).path(scale) ==
+                        fresh->path(scale).translated(translation),
+                    "cached previews preserve exact reconstruction at each render scale");
+        }
+        require(capture.path() == canonical && capture.toJson() == expected.toJson(),
+                "display contour cache reuse must preserve canonical geometry and source cubics");
+    }
+}
+
+void animatedMarqueeCacheRetiresSnapshots() {
+    using Operation = ScreenshotSelectionModel::RegionOperation;
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0.25, 0.5, 160, 120));
+    const auto confirmed = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+    const QRect first(40, 30, 20, 30), second(50, 30, 20, 30), third(60, 30, 20, 30);
+    ScreenshotSelectionModel model;
+    model.setSelectionRegion(confirmed);
+    model.beginRegionOperation(Operation::Subtract);
+    model.setSelectionRect(first);
+    const auto firstStorage = model.selectionRegion().storageLifetimeForTesting();
+    const auto secondStorage =
+        model.selectionRegionForMarquee(QRectF(second)).storageLifetimeForTesting();
+    require(!firstStorage.expired() && !secondStorage.expired(),
+            "target and displayed marquee must be retained without external owners");
+    require(sharesVectorStorage(
+                firstStorage,
+                model.selectionRegionForMarquee(QRectF(first)).storageLifetimeForTesting()),
+            "reading a cached marquee must retain its snapshot");
+    const auto thirdStorage =
+        model.selectionRegionForMarquee(QRectF(third)).storageLifetimeForTesting();
+    require(!firstStorage.expired() && secondStorage.expired() && !thirdStorage.expired(),
+            "a new display frame must retire the previous frame and preserve the capture target");
+    require(model.selectionRegionForMarquee({}) == confirmed && !firstStorage.expired() &&
+                !thirdStorage.expired(),
+            "an empty marquee must preserve confirmed geometry and both useful cached frames");
+    model.setSelectionRect(third);
+    require(
+        firstStorage.expired() &&
+            sharesVectorStorage(thirdStorage, model.selectionRegion().storageLifetimeForTesting()),
+        "a new target must reuse the latest displayed snapshot and retire the old target");
+    std::weak_ptr<const void> latestFrame;
+    for (int offset = 1; offset <= 8; ++offset) {
+        const auto previousFrame = latestFrame;
+        latestFrame = model.selectionRegionForMarquee(QRectF(third.translated(offset, offset)))
+                          .storageLifetimeForTesting();
+        require(previousFrame.expired() &&
+                    sharesVectorStorage(thirdStorage,
+                                        model.selectionRegion().storageLifetimeForTesting()),
+                "many animation frames must keep the target pinned and retire previous frames");
+    }
+    model.reset();
+    require(thirdStorage.expired() && latestFrame.expired(),
+            "reset must release composed preview storage immediately");
+
+    for (const int mutation : {0, 1, 2, 3, 4, 5}) {
+        model.setSelectionRegion(confirmed);
+        model.beginRegionOperation(Operation::Subtract);
+        model.setSelectionRect(first);
+        const auto storage = model.selectionRegion().storageLifetimeForTesting();
+        require(!storage.expired(), "capture composition must remain cached during the operation");
+        switch (mutation) {
+        case 0:
+            model.clearSelection();
+            break;
+        case 1:
+            model.cancelRegionOperation();
+            require(model.selectionRegion() == confirmed, "cancel restores the confirmed contour");
+            break;
+        case 2:
+            model.beginRegionOperation(Operation::Add);
+            require(model.selectionRegionForMarquee(QRectF(first)) == confirmed.united(first),
+                    "switching operation must discard the old subtract composition");
+            break;
+        case 3: {
+            const auto replacement = confirmed.subtracted(QRect(80, 40, 20, 20));
+            model.setSelectionRegion(replacement);
+            model.beginRegionOperation(Operation::Subtract);
+            require(model.selectionRegionForMarquee(QRectF(first)) == replacement.subtracted(first),
+                    "confirmed contour replacement must invalidate identical marquee pixels");
+            break;
+        }
+        case 4:
+            model.setDraftRegion(confirmed);
+            require(model.selectionRegionForMarquee(QRectF(second)) == model.selectionRegion() &&
+                        model.selectionRegion().isEmpty(),
+                    "construction uses its exact vector operand instead of the animated marquee");
+            break;
+        case 5:
+            model.commitRegionOperation();
+            require(!model.regionOperationActive() &&
+                        model.selectionRegion() == confirmed.subtracted(first),
+                    "commit preserves the composed target as the confirmed selection");
+            // The committed result owns its snapshot until that selection is replaced.
+            model.clearSelection();
+            break;
+        }
+        require(storage.expired(), "ending or replacing a transaction must retire its cache");
+    }
+}
+
+void settledMarqueeSurvivesTargetPreparation() {
+    using Operation = ScreenshotSelectionModel::RegionOperation;
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0.25, 0.5, 160, 120));
+    const auto confirmed = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+    for (const auto operation : {Operation::Add, Operation::Subtract}) {
+        const QRect settled =
+            operation == Operation::Add ? QRect(120, 40, 70, 30) : QRect(40, 30, 20, 30);
+        const QRect target = settled.translated(10, 10);
+        const QRect intermediate = settled.translated(2, 3);
+        ScreenshotSelectionModel model;
+        model.setSelectionRegion(confirmed);
+        model.beginRegionOperation(operation);
+        model.setSelectionRect(settled);
+        const auto settledStorage = model.selectionRegion().storageLifetimeForTesting();
+        const auto previousFrame =
+            model.selectionRegionForMarquee(QRectF(intermediate)).storageLifetimeForTesting();
+        require(
+            sharesVectorStorage(
+                settledStorage,
+                model.selectionRegionForMarquee(QRectF(settled)).storageLifetimeForTesting()) &&
+                previousFrame.expired(),
+            "a settled target must become the latest displayed frame and retire its predecessor");
+
+        model.setSelectionRect(target);
+        const auto targetStorage = model.selectionRegion().storageLifetimeForTesting();
+        require(
+            !settledStorage.expired() &&
+                sharesVectorStorage(
+                    settledStorage,
+                    model.selectionRegionForMarquee(QRectF(settled)).storageLifetimeForTesting()),
+            "preparing a new target must preserve and reuse the last settled display snapshot");
+        const auto nextFrame =
+            model.selectionRegionForMarquee(QRectF(intermediate)).storageLifetimeForTesting();
+        require(
+            settledStorage.expired() && !nextFrame.expired() &&
+                sharesVectorStorage(targetStorage,
+                                    model.selectionRegion().storageLifetimeForTesting()),
+            "advancing the display must retire its old target while keeping the new target pinned");
+        model.reset();
+        require(nextFrame.expired() && targetStorage.expired(),
+                "reset must retire both the pending target and its latest displayed frame");
+    }
+}
+#endif
+
 void outlinesAndEffects() {
     const QRegion shape = QRegion(QRect(0, 0, 100, 80)).subtracted(QRect(30, 20, 40, 40));
     const auto path = screenshotRegionPath(shape);
@@ -567,6 +773,11 @@ int main(int argc, char** argv) {
     geometryAndTransactions();
     moveSnapshotEndsWithSelection();
     animatedMarqueeUsesDisplayedGeometry();
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    animatedMarqueeReusesVectorSnapshots();
+    animatedMarqueeCacheRetiresSnapshots();
+    settledMarqueeSurvivesTargetPreparation();
+#endif
     outlinesAndEffects();
     persistenceAndHandlePolicy();
     std::cout << "Multi-region selection tests passed\n";

@@ -269,6 +269,11 @@ class Fixture final {
                 colorPickerController->updateForOverlay(owner, position,
                                                         services->colorPickerContext());
         };
+        context.presentSelectionDragColorPicker = [this](const QPointF& position) {
+            if (colorPickerController)
+                colorPickerController->updateForSelectionDrag(position,
+                                                              services->colorPickerContext());
+        };
 #else
         if (frameBackend != FrameBackend::Automatic)
             throw std::runtime_error("archived presentation runtime cannot select a Qt backend");

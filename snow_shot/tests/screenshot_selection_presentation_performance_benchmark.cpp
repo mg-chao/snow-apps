@@ -1,4 +1,5 @@
 #include "screenshot_selection_presentation_fixture.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
 
 #include <QCommandLineParser>
 #include <QElapsedTimer>
@@ -27,6 +28,15 @@ enum class Scenario {
     MagnifierVisible,
     MagnifierHidden,
     CombinedAnimation,
+    ManualMarquee,
+    ManualResize,
+    ManualMarqueeMagnifier,
+    BooleanAddTargets,
+    BooleanSubtractTargets,
+    BooleanAddPixelReuse,
+    BooleanSubtractPixelReuse,
+    BooleanAddAnimation,
+    BooleanSubtractAnimation,
 };
 
 struct Case {
@@ -56,7 +66,61 @@ constexpr std::array kCases{
     Case{"magnifier_hidden_16", Scenario::MagnifierHidden, 16},
     Case{"combined_animation_pointer_magnifier_1", Scenario::CombinedAnimation, 1},
     Case{"combined_animation_pointer_magnifier_16", Scenario::CombinedAnimation, 16},
+    Case{"manual_marquee_1", Scenario::ManualMarquee, 1},
+    Case{"manual_marquee_16", Scenario::ManualMarquee, 16},
+    Case{"manual_resize_1", Scenario::ManualResize, 1},
+    Case{"manual_resize_16", Scenario::ManualResize, 16},
+    Case{"manual_marquee_magnifier_1", Scenario::ManualMarqueeMagnifier, 1},
+    Case{"manual_marquee_magnifier_16", Scenario::ManualMarqueeMagnifier, 16},
+    Case{"boolean_add_targets_1", Scenario::BooleanAddTargets, 1},
+    Case{"boolean_add_targets_16", Scenario::BooleanAddTargets, 16},
+    Case{"boolean_subtract_targets_1", Scenario::BooleanSubtractTargets, 1},
+    Case{"boolean_subtract_targets_16", Scenario::BooleanSubtractTargets, 16},
+    Case{"boolean_add_pixel_reuse_16", Scenario::BooleanAddPixelReuse, 16},
+    Case{"boolean_subtract_pixel_reuse_16", Scenario::BooleanSubtractPixelReuse, 16},
+    Case{"boolean_add_animation_1", Scenario::BooleanAddAnimation, 1},
+    Case{"boolean_subtract_animation_1", Scenario::BooleanSubtractAnimation, 1},
 };
+
+bool booleanOperation(Scenario scenario) {
+    return scenario == Scenario::BooleanAddTargets ||
+           scenario == Scenario::BooleanSubtractTargets ||
+           scenario == Scenario::BooleanAddPixelReuse ||
+           scenario == Scenario::BooleanSubtractPixelReuse ||
+           scenario == Scenario::BooleanAddAnimation ||
+           scenario == Scenario::BooleanSubtractAnimation;
+}
+
+bool booleanAnimation(Scenario scenario) {
+    return scenario == Scenario::BooleanAddAnimation ||
+           scenario == Scenario::BooleanSubtractAnimation;
+}
+
+ScreenshotRegionGeometry complexConfirmedRegion(const QSize& size) {
+    // A deterministic freehand-like contour with concave edges and two holes.
+    // Boolean marquee changes cross its edge, preventing the containment fast path.
+    const QPointF center(size.width() * 0.48, size.height() * 0.46);
+    QPainterPath contour;
+    constexpr int vertices = 96;
+    constexpr qreal pi = 3.14159265358979323846;
+    for (int vertex = 0; vertex < vertices; ++vertex) {
+        const qreal angle = vertex * 2.0 * pi / vertices;
+        const qreal radius = vertex % 2 == 0 ? 1.0 : 0.82;
+        const QPointF point = center + QPointF(std::cos(angle) * size.width() * 0.3 * radius,
+                                               std::sin(angle) * size.height() * 0.32 * radius);
+        if (vertex == 0)
+            contour.moveTo(point);
+        else
+            contour.lineTo(point);
+    }
+    contour.closeSubpath();
+    contour.setFillRule(Qt::OddEvenFill);
+    contour.addEllipse(QRectF(center.x() - size.width() * 0.14, center.y() - size.height() * 0.1,
+                              size.width() * 0.09, size.height() * 0.14));
+    contour.addEllipse(QRectF(center.x() + size.width() * 0.02, center.y() - size.height() * 0.06,
+                              size.width() * 0.08, size.height() * 0.12));
+    return ScreenshotRegionGeometry::fromPath(contour, ScreenshotRegionType::Freehand);
+}
 
 QJsonObject distribution(std::vector<double> values) {
     std::sort(values.begin(), values.end());
@@ -82,13 +146,18 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
                     int requestedFrameIntervalMs, FrameBackend frameBackend) {
     const bool animation = benchmarkCase.scenario == Scenario::AnimationFrames ||
                            benchmarkCase.scenario == Scenario::Retargeting ||
-                           benchmarkCase.scenario == Scenario::CombinedAnimation;
+                           benchmarkCase.scenario == Scenario::CombinedAnimation ||
+                           booleanAnimation(benchmarkCase.scenario);
     const int frameIntervalMs =
         requestedFrameIntervalMs > 0 ? requestedFrameIntervalMs : (animation ? 17 : 8);
     Fixture fixture(logicalSize, animation, !animation, frameBackend);
     const bool magnifier = benchmarkCase.scenario == Scenario::MagnifierVisible ||
                            benchmarkCase.scenario == Scenario::MagnifierHidden ||
-                           benchmarkCase.scenario == Scenario::CombinedAnimation;
+                           benchmarkCase.scenario == Scenario::CombinedAnimation ||
+                           benchmarkCase.scenario == Scenario::ManualMarqueeMagnifier;
+    const bool manual = benchmarkCase.scenario == Scenario::ManualMarquee ||
+                        benchmarkCase.scenario == Scenario::ManualResize ||
+                        benchmarkCase.scenario == Scenario::ManualMarqueeMagnifier;
     if (benchmarkCase.toolbarHidden) {
         fixture.coordinator.setSelectionToolbarHidden(true);
         fixture.processEvents();
@@ -102,6 +171,73 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         benchmarkCase.scenario == Scenario::CombinedAnimation)
         fixture.enableGuides();
     const QRectF base = fixture.baseSelection();
+    const QSize canvasSize = fixture.geometry.canvasBounds().size().toSize();
+    const auto overlayPosition = [&fixture](const QPointF& canvasPosition) {
+        return fixture.geometry.logicalPositionForCanvasPoint(fixture.displays.displayAt(0),
+                                                              canvasPosition) -
+               fixture.overlay.captureGeometry().topLeft();
+    };
+    std::unique_ptr<ScreenshotOverlayInputHandler> input;
+    if (manual) {
+        fixture.displays.startup->resumeLiveInput();
+        ScreenshotOverlayInputActions actions;
+        actions.updateOverlayState = [&fixture] { fixture.services->updateOverlayState(); };
+#if !defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+        actions.requestSelectionDragPresentation = [&fixture] {
+            fixture.services->requestSelectionDragPresentation();
+        };
+#endif
+        actions.updateGuideLinesForOverlay = [&fixture](ScreenshotOverlayWindow* owner,
+                                                        const QPointF& position) {
+            fixture.services->updatePointerPresentation(owner, position);
+        };
+        if (magnifier) {
+            actions.updateColorPickerForOverlay = [&fixture](ScreenshotOverlayWindow* owner,
+                                                             const QPointF& position) {
+                fixture.services->requestColorPickerPresentation(owner, position);
+            };
+            actions.updateColorPickerForSelectionDrag = [&fixture](const QPointF& position) {
+#if defined(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE)
+                fixture.services->discardColorPickerPresentation();
+                fixture.colorPickerController->updateForSelectionDrag(
+                    position, fixture.services->colorPickerContext());
+#else
+                fixture.services->requestSelectionDragColorPickerPresentation(position);
+#endif
+            };
+        }
+        input =
+            std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
+                fixture.captureState, fixture.interaction, fixture.selection,
+                fixture.intelligentSelection, fixture.geometry, fixture.displays,
+                std::move(actions)});
+        if (benchmarkCase.scenario == Scenario::ManualResize) {
+            fixture.interaction.confirmSelection();
+            fixture.services->updateOverlayState();
+            if (!input->beginSelectionResizeAtCanvasPosition(base.bottomRight()))
+                throw std::runtime_error("manual resize benchmark requires a resize gesture");
+        } else {
+            fixture.selection.clearSelection();
+            fixture.interaction.returnToSelectionMode(false);
+            fixture.services->updateOverlayState();
+            input->handleMousePress(&fixture.overlay, overlayPosition(base.topLeft()));
+        }
+        fixture.flushFrame();
+        fixture.processEvents();
+        fixture.resetCounters();
+    } else if (booleanOperation(benchmarkCase.scenario)) {
+        fixture.selection.setSelectionRegion(complexConfirmedRegion(canvasSize));
+        const bool subtract = benchmarkCase.scenario == Scenario::BooleanSubtractTargets ||
+                              benchmarkCase.scenario == Scenario::BooleanSubtractPixelReuse ||
+                              benchmarkCase.scenario == Scenario::BooleanSubtractAnimation;
+        fixture.selection.beginRegionOperation(
+            subtract ? ScreenshotSelectionModel::RegionOperation::Subtract
+                     : ScreenshotSelectionModel::RegionOperation::Add);
+        fixture.requestSelection(base);
+        fixture.flushFrame();
+        fixture.processEvents();
+        fixture.resetCounters();
+    }
     const int totalFrames = iterations + warmup;
     std::vector<QRectF> targets;
     std::vector<QPointF> pointers;
@@ -110,7 +246,19 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
     for (int frame = 0; frame < totalFrames; ++frame) {
         for (int request = 0; request < benchmarkCase.requestsPerFrame; ++request) {
             const int sample = frame * benchmarkCase.requestsPerFrame + request;
-            targets.push_back(base.translated(2.0 * (1 + sample % 121), (sample * 3) % 71));
+            if (booleanOperation(benchmarkCase.scenario)) {
+                const qreal x = canvasSize.width() * 0.59 + frame % 83;
+                const qreal y = canvasSize.height() * 0.38 + (frame * 3) % 47;
+                const bool pixelReuse =
+                    benchmarkCase.scenario == Scenario::BooleanAddPixelReuse ||
+                    benchmarkCase.scenario == Scenario::BooleanSubtractPixelReuse;
+                const qreal delta = pixelReuse ? 0.25 + 0.01 * request : 2.0 * request;
+                targets.emplace_back(std::floor(x) + delta, std::floor(y) + delta,
+                                     std::floor(canvasSize.width() * 0.18),
+                                     std::floor(canvasSize.height() * 0.22));
+            } else {
+                targets.push_back(base.translated(2.0 * (1 + sample % 121), (sample * 3) % 71));
+            }
             if (magnifier) {
                 // Keep the sample band below the selection and its interactive toolbar.
                 pointers.emplace_back(logicalSize.width() * 0.65 +
@@ -165,7 +313,8 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
         QElapsedTimer preparation;
         preparation.start();
         const bool requestTarget = (benchmarkCase.scenario != Scenario::AnimationFrames &&
-                                    benchmarkCase.scenario != Scenario::CombinedAnimation) ||
+                                    benchmarkCase.scenario != Scenario::CombinedAnimation &&
+                                    !booleanAnimation(benchmarkCase.scenario)) ||
                                    frame % framesPerTarget == 0;
         if (requestTarget || benchmarkCase.scenario == Scenario::CombinedAnimation) {
             for (int request = 0; request < benchmarkCase.requestsPerFrame; ++request) {
@@ -191,6 +340,22 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
                     if (requestTarget)
                         fixture.requestSelection(targets[index]);
                     fixture.requestMagnifier(pointers[index]);
+                    break;
+                case Scenario::ManualMarquee:
+                case Scenario::ManualMarqueeMagnifier:
+                    input->handleMouseMove(&fixture.overlay,
+                                           overlayPosition(targets[index].bottomRight()));
+                    break;
+                case Scenario::ManualResize:
+                    input->updateSelectionResizeAtCanvasPosition(targets[index].bottomRight());
+                    break;
+                case Scenario::BooleanAddTargets:
+                case Scenario::BooleanSubtractTargets:
+                case Scenario::BooleanAddPixelReuse:
+                case Scenario::BooleanSubtractPixelReuse:
+                case Scenario::BooleanAddAnimation:
+                case Scenario::BooleanSubtractAnimation:
+                    fixture.requestSelection(targets[index]);
                     break;
                 }
             }
@@ -292,6 +457,8 @@ QJsonObject runCase(const Case& benchmarkCase, const QSize& logicalSize, int ite
             {"requests_per_frame", benchmarkCase.requestsPerFrame},
             {"selection_toolbar_hidden", benchmarkCase.toolbarHidden},
             {"magnifier_included", magnifier},
+            {"manual_input_handler_included", manual},
+            {"boolean_region_operation_included", booleanOperation(benchmarkCase.scenario)},
             {"magnifier_display_mode", !magnifier ? "excluded"
                                        : benchmarkCase.scenario == Scenario::MagnifierHidden
                                            ? "always_hide"
@@ -356,7 +523,8 @@ int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     application.setQuitOnLastWindowClosed(false);
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("Real smart selection presentation benchmark"));
+    parser.setApplicationDescription(
+        QStringLiteral("Real screenshot selection presentation benchmark"));
     parser.addHelpOption();
     parser.addOption({QStringLiteral("native"), QStringLiteral("Use the native Qt platform")});
     parser.addOption(
@@ -372,7 +540,8 @@ int main(int argc, char* argv[]) {
     parser.addOption({QStringLiteral("frame-interval-ms"),
                       QStringLiteral("Sample interval; default 17ms animation, 8ms other cases"),
                       QStringLiteral("milliseconds")});
-    parser.addOption({QStringLiteral("scenario"), QStringLiteral("Scenario name or all"),
+    parser.addOption({QStringLiteral("scenario"),
+                      QStringLiteral("Scenario name, optimizations, or all"),
                       QStringLiteral("name"), QStringLiteral("all")});
     parser.addOption({QStringLiteral("frame-backend"),
                       QStringLiteral("Presentation wakeup backend: automatic or qt_timer"),
@@ -398,7 +567,12 @@ int main(int argc, char* argv[]) {
     QJsonArray results;
     const QString selected = parser.value(QStringLiteral("scenario"));
     for (const Case& benchmarkCase : kCases) {
-        if (selected == QStringLiteral("all") || selected == QLatin1String(benchmarkCase.name))
+        const bool optimizationCase = booleanOperation(benchmarkCase.scenario) ||
+                                      benchmarkCase.scenario == Scenario::ManualMarquee ||
+                                      benchmarkCase.scenario == Scenario::ManualResize ||
+                                      benchmarkCase.scenario == Scenario::ManualMarqueeMagnifier;
+        if (selected == QStringLiteral("all") || selected == QLatin1String(benchmarkCase.name) ||
+            (selected == QStringLiteral("optimizations") && optimizationCase))
             results.append(runCase(benchmarkCase, logicalSize, iterations, warmup, frameIntervalMs,
                                    frameBackend));
     }
@@ -430,11 +604,19 @@ int main(int argc, char* argv[]) {
          "event-driven timer with event pumping and requested idle waits of at most 1ms. "
          "Event-processing work and counters cover the entire input interval. Compare animation "
          "costs with observed paint and geometry counts. Magnifier cases include pointer "
-         "presentation and the real picker controller/window: baseline updates each input sample "
-         "immediately, optimized commits the latest sample with the presentation frame. Picker "
-         "paint/move/owner-change event counts are comparable; internal sampling/preview counters "
-         "are unavailable for the baseline and reported as null. Combined cases include animated "
-         "selection, guides, and magnifier bursts; remaining cases exclude magnifier work. "
+         "presentation and the real picker controller/window. The optional archived legacy "
+         "baseline target updates hover magnifiers immediately and reports internal "
+         "sampling/preview "
+         "counters as null; the current target batches hover magnifiers with the presentation "
+         "frame. "
+         "Picker paint/move/owner-change event counts are comparable. Combined cases include "
+         "animated "
+         "selection, guides, and magnifier bursts. "
+         "Manual cases deliver coordinates through the real input handler and include constrained "
+         "drag geometry; manual magnifier cases also include the real drag anchor sampler. "
+         "Boolean cases use a concave freehand contour with two holes; pixel reuse "
+         "keeps sixteen subpixel requests inside one integer marquee per frame, and animation "
+         "allows displayed marquees to evolve between target requests. "
          "Idle waits, selector workers, native mouse delivery, and input-to-photon latency "
          "are excluded from work timings."},
         {"results", results}};

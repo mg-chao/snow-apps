@@ -109,8 +109,15 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] bool applyParams(const ScreenshotSelectionParams& params, const QRect& bounds);
 
   private:
+    struct MarqueeRegion {
+        QRect pixels;
+        ScreenshotRegionGeometry region;
+    };
     QVector<QPointF> m_draftVertices;
+    // Keep the capture target pinned while animation replaces its displayed frame.
+    // Both caches belong to the current confirmed-region/operation transaction.
     mutable std::optional<ScreenshotRegionGeometry> m_cachedSelectionRegion;
+    mutable std::optional<MarqueeRegion> m_cachedMarqueeRegion;
     ScreenshotRegionType m_regionType = ScreenshotRegionType::Rectangle;
     std::optional<ScreenshotRegionGeometry> m_draftRegion;
     std::optional<ScreenshotRegionGeometry> m_region;

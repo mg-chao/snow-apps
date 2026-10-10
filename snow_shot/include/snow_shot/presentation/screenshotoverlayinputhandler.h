@@ -137,6 +137,8 @@ struct ScreenshotOverlayInputActions {
     std::function<void(ScreenshotSelectionAspectRatioPreset, bool)>
         persistSelectionAspectRatioPreference = [](ScreenshotSelectionAspectRatioPreset, bool) {};
     std::function<QPoint()> currentLogicalCursorPosition = [] { return QCursor::pos(); };
+    // Only continuous drag geometry uses this request; gesture boundaries and commands stay direct.
+    std::function<void()> requestSelectionDragPresentation = {};
 };
 
 struct ScreenshotOverlayInputHandlerContext {

@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotpresentationframescheduler.h"
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotselectionlimits.h"
 
 #include <QPainter>
 #include <QClipboard>
@@ -152,6 +153,113 @@ void theFirstResultAfterAnEmptySelectionIsImmediate() {
             "the first valid smart result must be presented before another scheduled frame");
     require(fixture.stateNotifications == 1,
             "an immediate first result must publish its committed semantic state");
+}
+
+void selectionDragBurstsPrepareAndCommitTheLatestModelAtOneFrame() {
+    for (const auto dragMode :
+         {ScreenshotSelectionDragMode::All, ScreenshotSelectionDragMode::BottomRight}) {
+        Fixture fixture(QSize(1200, 800), false);
+        fixture.interaction.confirmSelection();
+        require(fixture.interaction.enterSelectionDrag(dragMode),
+                "manual presentation requires a valid move or resize gesture");
+        fixture.services->updateOverlayState();
+        fixture.resetCounters();
+        const QRectF initial = fixture.displayedSelection();
+        QRectF latest;
+        for (int request = 1; request <= 16; ++request) {
+            latest = dragMode == ScreenshotSelectionDragMode::All
+                         ? initial.translated(request * 4.0, request * 2.0)
+                         : initial.adjusted(0, 0, request * 4.0, request * 2.0);
+            fixture.selection.setDraggedSelectionRect(latest, dragMode);
+            fixture.services->requestSelectionDragPresentation();
+            require(fixture.selection.normalizedSelection() == latest,
+                    "frame pacing must preserve each immediate model mutation");
+        }
+        require(fixture.stateNotifications == 0 && fixture.displayedSelection() == initial,
+                "continuous drag bursts must defer presentation until their shared frame");
+        fixture.advanceClock(17);
+        fixture.flushFrame();
+        fixture.processEvents();
+        require(fixture.stateNotifications == 1 && fixture.displayedSelection() == latest &&
+                    fixture.paintObserver.canvasPaints == 1,
+                "one display frame must commit and paint only the latest drag geometry");
+        // Drain child-widget layout/expose work before measuring an idle frame, as setup does.
+        fixture.processEvents();
+        fixture.resetCounters();
+        for (int request = 0; request < 16; ++request)
+            fixture.services->requestSelectionDragPresentation();
+        fixture.advanceClock(17);
+        fixture.flushFrame();
+        fixture.processEvents();
+        require(fixture.stateNotifications == 0 && fixture.paintObserver.canvasPaints == 0 &&
+                    selectionRenderDiagnosticsForCurrentThread().requestedDamagePixels == 0,
+                "unchanged drag requests must leave the committed presentation idle");
+    }
+}
+
+void selectionDragBoundariesAndCommandsCommitSynchronously() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.interaction.confirmSelection();
+    require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All),
+            "selection dragging must start from a confirmed selection");
+    const auto captureMode = fixture.interaction.mode();
+    fixture.services->updateOverlayState();
+    fixture.resetCounters();
+    const QRectF initial = fixture.displayedSelection();
+    const QRectF moved = initial.translated(20, 15);
+    fixture.selection.setDraggedSelectionRect(moved, ScreenshotSelectionDragMode::All);
+    fixture.services->requestSelectionDragPresentation();
+    fixture.interaction.finishDrag();
+    fixture.services->updateOverlayState();
+    require(fixture.interaction.mode() == captureMode && fixture.displayedSelection() == moved &&
+                fixture.stateNotifications == 1,
+            "releasing a same-mode drag must synchronously commit its latest pending geometry");
+    fixture.resetCounters();
+    require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::BottomRight),
+            "confirmed selections must allow another resize gesture");
+    fixture.services->updateOverlayState();
+    require(fixture.stateNotifications == 1,
+            "a same-mode gesture start must synchronously publish its drag boundary");
+    fixture.resetCounters();
+    const QRectF resized = moved.adjusted(0, 0, 40, 25);
+    fixture.selection.setDraggedSelectionRect(resized, ScreenshotSelectionDragMode::BottomRight);
+    fixture.services->requestSelectionDragPresentation();
+    require(fixture.selection.setCornerRadius(12),
+            "the explicit style command must change the selection radius");
+    fixture.services->updateOverlayState();
+    require(fixture.displayedSelection() == resized && fixture.stateNotifications == 1,
+            "an explicit style command must commit pending drag geometry synchronously");
+    fixture.resetCounters();
+    require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All),
+            "a resize gesture must allow its transient move shortcut");
+    fixture.services->requestSelectionDragPresentation();
+    require(fixture.stateNotifications == 1,
+            "changing drag mode must commit the new interaction boundary synchronously");
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    require(fixture.stateNotifications == 1,
+            "synchronous drag boundaries must cancel superseded pending commits");
+}
+
+void theFirstUsableMarqueeIsPresentedImmediately() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.interaction.returnToSelectionMode(false);
+    fixture.selection.clearSelection();
+    require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee),
+            "manual marquee presentation requires an active gesture");
+    fixture.services->updateOverlayState();
+    fixture.resetCounters();
+    const QRectF first = fixture.baseSelection();
+    fixture.selection.setDraggedSelectionRect(first, ScreenshotSelectionDragMode::Marquee);
+    fixture.services->requestSelectionDragPresentation();
+    require(fixture.displayedSelection() == first && fixture.stateNotifications == 1,
+            "the first usable marquee must reveal before the next display deadline");
+    fixture.resetCounters();
+    fixture.selection.setDraggedSelectionRect(first.adjusted(0, 0, 30, 20),
+                                              ScreenshotSelectionDragMode::Marquee);
+    fixture.services->requestSelectionDragPresentation();
+    require(fixture.displayedSelection() == first && fixture.stateNotifications == 0,
+            "later marquee geometry must share the display frame boundary");
 }
 
 void canceledRequestsLeaveTheCommittedFrameUntouched() {
@@ -898,13 +1006,189 @@ ScreenshotOverlayInputActions pickerInputActions(Fixture& fixture) {
         fixture.services->requestColorPickerPresentation(owner, position);
     };
     actions.updateColorPickerForSelectionDrag = [&fixture](const QPointF& position) {
-        fixture.services->discardColorPickerPresentation();
-        fixture.colorPickerController->updateForSelectionDrag(
-            position, fixture.services->colorPickerContext());
+        fixture.services->requestSelectionDragColorPickerPresentation(position);
     };
     actions.updateOverlayState = [&fixture] { fixture.services->updateOverlayState(); };
+    actions.requestSelectionDragPresentation = [&fixture] {
+        fixture.services->requestSelectionDragPresentation();
+    };
     actions.showToolbar = [&fixture] { fixture.services->showToolbar(); };
     return actions;
+}
+
+void selectionDragFramesShareTheLatestGeometryAndPickerAnchor() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.displays.startup->resumeLiveInput();
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysShow);
+    fixture.coordinator.setSelectionToolbarHidden(true);
+    require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::BottomRight),
+            "drag sampling requires a real resize gesture");
+    fixture.services->updateOverlayState();
+    const QRectF initial = fixture.selection.normalizedSelection();
+    fixture.services->requestSelectionDragColorPickerPresentation(initial.bottomRight());
+    require(fixture.coordinator.colorPicker()->workCounters().samples == 1,
+            "gesture entry must synchronously sample its first drag anchor");
+    fixture.resetCounters();
+    QRectF latest;
+    QPointF pointer;
+    for (int request = 1; request <= 16; ++request) {
+        latest = initial.adjusted(0, 0, request * 4.0, request * 2.0);
+        pointer = latest.bottomRight() + QPointF(30, 20);
+        fixture.selection.setDraggedSelectionRect(latest, ScreenshotSelectionDragMode::BottomRight);
+        fixture.services->requestSelectionDragPresentation();
+        fixture.services->requestSelectionDragColorPickerPresentation(pointer);
+        fixture.services->requestColorPickerPresentation(&fixture.overlay, QPointF(900, 700));
+    }
+    auto* picker = fixture.coordinator.colorPicker();
+    require(fixture.stateNotifications == 0 && picker->workCounters().samples == 0,
+            "continuous resize and picker work must wait for their shared display frame");
+    fixture.advanceClock(17);
+    fixture.flushFrame();
+    fixture.processEvents();
+    const auto anchor =
+        screenshotSelectionDragAnchor(latest, ScreenshotSelectionDragMode::BottomRight, pointer,
+                                      snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    require(anchor.has_value(), "a resized selection must expose its constrained drag anchor");
+    const auto& display = fixture.displays.displayAt(0);
+    const QPoint physical =
+        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, anchor.value());
+    const QString expected = display.image.pixelColor(physical - display.physicalRect.topLeft())
+                                 .name(QColor::HexRgb)
+                                 .toUpper();
+    require(fixture.displayedSelection() == latest && fixture.stateNotifications == 1 &&
+                picker->workCounters().samples == 1 && picker->workCounters().previews == 1 &&
+                picker->currentColorText() == expected && fixture.paintObserver.canvasPaints == 1,
+            "a drag frame must paint and sample the latest constrained geometry once");
+
+    fixture.resetCounters();
+    latest.adjust(0, 0, 20, 10);
+    fixture.selection.setDraggedSelectionRect(latest, ScreenshotSelectionDragMode::BottomRight);
+    fixture.services->requestSelectionDragPresentation();
+    fixture.services->requestSelectionDragColorPickerPresentation(latest.bottomRight());
+    fixture.services->flushColorPickerPresentation();
+    const auto latestAnchor = screenshotSelectionDragAnchor(
+        latest, ScreenshotSelectionDragMode::BottomRight, latest.bottomRight(),
+        snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    require(latestAnchor.has_value(), "clipboard sampling must resolve the latest drag anchor");
+    const QPoint latestPhysical =
+        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, latestAnchor.value());
+    const QString latestColor =
+        display.image.pixelColor(latestPhysical - display.physicalRect.topLeft())
+            .name(QColor::HexRgb)
+            .toUpper();
+    require(picker->workCounters().samples == 1 && fixture.displayedSelection() != latest &&
+                picker->currentColorText() == latestColor &&
+                fixture.colorPickerController->copyColorToClipboard(
+                    fixture.services->colorPickerContext()) &&
+                QApplication::clipboard()->text() == latestColor,
+            "clipboard commands must sample current drag geometry before its presentation frame");
+    fixture.flushFrame();
+    require(fixture.displayedSelection() == latest && picker->workCounters().samples == 1,
+            "the later geometry commit must not replay a command's already consumed sample");
+
+    fixture.resetCounters();
+    latest.adjust(0, 0, 17, 9);
+    fixture.selection.setDraggedSelectionRect(latest, ScreenshotSelectionDragMode::BottomRight);
+    fixture.services->requestSelectionDragPresentation();
+    fixture.services->requestSelectionDragColorPickerPresentation(latest.bottomRight());
+    fixture.services->flushColorPickerPresentation();
+    const auto formatAnchor = screenshotSelectionDragAnchor(
+        latest, ScreenshotSelectionDragMode::BottomRight, latest.bottomRight(),
+        snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    require(formatAnchor.has_value(), "format commands must resolve their latest drag anchor");
+    const QPoint formatPhysical =
+        fixture.geometry.physicalPositionForCanvasPoint(fixture.displays, formatAnchor.value());
+    const QString formatColor =
+        display.image.pixelColor(formatPhysical - display.physicalRect.topLeft())
+            .name(QColor::HexRgb)
+            .toUpper();
+    const auto context = fixture.services->colorPickerContext();
+    require(picker->currentColorText() == formatColor && formatColor != latestColor &&
+                fixture.colorPickerController->cycleFormat(context) &&
+                fixture.colorPickerController->copyColorToClipboard(context) &&
+                QApplication::clipboard()->text() == picker->currentColorText() &&
+                picker->workCounters().samples == 1,
+            "format commands must consume the latest queued drag sample exactly once");
+    fixture.flushFrame();
+    require(picker->workCounters().samples == 1,
+            "format commands must not replay their drag sample at the next frame");
+    static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+    static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+    static_cast<void>(fixture.colorPickerController->cycleFormat(context));
+}
+
+void explicitAspectRatioSnapCommitsQueuedDragWork() {
+    Fixture fixture(QSize(1200, 800), false);
+    fixture.displays.startup->resumeLiveInput();
+    fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysShow);
+    fixture.coordinator.setSelectionToolbarHidden(true);
+    fixture.interaction.returnToSelectionMode(false);
+    fixture.selection.clearSelection();
+    fixture.services->updateOverlayState();
+    ScreenshotOverlayInputHandler input(
+        {fixture.captureState, fixture.interaction, fixture.selection, fixture.intelligentSelection,
+         fixture.geometry, fixture.displays, pickerInputActions(fixture)});
+    input.handleMousePress(&fixture.overlay, QPointF(200, 200));
+    // The first usable marquee is deliberately synchronous; measure a later move.
+    input.handleMouseMove(&fixture.overlay, QPointF(400, 300));
+    fixture.flushFrame();
+    fixture.resetCounters();
+    input.handleMouseMove(&fixture.overlay, QPointF(440, 320));
+    auto* picker = fixture.coordinator.colorPicker();
+    require(fixture.stateNotifications == 0 && picker->workCounters().samples == 0,
+            "the pointer move before a snap command must still be frame paced");
+    require(input.activateSelectionAspectRatioSnapShortcut(),
+            "the active marquee must accept its explicit aspect ratio snap command");
+    require(fixture.displayedSelection() == fixture.selection.normalizedSelection() &&
+                fixture.stateNotifications == 1 && picker->workCounters().samples == 1,
+            "an explicit snap command must synchronously commit geometry and its drag sample");
+    fixture.flushFrame();
+    require(fixture.stateNotifications == 1 && picker->workCounters().samples == 1,
+            "a later frame must not replay work consumed by the snap command");
+}
+
+void selectionDragPickerWorkIsDiscardedAtInteractionBoundaries() {
+    for (int boundary = 0; boundary < 6; ++boundary) {
+        Fixture fixture(QSize(1200, 800), false);
+        fixture.enableColorPicker(ScreenshotColorPickerDisplayMode::AlwaysHide);
+        require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::BottomRight),
+                "boundary sampling requires an active resize gesture");
+        fixture.services->updateOverlayState();
+        fixture.services->requestSelectionDragColorPickerPresentation(
+            fixture.selection.normalizedSelection().bottomRight());
+        fixture.resetCounters();
+        const QRectF resized = fixture.selection.normalizedSelection().adjusted(0, 0, 20, 10);
+        fixture.selection.setDraggedSelectionRect(resized,
+                                                  ScreenshotSelectionDragMode::BottomRight);
+        fixture.services->requestSelectionDragPresentation();
+        fixture.services->requestSelectionDragColorPickerPresentation(resized.bottomRight());
+        switch (boundary) {
+        case 0:
+            ++fixture.captureState.sessionId;
+            break;
+        case 1:
+            ++fixture.displays.startup->layoutGeneration;
+            break;
+        case 2:
+            fixture.interaction.finishDrag();
+            break;
+        case 3:
+            fixture.captureState.presentationSuppressed = true;
+            break;
+        case 4:
+            fixture.services->resetPresentation();
+            break;
+        case 5:
+            require(fixture.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All),
+                    "a resize gesture must allow a drag-mode boundary");
+            break;
+        }
+        fixture.services->flushColorPickerPresentation();
+        fixture.flushFrame();
+        require(fixture.coordinator.colorPicker()->workCounters().samples == 0,
+                "session, topology, release, suppression, reset and mode changes must discard "
+                "the previous drag's sample");
+    }
 }
 
 void queuedPickerInputSurvivesSelectionConfirmation() {
@@ -1155,6 +1439,9 @@ int main(int argc, char* argv[]) {
     repeatedSelectionLeavesThePresentedUiIdle();
     multipleRequestsCommitOnlyTheirLatestSelection();
     theFirstResultAfterAnEmptySelectionIsImmediate();
+    selectionDragBurstsPrepareAndCommitTheLatestModelAtOneFrame();
+    selectionDragBoundariesAndCommandsCommitSynchronously();
+    theFirstUsableMarqueeIsPresentedImmediately();
     canceledRequestsLeaveTheCommittedFrameUntouched();
     captureLifecycleChangesNotifyEvenWhenGeometryIsUnchanged();
     displayRebindingReappliesSelectionAfterRendererReset();
@@ -1180,6 +1467,9 @@ int main(int argc, char* argv[]) {
     shortcutContentStillRetranslatesOnLanguageChange();
     queuedPickerInputSurvivesSelectionConfirmation();
     queuedPickerHoverYieldsToSelectionDrag();
+    selectionDragFramesShareTheLatestGeometryAndPickerAnchor();
+    explicitAspectRatioSnapCommitsQueuedDragWork();
+    selectionDragPickerWorkIsDiscardedAtInteractionBoundaries();
     queuedPickerSamplesTheLatestPointBeforeClipboardCommands();
     explicitCursorSamplingCannotBeOverwrittenByQueuedHover();
     pickerWorkIsDiscardedAtCaptureAndDisabledToolBoundaries();

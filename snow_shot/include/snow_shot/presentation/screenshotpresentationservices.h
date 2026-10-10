@@ -47,6 +47,7 @@ struct ScreenshotPresentationServicesContext {
     std::function<void(ScreenshotOverlayWindow*, const QPointF&)> presentColorPicker = {};
     ScreenshotPresentationFrameScheduler::Backend frameSchedulerBackend =
         ScreenshotPresentationFrameScheduler::Backend::Automatic;
+    std::function<void(const QPointF&)> presentSelectionDragColorPicker = {};
 };
 
 class ScreenshotPresentationServices final {
@@ -71,9 +72,12 @@ class ScreenshotPresentationServices final {
     // Release capture-owned snapshots and pending frames while retaining the scheduler.
     void resetPresentation();
     void updateOverlayState();
+    // Continuous drags mutate the model immediately and prepare presentation at the frame boundary.
+    void requestSelectionDragPresentation();
     void updatePointerPresentation(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     void requestColorPickerPresentation(ScreenshotOverlayWindow* overlay,
                                         const QPointF& localPosition);
+    void requestSelectionDragColorPickerPresentation(const QPointF& canvasPosition);
     void flushColorPickerPresentation();
     void discardColorPickerPresentation();
     void flushPendingFrame();
@@ -85,7 +89,9 @@ class ScreenshotPresentationServices final {
     [[nodiscard]] ScreenshotColorPickerContext colorPickerContext() const;
 
   private:
+    enum class Preparation { Unchanged, Frame, Immediate };
     struct State;
+    [[nodiscard]] Preparation prepareOverlayState();
     void scheduleFrame();
     [[nodiscard]] qint64 nowNanoseconds() const;
     void presentOverlayState(const QRectF& selection, bool semanticChanged, bool geometryChanged);

@@ -654,7 +654,10 @@ void ScreenshotOverlayInputHandler::updateSelectionDrag(const QPointF& virtualPo
         static_cast<void>(
             m_context.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All));
     }
-    m_context.actions.updateOverlayState();
+    if (m_context.actions.requestSelectionDragPresentation)
+        m_context.actions.requestSelectionDragPresentation();
+    else
+        m_context.actions.updateOverlayState();
     m_context.actions.updateColorPickerForSelectionDrag(virtualPosition);
 }
 
@@ -970,6 +973,9 @@ bool ScreenshotOverlayInputHandler::activateSelectionAspectRatioSnapShortcut() {
     }
     m_selectionAspectRatioSnapShortcut = true;
     updateSelectionDrag(m_lastMoveDragPosition);
+    // Snap is an explicit command; commit its geometry and queued drag sample together.
+    if (m_context.actions.requestSelectionDragPresentation)
+        m_context.actions.updateOverlayState();
     return true;
 }
 

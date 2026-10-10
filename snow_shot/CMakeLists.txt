@@ -3560,6 +3560,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/storage/persistedselectioncodec.cpp
     )
     target_include_directories(snow-shot-multi-region-tests PRIVATE include)
+    target_compile_definitions(snow-shot-multi-region-tests PRIVATE SNOW_SHOT_BENCH_INTERNALS=1)
     target_link_libraries(snow-shot-multi-region-tests PRIVATE
         Qt6::Gui snow_draw_engine_qt_canvas ant_design_qt)
     if(WIN32)

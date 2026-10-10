@@ -1199,6 +1199,11 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
                 m_colorPickerController->updateForOverlay(
                     overlay, localPosition, m_presentationServices->colorPickerContext());
             },
+            ScreenshotPresentationFrameScheduler::Backend::Automatic,
+            [this](const QPointF& canvasPosition) {
+                m_colorPickerController->updateForSelectionDrag(
+                    canvasPosition, m_presentationServices->colorPickerContext());
+            },
         });
     QObject::connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
                      &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, &owner,
@@ -1943,9 +1948,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             m_presentationServices->updatePointerPresentation(overlay, localPosition);
         },
         [this](const QPointF& virtualPosition) {
-            m_presentationServices->discardColorPickerPresentation();
-            m_colorPickerController->updateForSelectionDrag(
-                virtualPosition, m_presentationServices->colorPickerContext());
+            m_presentationServices->requestSelectionDragColorPickerPresentation(virtualPosition);
         },
         [this]() {
             m_presentationServices->flushColorPickerPresentation();
@@ -2067,6 +2070,9 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
             m_selectionSettings->setAspectRatioPreference(preset, locked);
         };
+    actions.requestSelectionDragPresentation = [this] {
+        m_presentationServices->requestSelectionDragPresentation();
+    };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
             m_captureState,
@@ -4384,7 +4390,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,

@@ -86,9 +86,8 @@ selectionVisualState(const ScreenshotPresentationServicesContext& context, bool 
     if (shaped) {
         const bool animatedMarquee = context.interaction.intelligentSelecting() &&
                                      regionOperation && !context.selection.constructionActive();
-        visualState.region = animatedMarquee
-                                 ? context.selection.selectionRegionForMarquee(selection)
-                                 : context.selection.selectionRegion();
+        // Prepare the authoritative target without replacing the last displayed frame's cache.
+        visualState.region = context.selection.selectionRegion();
         visualState.confirmedRegion = context.selection.confirmedRegion();
         visualState.marquee = animatedMarquee ? selection : context.selection.pendingMarquee();
         visualState.subtracting = context.selection.regionOperation() ==
@@ -111,8 +110,11 @@ struct PresentationSnapshot {
     ScreenshotSelectionVisualState visual;
     ScreenshotShortcutHintContext hints;
     PresentationLifecycle lifecycle;
+    ScreenshotSelectionDragMode dragMode = ScreenshotSelectionDragMode::None;
     bool operator==(const PresentationSnapshot&) const = default;
 };
+
+enum class ColorPickerSource { None, Hover, SelectionDrag };
 } // namespace
 
 struct ScreenshotPresentationServices::State {
@@ -123,6 +125,7 @@ struct ScreenshotPresentationServices::State {
     PresentationLifecycle lifecycle;
     ScreenshotSelectionVisualState visual;
     ScreenshotShortcutHintContext hints;
+    ScreenshotSelectionDragMode dragMode = ScreenshotSelectionDragMode::None;
     std::optional<PresentationSnapshot> committed;
     ScreenshotShortcutHintMode hintMode = ScreenshotShortcutHintMode::Hidden;
     QPointer<ScreenshotOverlayWindow> pointerOwner;
@@ -133,6 +136,8 @@ struct ScreenshotPresentationServices::State {
     QRect colorPickerCaptureGeometry;
     quint64 colorPickerSessionId = 0;
     quint64 colorPickerLayoutGeneration = 0;
+    ColorPickerSource colorPickerSource = ColorPickerSource::None;
+    ScreenshotSelectionDragMode colorPickerDragMode = ScreenshotSelectionDragMode::None;
     QRectF selectionGlobal;
     QPoint cursorPosition;
     QPointF pointerLocal;
@@ -143,9 +148,9 @@ struct ScreenshotPresentationServices::State {
     bool preferencesDirty = true;
     bool presentationDirty = false;
     bool semanticDirty = false;
+    bool selectionDragDirty = false;
     bool geometryDirty = false;
     bool pointerDirty = false;
-    bool colorPickerDirty = false;
     bool pointerKnown = false;
     bool inFrame = false;
 };
@@ -159,8 +164,10 @@ ScreenshotPresentationServices::ScreenshotPresentationServices(
         [this] { return nowNanoseconds(); },
         [this] {
             const qint64 now = nowNanoseconds();
-            if (!m_state->semanticDirty && !m_state->geometryDirty && !m_state->pointerDirty &&
-                !m_state->colorPickerDirty && !m_smartSelectionTransition.isRunning()) {
+            if (!m_state->semanticDirty && !m_state->selectionDragDirty &&
+                !m_state->geometryDirty && !m_state->pointerDirty &&
+                m_state->colorPickerSource == ColorPickerSource::None &&
+                !m_smartSelectionTransition.isRunning()) {
                 m_state->scheduler->cancelDeadline();
                 return;
             }
@@ -291,6 +298,7 @@ void ScreenshotPresentationServices::resetPresentation() {
     m_state->lifecycle = {};
     m_state->visual = {};
     m_state->hints = {};
+    m_state->dragMode = ScreenshotSelectionDragMode::None;
     m_state->committed.reset();
     m_state->hintMode = ScreenshotShortcutHintMode::Hidden;
     m_state->pointerOwner.clear();
@@ -306,6 +314,7 @@ void ScreenshotPresentationServices::resetPresentation() {
     m_state->preferencesDirty = true;
     m_state->presentationDirty = false;
     m_state->semanticDirty = false;
+    m_state->selectionDragDirty = false;
     m_state->geometryDirty = false;
     m_state->pointerDirty = false;
     m_state->pointerKnown = false;
@@ -313,6 +322,39 @@ void ScreenshotPresentationServices::resetPresentation() {
 }
 
 void ScreenshotPresentationServices::updateOverlayState() {
+    switch (prepareOverlayState()) {
+    case Preparation::Unchanged:
+        if (!m_context.interaction.intelligentSelecting())
+            flushPendingFrame();
+        return;
+    case Preparation::Frame:
+        scheduleFrame();
+        return;
+    case Preparation::Immediate:
+        flushPendingFrame();
+        return;
+    }
+}
+
+void ScreenshotPresentationServices::requestSelectionDragPresentation() {
+    const QRectF selection = m_context.selection.normalizedSelection();
+    const bool firstSelection = !m_state->toolbar.selectionCanvas.isValid() && selection.isValid();
+    if (!m_state->initialized || m_state->sessionId != m_context.captureState.sessionId ||
+        !m_context.interaction.manualSelecting() || !m_context.interaction.dragging() ||
+        m_context.interaction.dragMode() == ScreenshotSelectionDragMode::None ||
+        m_context.interaction.dragMode() != m_state->dragMode ||
+        m_context.interaction.mode() != m_state->hints.captureMode || firstSelection ||
+        presentationLifecycle(m_context) != m_state->lifecycle || m_state->preferencesDirty ||
+        m_state->presentationDirty) {
+        updateOverlayState();
+        return;
+    }
+    m_state->selectionDragDirty = true;
+    scheduleFrame();
+}
+
+ScreenshotPresentationServices::Preparation ScreenshotPresentationServices::prepareOverlayState() {
+    m_state->selectionDragDirty = false;
     const bool newSession =
         !m_state->initialized || m_state->sessionId != m_context.captureState.sessionId;
     if (newSession)
@@ -343,30 +385,33 @@ void ScreenshotPresentationServices::updateOverlayState() {
         !m_state->toolbar.selectionCanvas.isValid() && toolbar.selectionCanvas.isValid();
     const bool modeChanged =
         !m_state->initialized || hints.captureMode != m_state->hints.captureMode;
+    const auto dragMode = m_context.interaction.dragMode();
+    const bool dragModeChanged = dragMode != m_state->dragMode;
     if (!newSession && toolbar == m_state->toolbar && visual == m_state->visual &&
-        hints == m_state->hints && !lifecycleChanged && !m_state->preferencesDirty &&
-        !m_state->presentationDirty) {
-        return;
+        hints == m_state->hints && !dragModeChanged && !lifecycleChanged &&
+        !m_state->preferencesDirty && !m_state->presentationDirty) {
+        return Preparation::Unchanged;
     }
     if (lifecycle.suppressed || m_context.interaction.inactive() ||
-        m_context.interaction.dragging())
+        (m_context.interaction.dragging() && dragModeChanged) ||
+        (m_state->colorPickerSource == ColorPickerSource::SelectionDrag &&
+         !m_context.interaction.dragging()))
         discardColorPickerPresentation();
     m_state->lifecycle = lifecycle;
     m_state->toolbar = toolbar;
     m_state->visual = visual;
     m_state->hints = std::move(hints);
+    m_state->dragMode = dragMode;
     m_state->hintMode = screenshotShortcutHintModeForContext(m_state->hints);
     m_state->sessionId = m_context.captureState.sessionId;
     m_state->initialized = true;
     m_state->semanticDirty = true;
     // Reveal the first result and mode boundaries synchronously. Hover results share
     // the display frame boundary with pointer movement and animation sampling.
-    if (newSession || modeChanged || firstSelection || lifecycleChanged ||
-        !m_context.interaction.intelligentSelecting()) {
-        flushPendingFrame();
-    } else {
-        scheduleFrame();
-    }
+    return newSession || modeChanged || dragModeChanged || firstSelection || lifecycleChanged ||
+                   !m_context.interaction.intelligentSelecting()
+               ? Preparation::Immediate
+               : Preparation::Frame;
 }
 
 void ScreenshotPresentationServices::updatePointerPresentation(ScreenshotOverlayWindow* overlay,
@@ -415,29 +460,63 @@ void ScreenshotPresentationServices::requestColorPickerPresentation(
     m_state->colorPickerSessionId = m_context.captureState.sessionId;
     m_state->colorPickerLayoutGeneration =
         m_context.displaySession.startup ? m_context.displaySession.startup->layoutGeneration : 0;
-    m_state->colorPickerDirty = true;
+    m_state->colorPickerSource = ColorPickerSource::Hover;
     scheduleFrame();
 }
 
+void ScreenshotPresentationServices::requestSelectionDragColorPickerPresentation(
+    const QPointF& canvasPosition) {
+    if (!m_state->initialized || !m_context.interaction.manualSelecting() ||
+        !m_context.interaction.dragging() ||
+        m_context.interaction.dragMode() == ScreenshotSelectionDragMode::None ||
+        m_context.captureState.presentationSuppressed)
+        return;
+    const auto dragMode = m_context.interaction.dragMode();
+    const bool firstSample = m_state->colorPickerDragMode != dragMode;
+    m_state->colorPickerOwner.clear();
+    m_state->colorPickerPosition = canvasPosition;
+    m_state->colorPickerSessionId = m_context.captureState.sessionId;
+    m_state->colorPickerLayoutGeneration =
+        m_context.displaySession.startup ? m_context.displaySession.startup->layoutGeneration : 0;
+    m_state->colorPickerDragMode = dragMode;
+    m_state->colorPickerSource = ColorPickerSource::SelectionDrag;
+    if (firstSample)
+        flushColorPickerPresentation();
+    else
+        scheduleFrame();
+}
+
 void ScreenshotPresentationServices::discardColorPickerPresentation() {
-    m_state->colorPickerDirty = false;
+    m_state->colorPickerSource = ColorPickerSource::None;
+    m_state->colorPickerDragMode = ScreenshotSelectionDragMode::None;
     m_state->colorPickerOwner.clear();
 }
 
 void ScreenshotPresentationServices::flushColorPickerPresentation() {
-    if (!std::exchange(m_state->colorPickerDirty, false))
+    const auto source = std::exchange(m_state->colorPickerSource, ColorPickerSource::None);
+    if (source == ColorPickerSource::None)
         return;
     const auto owner = m_state->colorPickerOwner;
     m_state->colorPickerOwner.clear();
     const quint64 layoutGeneration =
         m_context.displaySession.startup ? m_context.displaySession.startup->layoutGeneration : 0;
+    if (m_state->colorPickerSessionId != m_context.captureState.sessionId ||
+        m_state->colorPickerLayoutGeneration != layoutGeneration ||
+        m_context.interaction.inactive() || m_context.captureState.presentationSuppressed)
+        return;
+    if (source == ColorPickerSource::SelectionDrag) {
+        // Resolve the anchor against the latest model, including clipboard/format commands
+        // that precede the scheduled geometry presentation.
+        if (m_context.interaction.manualSelecting() && m_context.interaction.dragging() &&
+            m_state->colorPickerDragMode == m_context.interaction.dragMode() &&
+            m_context.presentSelectionDragColorPicker)
+            m_context.presentSelectionDragColorPicker(m_state->colorPickerPosition);
+        return;
+    }
     // Raw pointer coordinates survive selection confirmation. Apply current picker
     // visibility and selection state at delivery; dragging owns a different sample anchor.
-    if (owner && m_state->colorPickerSessionId == m_context.captureState.sessionId &&
-        m_state->colorPickerLayoutGeneration == layoutGeneration &&
-        m_state->colorPickerCaptureGeometry == owner->captureGeometry() &&
-        !m_context.interaction.inactive() && !m_context.interaction.dragging() &&
-        !m_context.captureState.presentationSuppressed && m_context.presentColorPicker)
+    if (owner && m_state->colorPickerCaptureGeometry == owner->captureGeometry() &&
+        !m_context.interaction.dragging() && m_context.presentColorPicker)
         m_context.presentColorPicker(owner, m_state->colorPickerPosition);
 }
 
@@ -448,15 +527,15 @@ void ScreenshotPresentationServices::flushPendingFrame() {
         resetPresentation();
         return;
     }
-    if (m_state->hints.captureMode != m_context.interaction.mode() ||
+    if (m_state->selectionDragDirty || m_state->hints.captureMode != m_context.interaction.mode() ||
+        m_state->dragMode != m_context.interaction.dragMode() ||
         m_state->lifecycle != presentationLifecycle(m_context)) {
-        updateOverlayState();
-        return;
+        (void)prepareOverlayState();
     }
     m_state->inFrame = true;
     const qint64 now = nowNanoseconds();
     const PresentationSnapshot snapshot{m_state->toolbar, m_state->visual, m_state->hints,
-                                        m_state->lifecycle};
+                                        m_state->lifecycle, m_state->dragMode};
     const bool requested = std::exchange(m_state->semanticDirty, false);
     const bool notify = requested && (!m_state->committed || snapshot != *m_state->committed);
     const bool semantic =
@@ -485,7 +564,7 @@ void ScreenshotPresentationServices::flushPendingFrame() {
     (void)m_smartSelectionTransition.advance(now / 1000000);
     const bool geometry = std::exchange(m_state->geometryDirty, false);
     const QRectF selection = m_smartSelectionTransition.displayedSelection();
-    const bool colorPicker = m_state->colorPickerDirty;
+    const bool colorPicker = m_state->colorPickerSource != ColorPickerSource::None;
     if (semantic || geometry || pointer) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("overlay.present_state");
         presentOverlayState(selection, semantic, geometry);
@@ -511,8 +590,9 @@ void ScreenshotPresentationServices::flushPendingFrame() {
     m_state->frameClock.advancePast(nowNanoseconds());
     if (m_context.interaction.inactive()) {
         m_state->scheduler->stop();
-    } else if (m_state->semanticDirty || m_state->geometryDirty || m_state->pointerDirty ||
-               m_state->colorPickerDirty || m_smartSelectionTransition.isRunning()) {
+    } else if (m_state->semanticDirty || m_state->selectionDragDirty || m_state->geometryDirty ||
+               m_state->pointerDirty || m_state->colorPickerSource != ColorPickerSource::None ||
+               m_smartSelectionTransition.isRunning()) {
         scheduleFrame();
     } else {
         // A one-shot wakeup has no idle polling cost. Keep its notifier registered

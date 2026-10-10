@@ -337,8 +337,9 @@ void aspectRatioPresetsFitCanvasWithoutDistortion() {
     static_cast<void>(selection.setAspectRatioPreset(Preset::Portrait9x16, bounds, 1.0));
     const QRectF fitted = selection.normalizedSelection();
     require(std::abs(fitted.width() - 337.5) < kComparisonTolerance &&
-                std::abs(fitted.height() - 600) < kComparisonTolerance && fitted.top() == 20 &&
-                fitted.left() == 100,
+                std::abs(fitted.height() - 600) < kComparisonTolerance &&
+                std::abs(fitted.top() - bounds.top()) < kComparisonTolerance &&
+                fitted.left() == 100 && bounds.contains(fitted),
             "an oversized preset should fit by shrinking both dimensions proportionally");
     selection.setSelectionRect(QRectF(100, 100, 1, 1));
     static_cast<void>(selection.setAspectRatioPreset(Preset::Landscape16x9, bounds, 1.0));
