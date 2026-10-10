@@ -2695,6 +2695,37 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
     };
     if (!capturePath.isEmpty())
         saveVisualFixture(valid, capturePath);
+    const QPointer<ScreenshotOriginalImagePreviewWindow> originalImagePreview = preview();
+    window.refreshOriginalImagePreview();
+    window.setShowOriginalImage(true);
+    require(!editor->isVisible(), "original-image mode hides the formula source editor");
+    require(waitFor([&] {
+                return originalImagePreview && originalImagePreview == preview() &&
+                       preview()->isVisible() && preview()->accessibleDescription().isEmpty();
+            }),
+            "showing the original image preserves the rendered formula companion");
+    document.setPlainText(QStringLiteral("x^2"));
+    require(waitFor([&] {
+                return originalImagePreview && originalImagePreview == preview() &&
+                       preview()->isVisible() && preview()->accessibleDescription().isEmpty() &&
+                       preview()->grab().toImage() != valid;
+            }),
+            "source updates rerender the formula while the original image is shown");
+    window.setShowOriginalImage(false);
+    require(editor->isVisible() && editor->document() == &document &&
+                editor->toPlainText() == QStringLiteral("x^2"),
+            "returning from the original image preserves the formula draft and editor");
+    window.setShowOriginalImage(true);
+    document.setPlainText(QStringLiteral("\\frac{a}{b}+\\sqrt{x}"));
+    window.showLatexEditor(&document);
+    require(waitFor([&] {
+                return preview() && preview()->isVisible() &&
+                       preview()->accessibleDescription().isEmpty() &&
+                       preview()->grab().toImage() == valid;
+            }),
+            "a formula session renders when original-image mode is already enabled");
+    require(!editor->isVisible(), "starting a formula session preserves original-image mode");
+    window.setShowOriginalImage(false);
     const QPointer<ScreenshotOriginalImagePreviewWindow> initialPreview = preview();
     editor->moveCursor(QTextCursor::End);
     QKeyEvent type(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, QStringLiteral("c"));

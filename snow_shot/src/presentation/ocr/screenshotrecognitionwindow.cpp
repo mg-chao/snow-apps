@@ -468,8 +468,8 @@ void ScreenshotRecognitionWindow::syncOriginalImagePreviewStacking(bool staysOnT
 }
 
 void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
-    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || m_showOriginalImage ||
-        !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || !isVisible() ||
+        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         destroyOriginalImagePreview();
         return;
@@ -539,8 +539,8 @@ void ScreenshotRecognitionWindow::observeOriginalImagePreviewHost() {
 }
 
 void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
-    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || m_showOriginalImage ||
-        !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || !isVisible() ||
+        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         destroyOriginalImagePreview();
         return;
@@ -936,10 +936,11 @@ void ScreenshotRecognitionWindow::commitActiveTableEdit() {
 
 bool ScreenshotRecognitionWindow::companionPreviewEnabled() const {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    return m_originalImagePreviewEnabled || m_latexPreviewEnabled;
-#else
-    return m_originalImagePreviewEnabled;
+    // Formula previews remain available while the selection displays the original image.
+    if (m_latexPreviewEnabled)
+        return true;
 #endif
+    return m_originalImagePreviewEnabled && !m_showOriginalImage;
 }
 
 void ScreenshotRecognitionWindow::setLatexPreviewEnabled(bool enabled) {
