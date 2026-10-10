@@ -1330,6 +1330,99 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
     window.hideTextEditor();
 }
 
+void textRecognitionEditorsCollapseMarginsInSmallAreas() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.theme();
+    const auto restoreTheme = qScopeGuard([&] { themes.setTheme(originalTheme); });
+    themes.setPreset(adqt::theme::ThemeScheme::Light, adqt::theme::ThemeDensity::Compact);
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        QWidget parent;
+        parent.resize(400, 240);
+        parent.show();
+        QTextDocument document;
+        document.setPlainText(QStringLiteral("Editable recognition text"));
+        ScreenshotRecognitionWindow window({}, &parent, mode);
+        window.resize(320, 24);
+        window.showTextEditor(&document);
+        window.show();
+        QApplication::processEvents();
+        auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+        require(editor != nullptr && editor->geometry() == window.rect() &&
+                    editor->viewport()->geometry() == editor->rect(),
+                "a short recognition editor must give its entire area to text");
+
+        window.resize(320, 200);
+        QApplication::processEvents();
+        const QRect paddedViewport = editor->viewport()->geometry();
+        require(paddedViewport.left() > 0 && paddedViewport.top() > 0 &&
+                    paddedViewport.width() < editor->width() &&
+                    paddedViewport.height() < editor->height(),
+                "a roomy recognition editor must retain its themed padding");
+
+        QTextCursor selection(&document);
+        selection.setPosition(0);
+        selection.setPosition(8, QTextCursor::KeepAnchor);
+        editor->setTextCursor(selection);
+        for (const QSize& size : {QSize(320, 24), QSize(80, 200), QSize(80, 24)}) {
+            window.resize(size);
+            QApplication::processEvents();
+            require(editor->geometry() == window.rect() &&
+                        editor->viewport()->geometry() == editor->rect() &&
+                        editor->textCursor().selectedText() == QStringLiteral("Editable"),
+                    "resizing a short or narrow editor must remove margins and preserve selection");
+
+            window.showTextEditor(&document, true, true);
+            document.setPlainText(QStringLiteral("Streaming translation result"));
+            QApplication::processEvents();
+            require(editor->isReadOnly() && editor->viewport()->geometry() == editor->rect(),
+                    "streaming translation must retain the compact text area after updates");
+            window.setTextEditorStreaming(false);
+            QApplication::processEvents();
+            require(!editor->isReadOnly() && editor->viewport()->geometry() == editor->rect(),
+                    "completed translation must retain the compact text area");
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            window.showLatexEditor(&document);
+            QApplication::processEvents();
+            require(editor->viewport()->geometry() == editor->rect(),
+                    "LaTeX source editing must share the compact text area");
+#endif
+            for (const auto scheme :
+                 {adqt::theme::ThemeScheme::Dark, adqt::theme::ThemeScheme::Light}) {
+                themes.setPreset(scheme, adqt::theme::ThemeDensity::Compact);
+                QApplication::processEvents();
+                require(editor->viewport()->geometry() == editor->rect(),
+                        "theme refreshes must not restore padding in a small text area");
+            }
+            window.resize(320, 200);
+            QApplication::processEvents();
+            require(editor->viewport()->geometry() == paddedViewport,
+                    "growing the recognition editor must restore its original themed padding");
+            window.showTextEditor(&document);
+            document.setPlainText(QStringLiteral("Editable recognition text"));
+            selection = QTextCursor(&document);
+            selection.setPosition(0);
+            selection.setPosition(8, QTextCursor::KeepAnchor);
+            editor->setTextCursor(selection);
+        }
+        window.hideTextEditor();
+    }
+
+    adqt::widgets::AdTextEdit formEditor;
+    formEditor.setHeightMode(adqt::widgets::AdTextEdit::HeightMode::FixedGeometry);
+    formEditor.resize(80, 24);
+    formEditor.show();
+    QApplication::processEvents();
+    require(formEditor.viewport()->geometry().left() > 0,
+            "an outlined form editor must retain its padding in a small area");
+    formEditor.setVariant(adqt::widgets::AdTextEdit::Variant::Borderless);
+    formEditor.setHeightMode(adqt::widgets::AdTextEdit::HeightMode::FixedRows);
+    QApplication::processEvents();
+    require(formEditor.viewport()->geometry().left() > 0,
+            "a borderless form editor sized by rows must retain its padding");
+}
+
 void formattedClipboardTextUsesASelectableQtDocument() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2741,6 +2834,10 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--text-editor-layout-only"))) {
+        textRecognitionEditorsCollapseMarginsInSmallAreas();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--latex-preview-only"))) {
         latexPreviewUsesPassiveCompanionAndSurvivesEditing();
         return 0;
@@ -2805,6 +2902,7 @@ int main(int argc, char** argv) {
     recognitionMessageUsesOnlyItsPaintedShadow();
     recognitionWindowUsesOrdinaryQtWindowBehavior();
     shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
+    textRecognitionEditorsCollapseMarginsInSmallAreas();
     formattedClipboardTextUsesASelectableQtDocument();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
     emptyOcrResultCopiesEmptyText();

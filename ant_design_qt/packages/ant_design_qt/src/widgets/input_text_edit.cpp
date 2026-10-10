@@ -42,6 +42,7 @@ using detail::input_internal::InputFramePaintStyle;
 using detail::input_internal::InputIconButton;
 
 constexpr char kFeedbackSpinnerFrameKey[] = "AdTextEdit.FeedbackSpinnerFrame";
+constexpr int kMinimumTextAreaWidth = 120;
 
 bool isLoadingIcon(const adqt::icons::IconRef& icon) {
   const auto metadata = adqt::icons::describeIcon(icon);
@@ -513,7 +514,7 @@ QSize AdTextEdit::minimumSizeHint() const {
   if (property("ad-flex-min-width-zero").toBool()) {
     return QSize(0, hint.height());
   }
-  return QSize(std::min(120, hint.width()), hint.height());
+  return QSize(std::min(kMinimumTextAreaWidth, hint.width()), hint.height());
 }
 
 void AdTextEdit::focusEditor(FocusSelection selection, bool preventScroll) {
@@ -881,7 +882,7 @@ void AdTextEdit::updateOverlayScrollBarGeometry() {
 void AdTextEdit::updateLayoutMetrics() {
   const InputVisualStyle style = resolvedStyle();
   const QRect frameRect = textAreaFrameRect(rect(), style, countVisible_);
-  const QMargins contentInsets = detail::input_internal::textControlContentMargins(style);
+  QMargins contentInsets = detail::input_internal::textControlContentMargins(style);
   const int clearGap = clearButtonGap(style);
   const int clearWidth =
       (clearButton_ && clearButton_->isVisible()) ? clearButton_->width() + clearGap : 0;
@@ -890,6 +891,15 @@ void AdTextEdit::updateLayoutMetrics() {
                                 : 0;
   const int countHeight =
       countVisible_ ? style.metrics.countTopMargin + style.metrics.countHeight : 0;
+
+  // An externally sized borderless editor can be smaller than a normal form input.
+  // Give that limited area to text rather than retaining the form's content padding.
+  const int minimumPaddedHeight = std::max(1, minimumVisibleRows_) * visualTextLineHeight(style) +
+                                  contentInsets.top() + contentInsets.bottom();
+  if (heightMode_ == HeightMode::FixedGeometry && variant_ == Variant::Borderless &&
+      (width() < kMinimumTextAreaWidth || frameRect.height() < minimumPaddedHeight)) {
+    contentInsets = {};
+  }
 
   setViewportMargins(contentInsets.left(), contentInsets.top(),
                      contentInsets.right() + std::max(clearWidth, feedbackWidth),

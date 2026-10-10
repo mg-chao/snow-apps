@@ -7331,6 +7331,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-window-tests --selection-only-rendering -platform offscreen)
     add_test(NAME snow-shot-recognition-ocr-hover-tests
         COMMAND snow-shot-recognition-window-tests --ocr-hover-only -platform offscreen)
+    add_test(NAME snow-shot-recognition-text-editor-layout-tests
+        COMMAND snow-shot-recognition-window-tests --text-editor-layout-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-text-editor-layout-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-recognition-window-tests
         COMMAND snow-shot-recognition-window-tests
