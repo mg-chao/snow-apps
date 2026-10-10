@@ -375,8 +375,8 @@ if (-not $ReproduceOnly) {
     $scriptPath = Get-ChildItem -LiteralPath "$cpackBuild\_CPack_Packages" -Recurse -Filter project.nsi
     $generated = Get-Content -LiteralPath $scriptPath.FullName -Raw
     $init = [regex]::Match($generated, '(?s)Function \.onInit\r?\n.*?FunctionEnd').Value
-    if ($init.IndexOf('Call SnowShotEnsureMainAppClosed') -lt 0 -or
-        $init.IndexOf('Call SnowShotEnsureMainAppClosed') -gt $init.IndexOf('ExecWait')) {
+    if ($init.IndexOf('Call SnowShotEnsureInstallationClosed') -lt 0 -or
+        $init.IndexOf('Call SnowShotEnsureInstallationClosed') -gt $init.IndexOf('ExecWait')) {
         throw "The running-app check must precede the old uninstaller in .onInit."
     }
     if ($init.IndexOf('Call SnowShotPrepareUpgradeHelper') -lt 0 -or
@@ -385,18 +385,19 @@ if (-not $ReproduceOnly) {
         throw 'Legacy upgrades must prepare the bundled helper before uninstall and restore it on failure.'
     }
     $core = [regex]::Match($generated, '(?s)Section "-Core installation".*?SectionEnd').Value
-    if ($core.IndexOf('Call SnowShotEnsureMainAppClosed') -lt 0 -or
-        $core.IndexOf('Call SnowShotEnsureMainAppClosed') -gt $core.IndexOf('File /r')) {
+    if ($core.IndexOf('Call SnowShotEnsureInstallationClosed') -lt 0 -or
+        $core.IndexOf('Call SnowShotEnsureInstallationClosed') -gt $core.IndexOf('File /r')) {
         throw "The destination check must precede file extraction."
     }
     if (-not $generated.Contains('!include "' + $repoRoot + '\snow_shot\packaging\InstallerLaunch.nsh"')) {
         throw 'CPack must use the shared successful-install restart callback.'
     }
     $uninstall = [regex]::Match($generated, '(?s)Section "Uninstall".*?SectionEnd').Value
-    if ($uninstall.IndexOf('Call un.SnowShotEnsureAppClosed') -lt 0 -or
-        $uninstall.IndexOf('Call un.SnowShotEnsureAppClosed') -gt $uninstall.IndexOf('Delete "')) {
+    if ($uninstall.IndexOf('!insertmacro SnowShotUninstallOwnedCleanup') -lt 0 -or
+        $uninstall.IndexOf('!insertmacro SnowShotUninstallOwnedCleanup') -gt $uninstall.IndexOf('Delete "')) {
         throw "The uninstall check must precede file deletion."
     }
     Write-Output "PASS: CPack compiles the guard and checks the old installation before launching its uninstaller."
+    & (Join-Path $PSScriptRoot 'test-snow-shot-installer-owned-processes.ps1') -Architecture $Architecture
 }
 Write-Output "Installer test artifacts: $testRoot"

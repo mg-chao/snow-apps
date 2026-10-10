@@ -24,22 +24,15 @@ string(REPLACE "${_snow_nsis_init}" [=[Function .onInit
   !insertmacro MUI_LANGDLL_DISPLAY
   Push $0
   ReadRegStr $0 HKLM "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" ""
-  StrCmp $0 "" +5
-    Push "$0\bin\@SNOW_SHOT_EXECUTABLE_NAME@.exe"
-    Call SnowShotEnsureMainAppClosed
-    Push "$0\bin\crashpad_handler.exe"
-    Call SnowShotEnsureAppClosed
+  StrCmp $0 "" +3
+    Push "$0"
+    Call SnowShotEnsureInstallationClosed
   ReadRegStr $0 HKCU "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" ""
-  StrCmp $0 "" +5
-    Push "$0\bin\@SNOW_SHOT_EXECUTABLE_NAME@.exe"
-    Call SnowShotEnsureMainAppClosed
-    Push "$0\bin\crashpad_handler.exe"
-    Call SnowShotEnsureAppClosed
+  StrCmp $0 "" +3
+    Push "$0"
+    Call SnowShotEnsureInstallationClosed
   Pop $0
 ]=] _snow_nsis_template "${_snow_nsis_template}")
-# CPack does not carry project variables into its template configuration.
-string(REPLACE "@SNOW_SHOT_EXECUTABLE_NAME@" "${SNOW_SHOT_EXECUTABLE_NAME}"
-    _snow_nsis_template "${_snow_nsis_template}")
 # Restrict the wizard to languages with complete Snow Shot catalogs.
 string(REGEX MATCHALL "!insertmacro MUI_LANGUAGE \"[A-Za-z]+\"[^\n]*" _snow_nsis_languages
     "${_snow_nsis_template}")
@@ -181,9 +174,9 @@ string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\nUnicode true\n!inc
 # MUI normally saves on the visible progress page; also persist silent installs.
 string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS "\n!insertmacro MUI_LANGDLL_SAVELANGUAGE\n")
 set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
-    "Push \"$INSTDIR\\bin\\${SNOW_SHOT_EXECUTABLE_NAME}.exe\"\nCall SnowShotEnsureMainAppClosed\nPush \"$INSTDIR\\bin\\crashpad_handler.exe\"\nCall SnowShotEnsureAppClosed")
-set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-    "Push \"$INSTDIR\\bin\\${SNOW_SHOT_EXECUTABLE_NAME}.exe\"\nCall un.SnowShotEnsureAppClosed\nPush \"$INSTDIR\\bin\\crashpad_handler.exe\"\nCall un.SnowShotEnsureAppClosed")
+    "Push \"$INSTDIR\"\nCall SnowShotEnsureInstallationClosed")
+# OwnedCleanup guards before deletion; a second check after deletion is too late.
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "")
 
 string(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS [=[
   StrCmp $SnowShotPreviousRoot "" snowStartupMigrated

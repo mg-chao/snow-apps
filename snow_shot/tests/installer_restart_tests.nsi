@@ -9,10 +9,8 @@ RequestExecutionLevel user
 ; destination, including an upgrade that moves to a different directory.
 Function .onInit
 !ifdef PREVIOUS_DESTINATION
-  Push "${PREVIOUS_DESTINATION}\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
-  Call SnowShotEnsureMainAppClosed
-  Push "${PREVIOUS_DESTINATION}\bin\crashpad_handler.exe"
-  Call SnowShotEnsureAppClosed
+  Push "${PREVIOUS_DESTINATION}"
+  Call SnowShotEnsureInstallationClosed
   ClearErrors
   ExecWait '"${PREVIOUS_DESTINATION}\uninstall.exe" /S _?=${PREVIOUS_DESTINATION}' $0
   IfErrors oldUninstallFailed
@@ -26,10 +24,8 @@ FunctionEnd
 
 Section
   StrCpy $INSTDIR "${DESTINATION}"
-  Push "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
-  Call SnowShotEnsureMainAppClosed
-  Push "$INSTDIR\bin\crashpad_handler.exe"
-  Call SnowShotEnsureAppClosed
+  Push "$INSTDIR"
+  Call SnowShotEnsureInstallationClosed
 !ifdef FAIL_INSTALL
   SetErrorLevel 21
   Abort
@@ -41,10 +37,8 @@ Section
 SectionEnd
 
 Section "Uninstall"
-  Push "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
-  Call un.SnowShotEnsureAppClosed
-  Push "$INSTDIR\bin\crashpad_handler.exe"
-  Call un.SnowShotEnsureAppClosed
+  Push "$INSTDIR"
+  Call un.SnowShotEnsureInstallationClosed
   Delete "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
   Delete "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_UPDATER}.exe"
 SectionEnd

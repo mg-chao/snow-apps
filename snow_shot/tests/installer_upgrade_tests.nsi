@@ -9,10 +9,8 @@ RequestExecutionLevel user
 
 Function .onInit
 !ifdef PREVIOUS_DESTINATION
-  Push "${PREVIOUS_DESTINATION}\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
-  Call SnowShotEnsureMainAppClosed
-  Push "${PREVIOUS_DESTINATION}\bin\crashpad_handler.exe"
-  Call SnowShotEnsureAppClosed
+  Push "${PREVIOUS_DESTINATION}"
+  Call SnowShotEnsureInstallationClosed
 !ifdef BOOTSTRAP
   Push "${PREVIOUS_DESTINATION}"
   Call SnowShotPrepareUpgradeHelper

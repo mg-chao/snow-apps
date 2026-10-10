@@ -157,7 +157,7 @@ if ($init.Contains('0 noOptionsPage') -or
 }
 Write-Output "PASS: shortcut-only options default on, preserve selection, and gate desktop shortcut creation."
 if ($init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -lt 0 -or
-    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureMainAppClosed')) {
+    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureInstallationClosed')) {
     throw "Language selection must precede the running-app and upgrade prompts."
 }
 $uninit = [regex]::Match($generated, '(?s)Function un\.onInit\r?\n.*?FunctionEnd').Value

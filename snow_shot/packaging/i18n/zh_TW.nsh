@@ -1,5 +1,5 @@
-LangString SnowShotClosePrompt 1028 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 正在執行。是否關閉它以繼續安裝？未儲存的截圖和錄影可能會遺失。"
-LangString SnowShotCloseFailed 1028 "安裝程式無法關閉 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 或檢查其執行狀態。請手動關閉 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME}，然後重新執行安裝程式。"
+LangString SnowShotClosePrompt 1028 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 或其背景元件正在執行。是否關閉它們以繼續？未儲存的截圖和錄影可能會遺失。"
+LangString SnowShotCloseFailed 1028 "無法關閉 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 或其背景元件，或檢查它們的執行狀態。請手動關閉它們，然後重試。"
 LangString SnowShotLanguageTitle 1028 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 安裝語言"
 LangString SnowShotLanguagePrompt 1028 "請選擇語言。"
 LangString SnowShotUpgradePrompt 1028 "$1 已安裝。$\n$\n是否先解除安裝舊版本，再安裝新版本？"
