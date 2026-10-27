@@ -129,6 +129,33 @@ pub fn initialize() -> Result<Arc<Context>, String> {
     }
 }
 
+impl Acceleration {
+    pub fn release_cached_resources(&self) {
+        #[cfg(feature = "gpu")]
+        {
+            let context = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .context
+                .clone();
+            if let Some(context) = context
+                && let Err(error) = context.release_cached_resources()
+            {
+                super::worker_event(
+                    "ocr.gpu_cleanup",
+                    0,
+                    "idle",
+                    "gpu",
+                    "failed",
+                    0,
+                    &error.to_string(),
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,11 +233,13 @@ mod tests {
             let acceleration = Acceleration::<usize>::new();
             let (release, blocked) = mpsc::channel();
             let (notified, result) = mpsc::channel();
+            let context = Arc::new(1);
+            let weak = Arc::downgrade(&context);
             acceleration.configure(
                 true,
                 move || {
                     blocked.recv().unwrap();
-                    Ok(Arc::new(1))
+                    Ok(context)
                 },
                 move |ok, _| {
                     let _ = notified.send(ok);
@@ -229,6 +258,10 @@ mod tests {
                 Err(mpsc::RecvTimeoutError::Disconnected)
             ));
             assert!(acceleration.snapshot().is_none());
+            assert!(
+                weak.upgrade().is_none(),
+                "stale discovery must release its device"
+            );
         }
     }
 

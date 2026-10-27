@@ -67,6 +67,11 @@ sessions drain; discovery threads are not joined at shutdown. GPU preparation
 failures select CPU; GPU execution failures retry once on CPU unless cancelled.
 Input/model/I/O errors are preserved. After a GPU failure, that worker stays on
 CPU. Settings never implicitly enable residency or hot start.
+Before acknowledging PrepareSession or ReleaseSession, the worker releases
+unused GPU transfer, command, descriptor and native compilation caches. Live
+model uploads and compiled kernels survive an idle hot-start reset. An empty
+Vulkan allocator releases its retained blocks without recreating the device or
+the process; allocator blocks for live models use OCR-sized slabs.
 A failed session preparation leaves no usable session and does not exit the
 process. Only real recognition requests receive user-facing errors.
 

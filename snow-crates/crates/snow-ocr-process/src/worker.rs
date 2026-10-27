@@ -150,6 +150,7 @@ pub(super) fn worker_loop(
     let mut configuration = None;
     let thread_budget = num_cpus::get_physical().max(1);
     for work in rx {
+        let release_caches = matches!(&work, Work::Prepare(..) | Work::Release(_));
         let result = match work {
             Work::Prepare(id, next) => {
                 let ready = if configuration.as_ref() == Some(&next) && session.engine().is_some() {
@@ -178,6 +179,11 @@ pub(super) fn worker_loop(
                 WorkResult::Complete(Box::new(completion))
             }
         };
+        if release_caches {
+            // The host sends these operations only after inference has drained.
+            // Request destruction alone does not release context-owned caches.
+            acceleration.release_cached_resources();
+        }
         if tx.send(Event::Completed(result)).is_err() {
             break;
         }
