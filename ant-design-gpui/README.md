@@ -115,6 +115,10 @@ editing limit; grapheme clusters are the default unit, with UTF-16 and custom
 strategies available. Existing external values are not silently truncated.
 
 `TextArea::auto_size(min_rows, max_rows)` follows content height within row bounds.
+Overflow uses `ScrollArea` with an overlay scrollbar at the inner frame edge;
+text retains its normal padding without an extra gutter. Wheel, thumb-drag and
+caret scrolling share one position. Scrollbar dragging preserves
+editor focus and selection; wheel events at the boundary reach enclosing scroll areas.
 `PasswordInput` keeps visibility in the retained state; revealing a value preserves
 selection and undo history, and never exposes it through clipboard or accessibility
 text export. Use `set_password_visible` for external updates.

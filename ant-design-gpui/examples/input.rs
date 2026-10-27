@@ -41,7 +41,7 @@ impl Probe {
                     1 => "中文输入 · e\u{301} · 👩🏽‍💻",
                     2 => "Mixed עברית العربية text",
                     12 => "First line\n第二行 · Unicode\nThird line",
-                    13 => "A long note wraps naturally within its available width. 中文输入支持多行。 Select text and use the keyboard to edit this note.",
+                    13 => "A long note wraps naturally within its available width. 中文输入支持多行。 Select text and use the keyboard to edit this note.\nScroll to read the remaining lines.\nDrag the scrollbar without losing your selection.\nThe caret stays visible while editing.\nThe counter remains below the editor.\nLast line.",
                     14 => "Read-only value",
                     15 => "Disabled value",
                     16 => "密码 · secret",

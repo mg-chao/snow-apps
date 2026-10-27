@@ -92,7 +92,7 @@ type StyleResolver = Rc<dyn Fn(&SliderStyleContext, &mut Window, &mut App) -> Sl
 #[derive(Clone)]
 pub struct SliderTooltip {
     pub enabled: bool,
-    /// `None` follows hover, focus, and dragging.
+    /// `None` follows hover, dragging, and focus until mouse release.
     pub open: Option<bool>,
     pub placement: Option<PopupPlacement>,
     pub auto_adjust_overflow: bool,
@@ -371,7 +371,7 @@ impl RenderOnce for Slider {
                 );
                 let sample = handle.motion.sample(now);
                 running |= !sample.finished;
-                samples.push((sample.value as f32, active));
+                samples.push(sample.value as f32);
             }
             if running {
                 s.request_frame(window, cx);
@@ -737,8 +737,15 @@ impl RenderOnce for Slider {
             let numeric = value.value;
             let handle = state.read(cx).handles.get(&id).expect("handle state");
             let focus = handle.focus.clone();
+            let tooltip_active = handle.hovered
+                || handle.tooltip_focus_open
+                || state
+                    .read(cx)
+                    .drag
+                    .as_ref()
+                    .is_some_and(|d| d.active == Some(id));
             let handle_disabled = state.read(cx).disabled(index, cx);
-            let (progress, active) = animations[index];
+            let progress = animations[index];
             let handle_size = tokens.handle_size as f32;
             let ratio = fraction(numeric);
             let mut handle = div()
@@ -959,7 +966,7 @@ impl RenderOnce for Slider {
             let popup_open = self.tooltip.enabled
                 && !handle_disabled
                 && deleting != Some(id)
-                && self.tooltip.open.unwrap_or(active);
+                && self.tooltip.open.unwrap_or(tooltip_active);
             let placement = self.tooltip.placement.unwrap_or(if vertical {
                 if config.direction == crate::Direction::Rtl {
                     PopupPlacement::Left

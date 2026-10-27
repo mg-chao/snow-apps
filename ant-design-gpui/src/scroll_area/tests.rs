@@ -51,14 +51,52 @@ fn tiny_tracks_bound_minimum_thumb_and_do_not_divide_by_zero() {
 fn custom_visual_thickness_stays_inside_tiny_track_bounds() {
     let track = gpui::Bounds::new(point(px(20.), px(30.)), size(px(3.), px(8.)));
     let bar = BarGeometry::new(track, true, px(8.), px(1000.), px(-500.), px(24.)).unwrap();
-    let visual = bar.visual_thumb(px(40.));
+    let visual = bar.visual_thumb(px(40.), Direction::Ltr);
     assert_eq!(visual.size.width, px(3.));
     assert_eq!(visual, bar.thumb);
     let track = gpui::Bounds::new(point(px(20.), px(30.)), size(px(8.), px(2.)));
     let bar = BarGeometry::new(track, false, px(8.), px(1000.), px(-500.), px(24.)).unwrap();
-    let visual = bar.visual_thumb(px(40.));
+    let visual = bar.visual_thumb(px(40.), Direction::Ltr);
     assert_eq!(visual.size.height, px(2.));
     assert_eq!(visual, bar.thumb);
+}
+
+#[test]
+fn thumb_expansion_keeps_the_qt_overlay_outer_edge() {
+    let vertical = BarGeometry::new(
+        gpui::Bounds::new(point(px(20.), px(30.)), size(px(12.), px(100.))),
+        true,
+        px(100.),
+        px(300.),
+        px(-150.),
+        px(24.),
+    )
+    .unwrap();
+    let horizontal = BarGeometry::new(
+        gpui::Bounds::new(point(px(20.), px(30.)), size(px(100.), px(12.))),
+        false,
+        px(100.),
+        px(300.),
+        px(-150.),
+        px(24.),
+    )
+    .unwrap();
+    for thickness in [3., 5.5, 8., 40.] {
+        for direction in [Direction::Ltr, Direction::Rtl] {
+            let visual = vertical.visual_thumb(px(thickness), direction);
+            if direction == Direction::Ltr {
+                assert_eq!(visual.right(), vertical.track.right());
+            } else {
+                assert_eq!(visual.left(), vertical.track.left());
+            }
+            assert_eq!(visual.top(), vertical.thumb.top());
+            assert_eq!(visual.size.width, px(thickness.min(12.)));
+            let visual = horizontal.visual_thumb(px(thickness), direction);
+            assert_eq!(visual.bottom(), horizontal.track.bottom());
+            assert_eq!(visual.left(), horizontal.thumb.left());
+            assert_eq!(visual.size.height, px(thickness.min(12.)));
+        }
+    }
 }
 
 #[test]

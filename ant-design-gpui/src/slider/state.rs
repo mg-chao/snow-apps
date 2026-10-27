@@ -39,6 +39,8 @@ pub(super) type ChangeHandler = Rc<dyn Fn(&SliderChange, &mut Window, &mut App)>
 pub(super) struct HandleState {
     pub focus: FocusHandle,
     pub hovered: bool,
+    // Mouse release closes focus-triggered tooltips without removing keyboard focus.
+    pub tooltip_focus_open: bool,
     pub motion: ScalarTransition,
     _subscriptions: Vec<Subscription>,
 }
@@ -223,12 +225,18 @@ impl SliderState {
             self.handles.entry(id).or_insert_with(|| {
                 let focus = focus_handle(cx);
                 let enter = cx.on_focus(&focus, window, move |this, _, cx| {
+                    if let Some(handle) = this.handles.get_mut(&id) {
+                        handle.tooltip_focus_open = true;
+                    }
                     if let Some(handle) = this.model.handles.iter().position(|h| h.id == id) {
                         cx.emit(SliderEvent::Focus { handle });
                     }
                     cx.notify();
                 });
                 let leave = cx.on_blur(&focus, window, move |this, _, cx| {
+                    if let Some(handle) = this.handles.get_mut(&id) {
+                        handle.tooltip_focus_open = false;
+                    }
                     this.key_active = None;
                     if this.drag.as_ref().is_some_and(|d| d.active == Some(id)) {
                         this.cancel_interaction();
@@ -241,6 +249,7 @@ impl SliderState {
                 HandleState {
                     focus,
                     hovered: false,
+                    tooltip_focus_open: false,
                     motion: ScalarTransition::new(0., CubicBezier::new(0.25, 0.1, 0.25, 1.)),
                     _subscriptions: vec![enter, leave],
                 }
@@ -400,8 +409,9 @@ impl SliderState {
             deleting: false,
         });
         if let Some(active) = active
-            && let Some(handle) = self.handles.get(&active)
+            && let Some(handle) = self.handles.get_mut(&active)
         {
+            handle.tooltip_focus_open = true;
             handle.focus.focus(window, cx);
         }
         cx.notify();
@@ -498,6 +508,20 @@ impl SliderState {
     }
     pub(super) fn pointer_end(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancel_unavailable_interaction(cx);
+        // Ant Design clears tooltip focus one frame after mouseup so a click's
+        // later focus notification cannot reopen it. Native focus stays intact.
+        let target = cx.weak_entity();
+        window.on_next_frame(move |_, cx| {
+            let _ = target.update(cx, |state, cx| {
+                let mut changed = false;
+                for handle in state.handles.values_mut() {
+                    changed |= std::mem::take(&mut handle.tooltip_focus_open);
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
+        });
         if self.drag.take().is_some() {
             self.complete(SliderChangeSource::Pointer, window, cx);
             self.sync_handles(window, cx);

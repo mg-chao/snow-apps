@@ -38,6 +38,7 @@ pub struct ScrollArea {
     on_scroll: Option<ScrollHandler>,
     style: StyleRefinement,
     children: Vec<AnyElement>,
+    embedded: bool,
 }
 
 impl ScrollArea {
@@ -54,6 +55,7 @@ impl ScrollArea {
             on_scroll: None,
             style: StyleRefinement::default(),
             children: Vec::new(),
+            embedded: false,
         }
     }
 
@@ -86,6 +88,12 @@ impl ScrollArea {
         callback: impl Fn(&ScrollAreaEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_scroll = Some(Rc::new(callback));
+        self
+    }
+
+    /// The containing control owns focus, traversal and keyboard navigation.
+    pub(crate) fn embedded(mut self) -> Self {
+        self.embedded = true;
         self
     }
 }
@@ -159,6 +167,7 @@ impl RenderOnce for ScrollArea {
         });
         state.update(cx, |s, cx| {
             s.configure_scope(scope, window, cx);
+            s.focus_on_pointer = !self.embedded;
             if s.axis != self.axis {
                 s.axis = self.axis;
                 s.drag = None;
@@ -206,7 +215,7 @@ impl RenderOnce for ScrollArea {
             .min_h(px(0.))
             .overflow_hidden()
             .track_scroll(&handle)
-            .track_focus(&focus)
+            .when(!self.embedded, |root| root.track_focus(&focus))
             .role(Role::ScrollView)
             .on_hover(move |hovered, _, cx| {
                 target.update(cx, |s, cx| {
@@ -259,7 +268,8 @@ impl RenderOnce for ScrollArea {
         root = root.on_key_down(move |event, window, cx| {
             let modifiers = event.keystroke.modifiers;
             // Descendant editors and controls retain their own key behavior.
-            if target.read(cx).focus.is_focused(window)
+            if target.read(cx).focus_on_pointer
+                && target.read(cx).focus.is_focused(window)
                 && !modifiers.control
                 && !modifiers.platform
                 && !modifiers.alt
@@ -305,11 +315,15 @@ impl RenderOnce for ScrollArea {
         let ring = FocusRing::new(config.theme.tokens.color_primary.to_hsla(), px(2.))
             .with_offset(px(-2.))
             .radius(px(config.theme.tokens.border_radius as f32));
+        let inner = accessibility.apply(root).into_any_element();
+        let inner = if self.embedded {
+            inner
+        } else {
+            ring.apply(inner, &focus).into_any_element()
+        };
         ScrollAreaElement {
             id: self.id,
-            inner: ring
-                .apply(accessibility.apply(root), &focus)
-                .into_any_element(),
+            inner,
             state,
             tokens,
             direction: config.direction,
@@ -632,8 +646,14 @@ fn scrollbar(
     };
     let thickness = tokens.collapsed_thickness as f32
         + (tokens.thickness - tokens.collapsed_thickness) as f32 * expansion;
+    let config = state
+        .read(cx)
+        .scope
+        .as_ref()
+        .expect("configured scroll area")
+        .snapshot(cx);
     let track = geometry.track;
-    let visual_bounds = geometry.visual_thumb(px(thickness));
+    let visual_bounds = geometry.visual_thumb(px(thickness), config.direction);
     let thickness = if geometry.vertical {
         visual_bounds.size.width
     } else {
@@ -644,12 +664,6 @@ fn scrollbar(
     } else {
         -state.read(cx).offset().x
     };
-    let config = state
-        .read(cx)
-        .scope
-        .as_ref()
-        .expect("configured scroll area")
-        .snapshot(cx);
     let mut bar = div()
         .id(("scrollbar", index))
         .relative()

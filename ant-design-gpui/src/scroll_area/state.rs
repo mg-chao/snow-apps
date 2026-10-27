@@ -35,6 +35,7 @@ pub(super) struct Drag {
 pub struct ScrollAreaState {
     pub(super) handle: ScrollHandle,
     pub(super) focus: FocusHandle,
+    pub(super) focus_on_pointer: bool,
     pub(super) axis: ScrollAxis,
     pub(super) hovered: bool,
     pub(super) bar_hovered: [bool; 2],
@@ -92,6 +93,7 @@ impl ScrollAreaState {
         Self {
             handle: ScrollHandle::new(),
             focus,
+            focus_on_pointer: true,
             axis: ScrollAxis::Vertical,
             hovered: false,
             bar_hovered: [false; 2],
@@ -235,7 +237,9 @@ impl ScrollAreaState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.focus.focus(window, cx);
+        if self.focus_on_pointer {
+            self.focus.focus(window, cx);
+        }
         if geometry.thumb.contains(&position) {
             self.drag = Some(Drag {
                 vertical: geometry.vertical,

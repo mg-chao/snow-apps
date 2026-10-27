@@ -22,6 +22,8 @@ struct Consumer {
     allow_clear: bool,
     adornments: bool,
     loading: bool,
+    outer_wheel: Rc<RefCell<usize>>,
+    height: Option<f32>,
     events: Rc<RefCell<Vec<InputEvent>>>,
     _subscription: Subscription,
 }
@@ -42,6 +44,8 @@ impl Consumer {
             allow_clear: false,
             adornments: false,
             loading: false,
+            outer_wheel: Rc::default(),
+            height: None,
             events,
             _subscription: subscription,
         }
@@ -68,9 +72,15 @@ impl Render for Consumer {
             if self.adornments {
                 input = input.prefix("￥").suffix("元").show_count(true);
             }
+            if let Some(height) = self.height {
+                input = input.h(px(height));
+            }
             input
         };
         let input = match self.mode {
+            state::InputMode::Text if self.multiline => TextArea::new("test-input", &self.state)
+                .configure(configure)
+                .into_any_element(),
             state::InputMode::Text => {
                 configure(Input::new("test-input", &self.state)).into_any_element()
             }
@@ -82,7 +92,13 @@ impl Render for Consumer {
                 .configure(configure)
                 .into_any_element(),
         };
-        div().w(px(320.)).p(px(10.)).child(input)
+        let outer_wheel = self.outer_wheel.clone();
+        div()
+            .id("input-container")
+            .w(px(320.))
+            .p(px(10.))
+            .on_scroll(move |_, _, _| *outer_wheel.borrow_mut() += 1)
+            .child(input)
     }
 }
 
@@ -224,6 +240,29 @@ impl Fixture {
                 window.rendered_scene().quads.iter().any(|quad| {
                     (quad.bounds.size.width.0 / window.scale_factor() - 1.).abs() < 0.1
                         && quad.bounds.size.height.0 / window.scale_factor() > 10.
+                })
+            })
+            .unwrap()
+    }
+
+    fn scrollbar_thumb(&mut self) -> Option<gpui::Bounds<gpui::Pixels>> {
+        self.cx
+            .update_window(self.window.into(), |_, window, _| {
+                let scale = window.scale_factor();
+                window.rendered_scene().quads.iter().find_map(|quad| {
+                    let bounds = gpui::Bounds::new(
+                        point(
+                            px(quad.bounds.left().0 / scale),
+                            px(quad.bounds.top().0 / scale),
+                        ),
+                        gpui::size(
+                            px(quad.bounds.size.width.0 / scale),
+                            px(quad.bounds.size.height.0 / scale),
+                        ),
+                    );
+                    ((3. ..=8.).contains(&f32::from(bounds.size.width))
+                        && bounds.size.height >= px(24.))
+                    .then_some(bounds)
                 })
             })
             .unwrap()
@@ -677,7 +716,8 @@ fn rtl_alignment_updates_each_wrapped_row_selection_and_candidate_geometry() {
         let selected = g.selection_rects(0.."短行".len());
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].left(), start.x);
-        assert_eq!(selected[0].right(), end.x);
+        // Rectangle width addition and caret positioning may round differently.
+        assert!((selected[0].right() - end.x).abs() < px(0.01));
         (start, end)
     });
     f.click(start + point(px(1.), px(2.)));
@@ -990,6 +1030,198 @@ fn auto_height_tracks_newlines_and_clamps_at_maximum_rows() {
         let geometry = state.geometry().unwrap();
         assert!((f32::from(geometry.viewport.size.height - geometry.line_height * 4.)).abs() < 0.1);
     });
+}
+
+#[test]
+fn textarea_scrollbar_tracks_overflow_wheel_and_content_shrink() {
+    let mut f = Fixture::new(true);
+    assert!(f.scrollbar_thumb().is_none());
+    f.edit(|state, window, cx| {
+        state.set_value("Line\n".repeat(20), window, cx);
+        state.select(TextSelection::collapsed(0), window, cx);
+    });
+    let initial = f
+        .scrollbar_thumb()
+        .expect("overflow must display a scrollbar");
+    let position = f.state.read_with(&f.cx, |state, _| {
+        state.geometry().unwrap().viewport.center()
+    });
+    f.pointer(PlatformInput::MouseMove(MouseMoveEvent {
+        position,
+        ..Default::default()
+    }));
+    f.pointer(PlatformInput::Scroll(gpui::ScrollEvent {
+        position,
+        delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-100.))),
+        ..Default::default()
+    }));
+    assert_eq!(
+        f.state
+            .read_with(&f.cx, |state, _| state.geometry().unwrap().scroll.y),
+        px(100.)
+    );
+    assert!(f.scrollbar_thumb().unwrap().top() > initial.top());
+    assert_eq!(
+        f.consumer.read_with(&f.cx, |c, _| *c.outer_wheel.borrow()),
+        0
+    );
+    for _ in 0..2 {
+        f.pointer(PlatformInput::Scroll(gpui::ScrollEvent {
+            position,
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-10000.))),
+            ..Default::default()
+        }));
+    }
+    assert_eq!(
+        f.consumer.read_with(&f.cx, |c, _| *c.outer_wheel.borrow()),
+        1
+    );
+    f.edit(|state, window, cx| state.set_value("Short", window, cx));
+    assert!(f.scrollbar_thumb().is_none());
+    f.state.read_with(&f.cx, |state, _| {
+        assert_eq!(state.geometry().unwrap().scroll, point(px(0.), px(0.)));
+    });
+}
+
+#[test]
+fn textarea_preserves_the_full_padded_editing_width() {
+    let mut f = Fixture::new(false);
+    let single_line = f
+        .state
+        .read_with(&f.cx, |state, _| state.geometry().unwrap().viewport);
+    f.configure(|view| view.multiline = true);
+    for value in ["Short".to_owned(), "1".repeat(400)] {
+        f.edit(|state, window, cx| state.set_value(value, window, cx));
+        f.state.read_with(&f.cx, |state, _| {
+            let viewport = state.geometry().unwrap().viewport;
+            assert_eq!(viewport.left(), single_line.left());
+            assert_eq!(viewport.right(), single_line.right());
+            assert_eq!(viewport.size.width, px(276.));
+        });
+    }
+}
+
+#[test]
+fn textarea_scrollbar_drag_preserves_focus_selection_and_native_geometry() {
+    for direction in [crate::Direction::Ltr, crate::Direction::Rtl] {
+        let mut f = Fixture::new(true);
+        let scope = f.consumer.read_with(&f.cx, |view, _| view.scope.clone());
+        f.cx.update(|cx| {
+            scope
+                .update_patch(cx, |patch| {
+                    patch.direction = Some(direction);
+                    patch.motion = Some(false);
+                })
+                .unwrap();
+        });
+        f.edit(|state, window, cx| {
+            window.activate_window();
+            state.set_value("Line\n".repeat(20), window, cx);
+            state.focus(window, cx);
+            state.select(TextSelection::collapsed(0), window, cx);
+        });
+        let thumb = f.scrollbar_thumb().unwrap();
+        let viewport = f
+            .state
+            .read_with(&f.cx, |state, _| state.geometry().unwrap().viewport);
+        if direction == crate::Direction::Ltr {
+            assert!(thumb.left() >= viewport.right());
+            // Anchor to the inner frame edge, independently of text padding:
+            // frame right (310) - border (1) - scrollbar inset (2).
+            assert_eq!(thumb.right(), px(307.));
+        } else {
+            assert!(thumb.right() <= viewport.left());
+            assert_eq!(thumb.left(), px(13.));
+        }
+        let start = thumb.center();
+        f.pointer(PlatformInput::MouseMove(MouseMoveEvent {
+            position: start,
+            ..Default::default()
+        }));
+        let expanded = f.scrollbar_thumb().unwrap();
+        if direction == crate::Direction::Ltr {
+            assert_eq!(expanded.right(), thumb.right());
+        } else {
+            assert_eq!(expanded.left(), thumb.left());
+        }
+        f.pointer(PlatformInput::MouseDown(MouseDownEvent {
+            position: start,
+            button: MouseButton::Left,
+            click_count: 1,
+            ..Default::default()
+        }));
+        let end = point(start.x, viewport.bottom() + px(100.));
+        f.drag_move(end);
+        f.pointer(PlatformInput::MouseUp(MouseUpEvent {
+            position: end,
+            button: MouseButton::Left,
+            ..Default::default()
+        }));
+        f.edit(|state, window, cx| {
+            assert!(state.focus.is_focused(window));
+            assert_eq!(state.selection(), TextSelection::collapsed(0));
+            assert!(state.geometry().unwrap().scroll.y > px(300.));
+            let geometry = state.geometry().unwrap();
+            let expected = geometry.caret_bounds(state.caret_location()).unwrap();
+            let actual = state
+                .bounds_for_range(0..0, Default::default(), window, cx)
+                .unwrap();
+            assert_eq!(actual, expected);
+        });
+        // Editor navigation still owns the arrow keys and reveals the caret.
+        f.key("down");
+        f.state.read_with(&f.cx, |state, _| {
+            assert!(state.selection().caret > 0);
+            let geometry = state.geometry().unwrap();
+            let caret = geometry.caret_bounds(state.caret_location()).unwrap();
+            assert!(geometry.scroll.y <= geometry.line_height);
+            assert!(caret.top() >= geometry.viewport.top());
+            assert!(caret.bottom() <= geometry.viewport.bottom());
+        });
+        let selection = f.state.read_with(&f.cx, |state, _| state.selection());
+        f.click(point(start.x, viewport.bottom() - px(3.)));
+        f.edit(|state, window, _| {
+            assert!(state.focus.is_focused(window));
+            assert_eq!(state.selection(), selection);
+            assert!(state.geometry().unwrap().scroll.y > px(40.));
+        });
+    }
+}
+
+#[test]
+fn textarea_scrollbars_follow_wrapping_auto_size_and_explicit_height() {
+    let mut f = Fixture::new(true);
+    f.configure(|view| view.auto_size = true);
+    f.edit(|state, window, cx| state.set_value("one\ntwo\nthree", window, cx));
+    assert!(f.scrollbar_thumb().is_none());
+    f.edit(|state, window, cx| state.set_value("wrapped words ".repeat(60), window, cx));
+    let initial = f.scrollbar_thumb().unwrap();
+    f.state.read_with(&f.cx, |state, _| {
+        let geometry = state.geometry().unwrap();
+        assert_eq!(geometry.viewport.size.height, geometry.line_height * 4.);
+    });
+    f.edit(|state, window, cx| {
+        state.select(TextSelection::collapsed(state.value().len()), window, cx)
+    });
+    assert!(f.scrollbar_thumb().unwrap().top() > initial.top());
+    f.configure(|view| {
+        view.auto_size = false;
+        view.height = Some(180.);
+    });
+    f.state.read_with(&f.cx, |state, _| {
+        assert!(state.geometry().unwrap().viewport.size.height > px(150.));
+    });
+    assert!(f.scrollbar_thumb().is_some());
+    f.configure(|view| {
+        view.adornments = true;
+        view.allow_clear = true;
+    });
+    f.state.read_with(&f.cx, |state, _| {
+        assert!(state.geometry().unwrap().viewport.size.height > px(120.));
+    });
+    assert!(f.scrollbar_thumb().is_some());
+    f.configure(|view| view.height = Some(1600.));
+    assert!(f.scrollbar_thumb().is_none());
 }
 
 #[test]

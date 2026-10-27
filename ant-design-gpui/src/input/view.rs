@@ -4,14 +4,15 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, Element, ElementId,
-    ElementInputHandler, Entity, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    MouseButton, Pixels, Point, Refineable, RenderOnce, Role, SharedString, Style, StyleRefinement,
-    Styled, Subscription, Task, Window, div, fill, point, prelude::*, px, relative, size,
+    AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, DefiniteLength, Edges, Element,
+    ElementId, ElementInputHandler, Entity, GlobalElementId, InspectorElementId, IntoElement,
+    LayoutId, MouseButton, Pixels, Point, Refineable, RenderOnce, Role, SharedString, Style,
+    StyleRefinement, Styled, Subscription, Task, Window, canvas, div, fill, point, prelude::*, px,
+    relative, size,
 };
 
 use crate::{
-    Button, ConfigScope, Direction, Size, ValidationStatus, Variant,
+    Button, ConfigScope, Direction, ScrollArea, ScrollAreaState, Size, ValidationStatus, Variant,
     behavior::{Accessibility, FocusRing, MotionPolicy},
     icons::IconName,
 };
@@ -242,7 +243,8 @@ struct MountedInput {
     caret_eligible: bool,
     caret_reset: bool,
     caret_task: Option<Task<()>>,
-    scroll: Point<Pixels>,
+    single_line_scroll: Point<Pixels>,
+    scroll_area: Option<Entity<ScrollAreaState>>,
     ensure_caret: bool,
     cache: Rc<RefCell<LayoutCache>>,
     geometry_cache: Option<GeometryCache>,
@@ -290,7 +292,8 @@ impl MountedInput {
             caret_eligible: false,
             caret_reset: true,
             caret_task: None,
-            scroll: Point::default(),
+            single_line_scroll: Point::default(),
+            scroll_area: None,
             ensure_caret: true,
             cache: Rc::default(),
             geometry_cache: None,
@@ -379,6 +382,22 @@ impl MountedInput {
         }
     }
 
+    fn scroll(&self, cx: &App) -> Point<Pixels> {
+        self.scroll_area
+            .as_ref()
+            .map_or(self.single_line_scroll, |area| -area.read(cx).offset())
+    }
+
+    fn set_scroll(&mut self, scroll: Point<Pixels>, cx: &App) {
+        if let Some(area) = &self.scroll_area {
+            // Caret reveal and selection dragging update the same native handle
+            // as wheel/thumb input. Its content uses this editor's shaped height.
+            area.read(cx).handle().set_offset(point(px(0.), -scroll.y));
+        } else {
+            self.single_line_scroll = scroll;
+        }
+    }
+
     fn stop_drag(&mut self) {
         self.selecting = false;
         self.drag_position = None;
@@ -399,7 +418,7 @@ impl MountedInput {
                     viewport.top(),
                     (viewport.bottom() - px(1.)).max(viewport.top()),
                 ),
-            ) + self.scroll
+            ) + self.scroll(cx)
                 - geometry.scroll,
         )
     }
@@ -441,10 +460,13 @@ impl MountedInput {
     }
 
     fn advance_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let next = self.scroll + self.drag_velocity(cx);
-        self.scroll = point(
-            next.x.clamp(px(0.), self.scroll_max.x),
-            next.y.clamp(px(0.), self.scroll_max.y),
+        let next = self.scroll(cx) + self.drag_velocity(cx);
+        self.set_scroll(
+            point(
+                next.x.clamp(px(0.), self.scroll_max.x),
+                next.y.clamp(px(0.), self.scroll_max.y),
+            ),
+            cx,
         );
         if let Some(position) = self.drag_target(cx) {
             self.state.update(cx, |state, cx| {
@@ -462,9 +484,10 @@ impl MountedInput {
         {
             return;
         }
-        let next = self.scroll + self.drag_velocity(cx);
-        if next.x.clamp(px(0.), self.scroll_max.x) == self.scroll.x
-            && next.y.clamp(px(0.), self.scroll_max.y) == self.scroll.y
+        let scroll = self.scroll(cx);
+        let next = scroll + self.drag_velocity(cx);
+        if next.x.clamp(px(0.), self.scroll_max.x) == scroll.x
+            && next.y.clamp(px(0.), self.scroll_max.y) == scroll.y
         {
             return;
         }
@@ -538,11 +561,17 @@ impl RenderOnce for Input {
                 mounted.caret_reset = true;
                 mounted._state_subscription = MountedInput::observe_state(&self.state, window, cx);
                 mounted.state = self.state.clone();
-                mounted.scroll = Point::default();
+                mounted.set_scroll(Point::default(), cx);
             }
             if mounted.scope != scope {
                 mounted._scope_subscription = MountedInput::observe_scope(&scope, window, cx);
                 mounted.scope = scope.clone();
+            }
+            if self.multiline && mounted.scroll_area.is_none() {
+                mounted.scroll_area = Some(cx.new(|cx| ScrollAreaState::new(window, cx)));
+            } else if !self.multiline && mounted.scroll_area.is_some() {
+                mounted.scroll_area = None;
+                mounted.single_line_scroll = Point::default();
             }
         });
         let config = scope.snapshot(cx);
@@ -718,6 +747,7 @@ impl RenderOnce for Input {
             } else {
                 TextAlignment::Left
             },
+            padding: Edges::default(),
         };
         let shadow = mounted.update(cx, |mounted, cx| {
             let mut policy =
@@ -762,6 +792,10 @@ impl RenderOnce for Input {
             .relative()
             .flex()
             .items_center()
+            .when(self.multiline, |root| root.items_stretch())
+            .when(self.multiline && self.count.is_some(), |root| {
+                root.flex_auto().min_h_0()
+            })
             .gap(px(tokens.globals.padding_xxs as f32))
             .when(config.direction == Direction::Rtl, |root| {
                 root.flex_row_reverse()
@@ -805,6 +839,30 @@ impl RenderOnce for Input {
             };
         }
         root.style().refine(&self.style);
+        let visibility = self.mode == InputMode::Password && self.visibility_toggle;
+        let has_suffix =
+            visibility || self.suffix.is_some() || (!self.multiline && count.is_some());
+        let mut affix_padding = Edges::<DefiniteLength>::default();
+        if self.multiline {
+            // The scroll viewport reaches the inner frame edge. Text padding
+            // belongs inside it, so it neither displaces the scrollbar nor
+            // combines with a second gutter to narrow the editing area.
+            affix_padding.refine(&root.style().padding);
+            viewport.padding = affix_padding;
+            if self.prefix.is_some() {
+                match config.direction {
+                    Direction::Ltr => viewport.padding.left = px(0.).into(),
+                    Direction::Rtl => viewport.padding.right = px(0.).into(),
+                }
+            }
+            if has_suffix {
+                match config.direction {
+                    Direction::Ltr => viewport.padding.right = px(0.).into(),
+                    Direction::Rtl => viewport.padding.left = px(0.).into(),
+                }
+            }
+            root = root.p_0();
+        }
         if let Some(group) = &self.group {
             group.set_interaction(disabled, mounted.read(cx).hovered, focused);
             if wrapped {
@@ -874,15 +932,17 @@ impl RenderOnce for Input {
         });
         let line_height = px(metrics.line_height as f32);
         let scroll_mount = mounted.clone();
-        root = root.on_scroll(move |event, _, cx| {
-            scroll_mount.update(cx, |mounted, cx| {
-                let delta = event.delta.pixel_delta(line_height);
-                mounted.scroll.x = (mounted.scroll.x - delta.x).max(px(0.));
-                mounted.scroll.y = (mounted.scroll.y - delta.y).max(px(0.));
-                mounted.ensure_caret = false;
-                cx.notify();
+        if !self.multiline {
+            root = root.on_scroll(move |event, _, cx| {
+                scroll_mount.update(cx, |mounted, cx| {
+                    let delta = event.delta.pixel_delta(line_height);
+                    let scroll = mounted.scroll(cx) - delta;
+                    mounted.set_scroll(point(scroll.x.max(px(0.)), scroll.y.max(px(0.))), cx);
+                    mounted.ensure_caret = false;
+                    cx.notify();
+                });
             });
-        });
+        }
         if let Some(prefix) = self.prefix {
             root = root.child(
                 div()
@@ -890,19 +950,24 @@ impl RenderOnce for Input {
                     .items_center()
                     .flex_shrink_0()
                     .text_color(metrics.affix)
+                    .when(self.multiline, |slot| match config.direction {
+                        Direction::Ltr => slot.pl(affix_padding.left),
+                        Direction::Rtl => slot.pr(affix_padding.right),
+                    })
                     .child(prefix),
             );
         }
         root = root.child(viewport);
-        let visibility = self.mode == InputMode::Password && self.visibility_toggle;
-        let has_suffix =
-            visibility || self.suffix.is_some() || (!self.multiline && count.is_some());
         let mut suffix = div()
             .flex()
             .items_center()
             .flex_shrink_0()
             .when(config.direction == Direction::Rtl, |slot| {
                 slot.flex_row_reverse()
+            })
+            .when(self.multiline, |slot| match config.direction {
+                Direction::Ltr => slot.pr(affix_padding.right),
+                Direction::Rtl => slot.pl(affix_padding.left),
             });
         if self.allow_clear {
             // A hidden clear affordance retains its space, matching Ant's
@@ -1135,6 +1200,7 @@ impl RenderOnce for Input {
                 .child(
                     div()
                         .flex()
+                        .flex_shrink_0()
                         .when(config.direction == Direction::Ltr, |root| {
                             root.justify_end()
                         })
@@ -1158,6 +1224,7 @@ impl RenderOnce for Input {
     }
 }
 
+#[derive(Clone)]
 struct TextViewport {
     state: Entity<InputState>,
     mounted: Entity<MountedInput>,
@@ -1173,6 +1240,7 @@ struct TextViewport {
     text_color: gpui::Hsla,
     accessible_geometry: GeometryCell,
     alignment: TextAlignment,
+    padding: Edges<DefiniteLength>,
 }
 
 impl IntoElement for TextViewport {
@@ -1184,7 +1252,7 @@ impl IntoElement for TextViewport {
 
 impl Element for TextViewport {
     type RequestLayoutState = ();
-    type PrepaintState = Rc<TextLayout>;
+    type PrepaintState = (Rc<TextLayout>, Option<AnyElement>);
 
     fn id(&self) -> Option<ElementId> {
         None
@@ -1204,6 +1272,7 @@ impl Element for TextViewport {
         style.size.width = relative(1.).into();
         style.flex_grow = 1.;
         style.flex_shrink = 1.;
+        style.padding = self.padding;
         let mounted = self.mounted.clone();
         let text = self.text.clone();
         let layout_style = self.layout_style.clone();
@@ -1253,14 +1322,98 @@ impl Element for TextViewport {
         _: &mut (),
         window: &mut Window,
         cx: &mut App,
-    ) -> Rc<TextLayout> {
-        self.layout_style.wrap_width = self.multiline.then_some(bounds.size.width.max(px(1.)));
+    ) -> Self::PrepaintState {
+        let padding = self
+            .padding
+            .map(|value| value.to_pixels(bounds.size.width.into(), window.rem_size()));
+        let text_bounds = Bounds::new(
+            bounds.origin
+                + point(
+                    padding.left.min(bounds.size.width),
+                    padding.top.min(bounds.size.height),
+                ),
+            size(
+                (bounds.size.width - padding.left - padding.right).max(px(0.)),
+                (bounds.size.height - padding.top - padding.bottom).max(px(0.)),
+            ),
+        );
+        self.layout_style.wrap_width = self.multiline.then_some(text_bounds.size.width.max(px(1.)));
         let layout = self.mounted.update(cx, |mounted, _| {
             mounted
                 .cache
                 .borrow_mut()
                 .shape(&self.text, &self.layout_style, window)
         });
+        let scroll_area = self.mounted.read(cx).scroll_area.clone();
+        if let Some(scroll_area) = scroll_area {
+            let mut editor = self.clone();
+            let mut painter = self.clone();
+            let shaped = layout.clone();
+            let mut area = ScrollArea::new("text-scroll", &scroll_area)
+                .scope(self.mounted.read(cx).scope.clone())
+                .embedded()
+                .w(bounds.size.width)
+                .h(bounds.size.height)
+                .child(
+                    canvas(
+                        move |_, window, cx| {
+                            // Native layout has measured/clamped the handle.
+                            // Paint and IME use viewport coordinates so caret
+                            // reveal during this prepaint takes effect at once.
+                            editor.prepaint_text(text_bounds, &shaped, window, cx);
+                            shaped
+                        },
+                        move |_, layout, window, cx| {
+                            painter.paint_text(text_bounds, &layout, window, cx);
+                        },
+                    )
+                    .w_full()
+                    .h(layout.height + bounds.size.height - text_bounds.size.height)
+                    .flex_none(),
+                )
+                .into_any_element();
+            area.layout_as_root(
+                size(
+                    AvailableSpace::Definite(bounds.size.width),
+                    AvailableSpace::Definite(bounds.size.height),
+                ),
+                window,
+                cx,
+            );
+            area.prepaint_at(bounds.origin, window, cx);
+            (layout, Some(area))
+        } else {
+            self.prepaint_text(text_bounds, &layout, window, cx);
+            (layout, None)
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        (layout, area): &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Some(area) = area {
+            area.paint(window, cx);
+        } else {
+            self.paint_text(bounds, layout, window, cx);
+        }
+    }
+}
+
+impl TextViewport {
+    fn prepaint_text(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        layout: &Rc<TextLayout>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         let line_height = self.layout_style.line_height;
         let caret = self.state.read(cx).caret_location();
         let queried_geometry = {
@@ -1275,9 +1428,10 @@ impl Element for TextViewport {
                 })
                 .and_then(|_| state.geometry_snapshot())
         };
-        let geometry = self.mounted.update(cx, |mounted, _| {
+        let geometry = self.mounted.update(cx, |mounted, cx| {
+            let mut scroll = mounted.scroll(cx);
             let cached = mounted.geometry_cache.as_ref().filter(|cache| {
-                Rc::ptr_eq(&cache.layout, &layout)
+                Rc::ptr_eq(&cache.layout, layout)
                     && cache.geometry.revision == self.revision
                     && cache.geometry.viewport == bounds
                     && cache.alignment == self.alignment
@@ -1288,13 +1442,8 @@ impl Element for TextViewport {
             } else if let Some(geometry) = queried_geometry {
                 geometry
             } else {
-                let mut geometry = layout.geometry(
-                    self.revision,
-                    bounds,
-                    mounted.scroll,
-                    line_height,
-                    self.alignment,
-                );
+                let mut geometry =
+                    layout.geometry(self.revision, bounds, scroll, line_height, self.alignment);
                 if self.placeholder {
                     geometry.clusters.clear();
                     geometry.carets = vec![super::geometry::CaretStop {
@@ -1312,22 +1461,21 @@ impl Element for TextViewport {
                 Rc::new(geometry)
             };
             if mounted.ensure_caret {
-                mounted.scroll = geometry.scroll_to_caret(caret, mounted.scroll);
+                scroll = geometry.scroll_to_caret(caret, scroll);
             }
             mounted.scroll_max = point(
-                (layout.width - bounds.size.width).max(px(0.)),
+                if self.multiline {
+                    px(0.)
+                } else {
+                    (layout.width - bounds.size.width).max(px(0.))
+                },
                 (layout.height - bounds.size.height).max(px(0.)),
             );
-            mounted.scroll.x = mounted
-                .scroll
-                .x
-                .min((layout.width - bounds.size.width).max(px(0.)));
-            mounted.scroll.y = mounted
-                .scroll
-                .y
-                .min((layout.height - bounds.size.height).max(px(0.)));
-            if geometry.scroll != mounted.scroll {
-                Rc::make_mut(&mut geometry).scroll = mounted.scroll;
+            scroll.x = scroll.x.clamp(px(0.), mounted.scroll_max.x);
+            scroll.y = scroll.y.clamp(px(0.), mounted.scroll_max.y);
+            mounted.set_scroll(scroll, cx);
+            if geometry.scroll != scroll {
+                Rc::make_mut(&mut geometry).scroll = scroll;
             }
             mounted.ensure_caret = false;
             mounted.geometry_cache = Some(GeometryCache {
@@ -1353,16 +1501,12 @@ impl Element for TextViewport {
         });
         self.mounted
             .update(cx, |mounted, cx| mounted.schedule_drag(window, cx));
-        layout
     }
 
-    fn paint(
+    fn paint_text(
         &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        _: &mut (),
-        layout: &mut Rc<TextLayout>,
+        layout: &Rc<TextLayout>,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -1374,7 +1518,7 @@ impl Element for TextViewport {
         let caret = state.caret_location();
         let geometry = state.geometry_snapshot();
         let marked = state.buffer.marked_range();
-        let scroll = self.mounted.read(cx).scroll;
+        let scroll = self.mounted.read(cx).scroll(cx);
         let caret_visible = self.mounted.read(cx).caret_visible;
         let mounted = self.mounted.clone();
         window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, window, cx| {

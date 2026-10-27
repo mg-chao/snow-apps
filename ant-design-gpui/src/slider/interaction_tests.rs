@@ -107,6 +107,14 @@ impl Fixture {
             .unwrap();
         self.cx.run_until_parked();
     }
+    fn next_frame(&mut self) {
+        self.cx
+            .update_window(self.window.into(), |_, window, cx| {
+                window.simulate_next_frame(cx);
+            })
+            .unwrap();
+        self.draw();
+    }
     fn event(&mut self, event: PlatformInput) {
         self.cx
             .update_window(self.window.into(), |_, window, cx| {
@@ -144,12 +152,19 @@ impl Fixture {
             ..Default::default()
         }));
     }
+    fn hover(&mut self, position: Point<Pixels>) {
+        self.event(PlatformInput::MouseMove(MouseMoveEvent {
+            position,
+            ..Default::default()
+        }));
+    }
     fn up(&mut self, position: Point<Pixels>) {
         self.event(PlatformInput::MouseUp(MouseUpEvent {
             position,
             button: MouseButton::Left,
             ..Default::default()
         }));
+        self.next_frame();
     }
     fn key(&mut self, key: &'static str) {
         self.event(PlatformInput::KeyDown(KeyDownEvent {
@@ -174,6 +189,25 @@ impl Fixture {
     }
     fn value(&self) -> SliderValue {
         self.state.read_with(&self.cx, |s, _| s.value())
+    }
+    fn tooltip_visible(&mut self) -> bool {
+        let background = self.consumer.read_with(&self.cx, |c, cx| {
+            c.scope
+                .snapshot(cx)
+                .theme
+                .tokens
+                .color_bg_spotlight
+                .to_hsla()
+        });
+        self.cx
+            .update_window(self.window.into(), |_, window, _| {
+                window
+                    .rendered_scene()
+                    .quads
+                    .iter()
+                    .any(|quad| quad.background.as_solid() == Some(background))
+            })
+            .unwrap()
     }
     fn edit(&mut self, edit: impl FnOnce(&mut Consumer)) {
         self.consumer.update(&mut self.cx, |c, cx| {
@@ -472,6 +506,175 @@ fn compact_focused_handle_rings_do_not_accumulate_layout_rounding() {
             );
         })
         .unwrap();
+    }
+}
+
+#[test]
+fn native_tooltip_closes_after_drag_release_and_pointer_leave_without_blurring() {
+    for range in [false, true] {
+        for release_outside in [false, true] {
+            let mut f = Fixture::new(
+                SliderOptions {
+                    range: range.then(SliderRange::default),
+                    ..Default::default()
+                },
+                if range {
+                    [20., 80.].into()
+                } else {
+                    SliderValue::Single(20.)
+                },
+            );
+            f.edit(|c| c.tooltip = SliderTooltip::default());
+            assert!(!f.tooltip_visible());
+            f.hover(f.point(20.));
+            assert!(f.tooltip_visible(), "hover opens the tooltip");
+            f.down(f.point(20.));
+            f.move_to(f.point(60.));
+            let outside = f.point(60.) + point(px(0.), px(80.));
+            f.move_to(outside);
+            assert!(
+                f.tooltip_visible(),
+                "dragging outside keeps the tooltip open"
+            );
+            if release_outside {
+                f.up(outside);
+            } else {
+                f.move_to(f.point(60.));
+                f.up(f.point(60.));
+                assert!(
+                    f.tooltip_visible(),
+                    "hover keeps the tooltip open after release"
+                );
+                f.hover(outside);
+            }
+            assert!(
+                !f.tooltip_visible(),
+                "release and pointer leave close the tooltip"
+            );
+            let focus = f.state.read_with(&f.cx, |s, _| {
+                s.handles[&s.model.handles[0].id].focus.clone()
+            });
+            assert!(
+                f.cx.update_window(f.window.into(), |_, window, _| { focus.is_focused(window) })
+                    .unwrap(),
+                "pointer release preserves native focus"
+            );
+            f.key("right");
+            f.key_up("right");
+            assert_eq!(
+                f.value(),
+                if range {
+                    [61., 80.].into()
+                } else {
+                    61.0.into()
+                }
+            );
+            f.hover(f.point(61.));
+            assert!(f.tooltip_visible(), "hover can reopen the tooltip");
+            f.hover(outside);
+            assert!(!f.tooltip_visible());
+            f.down(f.point(61.));
+            f.move_to(outside);
+            assert!(
+                f.tooltip_visible(),
+                "pressing the focused thumb reopens its tooltip"
+            );
+            f.up(outside);
+            assert!(!f.tooltip_visible());
+        }
+    }
+}
+
+#[test]
+fn native_tooltip_release_before_focus_notification_does_not_reopen_it() {
+    let mut f = Fixture::new(SliderOptions::default(), 30.);
+    f.edit(|c| c.tooltip = SliderTooltip::default());
+    let position = f.point(30.);
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                position,
+                button: MouseButton::Left,
+                click_count: 1,
+                ..Default::default()
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                position,
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+    })
+    .unwrap();
+    f.draw();
+    f.next_frame();
+    f.hover(position + point(px(0.), px(80.)));
+    assert!(
+        !f.tooltip_visible(),
+        "a late focus event must not reopen the released tooltip"
+    );
+}
+
+#[test]
+fn native_tooltip_focus_opens_until_blur_or_mouse_release() {
+    let mut f = Fixture::new(SliderOptions::default(), 30.);
+    f.edit(|c| c.tooltip = SliderTooltip::default());
+    f.focus(0);
+    f.draw();
+    assert!(f.tooltip_visible(), "native focus opens the tooltip");
+    f.key("right");
+    f.key_up("right");
+    assert!(
+        f.tooltip_visible(),
+        "keyboard release keeps the focused tooltip open"
+    );
+    f.up(point(px(900.), px(900.)));
+    assert!(
+        !f.tooltip_visible(),
+        "mouse release clears tooltip focus even without a drag"
+    );
+    let state = f.state.clone();
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        state.update(cx, |s, cx| s.blur(window, cx));
+    })
+    .unwrap();
+    f.draw();
+    f.focus(0);
+    f.draw();
+    assert!(f.tooltip_visible(), "new focus can reopen the tooltip");
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        state.update(cx, |s, cx| s.blur(window, cx));
+    })
+    .unwrap();
+    f.draw();
+    f.draw();
+    assert!(!f.tooltip_visible(), "blur closes the focused tooltip");
+}
+
+#[test]
+fn native_tooltip_explicit_open_overrides_pointer_and_focus() {
+    for open in [false, true] {
+        let mut f = Fixture::new(SliderOptions::default(), 30.);
+        f.edit(|c| {
+            c.tooltip = SliderTooltip {
+                open: Some(open),
+                ..Default::default()
+            }
+        });
+        f.focus(0);
+        f.draw();
+        assert_eq!(f.tooltip_visible(), open);
+        f.down(f.point(30.));
+        f.move_to(f.point(60.));
+        assert_eq!(f.tooltip_visible(), open);
+        let outside = f.point(60.) + point(px(0.), px(80.));
+        f.move_to(outside);
+        f.up(outside);
+        assert_eq!(f.tooltip_visible(), open);
     }
 }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::ScrollAxis;
+use crate::Direction;
 use gpui::{Bounds, Pixels, Point, point, px, size};
 
 /// All values use the viewport's physical coordinate system. GPUI offsets are
@@ -67,9 +68,10 @@ impl BarGeometry {
         self.coordinate(self.thumb.origin)
     }
 
-    /// The larger thumb bounds are the pointer target. Center the visible shape
-    /// inside them, clamping custom thickness for tiny constrained viewports.
-    pub fn visual_thumb(self, thickness: Pixels) -> Bounds<Pixels> {
+    /// Keep the visible thumb against the viewport's outer edge, matching the
+    /// Qt overlay scrollbar. Hover expansion grows inward without moving that
+    /// edge or the larger pointer target. Clamp thickness for tiny viewports.
+    pub fn visual_thumb(self, thickness: Pixels, direction: Direction) -> Bounds<Pixels> {
         let cross = if self.vertical {
             self.track.size.width
         } else {
@@ -78,12 +80,19 @@ impl BarGeometry {
         let thickness = thickness.clamp(px(0.), cross);
         if self.vertical {
             Bounds::new(
-                point(self.thumb.center().x - thickness / 2., self.thumb.top()),
+                point(
+                    if direction == Direction::Rtl {
+                        self.thumb.left()
+                    } else {
+                        self.thumb.right() - thickness
+                    },
+                    self.thumb.top(),
+                ),
                 size(thickness, self.thumb.size.height),
             )
         } else {
             Bounds::new(
-                point(self.thumb.left(), self.thumb.center().y - thickness / 2.),
+                point(self.thumb.left(), self.thumb.bottom() - thickness),
                 size(self.thumb.size.width, thickness),
             )
         }
