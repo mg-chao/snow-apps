@@ -330,6 +330,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("none"), QStringLiteral("system")}},
     {QStringLiteral("text_recognition/resident_process"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/model_hot_start"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("text_recognition/hardware_acceleration"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/model_type"),
      QStringLiteral("small"),
      ConfigurationValueKind::String,

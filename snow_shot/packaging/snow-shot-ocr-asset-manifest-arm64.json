@@ -2,24 +2,24 @@
   "schema": 2,
   "default_model": "small",
   "runtime": {
-    "version": "1.1.0",
+    "version": "1.2.0",
     "platform": "windows-arm64",
     "archive": {
-      "name": "snow-ocr-runtime-1.1.0-windows-arm64.zip",
-      "size": 1320031,
-      "sha256": "ff4245529360e209d1da34c75ce0a20c8ffdbd69b7ba02c93f047d45e7ca80f4",
-      "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.1.0/windows-arm64/snow-ocr-runtime-1.1.0-windows-arm64.zip"
+      "name": "snow-ocr-runtime-1.2.0-windows-arm64.zip",
+      "size": 8269645,
+      "sha256": "3c87f132bbbeb1041cc17d4870a204f9de7cf38a2f8b30c6f2a4d41d8b9cda6f",
+      "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.2.0/windows-arm64/snow-ocr-runtime-1.2.0-windows-arm64.zip"
     },
     "files": [
       {
-        "name": "snow-ocr-process-1.1.0-windows-arm64.exe",
-        "size": 2881536,
-        "sha256": "ed0c55fbf14b0560d4b27ba10584a9490b32592558ed1506bb34ebafada93be2"
+        "name": "snow-ocr-process-1.2.0-windows-arm64.exe",
+        "size": 27809792,
+        "sha256": "fe61426c03c65163979ef27e3f2f3136b2ab508c3b4e02638f69b0b33842fc6a"
       },
       {
         "name": "runtime-manifest.json",
-        "size": 295,
-        "sha256": "ac30bb6bf6f407fa214fc2c943ab009d2aafefcd65d31b050b522d58e8578832"
+        "size": 296,
+        "sha256": "5a3e9bd91b138e2883a61bafb0027e09dfad7be18a0d3401d8f78ed021b49d77"
       }
     ]
   },

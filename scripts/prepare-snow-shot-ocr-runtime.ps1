@@ -40,7 +40,7 @@ $nativeProbePassed = $false
 if ($nativeTarget) {
     $version = (& $executable --version 2>$null)
     $workerArchitecture = if ($Architecture -eq 'arm64') { 'aarch64' } else { 'x86_64' }
-    if ($LASTEXITCODE -ne 0 -or $version -cne "snow-ocr-process $runtimeVersion windows-$workerArchitecture protocol 6") {
+    if ($LASTEXITCODE -ne 0 -or $version -cne "snow-ocr-process $runtimeVersion windows-$workerArchitecture protocol 7") {
         throw "Unexpected OCR runtime identity: $version"
     }
     $nativeProbePassed = $true
@@ -82,7 +82,7 @@ $payload = @(
     (Get-RuntimeFile (Join-Path $stage $runtimeName) $runtimeName)
 )
 $runtimeManifest = Join-Path $stage 'runtime-manifest.json'
-[ordered]@{ schema = 1; version = $runtimeVersion; platform = $platform; protocol = 6; files = $payload } |
+[ordered]@{ schema = 1; version = $runtimeVersion; platform = $platform; protocol = 7; files = $payload } |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeManifest -Encoding utf8
 $files = @($payload) + @((Get-RuntimeFile $runtimeManifest 'runtime-manifest.json'))
 $stagedArchive = Join-Path $buildRoot "$archiveName.pending"

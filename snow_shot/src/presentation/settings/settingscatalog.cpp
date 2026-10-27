@@ -2854,6 +2854,19 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
     };
 }
 
+SettingsItemDefinition ocrHardwareAccelerationItem() {
+    return {
+        QStringLiteral("text-recognition.hardware-acceleration"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hardware acceleration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Use GPU acceleration when available. Recognition uses the CPU "
+                               "while acceleration is unavailable.")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "GPU"))},
+        QStringLiteral("text_recognition/hardware_acceleration"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::OcrHardwareAcceleration},
+    };
+}
+
 SettingsItemDefinition ocrResidentProcessItem() {
     return {
         QStringLiteral("text-recognition.resident-process"),
@@ -3762,7 +3775,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                                              "Configure text recognition models and processing")),
               SettingsSectionReset::TextRecognition,
               {ocrModelTypeItem(), ocrDetectorResizePolicyItem(), ocrTextDetectionProcessingItem(),
-               ocrResidentProcessItem(), ocrModelHotStartItem()},
+               ocrHardwareAccelerationItem(), ocrResidentProcessItem(), ocrModelHotStartItem()},
               SettingsSectionItemLayout::VerticalList},
          },
          SettingsPageKind::GeneratedSettings,
@@ -5156,6 +5169,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::OcrResidentProcess:
                         expectedKey = QStringLiteral("text_recognition/resident_process");
+                        break;
+                    case SettingsSwitchBinding::OcrHardwareAcceleration:
+                        expectedKey = QStringLiteral("text_recognition/hardware_acceleration");
                         break;
                     case SettingsSwitchBinding::OcrModelHotStart:
                         expectedKey = QStringLiteral("text_recognition/model_hot_start");

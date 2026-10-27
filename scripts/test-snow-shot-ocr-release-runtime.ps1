@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
 $testRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "build/ocr-runtime-import-tests-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $testRoot
-$names = @("snow-ocr-process-1.1.0-windows-$Architecture.exe", 'runtime-manifest.json')
+$names = @("snow-ocr-process-1.2.0-windows-$Architecture.exe", 'runtime-manifest.json')
 $payload = [Text.Encoding]::UTF8.GetBytes('immutable fixture')
 $payloadHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payload)).ToLowerInvariant()
 foreach ($case in @('valid', 'archive-hash', 'archive-size', 'entry-hash', 'entry-size', 'duplicate', 'traversal', 'case-collision', 'symlink', 'directory', 'missing', 'nonempty')) {
@@ -32,7 +32,7 @@ foreach ($case in @('valid', 'archive-hash', 'archive-size', 'entry-hash', 'entr
         }
     } finally { $archive.Dispose(); $stream.Dispose() }
     $runtime = [pscustomobject]@{
-        version = '1.1.0'; platform = "windows-$Architecture"
+        version = '1.2.0'; platform = "windows-$Architecture"
         archive = [pscustomobject]@{ size = (Get-Item -LiteralPath $archivePath).Length; sha256 = (Get-FileHash -LiteralPath $archivePath).Hash.ToLowerInvariant() }
         files = @($names | ForEach-Object { [pscustomobject]@{ name = $_; size = $payload.Length; sha256 = $payloadHash } })
     }
@@ -76,7 +76,7 @@ $validArchive = Join-Path $testRoot 'valid.zip'
 $manifest = [ordered]@{
     schema = 2; default_model = 'small'
     runtime = [ordered]@{
-        version = '1.1.0'; platform = "windows-$Architecture"
+        version = '1.2.0'; platform = "windows-$Architecture"
         archive = [ordered]@{ name = 'valid.zip'; size = (Get-Item -LiteralPath $validArchive).Length; sha256 = (Get-FileHash -LiteralPath $validArchive).Hash.ToLowerInvariant(); url = 'https://invalid.invalid/unused' }
         files = @($names | ForEach-Object { [ordered]@{ name = $_; size = $payload.Length; sha256 = $payloadHash } })
     }
@@ -87,7 +87,7 @@ $manifest = [ordered]@{
 $manifestPath = Join-Path $testRoot 'asset-manifest.json'
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 $stage = Join-Path $testRoot 'offline-stage'
-$runtimeStage = Join-Path $stage "runtimes/1.1.0/windows-$Architecture"
+$runtimeStage = Join-Path $stage "runtimes/1.2.0/windows-$Architecture"
 foreach ($pass in 1..2) {
     & cmake "-DSNOW_OCR_ASSET_MANIFEST=$manifestPath" "-DSNOW_OCR_ARTIFACTS_DIR=$testRoot" `
         "-DSNOW_OCR_DESTINATION=$stage" "-DSNOW_OCR_PLATFORM=windows-$Architecture" `

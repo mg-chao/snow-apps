@@ -69,12 +69,19 @@ for WebP decoding, and libpng (Libpng) with zlib-ng (Zlib) for PNG/APNG frames.
 Their resolved copyright notices are included in the generated vcpkg license bundle.
 
 The OCR worker uses the Apache-2.0 `simd-paddle-ocr-rs` Git submodule for
-CPU inference. It includes adaptations of Sdcb.SimdPaddleOCR (Apache-2.0),
+CPU inference and optional Vulkan/Metal acceleration. It includes adaptations of Sdcb.SimdPaddleOCR (Apache-2.0),
 .NET runtime reading-order sorting (MIT), and AMD win-libm exponential
 approximation (MIT). The generated bundle includes the submodule's LICENSE,
 NOTICE, and both component notices from its `licenses/` directory, along with
 its resolved dependencies. The worker is built using the submodule's pinned
-nightly toolchain. Runtime 1.1.0 has no external inference libraries.
+nightly toolchain. Runtime 1.2.0 uses ash (MIT OR Apache-2.0), gpu-allocator
+(MIT OR Apache-2.0), and shaderc (Apache-2.0) for Vulkan; shaderc and its bundled
+shader compiler sources are build dependencies. Apple Silicon builds use the
+objc2 Metal/Foundation bindings, block2, and dispatch2 (MIT OR Apache-2.0 OR Zlib)
+and miniz_oxide (MIT OR Zlib OR Apache-2.0). The resolved GPU dependency closure,
+including bytemuck, half, and transitive dependencies, is included by the same
+license collectors. Runtime shaders are embedded; GPU drivers and native system
+frameworks are supplied by the operating system/vendor.
 
 The GPL-3.0-only `snow-shot-updater` sidecar is implemented in Rust and is
 distributed as part of Snow Shot. Its resolved normal and build dependency

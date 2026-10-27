@@ -113,7 +113,7 @@ function Invoke-SnowNativePackageProbe {
         }
         $workerArchitecture = if ($TargetArchitecture -eq 'arm64') { 'aarch64' } else { 'x86_64' }
         $identity = & $runtime.FullName --version 2>$null
-        if ($LASTEXITCODE -ne 0 -or $identity -cne "snow-ocr-process $version windows-$workerArchitecture protocol 6") {
+        if ($LASTEXITCODE -ne 0 -or $identity -cne "snow-ocr-process $version windows-$workerArchitecture protocol 7") {
             throw 'Packaged native OCR runtime probe failed.'
         }
     }

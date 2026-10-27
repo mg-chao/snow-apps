@@ -134,6 +134,7 @@ enum class SettingsSwitchBinding {
     SmartSelection,
     OcrResidentProcess,
     OcrModelHotStart,
+    OcrHardwareAcceleration,
     ScreenshotAreaTypeHint,
     ShowGuidesByDefault,
     ShowEditSelectionToolbar,

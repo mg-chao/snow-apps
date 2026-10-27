@@ -159,7 +159,7 @@ int runOcrLifecycleChild() {
         QByteArray frame;
         QDataStream stream(&frame, QIODevice::WriteOnly);
         stream.setByteOrder(QDataStream::LittleEndian);
-        const quint16 version = qEnvironmentVariableIsSet("SNOW_TEST_OCR_OLD_PROTOCOL") ? 5 : 6;
+        const quint16 version = qEnvironmentVariableIsSet("SNOW_TEST_OCR_OLD_PROTOCOL") ? 6 : 7;
         stream << quint32(0x52434f53) << version << kind << token << quint32(payload.size());
         frame.append(payload);
         std::fwrite(frame.constData(), 1, static_cast<std::size_t>(frame.size()), stdout);
@@ -188,7 +188,7 @@ int runOcrLifecycleChild() {
         quint16 version = 0, kind = 0;
         quint64 token = 0;
         input >> magic >> version >> kind >> token >> size;
-        if (magic != 0x52434f53 || version != 6 || size > 1024 * 1024)
+        if (magic != 0x52434f53 || version != 7 || size > 1024 * 1024)
             return 2;
         QByteArray payload(size, '\0');
         if (std::fread(payload.data(), 1, size, stdin) != size)
@@ -213,9 +213,22 @@ int runOcrLifecycleChild() {
             QDataStream output(&ready, QIODevice::WriteOnly);
             output.setByteOrder(QDataStream::LittleEndian);
             output << quint8(1) << quint32(0) << quint32(5);
-            output.writeRawData("1.1.0", 5);
-            output << quint32(6);
+            output.writeRawData("1.2.0", 5);
+            output << quint32(7);
             reply(2, 0, ready);
+        } else if (kind == 19) {
+            event("acceleration " + payload.toHex());
+            if (payload == QByteArray(1, '\1') &&
+                qEnvironmentVariableIsSet("SNOW_TEST_OCR_GPU_READY")) {
+                const auto gate = QFileInfo(qEnvironmentVariable("SNOW_TEST_OCR_LIFECYCLE_MARKER"))
+                                      .dir()
+                                      .filePath(QStringLiteral("gpu-ready"));
+                std::thread([gate, reply]() {
+                    while (!QFileInfo::exists(gate))
+                        QThread::msleep(1);
+                    reply(20, 0);
+                }).detach();
+            }
         } else if (kind == 8) {
             event("prepare " + payload.toHex());
             if (qEnvironmentVariableIsSet("SNOW_TEST_OCR_PREPARE_HOLD")) {
@@ -317,6 +330,9 @@ int runOcrLifecycleChild() {
 
 void ocrProcessLifecycleTests() {
     imageTransfersConvertDirectlyWithoutPublishingReady();
+    require(!ScreenshotOcrRuntimeConfiguration{}.hardwareAcceleration &&
+                !ScreenshotOcrRecognitionService::Options{}.hardwareAcceleration,
+            "hardware acceleration must default off in runtime and initial options");
     using namespace snow_shot::diagnostics;
     require(ScreenshotOcrRuntimeConfiguration{}.textDetectionProcessing ==
                     ScreenshotOcrTextDetectionProcessing::AccuracyFirst &&
@@ -551,10 +567,88 @@ void ocrProcessLifecycleTests() {
                 ++count;
         return count;
     };
+    {
+        qputenv("SNOW_TEST_OCR_GPU_READY", "1");
+        QObject receiver;
+        ScreenshotOcrRecognitionService service(options);
+        ScreenshotOcrRuntimeConfiguration configuration;
+        configuration.residentProcess = true;
+        configuration.modelHotStart = true;
+        configuration.hardwareAcceleration = true;
+        const int initialLoads = countEvent("prepare ");
+        const int initialConfigurations = countEvent("acceleration 01");
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 1; }),
+                "pending GPU discovery must not block model hot start");
+        require(countEvent("acceleration 01") == initialConfigurations + 1,
+                "acceleration preference must be sent before session preparation");
+        QImage image(8, 8, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        bool completed = false;
+        require(service.recognize({image, QRectF(0, 0, 8, 8)}, &receiver,
+                                  [&](ScreenshotOcrRecognitionResult result) {
+                                      require(result.error.isEmpty(),
+                                              "pending GPU must allow CPU recognition");
+                                      completed = true;
+                                  }) != 0,
+                "acceleration request must be accepted");
+        require(waitUntil([&] { return completed && countEvent("prepare ") == initialLoads + 2; }),
+                "recognition and idle reset must finish before GPU discovery completes");
+        const auto pid = service.processId();
+        QFile gate(directory.filePath(QStringLiteral("gpu-ready")));
+        require(gate.open(QIODevice::WriteOnly), "GPU completion gate must open");
+        gate.close();
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 3; }),
+                "completed GPU discovery must promote the idle resident session");
+        require(service.processId() == pid, "GPU promotion must reuse the worker");
+        QByteArray lastPrepare;
+        for (const auto& event : events())
+            if (event.startsWith("prepare "))
+                lastPrepare = event;
+        require(lastPrepare.startsWith("prepare 000001"),
+                "session configuration must carry enabled acceleration");
+        service.setHardwareAcceleration(false);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 4; }),
+                "disabling acceleration must rebuild the idle session");
+        for (const auto& event : events())
+            if (event.startsWith("prepare "))
+                lastPrepare = event;
+        require(lastPrepare.startsWith("prepare 000000") && service.processId() == pid,
+                "disabling acceleration must select CPU without replacing the worker");
+        qunsetenv("SNOW_TEST_OCR_GPU_READY");
+        QFile::remove(gate.fileName());
+    }
     const auto touch = [&](const QString& name) {
         QFile file(directory.filePath(name));
         require(file.open(QIODevice::WriteOnly), "lifecycle control file must be writable");
     };
+    for (const auto [resident, hot] :
+         {std::pair{false, false}, std::pair{false, true}, std::pair{true, false}}) {
+        // An initializer that never finishes must not change residency or retain a child.
+        qputenv("SNOW_TEST_OCR_GPU_READY", "1");
+        ScreenshotOcrRecognitionService service(options);
+        ScreenshotOcrRuntimeConfiguration configuration;
+        configuration.hardwareAcceleration = true;
+        configuration.residentProcess = resident;
+        configuration.modelHotStart = hot;
+        service.setRuntimeConfiguration(configuration);
+        QObject receiver;
+        QImage image(8, 8, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        bool completed = false;
+        service.recognize({image, QRectF(0, 0, 8, 8)}, &receiver,
+                          [&](ScreenshotOcrRecognitionResult result) {
+                              require(result.error.isEmpty(), "pending GPU must allow CPU work");
+                              completed = true;
+                          });
+        require(waitUntil([&] { return completed && (resident || service.processId() == 0); }),
+                "pending GPU must preserve cold, saved-hot, and resident-only behavior");
+        configuration.residentProcess = false;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return service.processId() == 0; }),
+                "shutdown must not wait for pending GPU initialization");
+        qunsetenv("SNOW_TEST_OCR_GPU_READY");
+    }
     {
         const int initialStarts = countEvent("start");
         const int initialLoads = countEvent("prepare ");
@@ -710,6 +804,7 @@ void ocrProcessLifecycleTests() {
                 "growth must use exactly the largest pending image capacity");
         configuration.modelType = ScreenshotOcrModelType::Medium;
         configuration.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::SpeedFirst;
+        configuration.hardwareAcceleration = true;
         service.setRuntimeConfiguration(configuration);
         service.cancel(first);
         require(service.processId() == pid, "resident cancellation must preserve its child");
@@ -726,7 +821,7 @@ void ocrProcessLifecycleTests() {
                 latestPrepare = event;
         }
         require(
-            latestPrepare.startsWith("prepare 0001"),
+            latestPrepare.startsWith("prepare 000101"),
             "pending recognition must use the new processing mode after active inference drains");
         touch(QStringLiteral("finish-%1").arg(second));
         require(waitUntil([&] {
@@ -735,6 +830,7 @@ void ocrProcessLifecycleTests() {
                 }),
                 "mixed priorities must preserve strict FIFO");
         configuration.residentProcess = false;
+        configuration.hardwareAcceleration = false;
         service.setRuntimeConfiguration(configuration);
         require(service.processId() == pid, "resident-off must let outstanding inference finish");
         touch(QStringLiteral("finish-%1").arg(third));
@@ -935,7 +1031,7 @@ void ocrProcessLifecycleTests() {
             {image, QRectF(0, 0, 8, 8)}, &receiver,
             [&](ScreenshotOcrRecognitionResult result) { rejected = !result.error.isEmpty(); });
         require(waitUntil([&] { return rejected; }),
-                "protocol 5 workers must be rejected explicitly");
+                "protocol 6 workers must be rejected explicitly");
         qunsetenv("SNOW_TEST_OCR_OLD_PROTOCOL");
     }
     diagnostics.shutdown();

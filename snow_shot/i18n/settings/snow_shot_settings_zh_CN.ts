@@ -2528,6 +2528,10 @@
             <translation>GIF、APNG 和 WebP 的分辨率、帧率与循环播放</translation>
         </message>
         <message>
+            <source>GPU</source>
+            <translation>GPU</translation>
+        </message>
+        <message>
             <source>General</source>
             <translation>常规</translation>
         </message>
@@ -2578,6 +2582,10 @@
         <message>
             <source>H.265 (Hardware)</source>
             <translation>H.265（硬件）</translation>
+        </message>
+        <message>
+            <source>Hardware acceleration</source>
+            <translation>硬件加速</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -4598,6 +4606,10 @@
         <message>
             <source>Upload to Cloud</source>
             <translation>上传到云端</translation>
+        </message>
+        <message>
+            <source>Use GPU acceleration when available. Recognition uses the CPU while acceleration is unavailable.</source>
+            <translation>在可用时使用 GPU 加速。加速不可用时，识别将使用 CPU。</translation>
         </message>
         <message>
             <source>Use global mouse gestures, select individual window elements, and translate selected text.</source>

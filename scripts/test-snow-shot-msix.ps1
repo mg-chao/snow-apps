@@ -27,21 +27,21 @@ function New-Fixture([string]$Stage, [string]$Architecture) {
         'bin/audios/camera_shutter.mp3', 'share/snow-shot/licenses/LICENSES.txt',
         'bin/assets/qrcode/detect.prototxt', 'bin/assets/qrcode/detect.caffemodel',
         'bin/assets/qrcode/sr.prototxt', 'bin/assets/qrcode/sr.caffemodel',
-        "bin/assets/ocr/runtimes/1.1.0/windows-$Architecture/snow-ocr-process-1.1.0-windows-$Architecture.exe",
-        "bin/assets/ocr/runtimes/1.1.0/windows-$Architecture/runtime-manifest.json", 'bin/assets/ocr/models/small/model.onnx')
+        "bin/assets/ocr/runtimes/1.2.0/windows-$Architecture/snow-ocr-process-1.2.0-windows-$Architecture.exe",
+        "bin/assets/ocr/runtimes/1.2.0/windows-$Architecture/runtime-manifest.json", 'bin/assets/ocr/models/small/model.onnx')
     foreach ($name in $files) {
         $path = Join-Path $Stage $name
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force
         if ([IO.Path]::GetExtension($name) -in @('.exe', '.dll')) { Write-Pe $path $Architecture }
         else { [IO.File]::WriteAllText($path, 'fixture') }
     }
-    $runtimeFiles = @(Get-ChildItem -LiteralPath (Join-Path $Stage "bin/assets/ocr/runtimes/1.1.0/windows-$Architecture") -File | ForEach-Object {
+    $runtimeFiles = @(Get-ChildItem -LiteralPath (Join-Path $Stage "bin/assets/ocr/runtimes/1.2.0/windows-$Architecture") -File | ForEach-Object {
         @{ name = $_.Name; size = $_.Length; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
     })
     $model = Get-Item -LiteralPath (Join-Path $Stage 'bin/assets/ocr/models/small/model.onnx')
-    @{ schema = 1; component = '1.1.0' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage "bin/assets/ocr/runtimes/1.1.0/windows-$Architecture/.complete.json") -Encoding utf8NoBOM
+    @{ schema = 1; component = '1.2.0' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage "bin/assets/ocr/runtimes/1.2.0/windows-$Architecture/.complete.json") -Encoding utf8NoBOM
     @{ schema = 1; component = 'small' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Stage 'bin/assets/ocr/models/small/.complete.json') -Encoding utf8NoBOM
-    @{ schema = 2; default_model = 'small'; runtime = @{ version = '1.1.0'; platform = "windows-$Architecture"; files = $runtimeFiles };
+    @{ schema = 2; default_model = 'small'; runtime = @{ version = '1.2.0'; platform = "windows-$Architecture"; files = $runtimeFiles };
         models = @(@{ type = 'small'; id = 'small'; files = @(@{ name = 'model.onnx'; size = $model.Length;
             sha256 = (Get-FileHash $model.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }) }) } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $Stage 'bin/assets/ocr/asset-manifest.json') -Encoding utf8NoBOM

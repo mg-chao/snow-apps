@@ -1,3 +1,4 @@
+mod acceleration;
 mod buffer;
 use buffer::{SLOT_HEADER, SharedImage};
 mod protocol;
@@ -26,6 +27,7 @@ use std::{
 struct Config {
     detector_resize_policy: DetectorResizePolicy,
     text_detection_processing: TextDetectionProcessing,
+    hardware_acceleration: bool,
     detector_model: PathBuf,
     recognizer_model: PathBuf,
     dictionary: PathBuf,
@@ -93,6 +95,7 @@ enum Event {
     Command(protocol::Frame),
     Completed(WorkResult),
     CommandsClosed,
+    AccelerationReady,
 }
 
 fn read_commands(mut reader: impl io::Read, tx: mpsc::Sender<Event>) {
@@ -104,17 +107,6 @@ fn read_commands(mut reader: impl io::Read, tx: mpsc::Sender<Event>) {
     // The worker also owns a sender, so command EOF must explicitly wake the
     // event loop instead of waiting for every sender to disconnect.
     let _ = tx.send(Event::CommandsClosed);
-}
-
-fn run_unless_cancelled<T>(
-    cancelled: &AtomicBool,
-    work: impl FnOnce() -> Result<T, String>,
-) -> Result<T, String> {
-    if cancelled.load(Ordering::Acquire) {
-        Err("cancelled".to_string())
-    } else {
-        work()
-    }
 }
 
 fn worker_event(
@@ -140,13 +132,36 @@ fn initialize_engine(
     config: &Config,
     thread_budget: usize,
     previous: Option<Engine>,
+    acceleration: &acceleration::Acceleration,
 ) -> Option<Engine> {
     let started = Instant::now();
+    let gpu = config
+        .hardware_acceleration
+        .then(|| acceleration.snapshot())
+        .flatten();
+    let previous = previous.filter(|engine| engine.uses_gpu() == gpu.is_some());
     let reused = previous.is_some();
+    let use_gpu = gpu.is_some();
     let result = match previous {
         Some(engine) => engine.recreate(),
-        None => make_engine(config, thread_budget),
+        None => make_engine(config, thread_budget, gpu),
     }
+    .or_else(|error| {
+        if !use_gpu || !worker::gpu_failure(error.kind()) {
+            return Err(error);
+        }
+        acceleration.retire();
+        worker_event(
+            "ocr.gpu_fallback",
+            0,
+            "preparation",
+            "cpu",
+            "fallback",
+            0,
+            &error.to_string(),
+        );
+        make_engine(config, thread_budget, None)
+    })
     .map_err(|e| e.to_string());
     worker_event(
         "ocr.engine_ready",
@@ -156,7 +171,7 @@ fn initialize_engine(
         } else {
             "initialization"
         },
-        "simd-paddle-ocr-rs",
+        result.as_ref().map_or("cpu", Engine::backend),
         if result.is_ok() {
             "succeeded"
         } else {
@@ -172,6 +187,7 @@ fn session_config(payload: &[u8]) -> io::Result<Config> {
     let mut d = Decoder::new(payload);
     let detector_resize_policy = DetectorResizePolicy::from_wire(d.u8()?)?;
     let text_detection_processing = TextDetectionProcessing::from_wire(d.u8()?)?;
+    let hardware_acceleration = wire_boolean(d.u8()?)?;
     let detector_model = PathBuf::from(d.string()?);
     let recognizer_model = PathBuf::from(d.string()?);
     let dictionary = PathBuf::from(d.string()?);
@@ -181,10 +197,21 @@ fn session_config(payload: &[u8]) -> io::Result<Config> {
     Ok(Config {
         detector_resize_policy,
         text_detection_processing,
+        hardware_acceleration,
         detector_model,
         recognizer_model,
         dictionary,
     })
+}
+fn wire_boolean(value: u8) -> io::Result<bool> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid OCR boolean",
+        )),
+    }
 }
 fn ready_payload() -> Vec<u8> {
     let mut p = Vec::new();
@@ -290,6 +317,7 @@ fn main() -> io::Result<()> {
             1,
             DetectorResizePolicy::Max,
             TextDetectionProcessing::default(),
+            None,
         )
         .map_err(|error| io::Error::other(error.to_string()))?;
         return Ok(());
@@ -315,11 +343,14 @@ fn main() -> io::Result<()> {
     let (work_tx, work_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
     let result_tx = event_tx.clone();
+    let acceleration = acceleration::Acceleration::new();
+    let worker_acceleration = acceleration.clone();
     let worker = thread::Builder::new()
         .name("snow-ocr-inference".into())
-        .spawn(move || worker_loop(work_rx, result_tx))?;
+        .spawn(move || worker_loop(work_rx, result_tx, worker_acceleration))?;
     write_frame(&mut writer, Kind::Ready, 0, &ready_payload())?;
-    thread::spawn(move || read_commands(reader, event_tx));
+    let command_tx = event_tx.clone();
+    thread::spawn(move || read_commands(reader, command_tx));
     let mut shared: Option<(u64, SharedImage)> = None;
     let mut staged: Option<(u64, InputImage)> = None;
     let mut active: Option<(u64, Arc<AtomicBool>)> = None;
@@ -348,8 +379,44 @@ fn main() -> io::Result<()> {
                 continue;
             }
             Ok(Event::CommandsClosed) | Err(_) => break,
+            Ok(Event::AccelerationReady) => {
+                // Disabled/stale discoveries never change the host's session generation.
+                if acceleration.snapshot().is_some() {
+                    write_frame(&mut writer, Kind::AccelerationReady, 0, &[])?;
+                }
+                continue;
+            }
         };
         match frame.kind {
+            Kind::ConfigureAcceleration => {
+                if frame.request_id != 0 || frame.payload.len() != 1 {
+                    return Err(io::Error::other("invalid OCR acceleration configuration"));
+                }
+                let enabled = wire_boolean(frame.payload[0])?;
+                let notification_tx = event_tx.clone();
+                acceleration.configure(
+                    enabled,
+                    acceleration::initialize,
+                    move |available, reason| {
+                        worker_event(
+                            "ocr.gpu_initialization",
+                            0,
+                            "device",
+                            if available { "gpu" } else { "cpu" },
+                            if available {
+                                "succeeded"
+                            } else {
+                                "unavailable"
+                            },
+                            0,
+                            &reason,
+                        );
+                        if available {
+                            let _ = notification_tx.send(Event::AccelerationReady);
+                        }
+                    },
+                );
+            }
             Kind::AttachBuffer => {
                 if shared.is_some() {
                     return Err(io::Error::other("OCR buffer already attached"));
@@ -501,7 +568,9 @@ mod tests {
         let (work_tx, work_rx) = std::sync::mpsc::channel();
         let (event_tx, event_rx) = std::sync::mpsc::channel();
         let command_sender = event_tx.clone();
-        let worker = std::thread::spawn(move || super::worker_loop(work_rx, event_tx));
+        let worker = std::thread::spawn(move || {
+            super::worker_loop(work_rx, event_tx, crate::acceleration::Acceleration::new())
+        });
         work_tx.send(super::Work::Release(42)).unwrap();
         assert!(matches!(
             event_rx
@@ -519,6 +588,7 @@ mod tests {
         let mut payload = Vec::new();
         put_u8(&mut payload, detector_resize_policy);
         put_u8(&mut payload, text_detection_processing);
+        put_u8(&mut payload, 0);
         for path in ["det.onnx", "rec.onnx", "dict.txt"] {
             put_string(&mut payload, path);
         }
@@ -562,6 +632,19 @@ mod tests {
     }
 
     #[test]
+    fn session_acceleration_is_explicit_and_strictly_boolean() {
+        let mut payload = session_payload(0, 0);
+        assert!(!session_config(&payload).unwrap().hardware_acceleration);
+        payload[2] = 1;
+        assert!(session_config(&payload).unwrap().hardware_acceleration);
+        payload[2] = 2;
+        assert_eq!(
+            session_config(&payload).err().unwrap().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn session_config_rejects_missing_processing_and_truncated_paths() {
         for processing in [0, 1] {
             let payload = session_payload(0, processing);
@@ -575,18 +658,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cancellation_checkpoint_skips_expensive_work_and_preserves_results() {
-        let cancelled = std::sync::atomic::AtomicBool::new(true);
-        let result: Result<(), String> =
-            super::run_unless_cancelled(&cancelled, || panic!("cancelled inference must not run"));
-        assert_eq!(result.unwrap_err(), "cancelled");
-        cancelled.store(false, std::sync::atomic::Ordering::Release);
-        assert_eq!(super::run_unless_cancelled(&cancelled, || Ok(42)), Ok(42));
-        let error: Result<(), String> =
-            super::run_unless_cancelled(&cancelled, || Err("provider failed".into()));
-        assert_eq!(error.unwrap_err(), "provider failed");
-    }
     use super::{StartupMode, parse_startup_mode};
     use std::{ffi::OsString, io, path::PathBuf};
 

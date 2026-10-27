@@ -1,14 +1,16 @@
-use super::{Config, DetectorResizePolicy, TextDetectionProcessing};
+use super::{Config, DetectorResizePolicy, TextDetectionProcessing, acceleration::Context};
 use simd_paddle_ocr_rs::{
     cpu::{CpuContext, CpuOptions},
-    detector::{DetResizePolicy, Detector, DetectorOptions},
+    detector::{DetResizePolicy, DetectorOptions, DetectorPlan},
     error::ErrorKind,
     image::{ImageError, ImageResult, ImageView, PixelFormat},
-    lines::{LineOptions, OrientedLineExtractor},
+    lines::{LineOptions, OrientedLinePlan},
     model::Model,
-    ocr::{Ocr, OcrOptions},
-    recognizer::{Dictionary, RecognitionScoreMode, Recognizer, RecognizerOptions},
-    runtime::{CompiledModel, ExecutionLimits},
+    ocr::{OcrOptions, OcrPlan, OcrRequest, RunOptions},
+    recognizer::{Dictionary, RecognitionScoreMode, RecognizerOptions, RecognizerPlan},
+    runtime::{
+        CompileOptions, CompiledModel, Compiler, CompilerOptions, ExecutionLimits, ExecutionTarget,
+    },
 };
 use snow_memory::RasterBuffer;
 use std::{path::Path, sync::Arc, thread};
@@ -66,37 +68,42 @@ fn detector_limit(policy: DetectorResizePolicy, width: usize, height: usize) -> 
 }
 
 pub(super) struct Engine {
-    request: Ocr,
+    request: OcrRequest,
     policy: DetectorResizePolicy,
 }
 
 impl Engine {
     pub fn recreate(self) -> ImageResult<Self> {
-        // into_factory consumes the old request before allocating its replacement.
-        // No image, activation arena, crop slab or decoding buffer survives.
-        let factory = self.request.into_factory();
+        let plan = self.request.plan().clone();
+        // Drop all mutable storage before creating its replacement.
+        drop(self.request);
         Ok(Self {
-            request: factory()?,
+            request: plan.request()?,
             policy: self.policy,
         })
     }
 
+    pub fn uses_gpu(&self) -> bool {
+        self.request.uses_gpu()
+    }
+
+    pub fn backend(&self) -> &'static str {
+        if self.uses_gpu() { "gpu" } else { "cpu" }
+    }
+
     pub fn run(&mut self, input: &InputImage) -> ImageResult<Vec<OcrLine>> {
-        self.request
-            .extractor_mut()
-            .detector_mut()
-            .set_resize_options(
-                match self.policy {
-                    DetectorResizePolicy::Max => DetResizePolicy::Max,
-                    DetectorResizePolicy::Min => DetResizePolicy::Min,
-                },
-                detector_limit(self.policy, input.width, input.height),
-            )?;
+        self.request.set_detector_resize(
+            match self.policy {
+                DetectorResizePolicy::Max => DetResizePolicy::Max,
+                DetectorResizePolicy::Min => DetResizePolicy::Min,
+            },
+            detector_limit(self.policy, input.width, input.height),
+        )?;
         // The request owns reusable scratch. Copy only the accepted output before
         // it crosses the completion channel; never copy the input raster again.
         Ok(self
             .request
-            .run(input.view()?, false)?
+            .run(input.view()?, RunOptions::default())?
             .iter()
             .filter_map(|line| {
                 accepted_line(
@@ -109,7 +116,11 @@ impl Engine {
     }
 }
 
-pub(super) fn make_engine(config: &Config, thread_budget: usize) -> ImageResult<Engine> {
+pub(super) fn make_engine(
+    config: &Config,
+    thread_budget: usize,
+    gpu: Option<Arc<Context>>,
+) -> ImageResult<Engine> {
     make_engine_for_models(
         &config.detector_model,
         &config.recognizer_model,
@@ -117,6 +128,7 @@ pub(super) fn make_engine(config: &Config, thread_budget: usize) -> ImageResult<
         thread_budget,
         config.detector_resize_policy,
         config.text_detection_processing,
+        gpu,
     )
 }
 
@@ -127,23 +139,24 @@ pub(super) fn make_engine_for_models(
     thread_budget: usize,
     policy: DetectorResizePolicy,
     processing: TextDetectionProcessing,
+    gpu: Option<Arc<Context>>,
 ) -> ImageResult<Engine> {
     let (detection, recognition) = prepare_pair(
         thread_budget > 1,
-        || load_compiled(detector, "detection"),
-        || load_compiled(recognizer, "recognition"),
+        || load_compiled(detector, "detection", gpu.clone()),
+        || load_compiled(recognizer, "recognition", gpu.clone()),
     )?;
     let bytes = std::fs::read(dictionary)
         .map_err(|error| ImageError::caused_by(ErrorKind::Io, "dictionary", error))?;
     let dictionary = Arc::new(Dictionary::from_utf8(&bytes)?);
     let cpu = Arc::new(CpuContext::new(thread_budget.max(1))?);
-    let detector = Detector::new(
+    let detector = DetectorPlan::new(
         detection,
         DetectorOptions::default(),
         ExecutionLimits::default(),
     )?;
-    let extractor = OrientedLineExtractor::new(detector, None, LineOptions::default())?;
-    let recognizer = Recognizer::new(
+    let extractor = OrientedLinePlan::new(detector, None, LineOptions::default())?;
+    let recognizer = RecognizerPlan::new(
         recognition,
         dictionary,
         RecognizerOptions {
@@ -153,21 +166,41 @@ pub(super) fn make_engine_for_models(
         },
         ExecutionLimits::default(),
     )?;
-    let request = Ocr::new_with_execution(
+    let plan = OcrPlan::new(
         extractor,
         recognizer,
         OcrOptions::default(),
         cpu,
         CpuOptions::default(),
+        1,
     )?;
-    Ok(Engine { request, policy })
+    Ok(Engine {
+        request: plan.request()?,
+        policy,
+    })
 }
 
-fn load_compiled(path: &Path, stage: &str) -> ImageResult<Arc<CompiledModel>> {
+fn load_compiled(
+    path: &Path,
+    stage: &str,
+    gpu: Option<Arc<Context>>,
+) -> ImageResult<CompiledModel> {
     let model = Model::load_path(path)
         .map_err(|error| ImageError::caused_by(error.kind(), format!("{stage} model"), error))?;
-    CompiledModel::new(Arc::new(model))
-        .map(Arc::new)
+    let target = if gpu.is_some() {
+        ExecutionTarget::Gpu
+    } else {
+        ExecutionTarget::Cpu
+    };
+    #[cfg(feature = "gpu")]
+    let options = CompilerOptions {
+        gpu,
+        ..Default::default()
+    };
+    #[cfg(not(feature = "gpu"))]
+    let options = CompilerOptions::default();
+    Compiler::new(options)
+        .compile(Arc::new(model), CompileOptions::default(), target)
         .map_err(|error| ImageError::caused_by(error.kind(), format!("{stage} compilation"), error))
 }
 

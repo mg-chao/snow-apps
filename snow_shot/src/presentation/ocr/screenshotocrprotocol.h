@@ -6,8 +6,8 @@
 
 namespace snow_shot::ocr::protocol {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
-constexpr quint16 kProtocolVersion = 6;
-constexpr auto kRuntimeVersion = "1.1.0";
+constexpr quint16 kProtocolVersion = 7;
+constexpr auto kRuntimeVersion = "1.2.0";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;
@@ -19,6 +19,7 @@ constexpr quint16 kReleaseSession = 10, kSessionReleased = 11;
 constexpr quint16 kAttachBuffer = 12, kBufferAttached = 13;
 constexpr quint16 kRecognize = 14, kImageConsumed = 15;
 constexpr quint16 kDetachBuffer = 16, kBufferDetached = 17, kDiscardImage = 18;
+constexpr quint16 kConfigureAcceleration = 19, kAccelerationReady = 20;
 constexpr qsizetype kSlotHeaderBytes = 32;
 constexpr unsigned long kTransportStopTimeoutMilliseconds = 5000;
 constexpr qsizetype kMaximumFrameBytes = 1024LL * 1024LL;

@@ -20,7 +20,7 @@ function New-TestPe([string]$Path, [int]$Machine) {
 function New-TestRuntime([string]$Architecture, [string]$Case) {
     $stage = Join-Path $root "$Architecture-$Case"
     $null = New-Item -ItemType Directory -Path $stage
-    $worker = "snow-ocr-process-1.1.0-windows-$Architecture.exe"
+    $worker = "snow-ocr-process-1.2.0-windows-$Architecture.exe"
     $machine = if ($Architecture -eq 'arm64') { 0xaa64 } else { 0x8664 }
     if ($Case -eq 'wrong-machine') { $machine = if ($Architecture -eq 'arm64') { 0x8664 } else { 0xaa64 } }
     foreach ($name in @($worker)) { New-TestPe (Join-Path $stage $name) $machine }
@@ -32,7 +32,7 @@ function New-TestRuntime([string]$Architecture, [string]$Case) {
     )
     if ($Case -eq 'wrong-file-hash') { $files[0].sha256 = '0' * 64 }
     $platform = if ($Case -eq 'wrong-platform') { 'windows-unknown' } else { "windows-$Architecture" }
-    [ordered]@{ schema = 1; version = '1.1.0'; platform = $platform; protocol = 6; files = $files } |
+    [ordered]@{ schema = 1; version = '1.2.0'; platform = $platform; protocol = 7; files = $files } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stage 'runtime-manifest.json') -Encoding utf8NoBOM
     if ($Case -eq 'unexpected-file') { [IO.File]::WriteAllText((Join-Path $stage 'extra.dll'), 'unexpected') }
     $archive = "$stage.zip"
@@ -153,15 +153,15 @@ try {
     Copy-Item -LiteralPath $fixture -Destination (Join-Path $bin 'snow-shot-updater.exe')
     Copy-Item -LiteralPath $fixture -Destination (Join-Path $bin 'snow-ocr-process.exe')
     $assets = Join-Path $bin 'assets/ocr'
-    $runtime = Join-Path $assets "runtimes/1.1.0/windows-$hostArchitecture"
+    $runtime = Join-Path $assets "runtimes/1.2.0/windows-$hostArchitecture"
     $model = Join-Path $assets 'models/fixture-small'
     $null = New-Item -ItemType Directory -Path $runtime, $model -Force
-    Copy-Item -LiteralPath $fixture -Destination (Join-Path $runtime "snow-ocr-process-1.1.0-windows-$hostArchitecture.exe")
+    Copy-Item -LiteralPath $fixture -Destination (Join-Path $runtime "snow-ocr-process-1.2.0-windows-$hostArchitecture.exe")
     foreach ($name in @('detector', 'recognizer', 'dictionary')) {
         [IO.File]::WriteAllText((Join-Path $model "$name.txt"), "valid $name", [Text.UTF8Encoding]::new($false))
     }
     $packagedAssets = [ordered]@{ schema = 2; default_model = 'small'
-        runtime = @{ version = '1.1.0'; platform = "windows-$hostArchitecture" }
+        runtime = @{ version = '1.2.0'; platform = "windows-$hostArchitecture" }
         models = @(@{ type = 'small'; id = 'fixture-small'; detector = 'detector.txt'
             recognizer = 'recognizer.txt'; dictionary = 'dictionary.txt'
             files = @(foreach ($name in @('detector', 'recognizer', 'dictionary')) {

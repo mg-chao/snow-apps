@@ -59,10 +59,12 @@ struct ScreenshotOcrRuntimeConfiguration {
     bool modelHotStart = false;
     ScreenshotOcrTextDetectionProcessing textDetectionProcessing =
         ScreenshotOcrTextDetectionProcessing::AccuracyFirst;
+    bool hardwareAcceleration = false;
     bool operator==(const ScreenshotOcrRuntimeConfiguration& other) const {
         return modelType == other.modelType && detectorResizePolicy == other.detectorResizePolicy &&
                residentProcess == other.residentProcess && modelHotStart == other.modelHotStart &&
-               textDetectionProcessing == other.textDetectionProcessing;
+               textDetectionProcessing == other.textDetectionProcessing &&
+               hardwareAcceleration == other.hardwareAcceleration;
     }
 };
 
@@ -133,6 +135,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
             ScreenshotOcrDetectorResizePolicy::Max;
         ScreenshotOcrTextDetectionProcessing textDetectionProcessing =
             ScreenshotOcrTextDetectionProcessing::AccuracyFirst;
+        bool hardwareAcceleration = false;
         // Explicit local assets, primarily for tests and development builds.
         QString processPath;
         QString detectorModelPath;
@@ -165,6 +168,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void setModelType(ScreenshotOcrModelType modelType);
     void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy);
     void setTextDetectionProcessing(ScreenshotOcrTextDetectionProcessing processing);
+    void setHardwareAcceleration(bool enabled);
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration);
     [[nodiscard]] int liveWorkerCount() const;
     [[nodiscard]] bool storageBusy() const;

@@ -702,6 +702,19 @@ int main(int argc, char** argv) {
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         const auto resident = settings::SettingsSwitchBinding::OcrResidentProcess;
         const auto hot = settings::SettingsSwitchBinding::OcrModelHotStart;
+        const auto acceleration = settings::SettingsSwitchBinding::OcrHardwareAcceleration;
+        const QString accelerationId = QStringLiteral("text-recognition.hardware-acceleration");
+        require(!backend.switchValue(acceleration) && session.state(accelerationId).enabled,
+                "hardware acceleration defaults off and remains available without a GPU probe");
+        require(backend.applySwitchValue(acceleration, true) &&
+                    applicationStorage.configuration()
+                        .value(QStringLiteral("text_recognition/hardware_acceleration"))
+                        .toBool(),
+                "hardware acceleration persists without preparing OCR resources");
+        QCoreApplication::processEvents();
+        require(session.state(accelerationId).acceptedValue.toBool() &&
+                    !backend.switchValue(resident) && !backend.switchValue(hot),
+                "hardware acceleration is independent of residency and model hot start");
         const QString hotId = QStringLiteral("text-recognition.model-hot-start");
         const QString residentId = QStringLiteral("text-recognition.resident-process");
         require(!backend.switchValue(resident) && !backend.switchValue(hot) &&
@@ -738,7 +751,8 @@ int main(int argc, char** argv) {
         QObject::disconnect(resetConnection);
         QCoreApplication::processEvents();
         require(resetObserved && !backend.switchValue(resident) && !backend.switchValue(hot) &&
-                    !session.state(hotId).enabled,
+                    !session.state(hotId).enabled && !backend.switchValue(acceleration) &&
+                    !session.state(accelerationId).acceptedValue.toBool(),
                 "OCR category reset must clear both preferences and refresh the disabled control");
         const auto pinBinding = settings::SettingsSelectBinding::PinDoubleClickAction;
         const QString pinId = QStringLiteral("pin-to-screen.double-click-action");

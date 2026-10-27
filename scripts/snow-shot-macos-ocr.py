@@ -308,11 +308,11 @@ def runtime_manifest(source, runtime, arch='arm64'):
             raise ValueError(f'Expected a thin {architecture["label"]} Mach-O binary: {path}')
     if not os.access(runtime / RUNTIME_FILES[0], os.X_OK):
         raise ValueError('The OCR worker is not executable')
-    expected = f'snow-ocr-process {version} macos-{architecture["worker"]} protocol 6'
+    expected = f'snow-ocr-process {version} macos-{architecture["worker"]} protocol 7'
     if run(str(runtime / RUNTIME_FILES[0]), '--version') != expected:
         raise ValueError('The OCR worker version/protocol does not match the application')
     return dict(schema=3, default_model='small', runtime=dict(
-        version=version, platform=f'macos-{arch}', delivery='bundled', protocol=6,
+        version=version, platform=f'macos-{arch}', delivery='bundled', protocol=7,
         executable=RUNTIME_FILES[0],
         files=[descriptor(runtime / n) for n in runtime_files]),
         models=source['models'])

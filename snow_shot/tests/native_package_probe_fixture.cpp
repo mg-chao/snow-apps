@@ -23,9 +23,9 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (argc == 2 && std::wcscmp(argv[1], L"--version") == 0) {
 #ifdef _M_ARM64
-        std::puts("snow-ocr-process 1.1.0 windows-aarch64 protocol 6");
+        std::puts("snow-ocr-process 1.2.0 windows-aarch64 protocol 7");
 #else
-        std::puts("snow-ocr-process 1.1.0 windows-x86_64 protocol 6");
+        std::puts("snow-ocr-process 1.2.0 windows-x86_64 protocol 7");
 #endif
         return 0;
     }

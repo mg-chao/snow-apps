@@ -106,7 +106,7 @@ function New-SnowOcrAssetManifest {
         if (-not $entry -or $entry.Length -le 0 -or $entry.Length -gt 1MB) { throw 'Missing or oversized OCR runtime manifest.' }
         $reader = [IO.StreamReader]::new($entry.Open())
         try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-        if ($manifest.schema -ne 1 -or $manifest.platform -cne $platform -or $manifest.protocol -ne 6 -or
+        if ($manifest.schema -ne 1 -or $manifest.platform -cne $platform -or $manifest.protocol -ne 7 -or
             $manifest.version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
             throw 'The OCR runtime manifest has an unexpected platform, protocol, or version.'
         }

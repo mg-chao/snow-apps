@@ -778,6 +778,9 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                            m_ocrRecognition != nullptr) {
                     m_ocrRecognition->setTextDetectionProcessing(
                         screenshotOcrTextDetectionProcessingFromValue(value.toString()));
+                } else if (key == QStringLiteral("text_recognition/hardware_acceleration") &&
+                           m_ocrRecognition != nullptr) {
+                    m_ocrRecognition->setHardwareAcceleration(value.toBool());
                 } else if (key == QStringLiteral("network/proxy")) {
                     if (m_ocrRecognition != nullptr) {
                         m_ocrRecognition->setProxyUrl(resolvedOcrProxyUrl(value.toString()));
@@ -1236,6 +1239,10 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
     const QScopedValueRollback<bool> constructingGuard(m_constructingRecognitionFeature, true);
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     ScreenshotOcrRecognitionService::Options ocrOptions;
+    ocrOptions.hardwareAcceleration =
+        applicationStorage.configuration()
+            .value(QStringLiteral("text_recognition/hardware_acceleration"))
+            .toBool();
     ocrOptions.modelType =
         screenshotOcrModelTypeFromValue(applicationStorage.configuration()
                                             .value(QStringLiteral("text_recognition/model_type"))

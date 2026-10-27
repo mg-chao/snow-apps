@@ -1,7 +1,7 @@
 # OCR runtime and V6 models
 
-Snow Shot uses CPU inference through the `simd-paddle-ocr-rs` Git submodule.
-Runtime **1.1.0** uses protocol **6**. Initialize submodules before building;
+Snow Shot uses CPU inference and optional GPU acceleration through the `simd-paddle-ocr-rs` Git submodule.
+Runtime **1.2.0** uses protocol **7**. Initialize submodules before building;
 the worker alone uses the library's pinned `nightly-2026-09-08` compiler.
 Other Rust packages keep their existing toolchain. The runtime takes verified
 local model paths, borrows child-owned BGR pixels, and returns owned text,
@@ -34,8 +34,17 @@ The recognizer uses the model's Softmax probabilities for confidence. Empty
 lines and confidence below 0.5 are filtered. Residency and hot start both
 default off; hot start is effective only when residency is enabled.
 
-Protocol 6 removes the DirectML byte from `PrepareSession`, the cache directory
-from `Hello`, and the capability byte from `Ready`. Image transfer and recognition
+Hardware acceleration also defaults off. Windows builds enable Vulkan 1.3
+through the GPU driver's loader; Apple Silicon builds enable Metal. Device
+initialization runs asynchronously in the worker. Requests use CPU while the
+GPU is unavailable or not ready, and reuse the context after discovery. Cold
+nonresident requests may finish on CPU. GPU errors fall back to CPU without
+changing the preference; enabling it never enables residency or hot start.
+Windows builds require Python, CMake, and the C++ compiler for build-time
+shaderc compilation; deployed apps need no Vulkan SDK or shader compiler.
+
+Protocol 7 adds an acceleration preference to `PrepareSession`, plus separate
+configuration and asynchronous readiness messages. Image transfer and recognition
 result layouts are unchanged. Both sides explicitly reject older workers. See
 [`PROTOCOL.md`](../../snow-crates/crates/snow-ocr-process/PROTOCOL.md).
 
@@ -64,12 +73,12 @@ Windows x64 and ARM64 ZIPs contain exactly the versioned worker executable and
 `runtime-manifest.json`. There are no inference DLLs. The trusted descriptors in
 this directory are generated from the actual built bytes, including archive and
 entry hashes. Preparation creates local artifacts; publication is a release step.
-Keep all earlier published archives unchanged. Publish the exact pinned 1.1.0
+Keep all earlier published archives unchanged. Publish the exact pinned 1.2.0
 archives before distributing this application revision.
 
 ```powershell
 scripts/prepare-snow-shot-ocr-runtime.ps1 -Architecture x64
-scripts/prepare-snow-shot-ocr-runtime.ps1 -Architecture arm64
+scripts/prepare-snow-shot-ocr-runtime.ps1 -Architecture arm64 -BuildDirectory build/ocr-arm64
 ```
 
 Use `-SkipBuild` only with an already-built Release worker. The helper audits PE
@@ -105,10 +114,10 @@ Supply verified models as `<model-root>/<cache-id>/<filename>` for real inferenc
 $env:SNOW_TEST_OCR_TEXT_FIXTURE = (Resolve-Path snow_shot/tests/baselines/ocr-model-versions.png).Path
 $test = 'build/windows-msvc-debug/snow_shot/test-bin/Debug/snow-shot-ocr-recognition-service-tests.exe'
 $modelRoot = (Resolve-Path build/ocr-versioned-models).Path
-$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.1.0/snow-ocr-process-1.1.0-windows-x64.exe).Path
+$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.2.0/snow-ocr-process-1.2.0-windows-x64.exe).Path
 & $test "--model-root=$modelRoot" "--worker=$worker"
 & $test "--model-root=$modelRoot" "--worker=$worker" --resident-models
-& $test "--downloaded-runtime=$((Resolve-Path artifacts/snow-ocr-runtime-1.1.0-windows-x64.zip).Path)"
+& $test "--downloaded-runtime=$((Resolve-Path artifacts/snow-ocr-runtime-1.2.0-windows-x64.zip).Path)"
 ```
 
 The downloaded-runtime check copies the prepared archive and models through the

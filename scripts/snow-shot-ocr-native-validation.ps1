@@ -29,7 +29,7 @@ function New-SnowOcrRuntimeReleaseReport {
         SchemaVersion = 1
         RuntimeVersion = $RuntimeVersion
         Platform = $platform
-        Protocol = 6
+        Protocol = 7
         NativeValidationRequired = (-not $NativeProbePassed)
         NativeValidation = [ordered]@{
             Platform = $platform

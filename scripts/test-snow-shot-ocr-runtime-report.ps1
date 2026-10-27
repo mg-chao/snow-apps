@@ -33,6 +33,7 @@ try {
                     continue
                 }
                 Require (-not $rejected) 'A truthful OCR runtime report was rejected.'
+                Require ($report.Protocol -eq 7) 'Runtime reports must use the current OCR protocol.'
                 Require ($report.NativeValidationRequired -is [bool] -and
                     $report.NativeValidationRequired -eq (-not $passed) -and
                     $report.NativeValidation.Passed -is [bool] -and $report.NativeValidation.Passed -eq $passed -and

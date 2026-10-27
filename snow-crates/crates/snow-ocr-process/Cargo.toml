@@ -1,6 +1,6 @@
 [package]
 name = "snow-ocr-process"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 license.workspace = true
 
@@ -11,6 +11,7 @@ path = "src/main.rs"
 [features]
 crash-diagnostics = ["dep:snow-diagnostics"]
 default = []
+gpu = ["simd-paddle-ocr-rs/gpu"]
 
 [dependencies]
 snow-memory = { path = "../snow-memory" }

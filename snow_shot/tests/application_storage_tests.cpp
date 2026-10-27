@@ -89,6 +89,25 @@ void writeBytes(const QString& path, const QByteArray& bytes) {
     require(file.write(bytes) == bytes.size(), "failed to write test file");
 }
 
+void ocrHardwareAccelerationPersistsAndDefaultsOff() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "OCR acceleration requires isolated storage");
+    const QString path = temporary.filePath(QStringLiteral("configuration.json"));
+    const QString key = QStringLiteral("text_recognition/hardware_acceleration");
+    {
+        storage::ConfigurationStore store(path, true, true, 60000);
+        require(store.value(key) == QJsonValue(false), "missing acceleration defaults off");
+        require(store.setValue(key, true) && store.flushNow().success,
+                "acceleration preference must save to disk");
+    }
+    storage::ConfigurationStore reloaded(path, true, true, 60000);
+    require(reloaded.value(key) == QJsonValue(true), "acceleration must survive a storage reload");
+    require(!reloaded.setValue(key, QStringLiteral("true")) && reloaded.value(key).toBool(),
+            "acceleration must reject nonboolean values");
+    require(reloaded.applySnapshot({}) && reloaded.value(key) == QJsonValue(false),
+            "older configurations must restore acceleration to off");
+}
+
 void ocrHighlightingSettingsPersistAndValidate() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "OCR highlighting requires isolated storage");
@@ -685,6 +704,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                 QStringLiteral("max") &&
             !defaultValue("text_recognition/resident_process").toBool() &&
             !defaultValue("text_recognition/model_hot_start").toBool() &&
+            !defaultValue("text_recognition/hardware_acceleration").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
             !defaultValue("extended_features/jump_to_translation_page").toBool() &&
 #ifdef Q_OS_MACOS
@@ -4077,6 +4097,7 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
     if (application.arguments().contains(QStringLiteral("--ocr-settings-only"))) {
+        ocrHardwareAccelerationPersistsAndDefaultsOff();
         ocrHighlightingSettingsPersistAndValidate();
         invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration();
         retiredOcrModelConfigurationsNormalizeToSmall();

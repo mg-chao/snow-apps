@@ -1,6 +1,6 @@
-# OCR protocol 6
+# OCR protocol 7
 
-Runtime 1.1.0 uses a binary stdin/stdout command channel. Diagnostics use stderr.
+Runtime 1.2.0 uses a binary stdin/stdout command channel. Diagnostics use stderr.
 The application and runtime are released together; earlier protocols are incompatible.
 All integers and IEEE-754 floats are little-endian. A string is a `u32` byte
 length followed by UTF-8. Frames have a 20-byte header: `SOCR`, version `u16`,
@@ -15,7 +15,7 @@ kind `u16`, operation ID `u64`, payload size `u32`. Payloads are capped at 1 MiB
 | 5 | Complete | Recognition token | Recognition result, described below |
 | 6 | Shutdown | 0 | Empty |
 | 7 | ShutdownAck | 0 | Empty |
-| 8 | PrepareSession | Session operation | Detector resize policy `u8` (0 = max, 1 = min), text detection processing `u8` (0 = accuracy first, 1 = speed first), detector/recognizer/dictionary path strings |
+| 8 | PrepareSession | Session operation | Detector resize policy `u8` (0 = max, 1 = min), text detection processing `u8` (0 = accuracy first, 1 = speed first), hardware acceleration `u8` (0 = off, 1 = prefer GPU), detector/recognizer/dictionary path strings |
 | 9 | SessionReady | Session operation | Success `u8` |
 | 10 | ReleaseSession | Session operation | Empty |
 | 11 | SessionReleased | Session operation | Empty |
@@ -26,6 +26,8 @@ kind `u16`, operation ID `u64`, payload size `u32`. Payloads are capped at 1 MiB
 | 16 | DetachBuffer | Mapping generation | Empty |
 | 17 | BufferDetached | Mapping generation | Empty |
 | 18 | DiscardImage | Recognition token | Empty |
+| 19 | ConfigureAcceleration | 0 | Enabled `u8` (0 or 1) |
+| 20 | AccelerationReady | 0 | Empty |
 
 `Ready` establishes only the command channel. It does not open an image buffer,
 probe a model, or create an inference session. Model creation and inference run
@@ -42,17 +44,29 @@ the next one. Repeating `PrepareSession` with the same configuration may share
 immutable compiled models, packed weights, dictionary and CPU context. Idle hot
 start detaches the image mapping, then sends `PrepareSession` directly when the
 configuration is unchanged. `ReleaseSession` always drops all model resources;
-configuration changes and disabling hot start still use it. The frame format is
-unchanged, and older protocol-6 workers can satisfy direct preparation by fully
-reloading. Session preparation accepts no image. CPU inference uses simd-paddle-ocr-rs with a
+configuration changes and disabling hot start still use it. Protocol 7 workers exclusively accept this session layout. Session preparation accepts no image. CPU inference uses simd-paddle-ocr-rs with a
 bounded context and local V6 models, without orientation classification.
 On multi-core workers, detector and recognizer parsing/compilation overlap on
 two bounded tasks. Both are joined before preparation succeeds or fails.
 Text detection processing selects the recognizer input-width floor: accuracy first uses
 320, while speed first uses 48 before the existing 32-pixel width alignment.
-Accuracy first is the default. Protocol 6 removes the backend byte from
-PrepareSession, the cache path from Hello, and the capability byte from Ready.
-Older workers are rejected before decoding their incompatible payloads.
+Accuracy first is the default. Protocol 7 adds the acceleration preference to
+PrepareSession and the separate acceleration control/readiness messages. Older
+workers are rejected before decoding their incompatible payloads.
+
+The host sends ConfigureAcceleration immediately after Ready and when the
+preference changes. Enabling starts device discovery on a separate thread;
+Ready, PrepareSession and Recognize never wait for that thread. Preparation
+reads a nonblocking context snapshot and selects CPU if it is not ready. The
+GPU compiler receives the existing context explicitly, preventing implicit
+synchronous discovery. Initialization failures are cached for the worker lifetime.
+AccelerationReady allows the host to promote an idle resident session, after
+queued requests have drained. A nonresident cold request may finish on CPU.
+Disabling invalidates pending discovery and releases the context after active
+sessions drain; discovery threads are not joined at shutdown. GPU preparation
+failures select CPU; GPU execution failures retry once on CPU unless cancelled.
+Input/model/I/O errors are preserved. After a GPU failure, that worker stays on
+CPU. Settings never implicitly enable residency or hot start.
 A failed session preparation leaves no usable session and does not exit the
 process. Only real recognition requests receive user-facing errors.
 

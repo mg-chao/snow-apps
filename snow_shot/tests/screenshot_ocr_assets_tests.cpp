@@ -37,9 +37,9 @@ const QString kWindowsPlatform = QStringLiteral("windows-arm64");
 const QString kWindowsPlatform = QStringLiteral("windows-x64");
 #endif
 const QString kWindowsWorkerName =
-    QStringLiteral("snow-ocr-process-1.1.0-%1.exe").arg(kWindowsPlatform);
+    QStringLiteral("snow-ocr-process-1.2.0-%1.exe").arg(kWindowsPlatform);
 const QString kWindowsArchiveName =
-    QStringLiteral("snow-ocr-runtime-1.1.0-%1.zip").arg(kWindowsPlatform);
+    QStringLiteral("snow-ocr-runtime-1.2.0-%1.zip").arg(kWindowsPlatform);
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
 #if defined(Q_PROCESSOR_ARM_64)
@@ -135,13 +135,13 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.1.0/%1").arg(kWindowsPlatform));
+        QDir(root).filePath(QStringLiteral("runtimes/1.2.0/%1").arg(kWindowsPlatform));
     if (completePayload) {
         writeFixture(QDir(runtimeDirectory).filePath(kWindowsWorkerName), process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
                      runtimeManifest);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.1.0"})");
+                     R"({"schema":1,"component":"1.2.0"})");
         writeInstalledSmallModelFixture(root);
     }
     const QJsonArray runtimeFiles{
@@ -173,7 +173,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.1.0")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.2.0")},
                      {QStringLiteral("platform"), kWindowsPlatform},
                      {QStringLiteral("archive"),
                       assetFile(kWindowsArchiveName, archive,
@@ -204,10 +204,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     manifest.insert(QStringLiteral("schema"), 3);
     manifest.insert(
         QStringLiteral("runtime"),
-        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.1.0")},
+        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.2.0")},
                     {QStringLiteral("platform"), kMacPlatform},
                     {QStringLiteral("delivery"), QStringLiteral("bundled")},
-                    {QStringLiteral("protocol"), 6},
+                    {QStringLiteral("protocol"), 7},
                     {QStringLiteral("executable"), kWorkerName},
                     {QStringLiteral("files"), QJsonArray{assetFile(kWorkerName, macProcess)}}});
 #endif
@@ -343,7 +343,7 @@ void installedAssetsUseLightweightChecks() {
 #else
             const QDir runtime(
                 QDir(payloadRoot)
-                    .filePath(QStringLiteral("runtimes/1.1.0/%1").arg(kWindowsPlatform)));
+                    .filePath(QStringLiteral("runtimes/1.2.0/%1").arg(kWindowsPlatform)));
             changeFixtureContentsWithoutResizing(runtime.filePath(kWindowsWorkerName));
             changeFixtureContentsWithoutResizing(
                 runtime.filePath(QStringLiteral("runtime-manifest.json")));
@@ -522,7 +522,7 @@ void acquiredRuntimeStillRequiresMatchingHashes() {
         require(
             !QDir(cache.path())
                     .exists(
-                        QStringLiteral("runtimes/1.1.0/%1/.complete.json").arg(kWindowsPlatform)) &&
+                        QStringLiteral("runtimes/1.2.0/%1/.complete.json").arg(kWindowsPlatform)) &&
                 QDir(QDir(cache.path()).filePath(QStringLiteral(".staging")))
                     .entryList(QDir::NoDotAndDotDot | QDir::AllEntries)
                     .isEmpty(),
@@ -1039,7 +1039,7 @@ void storeRuntimeNeverFallsBackToCachedCode() {
         writeAssetManifest(offline.path(), true);
         writeAssetManifest(cache.path(), true);
         const QString worker = QDir(offline.path())
-                                   .filePath(QStringLiteral("runtimes/1.1.0/%1/%2")
+                                   .filePath(QStringLiteral("runtimes/1.2.0/%1/%2")
                                                  .arg(kWindowsPlatform, kWindowsWorkerName));
         if (corrupt)
             changeFixtureContentsWithoutResizing(worker);

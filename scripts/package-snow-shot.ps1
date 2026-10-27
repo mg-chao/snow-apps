@@ -514,9 +514,9 @@ if (-not $store) { $licenseManifests += $updaterCargoManifest }
     -QtPrefix $qtPrefix `
     -CargoManifest $licenseManifests `
     -CargoOptions @{ (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") = @('--features', 'selected-text,language-detection');
-        # Runtime 1.1.0 ships the raw-pixel worker without convenience dependencies.
+        # Runtime 1.2.0 ships the raw-pixel worker without convenience dependencies.
         $ocrCargoManifest = @('--no-default-features', '--features',
-        'crash-diagnostics') } `
+        'crash-diagnostics,gpu') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
     -FallbackLicenseDirectory (Join-Path $repoRoot "licenses")
 if ($LASTEXITCODE -ne 0) {
@@ -1113,7 +1113,7 @@ if ($nativeTarget) {
     $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
     $ocrWorkerArchitecture = if ($Architecture -eq 'arm64') { 'aarch64' } else { 'x86_64' }
     if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
-        "snow-ocr-process $ocrRuntimeVersion windows-$ocrWorkerArchitecture protocol 6") {
+        "snow-ocr-process $ocrRuntimeVersion windows-$ocrWorkerArchitecture protocol 7") {
         throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
     }
     $ocrRuntimeNativeProbePassed = $true

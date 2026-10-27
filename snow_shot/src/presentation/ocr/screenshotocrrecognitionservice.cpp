@@ -103,6 +103,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         m_configuration.modelType = options.modelType;
         m_configuration.detectorResizePolicy = options.detectorResizePolicy;
         m_configuration.textDetectionProcessing = options.textDetectionProcessing;
+        m_configuration.hardwareAcceleration = options.hardwareAcceleration;
         m_queueClock.start();
         m_localPool->setMaxThreadCount(1);
         if (!options.processPath.trimmed().isEmpty() &&
@@ -358,13 +359,20 @@ class ScreenshotOcrRecognitionService::Impl final {
         const bool sessionChanged =
             modelChanged ||
             m_configuration.detectorResizePolicy != configuration.detectorResizePolicy ||
-            m_configuration.textDetectionProcessing != configuration.textDetectionProcessing;
+            m_configuration.textDetectionProcessing != configuration.textDetectionProcessing ||
+            m_configuration.hardwareAcceleration != configuration.hardwareAcceleration;
+        const bool accelerationChanged =
+            m_configuration.hardwareAcceleration != configuration.hardwareAcceleration;
         if (sessionChanged)
             ++m_configurationGeneration;
         if (m_configuration.modelHotStart &&
             (!configuration.modelHotStart || !configuration.residentProcess))
             m_invalidateWarmSession = true;
         m_configuration = configuration;
+        if (accelerationChanged && processReady())
+            configureAcceleration();
+        if (!configuration.hardwareAcceleration)
+            m_accelerationReadyPending = false;
         m_modelType = configuration.modelType;
         if (modelChanged) {
             if (m_assetManager != nullptr) {
@@ -718,10 +726,16 @@ class ScreenshotOcrRecognitionService::Impl final {
                                   ScreenshotOcrTextDetectionProcessing::SpeedFirst
                               ? 1
                               : 0);
+        appendU8(payload, m_configuration.hardwareAcceleration ? 1 : 0);
         appendString(payload, m_assets.detectorModelPath);
         appendString(payload, m_assets.recognizerModelPath);
         appendString(payload, m_assets.dictionaryPath);
         sendFrame(makeFrame(kPrepareSession, ++m_sessionOperation, payload));
+    }
+    void configureAcceleration() {
+        QByteArray payload;
+        appendU8(payload, m_configuration.hardwareAcceleration ? 1 : 0);
+        sendFrame(makeFrame(kConfigureAcceleration, 0, payload));
     }
     void releaseBuffer() {
         if (m_bufferState != BufferState::Ready || m_transferring != nullptr)
@@ -737,6 +751,12 @@ class ScreenshotOcrRecognitionService::Impl final {
         if (m_stopping || processStopping())
             return;
         const bool demand = !m_pending.empty() || m_runningCount != 0;
+        // Do not discard CPU preparation for queued requests when discovery finishes.
+        // Promote a resident session only after existing requests have drained.
+        if (!demand && m_accelerationReadyPending) {
+            m_accelerationReadyPending = false;
+            ++m_configurationGeneration;
+        }
         if (!demand && !residentEffective()) {
             if (m_transport != nullptr) {
                 m_processState = ProcessState::Stopping;
@@ -914,8 +934,10 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void handleControl(quint16 kind, quint64 id, const QByteArray& payload) {
-        if (kind == kBufferAttached && id == m_bufferGeneration &&
-            m_bufferState == BufferState::Attaching) {
+        if (kind == kAccelerationReady && id == 0 && payload.isEmpty()) {
+            m_accelerationReadyPending = m_configuration.hardwareAcceleration;
+        } else if (kind == kBufferAttached && id == m_bufferGeneration &&
+                   m_bufferState == BufferState::Attaching) {
             m_bufferState = BufferState::Ready;
         } else if (kind == kBufferDetached && id == m_bufferGeneration &&
                    m_bufferState == BufferState::Detaching) {
@@ -987,6 +1009,8 @@ class ScreenshotOcrRecognitionService::Impl final {
              {QStringLiteral("outcome"), QStringLiteral("ready")}});
 
         m_processState = ProcessState::Ready;
+        m_accelerationReadyPending = false;
+        configureAcceleration();
         m_assetStatus = {m_assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
                                           : ScreenshotOcrAssetPhase::ReadyCached,
                          QStringLiteral("assets")};
@@ -1355,6 +1379,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     quint64 m_bufferGeneration = 0, m_transferSequence = 0, m_retryGeneration = 0;
     quint64 m_idleGeneration = 0, m_sessionIdleGeneration = 0;
     bool m_sessionUsed = false, m_sessionWarm = false, m_invalidateWarmSession = false;
+    bool m_accelerationReadyPending = false;
     bool m_residentSuspended = false, m_retryPending = false, m_assetPreparing = false;
     bool m_reconcileScheduled = false, m_delivering = false;
     int m_assetRetryCount = 0;
@@ -1449,6 +1474,14 @@ void ScreenshotOcrRecognitionService::setRuntimeConfiguration(
     const ScreenshotOcrRuntimeConfiguration& configuration) {
     if (m_impl != nullptr)
         m_impl->setRuntimeConfiguration(configuration);
+}
+
+void ScreenshotOcrRecognitionService::setHardwareAcceleration(bool enabled) {
+    if (m_impl) {
+        auto configuration = m_impl->configuration();
+        configuration.hardwareAcceleration = enabled;
+        m_impl->setRuntimeConfiguration(configuration);
+    }
 }
 
 bool ScreenshotOcrRecognitionService::storageBusy() const {

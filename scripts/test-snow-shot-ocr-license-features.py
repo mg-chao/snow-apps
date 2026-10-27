@@ -37,13 +37,21 @@ class OcrLicenseFeatures(unittest.TestCase):
                         f'Unused worker notices were retained: {LEGACY_DEPENDENCIES & selected}')
         self.assertTrue({'png', 'zune-jpeg', 'turbojpeg', 'ravif', 'image-webp'}.isdisjoint(selected))
         self.assertIn('simd-paddle-ocr-rs', selected)
+        self.assertTrue({'ash', 'gpu-allocator', 'shaderc'}.issubset(selected))
 
     def test_local_macos_worker_omits_unused_convenience_notices(self):
-        selected = packages('aarch64-apple-darwin', 'crash-diagnostics')
+        selected = packages('aarch64-apple-darwin', 'crash-diagnostics,gpu')
         self.assertTrue(LEGACY_DEPENDENCIES.isdisjoint(selected),
                         f'Unused local worker notices were retained: {LEGACY_DEPENDENCIES & selected}')
         self.assertTrue({'png', 'zune-jpeg', 'turbojpeg', 'ravif'}.isdisjoint(selected))
         self.assertIn('simd-paddle-ocr-rs', selected)
+        self.assertIn('objc2-metal', selected)
+        # Cross-target cargo tree still includes the host's shader build dependencies.
+        self.assertNotIn('ash', selected)
+
+    def test_intel_macos_worker_keeps_cpu_only_dependency_closure(self):
+        selected = packages('x86_64-apple-darwin', 'crash-diagnostics')
+        self.assertTrue({'ash', 'gpu-allocator', 'shaderc', 'objc2-metal'}.isdisjoint(selected))
 
 
 if __name__ == '__main__':
