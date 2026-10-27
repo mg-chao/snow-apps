@@ -1440,6 +1440,10 @@
             <translation>自动文本识别</translation>
         </message>
         <message>
+            <source>Automatically adapt the icon color to the menu bar background. Uses the image's transparency as its shape and ignores its original colors.</source>
+            <translation>根据菜单栏背景自动调整图标颜色。使用图像的透明度确定形状，忽略其原始颜色。</translation>
+        </message>
+        <message>
             <source>Automatically disable when a focused fullscreen window exists</source>
             <translation>存在焦点全屏窗口时自动禁用</translation>
         </message>
@@ -2814,6 +2818,10 @@
         <message>
             <source>Leftover working files from finished or interrupted recordings will be removed</source>
             <translation>已完成或中断的屏幕录制留下的工作文件将被删除</translation>
+        </message>
+        <message>
+            <source>Let macOS control tray icon color</source>
+            <translation>让 macOS 控制托盘图标颜色</translation>
         </message>
         <message>
             <source>Light</source>

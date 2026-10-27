@@ -44,6 +44,8 @@ class SystemTrayController final : public QObject {
     void showRecordingExportMessage(const QString& path);
     void setEnabled(bool enabled);
     [[nodiscard]] bool isEnabled() const;
+    void setUseSystemIconColor(bool enabled);
+    [[nodiscard]] bool useSystemIconColor() const;
     void setIconSelection(const QString& selection);
     [[nodiscard]] QString iconSelection() const;
     void setCustomIconPath(const QString& path);

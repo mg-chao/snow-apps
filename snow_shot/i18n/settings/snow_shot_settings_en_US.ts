@@ -1440,6 +1440,10 @@
             <translation>Automatic text recognition</translation>
         </message>
         <message>
+            <source>Automatically adapt the icon color to the menu bar background. Uses the image's transparency as its shape and ignores its original colors.</source>
+            <translation>Automatically adapt the icon color to the menu bar background. Uses the image's transparency as its shape and ignores its original colors.</translation>
+        </message>
+        <message>
             <source>Automatically disable when a focused fullscreen window exists</source>
             <translation>Automatically disable when a focused fullscreen window exists</translation>
         </message>
@@ -2814,6 +2818,10 @@
         <message>
             <source>Leftover working files from finished or interrupted recordings will be removed</source>
             <translation>Leftover working files from finished or interrupted recordings will be removed</translation>
+        </message>
+        <message>
+            <source>Let macOS control tray icon color</source>
+            <translation>Let macOS control tray icon color</translation>
         </message>
         <message>
             <source>Light</source>

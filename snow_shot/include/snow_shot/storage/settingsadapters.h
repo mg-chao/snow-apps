@@ -703,6 +703,8 @@ class TraySettings final {
   public:
     [[nodiscard]] bool enabled() const;
     bool setEnabled(bool enabled) const;
+    [[nodiscard]] bool useSystemIconColor() const;
+    bool setUseSystemIconColor(bool enabled) const;
     [[nodiscard]] QString icon() const;
     bool setIcon(const QString& icon) const;
     [[nodiscard]] QString customIcon() const;

@@ -2678,6 +2678,14 @@ bool TraySettings::setEnabled(bool enabled) const {
     return cache().setValue(QStringLiteral("tray/enabled"), enabled);
 }
 
+bool TraySettings::useSystemIconColor() const {
+    return cache().value(QStringLiteral("tray/use_system_icon_color")).toBool();
+}
+
+bool TraySettings::setUseSystemIconColor(bool enabled) const {
+    return cache().setValue(QStringLiteral("tray/use_system_icon_color"), enabled);
+}
+
 QString TraySettings::icon() const {
     return cache().value(QStringLiteral("tray/icon")).toString();
 }

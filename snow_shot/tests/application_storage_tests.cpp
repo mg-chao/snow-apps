@@ -3652,9 +3652,10 @@ void trayDarkIconSettingsPersistAndValidate() {
     require(settings.icon() == QStringLiteral("snow-dark") &&
                 settings.customIcon() == QStringLiteral("regular.ico") &&
                 settings.darkIcon() == QStringLiteral("inherit") &&
-                settings.darkCustomIcon().isEmpty(),
+                settings.darkCustomIcon().isEmpty() && !settings.useSystemIconColor(),
             "existing configurations must retain their icons and inherit them in dark theme");
-    require(settings.setDarkIcon(QStringLiteral("snow-light")) &&
+    require(settings.setUseSystemIconColor(true) &&
+                settings.setDarkIcon(QStringLiteral("snow-light")) &&
                 settings.setDarkCustomIcon(QStringLiteral("dark.png")) &&
                 !settings.setDarkIcon(QStringLiteral("invalid")) &&
                 settings.darkIcon() == QStringLiteral("snow-light") &&
@@ -3665,8 +3666,9 @@ void trayDarkIconSettingsPersistAndValidate() {
                 settings.icon() == QStringLiteral("snow-dark") &&
                 settings.customIcon() == QStringLiteral("regular.ico") &&
                 settings.darkIcon() == QStringLiteral("snow-light") &&
-                settings.darkCustomIcon() == QStringLiteral("dark.png"),
-            "both regular and dark icon settings must survive a storage restart");
+                settings.darkCustomIcon() == QStringLiteral("dark.png") &&
+                settings.useSystemIconColor(),
+            "icon choices and system coloring must survive a storage restart");
     appStorage.shutdown();
     storage::ConfigurationStore imported(config, true, true, 60000);
     require(imported.applySnapshot(
@@ -3675,9 +3677,14 @@ void trayDarkIconSettingsPersistAndValidate() {
                 imported.value(QStringLiteral("tray/dark_icon")).toString() ==
                     QStringLiteral("inherit") &&
                 imported.value(QStringLiteral("tray/dark_custom_icon")).toString().isEmpty() &&
+                !imported.value(QStringLiteral("tray/use_system_icon_color")).toBool(true) &&
                 imported.value(QStringLiteral("tray/custom_icon")).toString() ==
                     QStringLiteral("legacy.png"),
             "importing older snapshots must restore compatible dark icon defaults");
+    require(
+        !imported.setValue(QStringLiteral("tray/use_system_icon_color"), QStringLiteral("true")) &&
+            !imported.value(QStringLiteral("tray/use_system_icon_color")).toBool(true),
+        "system icon coloring must reject non-boolean values without changing its default");
 }
 
 void invalidTrayClickSettingsUseIndependentDefaults() {

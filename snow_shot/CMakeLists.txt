@@ -3032,6 +3032,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    if(APPLE)
+        add_test(NAME snow-shot-tray-icon-color-settings-tests
+            COMMAND snow-shot-about-page-tests --tray-icon-color-only)
+        set_tests_properties(snow-shot-tray-icon-color-settings-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
 
     get_target_property(_main_window_font_sources snow-shot-about-page-tests SOURCES)
     list(REMOVE_ITEM _main_window_font_sources tests/about_page_tests.cpp)
@@ -3090,6 +3098,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
+    add_test(NAME snow-shot-tray-icon-settings-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --tray-icons-only)
+    set_tests_properties(snow-shot-tray-icon-settings-catalog-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-translation-confidence-catalog-tests
         COMMAND snow-shot-settings-catalog-tests --translation-confidence-only)
     set_tests_properties(snow-shot-translation-confidence-catalog-tests PROPERTIES

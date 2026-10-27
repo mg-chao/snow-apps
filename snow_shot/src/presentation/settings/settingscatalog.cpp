@@ -904,6 +904,20 @@ SettingsItemDefinition trayIconItem() {
             payload};
 }
 
+#ifdef Q_OS_MACOS
+SettingsItemDefinition trayUseSystemIconColorItem() {
+    return {QStringLiteral("interface.tray.use-system-icon-color"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Let macOS control tray icon color")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Automatically adapt the icon color to the menu bar background. Uses the image's "
+                "transparency as its shape and ignores its original colors.")),
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Tray appearance"))},
+            QStringLiteral("tray/use_system_icon_color"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::TrayUseSystemIconColor}};
+}
+#endif
+
 SettingsItemDefinition trayCustomIconItem() {
     return {
         QStringLiteral("interface.tray.custom-icon"),
@@ -3875,7 +3889,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(
                      QT_TRANSLATE_NOOP("SettingsCatalog", "System tray icon, actions and menu")),
                  SettingsSectionReset::Tray,
-                 {trayEnabledItem(), trayIconItem(), trayCustomIconItem(), trayDarkIconItem(),
+                 {trayEnabledItem(),
+#ifdef Q_OS_MACOS
+                  trayUseSystemIconColorItem(),
+#endif
+                  trayIconItem(), trayCustomIconItem(), trayDarkIconItem(),
                   trayDarkCustomIconItem(), trayLeftClickItem(), trayMiddleClickItem(),
                   trayMenuOptionsItem()},
              },
@@ -5174,6 +5192,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::TrayEnabled:
                         expectedKey = QStringLiteral("tray/enabled");
+                        break;
+                    case SettingsSwitchBinding::TrayUseSystemIconColor:
+                        expectedKey = QStringLiteral("tray/use_system_icon_color");
                         break;
                     case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
                         expectedKey = QStringLiteral("screenshot/quick_selection_modification");

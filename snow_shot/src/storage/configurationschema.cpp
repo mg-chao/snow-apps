@@ -1564,6 +1564,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("restore_last_closed_window"), QStringLiteral("repeat_action")}},
     {QStringLiteral("pin_to_screen/auto_resize_window"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("tray/enabled"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("tray/use_system_icon_color"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("tray/icon"),
      QStringLiteral("default"),
      ConfigurationValueKind::String,

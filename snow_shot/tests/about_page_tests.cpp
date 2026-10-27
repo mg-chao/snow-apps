@@ -732,6 +732,23 @@ void dividersFollowTheComponentLibraryAndUpdatesBreathe() {
     page.hide();
 }
 
+void traySystemIconColorSettings() {
+#ifdef Q_OS_MACOS
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    constexpr auto binding = settings::SettingsSwitchBinding::TrayUseSystemIconColor;
+    require(!backend.switchValue(binding), "macOS system icon coloring must default off");
+    require(session.applySwitchValue(binding, true) && backend.switchValue(binding) &&
+                snow_shot::storage::TraySettings().useSystemIconColor(),
+            "the macOS switch must persist enabled system icon coloring through the backend");
+    require(session.reset(settings::SettingsSectionReset::Tray) && !backend.switchValue(binding) &&
+                !snow_shot::storage::TraySettings().useSystemIconColor(),
+            "resetting tray settings must disable macOS system icon coloring");
+#endif
+}
+
 void traySettingsAndFunctionNavigation() {
     const auto& registry = settings::builtInSettingsRegistry();
     snow_shot::presentation::GlobalShortcutManager shortcuts;
@@ -1080,6 +1097,11 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 8000}).success,
             "initialize isolated storage");
     styles::ThemeManager::instance().initialize(application);
+    if (application.arguments().contains(QStringLiteral("--tray-icon-color-only"))) {
+        traySystemIconColorSettings();
+        storage.shutdown();
+        return 0;
+    }
     themeAndSkinChangesUpdateOnlyAffectedBackgrounds();
     versionIsExactSelectableAndCopyable();
     absentVersionDoesNotInventARelease();
@@ -1091,6 +1113,7 @@ int main(int argc, char** argv) {
     updateStatesFitTheVersionPanel();
     updateModuleKeepsItsHeightAcrossStates();
     dividersFollowTheComponentLibraryAndUpdatesBreathe();
+    traySystemIconColorSettings();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();
     largerTypeKeepsEveryActionReachable();

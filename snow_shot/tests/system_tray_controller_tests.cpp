@@ -718,6 +718,95 @@ void verifyThemeIcons(const QTemporaryDir& directory) {
     theme.setConfig(originalConfig);
 }
 
+void verifySystemIconColor(const QTemporaryDir& directory) {
+    using snow_shot::presentation::GlobalShortcutAction;
+    using snow_shot::presentation::SystemTrayController;
+    using ThemeScheme = adqt::theme::ThemeScheme;
+    auto& theme = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = theme.config();
+    theme.setColorScheme(ThemeScheme::Light);
+    SystemTrayController controller;
+    auto* tray = controller.findChild<QSystemTrayIcon*>();
+    require(tray && !controller.useSystemIconColor() && !tray->icon().isMask(),
+            "system icon coloring must default off and preserve the original artwork");
+    const auto source = [&]() { return tray->property("resolvedIconSource").toString(); };
+    const auto requireSystemColor = [&]() {
+#ifdef Q_OS_MACOS
+        require(tray->icon().isMask(), "macOS must receive a template icon when enabled");
+#else
+        require(!tray->icon().isMask(), "system icon coloring must have no effect outside macOS");
+#endif
+    };
+    const QString originalSource = source();
+    controller.setUseSystemIconColor(true);
+    require(controller.useSystemIconColor() && source() == originalSource,
+            "enabling system coloring must immediately update the existing icon");
+    requireSystemColor();
+    for (const auto& selection : {QStringLiteral("default"), QStringLiteral("light"),
+                                  QStringLiteral("dark"), QStringLiteral("snow-default"),
+                                  QStringLiteral("snow-light"), QStringLiteral("snow-dark")}) {
+        controller.setIconSelection(selection);
+        controller.show();
+        requireSystemColor();
+    }
+    controller.setDarkIconSelection(QStringLiteral("snow-light"));
+    theme.setColorScheme(ThemeScheme::Dark);
+    require(source() == QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-snow-light.png"),
+            "system coloring must preserve the independent dark theme artwork selection");
+    requireSystemColor();
+    theme.setColorScheme(ThemeScheme::Light);
+    requireSystemColor();
+
+    const QString path = directory.filePath(QStringLiteral("system-color-icon.png"));
+    QImage custom(32, 32, QImage::Format_ARGB32_Premultiplied);
+    custom.fill(QColor(31, 107, 53));
+    require(custom.save(path), "system icon coloring requires writable custom artwork");
+    controller.setCustomIconPath(path);
+    require(source() == path, "system coloring must retain custom artwork");
+    requireSystemColor();
+    const auto decodeCount = tray->property("customIconDecodeCount").toULongLong();
+    const QImage originalImage = tray->icon().pixmap(QSize(32, 32), 1.0).toImage();
+    controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, true);
+    requireSystemColor();
+#ifdef Q_OS_MACOS
+    const auto requireTemplateBadge = [&]() {
+        requireSystemColor();
+        for (const int size : {16, 32, 64}) {
+            const QImage image = tray->icon().pixmap(QSize(size, size), 1.0).toImage();
+            require(image.pixelColor(size * 6 / 16, size * 6 / 16).alpha() > 200 &&
+                        image.pixelColor(size / 2 - 1, size / 2).alpha() < 128,
+                    "the template badge must have an opaque body and a transparent slash");
+        }
+    };
+    requireTemplateBadge();
+    controller.setFocusedFullscreenSuppressionActive(true);
+    controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+    controller.show();
+    requireTemplateBadge();
+    controller.setFocusedFullscreenSuppressionActive(false);
+#else
+    controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+#endif
+    require(tray->icon().pixmap(QSize(32, 32), 1.0).toImage() == originalImage,
+            "clearing disabled state must restore the original custom artwork");
+    controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, true);
+    controller.setUseSystemIconColor(false);
+    const QColor badge = tray->icon().pixmap(QSize(32, 32), 1.0).toImage().pixelColor(12, 12);
+    require(!tray->icon().isMask() && badge.red() > 180 && badge.green() < 100 &&
+                badge.blue() < 100,
+            "disabling system coloring must immediately restore the red badge");
+    controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+    require(tray->icon().pixmap(QSize(32, 32), 1.0).toImage() == originalImage &&
+                tray->property("customIconDecodeCount").toULongLong() == decodeCount,
+            "color toggles must preserve artwork and reuse the decoded custom image");
+    controller.setUseSystemIconColor(true);
+    controller.setCustomIconPath(directory.filePath(QStringLiteral("missing-system-icon.png")));
+    requireSystemColor();
+    require(source() == QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-snow-dark.png"),
+            "invalid custom artwork must retain system coloring on the bundled fallback");
+    theme.setConfig(originalConfig);
+}
+
 void verifyTrayClickActions() {
     using snow_shot::presentation::GlobalShortcutAction;
     using snow_shot::presentation::SystemTrayController;
@@ -824,6 +913,7 @@ int main(int argc, char* argv[]) {
     }
     if (application.arguments().contains(QStringLiteral("--theme-icons-only"))) {
         verifyThemeIcons(storageDirectory);
+        verifySystemIconColor(storageDirectory);
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

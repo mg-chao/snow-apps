@@ -107,6 +107,7 @@ const QString kPinShadowColorKey = QStringLiteral("pin_to_screen/shadow_color");
 const QString kPinShadowActiveColorKey = QStringLiteral("pin_to_screen/shadow_active_color");
 const QString kPinLockedShadowColorKey = QStringLiteral("pin_to_screen/locked_shadow_color");
 const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
+const QString kTrayUseSystemIconColorKey = QStringLiteral("tray/use_system_icon_color");
 const QString kTrayIconKey = QStringLiteral("tray/icon");
 const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
 const QString kTrayDarkIconKey = QStringLiteral("tray/dark_icon");
@@ -528,6 +529,8 @@ class ApplicationController::Impl {
         applyRuntimeConfiguration(configuration.value(kPinLockedShadowColorKey),
                                   kPinLockedShadowColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
+        applyRuntimeConfiguration(configuration.value(kTrayUseSystemIconColorKey),
+                                  kTrayUseSystemIconColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayIconKey), kTrayIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayCustomIconKey), kTrayCustomIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayDarkIconKey), kTrayDarkIconKey);
@@ -1648,6 +1651,8 @@ class ApplicationController::Impl {
             const bool enabled = value.isBool() ? value.toBool() : true;
             systemTray.setEnabled(enabled);
             ScreenshotPinnedWindow::setRuntimeTrayEnabled(enabled);
+        } else if (key == kTrayUseSystemIconColorKey) {
+            systemTray.setUseSystemIconColor(value.toBool(false));
         } else if (key == kTrayIconKey) {
             systemTray.setIconSelection(value.toString(QStringLiteral("default")));
         } else if (key == kTrayCustomIconKey) {
