@@ -128,6 +128,14 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Arrow color</source>
+            <translation>箭頭顏色</translation>
+        </message>
+        <message>
+            <source>Arrow color %1</source>
+            <translation>箭頭顏色 %1</translation>
+        </message>
+        <message>
             <source>Arrow outline color %1</source>
             <translation>箭頭描邊顏色 %1</translation>
         </message>
@@ -144,24 +152,16 @@
             <translation>箭頭描邊寬度 %1px</translation>
         </message>
         <message>
-            <source>Arrow ratio (scroll to adjust)</source>
-            <translation>箭頭比例（捲動調整）</translation>
-        </message>
-        <message>
             <source>Arrow shaft type</source>
             <translation>箭桿類型</translation>
         </message>
         <message>
-            <source>Arrow stroke color</source>
-            <translation>箭頭筆畫色彩</translation>
+            <source>Arrow width %1</source>
+            <translation>箭頭寬度 %1</translation>
         </message>
         <message>
-            <source>Arrow stroke color %1</source>
-            <translation>箭頭筆畫色彩 %1</translation>
-        </message>
-        <message>
-            <source>Arrow stroke width %1</source>
-            <translation>箭頭筆畫寬度 %1</translation>
+            <source>Arrowhead scale (scroll to adjust)</source>
+            <translation>箭頭端點比例（捲動調整）</translation>
         </message>
         <message>
             <source>Artist</source>
@@ -200,10 +200,6 @@
             <translation>粗體</translation>
         </message>
         <message>
-            <source>Border</source>
-            <translation>邊框</translation>
-        </message>
-        <message>
             <source>Brightness</source>
             <translation>亮度</translation>
         </message>
@@ -220,8 +216,8 @@
             <translation>畫筆橡皮擦</translation>
         </message>
         <message>
-            <source>Brush eraser stroke width %1 (%2px)</source>
-            <translation>畫筆橡皮擦筆畫寬度 %1（%2px）</translation>
+            <source>Brush eraser width %1 (%2px)</source>
+            <translation>畫筆橡皮擦寬度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -312,28 +308,28 @@
             <translation>無法儲存標註範本</translation>
         </message>
         <message>
-            <source>Cross-line fill</source>
+            <source>Crosshatched fill</source>
             <translation>交叉線填充</translation>
         </message>
         <message>
-            <source>Cross-line sequence number fill</source>
-            <translation>交叉線序號填充</translation>
+            <source>Crosshatched sequence number background</source>
+            <translation>交叉線序號背景</translation>
         </message>
         <message>
-            <source>Cross-line text fill</source>
-            <translation>交叉線文字填充</translation>
+            <source>Crosshatched text background</source>
+            <translation>交叉線文字背景</translation>
         </message>
         <message>
             <source>Current angle stroke width</source>
             <translation>目前角度線條寬度</translation>
         </message>
         <message>
-            <source>Current arrow stroke width</source>
-            <translation>目前箭頭描邊寬度</translation>
+            <source>Current arrow width</source>
+            <translation>目前箭頭寬度</translation>
         </message>
         <message>
-            <source>Current brush eraser stroke width</source>
-            <translation>目前畫筆橡皮擦筆畫寬度</translation>
+            <source>Current brush eraser width</source>
+            <translation>目前畫筆橡皮擦寬度</translation>
         </message>
         <message>
             <source>Current distance stroke width</source>
@@ -344,12 +340,12 @@
             <translation>目前放大鏡描邊寬度</translation>
         </message>
         <message>
-            <source>Current pen filter stroke width</source>
-            <translation>目前畫筆濾鏡描邊寬度</translation>
+            <source>Current pen filter width</source>
+            <translation>目前畫筆濾鏡寬度</translation>
         </message>
         <message>
-            <source>Current pen highlight stroke width</source>
-            <translation>目前畫筆醒目提示描邊寬度</translation>
+            <source>Current pen highlight width</source>
+            <translation>目前畫筆醒目提示寬度</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -384,8 +380,8 @@
             <translation>曲線</translation>
         </message>
         <message>
-            <source>Dashed arrow stroke</source>
-            <translation>虛線箭頭描邊</translation>
+            <source>Dashed arrow line</source>
+            <translation>虛線箭頭</translation>
         </message>
         <message>
             <source>Dashed stroke</source>
@@ -468,8 +464,8 @@
             <translation>垂直分佈</translation>
         </message>
         <message>
-            <source>Dotted arrow stroke</source>
-            <translation>點線箭頭描邊</translation>
+            <source>Dotted arrow line</source>
+            <translation>點線箭頭</translation>
         </message>
         <message>
             <source>Dotted stroke</source>
@@ -644,6 +640,18 @@
             <translation>綠色</translation>
         </message>
         <message>
+            <source>Hatched fill</source>
+            <translation>線條填充</translation>
+        </message>
+        <message>
+            <source>Hatched sequence number background</source>
+            <translation>線條序號背景</translation>
+        </message>
+        <message>
+            <source>Hatched text background</source>
+            <translation>線條文字背景</translation>
+        </message>
+        <message>
             <source>Hide selection toolbar</source>
             <translation>隱藏選取範圍工具列</translation>
         </message>
@@ -660,16 +668,16 @@
             <translation>醒目提示色彩 %1</translation>
         </message>
         <message>
-            <source>Highlight stroke color %1</source>
-            <translation>醒目提示筆畫色彩 %1</translation>
+            <source>Highlight outline color %1</source>
+            <translation>醒目提示描邊顏色 %1</translation>
         </message>
         <message>
-            <source>Highlight stroke width</source>
-            <translation>醒目提示筆畫寬度</translation>
+            <source>Highlight outline width</source>
+            <translation>醒目提示描邊寬度</translation>
         </message>
         <message>
-            <source>Highlight stroke width %1px</source>
-            <translation>醒目提示筆畫寬度 %1 像素</translation>
+            <source>Highlight outline width %1px</source>
+            <translation>醒目提示描邊寬度 %1 像素</translation>
         </message>
         <message>
             <source>Horizontal Crop</source>
@@ -752,24 +760,12 @@
             <translation>引導線</translation>
         </message>
         <message>
-            <source>Leader line type</source>
-            <translation>引線類型</translation>
+            <source>Leader line arrowhead</source>
+            <translation>引導線箭頭樣式</translation>
         </message>
         <message>
             <source>Line</source>
             <translation>直線</translation>
-        </message>
-        <message>
-            <source>Line fill</source>
-            <translation>線條填充</translation>
-        </message>
-        <message>
-            <source>Line sequence number fill</source>
-            <translation>線條序號填充</translation>
-        </message>
-        <message>
-            <source>Line text fill</source>
-            <translation>線條文字填充</translation>
         </message>
         <message>
             <source>Logical Pixel Selection</source>
@@ -880,6 +876,10 @@
             <translation>垂直移動選取範圍（按住並拖曳）</translation>
         </message>
         <message>
+            <source>No fill</source>
+            <translation>無填滿</translation>
+        </message>
+        <message>
             <source>No matching templates</source>
             <translation>沒有符合的範本</translation>
         </message>
@@ -928,8 +928,8 @@
             <translation>畫筆濾鏡</translation>
         </message>
         <message>
-            <source>Pen filter stroke width %1 (%2px)</source>
-            <translation>畫筆濾鏡描邊寬度 %1 (%2px)</translation>
+            <source>Pen filter width %1 (%2px)</source>
+            <translation>畫筆濾鏡寬度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Pen highlight</source>
@@ -944,8 +944,8 @@
             <translation>畫筆醒目提示色彩 %1</translation>
         </message>
         <message>
-            <source>Pen highlight stroke width %1 (%2px)</source>
-            <translation>畫筆醒目提示描邊寬度 %1 (%2px)</translation>
+            <source>Pen highlight width %1 (%2px)</source>
+            <translation>畫筆醒目提示寬度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Physical Pixel Selection</source>
@@ -1140,24 +1140,24 @@
             <translation>序號（捲動調整）</translation>
         </message>
         <message>
+            <source>Sequence number background color</source>
+            <translation>序號背景顏色</translation>
+        </message>
+        <message>
+            <source>Sequence number background color %1</source>
+            <translation>序號背景顏色 %1</translation>
+        </message>
+        <message>
+            <source>Sequence number background color transparent</source>
+            <translation>序號背景顏色透明</translation>
+        </message>
+        <message>
             <source>Sequence number color</source>
             <translation>序號色彩</translation>
         </message>
         <message>
             <source>Sequence number color %1</source>
             <translation>序號色彩 %1</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color</source>
-            <translation>序號填滿色彩</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color %1</source>
-            <translation>序號填滿色彩 %1</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color transparent</source>
-            <translation>序號填滿色彩透明</translation>
         </message>
         <message>
             <source>Sequence number font family</source>
@@ -1224,8 +1224,8 @@
             <translation>Snow Shot 視覺理解</translation>
         </message>
         <message>
-            <source>Solid arrow stroke</source>
-            <translation>實線箭頭描邊</translation>
+            <source>Solid arrow line</source>
+            <translation>實線箭頭</translation>
         </message>
         <message>
             <source>Solid circle</source>
@@ -1236,8 +1236,8 @@
             <translation>純色填充</translation>
         </message>
         <message>
-            <source>Solid sequence number fill</source>
-            <translation>純色序號填充</translation>
+            <source>Solid sequence number background</source>
+            <translation>純色序號背景</translation>
         </message>
         <message>
             <source>Solid square</source>
@@ -1248,8 +1248,8 @@
             <translation>實線描邊</translation>
         </message>
         <message>
-            <source>Solid text fill</source>
-            <translation>純色文字填充</translation>
+            <source>Solid text background</source>
+            <translation>純色文字背景</translation>
         </message>
         <message>
             <source>Source region outline</source>
@@ -1408,6 +1408,22 @@
             <translation>文字對齊</translation>
         </message>
         <message>
+            <source>Text background color</source>
+            <translation>文字背景顏色</translation>
+        </message>
+        <message>
+            <source>Text background color %1</source>
+            <translation>文字背景顏色 %1</translation>
+        </message>
+        <message>
+            <source>Text background color transparent</source>
+            <translation>文字背景顏色透明</translation>
+        </message>
+        <message>
+            <source>Text background corner radius (scroll to adjust)</source>
+            <translation>文字背景圓角半徑（捲動調整）</translation>
+        </message>
+        <message>
             <source>Text block</source>
             <translation>文字區塊</translation>
         </message>
@@ -1418,22 +1434,6 @@
         <message>
             <source>Text color %1</source>
             <translation>文字色彩 %1</translation>
-        </message>
-        <message>
-            <source>Text fill color</source>
-            <translation>文字填滿色彩</translation>
-        </message>
-        <message>
-            <source>Text fill color %1</source>
-            <translation>文字填滿色彩 %1</translation>
-        </message>
-        <message>
-            <source>Text fill color transparent</source>
-            <translation>文字填滿色彩透明</translation>
-        </message>
-        <message>
-            <source>Text fill corner radius (scroll to adjust)</source>
-            <translation>文字填滿圓角半徑（捲動調整）</translation>
         </message>
         <message>
             <source>Text font family</source>
@@ -1448,24 +1448,24 @@
             <translation>框內文字</translation>
         </message>
         <message>
+            <source>Text outline color %1</source>
+            <translation>文字描邊顏色 %1</translation>
+        </message>
+        <message>
+            <source>Text outline color transparent</source>
+            <translation>文字描邊顏色透明</translation>
+        </message>
+        <message>
+            <source>Text outline width</source>
+            <translation>文字描邊寬度</translation>
+        </message>
+        <message>
+            <source>Text outline width %1px</source>
+            <translation>文字描邊寬度 %1 像素</translation>
+        </message>
+        <message>
             <source>Text recognition</source>
             <translation>文字辨識</translation>
-        </message>
-        <message>
-            <source>Text stroke color %1</source>
-            <translation>文字筆畫色彩 %1</translation>
-        </message>
-        <message>
-            <source>Text stroke color transparent</source>
-            <translation>文字筆畫色彩透明</translation>
-        </message>
-        <message>
-            <source>Text stroke width</source>
-            <translation>文字筆畫寬度</translation>
-        </message>
-        <message>
-            <source>Text stroke width %1px</source>
-            <translation>文字筆畫寬度 %1 像素</translation>
         </message>
         <message>
             <source>Text translation</source>

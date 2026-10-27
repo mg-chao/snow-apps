@@ -128,6 +128,14 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Arrow color</source>
+            <translation>Arrow color</translation>
+        </message>
+        <message>
+            <source>Arrow color %1</source>
+            <translation>Arrow color %1</translation>
+        </message>
+        <message>
             <source>Arrow outline color %1</source>
             <translation>Arrow outline color %1</translation>
         </message>
@@ -144,24 +152,16 @@
             <translation>Arrow outline width %1px</translation>
         </message>
         <message>
-            <source>Arrow ratio (scroll to adjust)</source>
-            <translation>Arrow ratio (scroll to adjust)</translation>
-        </message>
-        <message>
             <source>Arrow shaft type</source>
             <translation>Arrow shaft type</translation>
         </message>
         <message>
-            <source>Arrow stroke color</source>
-            <translation>Arrow stroke color</translation>
+            <source>Arrow width %1</source>
+            <translation>Arrow width %1</translation>
         </message>
         <message>
-            <source>Arrow stroke color %1</source>
-            <translation>Arrow stroke color %1</translation>
-        </message>
-        <message>
-            <source>Arrow stroke width %1</source>
-            <translation>Arrow stroke width %1</translation>
+            <source>Arrowhead scale (scroll to adjust)</source>
+            <translation>Arrowhead scale (scroll to adjust)</translation>
         </message>
         <message>
             <source>Artist</source>
@@ -200,10 +200,6 @@
             <translation>Bold</translation>
         </message>
         <message>
-            <source>Border</source>
-            <translation>Border</translation>
-        </message>
-        <message>
             <source>Brightness</source>
             <translation>Brightness</translation>
         </message>
@@ -220,8 +216,8 @@
             <translation>Brush Eraser</translation>
         </message>
         <message>
-            <source>Brush eraser stroke width %1 (%2px)</source>
-            <translation>Brush eraser stroke width %1 (%2px)</translation>
+            <source>Brush eraser width %1 (%2px)</source>
+            <translation>Brush eraser width %1 (%2px)</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -312,28 +308,28 @@
             <translation>Could not save the annotation template</translation>
         </message>
         <message>
-            <source>Cross-line fill</source>
-            <translation>Cross-line fill</translation>
+            <source>Crosshatched fill</source>
+            <translation>Crosshatched fill</translation>
         </message>
         <message>
-            <source>Cross-line sequence number fill</source>
-            <translation>Cross-line sequence number fill</translation>
+            <source>Crosshatched sequence number background</source>
+            <translation>Crosshatched sequence number background</translation>
         </message>
         <message>
-            <source>Cross-line text fill</source>
-            <translation>Cross-line text fill</translation>
+            <source>Crosshatched text background</source>
+            <translation>Crosshatched text background</translation>
         </message>
         <message>
             <source>Current angle stroke width</source>
             <translation>Current angle stroke width</translation>
         </message>
         <message>
-            <source>Current arrow stroke width</source>
-            <translation>Current arrow stroke width</translation>
+            <source>Current arrow width</source>
+            <translation>Current arrow width</translation>
         </message>
         <message>
-            <source>Current brush eraser stroke width</source>
-            <translation>Current brush eraser stroke width</translation>
+            <source>Current brush eraser width</source>
+            <translation>Current brush eraser width</translation>
         </message>
         <message>
             <source>Current distance stroke width</source>
@@ -344,12 +340,12 @@
             <translation>Current magnifier stroke width</translation>
         </message>
         <message>
-            <source>Current pen filter stroke width</source>
-            <translation>Current pen filter stroke width</translation>
+            <source>Current pen filter width</source>
+            <translation>Current pen filter width</translation>
         </message>
         <message>
-            <source>Current pen highlight stroke width</source>
-            <translation>Current pen highlight stroke width</translation>
+            <source>Current pen highlight width</source>
+            <translation>Current pen highlight width</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -384,8 +380,8 @@
             <translation>Curved line</translation>
         </message>
         <message>
-            <source>Dashed arrow stroke</source>
-            <translation>Dashed arrow stroke</translation>
+            <source>Dashed arrow line</source>
+            <translation>Dashed arrow line</translation>
         </message>
         <message>
             <source>Dashed stroke</source>
@@ -468,8 +464,8 @@
             <translation>Distribute vertically</translation>
         </message>
         <message>
-            <source>Dotted arrow stroke</source>
-            <translation>Dotted arrow stroke</translation>
+            <source>Dotted arrow line</source>
+            <translation>Dotted arrow line</translation>
         </message>
         <message>
             <source>Dotted stroke</source>
@@ -644,6 +640,18 @@
             <translation>Green</translation>
         </message>
         <message>
+            <source>Hatched fill</source>
+            <translation>Hatched fill</translation>
+        </message>
+        <message>
+            <source>Hatched sequence number background</source>
+            <translation>Hatched sequence number background</translation>
+        </message>
+        <message>
+            <source>Hatched text background</source>
+            <translation>Hatched text background</translation>
+        </message>
+        <message>
             <source>Hide selection toolbar</source>
             <translation>Hide selection toolbar</translation>
         </message>
@@ -660,16 +668,16 @@
             <translation>Highlight color %1</translation>
         </message>
         <message>
-            <source>Highlight stroke color %1</source>
-            <translation>Highlight stroke color %1</translation>
+            <source>Highlight outline color %1</source>
+            <translation>Highlight outline color %1</translation>
         </message>
         <message>
-            <source>Highlight stroke width</source>
-            <translation>Highlight stroke width</translation>
+            <source>Highlight outline width</source>
+            <translation>Highlight outline width</translation>
         </message>
         <message>
-            <source>Highlight stroke width %1px</source>
-            <translation>Highlight stroke width %1px</translation>
+            <source>Highlight outline width %1px</source>
+            <translation>Highlight outline width %1px</translation>
         </message>
         <message>
             <source>Horizontal Crop</source>
@@ -752,24 +760,12 @@
             <translation>Leader line</translation>
         </message>
         <message>
-            <source>Leader line type</source>
-            <translation>Leader line type</translation>
+            <source>Leader line arrowhead</source>
+            <translation>Leader line arrowhead</translation>
         </message>
         <message>
             <source>Line</source>
             <translation>Line</translation>
-        </message>
-        <message>
-            <source>Line fill</source>
-            <translation>Line fill</translation>
-        </message>
-        <message>
-            <source>Line sequence number fill</source>
-            <translation>Line sequence number fill</translation>
-        </message>
-        <message>
-            <source>Line text fill</source>
-            <translation>Line text fill</translation>
         </message>
         <message>
             <source>Logical Pixel Selection</source>
@@ -880,6 +876,10 @@
             <translation>Move selection vertically (press and hold to drag)</translation>
         </message>
         <message>
+            <source>No fill</source>
+            <translation>No fill</translation>
+        </message>
+        <message>
             <source>No matching templates</source>
             <translation>No matching templates</translation>
         </message>
@@ -928,8 +928,8 @@
             <translation>Pen filter</translation>
         </message>
         <message>
-            <source>Pen filter stroke width %1 (%2px)</source>
-            <translation>Pen filter stroke width %1 (%2px)</translation>
+            <source>Pen filter width %1 (%2px)</source>
+            <translation>Pen filter width %1 (%2px)</translation>
         </message>
         <message>
             <source>Pen highlight</source>
@@ -944,8 +944,8 @@
             <translation>Pen highlight color %1</translation>
         </message>
         <message>
-            <source>Pen highlight stroke width %1 (%2px)</source>
-            <translation>Pen highlight stroke width %1 (%2px)</translation>
+            <source>Pen highlight width %1 (%2px)</source>
+            <translation>Pen highlight width %1 (%2px)</translation>
         </message>
         <message>
             <source>Physical Pixel Selection</source>
@@ -1140,24 +1140,24 @@
             <translation>Sequence number (scroll to adjust)</translation>
         </message>
         <message>
+            <source>Sequence number background color</source>
+            <translation>Sequence number background color</translation>
+        </message>
+        <message>
+            <source>Sequence number background color %1</source>
+            <translation>Sequence number background color %1</translation>
+        </message>
+        <message>
+            <source>Sequence number background color transparent</source>
+            <translation>Sequence number background color transparent</translation>
+        </message>
+        <message>
             <source>Sequence number color</source>
             <translation>Sequence number color</translation>
         </message>
         <message>
             <source>Sequence number color %1</source>
             <translation>Sequence number color %1</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color</source>
-            <translation>Sequence number fill color</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color %1</source>
-            <translation>Sequence number fill color %1</translation>
-        </message>
-        <message>
-            <source>Sequence number fill color transparent</source>
-            <translation>Sequence number fill color transparent</translation>
         </message>
         <message>
             <source>Sequence number font family</source>
@@ -1224,8 +1224,8 @@
             <translation>Snow Shot visual understanding</translation>
         </message>
         <message>
-            <source>Solid arrow stroke</source>
-            <translation>Solid arrow stroke</translation>
+            <source>Solid arrow line</source>
+            <translation>Solid arrow line</translation>
         </message>
         <message>
             <source>Solid circle</source>
@@ -1236,8 +1236,8 @@
             <translation>Solid fill</translation>
         </message>
         <message>
-            <source>Solid sequence number fill</source>
-            <translation>Solid sequence number fill</translation>
+            <source>Solid sequence number background</source>
+            <translation>Solid sequence number background</translation>
         </message>
         <message>
             <source>Solid square</source>
@@ -1248,8 +1248,8 @@
             <translation>Solid stroke</translation>
         </message>
         <message>
-            <source>Solid text fill</source>
-            <translation>Solid text fill</translation>
+            <source>Solid text background</source>
+            <translation>Solid text background</translation>
         </message>
         <message>
             <source>Source region outline</source>
@@ -1408,6 +1408,22 @@
             <translation>Text alignment</translation>
         </message>
         <message>
+            <source>Text background color</source>
+            <translation>Text background color</translation>
+        </message>
+        <message>
+            <source>Text background color %1</source>
+            <translation>Text background color %1</translation>
+        </message>
+        <message>
+            <source>Text background color transparent</source>
+            <translation>Text background color transparent</translation>
+        </message>
+        <message>
+            <source>Text background corner radius (scroll to adjust)</source>
+            <translation>Text background corner radius (scroll to adjust)</translation>
+        </message>
+        <message>
             <source>Text block</source>
             <translation>Text block</translation>
         </message>
@@ -1418,22 +1434,6 @@
         <message>
             <source>Text color %1</source>
             <translation>Text color %1</translation>
-        </message>
-        <message>
-            <source>Text fill color</source>
-            <translation>Text fill color</translation>
-        </message>
-        <message>
-            <source>Text fill color %1</source>
-            <translation>Text fill color %1</translation>
-        </message>
-        <message>
-            <source>Text fill color transparent</source>
-            <translation>Text fill color transparent</translation>
-        </message>
-        <message>
-            <source>Text fill corner radius (scroll to adjust)</source>
-            <translation>Text fill corner radius (scroll to adjust)</translation>
         </message>
         <message>
             <source>Text font family</source>
@@ -1448,24 +1448,24 @@
             <translation>Text in box</translation>
         </message>
         <message>
+            <source>Text outline color %1</source>
+            <translation>Text outline color %1</translation>
+        </message>
+        <message>
+            <source>Text outline color transparent</source>
+            <translation>Text outline color transparent</translation>
+        </message>
+        <message>
+            <source>Text outline width</source>
+            <translation>Text outline width</translation>
+        </message>
+        <message>
+            <source>Text outline width %1px</source>
+            <translation>Text outline width %1px</translation>
+        </message>
+        <message>
             <source>Text recognition</source>
             <translation>Text recognition</translation>
-        </message>
-        <message>
-            <source>Text stroke color %1</source>
-            <translation>Text stroke color %1</translation>
-        </message>
-        <message>
-            <source>Text stroke color transparent</source>
-            <translation>Text stroke color transparent</translation>
-        </message>
-        <message>
-            <source>Text stroke width</source>
-            <translation>Text stroke width</translation>
-        </message>
-        <message>
-            <source>Text stroke width %1px</source>
-            <translation>Text stroke width %1px</translation>
         </message>
         <message>
             <source>Text translation</source>

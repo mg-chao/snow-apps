@@ -1998,8 +1998,8 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
     require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Text),
             "text style family should materialize on demand");
     const QList<QString> triggerNames{
-        QStringLiteral("Text stroke width"),
-        QStringLiteral("Highlight stroke width"),
+        QStringLiteral("Text outline width"),
+        QStringLiteral("Highlight outline width"),
     };
     QList<adqt::widgets::AdColorPicker*> pickers;
 
@@ -2052,10 +2052,10 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
             return control != nullptr && control->toolTip() == tooltip;
         });
     };
-    require(hasTooltip(QStringLiteral("Text stroke width 2px")) &&
-                hasTooltip(QStringLiteral("Highlight stroke width 2px")) &&
-                hasTooltip(QStringLiteral("Text stroke color transparent")) &&
-                hasTooltip(QStringLiteral("Highlight stroke color #f5222d")),
+    require(hasTooltip(QStringLiteral("Text outline width 2px")) &&
+                hasTooltip(QStringLiteral("Highlight outline width 2px")) &&
+                hasTooltip(QStringLiteral("Text outline color transparent")) &&
+                hasTooltip(QStringLiteral("Highlight outline color #f5222d")),
             "configured width-color editors should preserve tool-specific presets");
 
     palette.setPhysicalScale(1.5);
@@ -2093,7 +2093,7 @@ void shapeAndArrowStrokeEditorsShareThePresetCatalog() {
     const QStringList shapeColors = rowPresetColorNames(
         QStringLiteral("screenshotRectangleStyleControls"), QStringLiteral("Stroke color "));
     const QStringList arrowColors = rowPresetColorNames(
-        QStringLiteral("screenshotArrowStyleControls"), QStringLiteral("Arrow stroke color "));
+        QStringLiteral("screenshotArrowStyleControls"), QStringLiteral("Arrow color "));
     require(shapeColors.size() == 5 && arrowColors == shapeColors,
             "shape and arrow stroke editors should render the shared stroke color catalog");
 
@@ -2118,7 +2118,7 @@ void shapeAndArrowStrokeEditorsShareThePresetCatalog() {
         return 0;
     };
     require(strokeStyleButtonCount(QStringLiteral("Stroke color")) == 3 &&
-                strokeStyleButtonCount(QStringLiteral("Arrow stroke color")) == 3,
+                strokeStyleButtonCount(QStringLiteral("Arrow color")) == 3,
             "both stroke editors should expose the shared solid/dashed/dotted styles");
 }
 
@@ -2146,7 +2146,7 @@ void sizePresetEditorsShareTheSizeCatalog() {
     };
 
     for (const QString& prefix :
-         {QStringLiteral("Pen highlight stroke width "), QStringLiteral("Pen filter stroke width "),
+         {QStringLiteral("Pen highlight width "), QStringLiteral("Pen filter width "),
           QStringLiteral("Text font size ")}) {
         const QStringList tooltips = presetTooltips(prefix);
         require(tooltips.size() == 4, "size preset editors should render the S/M/L/XL quartet");
@@ -2348,14 +2348,13 @@ void retainedOutlineEditorsRebindStateLabelsAndCommands() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
     QWidget* arrowRow = palette.findChild<QWidget*>(QStringLiteral("screenshotArrowStyleControls"));
     require(styleEditorRoot(arrowRow, "outline-stroke") == strokeRoot &&
-                picker->accessibleName() == QStringLiteral("Arrow stroke color") &&
+                picker->accessibleName() == QStringLiteral("Arrow color") &&
                 picker->value().solidColor == options.styleDefaults.arrow.stroke,
             "a retained outline editor should immediately rebind Arrow labels and state");
     ColorSwatchButton* arrowPreset = nullptr;
     for (adqt::widgets::AdButton* button : strokeRoot->findChildren<adqt::widgets::AdButton*>()) {
         auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
-        if (swatch != nullptr &&
-            swatch->toolTip() == QStringLiteral("Arrow stroke color #52c41a")) {
+        if (swatch != nullptr && swatch->toolTip() == QStringLiteral("Arrow color #52c41a")) {
             arrowPreset = swatch;
             break;
         }
@@ -4438,7 +4437,7 @@ void styleToolbarPopoversMaterializeWithTheirOwners() {
 
     drawingPalette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
     QCoreApplication::processEvents();
-    require(colorPickerWithAccessibleName(drawingPalette, "Arrow stroke color") == strokePicker &&
+    require(colorPickerWithAccessibleName(drawingPalette, "Arrow color") == strokePicker &&
                 strokePicker->popupContent() == strokePopupContent,
             "a retained shared editor must carry its materialized popup across reconciliation");
     QWidget* arrowheadTrigger = controlWithAccessibleName(drawingPalette, "Start arrowhead");
@@ -8770,11 +8769,11 @@ void mixedColorsKeepUniformStyleButtonsActive() {
 
     requireControlActive(palette, "Dotted stroke",
                          "uniform stroke style should stay active when stroke colors differ");
-    requireControlActive(palette, "Cross-line fill",
+    requireControlActive(palette, "Crosshatched fill",
                          "uniform fill style should stay active when fill colors differ");
     selectedState.shapeStyle.fillStyle = SnowCanvasFillStyle::Border;
     palette.setStyleToolbarState(selectedState);
-    requireControlActive(palette, "Border",
+    requireControlActive(palette, "No fill",
                          "uniform Border mode stays active when stored fill colors differ");
     const QColor color(QStringLiteral("#FFCCC7"));
     selectedState.shapeStyle.fill = color;
@@ -9828,10 +9827,10 @@ void filterToolExposesTypeAndIntensityControls() {
     require(penTypeSelect != nullptr && penIntensity != nullptr && widthSummary != nullptr &&
                 width54 != nullptr,
             "Pen Filter should expose type, width presets, width summary, and intensity");
-    require(controlWithTooltip(palette, "Pen filter stroke width S (24px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter stroke width M (30px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter stroke width L (42px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter stroke width XL (54px)") != nullptr,
+    require(controlWithTooltip(palette, "Pen filter width S (24px)") != nullptr &&
+                controlWithTooltip(palette, "Pen filter width M (30px)") != nullptr &&
+                controlWithTooltip(palette, "Pen filter width L (42px)") != nullptr &&
+                controlWithTooltip(palette, "Pen filter width XL (54px)") != nullptr,
             "Pen Filter should use the same numeric stroke-width presets as Pen Highlight");
 
     SnowCanvasFilterStyle lastStyle;
@@ -11715,8 +11714,8 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
         arrowControls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
     require(separators.size() == 3,
             "arrow style controls should separate color, width, type, and endpoint settings");
-    QWidget* arrowStrokeColorControl = controlWithAccessibleName(palette, "Arrow stroke color");
-    QWidget* arrowStrokeWidthControl = controlWithTooltip(palette, "Current arrow stroke width");
+    QWidget* arrowStrokeColorControl = controlWithAccessibleName(palette, "Arrow color");
+    QWidget* arrowStrokeWidthControl = controlWithTooltip(palette, "Current arrow width");
     QWidget* arrowStrokeRoot = styleEditorRoot(arrowControls, "outline-stroke");
     QWidget* arrowWidthRoot = styleEditorRoot(arrowControls, "outline-width");
     require(arrowStrokeColorControl != nullptr && arrowStrokeWidthControl != nullptr &&
@@ -11791,11 +11790,11 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
             }
         });
 
-    clickStyleControl(palette, "Arrow stroke width 4");
+    clickStyleControl(palette, "Arrow width 4");
     require(styleChangeCount == 1, "arrow stroke width should emit once");
-    clickStyleControl(palette, "Arrow stroke color #f5222d");
+    clickStyleControl(palette, "Arrow color #f5222d");
     require(styleChangeCount == 2, "arrow stroke color should emit once");
-    clickStyleControl(palette, "Dashed arrow stroke");
+    clickStyleControl(palette, "Dashed arrow line");
     require(styleChangeCount == 3, "arrow stroke style should emit once");
     elbowArrowType->click();
     require(styleChangeCount == 4, "arrow type should emit once");
@@ -12094,7 +12093,9 @@ void magnifierControlsPatchIndependentProperties() {
         return palette.findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotMagnifierSourceOutlineButton"));
     };
-    const auto leader = [&]() { return controlWithAccessibleName(palette, "Leader line type"); };
+    const auto leader = [&]() {
+        return controlWithAccessibleName(palette, "Leader line arrowhead");
+    };
     const auto initial = palette.creationStyleDefaults().magnifier;
     require(shapes() && shapes()->buttons().size() == 3 && factor() && radius() && ratio() &&
                 connections() && connections()->buttons().size() == 3 && outline() && leader() &&
@@ -12765,8 +12766,9 @@ void magnifierControlsRetranslateAndRenderPreviews() {
             palette.findChild<QWidget*>(QStringLiteral("screenshotMagnifierArrowRatioButton"));
         require(
             factor && connection && outline && ratio &&
-                ratio->toolTip() == QCoreApplication::translate("ScreenshotToolPalette",
-                                                                "Arrow ratio (scroll to adjust)") &&
+                ratio->toolTip() ==
+                    QCoreApplication::translate("ScreenshotToolPalette",
+                                                "Arrowhead scale (scroll to adjust)") &&
                 factor->toolTip() ==
                     QCoreApplication::translate("ScreenshotToolPalette",
                                                 "Magnification factor (scroll to adjust)") &&
@@ -13823,7 +13825,7 @@ void arrowheadOptionsRetranslateInPlace() {
                                         QStringLiteral("arrowhead-standard"),
             "end arrowhead options should use the right-facing asset");
     endPopover->hide();
-    QWidget* ratioTrigger = controlWithTooltip(palette, "Arrow ratio (scroll to adjust)");
+    QWidget* ratioTrigger = controlWithTooltip(palette, "Arrowhead scale (scroll to adjust)");
     require(ratioTrigger != nullptr, "ratio editor must expose translated accessible text");
     QWidget* shaftTrigger = controlWithAccessibleName(palette, "Arrow shaft type");
     require(shaftTrigger != nullptr, "shaft trigger must be available");
@@ -13843,7 +13845,7 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Simplified Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u5934 \u65e0"),
             "open arrowhead option should retranslate to Simplified Chinese");
-    require(ratioTrigger->accessibleName() == QStringLiteral("箭头比例（滚动调整）"),
+    require(ratioTrigger->accessibleName() == QStringLiteral("箭头端点比例（滚动调整）"),
             "ratio editor retranslates to Simplified Chinese");
     require(shaftTrigger->accessibleName() == QStringLiteral("箭杆类型") &&
                 taperedOption->toolTip() == QStringLiteral("渐宽箭杆"),
@@ -13858,7 +13860,7 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Traditional Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u982d \u7121"),
             "open arrowhead option should retranslate to Traditional Chinese");
-    require(ratioTrigger->accessibleName() == QStringLiteral("箭頭比例（捲動調整）"),
+    require(ratioTrigger->accessibleName() == QStringLiteral("箭頭端點比例（捲動調整）"),
             "ratio editor retranslates to Traditional Chinese");
     require(shaftTrigger->accessibleName() == QStringLiteral("箭桿類型") &&
                 taperedOption->toolTip() == QStringLiteral("漸寬箭桿"),
@@ -13894,11 +13896,11 @@ void selectedArrowMixedPropertiesResolveIndependently() {
         SnowCanvasShapeStylePropertyArrowShaftType;
     palette.setStyleToolbarState(state);
 
-    requireControlInactive(palette, "Arrow stroke width 4",
+    requireControlInactive(palette, "Arrow width 4",
                            "mixed arrow stroke width must not select a preset");
-    requireControlInactive(palette, "Arrow stroke color #f5222d",
+    requireControlInactive(palette, "Arrow color #f5222d",
                            "mixed arrow color must not select a preset");
-    requireControlInactive(palette, "Dashed arrow stroke",
+    requireControlInactive(palette, "Dashed arrow line",
                            "mixed arrow stroke style must not select an option");
 
     QWidget* arrowTypeControls =
@@ -13951,7 +13953,7 @@ void selectedArrowMixedPropertiesResolveIndependently() {
             "the selected arrow type must emit only its arrow property");
     require(arrowTypeGroup->checkedId() == 2 && elbowArrowType->isChecked(),
             "the explicitly selected arrow type should become active");
-    requireControlInactive(palette, "Arrow stroke width 4",
+    requireControlInactive(palette, "Arrow width 4",
                            "resolving arrow type must preserve mixed width");
     for (const auto& option : {
              std::pair{startArrowheadPopover, "Start arrowhead triangle"},
@@ -14447,8 +14449,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
     };
     adqt::widgets::AdColorPicker* colorPicker = pickerWithName(QStringLiteral("Text color"));
     adqt::widgets::AdColorPicker* strokePicker =
-        pickerWithName(QStringLiteral("Text stroke width"));
-    adqt::widgets::AdColorPicker* fillPicker = pickerWithName(QStringLiteral("Text fill color"));
+        pickerWithName(QStringLiteral("Text outline width"));
+    adqt::widgets::AdColorPicker* fillPicker =
+        pickerWithName(QStringLiteral("Text background color"));
     require(colorPicker != nullptr, "text foreground picker should be present");
     require(strokePicker != nullptr, "text stroke picker should be present");
     require(fillPicker != nullptr, "text fill picker should be present");
@@ -14529,15 +14532,15 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
     QCoreApplication::processEvents();
     auto* strokePopover = strokePicker->findChild<adqt::widgets::AdPopover*>();
     require(strokePopover != nullptr, "text stroke picker should own a popup");
-    require(popoverButtonWithTooltip(strokePopover, "Text stroke width 2px") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke width 4px") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke width 8px") != nullptr,
+    require(popoverButtonWithTooltip(strokePopover, "Text outline width 2px") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline width 4px") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline width 8px") != nullptr,
             "text stroke popup should contain 2px, 4px, and 8px shortcuts");
-    require(popoverButtonWithTooltip(strokePopover, "Text stroke color transparent") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke color #ffccc7") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke color #d9f7be") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke color #bae0ff") != nullptr &&
-                popoverButtonWithTooltip(strokePopover, "Text stroke color #fff1b8") != nullptr,
+    require(popoverButtonWithTooltip(strokePopover, "Text outline color transparent") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline color #ffccc7") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline color #d9f7be") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline color #bae0ff") != nullptr &&
+                popoverButtonWithTooltip(strokePopover, "Text outline color #fff1b8") != nullptr,
             "text stroke popup should reuse the fill color presets");
     strokePicker->setPopupVisible(false);
 
@@ -14562,7 +14565,7 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
             xlFontSizePreset->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal &&
             activeFontSizePreset->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
         "changing text size should move the shared style-toolbar active state to the new preset");
-    clickStyleControl(palette, "Line text fill");
+    clickStyleControl(palette, "Hatched text background");
     require(changeCount == 2 && emittedStyle.fillStyle == SnowCanvasFillStyle::Line &&
                 emittedProperties == SnowCanvasTextStyleMixedFillStyle,
             "text fill pattern should update");
@@ -14596,8 +14599,8 @@ void textStylePopupLifecyclesAreBalanced() {
         return static_cast<adqt::widgets::AdColorPicker*>(nullptr);
     };
     auto* colorPicker = pickerWithName(QStringLiteral("Text color"));
-    auto* strokePicker = pickerWithName(QStringLiteral("Text stroke width"));
-    auto* fillPicker = pickerWithName(QStringLiteral("Text fill color"));
+    auto* strokePicker = pickerWithName(QStringLiteral("Text outline width"));
+    auto* fillPicker = pickerWithName(QStringLiteral("Text background color"));
     auto* fontSelect = qobject_cast<adqt::widgets::AdSelect*>(
         controlWithAccessibleName(palette, "Text font family"));
     auto* alignmentPopover =
@@ -14710,9 +14713,9 @@ void retainedEditorsApplyDestinationMixedStateDuringReconciliation() {
             "the retained outline editor should expose its destination color picker");
     strokePicker->setPopupVisible(true);
     QCoreApplication::processEvents();
-    requireControlInactive(palette, "Arrow stroke color #f5222d",
+    requireControlInactive(palette, "Arrow color #f5222d",
                            "the retained color editor should apply destination mixed state");
-    requireControlInactive(palette, "Dashed arrow stroke",
+    requireControlInactive(palette, "Dashed arrow line",
                            "the retained stroke-style editor should apply destination mixed state");
 }
 
@@ -14889,7 +14892,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     // on-demand lifecycle evicts Text controls during SerialNumber activation.
     auto* textColorPickerBeforeSwitch = colorPickerWithAccessibleName(palette, "Text color");
     auto* textFillColorPickerBeforeSwitch =
-        colorPickerWithAccessibleName(palette, "Text fill color");
+        colorPickerWithAccessibleName(palette, "Text background color");
     require(textColorPickerBeforeSwitch != nullptr && textFillColorPickerBeforeSwitch != nullptr,
             "text color editors should materialize before the family transition");
     const QSize textColorTriggerSize =
@@ -14936,12 +14939,12 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
             "sequence-number style controls should be visible");
     require(controlWithAccessibleName(palette, "Sequence number color") != nullptr,
             "sequence-number color picker should be present");
-    require(controlWithAccessibleName(palette, "Sequence number fill color") != nullptr,
+    require(controlWithAccessibleName(palette, "Sequence number background color") != nullptr,
             "sequence-number fill color picker should be present");
     adqt::widgets::AdColorPicker* colorPicker =
         colorPickerWithAccessibleName(palette, "Sequence number color");
     adqt::widgets::AdColorPicker* fillColorPicker =
-        colorPickerWithAccessibleName(palette, "Sequence number fill color");
+        colorPickerWithAccessibleName(palette, "Sequence number background color");
     require(colorPicker != nullptr && fillColorPicker != nullptr &&
                 colorPicker->alphaChannelEnabled() && fillColorPicker->alphaChannelEnabled(),
             "sequence-number color should match text color alpha behavior");
@@ -14977,10 +14980,10 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
             "sequence-number fill presets should match the text fill preset row");
     require(serialFillPresets->layout()->count() == textFillPresetsCount,
             "sequence-number fill popup should expose every text fill color preset");
-    QWidget* borderFill = controlWithTooltip(palette, "Border");
-    QWidget* solidFill = controlWithTooltip(palette, "Solid sequence number fill");
-    QWidget* crossLineFill = controlWithTooltip(palette, "Cross-line sequence number fill");
-    QWidget* lineFill = controlWithTooltip(palette, "Line sequence number fill");
+    QWidget* borderFill = controlWithTooltip(palette, "No fill");
+    QWidget* solidFill = controlWithTooltip(palette, "Solid sequence number background");
+    QWidget* crossLineFill = controlWithTooltip(palette, "Crosshatched sequence number background");
+    QWidget* lineFill = controlWithTooltip(palette, "Hatched sequence number background");
     QLayout* serialNumberLayout = controls->layout();
     QWidget* colorRoot = styleEditorRoot(controls, "foreground-color");
     QWidget* typeRoot = styleEditorRoot(controls, "serial-type");
@@ -15078,7 +15081,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     clickStyleControl(palette, "Sequence number color #52c41a");
     require(changeCount == 2 && emittedStyle.color == QColor(QStringLiteral("#52c41a")),
             "sequence-number color preset should update the style");
-    clickStyleControl(palette, "Line sequence number fill");
+    clickStyleControl(palette, "Hatched sequence number background");
     require(changeCount == 3 && emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
             "sequence-number fill pattern should update like text fill");
     fillColorPicker->setValue(
@@ -15116,7 +15119,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     clickStyleControl(palette, "Sequence number font size 30px");
     require(changeCount == circleChangeCount + 1 && emittedStyle.fontSize == 30.0,
             "Circle font size should remain editable");
-    clickStyleControl(palette, "Cross-line sequence number fill");
+    clickStyleControl(palette, "Crosshatched sequence number background");
     require(emittedStyle.fillStyle == SnowCanvasFillStyle::CrossLine,
             "Circle fill should remain editable");
     solidSquareType->click();
@@ -15408,7 +15411,7 @@ void cornerRadiusButtonsRestoreTheDefaultValue() {
     observePaletteStyleEdit<SnowCanvasTextEdit>(
         palette,
         [&emittedTextStyle](const SnowCanvasTextStyle& style) { emittedTextStyle = style; });
-    clickStyleControl(palette, "Text fill corner radius (scroll to adjust)");
+    clickStyleControl(palette, "Text background corner radius (scroll to adjust)");
     require(qFuzzyCompare(emittedTextStyle.cornerRadii.topLeft + 1.0, 7.0),
             "clicking the text corner-radius button should restore 6px");
 }
@@ -15596,11 +15599,11 @@ void borderFillControlsRetainColorAndSavedPreferences() {
         const bool text = tool == Tool::Text;
         const bool serial = tool == Tool::SerialNumber;
         auto* picker =
-            colorPickerWithAccessibleName(palette, text     ? "Text fill color"
-                                                   : serial ? "Sequence number fill color"
+            colorPickerWithAccessibleName(palette, text     ? "Text background color"
+                                                   : serial ? "Sequence number background color"
                                                             : "Fill color");
         require(picker != nullptr, "each configurable fill exposes its color picker");
-        requireControlActive(palette, "Border", "Border starts selected");
+        requireControlActive(palette, "No fill", "Border starts selected");
         require(picker->value().solidColor == QColor("#FFCCC7"), "the latent fill is pale red");
         auto* trigger = picker->triggerContent();
         require(trigger != nullptr, "fill color trigger should be present");
@@ -15609,18 +15612,18 @@ void borderFillControlsRetainColorAndSavedPreferences() {
                 "Border mode displays the stored fill color as a solid block");
         const QColor chosen(23, 67, 109, 128);
         picker->commitValue(adqt::widgets::AdColorValue::solid(chosen));
-        requireControlActive(palette, "Border", "choosing a color retains Border mode");
+        requireControlActive(palette, "No fill", "choosing a color retains Border mode");
         const QImage chosenSwatch = renderButton(*trigger);
-        for (const char* tooltip : {text     ? "Solid text fill"
-                                    : serial ? "Solid sequence number fill"
+        for (const char* tooltip : {text     ? "Solid text background"
+                                    : serial ? "Solid sequence number background"
                                              : "Solid fill",
-                                    text     ? "Cross-line text fill"
-                                    : serial ? "Cross-line sequence number fill"
-                                             : "Cross-line fill",
-                                    text     ? "Line text fill"
-                                    : serial ? "Line sequence number fill"
-                                             : "Line fill",
-                                    "Border"}) {
+                                    text     ? "Crosshatched text background"
+                                    : serial ? "Crosshatched sequence number background"
+                                             : "Crosshatched fill",
+                                    text     ? "Hatched text background"
+                                    : serial ? "Hatched sequence number background"
+                                             : "Hatched fill",
+                                    "No fill"}) {
             clickStyleControl(palette, tooltip);
             require(picker->value().solidColor == chosen,
                     "switching fill styles retains the chosen color");
@@ -15668,9 +15671,9 @@ void fillStyleButtonsFollowFillColorPickerTrigger() {
     require(fillPicker != nullptr, "fill color picker should be present");
 
     auto* lineFill =
-        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Line fill"));
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Hatched fill"));
     auto* crossLineFill =
-        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Cross-line fill"));
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Crosshatched fill"));
     auto* solidFill =
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Solid fill"));
     require(lineFill != nullptr, "line fill control should be present");
@@ -15681,13 +15684,13 @@ void fillStyleButtonsFollowFillColorPickerTrigger() {
     require(toolbarLayout != nullptr, "fill color picker should have a toolbar layout");
     const int fillPickerIndex = layoutWidgetIndex(toolbarLayout, fillPicker);
     require(fillPickerIndex >= 0, "fill color picker should be in the toolbar layout");
-    auto* borderFill = controlWithTooltip(palette, "Border");
+    auto* borderFill = controlWithTooltip(palette, "No fill");
     require(borderFill != nullptr &&
                 layoutWidgetIndex(toolbarLayout, borderFill) == fillPickerIndex + 1 &&
                 layoutWidgetIndex(toolbarLayout, solidFill) == fillPickerIndex + 2 &&
                 layoutWidgetIndex(toolbarLayout, crossLineFill) == fillPickerIndex + 3 &&
                 layoutWidgetIndex(toolbarLayout, lineFill) == fillPickerIndex + 4,
-            "fill styles should follow the picker in Border, Solid, Cross-line, Line order");
+            "fill styles should follow the picker in No fill, Solid, Crosshatched, Hatched order");
 
     fillPicker->setPopupLayerMode(QApplication::platformName() == QStringLiteral("offscreen")
                                       ? adqt::widgets::AdColorPicker::PopupLayerMode::InWindow
@@ -15696,8 +15699,8 @@ void fillStyleButtonsFollowFillColorPickerTrigger() {
     QCoreApplication::processEvents();
     auto* fillPopover = fillPicker->findChild<adqt::widgets::AdPopover*>();
     require(fillPopover != nullptr, "fill color picker should own a popup");
-    require(popoverButtonWithTooltip(fillPopover, "Line fill") == nullptr &&
-                popoverButtonWithTooltip(fillPopover, "Cross-line fill") == nullptr &&
+    require(popoverButtonWithTooltip(fillPopover, "Hatched fill") == nullptr &&
+                popoverButtonWithTooltip(fillPopover, "Crosshatched fill") == nullptr &&
                 popoverButtonWithTooltip(fillPopover, "Solid fill") == nullptr,
             "fill styles should not remain in the fill color popup");
     require(popoverButtonWithTooltip(fillPopover, "Fill color transparent") != nullptr,
@@ -15812,9 +15815,9 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
         colorPickerWithAccessibleName(palette, "Highlight color");
     adqt::widgets::AdColorPicker* fillPicker = colorPickerWithAccessibleName(palette, "Fill color");
     adqt::widgets::AdColorPicker* strokePicker =
-        colorPickerWithAccessibleName(palette, "Arrow stroke color");
+        colorPickerWithAccessibleName(palette, "Arrow color");
     adqt::widgets::AdColorPicker* widthColorPicker =
-        colorPickerWithAccessibleName(palette, "Highlight stroke width");
+        colorPickerWithAccessibleName(palette, "Highlight outline width");
     const QList<adqt::widgets::AdColorPicker*> pickerShells{
         colorPicker,
         fillPicker,
@@ -16208,12 +16211,12 @@ void toolbarScalingDoesNotRelayoutPopupContent() {
         adqt::widgets::AdButton* strokeStyle =
             popoverButtonWithTooltip(strokePopover, "Solid stroke");
         auto* fillStyle =
-            qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Line fill"));
+            qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Hatched fill"));
         adqt::widgets::AdButton* fillPreset =
             popoverButtonWithTooltip(fillPopover, "Fill color transparent");
         require(strokeStyle != nullptr && fillStyle != nullptr && fillPreset != nullptr,
                 "shape popup and toolbar options should be present");
-        require(popoverButtonWithTooltip(fillPopover, "Line fill") == nullptr,
+        require(popoverButtonWithTooltip(fillPopover, "Hatched fill") == nullptr,
                 "fill style option should not be in the fill color popup");
 
         QWidget* mainToolbarControl = controlWithTooltip(palette, "Select elements");
@@ -16256,10 +16259,10 @@ void toolbarScalingDoesNotRelayoutPopupContent() {
     {
         ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
         palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
-        adqt::widgets::AdPopover* arrowStrokePopover = openColorPicker(
-            pickerWithAccessibleName(palette, QStringLiteral("Arrow stroke color")));
+        adqt::widgets::AdPopover* arrowStrokePopover =
+            openColorPicker(pickerWithAccessibleName(palette, QStringLiteral("Arrow color")));
         adqt::widgets::AdButton* arrowStrokeStyle =
-            popoverButtonWithTooltip(arrowStrokePopover, "Solid arrow stroke");
+            popoverButtonWithTooltip(arrowStrokePopover, "Solid arrow line");
         auto* arrowType =
             qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Straight arrow"));
         QWidget* startArrowheadTrigger = controlWithAccessibleName(palette, "Start arrowhead");
@@ -16327,7 +16330,7 @@ void toolbarScalingDoesNotRelayoutPopupContent() {
     {
         ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
         palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
-        QWidget* strokePicker = controlWithAccessibleName(palette, "Text stroke width");
+        QWidget* strokePicker = controlWithAccessibleName(palette, "Text outline width");
         QWidget* controls =
             palette.findChild<QWidget*>(QStringLiteral("screenshotTextStyleControls"));
         QWidget* strokeRoot = styleEditorRoot(controls, "text-stroke");
@@ -17579,11 +17582,11 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.line.stroke; }},
         {Tool::FreeDraw, "Stroke color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.freeDraw.stroke; }},
-        {Tool::Arrow, "Arrow stroke color",
+        {Tool::Arrow, "Arrow color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.arrow.stroke; }},
         {Tool::RectangleHighlight, "Highlight color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.rectangleHighlight.fill; }},
-        {Tool::RectangleHighlight, "Highlight stroke width",
+        {Tool::RectangleHighlight, "Highlight outline width",
          [](SnowCanvasStyleDefaults& styles) -> QColor& {
              return styles.rectangleHighlight.stroke;
          }},
@@ -17591,13 +17594,13 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.penHighlight.stroke; }},
         {Tool::Text, "Text color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.color; }},
-        {Tool::Text, "Text stroke width",
+        {Tool::Text, "Text outline width",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.stroke; }},
-        {Tool::Text, "Text fill color",
+        {Tool::Text, "Text background color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.fill; }},
         {Tool::SerialNumber, "Sequence number color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.serialNumber.color; }},
-        {Tool::SerialNumber, "Sequence number fill color",
+        {Tool::SerialNumber, "Sequence number background color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.serialNumber.fill; }},
         {Tool::Spotlight, "Mask color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.spotlight.color; }},
@@ -17634,9 +17637,8 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
 
 QWidget* openStrokeRenderingRow(ScreenshotToolPalette& palette, ScreenshotToolPalette::Tool tool) {
     palette.setActiveTool(tool);
-    auto* picker = colorPickerWithAccessibleName(palette, tool == ScreenshotToolPalette::Tool::Arrow
-                                                              ? "Arrow stroke color"
-                                                              : "Stroke color");
+    auto* picker = colorPickerWithAccessibleName(
+        palette, tool == ScreenshotToolPalette::Tool::Arrow ? "Arrow color" : "Stroke color");
     require(picker != nullptr, "stroke rendering fixture needs a stroke color picker");
     picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::InWindow);
     picker->setPopupVisible(true);
@@ -17731,7 +17733,7 @@ void strokeRenderingControlsPreserveIndependentToolStyles() {
                 "a rendering choice should emit one property and remember only its tool");
         buttons.at(index)->click();
         require(commits == before + 1, "clicking the current rendering style should be a no-op");
-        clickStyleControl(palette, tool == Tool::Arrow ? "Dashed arrow stroke" : "Dashed stroke");
+        clickStyleControl(palette, tool == Tool::Arrow ? "Dashed arrow line" : "Dashed stroke");
         expectedStyle.strokeStyle = SnowCanvasStrokeStyle::Dashed;
         require(properties == SnowCanvasShapeStylePropertyStrokeStyle &&
                     emitted.strokeRenderingStyle == style &&
@@ -17869,7 +17871,7 @@ void strokeRenderingMixedSelectionResolvesOneProperty() {
             require(button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
                     "mixed rendering styles should leave every option inactive");
         }
-        requireControlActive(palette, tool == Tool::Arrow ? "Dashed arrow stroke" : "Dashed stroke",
+        requireControlActive(palette, tool == Tool::Arrow ? "Dashed arrow line" : "Dashed stroke",
                              "mixed rendering and colors should preserve a uniform stroke pattern");
         int commits = 0;
         quint32 properties = 0;
@@ -18307,7 +18309,7 @@ void arrowShaftEditorPersistsAcrossReopening() {
                 screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
                     SnowCanvasArrowShaftType::Tapered,
             "shaft control must save its choice through the canvas style binding");
-    clickStyleControl(palette, "Arrow stroke width 4");
+    clickStyleControl(palette, "Arrow width 4");
     require(screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
                 SnowCanvasArrowShaftType::Tapered,
             "another property edit must preserve the saved shaft preference");
@@ -18748,19 +18750,20 @@ void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
     auto textButtons = swatches(palette.stylePanel(), QStringLiteral("Text color "));
     requireColors(textButtons, stroke);
-    auto* textFill = colorPickerWithAccessibleName(palette, "Text fill color");
-    auto* textStroke = colorPickerWithAccessibleName(palette, "Text stroke width");
+    auto* textFill = colorPickerWithAccessibleName(palette, "Text background color");
+    auto* textStroke = colorPickerWithAccessibleName(palette, "Text outline width");
     require(textFill != nullptr && textStroke != nullptr,
             "lazily materialized text controls must expose fill and stroke pickers");
     textFill->setPopupVisible(true);
     QCoreApplication::processEvents();
-    auto textFillButtons = swatches(textFill->popupContent(), QStringLiteral("Text fill color "));
+    auto textFillButtons =
+        swatches(textFill->popupContent(), QStringLiteral("Text background color "));
     requireColors(textFillButtons, fill);
     textFill->setPopupVisible(false);
     textStroke->setPopupVisible(true);
     QCoreApplication::processEvents();
     auto textStrokeButtons =
-        swatches(textStroke->popupContent(), QStringLiteral("Text stroke color "));
+        swatches(textStroke->popupContent(), QStringLiteral("Text outline color "));
     requireColors(textStrokeButtons, fill);
     int textCommands = 0;
     SnowCanvasTextStyle changedText;
