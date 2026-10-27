@@ -381,8 +381,9 @@ void ScreenshotPinnedEditController::ensureToolbar() {
         return;
     }
 
-    m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(
-        snow_shot::presentation::screenshotDrawingToolbarOptions());
+    auto options = snow_shot::presentation::screenshotDrawingToolbarOptions();
+    options.showAirDropButton = true;
+    m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(options);
     m_toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
     m_toolbarWindow->setTransientOwnerWindow(&m_pinnedWindow);
     m_toolbarWindow->setStyleToolbarAboveMain(false);

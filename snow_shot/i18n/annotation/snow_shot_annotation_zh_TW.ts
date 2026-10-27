@@ -56,6 +56,10 @@
             <translation>調整不透明度</translation>
         </message>
         <message>
+            <source>AirDrop</source>
+            <translation>AirDrop</translation>
+        </message>
+        <message>
             <source>Align bottom</source>
             <translation>靠下對齊</translation>
         </message>

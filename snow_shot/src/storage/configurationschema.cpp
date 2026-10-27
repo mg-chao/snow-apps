@@ -81,6 +81,7 @@ const QStringList kActionToolbarItemIds = editionActionIds({
     QStringLiteral("scrolling-screenshot"),
     QStringLiteral("quick-save"),
     QStringLiteral("print"),
+    QStringLiteral("airdrop"),
     QStringLiteral("save-as-file"),
     QStringLiteral("upload-to-cloud"),
     QStringLiteral("separator"),
@@ -134,8 +135,8 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
-        {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
-         QStringLiteral("save-as-file")},
+        {QStringLiteral("upload-to-cloud"), QStringLiteral("airdrop"), QStringLiteral("print"),
+         QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
         {QStringLiteral("separator")},
         {QStringLiteral("cancel")},
         {QStringLiteral("copy")},
@@ -147,7 +148,7 @@ const QStringList kPinnedActionToolbarItemIds = editionActionIds(
      QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
      QStringLiteral("convert-to-html"), QStringLiteral("text-recognition"),
      QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("print"),
-     QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+     QStringLiteral("airdrop"), QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
      QStringLiteral("upload-to-cloud"), QStringLiteral("copy"), QStringLiteral("confirm"),
      QStringLiteral("confirm-separator")});
 
@@ -159,8 +160,8 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("separator")},
-        {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
-         QStringLiteral("save-as-file")},
+        {QStringLiteral("upload-to-cloud"), QStringLiteral("airdrop"), QStringLiteral("print"),
+         QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
         {QStringLiteral("copy")},
         {QStringLiteral("confirm-separator")},
         {QStringLiteral("confirm")},
@@ -2448,6 +2449,28 @@ normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
             hiddenSet.contains(QStringLiteral("save-as-file"))) {
             hidden.push_back(QStringLiteral("print"));
             hiddenSet.insert(QStringLiteral("print"));
+        }
+    }
+    if (known.contains(QStringLiteral("airdrop")) &&
+        !positioned.contains(QStringLiteral("airdrop")) &&
+        !hiddenSet.contains(QStringLiteral("airdrop"))) {
+        for (QStringList& position : positions) {
+            const qsizetype save = position.indexOf(QStringLiteral("save-as-file"));
+            if (save < 0)
+                continue;
+            const qsizetype print = position.indexOf(QStringLiteral("print"));
+            const qsizetype quick = position.indexOf(QStringLiteral("quick-save"));
+            position.insert(print >= 0   ? print
+                            : quick >= 0 ? quick
+                                         : save,
+                            QStringLiteral("airdrop"));
+            positioned.insert(QStringLiteral("airdrop"));
+            break;
+        }
+        if (!positioned.contains(QStringLiteral("airdrop")) &&
+            hiddenSet.contains(QStringLiteral("save-as-file"))) {
+            hidden.push_back(QStringLiteral("airdrop"));
+            hiddenSet.insert(QStringLiteral("airdrop"));
         }
     }
     if (migrateScreenshotLayout && !positions.isEmpty() &&

@@ -1826,6 +1826,22 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/systemtraycontroller.h
 )
 
+add_library(snow_shot_airdrop STATIC src/presentation/services/screenshotairdropservice.cpp)
+snow_shot_register_source_capability(airdrop
+    FULL_TARGET snow_shot_airdrop MINI_TARGET snow_shot_airdrop_mini)
+snow_shot_source_requires(airdrop SOURCES
+    src/presentation/services/screenshotcontroller.cpp
+    src/presentation/pinned/screenshotpinnedwindow.cpp)
+target_include_directories(snow_shot_airdrop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_airdrop PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
+if(APPLE)
+    target_sources(snow_shot_airdrop PRIVATE src/platform/macos/nativeairdrop.mm)
+    target_compile_options(snow_shot_airdrop PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_link_libraries(snow_shot_airdrop PRIVATE "-framework AppKit")
+else()
+    target_sources(snow_shot_airdrop PRIVATE src/presentation/services/nativeairdropunsupported.cpp)
+endif()
+
 add_library(snow_shot_print STATIC src/presentation/services/screenshotprintservice.cpp)
 snow_shot_register_source_capability(print
     FULL_TARGET snow_shot_print MINI_TARGET snow_shot_print_mini)
@@ -12525,6 +12541,24 @@ endif()
 if(SNOW_SHOT_BUILD_TESTS)
     target_sources(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
+    add_executable(snow-shot-airdrop-service-tests tests/screenshot_airdrop_service_tests.cpp)
+    target_link_libraries(snow-shot-airdrop-service-tests PRIVATE snow_shot_airdrop)
+    snow_shot_import_offscreen_platform(snow-shot-airdrop-service-tests)
+    add_test(NAME snow-shot-airdrop-service-tests
+        COMMAND snow-shot-airdrop-service-tests -platform offscreen)
+    set_tests_properties(snow-shot-airdrop-service-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    foreach(_airdrop_host IN ITEMS pinned-window toolbar-main-panel floating-toolbar-drag)
+        add_test(NAME snow-shot-${_airdrop_host}-airdrop-tests
+            COMMAND snow-shot-${_airdrop_host}-tests --airdrop-only -platform offscreen)
+        set_tests_properties(snow-shot-${_airdrop_host}-airdrop-tests PROPERTIES
+            LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    endforeach()
+    add_test(NAME snow-shot-airdrop-icon-tests
+        COMMAND snow-shot-generated-icon-pack-tests --airdrop-only -platform offscreen)
+    set_tests_properties(snow-shot-airdrop-icon-tests PROPERTIES LABELS unit TIMEOUT 30)
     add_executable(snow-shot-print-service-tests tests/screenshot_print_service_tests.cpp)
     target_link_libraries(snow-shot-print-service-tests PRIVATE snow_shot_print snow_shot_diagnostics)
     snow_shot_import_offscreen_platform(snow-shot-print-service-tests)
@@ -12536,6 +12570,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-native-print-smoke tests/native_print_smoke.cpp)
     target_link_libraries(snow-shot-native-print-smoke PRIVATE snow_shot_print)
     if(APPLE)
+        add_executable(snow-shot-macos-airdrop-native-tests tests/macos_airdrop_native_tests.mm)
+        target_include_directories(snow-shot-macos-airdrop-native-tests PRIVATE include src)
+        target_link_libraries(snow-shot-macos-airdrop-native-tests PRIVATE
+            snow_shot_airdrop snow_shot_macos_window_platform "-framework AppKit")
+        add_test(NAME snow-shot-macos-airdrop-native-tests
+            COMMAND snow-shot-macos-airdrop-native-tests -platform cocoa)
+        set_tests_properties(snow-shot-macos-airdrop-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 75 SKIP_RETURN_CODE 77)
         add_executable(snow-shot-macos-native-print-stacking-tests
             tests/macos_native_print_stacking_tests.mm)
         target_include_directories(snow-shot-macos-native-print-stacking-tests PRIVATE include src)

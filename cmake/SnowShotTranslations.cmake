@@ -116,6 +116,7 @@ function(snow_shot_add_translations target)
             snow_shot_translation
             snow_shot_cloud_upload
             snow_shot_print
+            snow_shot_airdrop
             snow_shot_diagnostics
             snow_shot_updates
         # Include companion-preview sources defined after this translation target.
@@ -127,6 +128,7 @@ function(snow_shot_add_translations target)
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/update/updateservice.cpp"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/nativeprint.cpp"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/nativeprint.mm"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/nativeairdrop.mm"
         TS_FILES ${_snow_shot_update_ts}
         LUPDATE_TARGET snow_shot_update_translations
         OPTIONS -no-obsolete -locations none

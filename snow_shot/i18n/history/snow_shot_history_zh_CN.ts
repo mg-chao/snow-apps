@@ -1579,6 +1579,10 @@ Files:
             <translation>%1%</translation>
         </message>
         <message>
+            <source>AirDrop</source>
+            <translation>隔空投送</translation>
+        </message>
+        <message>
             <source>Always on Top</source>
             <translation>始终置顶</translation>
         </message>

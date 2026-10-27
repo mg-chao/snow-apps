@@ -27,7 +27,7 @@ set(SNOW_SHOT_MINI_EXCLUDED_TARGETS
     snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_settings snow_shot_collage snow_shot_image_split snow_shot_global_mouse snow_shot_login_item
     snow_shot_administrator snow_shot_permissions snow_shot_updates
-    snow_shot_diagnostics snow_shot_crash_bridge snow_shot_print
+    snow_shot_diagnostics snow_shot_crash_bridge snow_shot_print snow_shot_airdrop
     snow_shot_mcp snow_shot_mcp_build
     snow-shot-updater-binary snow-shot-updater-binary_build
     snow_shot_release_translations)

@@ -6,7 +6,7 @@
 #include <QPointer>
 #include <QWidget>
 
-// Native print UI does not participate in Qt's modal-window dispatch. Freeze only
+// Native print and sharing UI do not participate in Qt's modal-window dispatch. Freeze only
 // the capture's existing widgets, including the asynchronous snapshot preparation.
 class ScreenshotPrintInteractionGuard final : public QObject {
   public:

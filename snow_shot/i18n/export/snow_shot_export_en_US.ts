@@ -2,6 +2,29 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>ScreenshotAirDropService</name>
+        <message>
+            <source>AirDrop is unavailable on this Mac</source>
+            <translation>AirDrop is unavailable on this Mac</translation>
+        </message>
+        <message>
+            <source>The AirDrop sharing window could not be opened</source>
+            <translation>The AirDrop sharing window could not be opened</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for AirDrop</source>
+            <translation>The image could not be prepared for AirDrop</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for AirDrop: %1</source>
+            <translation>The image could not be prepared for AirDrop: %1</translation>
+        </message>
+        <message>
+            <source>The image could not be shared with AirDrop: %1</source>
+            <translation>The image could not be shared with AirDrop: %1</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotClipboardService</name>
         <message>
             <source>The clipboard could not be cleared</source>

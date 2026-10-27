@@ -15,8 +15,10 @@
 #include "snow_shot/presentation/screenshotexportnaming.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
+#include "snow_shot/presentation/screenshotairdropservice.h"
 #include "screenshotprintinteractionguard.h"
 #include "screenshotprintcompletion.h"
+#include "screenshotairdropcompletion.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
@@ -485,6 +487,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void restorePinnedWindows();
     void restoreActivePinnedGroupWindows();
     void printSelection() override;
+    void airDropSelection() override;
     void saveSelectionToFile() override;
     void saveSelectionWithSnowDialog();
     void saveRecognitionResultWithSystemDialog(const ScreenshotRecognitionFileSnapshot& snapshot);
@@ -664,6 +667,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QPointer<ScreenshotPrintService> m_printService;
     std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
     bool m_printPending = false;
+    QPointer<ScreenshotAirDropService> m_airDropService;
+    std::shared_ptr<ScreenshotExportArtifact> m_airDropArtifact;
+    bool m_airDropPending = false;
     QHash<quint64, quint64> m_imageExportCaptureEpochs;
     quint64 m_captureEpoch = 0;
     ScreenshotExportJobHandle m_exportJob;
@@ -4544,6 +4550,98 @@ void ScreenshotController::Impl::printSelection() {
 
 void ScreenshotController::setPrintService(ScreenshotPrintService* service) {
     m_impl->m_printService = service;
+}
+
+void ScreenshotController::setAirDropService(ScreenshotAirDropService* service) {
+    m_impl->m_airDropService = service;
+}
+
+void ScreenshotController::Impl::airDropSelection() {
+    using Service = ScreenshotAirDropService;
+    auto& service = m_airDropService ? *m_airDropService : Service::shared();
+    if (m_airDropPending || !m_activeImageExports.isEmpty() ||
+        owner.property("saveDialogOpen").toBool() || service.busy() ||
+        QApplication::activeModalWidget() || !m_selection.hasPixelSelection() ||
+        !ensureExportFeature() || !resetCanvasEditingState())
+        return;
+    rememberKeyboardOwner(QApplication::focusWidget());
+    const QPointer<ScreenshotOverlayWindow> keyboardOwner(keyboardOwnerOverlay());
+    const QRectF selection = m_scrollingCaptureController && m_scrollingCaptureController->active()
+                                 ? QRectF(m_scrollingCaptureController->canvasSelection())
+                                 : m_selection.normalizedSelection();
+    const QPointer<ScreenshotOverlayWindow> dialogOwner(
+        screenshotSelectionDialogOwner(m_displaySession, m_geometry, selection, keyboardOwner));
+    if (!dialogOwner)
+        return;
+    QList<QWidget*> windows;
+    for (qsizetype i = 0; i < m_displaySession.size(); ++i)
+        windows.append(m_displaySession.overlayAt(i));
+    windows.append(m_overlayCoordinator->toolbar());
+    const auto interaction = std::make_shared<ScreenshotPrintInteractionGuard>(windows);
+    const auto suspension = m_windowShortcutManager ? m_windowShortcutManager->suspendInput() : 0;
+    const quint64 epoch = m_captureEpoch;
+    m_airDropPending = true;
+    owner.setProperty("saveDialogOpen", true);
+    const QPointer<ScreenshotController> receiver(&owner);
+    const QPointer<Service> sharing(&service);
+    const auto completed = std::make_shared<bool>(false);
+    const auto finished = screenshotAirDropCompletion(
+        completed,
+        [receiver, epoch, suspension, interaction] {
+            interaction->release();
+            if (!receiver || !receiver->m_impl)
+                return false;
+            auto& impl = *receiver->m_impl;
+            impl.m_airDropPending = false;
+            impl.m_airDropArtifact.reset();
+            receiver->setProperty("saveDialogOpen", false);
+            if (impl.m_windowShortcutManager && suspension)
+                impl.m_windowShortcutManager->resumeInput(suspension);
+            if (impl.m_captureEpoch != epoch)
+                return false;
+            if (impl.m_scrollingCaptureController)
+                impl.m_scrollingCaptureController->setExportPaused(false);
+            return true;
+        },
+        [receiver] { receiver->m_impl->cancelCapture(); },
+        [receiver, keyboardOwner](Service::Result result) {
+            auto& impl = *receiver->m_impl;
+            impl.restoreKeyboardOwnerQueued(keyboardOwner);
+            if (result.status == Service::Status::Failed ||
+                result.status == Service::Status::Unavailable)
+                impl.m_messages->error(
+                    QStringLiteral("screenshot-airdrop"),
+                    QCoreApplication::translate("ScreenshotAirDropService",
+                                                "The image could not be shared with AirDrop: %1")
+                        .arg(result.error));
+        });
+    const auto ready = [receiver, dialogOwner, sharing, epoch, finished,
+                        completed](ScreenshotExportImageResult result) {
+        if (*completed || !receiver || !receiver->m_impl)
+            return;
+        auto& impl = *receiver->m_impl;
+        if (impl.m_captureEpoch != epoch || !dialogOwner) {
+            finished({Service::Status::Cancelled, {}});
+            return;
+        }
+        if (impl.m_scrollingCaptureController && impl.m_scrollingCaptureController->active())
+            impl.m_scrollingCaptureController->setExportPaused(true);
+        const QString filename =
+            ScreenshotImageFileService::suggestedBaseName(
+                snow_shot::storage::ScreenshotSettings().manualSaveFilenameFormat()) +
+            QStringLiteral(".png");
+        if (!result.succeeded() || !sharing ||
+            !sharing->shareImage(receiver, dialogOwner, std::move(result.image), filename,
+                                 finished))
+            finished({Service::Status::Failed,
+                      result.error.isEmpty() ? QCoreApplication::translate(
+                                                   "ScreenshotAirDropService",
+                                                   "The image could not be prepared for AirDrop")
+                                             : result.error});
+    };
+    m_airDropArtifact = owner.mcpExportArtifact(1.0);
+    if (!m_airDropArtifact || !m_airDropArtifact->requestImage(&owner, ready))
+        ready({});
 }
 
 void ScreenshotController::Impl::saveSelectionToFile() {

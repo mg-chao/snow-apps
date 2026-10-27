@@ -80,6 +80,7 @@
     "ScreenshotImageFileService",
     "ScreenshotPdfExport",
     "ScreenshotPrintService",
+    "ScreenshotAirDropService",
     "ScreenshotRecognitionFileExport",
     "ScreenshotSaveAsFileDialog",
     "ScreenshotSavePreviewCanvas"

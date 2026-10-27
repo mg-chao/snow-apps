@@ -56,6 +56,10 @@
             <translation>调整不透明度</translation>
         </message>
         <message>
+            <source>AirDrop</source>
+            <translation>隔空投送</translation>
+        </message>
+        <message>
             <source>Align bottom</source>
             <translation>底对齐</translation>
         </message>

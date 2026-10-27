@@ -998,6 +998,10 @@
     <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
+            <source>AirDrop</source>
+            <translation>AirDrop</translation>
+        </message>
+        <message>
             <source>Barcode recognition</source>
             <translation>Barcode recognition</translation>
         </message>

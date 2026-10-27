@@ -22,6 +22,7 @@
 #include <qt_windows.h>
 #endif
 #include "snow_shot/presentation/screenshotprintservice.h"
+#include "snow_shot/presentation/screenshotairdropservice.h"
 #include "../services/screenshotprintinteractionguard.h"
 #include "snow_shot/presentation/automationrevision.h"
 #include "snow_shot/app/mcp/mcpstylepatch.h"
@@ -2401,6 +2402,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
     m_printService = config.printService;
+    m_airDropService = config.airDropService;
     cancelCloudUpload();
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
@@ -3634,6 +3636,15 @@ void ScreenshotPinnedWindow::createContextMenu() {
     setActionTranslationSource(saveAction, "Save as file");
     saveAction->setObjectName(QStringLiteral("screenshotPinnedSaveAsFileAction"));
     connect(saveAction, &QAction::triggered, this, &ScreenshotPinnedWindow::saveAsFile);
+
+#ifdef Q_OS_MACOS
+    // Animated pins have no editing toolbar. Keep sharing reachable for every pin.
+    QAction* airDropAction =
+        m_contextMenu->addItem(tr("AirDrop"), custom_outlined_icons::AirDrop());
+    setActionTranslationSource(airDropAction, "AirDrop");
+    airDropAction->setObjectName(QStringLiteral("screenshotPinnedAirDropAction"));
+    connect(airDropAction, &QAction::triggered, this, &ScreenshotPinnedWindow::airDropContent);
+#endif
 
     if (!animatedImage()) {
         m_ocrAction = m_contextMenu->addItem(tr("Recognizing text"),
@@ -4957,6 +4968,8 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     ScreenshotToolPalette* toolbar = toolbarWindow->palette();
     connect(toolbar, &ScreenshotToolPalette::quickSaveRequested, this,
             &ScreenshotPinnedWindow::quickSave);
+    connect(toolbar, &ScreenshotToolPalette::airDropRequested, this,
+            &ScreenshotPinnedWindow::airDropContent);
     connect(toolbar, &ScreenshotToolPalette::printRequested, this,
             &ScreenshotPinnedWindow::printContent);
     toolbar->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
@@ -5124,8 +5137,8 @@ void ScreenshotPinnedWindow::updateOriginalImagePreviewVisibility() {
         const auto* toolbar =
             m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
         m_recognitionContent->setOriginalImagePreviewSuppressed(
-            m_auxiliaryWindowInteractionActive || m_printPending || toolbar == nullptr ||
-            !toolbar->isVisible());
+            m_auxiliaryWindowInteractionActive || m_printPending || m_airDropPending ||
+            toolbar == nullptr || !toolbar->isVisible());
     }
 }
 
@@ -7117,7 +7130,7 @@ void ScreenshotPinnedWindow::printContent() {
             return;
         receiver->m_printPending = false;
         receiver->setProperty("saveDialogOpen", false);
-        receiver->m_printArtifact.reset();
+        receiver->m_nativeExportArtifact.reset();
         receiver->m_shortcutManager->resumeInput(suspension);
         receiver->updateOriginalImagePreviewVisibility();
         if (receiver->m_closing || !receiver->isVisible() ||
@@ -7164,6 +7177,14 @@ void ScreenshotPinnedWindow::printContent() {
                                              : result.error});
         }
     };
+    requestVisibleContentSnapshot(ready);
+}
+
+void ScreenshotPinnedWindow::requestVisibleContentSnapshot(
+    std::function<void(ScreenshotExportImageResult)> ready) {
+    const QPointer<ScreenshotPinnedWindow> receiver(this);
+    const quint64 generation = m_presentationGeneration;
+    const quint64 replacement = m_contentReplacementGeneration;
     const auto frozenAnimation = animatedImage() ? viewportArtifact() : nullptr;
     requestMaterializedImage([receiver, generation, replacement, ready,
                               frozenAnimation](bool succeeded) {
@@ -7178,7 +7199,7 @@ void ScreenshotPinnedWindow::printContent() {
                                         receiver->m_recognitionSession &&
                                         receiver->m_recognitionSession->active() &&
                                         !receiver->m_recognitionSession->showOriginalImage();
-        receiver->m_printArtifact =
+        receiver->m_nativeExportArtifact =
             succeeded
                 ? (receiver->animatedImage() ? frozenAnimation
                                              : receiver->viewportArtifact(!recognitionVisible))
@@ -7201,15 +7222,86 @@ void ScreenshotPinnedWindow::printContent() {
                 result.image = std::move(snapshot);
                 if (result.image.isNull())
                     result.error = QCoreApplication::translate(
-                        "ScreenshotPrintService", "The image could not be prepared for printing");
+                        "ScreenshotPinnedWindow", "The pinned image could not be prepared");
             }
             ready(std::move(result));
         };
-        if (!receiver->m_printArtifact ||
-            !receiver->m_printArtifact->requestImage(receiver, snapshotReady))
+        if (!receiver->m_nativeExportArtifact ||
+            !receiver->m_nativeExportArtifact->requestImage(receiver, snapshotReady))
             ready({{},
-                   QCoreApplication::translate("ScreenshotPrintService",
-                                               "The image could not be prepared for printing")});
+                   QCoreApplication::translate("ScreenshotPinnedWindow",
+                                               "The pinned image could not be prepared")});
+    });
+}
+
+void ScreenshotPinnedWindow::airDropContent() {
+    using Service = ScreenshotAirDropService;
+    auto& service = m_airDropService ? *m_airDropService : Service::shared();
+    if (m_closing || m_airDropPending || m_quickSavePending ||
+        property("saveDialogOpen").toBool() || service.busy() || QApplication::activeModalWidget())
+        return;
+    m_airDropPending = true;
+    setProperty("saveDialogOpen", true);
+    const auto suspension = m_shortcutManager->suspendInput();
+    const quint64 generation = m_presentationGeneration;
+    const quint64 replacement = m_contentReplacementGeneration;
+    const QPointer<ScreenshotPinnedWindow> receiver(this);
+    const QPointer<Service> sharing(&service);
+    const QPointer<QWidget> previousFocus(QApplication::focusWidget());
+    const auto interaction = std::make_shared<ScreenshotPrintInteractionGuard>(
+        QList<QWidget*>{this, m_editController ? m_editController->toolbarWindow() : nullptr});
+    const auto completed = std::make_shared<bool>(false);
+    updateOriginalImagePreviewVisibility();
+    const auto finished = [receiver, previousFocus, generation, replacement, suspension,
+                           interaction, completed](Service::Result result) {
+        if (std::exchange(*completed, true))
+            return;
+        interaction->release();
+        if (!receiver)
+            return;
+        receiver->m_airDropPending = false;
+        receiver->m_nativeExportArtifact.reset();
+        receiver->setProperty("saveDialogOpen", false);
+        receiver->m_shortcutManager->resumeInput(suspension);
+        receiver->updateOriginalImagePreviewVisibility();
+        if (receiver->m_closing || !receiver->isVisible() ||
+            receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement)
+            return;
+        receiver->activateWindow();
+        if (previousFocus && previousFocus->isVisible())
+            previousFocus->setFocus(Qt::OtherFocusReason);
+        else
+            receiver->setFocus(Qt::OtherFocusReason);
+        if (result.status == Service::Status::Failed ||
+            result.status == Service::Status::Unavailable)
+            showPinnedRecognitionMessage(
+                receiver,
+                QCoreApplication::translate("ScreenshotAirDropService",
+                                            "The image could not be shared with AirDrop: %1")
+                    .arg(result.error),
+                true);
+    };
+    requestVisibleContentSnapshot([receiver, sharing, generation, replacement, finished,
+                                   completed](ScreenshotExportImageResult result) {
+        if (*completed || !receiver)
+            return;
+        if (receiver->m_closing || receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement) {
+            finished({Service::Status::Cancelled, {}});
+            return;
+        }
+        const QString filename =
+            ScreenshotImageFileService::suggestedBaseName(
+                snow_shot::storage::ScreenshotSettings().manualSaveFilenameFormat()) +
+            QStringLiteral(".png");
+        if (!result.succeeded() || !sharing ||
+            !sharing->shareImage(receiver, receiver, std::move(result.image), filename, finished))
+            finished({Service::Status::Failed,
+                      result.error.isEmpty() ? QCoreApplication::translate(
+                                                   "ScreenshotAirDropService",
+                                                   "The image could not be prepared for AirDrop")
+                                             : result.error});
     });
 }
 

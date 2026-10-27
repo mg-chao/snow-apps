@@ -262,6 +262,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showScrollingScreenshotTool = false;
         bool showGlobalCanvasActions = false;
         bool showSaveButton = false;
+        bool showAirDropButton = false;
         bool saveButtonWithResultActions = false;
         bool copyButtonWithNeutralIcon = false;
         bool showScreenRecordButton = false;
@@ -564,6 +565,7 @@ class ScreenshotToolPalette final : public QWidget,
     void scrollingImageSplittingRequested();
     void scrollingImageEditingRequested();
     void printRequested();
+    void airDropRequested();
     void saveRequested();
     void cloudUploadRequested();
     void quickSaveRequested();
@@ -997,6 +999,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_textTargetLanguageSpacer = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_printButton = nullptr;
+    adqt::widgets::AdButton* m_airDropButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
     adqt::widgets::AdButton* m_cloudUploadButton = nullptr;
     bool m_cloudUploadBusy = false;

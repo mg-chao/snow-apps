@@ -1808,6 +1808,142 @@ void toolbarSkinProfilesAndLifecycle() {
 } // namespace
 
 namespace {
+void airDropToolbarRoutingAndLayoutMigration() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    using Layout = snow_shot::storage::ScreenshotToolbarLayout;
+#ifdef Q_OS_MACOS
+    constexpr bool supported = true;
+#else
+    constexpr bool supported = false;
+#endif
+    const QString air = QStringLiteral("airdrop"), print = QStringLiteral("print"),
+                  save = QStringLiteral("save-as-file"), quick = QStringLiteral("quick-save"),
+                  cloud = QStringLiteral("upload-to-cloud");
+    const QStringList stored = supported ? QStringList{cloud, air, print, quick, save}
+                                         : QStringList{cloud, print, quick, save};
+    for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {
+        require(layout::defaultPositions(kind).contains(stored),
+                "default save stack has AirDrop after Print");
+        Layout legacy{{{cloud, print, quick, save}}, {}};
+        const auto upgraded = layout::normalizedLayout(legacy, kind);
+        require(upgraded.positions.first() == stored &&
+                    layout::normalizedLayout(upgraded, kind) == upgraded,
+                "legacy AirDrop migration is ordered and idempotent");
+        const auto popup = layout::stackPresentation(stored, [](const QString&) { return true; });
+        require(popup.entryItemId() == save &&
+                    (!supported ||
+                     popup.popoverItemIds.indexOf(air) == popup.popoverItemIds.indexOf(print) + 1),
+                "visible AirDrop immediately follows Print without changing the default trigger");
+        const auto verifyStorage = [kind](const Layout& input) {
+            QJsonArray positions;
+            for (const auto& position : input.positions)
+                positions.append(QJsonArray::fromStringList(position));
+            const auto result = snow_shot::storage::ConfigurationSchema::normalize(
+                kind == Kind::ActionTools ? QStringLiteral("screenshot_toolbar/action_tools_layout")
+                                          : QStringLiteral("pin_to_screen/action_tools_layout"),
+                QJsonObject{{QStringLiteral("positions"), positions},
+                            {QStringLiteral("hidden"), QJsonArray::fromStringList(input.hidden)}});
+            const auto expected = layout::normalizedLayout(input, kind);
+            QJsonArray expectedPositions;
+            for (const auto& position : expected.positions)
+                expectedPositions.append(QJsonArray::fromStringList(position));
+            require(result.valid &&
+                        result.value.toObject().value(QStringLiteral("positions")) ==
+                            expectedPositions &&
+                        result.value.toObject().value(QStringLiteral("hidden")) ==
+                            QJsonArray::fromStringList(expected.hidden),
+                    "storage and presentation must normalize AirDrop identically");
+        };
+        for (const Layout& input :
+             {legacy, Layout{{{print}, {save}}, {}}, Layout{{{save}}, {print}}, Layout{{}, {save}},
+              Layout{{{air}, {save}}, {}}, Layout{{{save}}, {air}}})
+            verifyStorage(input);
+        if (supported) {
+            auto moved = layout::normalizedLayout(Layout{{{air}, {save}}, {}}, kind);
+            require(moved.positions.first() == QStringList{air},
+                    "preserve explicitly moved AirDrop");
+            auto hidden = layout::normalizedLayout(Layout{{{save}}, {air}}, kind);
+            require(hidden.hidden.contains(air) && !hidden.positions.first().contains(air),
+                    "preserve explicitly hidden AirDrop");
+            require(layout::normalizedLayout(Layout{{}, {save}}, kind).hidden.contains(air),
+                    "AirDrop inherits a hidden Save group");
+            auto movedPrint = layout::normalizedLayout(Layout{{{print}, {save}}, {}}, kind);
+            require(movedPrint.positions.first() == QStringList{print} &&
+                        movedPrint.positions[1] == QStringList{cloud, air, quick, save},
+                    "custom Print placement stays intact while AirDrop joins Save");
+        }
+        for (const bool enabled : {false, true}) {
+            auto options = screenshotOptions();
+            options.showSaveButton = true;
+            options.showAirDropButton = enabled;
+            options.saveButtonWithResultActions = kind == Kind::ActionTools;
+            options.actionToolsLayoutKind = kind;
+            options.actionToolsLayout = upgraded;
+            ScreenshotToolPalette palette(options);
+            prepare(palette);
+            int shares = 0, prints = 0;
+            QObject::connect(&palette, &ScreenshotToolPalette::airDropRequested, [&] { ++shares; });
+            QObject::connect(&palette, &ScreenshotToolPalette::printRequested, [&] { ++prints; });
+            auto* button = palette.findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotAirDropButton"));
+            require(bool(button) == (enabled && supported),
+                    "AirDrop requires both macOS and an opted-in host");
+            if (!button)
+                continue;
+            button->click();
+            require(shares == 1 && prints == 0,
+                    "AirDrop source dispatches exactly one sharing request");
+            adqt::widgets::AdButton* trigger = nullptr;
+            for (auto* candidate : palette.findChildren<adqt::widgets::AdButton*>()) {
+                if (candidate->property("screenshotToolbarPositionItems")
+                        .toStringList()
+                        .contains(air)) {
+                    trigger = candidate;
+                    break;
+                }
+            }
+            require(trigger, "AirDrop belongs to the visible Save group");
+            auto* popover = trigger->findChild<adqt::widgets::AdPopover*>();
+            require(popover, "Save group has a popup");
+            popover->show();
+            flushEvents();
+            auto* content = popover->contentWidget();
+            auto* shareOption = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotActionToolGroupOption-airdrop"));
+            auto* printOption = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotActionToolGroupOption-print"));
+            require(shareOption && printOption &&
+                        content->layout()->indexOf(shareOption) ==
+                            content->layout()->indexOf(printOption) + 1,
+                    "rendered popup places AirDrop immediately right of Print");
+            class AirDropTranslator final : public QTranslator {
+              public:
+                bool isEmpty() const override {
+                    return false;
+                }
+                QString translate(const char* context, const char* source, const char*,
+                                  int) const override {
+                    if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
+                        qstrcmp(source, "AirDrop") == 0)
+                        return QStringLiteral("Translated AirDrop");
+                    return {};
+                }
+            } translator;
+            require(QApplication::installTranslator(&translator),
+                    "install AirDrop label translator");
+            flushEvents();
+            require(button->accessibleName() == QStringLiteral("Translated AirDrop") &&
+                        shareOption->accessibleName() == QStringLiteral("Translated AirDrop"),
+                    "AirDrop source and materialized popup retranslate on LanguageChange");
+            QApplication::removeTranslator(&translator);
+            flushEvents();
+            shareOption->click();
+            require(shares == 2 && prints == 0, "popup AirDrop dispatches once");
+        }
+    }
+}
+
 void printToolbarRoutingAndLayoutMigration() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
@@ -1815,6 +1951,10 @@ void printToolbarRoutingAndLayoutMigration() {
     const QString upload = QStringLiteral("upload-to-cloud");
     const QString quick = QStringLiteral("quick-save");
     const QString save = QStringLiteral("save-as-file");
+    QStringList saveStack{upload, print, quick, save};
+#ifdef Q_OS_MACOS
+    saveStack.insert(1, QStringLiteral("airdrop"));
+#endif
     for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {
         const auto verifyStorage = [kind](
                                        const snow_shot::storage::ScreenshotToolbarLayout& input) {
@@ -1840,13 +1980,12 @@ void printToolbarRoutingAndLayoutMigration() {
                     "storage and toolbar models must agree on Print layout migration");
         };
         auto defaults = layout::defaultPositions(kind);
-        require(defaults.contains(QStringList{upload, print, quick, save}),
-                "Print must join the default Save as File stack");
+        require(defaults.contains(saveStack), "Print must join the default Save as File stack");
         snow_shot::storage::ScreenshotToolbarLayout old;
         old.positions = {{save, QStringLiteral("text-recognition")}};
         const auto upgraded = layout::normalizedLayout(old, kind);
         require(upgraded.positions[0] ==
-                    QStringList{upload, print, quick, save, QStringLiteral("text-recognition")},
+                    (saveStack + QStringList{QStringLiteral("text-recognition")}),
                 "migration must preserve previous item order and placement");
         verifyStorage(old);
         require(layout::normalizedLayout(upgraded, kind) == upgraded,
@@ -2154,6 +2293,10 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--speech-bubble-only"))) {
         speechBubbleSharesSerialNumberToolbarGroup();
         speechBubbleReusesShapeControlsWithIndependentStyles();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--airdrop-only"))) {
+        airDropToolbarRoutingAndLayoutMigration();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--print-only"))) {

@@ -55,6 +55,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "AirDrop",
+      "name": "air-drop",
+      "source": "../src/presentation/components/icons/resources/air-drop.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "AlignBottom",
       "name": "align-bottom",
       "source": "../src/presentation/components/icons/resources/align-bottom.svg",

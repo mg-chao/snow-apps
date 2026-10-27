@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 
 #include "icon_renderer.h"
+#include "antd_icons.h"
 
 #include <QApplication>
 #include <QColor>
@@ -97,8 +98,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 199,
-            "Snow Shot pack should contain all 199 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 201,
+            "Snow Shot pack should contain all 201 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -126,6 +127,60 @@ void everySnowShotEntryRenders() {
         std::cerr << warning.toStdString() << '\n';
     require(renderWarnings.isEmpty(),
             "every Snow Shot icon must render without missing images or undefined references");
+}
+
+void airDropIconFollowsAntDesign() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    for (const QColor color : {QColor(35, 35, 35), QColor(240, 240, 240)}) {
+        const auto icon = icons::outlined::AirDrop(adqt::icons::IconColors::primary(color));
+        require(adqt::icons::describeIcon(icon).colorModel ==
+                    adqt::icons::IconColorModel::Monochrome,
+                "AirDrop uses the monochrome theme pipeline");
+        for (int size : {16, 20, 24, 32}) {
+            for (qreal dpr : {1.0, 1.25, 2.0}) {
+                const auto image = render(icon, QSize(size, size), dpr).toImage();
+                const auto bounds = alphaBounds(image);
+                require(!bounds.isEmpty() && bounds.left() > 0 &&
+                            bounds.right() < image.width() - 1 && bounds.top() > 0 &&
+                            bounds.bottom() < image.height(),
+                        "AirDrop stays legible and unclipped at toolbar sizes and fractional DPR");
+                require(std::abs(bounds.center().x() - image.rect().center().x()) <= 1,
+                        "AirDrop remains optically centered");
+                if (size >= 24)
+                    require(containsOpaqueColor(image, color),
+                            "AirDrop follows the requested theme color");
+            }
+        }
+    }
+    const QString previewPath = qEnvironmentVariable("SNOW_AIRDROP_ICON_PREVIEW");
+    if (!previewPath.isEmpty()) {
+        QImage preview(560, 180, QImage::Format_ARGB32_Premultiplied);
+        QPainter painter(&preview);
+        for (int row = 0; row < 2; ++row) {
+            painter.fillRect(0, row * 90, 560, 90, row ? QColor(30, 30, 30) : QColor(Qt::white));
+            const QColor color = row ? QColor(240, 240, 240) : QColor(35, 35, 35);
+            painter.setPen(color);
+            int x = 20;
+            for (int size : {16, 20, 24, 32}) {
+                painter.drawText(x, row * 90 + 20, QString::number(size) + QStringLiteral(" px"));
+                painter.drawPixmap(
+                    x, row * 90 + 36,
+                    render(icons::outlined::Save(adqt::icons::IconColors::primary(color)),
+                           QSize(size, size)));
+                painter.drawPixmap(x + 40, row * 90 + 36,
+                                   render(adqt::icons::antd::outlined::Printer(
+                                              adqt::icons::IconColors::primary(color)),
+                                          QSize(size, size)));
+                painter.drawPixmap(
+                    x + 80, row * 90 + 36,
+                    render(icons::outlined::AirDrop(adqt::icons::IconColors::primary(color)),
+                           QSize(size, size)));
+                x += 135;
+            }
+        }
+        painter.end();
+        require(preview.save(previewPath), "save AirDrop toolbar icon preview");
+    }
 }
 
 void recaptureIconUsesThemeColor() {
@@ -1002,6 +1057,10 @@ void borderFillIconMatchesToolbarGeometry() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--airdrop-only"))) {
+            airDropIconFollowsAntDesign();
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--thought-bubble-only"))) {
             thoughtBubbleIconFollowsAntDesign();
             return 0;

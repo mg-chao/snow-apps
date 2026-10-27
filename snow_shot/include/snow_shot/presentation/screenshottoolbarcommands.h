@@ -120,6 +120,7 @@ class ScreenshotToolbarCommandSink {
     virtual void endScrollingSelectionMove() {}
     virtual void pinSelectionToScreen() = 0;
     virtual void printSelection() {}
+    virtual void airDropSelection() {}
     virtual void saveSelectionToFile() {}
     virtual void quickSaveSelection() {}
     virtual void uploadSelectionToCloud() {}

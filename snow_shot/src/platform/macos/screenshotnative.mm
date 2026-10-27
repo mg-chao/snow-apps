@@ -337,15 +337,15 @@ void synchronizeScreenshotLayers() {
             }
         }
     }
-    // File panels and AppKit print sheets have no Qt transient parent. Include
-    // native sheets in the same capture family above its tools and Qt modals.
+    // File panels, print sheets, and sharing child windows have no Qt transient parent.
+    // Keep native descendants in the same capture family above its tools and Qt modals.
     // Leave AppKit classes intact; lifecycle notifications reapply the policy.
     for (NSWindow* window in NSApp.windows) {
         auto* state = nativePolicyState(window);
         if (state && !state->nativePanel)
             continue;
         const bool filePanel = [window isKindOfClass:[NSSavePanel class]];
-        if (!filePanel && !window.sheetParent && !state)
+        if (!filePanel && !window.sheetParent && !window.parentWindow && !state)
             continue;
         int sheetDepth = 1;
         CaptureLayer owner = nativePanelOwner(window, windows, sheetDepth);
@@ -396,7 +396,8 @@ class ScreenshotStackingPolicy final : public QObject {
                                  queue:nil
                             usingBlock:^(NSNotification* notification) {
                               NSWindow* window = static_cast<NSWindow*>(notification.object);
-                              if ([window isKindOfClass:[NSSavePanel class]] || window.sheetParent)
+                              if ([window isKindOfClass:[NSSavePanel class]] ||
+                                  window.sheetParent || window.parentWindow)
                                   synchronizeScreenshotLayers();
                             }];
         m_panelClosed = [center

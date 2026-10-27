@@ -5960,6 +5960,10 @@ void quickSaveStacksAndLayoutMigration() {
     const QString print = QStringLiteral("print");
     const QString quick = QStringLiteral("quick-save");
     const QString save = QStringLiteral("save-as-file");
+    QStringList storedSaveStack{cloud, print, quick, save};
+#ifdef Q_OS_MACOS
+    storedSaveStack.insert(1, QStringLiteral("airdrop"));
+#endif
     const auto positionFor = [](const ScreenshotToolbarLayout& layout,
                                 const QString& item) -> qsizetype {
         for (qsizetype index = 0; index < layout.positions.size(); ++index) {
@@ -5976,8 +5980,7 @@ void quickSaveStacksAndLayoutMigration() {
     for (auto& position : legacy.positions)
         position.removeAll(quick);
     const auto upgraded = normalizedLayout(legacy, kind);
-    require(upgraded.positions.at(savePosition(upgraded)) ==
-                    QStringList{cloud, print, quick, save} &&
+    require(upgraded.positions.at(savePosition(upgraded)) == storedSaveStack &&
                 normalizedLayout(upgraded, kind) == upgraded,
             "legacy default saves must upgrade to an idempotent quick-save stack");
     auto custom = legacy;
@@ -5985,7 +5988,7 @@ void quickSaveStacksAndLayoutMigration() {
     custom.positions[savePosition(custom)].prepend(QStringLiteral("record-screen"));
     const auto customUpgraded = normalizedLayout(custom, kind);
     require(customUpgraded.positions.at(savePosition(customUpgraded)) ==
-                QStringList{QStringLiteral("record-screen"), cloud, print, quick, save},
+                (QStringList{QStringLiteral("record-screen")} + storedSaveStack),
             "custom save placements must gain Quick save immediately above Save");
     legacy.positions.removeAt(savePosition(legacy));
     legacy.hidden = {save};

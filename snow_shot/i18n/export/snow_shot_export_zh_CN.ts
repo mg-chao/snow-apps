@@ -2,6 +2,29 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en_US">
     <context>
+        <name>ScreenshotAirDropService</name>
+        <message>
+            <source>AirDrop is unavailable on this Mac</source>
+            <translation>此 Mac 上无法使用隔空投送</translation>
+        </message>
+        <message>
+            <source>The AirDrop sharing window could not be opened</source>
+            <translation>无法打开隔空投送共享窗口</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for AirDrop</source>
+            <translation>无法准备要隔空投送的图像</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for AirDrop: %1</source>
+            <translation>无法准备要隔空投送的图像：%1</translation>
+        </message>
+        <message>
+            <source>The image could not be shared with AirDrop: %1</source>
+            <translation>无法通过隔空投送共享图像：%1</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotClipboardService</name>
         <message>
             <source>The clipboard could not be cleared</source>

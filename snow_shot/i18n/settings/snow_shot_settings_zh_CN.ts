@@ -998,6 +998,10 @@
     <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
+            <source>AirDrop</source>
+            <translation>隔空投送</translation>
+        </message>
+        <message>
             <source>Barcode recognition</source>
             <translation>条码识别</translation>
         </message>

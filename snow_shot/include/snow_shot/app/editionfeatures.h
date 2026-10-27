@@ -7,6 +7,13 @@
 
 namespace snow_shot::app {
 [[nodiscard]] inline bool editionActionToolAvailable(const QString& id) {
+    if (id == QStringLiteral("airdrop")) {
+#ifdef Q_OS_MACOS
+        return true;
+#else
+        return false;
+#endif
+    }
     if (id == QStringLiteral("barcode-recognition"))
         return edition::qrRecognition;
     if (id == QStringLiteral("table-recognition"))

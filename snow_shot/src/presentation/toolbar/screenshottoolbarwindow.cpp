@@ -48,6 +48,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showScreenRecordButton = true;
     options.showScrollingScreenshotTool = true;
     options.showSaveButton = true;
+    options.showAirDropButton = true;
     options.separatorBeforeShape = true;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
@@ -336,6 +337,8 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
             [this]() { m_commands.pinSelectionToScreen(); });
     connect(&toolPalette, &ScreenshotToolPalette::quickSaveRequested, this,
             [this]() { m_commands.quickSaveSelection(); });
+    connect(&toolPalette, &ScreenshotToolPalette::airDropRequested, this,
+            [this]() { m_commands.airDropSelection(); });
     connect(&toolPalette, &ScreenshotToolPalette::printRequested, this,
             [this]() { m_commands.printSelection(); });
     connect(&toolPalette, &ScreenshotToolPalette::cloudUploadRequested, this,

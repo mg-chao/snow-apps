@@ -5389,6 +5389,9 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     }
     if (itemId == QStringLiteral("upload-to-cloud"))
         return m_cloudUploadButton;
+    if (itemId == QStringLiteral("airdrop")) {
+        return m_airDropButton;
+    }
     if (itemId == QStringLiteral("print")) {
         return m_printButton;
     }
@@ -5493,6 +5496,8 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         return activateToolFromToolbar(Tool::ScrollingScreenshot, toggleVisibleButton);
     } else if (itemId == QStringLiteral("quick-save")) {
         emit quickSaveRequested();
+    } else if (itemId == QStringLiteral("airdrop")) {
+        emit airDropRequested();
     } else if (itemId == QStringLiteral("print")) {
         emit printRequested();
     } else if (itemId == QStringLiteral("upload-to-cloud")) {
@@ -6016,6 +6021,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         m_textTranslationButton,
         m_scrollingScreenshotButton,
         m_printButton,
+        m_airDropButton,
         m_saveButton,
         m_quickSaveButton,
         configurableResultActions ? m_copyButton : nullptr,
@@ -6085,8 +6091,9 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     QVector<QWidget*> resultActions{
         configurableCancel ? nullptr : m_cancelButton,
         m_options.saveButtonWithResultActions && !configurableResultActions
-            ? createActionToolGroup({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
-                                     QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
+            ? createActionToolGroup({QStringLiteral("upload-to-cloud"), QStringLiteral("airdrop"),
+                                     QStringLiteral("print"), QStringLiteral("quick-save"),
+                                     QStringLiteral("save-as-file")})
             : nullptr,
         configurableResultActions ? nullptr : m_copyButton,
         configurableConfirm ? nullptr : m_confirmButton,
@@ -6532,6 +6539,15 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     }
 
     if (options.showSaveButton && !options.saveButtonWithResultActions) {
+        if (options.showAirDropButton &&
+            snow_shot::app::editionActionToolAvailable(QStringLiteral("airdrop"))) {
+            m_airDropButton = addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "AirDrop"),
+                                              custom_outlined_icons::AirDrop());
+            m_airDropButton->setObjectName(QStringLiteral("screenshotAirDropButton"));
+            m_airDropButton->hide();
+            connect(m_airDropButton, &adqt::widgets::AdButton::clicked, this,
+                    [this] { activateActionTool(QStringLiteral("airdrop")); });
+        }
         m_printButton = addActionButton("Print", outlined_icons::Printer());
         applyScreenshotShortcutTooltip(m_printButton, QStringLiteral("Print"),
                                        QStringLiteral("print"));
@@ -6790,6 +6806,15 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
     }
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {
+        if (options.showAirDropButton &&
+            snow_shot::app::editionActionToolAvailable(QStringLiteral("airdrop"))) {
+            m_airDropButton = addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "AirDrop"),
+                                              custom_outlined_icons::AirDrop());
+            m_airDropButton->setObjectName(QStringLiteral("screenshotAirDropButton"));
+            m_airDropButton->hide();
+            connect(m_airDropButton, &adqt::widgets::AdButton::clicked, this,
+                    [this] { activateActionTool(QStringLiteral("airdrop")); });
+        }
         m_printButton = addActionButton("Print", outlined_icons::Printer());
         applyScreenshotShortcutTooltip(m_printButton, QStringLiteral("Print"),
                                        QStringLiteral("print"));

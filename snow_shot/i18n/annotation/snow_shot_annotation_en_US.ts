@@ -56,6 +56,10 @@
             <translation>Adjust opacity</translation>
         </message>
         <message>
+            <source>AirDrop</source>
+            <translation>AirDrop</translation>
+        </message>
+        <message>
             <source>Align bottom</source>
             <translation>Align bottom</translation>
         </message>

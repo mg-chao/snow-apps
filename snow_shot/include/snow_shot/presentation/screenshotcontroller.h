@@ -25,6 +25,7 @@ class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotExportArtifact;
 class ScreenshotPrintService;
+class ScreenshotAirDropService;
 class ScreenRecordingController;
 struct ScreenshotClipboardContent;
 struct ScreenshotClipboardContentSnapshot;
@@ -80,6 +81,7 @@ class ScreenshotController : public QObject {
     void cancelGlobalMouseCapture(quint64 gestureId);
 
     void setPrintService(ScreenshotPrintService* service);
+    void setAirDropService(ScreenshotAirDropService* service);
     void setRecordingPermissionCheck(std::function<bool(bool, bool, bool)> check);
     void prepareForSessionEnd(int timeoutMs);
     void offerRecordingRecovery();

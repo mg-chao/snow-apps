@@ -9,6 +9,7 @@
 #include "../src/app/mcp/mcppinnedworkflowowners_p.h"
 #include "cloud_upload_test_support.h"
 #include "print_diagnostics_test_support.h"
+#include "snow_shot/presentation/screenshotairdropservice.h"
 #include "recognition_workbook_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -993,6 +994,16 @@ class ScreenshotPinnedWindowTestAccess {
     static const ScreenshotOcrPresentation&
     displayedRecognition(const ScreenshotPinnedWindow& window) {
         return *window.m_displayOcrPresentation;
+    }
+    static void setAirDropper(ScreenshotPinnedWindow& window, ScreenshotAirDropService* service) {
+        window.m_airDropService = service;
+    }
+    static void airDrop(ScreenshotPinnedWindow& window, ScreenshotAirDropService* service) {
+        window.m_airDropService = service;
+        window.airDropContent();
+    }
+    static bool airDropPending(const ScreenshotPinnedWindow& window) {
+        return window.m_airDropPending;
     }
     static void print(ScreenshotPinnedWindow& window, ScreenshotPrintService* service) {
         window.m_printService = service;
@@ -22011,6 +22022,218 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
     }
 }
 
+void pinnedAirDropLifecycle() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Service = ScreenshotAirDropService;
+    for (bool thumbnail : {false, true}) {
+        ScreenshotPinnedWindow window;
+        auto config = cachedOcrPinConfig(nullptr);
+        config.imageSource.materializedImage.fill(QColor(100, 50, 20, 128));
+        require(window.present(config), "AirDrop fixture presents");
+        waitForUi(30);
+        Access::editSelectionOffscreen(window, true);
+        auto* edit = window.findChild<ScreenshotPinnedEditController*>();
+        require(edit && edit->toolbarWindow(), "AirDrop fixture has an editing toolbar");
+        const QPointer<ScreenshotToolPalette> palette(edit->toolbarWindow()->palette());
+        palette->freeDrawRequested();
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        require(canvas, "AirDrop fixture has a canvas");
+        canvas_quick_selection_test::drawStroke(*canvas);
+        Access::setGeneralOpacity(window, 60);
+        Access::setFractionalScale(window, 125);
+        Access::thumbnailForHideTest(window, thumbnail);
+        waitForUi(20);
+        QImage expected;
+        auto artifact = Access::printArtifact(window);
+        require(artifact &&
+                    artifact->requestImage(&window, [&](auto result) { expected = result.image; }),
+                "reference viewport snapshot starts");
+        QElapsedTimer timer;
+        const auto wait = [&](const std::function<bool()>& ready) {
+            timer.restart();
+            while (!ready() && timer.elapsed() < 10000)
+                waitForUi(5);
+            require(ready(), "AirDrop fixture operation finishes");
+        };
+        wait([&] { return !expected.isNull(); });
+        int starts = 0;
+        Service::Completion native;
+        QImage received;
+        Service sharing([&](QWidget* owner, QString path, Service::Completion completion) {
+            require(owner == &window, "pinned AirDrop owns its native chooser");
+            received = QImage(path);
+            native = std::move(completion);
+            ++starts;
+        });
+        for (const auto status :
+             {Service::Status::Cancelled, Service::Status::Failed, Service::Status::Unavailable,
+              Service::Status::HandedOff, Service::Status::Shared}) {
+            const int previous = starts;
+            Access::setAirDropper(window, &sharing);
+#ifdef Q_OS_MACOS
+            if (thumbnail || status == Service::Status::Shared) {
+                materializePinnedMenuTree(window);
+                auto* action =
+                    window.findChild<QAction*>(QStringLiteral("screenshotPinnedAirDropAction"));
+                require(action, "pins expose AirDrop in the context menu");
+                action->trigger();
+            } else
+#endif
+            {
+                if (thumbnail)
+                    Access::airDrop(window, &sharing);
+                else {
+                    require(palette, "expanded pin retains its editing toolbar");
+                    palette->airDropRequested();
+                }
+            }
+            Access::airDrop(window, &sharing);
+            require(Access::airDropPending(window) && window.property("saveDialogOpen").toBool(),
+                    "AirDrop blocks conflicting source interactions immediately");
+            wait([&] { return starts == previous + 1; });
+            require(received.size() == expected.size() &&
+                        received.convertToFormat(QImage::Format_ARGB32) ==
+                            expected.convertToFormat(QImage::Format_ARGB32),
+                    "shared PNG includes viewport annotations, zoom, thumbnail, alpha and opacity");
+            auto complete = std::move(native);
+            complete({status, {}});
+            complete = {};
+            wait([&] { return !Access::airDropPending(window); });
+            require(window.isVisible() && !window.property("saveDialogOpen").toBool(),
+                    "every sharing outcome preserves the pin and restores input");
+        }
+        const int previous = starts;
+        Access::airDrop(window, &sharing);
+        Access::replaceDuringPrint(window);
+        wait([&] { return !Access::airDropPending(window); });
+        require(starts == previous, "replacing pinned content cancels stale snapshot preparation");
+    }
+}
+
+void pinnedAirDropRecognitionSnapshot() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    for (const bool table : {false, true}) {
+#if !SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+        if (table)
+            continue;
+#endif
+        auto config = cachedOcrPinConfig(nullptr);
+        if (!table) {
+            config.recognitionResults = {};
+            config.formattedTextDocument = std::make_shared<QTextDocument>();
+            config.formattedTextDocument->setHtml(
+                QStringLiteral("<h2>AirDrop</h2><p><b>Edited</b> pinned text</p>"));
+            config.formattedPlainText = config.formattedTextDocument->toPlainText();
+        }
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+        else {
+            SnowShotTableResult result;
+            result.html = QStringLiteral("<table>");
+            for (int row = 0; row < 40; ++row)
+                result.html +=
+                    QStringLiteral("<tr><td>%1</td><td>Current content</td></tr>").arg(row);
+            result.html += QStringLiteral("</table>");
+            config.recognitionResults.table = result;
+        }
+#endif
+        ScreenshotPinnedWindow window;
+        auto* session = Access::hiddenSelectionOffscreen(window, config);
+        require(session, "recognized AirDrop fixture has a session");
+        session->activate(table ? ScreenshotRecognitionSessionController::Mode::Table
+                                : ScreenshotRecognitionSessionController::Mode::Text);
+        waitForUi(30);
+        Access::setGeneralOpacity(window, 60);
+        int scroll = 0;
+        ScreenshotTableEditor* editor = nullptr;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+        if (table) {
+            editor = window.findChild<ScreenshotTableEditor*>();
+            require(editor && editor->isVisible(), "AirDrop table is visible");
+            editor->verticalScrollBar()->setValue(editor->verticalScrollBar()->maximum());
+            scroll = editor->verticalScrollBar()->value();
+        }
+#endif
+        QImage expected, received;
+        ScreenshotPrintService printer([&](QWidget*, QImage image, auto completion) {
+            expected = std::move(image);
+            completion({ScreenshotPrintService::Status::Cancelled, {}});
+        });
+        Access::print(window, &printer);
+        translation_tests::waitUntil([&] { return !Access::printPending(window); },
+                                     "reference recognition snapshot finishes");
+        ScreenshotAirDropService sharing([&](QWidget*, QString path, auto completion) {
+            received = QImage(path);
+            completion({ScreenshotAirDropService::Status::Shared, {}});
+        });
+        Access::airDrop(window, &sharing);
+        translation_tests::waitUntil([&] { return !Access::airDropPending(window); },
+                                     "recognized content sharing finishes");
+        require(!received.isNull() && ScreenshotPrintService::opaqueImage(received) == expected,
+                "AirDrop uses the same visible recognition viewport as Print, without white "
+                "flattening");
+        require(window.isVisible() && (!editor || editor->verticalScrollBar()->value() == scroll),
+                "sharing recognized content preserves pin visibility and table scroll");
+    }
+}
+
+void pinnedAirDropAnimationSnapshot() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const auto fixture = pinned_animation_fixtures::images().first();
+    QString error;
+    const auto animation = snow_shot::image_codec::decodeAnimationSource(fixture.bytes, &error);
+    require(animation && error.isEmpty(), "decode AirDrop animation fixture");
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults = {};
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(animation->canvasSize));
+    config.contentCanvasRect = config.surfaceCanvasRect = config.canvasSourceRect;
+    config.imageSource =
+        ScreenshotImageSource::fromImage(animation->firstFrame, config.canvasSourceRect);
+    config.initialWindowSize = animation->canvasSize;
+    config.nativeGeometry =
+        physicalPinGeometry(*config.screen, QPoint(40, 40), animation->canvasSize);
+    config.animationSource = animation;
+    ScreenshotPinnedWindow window;
+    require(window.present(config), "present AirDrop animation fixture");
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    waitForUi(30);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas, "animation has a canvas");
+    Access::playback(window).pause();
+    static_cast<void>(renderWidget(*canvas));
+    QImage expected, received;
+    auto artifact = Access::printArtifact(window);
+    require(artifact &&
+                artifact->requestImage(&window, [&](auto result) { expected = result.image; }),
+            "capture the painted animation frame");
+    translation_tests::waitUntil([&] { return !expected.isNull(); },
+                                 "animation reference completes");
+    window.setUpdatesEnabled(false);
+    Access::animationCommand(window, QStringLiteral("next_frame"));
+    translation_tests::waitUntil([&] { return Access::pendingAnimationToken(window) != 0; },
+                                 "stage next frame without painting");
+    ScreenshotAirDropService sharing([&](QWidget*, QString path, auto completion) {
+        received = QImage(path);
+        completion({ScreenshotAirDropService::Status::Shared, {}});
+    });
+    Access::setAirDropper(window, &sharing);
+#ifdef Q_OS_MACOS
+    materializePinnedMenuTree(window);
+    auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedAirDropAction"));
+    require(action, "animated pins can invoke AirDrop without an editing toolbar");
+    action->trigger();
+#else
+    Access::airDrop(window, &sharing);
+#endif
+    window.setUpdatesEnabled(true);
+    static_cast<void>(renderWidget(*canvas));
+    translation_tests::waitUntil([&] { return !Access::airDropPending(window); },
+                                 "animation sharing finishes");
+    require(!received.isNull() && received.convertToFormat(QImage::Format_ARGB32) ==
+                                      expected.convertToFormat(QImage::Format_ARGB32),
+            "AirDrop freezes the invocation frame even when playback advances during encoding");
+    require(window.isVisible(), "sharing an animation frame preserves the pin");
+}
+
 void pinnedPrintMatchesTransformedViewport() {
     using Access = ScreenshotPinnedWindowTestAccess;
     for (bool thumbnail : {false, true}) {
@@ -26818,6 +27041,12 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--cloud-upload-only"))) {
             pinnedCloudUploadHiddenToolbar();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--airdrop-only"))) {
+            pinnedAirDropLifecycle();
+            pinnedAirDropRecognitionSnapshot();
+            pinnedAirDropAnimationSnapshot();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--print-only"))) {

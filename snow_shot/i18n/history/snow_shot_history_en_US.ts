@@ -1585,6 +1585,10 @@ Files:
             <translation>%1%</translation>
         </message>
         <message>
+            <source>AirDrop</source>
+            <translation>AirDrop</translation>
+        </message>
+        <message>
             <source>Always on Top</source>
             <translation>Always on Top</translation>
         </message>

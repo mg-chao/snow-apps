@@ -28,6 +28,7 @@ SelectionShadowCursor(const adqt::icons::IconColors& colors = {});
 
 namespace outlined {
 [[nodiscard]] adqt::icons::IconRef ActualSize(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AirDrop(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef AlignBottom(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef
 AlignCenterHorizontal(const adqt::icons::IconColors& colors = {});

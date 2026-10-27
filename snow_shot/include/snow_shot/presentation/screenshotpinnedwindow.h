@@ -92,6 +92,8 @@ class ScreenshotExportArtifact;
 class ScreenshotExportSource;
 struct ScreenshotPinnedViewportExportSource;
 class ScreenshotPrintService;
+class ScreenshotAirDropService;
+struct ScreenshotExportImageResult;
 class ScreenshotPinnedDragExport;
 class ScreenshotAnimationPlayback;
 class ScreenshotPinnedHideToTopController;
@@ -158,6 +160,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         QTransform initialPreparedAnimationTransform;
         ScreenshotImageLoader imageLoader;
         ScreenshotPrintService* printService = nullptr;
+        ScreenshotAirDropService* airDropService = nullptr;
         QScreen* screen = nullptr;
         bool enableEditing = true;
         bool automaticTextRecognition = !snow_shot::app::edition::isMini;
@@ -414,6 +417,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void finishQueuedContentReplacement();
     void cancelContentReplacement();
     void printContent();
+    void airDropContent();
+    void requestVisibleContentSnapshot(std::function<void(ScreenshotExportImageResult)> ready);
     void saveAsFile();
     void uploadToCloud();
     void cancelCloudUpload();
@@ -579,9 +584,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
     struct PinnedRenderCache;
     std::unique_ptr<PinnedRenderCache> m_pinnedRenderCache;
-    std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
+    std::shared_ptr<ScreenshotExportArtifact> m_nativeExportArtifact;
     QPointer<ScreenshotPrintService> m_printService;
     bool m_printPending = false;
+    QPointer<ScreenshotAirDropService> m_airDropService;
+    bool m_airDropPending = false;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_contentReplacementJob;
     quint64 m_contentReplacementGeneration = 0;
