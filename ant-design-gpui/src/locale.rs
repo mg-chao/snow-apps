@@ -67,6 +67,38 @@ common_messages! {
     more_tabs => MoreTabs,
 }
 
+/// Modal-owned action labels, including the single-button acknowledgement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModalMessages {
+    pub ok_text: SharedString,
+    pub cancel_text: SharedString,
+    pub just_ok_text: SharedString,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModalMessagePatch {
+    pub ok_text: Option<SharedString>,
+    pub cancel_text: Option<SharedString>,
+    pub just_ok_text: Option<SharedString>,
+}
+impl ModalMessages {
+    fn patched(&self, patch: &ModalMessagePatch) -> Self {
+        Self {
+            ok_text: patch
+                .ok_text
+                .clone()
+                .unwrap_or_else(|| self.ok_text.clone()),
+            cancel_text: patch
+                .cancel_text
+                .clone()
+                .unwrap_or_else(|| self.cancel_text.clone()),
+            just_ok_text: patch
+                .just_ok_text
+                .clone()
+                .unwrap_or_else(|| self.just_ok_text.clone()),
+        }
+    }
+}
+
 /// Popconfirm-owned messages, independent of application-supplied titles.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PopconfirmMessages {
@@ -148,6 +180,7 @@ pub struct Locale {
     pub id: LocaleId,
     pub common: CommonMessages,
     pub popconfirm: PopconfirmMessages,
+    pub modal: ModalMessages,
     pub pagination: PaginationMessages,
 }
 
@@ -156,6 +189,11 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::EnUs,
+                modal: ModalMessages {
+                    ok_text: "OK".into(),
+                    cancel_text: "Cancel".into(),
+                    just_ok_text: "OK".into(),
+                },
                 popconfirm: PopconfirmMessages {
                     ok_text: "OK".into(),
                     cancel_text: "Cancel".into(),
@@ -209,6 +247,11 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhCn,
+                modal: ModalMessages {
+                    ok_text: "确定".into(),
+                    cancel_text: "取消".into(),
+                    just_ok_text: "知道了".into(),
+                },
                 popconfirm: PopconfirmMessages {
                     ok_text: "确定".into(),
                     cancel_text: "取消".into(),
@@ -262,6 +305,11 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhTw,
+                modal: ModalMessages {
+                    ok_text: "確定".into(),
+                    cancel_text: "取消".into(),
+                    just_ok_text: "知道了".into(),
+                },
                 popconfirm: PopconfirmMessages {
                     ok_text: "確定".into(),
                     cancel_text: "取消".into(),
@@ -317,6 +365,7 @@ impl Locale {
             id: LocaleId::Custom(id.into()),
             common: Self::en_us().common.patched(&common),
             popconfirm: Self::en_us().popconfirm.clone(),
+            modal: Self::en_us().modal.clone(),
             pagination: Self::en_us().pagination.clone(),
         })
     }
@@ -332,6 +381,7 @@ pub struct LocalePatch {
     pub locale: Option<Arc<Locale>>,
     pub common: CommonMessagePatch,
     pub popconfirm: PopconfirmMessagePatch,
+    pub modal: ModalMessagePatch,
     pub pagination: PaginationMessagePatch,
 }
 
@@ -349,20 +399,27 @@ impl LocalePatch {
         let base = self.locale.as_ref().unwrap_or(parent);
         if self.common.is_empty()
             && self.popconfirm == PopconfirmMessagePatch::default()
+            && self.modal == ModalMessagePatch::default()
             && self.pagination.is_empty()
         {
             return base.clone();
         }
         let common = base.common.patched(&self.common);
         let popconfirm = base.popconfirm.patched(&self.popconfirm);
+        let modal = base.modal.patched(&self.modal);
         let pagination = base.pagination.patched(&self.pagination);
-        if common == base.common && popconfirm == base.popconfirm && pagination == base.pagination {
+        if common == base.common
+            && popconfirm == base.popconfirm
+            && pagination == base.pagination
+            && modal == base.modal
+        {
             return base.clone();
         }
         if let Some(previous) = previous.filter(|old| {
             old.id == base.id
                 && old.common == common
                 && old.popconfirm == popconfirm
+                && old.modal == modal
                 && old.pagination == pagination
         }) {
             return previous.clone();
@@ -371,6 +428,7 @@ impl LocalePatch {
             id: base.id.clone(),
             common,
             popconfirm,
+            modal,
             pagination,
         })
     }

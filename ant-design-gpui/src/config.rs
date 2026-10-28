@@ -122,6 +122,7 @@ pub struct ConfigPatch {
     pub spin: SpinConfigPatch,
     pub progress: ProgressConfigPatch,
     pub message: MessageConfigPatch,
+    pub modal: crate::modal::ModalConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -146,6 +147,7 @@ pub struct ResolvedConfig {
     pub spin: SpinConfig,
     pub progress: ProgressConfig,
     pub message: MessageConfig,
+    pub modal: crate::modal::ModalConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -171,6 +173,7 @@ impl PartialEq for ResolvedConfig {
             && self.spin == other.spin
             && self.progress == other.progress
             && self.message == other.message
+            && self.modal == other.modal
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -207,6 +210,7 @@ impl Default for ResolvedConfig {
             spin: SpinConfig::default(),
             progress: ProgressConfig::default(),
             message: MessageConfig::default(),
+            modal: Default::default(),
         }
     }
 }
@@ -308,6 +312,7 @@ impl ResolvedConfig {
             spin: patch.spin.resolve(&parent.spin),
             progress: patch.progress.resolve(&parent.progress),
             message: patch.message.resolve(&parent.message),
+            modal: patch.modal.resolve(&parent.modal),
         })
     }
 }
@@ -513,6 +518,43 @@ mod tests {
     use super::*;
     use crate::locale::{CommonMessagePatch, LocaleId};
     use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn message_and_modal_settings_propagate_independently(cx: &mut TestAppContext) {
+        let (parent, child) = cx.update(|cx| {
+            let parent = ConfigScope::new_window(cx);
+            let child = parent.child(ConfigPatch::default(), cx).unwrap();
+            parent
+                .update_patch(cx, |patch| {
+                    patch.message.top = Some(32.);
+                    patch.modal.centered = Some(true);
+                })
+                .unwrap();
+            (parent, child)
+        });
+        cx.update(|cx| {
+            assert_eq!(child.snapshot(cx).message.top, 32.);
+            assert!(child.snapshot(cx).modal.centered);
+            assert!(
+                parent
+                    .update_patch(cx, |patch| patch.message.top = Some(48.))
+                    .unwrap()
+            );
+        });
+        cx.update(|cx| {
+            assert_eq!(child.snapshot(cx).message.top, 48.);
+            assert!(child.snapshot(cx).modal.centered);
+            assert!(
+                parent
+                    .update_patch(cx, |patch| patch.modal.centered = Some(false))
+                    .unwrap()
+            );
+        });
+        cx.update(|cx| {
+            assert_eq!(child.snapshot(cx).message.top, 48.);
+            assert!(!child.snapshot(cx).modal.centered);
+        });
+    }
 
     #[gpui::test]
     fn result_scopes_inherit_styles_without_running_resolvers(cx: &mut TestAppContext) {

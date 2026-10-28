@@ -88,7 +88,7 @@ impl Content {
     }
     fn into_element(self, direction: Direction) -> AnyElement {
         match self {
-            Self::Text(text) => crate::behavior::text::paragraph_text(text, direction),
+            Self::Text(text) => crate::behavior::paragraph_text("alert-text", text, direction),
             Self::Element(element) => element,
         }
     }

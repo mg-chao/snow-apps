@@ -26,6 +26,7 @@ use super::{
     input_number::{self, InputNumberPage},
     menu::{self, MenuPage},
     message::{self, MessagePage},
+    modal::{self, ModalPage},
     pagination::{self, PaginationPage},
     popup::{self, Kind, PopupPage},
     progress::{self, ProgressPage},
@@ -100,6 +101,7 @@ pub(super) struct Gallery {
     pub spin: Entity<SpinPage>,
     pub progress: Entity<ProgressPage>,
     pub message: Entity<MessagePage>,
+    pub modal: Entity<ModalPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
@@ -125,6 +127,7 @@ pub(super) struct Gallery {
     spin_anchors: Vec<ScrollAnchor>,
     progress_anchors: Vec<ScrollAnchor>,
     message_anchors: Vec<ScrollAnchor>,
+    modal_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
 
@@ -207,6 +210,10 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let modal_anchors: Vec<_> = modal::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let alert_anchors: Vec<_> = alert::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
@@ -234,6 +241,7 @@ impl Gallery {
                 .new(|cx| ProgressPage::new(scope.clone(), progress_anchors.clone(), window, cx)),
             spin: cx.new(|cx| SpinPage::new(scope.clone(), spin_anchors.clone(), cx)),
             result: cx.new(|cx| ResultPage::new(scope.clone(), result_anchors.clone(), cx)),
+            modal: cx.new(|cx| ModalPage::new(scope.clone(), modal_anchors.clone(), window, cx)),
             alert: cx.new(|cx| AlertPage::new(scope.clone(), alert_anchors.clone(), cx)),
             menu: cx.new(|cx| MenuPage::new(scope.clone(), menu_anchors.clone(), window, cx)),
             pagination: cx.new(|cx| {
@@ -316,6 +324,7 @@ impl Gallery {
             spin_anchors,
             progress_anchors,
             message_anchors,
+            modal_anchors,
         }
     }
 
@@ -464,6 +473,7 @@ impl Gallery {
                         ComponentId::Spin => "Feedback / Spin",
                         ComponentId::Progress => "Feedback / Progress",
                         ComponentId::Message => "Feedback / Message",
+                        ComponentId::Modal => "Feedback / Modal",
                     },
                 ))
             })
@@ -576,6 +586,7 @@ impl Gallery {
                                 ComponentId::Spin => IconName::LoadingOutlined,
                                 ComponentId::Progress => IconName::DashboardOutlined,
                                 ComponentId::Message => IconName::MessageOutlined,
+                                ComponentId::Modal => IconName::LayoutOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
                             .accessibility_label(component.title)
@@ -695,6 +706,13 @@ impl Gallery {
                         .iter()
                         .zip(&self.tag_anchors)
                         .filter(|_| self.selected == ComponentId::Tag)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
+                    modal::DEMOS
+                        .iter()
+                        .zip(&self.modal_anchors)
+                        .filter(|_| self.selected == ComponentId::Modal)
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
@@ -957,6 +975,7 @@ impl Gallery {
                                 ComponentId::Spin => "Open Ant Design Spin reference",
                                 ComponentId::Progress => "Open Ant Design Progress reference",
                                 ComponentId::Message => "Open Ant Design Message reference",
+                                ComponentId::Modal => "Open Ant Design Modal reference",
                             })
                             .href(match self.selected {
                                 ComponentId::Button => "https://ant.design/components/button",
@@ -985,6 +1004,7 @@ impl Gallery {
                                 ComponentId::Spin => "https://ant.design/components/spin",
                                 ComponentId::Progress => "https://ant.design/components/progress",
                                 ComponentId::Message => "https://ant.design/components/message",
+                                ComponentId::Modal => "https://ant.design/components/modal",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -1043,6 +1063,7 @@ impl Render for Gallery {
             ComponentId::Spin => spin::DEMOS.len(),
             ComponentId::Progress => progress::DEMOS.len(),
             ComponentId::Message => message::DEMOS.len(),
+            ComponentId::Modal => modal::DEMOS.len(),
         };
         let coverage = match self.selected {
             ComponentId::Input => input_examples::summary(input::DEMOS),
@@ -1167,6 +1188,7 @@ impl Render for Gallery {
                                         ComponentId::Spin => self.spin.clone().into_any_element(),
                                         ComponentId::Progress => self.progress.clone().into_any_element(),
                                         ComponentId::Message => self.message.clone().into_any_element(),
+                                        ComponentId::Modal => self.modal.clone().into_any_element(),
 
                                     })
                                     .child(
@@ -1189,6 +1211,7 @@ impl Render for Gallery {
                                                 ComponentId::Spin => "Toggle loading or automatic progress · Run progress or a fullscreen operation",
                                                 ComponentId::Progress => "Adjust progress; change dashboard gaps and circular steps",
                                                 ComponentId::Message => "Display a message · Hover to pause dismissal or expand a stack",
+                                                ComponentId::Modal => "Tab stays in the active dialog · Escape closes the top dialog or popup",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {

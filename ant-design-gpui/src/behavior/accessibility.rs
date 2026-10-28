@@ -18,6 +18,8 @@ pub struct Accessibility {
     pub automation_id: Option<SharedString>,
     pub disabled: bool,
     pub busy: bool,
+    /// Marks a dialog that confines interaction to its active subtree.
+    pub modal: bool,
     pub invalid: bool,
     pub hidden: bool,
     pub read_only: bool,
@@ -71,6 +73,9 @@ impl Accessibility {
         }
         if self.busy {
             node.set_busy();
+        }
+        if self.modal {
+            node.set_modal();
         }
         if self.invalid {
             node.set_invalid(accesskit::Invalid::True);

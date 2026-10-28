@@ -1,6 +1,6 @@
 # Ant Design GPUI
 
-Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result, Spin, Progress and Message use
+Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result, Spin, Progress, Message and Modal use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
 
@@ -24,6 +24,7 @@ cargo run --locked --offline --example gallery
 # Open Progress directly: -- --component progress
 # Open Message directly: -- --component message
 # Open Result directly: -- --component result
+# Open Modal directly: -- --component modal
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
 # Open Select directly: -- --component select
@@ -78,6 +79,12 @@ Result provides all seven statuses, the original exception illustrations, custom
 content and actions, inherited semantic styling, and component tokens. Its gallery
 follows the nine public reference examples and includes the token example. Select
 Result or use `--component result`; see the [Result guide](docs/result.md).
+
+Modal provides controlled dialogs and context-aware confirmation, information, success,
+warning and error helpers. Its 17 reference examples cover asynchronous actions,
+custom footers, loading, localization, drag positioning, responsive widths and styling.
+Additional examples exercise nested overlays, tall content and retained native views.
+See the [Modal guide](docs/modal.md) for ownership, lifecycle and verification.
 
 Menu provides persistent horizontal, vertical and inline navigation, with collapsed
 rails, responsive overflow, controlled selection/open keys and all 11 public

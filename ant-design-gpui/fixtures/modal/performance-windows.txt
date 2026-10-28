@@ -1,0 +1,10 @@
+Modal focused CPU/layout measurements: 2026-10-28T14:54:21.5036501Z
+cached_token_resolution: n=1000, mean=1.689 us, p50=1.700 us, p95=1.700 us
+100_closed_draw: n=200, mean=476.233 us, p50=444.600 us, p95=661.400 us
+100_closed_invalidated: n=200, mean=487.369 us, p50=449.700 us, p95=689.800 us
+one_open_20_rows_draw: n=200, mean=291.659 us, p50=278.300 us, p95=376.800 us
+one_open_20_rows_invalidated: n=200, mean=328.952 us, p50=292.300 us, p95=484.500 us
+retained_close_reopen: n=100, mean=1025.537 us, p50=947.100 us, p95=1410.100 us
+resize_dialog: n=100, mean=282.156 us, p50=264.300 us, p95=481.700 us
+six_stacked_dialogs: n=100, mean=892.182 us, p50=856.900 us, p95=1001.900 us
+Verified: closed_lazy_constructions=0; retained_body_constructions=1; idle_frames=0; released_helpers=5/5

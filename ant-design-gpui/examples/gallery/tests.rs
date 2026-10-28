@@ -1071,6 +1071,11 @@ fn gallery_capture_options_keep_navigation_pages_noninteractive_with_or_without_
         ("menu", ComponentId::Menu),
         ("pagination", ComponentId::Pagination),
         ("tabs", ComponentId::Tabs),
+        ("modal", ComponentId::Modal),
+        ("message", ComponentId::Message),
+        ("progress", ComponentId::Progress),
+        ("result", ComponentId::Result),
+        ("spin", ComponentId::Spin),
     ] {
         let interactive = Options::parse(["--component".into(), name.into()]).unwrap();
         assert_eq!(interactive.component, component);

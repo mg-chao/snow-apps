@@ -957,3 +957,40 @@ Popup motion uses native fade/reveal instead of the reference's subtree scale;
 the pinned GPUI revision is preserved. Text antialiasing and shadow rasterization
 can differ between backends. Interactive screen-reader sessions and native
 macOS/Linux rendering and accessibility were not verified.
+
+## Modal — 2026-10-28
+
+Modal uses retained GPUI controllers, a window-local overlay host, scoped managers,
+weak handles and generation-checked async actions. All 17 public reference demos
+plus nested overlays, tall content and retained content are available in the gallery.
+See the [integration guide](docs/modal.md) and
+[verification ledger](fixtures/modal/verification.json) for commands, coverage,
+source hashes and documented limitations.
+
+**183 focused library tests and two gallery tests passed.** The latter cover all
+20 examples and native dragging with viewport clamping and pointer release.
+Strict Clippy, scoped rustfmt and whitespace checks passed. Eight native Windows
+UI Automation checks passed, including roles, hidden background controls, Tab
+containment, focus return, async busy state, localization and window teardown.
+No full crate or repository test suite was run.
+
+The visual comparison executes the original Ant Design 6.6.7 source at revision
+`f8f5595ab5e891fff6a2a06c5b3b98af643d008e`. **90 browser/native pairs** cover 30
+cases at 100%, 150% and 200% DPI. Dialog bounds and sampled solid colors matched
+exactly. Helper icon outlines differed by at most 0.667 logical pixels; fully
+opaque icon-core edges differed by up to 1.333 logical pixels at 150% due to SVG
+antialiasing. Full unaligned, unmasked image error is retained, with mean absolute
+channel error 0.554/255. Side-by-side inspection includes RTL, status icons,
+wireframe, loading and custom themes.
+
+Release CPU/layout measurements used the configured `windows-msvc-performance`
+tree. A 20-row invalidated dialog averaged **0.329 ms** (p95 **0.485 ms**), and six
+stacked surfaces averaged **0.892 ms** (p95 **1.002 ms**). Assertions verified zero
+closed lazy constructions, retained-body reuse, zero settled animation frames and
+release of all five managed controllers. The performance report retains executable
+and source hashes and confirms sources stayed unchanged during the run.
+
+The GPUI pin and runtime dependencies are unchanged. Native fade/dimming replace
+the browser's subtree zoom/backdrop blur. Font, SVG and shadow rasterization differ
+between backends. macOS/Linux execution, real screen-reader speech, GPU presentation
+time and end-to-end input latency were not verified.

@@ -30,6 +30,7 @@ pub(super) enum ComponentId {
     Spin,
     Progress,
     Message,
+    Modal,
 }
 
 pub(super) struct Component {
@@ -201,6 +202,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Feedback",
         title: "Message",
         description: "Display global messages as feedback in response to user operations.",
+    },
+    Component {
+        id: ComponentId::Modal,
+        navigation_id: "gallery.navigation.modal",
+        group: "Feedback",
+        title: "Modal",
+        description: "Display a modal dialog with a title, content, and actions.",
     },
     Component {
         id: ComponentId::Popconfirm,

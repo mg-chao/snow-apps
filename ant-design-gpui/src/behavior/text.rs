@@ -32,9 +32,16 @@ pub(crate) fn css_layout_statistics(cx: &App) -> CssLayoutStatistics {
         .unwrap_or_default()
 }
 
-pub(crate) fn paragraph_text(text: SharedString, direction: Direction) -> AnyElement {
-    AlertText {
-        text,
+/// Native paragraph text with explicit base direction and bounded layout caching.
+/// Use a stable, distinct ID for each paragraph in the same parent.
+pub fn paragraph_text(
+    id: impl Into<ElementId>,
+    text: impl Into<SharedString>,
+    direction: Direction,
+) -> AnyElement {
+    ParagraphText {
+        id: id.into(),
+        text: text.into(),
         direction,
         logical_text: None,
     }
@@ -44,7 +51,8 @@ pub(crate) fn paragraph_text(text: SharedString, direction: Direction) -> AnyEle
 /// CSS normal/nowrap text collapses ASCII whitespace before shaping. Keep the
 /// original logical value on the same semantic element for accessibility.
 pub(crate) fn normal_paragraph_text(text: SharedString, direction: Direction) -> AnyElement {
-    AlertText {
+    ParagraphText {
+        id: "paragraph-text".into(),
         text: collapse_css_whitespace(&text),
         direction,
         logical_text: Some(text),
@@ -81,7 +89,8 @@ fn collapse_css_whitespace(text: &SharedString) -> SharedString {
     collapsed.into()
 }
 
-struct AlertText {
+struct ParagraphText {
+    id: ElementId,
     text: SharedString,
     direction: Direction,
     logical_text: Option<SharedString>,
@@ -125,7 +134,7 @@ struct WidthLayout {
     lines: Rc<[ShapedLine]>,
 }
 
-impl IntoElement for AlertText {
+impl IntoElement for ParagraphText {
     type Element = Self;
     fn into_element(self) -> Self {
         self
@@ -437,12 +446,12 @@ fn reuse_css_layout(
         })
 }
 
-impl Element for AlertText {
+impl Element for ParagraphText {
     type RequestLayoutState = TextLayout;
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
-        Some("alert-text".into())
+        Some(self.id.clone())
     }
     fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
         None
@@ -480,7 +489,7 @@ impl Element for AlertText {
         #[cfg(test)]
         let created = std::cell::Cell::new(false);
         let layout = window.with_element_state(
-            global_id.expect("Alert text has a stable local ID"),
+            global_id.expect("Paragraph text has a stable local ID"),
             |previous, window| {
                 #[cfg(test)]
                 let prior = previous.clone();
@@ -617,7 +626,8 @@ mod tests {
     #[test]
     fn alert_native_text_preserves_logical_accessible_content() {
         let raw: SharedString = "500 نتائج\nא\u{05b0}ב A\u{0301} 🙂".into();
-        let text = AlertText {
+        let text = ParagraphText {
+            id: "text".into(),
             text: raw.clone(),
             direction: Direction::Rtl,
             logical_text: None,
@@ -632,7 +642,8 @@ mod tests {
         let raw: SharedString = " \tTask\n\r  complete\u{000c}مرحبا\u{00a0}世界 \t".into();
         let display = collapse_css_whitespace(&raw);
         assert_eq!(display.as_ref(), "Task complete مرحبا\u{00a0}世界");
-        let element = AlertText {
+        let element = ParagraphText {
+            id: "text".into(),
             text: display,
             direction: Direction::Rtl,
             logical_text: Some(raw.clone()),
@@ -960,7 +971,8 @@ mod tests {
                     .text_right()
                     .debug_selector(|| "alert-bidi-wrap".into())
                     .child(paragraph_text(
-                        "مرحبا 500 results. Long alert content wraps into several lines.".into(),
+                        "text",
+                        "مرحبا 500 results. Long alert content wraps into several lines.",
                         Direction::Rtl,
                     )),
             )
@@ -1012,7 +1024,7 @@ mod tests {
                                 .debug_selector(move || {
                                     format!("alert-leading-{direction:?}")
                                 })
-                        .child(paragraph_text("Additional description. Long alert content wraps into several lines when constrained.".into(), direction))
+                        .child(paragraph_text("text", "Additional description. Long alert content wraps into several lines when constrained.", direction))
                         }),
                 )
         }
@@ -1046,7 +1058,7 @@ mod tests {
                 div().w(px(160.)).text_size(px(14.)).line_height(px(22.)).text_right()
                     .when(mode==1,|d|d.line_clamp(2)).when(mode==2,|d|d.truncate())
                     .debug_selector(move||format!("alert-overflow-{mode}"))
-                    .child(paragraph_text("مرحبا 500 results. Long alert content wraps into several lines and remains logically accessible.".into(),Direction::Rtl))
+                    .child(paragraph_text("text", "مرحبا 500 results. Long alert content wraps into several lines and remains logically accessible.",Direction::Rtl))
             }))
         }
     }

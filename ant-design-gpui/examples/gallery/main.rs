@@ -14,6 +14,7 @@ mod input_examples;
 mod input_number;
 mod menu;
 mod message;
+mod modal;
 mod pagination;
 mod popup;
 mod progress;
@@ -83,6 +84,7 @@ impl Options {
                             Some("pagination") => catalog::ComponentId::Pagination,
                             Some("scroll-area") => catalog::ComponentId::ScrollArea,
                             Some("tabs") => catalog::ComponentId::Tabs,
+                            Some("modal") => catalog::ComponentId::Modal,
                             Some("alert") => catalog::ComponentId::Alert,
                             Some("result") => catalog::ComponentId::Result,
                             Some("spin") => catalog::ComponentId::Spin,
@@ -90,7 +92,7 @@ impl Options {
                             Some("message") => catalog::ComponentId::Message,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, spin, progress, or message"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, spin, progress, message, or modal"
                                     .into(),
                             ),
                         };

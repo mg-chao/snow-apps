@@ -7,7 +7,7 @@ pub(crate) mod component;
 mod config;
 mod element;
 mod geometry;
-mod host;
+pub(crate) mod host;
 mod lifecycle;
 mod motion;
 mod runtime;

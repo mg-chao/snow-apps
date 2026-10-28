@@ -754,7 +754,7 @@ impl Element for Viewport {
         window.defer_draw(
             layer,
             point(px(0.), px(self.config.top - metrics.edge_margin as f32)),
-            self.tokens.z_index_popup.saturating_mul(1 << 20),
+            crate::modal::host::overlay_priority(self.tokens.z_index_popup, window, cx),
             None,
         );
     }

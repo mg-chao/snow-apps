@@ -855,6 +855,7 @@ pub struct Icon {
     options: IconRenderOptions,
     style: StyleRefinement,
     inherit_color: bool,
+    frame_scale: f32,
 }
 
 pub fn icon(reference: impl Into<IconRef>) -> Icon {
@@ -863,10 +864,17 @@ pub fn icon(reference: impl Into<IconRef>) -> Icon {
         options: IconRenderOptions::default(),
         style: StyleRefinement::default(),
         inherit_color: false,
+        frame_scale: 1.,
     }
 }
 
 impl Icon {
+    /// Match Ant's cropped catalog frame without resizing the layout slot.
+    /// Host-provided artwork keeps its own view box.
+    pub(crate) fn ant_design_frame(mut self) -> Self {
+        self.frame_scale = self.reference.ant_design_viewbox_scale();
+        self
+    }
     /// Resolve `currentColor` from the native text style at paint time. This
     /// follows ancestor hover and semantic-slot colors without rebuilding SVGs.
     #[must_use]
@@ -920,7 +928,14 @@ impl RenderOnce for Icon {
                     cx.set_global(IconRenderer::default());
                 }
                 cx.update_global::<IconRenderer, _>(|renderer, cx| {
-                    let _ = renderer.paint(bounds, &self.reference, &options, window, cx);
+                    let _ = renderer.paint_with_scale(
+                        bounds,
+                        &self.reference,
+                        &options,
+                        self.frame_scale,
+                        window,
+                        cx,
+                    );
                 });
             },
         )

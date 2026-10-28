@@ -117,7 +117,7 @@ impl<E: Element> Element for Activity<E> {
 pub(super) struct Fullscreen {
     pub id: ElementId,
     pub child: AnyElement,
-    pub priority: usize,
+    pub z_index: usize,
 }
 impl IntoElement for Fullscreen {
     type Element = Self;
@@ -169,10 +169,15 @@ impl Element for Fullscreen {
         _: Bounds<Pixels>,
         _: &mut (),
         window: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) {
         let child = std::mem::replace(&mut self.child, gpui::div().into_any_element());
-        window.defer_draw(child, Point::default(), self.priority, None);
+        window.defer_draw(
+            child,
+            Point::default(),
+            crate::modal::host::overlay_priority(self.z_index, window, cx),
+            None,
+        );
     }
     fn paint(
         &mut self,

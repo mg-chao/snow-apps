@@ -44,6 +44,7 @@ impl UiRoot {
             // This event means the rendered focus path disappeared. A removed
             // control can retain its handle, so focused() may still return it.
             window.focus(&this.focus, cx);
+            crate::modal::host::restore_focus(window, cx);
         });
         Self {
             scope,
@@ -86,7 +87,10 @@ impl Render for UiRoot {
         MessageHost::new(
             "ant-design-message-host",
             &self.messages,
-            PopupHost::new("ant-design-popup-host", content),
+            crate::ModalHost::new(
+                "ant-design-modal-host",
+                PopupHost::new("ant-design-popup-host", content),
+            ),
         )
     }
 }

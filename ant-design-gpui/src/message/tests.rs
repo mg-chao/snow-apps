@@ -678,6 +678,67 @@ fn outgoing_notice_rejects_clicks_before_the_next_draw() {
 }
 
 #[test]
+fn window_messages_remain_interactive_while_a_modal_owns_focus() {
+    let mut f = Fixture::new(false);
+    let scope = f.scope.clone();
+    let modal = f.in_window(|_, window, cx| {
+        crate::ModalManager::new(scope, window).confirm(
+            crate::modal::ModalOptions {
+                title: Some(crate::modal::ModalContent::text("Confirm changes")),
+                ..Default::default()
+            },
+            window,
+            cx,
+        )
+    });
+    f.draw();
+    let focus = f.in_window(|_, window, cx| window.focused(cx).unwrap());
+    let clicks = Rc::new(Cell::new(0));
+    let observed = clicks.clone();
+    let notice = f.open(
+        MessageOptions::new("Changes saved")
+            .duration(Duration::ZERO)
+            .on_click(move |_, _, _| observed.set(observed.get() + 1)),
+    );
+    let position = f.layouts()[0].bounds.center();
+    f.click(position);
+    assert_eq!(clicks.get(), 1, "the modal mask must not cover feedback");
+    f.in_window(|_, _, cx| modal.update(|options| options.z_index = 3000, cx));
+    f.draw();
+    f.click(position);
+    assert_eq!(
+        clicks.get(),
+        1,
+        "an explicitly higher dialog still covers feedback"
+    );
+    f.in_window(|_, _, cx| modal.update(|options| options.z_index = 1000, cx));
+    f.draw();
+    f.click(position);
+    assert_eq!(
+        clicks.get(),
+        2,
+        "live dialog ordering updates the feedback layer"
+    );
+    f.in_window(|_, window, cx| {
+        assert!(
+            focus.is_focused(window),
+            "feedback must preserve modal focus"
+        );
+        notice.close(window, cx);
+    });
+    f.draw();
+    assert!(f.layouts().is_empty());
+    f.in_window(|_, window, cx| {
+        assert!(focus.is_focused(window));
+        modal.destroy(window, cx);
+    });
+    f.draw();
+    let next = f.open(MessageOptions::new("Dialog closed").duration(Duration::ZERO));
+    assert!(!next.is_dismissed());
+    assert_eq!(f.layouts().len(), 1);
+}
+
+#[test]
 fn eviction_reports_logical_dismissal_before_deferred_close_callbacks() {
     let mut f = Fixture::new(false);
     let oldest = f.open(MessageOptions::new("Oldest").duration(Duration::ZERO));

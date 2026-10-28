@@ -48,6 +48,8 @@ impl Element for PopupElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
+        let owner = crate::modal::host::owner(window, cx);
+        self.state.update(cx, |s, _| s.modal_owner = owner);
         let state = self.state.downgrade();
         (
             super::trigger::with_trigger(&state, cx, |cx| self.child.request_layout(window, cx)),
@@ -68,7 +70,9 @@ impl Element for PopupElement {
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         self.child.prepaint(window, cx);
         let clipped = bounds.intersect(&window.content_mask().bounds);
-        let visible = !clipped.is_empty() && self.state.read(cx).presented();
+        let visible = !clipped.is_empty()
+            && self.state.read(cx).presented()
+            && crate::modal::host::popup_allowed(self.state.read(cx).modal_owner, window, cx);
         let opacity = self.state.update(cx, |state, cx| {
             state.anchor = bounds;
             state.sample_opacity(visible, window, cx)
@@ -225,6 +229,12 @@ impl Element for PopupElement {
                         )
                     }
                 };
+                let priority = crate::modal::host::popup_priority(
+                    self.state.read(cx).modal_owner,
+                    priority,
+                    window,
+                    cx,
+                );
                 window.defer_draw(surface, Point::default(), priority, None);
             }
         } else {

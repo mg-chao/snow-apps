@@ -29,6 +29,8 @@ pub use message::{
     MessageConfigPatch, MessageHandle, MessageHost, MessageLayout, MessageOptions, MessageStack,
     MessageState, MessageStyleContext, MessageStyleResolver, MessageStyles, MessageType,
 };
+pub mod modal;
+pub use modal::{Modal, ModalEvent, ModalHandle, ModalHost, ModalManager, ModalState};
 pub mod pagination;
 pub use pagination::{
     Pagination, PaginationChange, PaginationEvent, PaginationSizeChange, PaginationState,

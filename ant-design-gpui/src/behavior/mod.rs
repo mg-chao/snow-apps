@@ -18,6 +18,7 @@ pub use focus::{
     FocusNext, FocusPrevious, FocusRing, FocusRingElement, focus_handle, initialize, traversal,
 };
 pub use motion::{MotionPolicy, ScalarTransition, TransitionSample, evaluate_cubic_bezier};
+pub use text::paragraph_text;
 pub(crate) use wave::{WaveMotion, WaveSample, WaveState, wave_color};
 
 #[cfg(test)]

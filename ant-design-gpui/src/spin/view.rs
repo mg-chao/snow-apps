@@ -356,7 +356,7 @@ impl RenderOnce for Spin {
             Fullscreen {
                 id: self.id,
                 child: element.into_any_element(),
-                priority: metrics.z_index.saturating_mul(1 << 20),
+                z_index: metrics.z_index,
             }
             .into_any_element()
         } else {

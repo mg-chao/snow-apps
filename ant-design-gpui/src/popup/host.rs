@@ -123,6 +123,90 @@ pub(super) fn current(window: &Window, cx: &App) -> Option<Host> {
         .upgrade()
 }
 
+pub(crate) fn dismiss_modal(owner: Option<EntityId>, window: &mut Window, cx: &mut App) {
+    let entries = current(window, cx)
+        .map(|h| {
+            h.borrow()
+                .entries
+                .values()
+                .map(|e| e.state.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for weak in entries {
+        if weak
+            .upgrade()
+            .is_some_and(|s| s.read(cx).modal_owner == owner)
+        {
+            request_open(&weak, false, PopupOpenReason::ParentClosed, window, cx);
+        }
+    }
+}
+pub(crate) fn dismiss_unowned_modal(owner: EntityId, window: &mut Window, cx: &mut App) {
+    let entries = current(window, cx)
+        .map(|h| {
+            h.borrow()
+                .entries
+                .values()
+                .map(|e| e.state.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for weak in entries {
+        if weak
+            .upgrade()
+            .is_some_and(|s| s.read(cx).modal_owner != Some(owner))
+        {
+            request_open(&weak, false, PopupOpenReason::ParentClosed, window, cx);
+        }
+    }
+}
+pub(crate) fn modal_contains_focus(owner: EntityId, window: &Window, cx: &App) -> bool {
+    current(window, cx).is_some_and(|h| {
+        h.borrow().entries.values().any(|e| {
+            e.state.upgrade().is_some_and(|s| {
+                s.read(cx).modal_owner == Some(owner)
+                    && s.read(cx).surface_focus.contains_focused(window, cx)
+            })
+        })
+    })
+}
+pub(crate) fn modal_contains_position(
+    owner: EntityId,
+    position: Point<Pixels>,
+    window: &Window,
+    cx: &App,
+) -> bool {
+    current(window, cx).is_some_and(|h| {
+        h.borrow().entries.values().any(|e| {
+            e.surface.contains(&position)
+                && e.state
+                    .upgrade()
+                    .is_some_and(|s| s.read(cx).modal_owner == Some(owner))
+        })
+    })
+}
+pub(crate) fn dismiss_top_modal(owner: EntityId, window: &mut Window, cx: &mut App) -> bool {
+    let top = current(window, cx).and_then(|h| {
+        h.borrow()
+            .entries
+            .values()
+            .filter(|e| {
+                e.state
+                    .upgrade()
+                    .is_some_and(|s| s.read(cx).modal_owner == Some(owner))
+            })
+            .max_by_key(|e| (e.layer, e.order))
+            .map(|e| e.state.clone())
+    });
+    if let Some(top) = top {
+        request_open(&top, false, PopupOpenReason::Escape, window, cx);
+        true
+    } else {
+        false
+    }
+}
+
 /// Set popup ancestry while rendering/layouting its content, without holding a
 /// RefCell borrow across user code or native GPUI element traversal.
 pub(super) fn with_parent<R>(host: &Host, parent: EntityId, f: impl FnOnce() -> R) -> R {

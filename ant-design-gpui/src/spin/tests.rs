@@ -9,9 +9,10 @@ use crate::{
     theme::{Color, ThemeConfig},
 };
 use gpui::{
-    AppContext, Bounds, Context, Entity, FocusHandle, IntoElement, KeyDownEvent, KeyUpEvent,
-    Keystroke, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, PlatformInput, Render,
-    StyleRefinement, TestAppContext, Window, WindowHandle, div, point, px, size,
+    AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseUpEvent, Pixels,
+    PlatformInput, Render, StyleRefinement, TestAppContext, Window, WindowHandle, div, point, px,
+    size,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -557,6 +558,51 @@ fn fullscreen_is_viewport_sized_outside_parent_clipping_and_stops_blocking_immed
         2,
         "keyboard focus remains reference-compatible"
     );
+}
+
+#[test]
+fn fullscreen_loading_blocks_modal_actions_until_loading_finishes() {
+    let mut f = Fixture::new(false, |view| view.fullscreen = true);
+    let clicks = Rc::new(Cell::new(0));
+    let observed = clicks.clone();
+    let scope = f.scope.clone();
+    let modal =
+        f.cx.update_window(f.window.into(), |_, window, cx| {
+            crate::ModalManager::new(scope, window).confirm(
+                crate::modal::ModalOptions {
+                    content: Some(crate::modal::ModalContent::render(move |_, _, _| {
+                        let observed = observed.clone();
+                        div().debug_selector(|| "spin-modal-action".into()).child(
+                            Button::new("modal-action")
+                                .label("Apply")
+                                .on_click(move |_, _, _| observed.set(observed.get() + 1)),
+                        )
+                    })),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    f.draw();
+    let mut visual = gpui::VisualTestContext::from_window(f.window.into(), &f.cx);
+    let position =
+        visual.debug_bounds("spin-modal-action").unwrap().origin + point(px(20.), px(15.));
+    f.click_at(position);
+    assert_eq!(
+        clicks.get(),
+        0,
+        "fullscreen loading must cover dialog actions"
+    );
+    f.edit(|view| view.spinning = false);
+    f.click_at(position);
+    assert_eq!(
+        clicks.get(),
+        1,
+        "finishing loading releases the modal action"
+    );
+    f.cx.update(|cx| assert!(modal.is_open(cx)));
 }
 
 #[test]

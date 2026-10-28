@@ -6,7 +6,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Pagination, Select, Slider, Tabs, Result and Message visual rules,
+Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Result and Message visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from

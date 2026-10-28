@@ -104,6 +104,10 @@ harness = false
 name = "message"
 harness = false
 
+[[bench]]
+name = "modal"
+harness = false
+
 [profile.dev]
 incremental = false
 
