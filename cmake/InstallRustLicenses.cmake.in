@@ -1,3 +1,8 @@
+if(@SNOW_LICENSE_RESET_DESTINATION@)
+    # Discard notices from the previous installation once per component. The
+    # remaining roots merge into this fresh directory and still reject conflicts.
+    file(REMOVE_RECURSE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@SNOW_LICENSE_DESTINATION@")
+endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env @SNOW_LICENSE_ENVIRONMENT@
         [==[@Python3_EXECUTABLE@]==]

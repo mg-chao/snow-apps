@@ -55,20 +55,23 @@ class RustLicenseCollection(unittest.TestCase):
                 self.assertIn(argument, command)
         self.assertIn('normal,build', run.call_args_list[1].args[0])
 
-    def test_original_transitive_notices_and_whatlang_provenance_are_copied(self):
+    def test_original_transitive_notices_and_versioned_provenance_are_copied(self):
         transitive = self.package('transitive', 'original transitive copyright\n')
         whatlang = self.package('whatlang')
         whatlang['version'] = '0.18.0'
+        objc2 = self.package('objc2')
+        objc2['version'] = '0.6.5'
         collector.collect_licenses(
-            [transitive, whatlang], self.destination, ROOT / 'licenses', 'full')
-        upstream = ROOT / 'licenses/cargo/whatlang-0.18.0'
-        for name in ('LICENSE', 'SOURCE.md'):
-            self.assertEqual((self.destination / 'whatlang-0.18.0' / name).read_bytes(),
-                             (upstream / name).read_bytes())
+            [transitive, whatlang, objc2], self.destination, ROOT / 'licenses', 'full')
+        for label, license_name in (('whatlang-0.18.0', 'LICENSE'), ('objc2-0.6.5', 'LICENSE.md')):
+            upstream = ROOT / 'licenses/cargo' / label
+            for name in (license_name, 'SOURCE.md'):
+                self.assertEqual((self.destination / label / name).read_bytes(),
+                                 (upstream / name).read_bytes())
+            self.assertIn(f'{label}/{license_name}',
+                          (self.destination / 'full.md').read_text())
         self.assertEqual((self.destination / 'transitive-1.0.0/LICENSE-MIT').read_text(),
                          'original transitive copyright\n')
-        self.assertIn('whatlang-0.18.0/LICENSE',
-                      (self.destination / 'full.md').read_text())
 
     def test_missing_notice_fails_before_writing_any_output(self):
         valid = self.package('valid', 'original notice')
@@ -173,6 +176,24 @@ snow_install_rust_licenses(COMPONENT Mini DESTINATION mini/cargo TARGETS Mini Sh
             self.assertTrue((stage / edition / 'cargo/transitive-1.0.0/LICENSE-MIT').is_file())
             self.assertTrue((stage / edition / 'cargo/shared-dependency-1.0.0/LICENSE-MIT').is_file())
             self.assertFalse((stage / edition / 'cargo/development-only-1.0.0').exists())
+        # A path dependency can change its notices without changing its package
+        # version. Reinstalling must replace the previous bundle, then merge all
+        # roots from this installation without carrying obsolete packages along.
+        Path(transitive['manifest_path']).with_name('LICENSE-MIT').write_text('updated notice')
+        for edition in ('Full', 'Mini'):
+            destination = stage / edition.lower() / 'cargo'
+            obsolete = destination / 'obsolete-0.1.0/LICENSE'
+            obsolete.parent.mkdir()
+            obsolete.write_text('previous build')
+            subprocess.run(['cmake', '--install', str(build), '--component', edition,
+                            '--prefix', str(stage)], check=True, capture_output=True, text=True)
+            self.assertEqual((destination / 'transitive-1.0.0/LICENSE-MIT').read_text(),
+                             'updated notice')
+            self.assertTrue((destination / 'shared-dependency-1.0.0/LICENSE-MIT').is_file())
+            self.assertTrue((destination / 'root.md').is_file())
+            self.assertTrue((destination / 'shared.md').is_file())
+            self.assertEqual((destination / 'whatlang-0.18.0/LICENSE').is_file(), edition == 'Full')
+            self.assertFalse(obsolete.parent.exists())
         Path(transitive['manifest_path']).with_name('LICENSE-MIT').unlink()
         failed = subprocess.run(
             ['cmake', '--install', str(build), '--component', 'Full', '--prefix', str(stage)],
