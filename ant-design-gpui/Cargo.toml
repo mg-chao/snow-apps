@@ -96,6 +96,14 @@ harness = false
 name = "spin"
 harness = false
 
+[[bench]]
+name = "progress"
+harness = false
+
+[[bench]]
+name = "message"
+harness = false
+
 [profile.dev]
 incremental = false
 

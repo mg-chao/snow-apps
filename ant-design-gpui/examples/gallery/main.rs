@@ -13,8 +13,10 @@ mod input;
 mod input_examples;
 mod input_number;
 mod menu;
+mod message;
 mod pagination;
 mod popup;
+mod progress;
 mod radio;
 mod result;
 mod scroll_area;
@@ -39,6 +41,7 @@ use gpui::{App, AppContext, Bounds, Focusable, WindowBounds, WindowOptions, px, 
 struct Options {
     component: catalog::ComponentId,
     capture: Option<PathBuf>,
+    capture_scroll_y: Option<f32>,
     headless: bool,
     reduced_motion: bool,
     dark: bool,
@@ -83,9 +86,11 @@ impl Options {
                             Some("alert") => catalog::ComponentId::Alert,
                             Some("result") => catalog::ComponentId::Result,
                             Some("spin") => catalog::ComponentId::Spin,
+                            Some("progress") => catalog::ComponentId::Progress,
+                            Some("message") => catalog::ComponentId::Message,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, or spin"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, spin, progress, or message"
                                     .into(),
                             ),
                         };
@@ -97,6 +102,15 @@ impl Options {
                             .filter(|path| !path.starts_with("--"))
                             .ok_or("--capture requires an output path")?
                             .into(),
+                    );
+                }
+                "--capture-scroll-y" => {
+                    options.capture_scroll_y = Some(
+                        arguments
+                            .next()
+                            .and_then(|value| value.parse::<f32>().ok())
+                            .filter(|value| value.is_finite() && *value >= 0.)
+                            .ok_or("--capture-scroll-y requires a finite nonnegative offset")?,
                     );
                 }
                 "--reduced-motion" => options.reduced_motion = true,
@@ -126,13 +140,16 @@ impl Options {
         if options.headless && options.capture.is_none() {
             return Err("--headless requires --capture".into());
         }
+        if options.capture_scroll_y.is_some() && options.capture.is_none() {
+            return Err("--capture-scroll-y requires --capture".into());
+        }
         Ok(options)
     }
 }
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|spin] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--headless]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|spin|progress|message] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {
@@ -176,7 +193,7 @@ fn main() {
                     gallery.selected = options.component;
                     gallery
                 });
-                let root = cx.new(|cx| UiRoot::new(scope, gallery, window, cx));
+                let root = cx.new(|cx| UiRoot::new(scope, gallery.clone(), window, cx));
                 window.focus(&root.focus_handle(cx), cx);
                 if interactive {
                     window.activate_window();
@@ -195,6 +212,21 @@ fn main() {
                                 cx.background_executor()
                                     .timer(Duration::from_millis(16))
                                     .await;
+                            }
+                            if let Some(offset) = options.capture_scroll_y {
+                                cx.update(|_, cx| {
+                                    gallery.update(cx, |gallery, cx| {
+                                        gallery.scroll.set_offset(gpui::point(px(0.), px(-offset)));
+                                        cx.notify();
+                                    });
+                                })
+                                .ok();
+                                for _ in 0..2 {
+                                    cx.update(|window, cx| window.draw(cx).clear(cx)).ok();
+                                    cx.background_executor()
+                                        .timer(Duration::from_millis(16))
+                                        .await;
+                                }
                             }
                             let result = cx.update(|window, cx| {
                                 window.draw(cx).clear(cx);

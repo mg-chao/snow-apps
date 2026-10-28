@@ -7,7 +7,9 @@ use crate::{
     alert::{AlertConfig, AlertConfigPatch},
     icons::IconPalette,
     locale::{Locale, LocalePatch},
+    message::{MessageConfig, MessageConfigPatch},
     popup::{PopupConfig, PopupConfigPatch, PopupTriggers, TooltipConfig, TooltipConfigPatch},
+    progress::{ProgressConfig, ProgressConfigPatch},
     result::{ResultConfig, ResultConfigPatch},
     spin::{SpinConfig, SpinConfigPatch},
     theme::{ResolvedTheme, ThemeConfig},
@@ -118,6 +120,8 @@ pub struct ConfigPatch {
     pub alert: AlertConfigPatch,
     pub result: ResultConfigPatch,
     pub spin: SpinConfigPatch,
+    pub progress: ProgressConfigPatch,
+    pub message: MessageConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -140,6 +144,8 @@ pub struct ResolvedConfig {
     pub alert: AlertConfig,
     pub result: ResultConfig,
     pub spin: SpinConfig,
+    pub progress: ProgressConfig,
+    pub message: MessageConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -163,6 +169,8 @@ impl PartialEq for ResolvedConfig {
             && self.alert == other.alert
             && self.result == other.result
             && self.spin == other.spin
+            && self.progress == other.progress
+            && self.message == other.message
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -197,6 +205,8 @@ impl Default for ResolvedConfig {
             alert: AlertConfig::default(),
             result: ResultConfig::default(),
             spin: SpinConfig::default(),
+            progress: ProgressConfig::default(),
+            message: MessageConfig::default(),
         }
     }
 }
@@ -296,6 +306,8 @@ impl ResolvedConfig {
             alert: patch.alert.resolve(&parent.alert),
             result: patch.result.resolve(&parent.result),
             spin: patch.spin.resolve(&parent.spin),
+            progress: patch.progress.resolve(&parent.progress),
+            message: patch.message.resolve(&parent.message),
         })
     }
 }

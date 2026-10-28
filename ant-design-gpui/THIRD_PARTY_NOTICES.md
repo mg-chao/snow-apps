@@ -6,7 +6,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Pagination, Select, Slider, Tabs and Result visual rules,
+Popover, Popconfirm, Menu, Pagination, Select, Slider, Tabs, Result and Message visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
@@ -209,3 +209,23 @@ and standalone-media selection. Its bundle is under
 `../build/ant-design-gpui/select-slider-license-audit/third-party/`. These components
 add no runtime dependency. The separately executed browser reference packages
 retain their notices under `fixtures/select/licenses/` and `fixtures/slider/licenses/`.
+
+## Message reference fixtures
+
+Message's developer-only reference generator executes the original Ant Design
+6.6.7 Message hook, panel and shared Notification styles, with the published
+`@rc-component/notification` 2.1.1, React/ReactDOM, cssinjs, rc util, TypeScript
+and helper packages. They are not native runtime dependencies. Original package
+notices are retained under `fixtures/message/licenses/`; Ant Design's MIT notice
+is retained in `fixtures/theme/licenses/ant-design.txt`. See
+`fixtures/message/README.md` for pinned versions, provenance and regeneration.
+
+## Progress reference fixtures
+
+Progress geometry, token defaults and examples are adapted from Ant Design 6.6.7
+(MIT) and `@rc-component/progress` 1.0.3 (MIT). The developer-only browser harness
+executes the original source using the existing locked reference toolchain.
+Neither React nor rc-progress is a native runtime dependency. Original notices
+are retained in `fixtures/progress/licenses/rc-component-progress.txt` and
+`fixtures/theme/licenses/ant-design.txt`. See `fixtures/progress/README.md` for
+source revision, provenance and regeneration. No native dependency was added.

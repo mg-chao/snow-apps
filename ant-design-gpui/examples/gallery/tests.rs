@@ -32,7 +32,9 @@ struct Fixture {
 mod context_scroll;
 mod input;
 mod menu;
+mod message;
 mod pagination;
+mod progress;
 mod result;
 mod select_slider;
 mod spin;

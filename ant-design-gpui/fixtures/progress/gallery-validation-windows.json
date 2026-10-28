@@ -1,0 +1,33 @@
+{
+  "captures": [
+    {
+      "name": "default-top",
+      "sha256": "f0a4f0237acdb2c054e99d671e217f373135ffc3c910030f352a3c16766ba5f2"
+    },
+    {
+      "name": "default-dynamic",
+      "sha256": "d540908e8585260c6359f5f908ff11386d74ac521d58afcb4418b7fe37d531ae"
+    },
+    {
+      "name": "default-steps",
+      "sha256": "ee19d93ebc83733188053d325b967fec072c98252c7cb3a64bcf9318d3143854"
+    },
+    {
+      "name": "default-styles",
+      "sha256": "1de1311918b463e2dd57d9845880f488004ef8a3c377691f32f9194770911589"
+    },
+    {
+      "name": "dark-compact-rtl",
+      "sha256": "dd527f4500f65a56e9c150d836f7a611076528a0298a27571803d051750d9dee"
+    },
+    {
+      "name": "narrow",
+      "sha256": "830bbae89b5f77f8719895e22c4a3e5c1d4712229f9b8c2ceb015f389ce0c6ee"
+    }
+  ],
+  "stack": "default",
+  "binary_sha256": "2c655084c1d0f7c6cf3079d17d06f3c6d8dec6a749f8746aa498d2c0175f55ae",
+  "utc": "2026-10-28T14:44:08.1932285Z",
+  "profile": "debug",
+  "status": "passed"
+}

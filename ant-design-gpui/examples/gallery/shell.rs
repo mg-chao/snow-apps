@@ -25,8 +25,10 @@ use super::{
     input_examples,
     input_number::{self, InputNumberPage},
     menu::{self, MenuPage},
+    message::{self, MessagePage},
     pagination::{self, PaginationPage},
     popup::{self, Kind, PopupPage},
+    progress::{self, ProgressPage},
     radio::{self, RadioPage},
     result::{self, ResultPage},
     scroll_area::{self, ScrollAreaPage},
@@ -96,6 +98,8 @@ pub(super) struct Gallery {
     pub alert: Entity<AlertPage>,
     pub result: Entity<ResultPage>,
     pub spin: Entity<SpinPage>,
+    pub progress: Entity<ProgressPage>,
+    pub message: Entity<MessagePage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
@@ -119,6 +123,8 @@ pub(super) struct Gallery {
     alert_anchors: Vec<ScrollAnchor>,
     result_anchors: Vec<ScrollAnchor>,
     spin_anchors: Vec<ScrollAnchor>,
+    progress_anchors: Vec<ScrollAnchor>,
+    message_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
 
@@ -209,11 +215,23 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let progress_anchors: Vec<_> = progress::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let spin_anchors: Vec<_> = spin::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let message_anchors: Vec<_> = message::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         Self {
+            message: cx
+                .new(|cx| MessagePage::new(scope.clone(), message_anchors.clone(), window, cx)),
+            progress: cx
+                .new(|cx| ProgressPage::new(scope.clone(), progress_anchors.clone(), window, cx)),
             spin: cx.new(|cx| SpinPage::new(scope.clone(), spin_anchors.clone(), cx)),
             result: cx.new(|cx| ResultPage::new(scope.clone(), result_anchors.clone(), cx)),
             alert: cx.new(|cx| AlertPage::new(scope.clone(), alert_anchors.clone(), cx)),
@@ -296,6 +314,8 @@ impl Gallery {
             alert_anchors,
             result_anchors,
             spin_anchors,
+            progress_anchors,
+            message_anchors,
         }
     }
 
@@ -442,6 +462,8 @@ impl Gallery {
                         ComponentId::Alert => "Feedback / Alert",
                         ComponentId::Result => "Feedback / Result",
                         ComponentId::Spin => "Feedback / Spin",
+                        ComponentId::Progress => "Feedback / Progress",
+                        ComponentId::Message => "Feedback / Message",
                     },
                 ))
             })
@@ -552,6 +574,8 @@ impl Gallery {
                                 ComponentId::Alert => IconName::AlertOutlined,
                                 ComponentId::Result => IconName::CheckCircleOutlined,
                                 ComponentId::Spin => IconName::LoadingOutlined,
+                                ComponentId::Progress => IconName::DashboardOutlined,
+                                ComponentId::Message => IconName::MessageOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
                             .accessibility_label(component.title)
@@ -745,10 +769,24 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 );
             let links = links.chain(
+                progress::DEMOS
+                    .iter()
+                    .zip(&self.progress_anchors)
+                    .filter(|_| self.selected == ComponentId::Progress)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
+            let links = links.chain(
                 spin::DEMOS
                     .iter()
                     .zip(&self.spin_anchors)
                     .filter(|_| self.selected == ComponentId::Spin)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
+            let links = links.chain(
+                message::DEMOS
+                    .iter()
+                    .zip(&self.message_anchors)
+                    .filter(|_| self.selected == ComponentId::Message)
                     .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
             );
             let links = links.chain(
@@ -917,6 +955,8 @@ impl Gallery {
                                 ComponentId::Alert => "Open Ant Design Alert reference",
                                 ComponentId::Result => "Open Ant Design Result reference",
                                 ComponentId::Spin => "Open Ant Design Spin reference",
+                                ComponentId::Progress => "Open Ant Design Progress reference",
+                                ComponentId::Message => "Open Ant Design Message reference",
                             })
                             .href(match self.selected {
                                 ComponentId::Button => "https://ant.design/components/button",
@@ -943,6 +983,8 @@ impl Gallery {
                                 ComponentId::Alert => "https://ant.design/components/alert",
                                 ComponentId::Result => "https://ant.design/components/result",
                                 ComponentId::Spin => "https://ant.design/components/spin",
+                                ComponentId::Progress => "https://ant.design/components/progress",
+                                ComponentId::Message => "https://ant.design/components/message",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -999,6 +1041,8 @@ impl Render for Gallery {
             ComponentId::Alert => alert::DEMOS.len(),
             ComponentId::Result => result::DEMOS.len(),
             ComponentId::Spin => spin::DEMOS.len(),
+            ComponentId::Progress => progress::DEMOS.len(),
+            ComponentId::Message => message::DEMOS.len(),
         };
         let coverage = match self.selected {
             ComponentId::Input => input_examples::summary(input::DEMOS),
@@ -1121,6 +1165,8 @@ impl Render for Gallery {
                                         ComponentId::Alert => self.alert.clone().into_any_element(),
                                         ComponentId::Result => self.result.clone().into_any_element(),
                                         ComponentId::Spin => self.spin.clone().into_any_element(),
+                                        ComponentId::Progress => self.progress.clone().into_any_element(),
+                                        ComponentId::Message => self.message.clone().into_any_element(),
 
                                     })
                                     .child(
@@ -1141,6 +1187,8 @@ impl Render for Gallery {
                                                 ComponentId::Alert => "Tab to navigate actions · Enter or Space to activate or close",
                                                 ComponentId::Result => "Tab to navigate actions · Enter or Space to activate",
                                                 ComponentId::Spin => "Toggle loading or automatic progress · Run progress or a fullscreen operation",
+                                                ComponentId::Progress => "Adjust progress; change dashboard gaps and circular steps",
+                                                ComponentId::Message => "Display a message · Hover to pause dismissal or expand a stack",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {

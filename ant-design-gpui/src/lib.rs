@@ -23,6 +23,12 @@ pub use input_number::{
 pub mod locale;
 pub mod menu;
 pub use menu::{Menu, MenuMode, MenuState};
+pub mod message;
+pub use message::{
+    Message, MessageCloseEvent, MessageCloseReason, MessageCompletion, MessageConfig,
+    MessageConfigPatch, MessageHandle, MessageHost, MessageLayout, MessageOptions, MessageStack,
+    MessageState, MessageStyleContext, MessageStyleResolver, MessageStyles, MessageType,
+};
 pub mod pagination;
 pub use pagination::{
     Pagination, PaginationChange, PaginationEvent, PaginationSizeChange, PaginationState,
@@ -30,6 +36,8 @@ pub use pagination::{
 pub mod popconfirm;
 pub mod popover;
 pub mod popup;
+pub mod progress;
+pub use progress::{Progress, ProgressConfig, ProgressConfigPatch, ProgressKind, ProgressStatus};
 pub mod radio;
 pub mod result;
 pub use result::{Result, ResultStatus};

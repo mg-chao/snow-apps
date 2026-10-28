@@ -1,6 +1,6 @@
 # Ant Design GPUI
 
-Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result and Spin use
+Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result, Spin, Progress and Message use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
 
@@ -21,6 +21,8 @@ cargo run --locked --offline --example gallery
 # Open Tag directly: -- --component tag
 # Open Alert directly: -- --component alert
 # Open Spin directly: -- --component spin
+# Open Progress directly: -- --component progress
+# Open Message directly: -- --component message
 # Open Result directly: -- --component result
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
@@ -963,3 +965,32 @@ configuration, native content factories, keyboard interaction, and guarded async
 confirmation. `UiRoot` supplies their window-local host. See the
 [popup guide](docs/popups.md), [verification report](docs/popup-system.md), and the
 gallery's `--component tooltip`, `popover`, and `popconfirm` pages.
+
+## Message
+
+Message provides window-scoped feedback with five status types, native rich content,
+timed or persistent notices, hover pausing, keyed updates, count limits and expandable
+stacks. `UiRoot` supplies a default host; use `Message::for_window(window, cx)` inside
+callbacks, or retain a `MessageState` and mount `MessageHost` for a separate scope.
+Handles expose programmatic closing and awaitable completion without retaining the
+window. Component tokens and six semantic style slots follow the effective theme.
+
+The gallery includes all nine applicable public reference examples and a component
+token example. See the [Message guide](docs/message.md) and
+[verification guide](docs/message-verification.md) for ownership, completion timing,
+upstream comparisons and platform limits.
+
+```powershell
+cargo run --locked --offline --example gallery -- --component message
+cargo test --locked --offline --lib message:: -- --test-threads=1
+cargo test --locked --offline --example gallery message_gallery
+./scripts/test-message-accessibility.ps1
+./scripts/run-message-perf.ps1
+```
+
+## Progress
+
+Progress provides controlled native line, circle and dashboard indicators with
+success segments, steps, gradients, custom content and logical label placement.
+Its gallery contains all sixteen public reference examples and a token example.
+See the [API guide](docs/progress.md) and [verification report](docs/progress-verification.md).
