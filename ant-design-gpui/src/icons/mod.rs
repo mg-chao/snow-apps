@@ -152,6 +152,17 @@ impl IconRef {
             IconSource::Asset { color_model, .. } => *color_model,
         }
     }
+
+    /// Ant's React icon frame crops catalog paths to 64 64 896 896.
+    /// Host artwork keeps the view box declared by its own SVG.
+    pub(crate) fn ant_design_viewbox_scale(&self) -> f32 {
+        match &self.source {
+            IconSource::Embedded { descriptor, .. } if descriptor.key.starts_with("antd/") => {
+                8. / 7.
+            }
+            _ => 1.,
+        }
+    }
 }
 
 impl IconName {

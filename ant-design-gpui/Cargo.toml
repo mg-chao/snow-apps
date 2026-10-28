@@ -83,6 +83,10 @@ harness = false
 name = "tabs"
 harness = false
 
+[[bench]]
+name = "alert"
+harness = false
+
 [profile.dev]
 incremental = false
 

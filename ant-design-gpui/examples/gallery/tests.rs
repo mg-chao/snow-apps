@@ -37,6 +37,182 @@ mod select_slider;
 mod tabs;
 
 #[test]
+fn alert_gallery_preserves_reference_order_and_supports_native_capture() {
+    assert_eq!(
+        super::alert::DEMOS
+            .iter()
+            .map(|demo| demo.id)
+            .collect::<Vec<_>>(),
+        [
+            "alert-basic",
+            "alert-style",
+            "alert-filled",
+            "alert-closable",
+            "alert-description",
+            "alert-icon",
+            "alert-banner",
+            "alert-smooth-closed",
+            "alert-custom-icon",
+            "alert-action",
+            "alert-custom-title-alignment",
+            "alert-component-token",
+            "alert-style-class",
+        ],
+    );
+    let options = Options::parse([
+        "--component".into(),
+        "alert".into(),
+        "--dark".into(),
+        "--compact".into(),
+        "--rtl".into(),
+        "--reduced-motion".into(),
+        "--headless".into(),
+        "--capture".into(),
+        "C:/temp/alert-gallery.png".into(),
+    ])
+    .unwrap();
+    assert_eq!(options.component, ComponentId::Alert);
+    assert!(!options.interactive());
+    assert!(options.dark && options.compact && options.rtl && options.reduced_motion);
+    assert_eq!(
+        COMPONENTS
+            .iter()
+            .find(|component| component.id == ComponentId::Alert)
+            .unwrap()
+            .group,
+        "Feedback",
+    );
+}
+
+#[test]
+fn alert_gallery_navigation_anchors_and_cards_follow_the_viewport() {
+    let mut fixture = Fixture::new();
+    fixture.reveal_sidebar("gallery.navigation.alert");
+    fixture.click("gallery.navigation.alert");
+    assert_eq!(
+        fixture
+            .gallery
+            .read_with(&fixture.cx, |gallery, _| gallery.selected),
+        ComponentId::Alert
+    );
+    for width in [1280., 1100., 640.] {
+        fixture.resize(width);
+        let first = fixture.bounds("gallery.card.alert-basic");
+        let second = fixture.bounds("gallery.card.alert-style");
+        let content = fixture.bounds("gallery.content");
+        assert!(first.left() >= content.left());
+        assert!(second.right() <= content.right());
+        if width == 1280. {
+            assert_eq!(first.top(), second.top());
+        } else {
+            assert!(second.top() >= first.bottom());
+        }
+    }
+    fixture.resize(1280.);
+    fixture.reveal_sidebar("gallery.jump.alert-smooth-closed");
+    fixture.click("gallery.jump.alert-smooth-closed");
+    fixture.next_frame();
+    let content = fixture.bounds("gallery.content");
+    let smooth = fixture.bounds("gallery.card.alert-smooth-closed");
+    assert!((smooth.top() - content.top()).abs() <= px(1.));
+    fixture.click("gallery.control.top");
+    fixture.next_frame();
+    let scroll = fixture
+        .gallery
+        .read_with(&fixture.cx, |gallery, _| gallery.scroll.clone());
+    assert_eq!(scroll.offset().y, px(0.));
+}
+
+#[test]
+fn alert_gallery_close_finishes_before_owner_unmount_and_switch_remounts() {
+    let mut fixture = Fixture::new();
+    fixture.gallery.update(&mut fixture.cx, |gallery, cx| {
+        gallery.selected = ComponentId::Alert;
+        cx.notify();
+    });
+    fixture.draw();
+    let page = fixture
+        .gallery
+        .read_with(&fixture.cx, |gallery, _| gallery.alert.clone());
+    fixture.reveal("alert.smooth.item");
+    let focus = page.read_with(&fixture.cx, |page, _| page.smooth_close_focus.clone());
+    fixture.cx.update(|window, cx| window.focus(&focus, cx));
+    fixture.key("space");
+    assert_eq!(
+        page.read_with(&fixture.cx, |page, _| (
+            page.smooth_visible,
+            page.close_requests,
+            page.close_completions
+        )),
+        (false, 1, 1)
+    );
+    fixture.reveal("alert.smooth.toggle");
+    fixture.click("alert.smooth.toggle");
+    assert_eq!(
+        page.read_with(&fixture.cx, |page, _| (
+            page.smooth_visible,
+            page.smooth_epoch
+        )),
+        (true, 1)
+    );
+    fixture.reveal("alert.smooth.item");
+    fixture.cx.update(|window, cx| window.focus(&focus, cx));
+    fixture.key("enter");
+    assert_eq!(
+        page.read_with(&fixture.cx, |page, _| (
+            page.smooth_visible,
+            page.close_requests,
+            page.close_completions
+        )),
+        (false, 2, 2)
+    );
+}
+
+#[test]
+fn alert_gallery_actions_and_dismissal_survive_presentation_changes() {
+    let mut fixture = Fixture::new();
+    fixture.gallery.update(&mut fixture.cx, |gallery, cx| {
+        gallery.selected = ComponentId::Alert;
+        cx.notify();
+    });
+    fixture.draw();
+    let page = fixture
+        .gallery
+        .read_with(&fixture.cx, |gallery, _| gallery.alert.clone());
+    fixture.reveal("alert.action.undo");
+    fixture.click("alert.action.undo");
+    assert_eq!(
+        page.read_with(&fixture.cx, |page, _| (page.last_action, page.action_count)),
+        (Some("UNDO"), 1)
+    );
+    let success = fixture.bounds("alert.action.success");
+    assert!(
+        success.size.height > px(0.),
+        "the action leaves its alert visible"
+    );
+    fixture.reveal("alert.smooth.item");
+    let focus = page.read_with(&fixture.cx, |page, _| page.smooth_close_focus.clone());
+    fixture.cx.update(|window, cx| window.focus(&focus, cx));
+    fixture.key("enter");
+    assert!(!page.read_with(&fixture.cx, |page, _| page.smooth_visible));
+    for control in [
+        "gallery.control.theme",
+        "gallery.control.density",
+        "gallery.control.direction",
+    ] {
+        fixture.click(control);
+        assert_eq!(
+            page.read_with(&fixture.cx, |page, _| (page.last_action, page.action_count)),
+            (Some("UNDO"), 1)
+        );
+        assert!(!page.read_with(&fixture.cx, |page, _| page.smooth_visible));
+    }
+    fixture.reveal("alert.action.undo");
+    fixture.click("alert.action.undo");
+    assert_eq!(page.read_with(&fixture.cx, |page, _| page.action_count), 2);
+}
+
+#[test]
 fn popup_gallery_pages_support_navigation_capture_selection_and_responsive_cards() {
     let mut f = Fixture::new();
     for (kind, id, first_id, second_id) in [

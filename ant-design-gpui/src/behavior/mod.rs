@@ -7,6 +7,7 @@ mod accessibility;
 mod activation;
 mod focus;
 mod motion;
+pub(crate) mod paragraph;
 mod wave;
 
 pub use accessibility::{Accessibility, SemanticElement};

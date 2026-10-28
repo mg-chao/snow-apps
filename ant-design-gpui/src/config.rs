@@ -4,6 +4,7 @@
 //! Retained configuration scopes with explicit ownership and immutable snapshots.
 
 use crate::{
+    alert::{AlertConfig, AlertConfigPatch},
     icons::IconPalette,
     locale::{Locale, LocalePatch},
     popup::{PopupConfig, PopupConfigPatch, PopupTriggers, TooltipConfig, TooltipConfigPatch},
@@ -112,6 +113,7 @@ pub struct ConfigPatch {
     pub popover: PopupConfigPatch,
     pub popconfirm: PopupConfigPatch,
     pub pagination: PaginationConfigPatch,
+    pub alert: AlertConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -131,6 +133,7 @@ pub struct ResolvedConfig {
     pub popover: PopupConfig,
     pub popconfirm: PopupConfig,
     pub pagination: PaginationConfig,
+    pub alert: AlertConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -151,6 +154,7 @@ impl PartialEq for ResolvedConfig {
             && self.popover == other.popover
             && self.popconfirm == other.popconfirm
             && self.pagination == other.pagination
+            && self.alert == other.alert
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -182,6 +186,7 @@ impl Default for ResolvedConfig {
                 ..Default::default()
             },
             pagination: PaginationConfig::default(),
+            alert: AlertConfig::default(),
         }
     }
 }
@@ -278,6 +283,7 @@ impl ResolvedConfig {
             popover: patch.popover.resolve(parent.popover),
             popconfirm: patch.popconfirm.resolve(parent.popconfirm),
             pagination: patch.pagination.resolve(parent.pagination),
+            alert: patch.alert.resolve(&parent.alert),
         })
     }
 }

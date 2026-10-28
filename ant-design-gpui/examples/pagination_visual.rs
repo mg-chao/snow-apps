@@ -28,7 +28,7 @@ use std::{
 
 // Use the exact production compositor for supplementary shaping diagnostics;
 // keep the library's implementation private to its normal public API.
-#[path = "../src/pagination/bidi.rs"]
+#[path = "../src/behavior/paragraph.rs"]
 mod paragraph_probe;
 
 type Centers = Rc<RefCell<HashMap<PaginationItemKind, gpui::Point<Pixels>>>>;

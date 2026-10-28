@@ -1,6 +1,6 @@
 # Ant Design GPUI
 
-Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented and Tag use
+Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag and Alert use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
 
@@ -19,6 +19,7 @@ cargo run --locked --offline --example gallery
 # Open Divider directly: -- --component divider
 # Open Segmented directly: -- --component segmented
 # Open Tag directly: -- --component tag
+# Open Alert directly: -- --component alert
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
 # Open Select directly: -- --component select
@@ -63,6 +64,11 @@ all three variants, cancelable closing, controlled checkable tags, single/multip
 groups, dynamic additions, entrance animation, native drag reordering, component
 tokens, disabled controls and semantic styling. Select Tag or use `--component tag`.
 The dynamic examples add sequential labels; text editing belongs to the host app.
+
+Alert's 13 applicable public examples follow the reference order, with four statuses,
+outlined/filled surfaces, descriptions, icons, banners, actions, measured dismissal,
+component tokens and semantic styling. Select Alert or use `--component alert`.
+See the [Alert guide](docs/alert.md) for ownership, accessibility and focused verification.
 
 Menu provides persistent horizontal, vertical and inline navigation, with collapsed
 rails, responsive overflow, controlled selection/open keys and all 11 public
@@ -675,6 +681,49 @@ cargo test --locked --offline --example gallery tag_
 ./scripts/run-tag-perf.ps1
 ./scripts/test-tag-accessibility.ps1
 ```
+
+## Alert
+
+```rust
+use ant_design_gpui::{Alert, AlertType, ConfigScope};
+
+# fn notice(scope: ConfigScope) -> impl gpui::IntoElement {
+Alert::new("upload-notice")
+    .scope(scope)
+    .alert_type(AlertType::Success)
+    .title("Upload complete")
+    .description("The document is ready to share.")
+    .show_icon(true)
+    .closable(true)
+    .on_close(|_activation, _window, _cx| {})
+    .after_close(|_window, _cx| {})
+# }
+```
+
+Build with a stable ID. Closing persists until remount: `on_close` reports accepted
+dismissal immediately and cannot cancel it; `after_close` runs once after the
+measured collapse and fade. Parent unmount cancels completion. Reduced motion
+finishes immediately with the same callback order, and idle Alerts schedule no frames.
+
+Use text or native content for title, description, icon, action and close slots.
+`AlertVariant::{Outlined, Filled}`, banner defaults, RTL, component tokens and
+inherited `ConfigPatch::alert` defaults follow the reference. `AlertStyles` and
+style resolvers customize semantic slots; GPUI `Styled` customizes the root.
+`close_disabled` is instance-only. The root announces as a native Alert without
+taking focus; the close button uses the existing localized Close label and supports
+pointer, Enter, Space and accessible activation.
+
+```powershell
+cargo run --locked --offline --example gallery -- --component alert
+cargo test --locked --offline --lib alert::
+cargo test --locked --offline --example gallery alert_gallery
+./scripts/run-alert-perf.ps1
+./scripts/test-alert-accessibility.ps1
+```
+
+See the [Alert guide](docs/alert.md) and
+[independent browser fixtures](fixtures/alert/README.md) for API details,
+source provenance and native/browser visual comparison commands.
 
 ## Retained configuration
 

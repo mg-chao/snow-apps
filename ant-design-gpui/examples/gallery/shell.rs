@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use super::{
+    alert::{self, AlertPage},
     button::{ButtonPage, DEMOS, Preview},
     catalog::{COMPONENTS, ComponentId},
     checkbox::{self, CheckboxPage},
@@ -90,6 +91,7 @@ pub(super) struct Gallery {
     pub pagination: Entity<PaginationPage>,
     pub scroll_area: Entity<ScrollAreaPage>,
     pub tabs: Entity<TabsPage>,
+    pub alert: Entity<AlertPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
@@ -110,6 +112,7 @@ pub(super) struct Gallery {
     pagination_anchors: Vec<ScrollAnchor>,
     scroll_area_anchors: Vec<ScrollAnchor>,
     tabs_anchors: Vec<ScrollAnchor>,
+    alert_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
 
@@ -192,7 +195,12 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let alert_anchors: Vec<_> = alert::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         Self {
+            alert: cx.new(|cx| AlertPage::new(scope.clone(), alert_anchors.clone(), cx)),
             menu: cx.new(|cx| MenuPage::new(scope.clone(), menu_anchors.clone(), window, cx)),
             pagination: cx.new(|cx| {
                 PaginationPage::new(scope.clone(), pagination_anchors.clone(), window, cx)
@@ -269,6 +277,7 @@ impl Gallery {
             pagination_anchors,
             scroll_area_anchors,
             tabs_anchors,
+            alert_anchors,
         }
     }
 
@@ -412,6 +421,7 @@ impl Gallery {
                         ComponentId::Pagination => "Navigation / Pagination",
                         ComponentId::ScrollArea => "Layout / Scroll Area",
                         ComponentId::Tabs => "Navigation / Tabs",
+                        ComponentId::Alert => "Feedback / Alert",
                     },
                 ))
             })
@@ -519,6 +529,7 @@ impl Gallery {
                                 ComponentId::Pagination => IconName::EllipsisOutlined,
                                 ComponentId::ScrollArea => IconName::SwapOutlined,
                                 ComponentId::Tabs => IconName::FolderOutlined,
+                                ComponentId::Alert => IconName::AlertOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
                             .accessibility_label(component.title)
@@ -641,6 +652,13 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
+                    alert::DEMOS
+                        .iter()
+                        .zip(&self.alert_anchors)
+                        .filter(|_| self.selected == ComponentId::Alert)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
                     radio::DEMOS
                         .iter()
                         .zip(&self.radio_anchors)
@@ -726,6 +744,7 @@ impl Gallery {
                                 "radio-keyboard" => "Keyboard navigation",
                                 "segmented-style-class" => "Semantic styling",
                                 "tag-style-class" => "Semantic styling",
+                                "alert-style-class" => "Semantic styling",
                                 _ => title,
                             })
                             .text_size(px(12.))
@@ -857,6 +876,7 @@ impl Gallery {
                                 ComponentId::Pagination => "Open Ant Design Pagination reference",
                                 ComponentId::ScrollArea => "Open Ant Design design principles",
                                 ComponentId::Tabs => "Open Ant Design Tabs reference",
+                                ComponentId::Alert => "Open Ant Design Alert reference",
                             })
                             .href(match self.selected {
                                 ComponentId::Button => "https://ant.design/components/button",
@@ -880,6 +900,7 @@ impl Gallery {
                                     "https://ant.design/components/pagination"
                                 }
                                 ComponentId::Tabs => "https://ant.design/components/tabs",
+                                ComponentId::Alert => "https://ant.design/components/alert",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -933,6 +954,7 @@ impl Render for Gallery {
             ComponentId::Pagination => pagination::DEMOS.len(),
             ComponentId::ScrollArea => scroll_area::DEMOS.len(),
             ComponentId::Tabs => tabs::DEMOS.len(),
+            ComponentId::Alert => alert::DEMOS.len(),
         };
         let coverage = match self.selected {
             ComponentId::Input => input_examples::summary(input::DEMOS),
@@ -1052,6 +1074,7 @@ impl Render for Gallery {
                                         ComponentId::Pagination => self.pagination.clone().into_any_element(),
                                         ComponentId::ScrollArea => self.scroll_area.clone().into_any_element(),
                                         ComponentId::Tabs => self.tabs.clone().into_any_element(),
+                                        ComponentId::Alert => self.alert.clone().into_any_element(),
 
                                     })
                                     .child(
@@ -1069,6 +1092,7 @@ impl Render for Gallery {
                                                 ComponentId::Menu => "Tab to enter · Arrow keys to navigate · Enter or Space to select · Escape to close a submenu",
                                                 ComponentId::ScrollArea => "Wheel or drag to scroll · Shift+wheel for horizontal · Arrow and Page keys when focused",
                                                 ComponentId::Tabs => "Arrow keys move focus · Enter or Space selects · Delete requests closing editable tabs",
+                                                ComponentId::Alert => "Tab to navigate actions · Enter or Space to activate or close",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {

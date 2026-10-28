@@ -3,6 +3,10 @@
 
 #![doc = include_str!("../README.md")]
 
+pub mod alert;
+pub use alert::{
+    Alert, AlertConfig, AlertConfigPatch, AlertIcon, AlertStyleResolver, AlertType, AlertVariant,
+};
 pub mod behavior;
 pub mod button;
 pub mod checkbox;

@@ -25,6 +25,7 @@ pub(super) enum ComponentId {
     Pagination,
     ScrollArea,
     Tabs,
+    Alert,
 }
 
 pub(super) struct Component {
@@ -161,6 +162,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Data Display",
         title: "Popover",
         description: "A floating card with additional content.",
+    },
+    Component {
+        id: ComponentId::Alert,
+        navigation_id: "gallery.navigation.alert",
+        group: "Feedback",
+        title: "Alert",
+        description: "Display warning messages that require attention.",
     },
     Component {
         id: ComponentId::Popconfirm,

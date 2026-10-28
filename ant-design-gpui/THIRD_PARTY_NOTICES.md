@@ -5,7 +5,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 
 ## Ant Design
 
-Theme derivation, token defaults, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
+Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
 Popover, Popconfirm, Menu, Pagination, Select, Slider and Tabs visual rules,
 Select's simple Empty illustration,
 rounded popup arrows, gallery examples and descriptions,
@@ -46,6 +46,19 @@ Checkbox's independent browser states and tick geometry measurements are under
 `fixtures/checkbox/`; its generator executes the original Checkbox styles.
 Tag's independent browser measurements and provenance are under
 `fixtures/tag/`; its generator executes the original styles and color resolution.
+
+Alert's native visual rules, component tokens, gallery examples and descriptions
+follow the same pinned Ant Design sources. Its independent browser measurements
+and hashed provenance are under `fixtures/alert/`. The developer generator executes
+the original `components/alert/Alert.tsx` through ReactDOMServer with the original
+Alert style generators, cssinjs serializer, CSSMotion and Ant Design icon components.
+Configuration and theme-registration adapters supply the pinned theme fixtures;
+the component DOM is rendered by the upstream component. The separate browser/native
+capture tools use that output for image and geometry comparisons. These packages
+are development references and add no JavaScript runtime dependency to the crate.
+Complete original MIT notices for the executed React, ReactDOM, rc-component
+motion/util, Ant Design icons and cssinjs packages are retained in
+`fixtures/alert/licenses/`; the fixture records loaded package/source hashes.
 
 Radio's independent browser measurements and input provenance are under
 `fixtures/radio/`; its generator executes the original token defaults and styles.
