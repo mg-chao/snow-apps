@@ -12,6 +12,7 @@ description = "Ant Design components for GPUI"
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions"] }
 unicode-segmentation = "1.13"
 unicode-bidi = "0.3"
+unicode-linebreak = "0.1.5"
 num-bigint = "0.4"
 num-traits = "0.2"
 
@@ -85,6 +86,14 @@ harness = false
 
 [[bench]]
 name = "alert"
+harness = false
+
+[[bench]]
+name = "result"
+harness = false
+
+[[bench]]
+name = "spin"
 harness = false
 
 [profile.dev]

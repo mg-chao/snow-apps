@@ -8,6 +8,8 @@ use crate::{
     icons::IconPalette,
     locale::{Locale, LocalePatch},
     popup::{PopupConfig, PopupConfigPatch, PopupTriggers, TooltipConfig, TooltipConfigPatch},
+    result::{ResultConfig, ResultConfigPatch},
+    spin::{SpinConfig, SpinConfigPatch},
     theme::{ResolvedTheme, ThemeConfig},
 };
 use gpui::{App, AppContext, Context, Entity, Global, Subscription};
@@ -114,6 +116,8 @@ pub struct ConfigPatch {
     pub popconfirm: PopupConfigPatch,
     pub pagination: PaginationConfigPatch,
     pub alert: AlertConfigPatch,
+    pub result: ResultConfigPatch,
+    pub spin: SpinConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -134,6 +138,8 @@ pub struct ResolvedConfig {
     pub popconfirm: PopupConfig,
     pub pagination: PaginationConfig,
     pub alert: AlertConfig,
+    pub result: ResultConfig,
+    pub spin: SpinConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -155,6 +161,8 @@ impl PartialEq for ResolvedConfig {
             && self.popconfirm == other.popconfirm
             && self.pagination == other.pagination
             && self.alert == other.alert
+            && self.result == other.result
+            && self.spin == other.spin
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -187,6 +195,8 @@ impl Default for ResolvedConfig {
             },
             pagination: PaginationConfig::default(),
             alert: AlertConfig::default(),
+            result: ResultConfig::default(),
+            spin: SpinConfig::default(),
         }
     }
 }
@@ -284,6 +294,8 @@ impl ResolvedConfig {
             popconfirm: patch.popconfirm.resolve(parent.popconfirm),
             pagination: patch.pagination.resolve(parent.pagination),
             alert: patch.alert.resolve(&parent.alert),
+            result: patch.result.resolve(&parent.result),
+            spin: patch.spin.resolve(&parent.spin),
         })
     }
 }
@@ -489,6 +501,77 @@ mod tests {
     use super::*;
     use crate::locale::{CommonMessagePatch, LocaleId};
     use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn result_scopes_inherit_styles_without_running_resolvers(cx: &mut TestAppContext) {
+        use crate::result::{ResultStyleResolver, ResultStyles};
+        use gpui::{StyleRefinement, Styled, px};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let resolver = ResultStyleResolver::new(move |_, _, _| {
+            count.fetch_add(1, Ordering::Relaxed);
+            ResultStyles::default()
+        });
+        let (parent, child) = cx.update(|cx| {
+            let parent = ConfigScope::new_window(cx);
+            parent
+                .update_patch(cx, |patch| {
+                    patch.result.styles.root = StyleRefinement::default().pt(px(19.));
+                    patch.result.styles_fn = Some(resolver.clone());
+                })
+                .unwrap();
+            let child = parent
+                .child(
+                    ConfigPatch {
+                        result: crate::result::ResultConfigPatch {
+                            styles: ResultStyles {
+                                title: StyleRefinement::default().text_size(px(27.)),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    cx,
+                )
+                .unwrap();
+            (parent, child)
+        });
+        cx.update(|cx| {
+            let snapshot = child.snapshot(cx);
+            assert_eq!(
+                snapshot.result.styles.root.padding.top,
+                Some(px(19.).into())
+            );
+            assert_eq!(
+                snapshot.result.styles.title.text.font_size,
+                Some(px(27.).into())
+            );
+            assert!(snapshot.result.styles_fn.as_ref() == Some(&resolver));
+            let original = parent.snapshot(cx);
+            assert!(!parent.update_patch(cx, |_| {}).unwrap());
+            assert!(Arc::ptr_eq(&original, &parent.snapshot(cx)));
+            parent
+                .update_patch(cx, |patch| {
+                    patch.result.styles.root = StyleRefinement::default().pt(px(23.));
+                })
+                .unwrap();
+        });
+        cx.update(|cx| {
+            let snapshot = child.snapshot(cx);
+            assert_eq!(
+                snapshot.result.styles.root.padding.top,
+                Some(px(23.).into())
+            );
+            assert_eq!(
+                snapshot.result.styles.title.text.font_size,
+                Some(px(27.).into())
+            );
+        });
+        assert_eq!(calls.load(Ordering::Relaxed), 0, "configuration stays lazy");
+    }
 
     #[gpui::test]
     fn pagination_defaults_inherit_threshold_and_explicit_false(cx: &mut TestAppContext) {

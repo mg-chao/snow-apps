@@ -11,7 +11,6 @@ mod config;
 mod element;
 mod state;
 mod style;
-mod text;
 mod view;
 
 pub use config::{AlertConfig, AlertConfigPatch, AlertIcon, AlertStyleResolver};
@@ -89,7 +88,7 @@ impl Content {
     }
     fn into_element(self, direction: Direction) -> AnyElement {
         match self {
-            Self::Text(text) => text::alert_text(text, direction),
+            Self::Text(text) => crate::behavior::text::paragraph_text(text, direction),
             Self::Element(element) => element,
         }
     }

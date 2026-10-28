@@ -106,7 +106,7 @@ def main():
             "examples/alert_visual.rs", "fixtures/alert/visual-cases.json",
             "scripts/compare_alert_visual.py", "scripts/capture_alert_reference.ps1",
             "src/alert/mod.rs", "src/alert/view.rs", "src/alert/style.rs",
-            "src/alert/state.rs", "src/alert/element.rs", "src/alert/text.rs",
+            "src/alert/state.rs", "src/alert/element.rs", "src/behavior/text.rs",
             "src/alert/config.rs", "src/behavior/paragraph.rs", "src/icons/mod.rs",
         ]
         summary = {

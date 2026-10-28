@@ -31,6 +31,8 @@ pub mod popconfirm;
 pub mod popover;
 pub mod popup;
 pub mod radio;
+pub mod result;
+pub use result::{Result, ResultStatus};
 pub mod root;
 pub mod scroll_area;
 pub mod segmented;
@@ -42,6 +44,8 @@ pub use select::{
 #[cfg(test)]
 mod select_slider_reference_tests;
 pub mod slider;
+pub mod spin;
+pub use spin::{Spin, SpinConfig, SpinConfigPatch, SpinIndicator, SpinPercent, SpinStyleResolver};
 pub mod switch;
 pub mod tabs;
 pub mod tag;

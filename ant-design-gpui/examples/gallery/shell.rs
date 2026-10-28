@@ -28,10 +28,12 @@ use super::{
     pagination::{self, PaginationPage},
     popup::{self, Kind, PopupPage},
     radio::{self, RadioPage},
+    result::{self, ResultPage},
     scroll_area::{self, ScrollAreaPage},
     segmented::{self, SegmentedPage},
     select::{self, SelectPage},
     slider::{self, SliderPage},
+    spin::{self, SpinPage},
     switch::{self, SwitchPage},
     tabs::{self, TabsPage},
     tag::{self, TagPage},
@@ -92,6 +94,8 @@ pub(super) struct Gallery {
     pub scroll_area: Entity<ScrollAreaPage>,
     pub tabs: Entity<TabsPage>,
     pub alert: Entity<AlertPage>,
+    pub result: Entity<ResultPage>,
+    pub spin: Entity<SpinPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
@@ -113,6 +117,8 @@ pub(super) struct Gallery {
     scroll_area_anchors: Vec<ScrollAnchor>,
     tabs_anchors: Vec<ScrollAnchor>,
     alert_anchors: Vec<ScrollAnchor>,
+    result_anchors: Vec<ScrollAnchor>,
+    spin_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
 
@@ -199,7 +205,17 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let result_anchors: Vec<_> = result::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
+        let spin_anchors: Vec<_> = spin::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         Self {
+            spin: cx.new(|cx| SpinPage::new(scope.clone(), spin_anchors.clone(), cx)),
+            result: cx.new(|cx| ResultPage::new(scope.clone(), result_anchors.clone(), cx)),
             alert: cx.new(|cx| AlertPage::new(scope.clone(), alert_anchors.clone(), cx)),
             menu: cx.new(|cx| MenuPage::new(scope.clone(), menu_anchors.clone(), window, cx)),
             pagination: cx.new(|cx| {
@@ -278,6 +294,8 @@ impl Gallery {
             scroll_area_anchors,
             tabs_anchors,
             alert_anchors,
+            result_anchors,
+            spin_anchors,
         }
     }
 
@@ -422,6 +440,8 @@ impl Gallery {
                         ComponentId::ScrollArea => "Layout / Scroll Area",
                         ComponentId::Tabs => "Navigation / Tabs",
                         ComponentId::Alert => "Feedback / Alert",
+                        ComponentId::Result => "Feedback / Result",
+                        ComponentId::Spin => "Feedback / Spin",
                     },
                 ))
             })
@@ -530,6 +550,8 @@ impl Gallery {
                                 ComponentId::ScrollArea => IconName::SwapOutlined,
                                 ComponentId::Tabs => IconName::FolderOutlined,
                                 ComponentId::Alert => IconName::AlertOutlined,
+                                ComponentId::Result => IconName::CheckCircleOutlined,
+                                ComponentId::Spin => IconName::LoadingOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
                             .accessibility_label(component.title)
@@ -659,6 +681,13 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
+                    result::DEMOS
+                        .iter()
+                        .zip(&self.result_anchors)
+                        .filter(|_| self.selected == ComponentId::Result)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
                     radio::DEMOS
                         .iter()
                         .zip(&self.radio_anchors)
@@ -716,6 +745,13 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 );
             let links = links.chain(
+                spin::DEMOS
+                    .iter()
+                    .zip(&self.spin_anchors)
+                    .filter(|_| self.selected == ComponentId::Spin)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
+            let links = links.chain(
                 tabs::DEMOS
                     .iter()
                     .zip(&self.tabs_anchors)
@@ -745,6 +781,8 @@ impl Gallery {
                                 "segmented-style-class" => "Semantic styling",
                                 "tag-style-class" => "Semantic styling",
                                 "alert-style-class" => "Semantic styling",
+                                "result-style-class" => "Semantic styling",
+                                "spin-style-class" => "Semantic styling",
                                 _ => title,
                             })
                             .text_size(px(12.))
@@ -877,6 +915,8 @@ impl Gallery {
                                 ComponentId::ScrollArea => "Open Ant Design design principles",
                                 ComponentId::Tabs => "Open Ant Design Tabs reference",
                                 ComponentId::Alert => "Open Ant Design Alert reference",
+                                ComponentId::Result => "Open Ant Design Result reference",
+                                ComponentId::Spin => "Open Ant Design Spin reference",
                             })
                             .href(match self.selected {
                                 ComponentId::Button => "https://ant.design/components/button",
@@ -901,6 +941,8 @@ impl Gallery {
                                 }
                                 ComponentId::Tabs => "https://ant.design/components/tabs",
                                 ComponentId::Alert => "https://ant.design/components/alert",
+                                ComponentId::Result => "https://ant.design/components/result",
+                                ComponentId::Spin => "https://ant.design/components/spin",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -955,6 +997,8 @@ impl Render for Gallery {
             ComponentId::ScrollArea => scroll_area::DEMOS.len(),
             ComponentId::Tabs => tabs::DEMOS.len(),
             ComponentId::Alert => alert::DEMOS.len(),
+            ComponentId::Result => result::DEMOS.len(),
+            ComponentId::Spin => spin::DEMOS.len(),
         };
         let coverage = match self.selected {
             ComponentId::Input => input_examples::summary(input::DEMOS),
@@ -1075,6 +1119,8 @@ impl Render for Gallery {
                                         ComponentId::ScrollArea => self.scroll_area.clone().into_any_element(),
                                         ComponentId::Tabs => self.tabs.clone().into_any_element(),
                                         ComponentId::Alert => self.alert.clone().into_any_element(),
+                                        ComponentId::Result => self.result.clone().into_any_element(),
+                                        ComponentId::Spin => self.spin.clone().into_any_element(),
 
                                     })
                                     .child(
@@ -1093,6 +1139,8 @@ impl Render for Gallery {
                                                 ComponentId::ScrollArea => "Wheel or drag to scroll · Shift+wheel for horizontal · Arrow and Page keys when focused",
                                                 ComponentId::Tabs => "Arrow keys move focus · Enter or Space selects · Delete requests closing editable tabs",
                                                 ComponentId::Alert => "Tab to navigate actions · Enter or Space to activate or close",
+                                                ComponentId::Result => "Tab to navigate actions · Enter or Space to activate",
+                                                ComponentId::Spin => "Toggle loading or automatic progress · Run progress or a fullscreen operation",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {

@@ -6,8 +6,8 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Pagination, Select, Slider and Tabs visual rules,
-Select's simple Empty illustration,
+Popover, Popconfirm, Menu, Pagination, Select, Slider, Tabs and Result visual rules,
+Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
 Ant Design 6.6.7, commit `f8f5595ab5e891fff6a2a06c5b3b98af643d008e`:
@@ -147,6 +147,15 @@ SOFTWARE.
 
 The original notice is also preserved in `licenses/ant-design-icons-MIT.txt`.
 
+## Spin reference fixtures
+
+Spin's developer-only reference generator executes the original Ant Design
+6.6.7 component, styles, React/ReactDOM, cssinjs, rc util, throttle-debounce,
+TypeScript and their helper packages. These packages are not native runtime
+dependencies. Original notices are retained under `fixtures/spin/licenses/`;
+Ant Design's MIT notice is retained in `fixtures/theme/licenses/ant-design.txt`.
+See `fixtures/spin/README.md` for versions, provenance and regeneration.
+
 ## GPUI and resolved Rust dependencies
 
 The native UI runtime is `gpui` 0.2.2 (Apache-2.0) from `mg-chao/gpui`, revision
@@ -166,6 +175,17 @@ Input editing also directly uses `unicode-segmentation` 1.13.3 and
 `unicode-bidi` 0.3.18; exact numeric support uses `num-bigint` 0.4.8 and
 `num-traits` 0.2.19. Each is licensed under MIT OR Apache-2.0. Their original
 license files are included in the generated dependency bundle.
+
+Result's CSS-compatible text wrapping directly uses `unicode-linebreak` 0.1.5
+(Apache-2.0), an existing locked transitive dependency of GPUI, for Unicode
+Standard Annex #14 line-break opportunities. Native shaping and bidi placement
+remain GPUI-owned. Its original license is retained in
+`licenses/unicode-linebreak-Apache-2.0.txt` and the generated dependency bundle.
+
+The Result audit on 2026-10-28 collected 470 notices for 257 external Rust
+packages and 21 installed vcpkg packages, using the locked Windows x64 manifest
+and standalone-media selection. Its bundle is under
+`../build/ant-design-gpui/result-licenses/third-party/`.
 
 The input implementation collector passed on 2026-10-26 with 486 notices covering 256 external runtime
 Rust packages and 38 repository vcpkg packages. The input implementation audit is under

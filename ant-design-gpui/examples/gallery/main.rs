@@ -16,11 +16,13 @@ mod menu;
 mod pagination;
 mod popup;
 mod radio;
+mod result;
 mod scroll_area;
 mod segmented;
 mod select;
 mod shell;
 mod slider;
+mod spin;
 mod switch;
 mod tabs;
 mod tag;
@@ -79,9 +81,11 @@ impl Options {
                             Some("scroll-area") => catalog::ComponentId::ScrollArea,
                             Some("tabs") => catalog::ComponentId::Tabs,
                             Some("alert") => catalog::ComponentId::Alert,
+                            Some("result") => catalog::ComponentId::Result,
+                            Some("spin") => catalog::ComponentId::Spin,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, or alert"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, or spin"
                                     .into(),
                             ),
                         };
@@ -128,7 +132,7 @@ impl Options {
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--headless]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|spin] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {

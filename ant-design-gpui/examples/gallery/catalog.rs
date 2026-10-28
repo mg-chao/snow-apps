@@ -26,6 +26,8 @@ pub(super) enum ComponentId {
     ScrollArea,
     Tabs,
     Alert,
+    Result,
+    Spin,
 }
 
 pub(super) struct Component {
@@ -169,6 +171,20 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Feedback",
         title: "Alert",
         description: "Display warning messages that require attention.",
+    },
+    Component {
+        id: ComponentId::Result,
+        navigation_id: "gallery.navigation.result",
+        group: "Feedback",
+        title: "Result",
+        description: "Used to feedback the processing results of a series of operations.",
+    },
+    Component {
+        id: ComponentId::Spin,
+        navigation_id: "gallery.navigation.spin",
+        group: "Feedback",
+        title: "Spin",
+        description: "Used for the loading status of a page or a block.",
     },
     Component {
         id: ComponentId::Popconfirm,

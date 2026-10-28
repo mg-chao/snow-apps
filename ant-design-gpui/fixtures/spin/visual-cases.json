@@ -1,0 +1,46 @@
+{
+  "basic": [
+    {"width":360,"height":64,"size":"small"},
+    {"width":360,"height":64,"size":"medium"},
+    {"width":360,"height":64,"size":"large"},
+    {"width":360,"height":88,"description":"Loading..."},
+    {"width":360,"height":64,"spinning":false}
+  ],
+  "progress": [
+    {"width":360,"height":64,"percent":0},
+    {"width":360,"height":64,"percent":1},
+    {"width":360,"height":64,"percent":25},
+    {"width":360,"height":64,"percent":50},
+    {"width":360,"height":64,"percent":75},
+    {"width":360,"height":64,"percent":100},
+    {"width":360,"height":64,"percent":-20},
+    {"width":360,"height":64,"percent":140}
+  ],
+  "nested": [
+    {"width":360,"height":112,"nested":true,"description":"Loading..."},
+    {"width":360,"height":112,"nested":true,"spinning":false},
+    {"width":360,"height":112,"nested":true,"size":"large","percent":65}
+  ],
+  "custom": [
+    {"width":360,"height":64,"size":"small","indicator":"square"},
+    {"width":360,"height":88,"description":"Loading...","indicator":"square"},
+    {"width":360,"height":64,"size":"large","indicator":"square","percent":42}
+  ],
+  "tokens": [
+    {"width":360,"height":64,"size":"small","tokenCase":true},
+    {"width":360,"height":88,"description":"Loading...","tokenCase":true},
+    {"width":360,"height":64,"size":"large","percent":65,"tokenCase":true}
+  ],
+  "semantic": [
+    {"width":360,"height":88,"description":"Loading...","semantic":true},
+    {"width":360,"height":112,"nested":true,"description":"Loading...","semantic":true},
+    {"width":360,"height":64,"percent":65,"semantic":true}
+  ],
+  "fullscreen": [
+    {"width":700,"height":960,"fullscreen":true,"description":"Loading...","size":"large"}
+  ],
+  "backdrops": [
+    {"width":360,"height":112,"nested":true,"description":"Loading...","backdropCase":"uniform"},
+    {"width":360,"height":112,"nested":true,"description":"Loading...","backdropCase":"stripes"}
+  ]
+}

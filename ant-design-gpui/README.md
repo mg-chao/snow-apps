@@ -1,6 +1,6 @@
 # Ant Design GPUI
 
-Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag and Alert use
+Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result and Spin use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
 
@@ -20,6 +20,8 @@ cargo run --locked --offline --example gallery
 # Open Segmented directly: -- --component segmented
 # Open Tag directly: -- --component tag
 # Open Alert directly: -- --component alert
+# Open Spin directly: -- --component spin
+# Open Result directly: -- --component result
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
 # Open Select directly: -- --component select
@@ -70,6 +72,11 @@ outlined/filled surfaces, descriptions, icons, banners, actions, measured dismis
 component tokens and semantic styling. Select Alert or use `--component alert`.
 See the [Alert guide](docs/alert.md) for ownership, accessibility and focused verification.
 
+Result provides all seven statuses, the original exception illustrations, custom
+content and actions, inherited semantic styling, and component tokens. Its gallery
+follows the nine public reference examples and includes the token example. Select
+Result or use `--component result`; see the [Result guide](docs/result.md).
+
 Menu provides persistent horizontal, vertical and inline navigation, with collapsed
 rails, responsive overflow, controlled selection/open keys and all 11 public
 reference demos. See the [Menu guide](docs/menu.md) for integration and focused verification.
@@ -90,6 +97,12 @@ the focused `cargo test --locked --offline --lib tabs::` command.
 
 Run only this example's offscreen regression tests with
 `cargo test --locked --offline --example gallery`.
+
+Spin provides native four-dot loading, delayed activation, embedded content,
+determinate and automatic progress, custom indicators, and fullscreen masks.
+The gallery includes all nine public reference examples. See the
+[Spin guide](docs/spin.md) and [verification report](docs/spin-verification.md)
+for ownership, accessibility, visual comparisons, performance, and known limits.
 
 ## Native example and integration
 

@@ -13,14 +13,78 @@ use gpui::{
 };
 
 use crate::{Direction, behavior::paragraph::shape_wrapped_line};
+use unicode_linebreak::{BreakOpportunity, linebreaks};
 
-pub(super) fn alert_text(text: SharedString, direction: Direction) -> AnyElement {
-    AlertText { text, direction }.into_any_element()
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct CssLayoutStatistics {
+    pub created: usize,
+    pub reused: usize,
+}
+
+#[cfg(test)]
+impl gpui::Global for CssLayoutStatistics {}
+
+#[cfg(test)]
+pub(crate) fn css_layout_statistics(cx: &App) -> CssLayoutStatistics {
+    cx.try_global::<CssLayoutStatistics>()
+        .copied()
+        .unwrap_or_default()
+}
+
+pub(crate) fn paragraph_text(text: SharedString, direction: Direction) -> AnyElement {
+    AlertText {
+        text,
+        direction,
+        logical_text: None,
+    }
+    .into_any_element()
+}
+
+/// CSS normal/nowrap text collapses ASCII whitespace before shaping. Keep the
+/// original logical value on the same semantic element for accessibility.
+pub(crate) fn normal_paragraph_text(text: SharedString, direction: Direction) -> AnyElement {
+    AlertText {
+        text: collapse_css_whitespace(&text),
+        direction,
+        logical_text: Some(text),
+    }
+    .into_any_element()
+}
+
+fn collapse_css_whitespace(text: &SharedString) -> SharedString {
+    let whitespace = |byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c);
+    let mut previous_space = false;
+    let needs_collapse = text.bytes().enumerate().any(|(index, byte)| {
+        let space = whitespace(byte);
+        let changed =
+            space && (byte != b' ' || previous_space || index == 0 || index + 1 == text.len());
+        previous_space = space;
+        changed
+    });
+    if !needs_collapse {
+        return text.clone();
+    }
+    let mut collapsed = String::with_capacity(text.len());
+    let mut pending_space = false;
+    for character in text.chars() {
+        if matches!(character, ' ' | '\t' | '\n' | '\r' | '\u{000c}') {
+            pending_space = !collapsed.is_empty();
+        } else {
+            if pending_space {
+                collapsed.push(' ');
+                pending_space = false;
+            }
+            collapsed.push(character);
+        }
+    }
+    collapsed.into()
 }
 
 struct AlertText {
     text: SharedString,
     direction: Direction,
+    logical_text: Option<SharedString>,
 }
 
 enum TextLayout {
@@ -36,6 +100,7 @@ struct LayoutKey {
     rem: Pixels,
     scale: f32,
     font: FontId,
+    css_wrap: bool,
 }
 
 impl LayoutKey {
@@ -49,6 +114,7 @@ impl LayoutKey {
             rem: window.rem_size(),
             scale: window.scale_factor(),
             font,
+            css_wrap: false,
         }
     }
 }
@@ -126,6 +192,11 @@ impl Layout {
         #[cfg(test)]
         {
             self.compositions += 1;
+        }
+        if self.key.css_wrap {
+            self.measure_css(width, window);
+            self.cache_width(width);
+            return;
         }
         let mut lines = Vec::new();
         self.width = px(0.);
@@ -222,6 +293,10 @@ impl Layout {
             lines.truncate(maximum.max(1));
         }
         self.lines = Rc::from(lines);
+        self.cache_width(width);
+    }
+
+    fn cache_width(&mut self, width: Option<Pixels>) {
         if self.variants.len() == 4 {
             self.variants.remove(0);
         }
@@ -230,6 +305,106 @@ impl Layout {
             width: self.width,
             lines: self.lines.clone(),
         });
+    }
+
+    /// CSS normal wrapping permits overflow inside an unbreakable segment.
+    /// Native glyph shaping and bidi placement remain shared with other labels;
+    /// UAX #14 supplies legal opportunities instead of emergency character breaks.
+    fn measure_css(&mut self, width: Option<Pixels>, window: &Window) {
+        if self.text.is_empty() {
+            self.width = px(0.);
+            self.lines = Rc::from([]);
+            return;
+        }
+        let mut display = self.text.clone();
+        let mut run = self.run.clone();
+        let (affix, from) = match &self.overflow {
+            Some(TextOverflow::Truncate(affix)) => (affix.as_ref(), TruncateFrom::End),
+            Some(TextOverflow::TruncateStart(affix)) => (affix.as_ref(), TruncateFrom::Start),
+            Some(TextOverflow::TruncateMiddle(affix)) => (affix.as_ref(), TruncateFrom::Middle),
+            None => ("", TruncateFrom::End),
+        };
+        if self.max_lines.is_none()
+            && self.overflow.is_some()
+            && let Some(width) = width
+        {
+            let mut wrapper = window
+                .text_system()
+                .line_wrapper(run.font.clone(), self.font_size);
+            display = wrapper
+                .truncate_line(display, width, affix, std::slice::from_ref(&run), from)
+                .0;
+            run.len = display.len();
+        }
+        let shape = |range: std::ops::Range<usize>| {
+            shape_wrapped_line(
+                display.clone(),
+                range,
+                self.direction,
+                self.font_size,
+                &run,
+                window,
+            )
+        };
+        let full = shape(0..display.len());
+        if !self.wrap || width.is_none_or(|width| full.width() <= width) {
+            self.width = full.width();
+            self.lines = Rc::from([full]);
+            return;
+        }
+        let width = width.expect("constrained wrapping");
+        let trimmed_end =
+            |start: usize, end: usize| start + display[start..end].trim_end_matches(' ').len();
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        let mut previous = 0;
+        for (end, opportunity) in linebreaks(&display) {
+            if previous > start && shape(start..trimmed_end(start, end)).width() > width {
+                ranges.push(start..trimmed_end(start, previous));
+                start = previous;
+            }
+            previous = end;
+            if opportunity == BreakOpportunity::Mandatory {
+                ranges.push(start..trimmed_end(start, end));
+                start = end;
+            }
+        }
+        let mut lines = Vec::with_capacity(ranges.len());
+        let maximum = self.max_lines.map(|maximum| maximum.max(1));
+        for (index, range) in ranges.iter().enumerate() {
+            if maximum.is_some_and(|maximum| index + 1 == maximum && ranges.len() > maximum) {
+                let tail: SharedString = display[range.start..].to_owned().into();
+                let mut tail_run = run.clone();
+                tail_run.len = tail.len();
+                let mut wrapper = window
+                    .text_system()
+                    .line_wrapper(run.font.clone(), self.font_size);
+                let truncated = wrapper
+                    .truncate_line(tail, width, affix, std::slice::from_ref(&tail_run), from)
+                    .0;
+                tail_run.len = truncated.len();
+                lines.push(shape_wrapped_line(
+                    truncated.clone(),
+                    0..truncated.len(),
+                    self.direction,
+                    self.font_size,
+                    &tail_run,
+                    window,
+                ));
+                break;
+            }
+            lines.push(shape(range.clone()));
+        }
+        self.width = if width > px(0.) {
+            width
+        } else {
+            lines
+                .iter()
+                .map(|line| line.width())
+                .max_by(|a, b| f32::from(*a).total_cmp(&f32::from(*b)))
+                .unwrap_or(px(0.))
+        };
+        self.lines = Rc::from(lines);
     }
 }
 
@@ -243,6 +418,23 @@ fn reuse_layout(
     previous
         .filter(|previous| previous.borrow().key == key)
         .unwrap_or_else(|| Rc::new(RefCell::new(Layout::new(text, direction, window))))
+}
+
+fn reuse_css_layout(
+    previous: Option<Rc<RefCell<Layout>>>,
+    text: SharedString,
+    direction: Direction,
+    window: &Window,
+) -> Rc<RefCell<Layout>> {
+    let mut key = LayoutKey::new(text.clone(), direction, window);
+    key.css_wrap = true;
+    previous
+        .filter(|previous| previous.borrow().key == key)
+        .unwrap_or_else(|| {
+            let mut layout = Layout::new(text, direction, window);
+            layout.key.css_wrap = true;
+            Rc::new(RefCell::new(layout))
+        })
 }
 
 impl Element for AlertText {
@@ -259,7 +451,7 @@ impl Element for AlertText {
         Some(Role::Label)
     }
     fn write_a11y_info(&self, node: &mut accesskit::Node) {
-        node.set_value(self.text.to_string());
+        node.set_value(self.logical_text.as_ref().unwrap_or(&self.text).to_string());
     }
 
     fn request_layout(
@@ -270,7 +462,8 @@ impl Element for AlertText {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let style = window.text_style();
-        if self.direction == Direction::Ltr
+        if self.logical_text.is_none()
+            && self.direction == Direction::Ltr
             && self.text.is_ascii()
             && style.text_overflow.is_none()
             && style.line_clamp.is_none()
@@ -284,13 +477,39 @@ impl Element for AlertText {
             );
             return (id, TextLayout::Native(state));
         }
+        #[cfg(test)]
+        let created = std::cell::Cell::new(false);
         let layout = window.with_element_state(
             global_id.expect("Alert text has a stable local ID"),
             |previous, window| {
-                let layout = reuse_layout(previous, self.text.clone(), self.direction, window);
+                #[cfg(test)]
+                let prior = previous.clone();
+                let layout = if self.logical_text.is_some() {
+                    reuse_css_layout(previous, self.text.clone(), self.direction, window)
+                } else {
+                    reuse_layout(previous, self.text.clone(), self.direction, window)
+                };
+                #[cfg(test)]
+                created.set(
+                    prior
+                        .as_ref()
+                        .is_none_or(|prior| !Rc::ptr_eq(prior, &layout)),
+                );
                 (layout.clone(), layout)
             },
         );
+        #[cfg(test)]
+        if self.logical_text.is_some() {
+            if cx.try_global::<CssLayoutStatistics>().is_none() {
+                cx.set_global(CssLayoutStatistics::default());
+            }
+            let stats = cx.global_mut::<CssLayoutStatistics>();
+            if created.get() {
+                stats.created += 1;
+            } else {
+                stats.reused += 1;
+            }
+        }
         let measured = layout.clone();
         let id = window.request_measured_layout(
             Default::default(),
@@ -367,10 +586,20 @@ impl Element for AlertText {
         let layout = layout.borrow();
         let mut origin = bounds.origin;
         for line in layout.lines.iter() {
+            // CSS expands an unbreakable line toward the paragraph's inline
+            // end. Its requested centering applies only while the line fits.
+            let align = if layout.key.css_wrap && line.width() > bounds.size.width {
+                match layout.direction {
+                    Direction::Ltr => TextAlign::Left,
+                    Direction::Rtl => TextAlign::Right,
+                }
+            } else {
+                layout.align
+            };
             let _ = line.paint(
                 origin,
                 layout.line_height,
-                layout.align,
+                align,
                 Some(bounds.size.width),
                 window,
                 cx,
@@ -391,10 +620,293 @@ mod tests {
         let text = AlertText {
             text: raw.clone(),
             direction: Direction::Rtl,
+            logical_text: None,
         };
         let mut node = accesskit::Node::new(text.a11y_role().unwrap());
         text.write_a11y_info(&mut node);
         assert_eq!(node.value(), Some(raw.as_ref()));
+    }
+
+    #[test]
+    fn result_css_whitespace_preserves_unicode_spaces_and_original_accessible_text() {
+        let raw: SharedString = " \tTask\n\r  complete\u{000c}مرحبا\u{00a0}世界 \t".into();
+        let display = collapse_css_whitespace(&raw);
+        assert_eq!(display.as_ref(), "Task complete مرحبا\u{00a0}世界");
+        let element = AlertText {
+            text: display,
+            direction: Direction::Rtl,
+            logical_text: Some(raw.clone()),
+        };
+        let mut node = accesskit::Node::new(element.a11y_role().unwrap());
+        element.write_a11y_info(&mut node);
+        assert_eq!(node.value(), Some(raw.as_ref()));
+        assert_eq!(collapse_css_whitespace(&" \r\n\t".into()).as_ref(), "");
+        assert_eq!(
+            collapse_css_whitespace(&"\u{00a0}\u{000b}".into()).as_ref(),
+            "\u{00a0}\u{000b}"
+        );
+        assert_eq!(
+            collapse_css_whitespace(&"A normal sentence".into()).as_ref(),
+            "A normal sentence"
+        );
+    }
+
+    #[test]
+    fn result_css_wrap_preserves_unbreakable_segments_and_unicode_line_opportunities() {
+        let mut cx = TestAppContext::single();
+        let window = cx.add_window(|_, _| gpui::Empty);
+        window
+            .update(&mut cx, |_, window, _| {
+                for direction in [Direction::Ltr, Direction::Rtl] {
+                    let token = "LongUnbrokenResultTitleThatCannotBreakAtAnOrdinaryWordBoundary";
+                    let text: SharedString = token.into();
+                    let css = reuse_css_layout(None, text.clone(), direction, window);
+                    css.borrow_mut().measure(Some(px(80.)), window);
+                    assert_eq!(css.borrow().lines.len(), 1);
+                    assert_eq!(css.borrow().lines[0].text.as_ref(), token);
+                    assert!(css.borrow().lines[0].width() > px(80.));
+                    let mixed: SharedString = format!("short words {token} after done").into();
+                    let css = reuse_css_layout(None, mixed, direction, window);
+                    css.borrow_mut().measure(Some(px(80.)), window);
+                    assert!(css.borrow().lines.len() >= 3);
+                    assert!(
+                        css.borrow()
+                            .lines
+                            .iter()
+                            .any(|line| line.text.as_ref() == token)
+                    );
+                    let cjk: SharedString = "第一行第二行第三行第四行".into();
+                    let css = reuse_css_layout(None, cjk.clone(), direction, window);
+                    css.borrow_mut().measure(Some(px(30.)), window);
+                    assert!(css.borrow().lines.len() > 1);
+                    assert_eq!(
+                        css.borrow()
+                            .lines
+                            .iter()
+                            .map(|line| line.text.as_ref())
+                            .collect::<String>(),
+                        cjk.as_ref()
+                    );
+                    let glued: SharedString = "Long\u{00a0}nonbreaking\u{00a0}phrase".into();
+                    let css = reuse_css_layout(None, glued.clone(), direction, window);
+                    css.borrow_mut().measure(Some(px(30.)), window);
+                    assert_eq!(css.borrow().lines.len(), 1);
+                    assert_eq!(css.borrow().lines[0].text, glued);
+                    let family = "👩‍👩‍👧‍👦";
+                    let css = reuse_css_layout(None, family.repeat(2).into(), direction, window);
+                    css.borrow_mut().measure(Some(px(10.)), window);
+                    assert_eq!(css.borrow().lines.len(), 2);
+                    assert!(
+                        css.borrow()
+                            .lines
+                            .iter()
+                            .all(|line| line.text.as_ref() == family)
+                    );
+                }
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn result_css_mode_retains_native_overflow_clamping_and_bounded_warm_cache() {
+        let mut cx = TestAppContext::single();
+        let ran = Rc::new(std::cell::Cell::new(false));
+        let probe_ran = ran.clone();
+        let window = cx.add_window(|_, _| CacheProbe(Rc::new(move |window| {
+            if probe_ran.replace(true) { return; }
+            let raw: SharedString = "Short words followed by LongUnbreakableIdentifier and additional words for wrapping.".into();
+            let css = reuse_css_layout(None, raw.clone(), Direction::Ltr, window);
+            for width in [None, Some(px(80.)), Some(px(120.))] {
+                css.borrow_mut().measure(width, window);
+            }
+            let count = css.borrow().compositions;
+            let warm = reuse_css_layout(Some(css.clone()), raw.clone(), Direction::Ltr, window);
+            assert!(Rc::ptr_eq(&css, &warm));
+            for width in [None, Some(px(80.)), Some(px(120.))] {
+                warm.borrow_mut().measure(width, window);
+            }
+            assert_eq!(warm.borrow().compositions, count);
+            assert!(!Rc::ptr_eq(&css, &reuse_css_layout(Some(css.clone()), "Changed text".into(), Direction::Ltr, window)));
+            assert!(!Rc::ptr_eq(&css, &reuse_css_layout(Some(css.clone()), raw.clone(), Direction::Rtl, window)));
+            window.with_text_style(Some(gpui::TextStyleRefinement { font_size: Some(px(24.).into()), ..Default::default() }), |window| {
+                assert!(!Rc::ptr_eq(&css, &reuse_css_layout(Some(css.clone()), raw.clone(), Direction::Ltr, window)));
+            });
+            let old_scale = window.scale_factor();
+            window.set_scale_factor(if old_scale == 1.5 { 2. } else { 1.5 });
+            assert!(!Rc::ptr_eq(&css, &reuse_css_layout(Some(css.clone()), raw.clone(), Direction::Ltr, window)));
+            window.set_scale_factor(old_scale);
+            let native = reuse_layout(Some(css.clone()), raw.clone(), Direction::Ltr, window);
+            assert!(!Rc::ptr_eq(&css, &native), "native emergency wrapping has a different cache mode");
+            for width in 40..50 { css.borrow_mut().measure(Some(px(width as f32)), window); }
+            assert_eq!(css.borrow().variants.len(), 4);
+            window.with_text_style(Some(gpui::TextStyleRefinement { line_clamp: Some(2), ..Default::default() }), |window| {
+                let clamped = reuse_css_layout(None, raw.clone(), Direction::Ltr, window);
+                clamped.borrow_mut().measure(Some(px(80.)), window);
+                assert_eq!(clamped.borrow().lines.len(), 2);
+            });
+            window.with_text_style(Some(gpui::TextStyleRefinement {
+                white_space: Some(WhiteSpace::Nowrap),
+                text_overflow: Some(TextOverflow::Truncate("…".into())),
+                ..Default::default()
+            }), |window| {
+                let ellipsis = reuse_css_layout(None, raw, Direction::Ltr, window);
+                ellipsis.borrow_mut().measure(Some(px(80.)), window);
+                assert_eq!(ellipsis.borrow().lines.len(), 1);
+                assert!(ellipsis.borrow().lines[0].text.ends_with('…'));
+                assert!(ellipsis.borrow().lines[0].width() <= px(80.));
+            });
+        })));
+        let mut visual = VisualTestContext::from_window(window.into(), &cx);
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(
+            ran.get(),
+            "cache and native style probes run during real prepaint"
+        );
+    }
+
+    /// Emit deterministic glyph textures so overflow tests observe actual paint
+    /// coordinates instead of the default no-op text system's empty rasters.
+    struct PaintTextSystem;
+    impl gpui::PlatformTextSystem for PaintTextSystem {
+        fn add_fonts(&self, fonts: Vec<std::borrow::Cow<'static, [u8]>>) -> gpui::Result<()> {
+            gpui::NoopTextSystem.add_fonts(fonts)
+        }
+        fn all_font_names(&self) -> Vec<String> {
+            gpui::NoopTextSystem.all_font_names()
+        }
+        fn font_id(&self, font: &gpui::Font) -> gpui::Result<gpui::FontId> {
+            gpui::NoopTextSystem.font_id(font)
+        }
+        fn font_metrics(&self, font: gpui::FontId) -> gpui::FontMetrics {
+            gpui::NoopTextSystem.font_metrics(font)
+        }
+        fn typographic_bounds(
+            &self,
+            font: gpui::FontId,
+            glyph: gpui::GlyphId,
+        ) -> gpui::Result<Bounds<f32>> {
+            gpui::NoopTextSystem.typographic_bounds(font, glyph)
+        }
+        fn advance(
+            &self,
+            font: gpui::FontId,
+            glyph: gpui::GlyphId,
+        ) -> gpui::Result<gpui::Size<f32>> {
+            gpui::NoopTextSystem.advance(font, glyph)
+        }
+        fn glyph_for_char(&self, font: gpui::FontId, ch: char) -> Option<gpui::GlyphId> {
+            gpui::NoopTextSystem.glyph_for_char(font, ch)
+        }
+        fn glyph_raster_bounds(
+            &self,
+            _: &gpui::RenderGlyphParams,
+        ) -> gpui::Result<Bounds<gpui::DevicePixels>> {
+            Ok(Bounds {
+                origin: gpui::point(gpui::DevicePixels(0), gpui::DevicePixels(-8)),
+                size: gpui::size(gpui::DevicePixels(3), gpui::DevicePixels(8)),
+            })
+        }
+        fn rasterize_glyph(
+            &self,
+            _: &gpui::RenderGlyphParams,
+            bounds: Bounds<gpui::DevicePixels>,
+        ) -> gpui::Result<(gpui::Size<gpui::DevicePixels>, Vec<u8>)> {
+            Ok((
+                bounds.size,
+                vec![255; (bounds.size.width.0 * bounds.size.height.0) as usize],
+            ))
+        }
+        fn layout_line(
+            &self,
+            text: &str,
+            font_size: Pixels,
+            runs: &[gpui::FontRun],
+        ) -> gpui::LineLayout {
+            gpui::NoopTextSystem.layout_line(text, font_size, runs)
+        }
+        fn recommended_rendering_mode(
+            &self,
+            font: gpui::FontId,
+            size: Pixels,
+        ) -> gpui::TextRenderingMode {
+            gpui::NoopTextSystem.recommended_rendering_mode(font, size)
+        }
+    }
+
+    struct CssOverflowProbe {
+        direction: Direction,
+        text: SharedString,
+    }
+    impl Render for CssOverflowProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .w(px(80.))
+                .ml(px(200.))
+                .text_size(px(14.))
+                .line_height(px(22.))
+                .text_center()
+                .debug_selector(|| "result-css-overflow".into())
+                .child(normal_paragraph_text(self.text.clone(), self.direction))
+        }
+    }
+
+    #[test]
+    fn result_css_overlong_lines_follow_browser_inline_start_and_fitting_lines_center() {
+        for (direction, text) in [
+            (Direction::Ltr, "UnbrokenResultIdentifier"),
+            (Direction::Rtl, "UnbrokenResultIdentifier"),
+            (Direction::Ltr, "Fit"),
+        ] {
+            let mut cx = TestAppContext::build_with_text_system(
+                gpui::TestDispatcher::new(0),
+                None,
+                std::sync::Arc::new(PaintTextSystem),
+            );
+            let window = cx.add_window(|_, _| CssOverflowProbe {
+                direction,
+                text: text.into(),
+            });
+            let mut visual = VisualTestContext::from_window(window.into(), &cx);
+            visual.update(|window, cx| window.draw(cx).clear(cx));
+            let bounds = visual.debug_bounds("result-css-overflow").unwrap();
+            visual.update(|window, _| {
+                let scene = window.rendered_scene();
+                let sprites: Vec<_> = scene
+                    .monochrome_sprites
+                    .iter()
+                    .map(|sprite| sprite.bounds)
+                    .chain(scene.subpixel_sprites.iter().map(|sprite| sprite.bounds))
+                    .collect();
+                assert!(!sprites.is_empty(), "observe actual native glyph paint");
+                let scale = window.scale_factor();
+                let left = sprites
+                    .iter()
+                    .map(|bounds| bounds.origin.x.0 / scale)
+                    .fold(f32::INFINITY, f32::min);
+                let right = sprites
+                    .iter()
+                    .map(|bounds| (bounds.origin.x.0 + bounds.size.width.0) / scale)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if text == "Fit" {
+                    assert!(
+                        left > f32::from(bounds.origin.x) && right < f32::from(bounds.right()),
+                        "fitting text remains centered"
+                    );
+                } else if direction == Direction::Ltr {
+                    assert!(
+                        (left - f32::from(bounds.origin.x)).abs() < 1.,
+                        "LTR begins at the browser's inline start: left={left}, bounds={bounds:?}"
+                    );
+                    assert!(right > f32::from(bounds.right()));
+                } else {
+                    assert!(left < f32::from(bounds.origin.x));
+                    assert!(
+                        right <= f32::from(bounds.right()) + 1.
+                            && right > f32::from(bounds.origin.x)
+                    );
+                }
+            });
+        }
     }
 
     #[test]
@@ -447,7 +959,7 @@ mod tests {
                     .line_height(px(22.))
                     .text_right()
                     .debug_selector(|| "alert-bidi-wrap".into())
-                    .child(alert_text(
+                    .child(paragraph_text(
                         "مرحبا 500 results. Long alert content wraps into several lines.".into(),
                         Direction::Rtl,
                     )),
@@ -500,7 +1012,7 @@ mod tests {
                                 .debug_selector(move || {
                                     format!("alert-leading-{direction:?}")
                                 })
-                        .child(alert_text("Additional description. Long alert content wraps into several lines when constrained.".into(), direction))
+                        .child(paragraph_text("Additional description. Long alert content wraps into several lines when constrained.".into(), direction))
                         }),
                 )
         }
@@ -534,7 +1046,7 @@ mod tests {
                 div().w(px(160.)).text_size(px(14.)).line_height(px(22.)).text_right()
                     .when(mode==1,|d|d.line_clamp(2)).when(mode==2,|d|d.truncate())
                     .debug_selector(move||format!("alert-overflow-{mode}"))
-                    .child(alert_text("مرحبا 500 results. Long alert content wraps into several lines and remains logically accessible.".into(),Direction::Rtl))
+                    .child(paragraph_text("مرحبا 500 results. Long alert content wraps into several lines and remains logically accessible.".into(),Direction::Rtl))
             }))
         }
     }

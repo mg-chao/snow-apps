@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "platform": "Windows x64",
+  "upstream": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e"
+  },
+  "library_tests": {
+    "passed": 36,
+    "failed": 0,
+    "command": "cargo test --locked --offline --lib -- result:: behavior::text:: config::tests::result_scopes alert::tests::alert_wrapping_and_custom_content_use_actual_native_layout --test-threads=1",
+    "independent_browser_slot_comparisons": 952,
+    "narrow_exception_direction_status_scale_combinations": 36
+  },
+  "gallery_tests": {
+    "passed": 4,
+    "failed": 0,
+    "command": "cargo test --locked --offline --example gallery result_gallery -- --test-threads=1"
+  },
+  "clippy": {
+    "passed": true,
+    "command": "cargo clippy --locked --offline --lib --tests --example gallery --example result_visual --bench result -- -D warnings"
+  },
+  "scoped_formatting": {
+    "passed": true,
+    "command": "rustfmt --edition 2024 --check --config skip_children=true <touched Rust files>"
+  },
+  "git_diff_check": {
+    "passed": true
+  },
+  "full_test_suites_run": false,
+  "visual": {
+    "passed": true,
+    "reference_measurements": 1312,
+    "image_pairs": 696,
+    "results_compared": 744,
+    "max_geometry_error_logical_px": 0.515625,
+    "evidence": "visual-validation-windows.json",
+    "zero_area_slots": "Paint markers cannot measure zero-area slots; these are recorded explicitly and tested with native debug layout bounds."
+  },
+  "performance": {
+    "passed": true,
+    "release_cases": 54,
+    "idle_animation_callbacks": 0,
+    "warm_illustration_parse_raster_misses": 0,
+    "max_tracked_raster_bytes": 3560928,
+    "evidence": "performance-windows.json",
+    "backend": "GPUI TestAppContext/NoopTextSystem; excludes native GPU and production font latency"
+  },
+  "licenses": {
+    "collector_passed": true,
+    "notices": 470,
+    "rust_packages": 257,
+    "vcpkg_packages": 21,
+    "bundle": "build/ant-design-gpui/result-licenses/third-party"
+  },
+  "gallery_captures": {
+    "result-gallery.png": {
+      "sha256": "920c831ddd6bd59f0f5ccd2e796c0363209b40e3f5edd078af76cb0340d417a6"
+    },
+    "result-gallery-dark-compact-rtl-narrow.png": {
+      "sha256": "bef31565016621243b3a69d065598fb3f153349f85a2c43eb062322a2b74b554"
+    }
+  },
+  "known_differences": "known-discrepancies-windows.json",
+  "not_verified": [
+    "Native macOS/Linux rendering",
+    "Production GPU frame latency",
+    "Production operating-system font shaping and glyph rasterization latency"
+  ],
+  "repository_check_limitations": [
+    "Whole-project cargo fmt --all --check reports pre-existing CRLF files outside the touched Rust sources; scoped LF formatting passes.",
+    "Very tall gallery windows are natively clamped; focused component captures and offscreen gallery tests cover the remaining categories."
+  ],
+  "incidental_changes": [
+    {
+      "path": "src/spin/view.rs",
+      "change": "Equivalent nested-condition simplification to clear a concurrent Spin Clippy warning; no behavioral change."
+    }
+  ],
+  "log_sha256": {
+    "result-tests.log": "04a84838ca8b88359f797276c885f2efa0d04187ea1c981edad30696505865ab",
+    "result-gallery-tests.log": "e6a18135e9f8cad6fdafa6a460efec0ed7869676847109b83345b21d916417a0",
+    "result-clippy.log": "b0fb42b8c044aac09446e80da3122966a656153612f99eea92832a0d5d47bf6d",
+    "result-scoped-format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "result-diff-check.log": "705c65d7ac0cd7c9b6495eff59b30835f1e75cd161b443c46318cbe227a17700",
+    "result-performance.log": "3b11c871822536ceaa9e8f2c202b95da7db72b905827a5ed2cee54f96ccc013b"
+  },
+  "source_sha256": {
+    "examples/result_visual.rs": "2a53d5f0f9aaef0108246b5ff9ec26737fd5a0e032290c84202a9b9a6b2822f5",
+    "fixtures/result/visual-cases.json": "c71942e3a9f2a1321d2a9865950cb920661246506e421b26ae1d6aa6d3186660",
+    "scripts/compare_result_visual.py": "800008d6b9c1f902392e6a3f2fef8e84f62bfbb5bb27e2a0662631cd11efdd6a",
+    "scripts/capture_result_reference.mjs": "3fc52f83ae6c269061811a25eeb5bd58c55a7879dd507ad4c3ee1ebc56f38d64",
+    "src/result/mod.rs": "a30c42ea9f352a23f4927bf16534d2f4cfe9ae54cf896e08a9b3af849459934a",
+    "src/result/view.rs": "d3f2238fb9b67f7c0d27b671368b172d432c0641edd90417a244513528128208",
+    "src/result/style.rs": "248a0d81ed04cfb54029e73645edbb49d3dd073a49e11bfd96d43ab41b3cbd43",
+    "src/result/config.rs": "c31c165d55de03a855c9d2c6cbe2e1ac6cbdfda5cc31593fa4ac337a4180f451",
+    "src/behavior/paragraph.rs": "ac679b93f18842efd061583d7d76c3e2de810b04b7b642764a1b7fff21641479",
+    "src/behavior/text.rs": "ac2fd230a6ca51a851fedf38bce150c399c0a59f96edb02ea63985dba9f24c8c",
+    "src/config.rs": "77dd147c0fa73358815720f0c9bf69bd3001049d6a95e760aaf407fb2be32448",
+    "src/root.rs": "0f9f3ad5194b126592c3555a34c0f685eac181af6b80c668fc8e0bc554012f24",
+    "src/icons/mod.rs": "cd27b0f6962fc5b915a2844784d459f58a76ec5375e6b981c58c84420390778b",
+    "src/result/resources/403.svg": "5e114ca6afd04f766e6dafa35c4db19a5abd8d41034c0b9291aa3c1475f87ca7",
+    "src/result/resources/404.svg": "6a5b2becd19b9b9e62c26a47430f672480ce4da6bef75556b50acba219a4a79c",
+    "src/result/resources/500.svg": "1bd26486c919e20a9e0162701c0c439edfc07b44189ef8beb64347b4447eaf8d",
+    "fixtures/result/known-discrepancies-windows.json": "07620396924700e5a70325538f5f4acce8adf6b21a75d3864da60129b81d3527",
+    "fixtures/result/host-action-metrics-windows.json": "4ae02efe91d39314d3db7b3b9c149719150e589d5bbc7865e9dd3885a6172eae",
+    "Cargo.toml": "b675f08fe251d8e1f38c31e1b74602aa5b0c8728375539fdba991ebed94ae6d1",
+    "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+    "benches/result.rs": "6e9d7acd6c347522f134e61f283b8635bc247c0e60df31b2998a1d77541665e2",
+    "scripts/run-result-perf.ps1": "62b3e4f14b3700bc89964d1134b1243e93d39a8ff386625d08be41ac1c4636b5",
+    "src/result/precedence_tests.rs": "64028301ff4a49b5417dbf47a69a18209b1cb260f9ea3dd3d0315a681354df36",
+    "src/result/tests.rs": "29bfbe8851b3fb3ea524d71c89ee20d91b1acbc2c6a041c201738e1bf0047378",
+    "fixtures/result/reference.json": "35c8d89b844f9e38c75ff1a703fd9772e230ed0e3a4781b6aab7ffe32f561cb4"
+  },
+  "artifacts_sha256": {
+    "reference.json": "35c8d89b844f9e38c75ff1a703fd9772e230ed0e3a4781b6aab7ffe32f561cb4",
+    "visual-cases.json": "c71942e3a9f2a1321d2a9865950cb920661246506e421b26ae1d6aa6d3186660",
+    "visual-validation-windows.json": "7559b1706dc49a9a50449fe0f7fc7ad4eb74df84b669371447441a800dc11662",
+    "performance-windows.json": "ada4c0ae78563d5fa339a4f85fc33d5632d9192d9a0c0bab4c12eb0b0182e50c",
+    "known-discrepancies-windows.json": "07620396924700e5a70325538f5f4acce8adf6b21a75d3864da60129b81d3527",
+    "host-action-metrics-windows.json": "4ae02efe91d39314d3db7b3b9c149719150e589d5bbc7865e9dd3885a6172eae",
+    "README.md": "57f5299d7b11134368522fa1d55495d50ac4969785c5493a12fa25cd8d5588e6"
+  }
+}

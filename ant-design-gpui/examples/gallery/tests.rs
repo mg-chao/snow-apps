@@ -33,7 +33,9 @@ mod context_scroll;
 mod input;
 mod menu;
 mod pagination;
+mod result;
 mod select_slider;
+mod spin;
 mod tabs;
 
 #[test]
