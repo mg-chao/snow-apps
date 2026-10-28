@@ -2375,7 +2375,7 @@ bool BuiltInSettingsBackend::importConfigurationSnapshot(
     const QString contextMenuKey = QStringLiteral("system/context_menu_mode");
 #endif
     const auto importedValue = [&](const QString& key) {
-        const auto fallback = storage::ConfigurationSchema::defaultValue(key);
+        const auto fallback = configuration.defaultValue(key);
         const auto normalized =
             storage::ConfigurationSchema::normalize(key, values.value(key, fallback));
         return normalized.valid ? normalized.value : fallback;
@@ -3010,15 +3010,13 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                 QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))
                 .toBool());
     case SettingsSectionReset::SystemGeneral: {
+        const auto& configuration = storage::ApplicationStorage::instance().configuration();
         if (app::distribution::isStoreManaged())
             return applySelectValue(SettingsSelectBinding::ContextMenuMode,
-                                    storage::ConfigurationSchema::defaultValue(
-                                        QStringLiteral("system/context_menu_mode"))
-                                        .toVariant());
+                                    configuration.defaultValue(kContextMenuModeKey).toVariant());
         emit synchronized();
         const auto result = applyStartupSettings(
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("system/auto_start_at_boot"))
-                .toBool(),
+            configuration.defaultValue(QStringLiteral("system/auto_start_at_boot")).toBool(),
             false);
         if (!result.success)
             emit operationMessage(result.error, false);
@@ -3026,9 +3024,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = result.success;
 #ifdef Q_OS_WIN
         accepted = applySelectValue(SettingsSelectBinding::ContextMenuMode,
-                                    storage::ConfigurationSchema::defaultValue(
-                                        QStringLiteral("system/context_menu_mode"))
-                                        .toVariant()) &&
+                                    configuration.defaultValue(kContextMenuModeKey).toVariant()) &&
                    accepted;
 #endif
         return accepted && applySelectValue(SettingsSelectBinding::UpdateMode,

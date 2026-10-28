@@ -267,7 +267,9 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
             : QDir(effectiveDirectory).filePath(QStringLiteral("config.json"));
     m_configuration = std::make_unique<ConfigurationStore>(
         configurationFile, m_status.readAvailable, m_status.writeAvailable,
-        options.debounceMilliseconds, this);
+        options.debounceMilliseconds, this,
+        selection.mode == StorageMode::Portable ? ConfigurationDefaults::Portable
+                                                : ConfigurationDefaults::Standard);
 #ifdef Q_OS_MACOS
     platform::initializeApplicationQoS(
         platform::applicationQoSForValue(

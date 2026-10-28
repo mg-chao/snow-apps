@@ -74,7 +74,7 @@ CPU inference and optional Vulkan/Metal acceleration. It includes adaptations of
 approximation (MIT). The generated bundle includes the submodule's LICENSE,
 NOTICE, and both component notices from its `licenses/` directory, along with
 its resolved dependencies. The worker is built using the submodule's pinned
-nightly toolchain. Runtime 1.2.0 uses ash (MIT OR Apache-2.0), gpu-allocator
+nightly toolchain. Runtime 1.2.1 uses ash (MIT OR Apache-2.0), gpu-allocator
 (MIT OR Apache-2.0), and shaderc (Apache-2.0) for Vulkan; shaderc and its bundled
 shader compiler sources are build dependencies. Apple Silicon builds use the
 objc2 Metal/Foundation bindings, block2, and dispatch2 (MIT OR Apache-2.0 OR Zlib)
@@ -85,6 +85,10 @@ frameworks are supplied by the operating system/vendor.
 The upstream notice for `objc2` 0.6.5 is retained in
 `licenses/cargo/objc2-0.6.5/` because its published crate omits the license file;
 the accompanying source record pins the crate's upstream revision.
+
+Vulkan shaders, like Metal resources, use miniz_oxide (MIT OR Zlib OR Apache-2.0)
+for build-time compression and lazy runtime decompression. Its resolved
+dependency licenses are included in the generated Rust dependency notice bundle.
 
 The GPL-3.0-only `snow-shot-updater` sidecar is implemented in Rust and is
 distributed as part of Snow Shot. Its resolved normal and build dependency

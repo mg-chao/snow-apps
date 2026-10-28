@@ -160,6 +160,7 @@ void reconcileLocalShortcutDefaults(MaterializedConfiguration& result,
 }
 
 MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValue>& overlay,
+                                                   const QMap<QString, QJsonValue>& defaults,
                                                    QJsonObject document, int schemaVersion,
                                                    ConfigurationCompatibility compatibility,
                                                    ConfigurationOverlayPolicy policy) {
@@ -196,14 +197,15 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         if (entry.key == kSchemaVersionKey) {
             continue;
         }
+        const QJsonValue defaultValue = defaults.value(entry.key);
 
         const bool present = currentOverlay.contains(entry.key);
         if (!present) {
-            result.values.insert(entry.key, entry.defaultValue);
+            result.values.insert(entry.key, defaultValue);
             if (entry.valueKind == ConfigurationValueKind::ShortcutList)
                 defaultedShortcutKeys.insert(entry.key);
             if (mutateDocument) {
-                insertPath(&result.document, entry.key, entry.defaultValue);
+                insertPath(&result.document, entry.key, defaultValue);
                 if (!replaceAll) {
                     result.dirty = true;
                 }
@@ -270,11 +272,11 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         const ConfigurationNormalization normalized =
             ConfigurationSchema::normalize(entry.key, raw);
         if (!normalized.valid) {
-            result.values.insert(entry.key, entry.defaultValue);
+            result.values.insert(entry.key, defaultValue);
             if (entry.valueKind == ConfigurationValueKind::ShortcutList)
                 defaultedShortcutKeys.insert(entry.key);
             if (mutateDocument) {
-                insertPath(&result.document, entry.key, entry.defaultValue);
+                insertPath(&result.document, entry.key, defaultValue);
                 if (!replaceAll) {
                     result.dirty = true;
                 }
@@ -360,13 +362,25 @@ QByteArray serializedDocument(const QJsonObject& document) {
     }
     return bytes;
 }
+
+QMap<QString, QJsonValue> configurationDefaults(ConfigurationDefaults profile) {
+    QMap<QString, QJsonValue> defaults;
+    for (const auto& entry : ConfigurationSchema::entries())
+        defaults.insert(entry.key, entry.defaultValue);
+    if (profile == ConfigurationDefaults::Portable) {
+        defaults.insert(QStringLiteral("system/auto_start_at_boot"), false);
+        defaults.insert(QStringLiteral("system/context_menu_mode"), QStringLiteral("disabled"));
+    }
+    return defaults;
+}
 } // namespace
 
 ConfigurationStore::ConfigurationStore(QString configurationFile, bool readAvailable,
                                        bool writeAvailable, int debounceMilliseconds,
-                                       QObject* parent)
+                                       QObject* parent, ConfigurationDefaults defaults)
     : QObject(parent), m_configurationFile(std::move(configurationFile)),
-      m_readAvailable(readAvailable), m_writeAvailable(writeAvailable) {
+      m_readAvailable(readAvailable), m_writeAvailable(writeAvailable),
+      m_defaults(configurationDefaults(defaults)) {
     m_flushTimer.setSingleShot(true);
     m_flushTimer.setInterval(std::max(0, debounceMilliseconds));
     connect(&m_flushTimer, &QTimer::timeout, this, [this]() { static_cast<void>(flushNow()); });
@@ -379,7 +393,11 @@ int ConfigurationStore::currentSchemaVersion() {
 
 QJsonValue ConfigurationStore::value(const QString& key) const {
     QMutexLocker locker(&m_mutex);
-    return m_values.value(key, ConfigurationSchema::defaultValue(key));
+    return m_values.value(key, defaultValue(key));
+}
+
+QJsonValue ConfigurationStore::defaultValue(const QString& key) const {
+    return m_defaults.value(key);
 }
 
 QMap<QString, QJsonValue> ConfigurationStore::snapshot() const {
@@ -496,8 +514,8 @@ bool ConfigurationStore::applySnapshot(const QMap<QString, QJsonValue>& values, 
     }
 
     MaterializedConfiguration materialized = materializeConfiguration(
-        values, ConfigurationSchema::completeDefaultDocument(), schemaVersion,
-        ConfigurationCompatibility::Current, ConfigurationOverlayPolicy::ReplaceAll);
+        values, m_defaults, {}, schemaVersion, ConfigurationCompatibility::Current,
+        ConfigurationOverlayPolicy::ReplaceAll);
     const QString customModelsError =
         materialized.customConfigurationsRepaired
             ? tr("Some custom API configurations are invalid and were ignored")
@@ -605,11 +623,10 @@ void ConfigurationStore::relocate(const QString& directory) {
 
 void ConfigurationStore::load() {
     cleanupCorruptBackups(m_configurationFile);
-    QMap<QString, QJsonValue> loaded;
-    for (const ConfigurationSchemaEntry& entry : ConfigurationSchema::entries()) {
-        loaded.insert(entry.key, entry.defaultValue);
-    }
-    QJsonObject document = ConfigurationSchema::completeDefaultDocument();
+    QMap<QString, QJsonValue> loaded = m_defaults;
+    QJsonObject document;
+    for (auto it = m_defaults.cbegin(); it != m_defaults.cend(); ++it)
+        insertPath(&document, it.key(), it.value());
     ConfigurationCompatibility compatibility = ConfigurationCompatibility::Current;
     int version = 1;
     bool dirty = false;
@@ -655,8 +672,8 @@ void ConfigurationStore::load() {
                     qCWarning(storageLog) << error << version;
                 }
                 const MaterializedConfiguration materialized = materializeConfiguration(
-                    overlayFromDocument(parsedObject), parsedObject, version, compatibility,
-                    ConfigurationOverlayPolicy::MergeFromDisk);
+                    overlayFromDocument(parsedObject), m_defaults, parsedObject, version,
+                    compatibility, ConfigurationOverlayPolicy::MergeFromDisk);
                 loaded = materialized.values;
                 document = materialized.document;
                 dirty = materialized.dirty;

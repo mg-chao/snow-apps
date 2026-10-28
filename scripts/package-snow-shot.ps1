@@ -514,7 +514,7 @@ if (-not $store) { $licenseManifests += $updaterCargoManifest }
     -QtPrefix $qtPrefix `
     -CargoManifest $licenseManifests `
     -CargoOptions @{ (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") = @('--features', 'selected-text,language-detection');
-        # Runtime 1.2.0 ships the raw-pixel worker without convenience dependencies.
+        # The runtime ships the raw-pixel worker without convenience dependencies.
         $ocrCargoManifest = @('--no-default-features', '--features',
         'crash-diagnostics,gpu') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `

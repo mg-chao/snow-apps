@@ -7,7 +7,7 @@
 namespace snow_shot::ocr::protocol {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
 constexpr quint16 kProtocolVersion = 7;
-constexpr auto kRuntimeVersion = "1.2.0";
+constexpr auto kRuntimeVersion = "1.2.1";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;

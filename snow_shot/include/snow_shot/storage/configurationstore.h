@@ -23,16 +23,21 @@ enum class ConfigurationCompatibility {
     Unavailable,
 };
 
+enum class ConfigurationDefaults { Standard, Portable };
+
 class ConfigurationStore final : public QObject {
     Q_OBJECT
 
   public:
     ConfigurationStore(QString configurationFile, bool readAvailable, bool writeAvailable,
-                       int debounceMilliseconds = 1000, QObject* parent = nullptr);
+                       int debounceMilliseconds = 1000, QObject* parent = nullptr,
+                       ConfigurationDefaults defaults = ConfigurationDefaults::Standard);
 
     [[nodiscard]] static int currentSchemaVersion();
 
     [[nodiscard]] QJsonValue value(const QString& key) const;
+    // Defaults belong to this storage mode; saved preferences take precedence.
+    [[nodiscard]] QJsonValue defaultValue(const QString& key) const;
     [[nodiscard]] QMap<QString, QJsonValue> snapshot() const;
     [[nodiscard]] quint64 revision() const;
     // Serializes the revision check with all configuration writers, including
@@ -47,7 +52,7 @@ class ConfigurationStore final : public QObject {
     bool setValue(const QString& key, const QJsonValue& value);
     bool setValues(const QMap<QString, QJsonValue>& values);
     // Replaces the whole configuration with `values` overlaid on schema
-    // defaults, using the same per-key salvage rules as loading a
+    // defaults for this store, using the same per-key salvage rules as loading a
     // configuration file. Keys absent from `values` revert to defaults.
     // Unknown keys are ignored. `schemaVersion` is the version the overlay
     // was written against: older versions are upgraded, and versions newer
@@ -78,6 +83,7 @@ class ConfigurationStore final : public QObject {
     mutable QMutex m_mutex;
     QRecursiveMutex m_mutationMutex;
     QMutex m_ioMutex;
+    const QMap<QString, QJsonValue> m_defaults;
     QMap<QString, QJsonValue> m_values;
     QJsonObject m_document;
     QString m_lastError;

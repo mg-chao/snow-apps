@@ -10,6 +10,7 @@
 #include "snow_shot/platform/windows/packagedcontextmenupreference.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -265,6 +266,64 @@ void settingsTransactions(const QString& configurationDirectory, const QString& 
                 configuration.snapshot() == before && registry.keys.isEmpty(),
             "other platforms reject context menu changes without side effects");
 #endif
+}
+
+void portableSettingsTransactions(const QString& root) {
+    const QString executable = QDir(root).filePath(QStringLiteral("portable-bin"));
+    require(QDir().mkpath(executable), "create an isolated portable executable directory");
+    QFile marker(QDir(executable).filePath(snow_shot::app::edition::portableMarkerName()));
+    require(marker.open(QIODevice::WriteOnly) && marker.write("data") == 4,
+            "create the edition-specific portable marker");
+    marker.close();
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    require(
+        applicationStorage
+                .initialize({executable, QDir(root).filePath(QStringLiteral("fallback")), 60000})
+                .success &&
+            applicationStorage.status().effectiveMode == storage::StorageMode::Portable,
+        "initialize portable settings through the storage marker");
+    auto& configuration = applicationStorage.configuration();
+    const QString enabledKey = QStringLiteral("system/auto_start_at_boot");
+    Registry registry;
+    windows::ShellContextMenuRegistration registration(registry.options());
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(
+        shortcuts, nullptr, nullptr, nullptr, nullptr, &registration,
+        [&](bool enabled, bool elevated) {
+            return windows::AdministratorResult{
+                configuration.setValues(
+                    {{enabledKey, enabled},
+                     {QStringLiteral("system/launch_as_administrator"), elevated}}),
+                false,
+                {}};
+        });
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const auto startupBinding = settings::SettingsSwitchBinding::AutoStartAtBoot;
+    require(!backend.switchValue(startupBinding) &&
+                session.state(kId).acceptedValue == QStringLiteral("disabled") &&
+                registration.setEnabled(false) && registry.keys.isEmpty(),
+            "portable settings expose both integrations as disabled on first launch");
+    const auto enableIntegrations = [&] {
+        return session.applySwitchValue(startupBinding, true) &&
+               session.applySelectValue(kBinding, QStringLiteral("image_files")) &&
+               backend.switchValue(startupBinding) && registry.keys.size() == 2;
+    };
+    require(enableIntegrations(), "portable settings allow explicitly enabling both integrations");
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                !backend.switchValue(startupBinding) && registry.keys.isEmpty() &&
+                session.state(kId).acceptedValue == QStringLiteral("disabled") &&
+                !session.hasDirtyFields(),
+            "portable General reset disables both native integrations and accepts the defaults");
+    require(enableIntegrations(), "prepare enabled integrations for a portable import");
+    auto imported = configuration.snapshot();
+    imported.remove(enabledKey);
+    imported.remove(kKey);
+    require(backend.importConfigurationSnapshot(imported,
+                                                storage::ConfigurationSchema::currentVersion()) &&
+                !backend.switchValue(startupBinding) && registry.keys.isEmpty() &&
+                configuration.value(kKey) == QStringLiteral("disabled"),
+            "omitted imported preferences restore disabled portable native integrations");
+    applicationStorage.shutdown();
 }
 
 void accessKeyTransactions(const QString& configurationDirectory, const QString& blockedDirectory) {
@@ -554,6 +613,7 @@ int main(int argc, char** argv) {
     settingsTransactions(applicationStorage.configurationDirectory(), blocker.fileName());
     accessKeyTransactions(applicationStorage.configurationDirectory(), blocker.fileName());
     applicationStorage.shutdown();
+    portableSettingsTransactions(temporary.path());
     std::cout << "Shell context menu settings tests passed\n";
     return 0;
 }
