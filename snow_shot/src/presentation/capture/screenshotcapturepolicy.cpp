@@ -4,12 +4,36 @@
 #include <QVector>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
-#include <windows.h>
+#include "screenshotcapturepolicy_p.h"
 #endif
 
 #include "snow_capture.h"
 
 namespace snow_shot::presentation::capture {
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+bool detail::displayHdrEnabled(const DISPLAYCONFIG_PATH_TARGET_INFO& target,
+                               DisplayColorInfoQuery query) noexcept {
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 current{};
+    current.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
+    current.header.size = sizeof(current);
+    current.header.adapterId = target.adapterId;
+    current.header.id = target.id;
+    if (query(&current.header) == ERROR_SUCCESS) {
+        // Advanced Color also covers SDR automatic color management. Only active HDR needs DXGI.
+        return current.activeColorMode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
+    }
+
+    // Older Windows versions expose only the legacy flags; WCG is not HDR there either.
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO info{};
+    info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+    info.header.size = sizeof(info);
+    info.header.adapterId = target.adapterId;
+    info.header.id = target.id;
+    return query(&info.header) == ERROR_SUCCESS && info.advancedColorSupported &&
+           info.advancedColorEnabled && !info.wideColorEnforced;
+}
+#endif
 
 ScreenshotApiMode screenshotApiModeFromValue(const char* value) noexcept {
     if (value != nullptr) {
@@ -55,13 +79,7 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
             if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount,
                                    modes.data(), nullptr) == ERROR_SUCCESS) {
                 for (UINT index = 0; index < pathCount; ++index) {
-                    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO info{};
-                    info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
-                    info.header.size = sizeof(info);
-                    info.header.adapterId = paths[index].targetInfo.adapterId;
-                    info.header.id = paths[index].targetInfo.id;
-                    if (DisplayConfigGetDeviceInfo(&info.header) == ERROR_SUCCESS &&
-                        info.advancedColorSupported && info.advancedColorEnabled) {
+                    if (detail::displayHdrEnabled(paths[index].targetInfo)) {
                         return ScreenshotApiMode::Dxgi;
                     }
                 }

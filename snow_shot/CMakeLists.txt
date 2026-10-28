@@ -4159,6 +4159,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-capture-worker-tests COMMAND snow-shot-capture-worker-tests)
 
     if(WIN32)
+        add_executable(snow-shot-capture-policy-tests
+            tests/screenshot_capture_policy_tests.cpp
+            src/presentation/capture/screenshotcapturepolicy.cpp)
+        target_include_directories(snow-shot-capture-policy-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+        target_link_libraries(snow-shot-capture-policy-tests PRIVATE Qt6::Gui user32)
+        add_test(NAME snow-shot-capture-policy-tests COMMAND snow-shot-capture-policy-tests)
+        set_tests_properties(snow-shot-capture-policy-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
         add_executable(snow-shot-recapture-cursor-native-e2e-test
             tests/recapture_cursor_native_e2e_test.cpp
             include/snow_shot/presentation/screenshotcapturecoordinator.h
