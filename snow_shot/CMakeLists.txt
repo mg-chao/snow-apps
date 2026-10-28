@@ -2760,6 +2760,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-screenshot-history-page-loading-tests
         COMMAND snow-shot-screenshot-history-page-tests --loading-only)
+    add_test(NAME snow-shot-history-page-size-tests
+        COMMAND snow-shot-screenshot-history-page-tests --page-size-only -platform offscreen)
+    set_tests_properties(snow-shot-history-page-size-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-history-entry-layout-tests
         COMMAND snow-shot-screenshot-history-page-tests --entry-layout-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-history-page-tests

@@ -599,6 +599,23 @@ bool InterfaceSettings::setSidebarCollapsed(bool collapsed) const {
     return cache().setValue(QStringLiteral("interface/sidebar_collapsed"), collapsed);
 }
 
+int InterfaceSettings::screenshotHistoryPageSize() const {
+    return cache().value(QStringLiteral("interface/screenshot_history_page_size")).toInt();
+}
+
+bool InterfaceSettings::setScreenshotHistoryPageSize(int pageSize) const {
+    return cache().setValue(QStringLiteral("interface/screenshot_history_page_size"), pageSize);
+}
+
+int InterfaceSettings::pinnedWindowManagementPageSize() const {
+    return cache().value(QStringLiteral("interface/pinned_window_management_page_size")).toInt();
+}
+
+bool InterfaceSettings::setPinnedWindowManagementPageSize(int pageSize) const {
+    return cache().setValue(QStringLiteral("interface/pinned_window_management_page_size"),
+                            pageSize);
+}
+
 std::optional<PersistedWindowGeometry> WindowMemorySettings::mainWindowGeometry() const {
     return parseWindowGeometry(
         cache().value(QStringLiteral("interface/main_window_geometry")).toObject());

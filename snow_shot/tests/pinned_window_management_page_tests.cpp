@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "theme/theme_manager.h"
 #include "widgets/select.h"
 #include "widgets/date_picker.h"
@@ -994,18 +995,20 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
-    pinnedEntryMoreActionsUseOnlyTheirRecord();
-    pinnedCollageSelectionKeepsRecordOrder();
-    batchPinRequiresSingleGroup();
-    batchPinUsesExistingShowForEveryState();
-    if (QApplication::arguments().contains(QStringLiteral("--collage-only")))
-        return 0;
     QTemporaryDir directory;
     QTemporaryDir migratedDirectory;
     require(storage::ApplicationStorage::instance()
                 .initialize({directory.path(), directory.path(), 30000})
                 .success,
             "isolated storage");
+    pinnedEntryMoreActionsUseOnlyTheirRecord();
+    pinnedCollageSelectionKeepsRecordOrder();
+    batchPinRequiresSingleGroup();
+    batchPinUsesExistingShowForEveryState();
+    if (QApplication::arguments().contains(QStringLiteral("--collage-only"))) {
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     Fixture fixture;
     const auto today = QDateTime(QDate(2026, 9, 24), QTime(0, 30), QTimeZone::systemTimeZone());
     storage::PinnedWindowSummary first;
@@ -1257,6 +1260,8 @@ int main(int argc, char** argv) {
         auto* pagination = page.findChild<adqt::widgets::AdPagination*>(
             QStringLiteral("pinnedManagementPagination"));
         pagination->setPageSize(50);
+        const auto restorePageSize =
+            qScopeGuard([] { storage::InterfaceSettings().setPinnedWindowManagementPageSize(10); });
         application.processEvents();
         QHash<QString, QPointer<QFrame>> originalRows;
         for (auto* row : page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord")))

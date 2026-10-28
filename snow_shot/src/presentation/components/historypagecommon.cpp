@@ -51,8 +51,8 @@ void configureDateFilter(adqt::widgets::AdDateRangePicker* filter) {
     filter->setMaximumWidth(260);
 }
 
-void configurePagination(adqt::widgets::AdPagination* pagination) {
-    pagination->setPageSize(10);
+void configurePagination(adqt::widgets::AdPagination* pagination, int pageSize) {
+    pagination->setPageSize(pageSize);
     pagination->setPageSizeOptions({10, 20, 50});
     pagination->setSizeChangerMode(adqt::widgets::AdPagination::SizeChangerMode::Always);
     pagination->setAlignment(adqt::widgets::AdPagination::Alignment::End);
