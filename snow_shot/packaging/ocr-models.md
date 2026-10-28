@@ -31,8 +31,8 @@ according to the screenshot's longest side. Minimum-side mode uses 736. Accuracy
 First uses a recognition-width floor of 320; Speed First uses 48. Widths align to
 32 pixels. Recognition text and confidence can differ from the previous runtime.
 The recognizer uses the model's Softmax probabilities for confidence. Empty
-lines and confidence below 0.5 are filtered. Residency and hot start both
-default off; hot start is effective only when residency is enabled.
+lines and confidence below 0.5 are filtered. Residency defaults on, while hot start
+defaults off; hot start is effective only when residency is enabled.
 
 Hardware acceleration also defaults off. Windows builds enable Vulkan 1.3
 through the GPU driver's loader; Apple Silicon builds enable Metal. Device
