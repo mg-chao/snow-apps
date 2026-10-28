@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "theme/theme_manager.h"
 #include "widgets/select.h"
 #include "widgets/date_picker.h"
@@ -127,21 +128,31 @@ class SkinBackdrop final : public QWidget {
 
 void selectionPanelSticksWhileScrolling() {
     Fixture fixture;
-    for (int index = 0; index < 20; ++index) {
+    for (int index = 0; index < 55; ++index) {
         storage::PinnedWindowSummary item;
         item.id = QStringLiteral("sticky-%1").arg(index);
         item.createdUtc =
             QDateTime(QDate(2026, 9, 24), QTime(0, 30), QTimeZone::UTC).addSecs(-index);
         fixture.items.push_back(item);
     }
-    PinnedWindowManagementPageWidget page(&fixture, nullptr);
-    page.resize(980, 640);
-    page.show();
-    history_sticky_test::settleLayout();
-    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
-    require(row != nullptr, "sticky pinned fixture has an entry");
-    history_sticky_test::verifySelection(page, QStringLiteral("pinnedManagement"),
-                                         row->findChild<adqt::widgets::AdCheckbox*>(), require);
+    storage::InterfaceSettings settings;
+    const int originalPageSize = settings.pinnedWindowManagementPageSize();
+    const auto restorePageSize =
+        qScopeGuard([&] { settings.setPinnedWindowManagementPageSize(originalPageSize); });
+    for (const int pageSize : {10, 20, 50}) {
+        require(settings.setPinnedWindowManagementPageSize(pageSize),
+                "save pinned fixture page size");
+        PinnedWindowManagementPageWidget page(&fixture, nullptr);
+        require(page.findChild<adqt::widgets::AdPagination*>()->pageSize() == pageSize,
+                "sticky pinned fixture restores the saved page size");
+        page.resize(980, 640);
+        page.show();
+        history_sticky_test::settleLayout();
+        auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+        require(row != nullptr, "sticky pinned fixture has an entry");
+        history_sticky_test::verifySelection(page, QStringLiteral("pinnedManagement"),
+                                             row->findChild<adqt::widgets::AdCheckbox*>(), require);
+    }
 }
 
 class StyleChangeRecorder final : public QObject {
@@ -1014,12 +1025,13 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    QTemporaryDir directory;
+    QTemporaryDir migratedDirectory;
+    require(storage::ApplicationStorage::instance()
+                .initialize({directory.path(), directory.path(), 30000})
+                .success,
+            "isolated storage");
     if (application.arguments().contains(QStringLiteral("--sticky-only"))) {
-        QTemporaryDir directory;
-        require(storage::ApplicationStorage::instance()
-                    .initialize({directory.path(), directory.path(), 30000})
-                    .success,
-                "isolated sticky selection storage");
         selectionPanelSticksWhileScrolling();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -1028,14 +1040,10 @@ int main(int argc, char** argv) {
     pinnedCollageSelectionKeepsRecordOrder();
     batchPinRequiresSingleGroup();
     batchPinUsesExistingShowForEveryState();
-    if (QApplication::arguments().contains(QStringLiteral("--collage-only")))
+    if (QApplication::arguments().contains(QStringLiteral("--collage-only"))) {
+        storage::ApplicationStorage::instance().shutdown();
         return 0;
-    QTemporaryDir directory;
-    QTemporaryDir migratedDirectory;
-    require(storage::ApplicationStorage::instance()
-                .initialize({directory.path(), directory.path(), 30000})
-                .success,
-            "isolated storage");
+    }
     Fixture fixture;
     const auto today = QDateTime(QDate(2026, 9, 24), QTime(0, 30), QTimeZone::systemTimeZone());
     storage::PinnedWindowSummary first;
@@ -1288,6 +1296,8 @@ int main(int argc, char** argv) {
         auto* pagination = page.findChild<adqt::widgets::AdPagination*>(
             QStringLiteral("pinnedManagementPagination"));
         pagination->setPageSize(50);
+        const auto restorePageSize =
+            qScopeGuard([] { storage::InterfaceSettings().setPinnedWindowManagementPageSize(10); });
         application.processEvents();
         QHash<QString, QPointer<QFrame>> originalRows;
         for (auto* row : page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord")))

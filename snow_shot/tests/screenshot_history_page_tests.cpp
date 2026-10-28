@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/historypinplacement.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
@@ -188,15 +189,24 @@ class SkinBackdrop final : public QWidget {
 
 void selectionPanelSticksWhileScrolling() {
     MutableHistoryDataSource source;
-    source.setRecords(historyRecords(20));
-    ScreenshotHistoryPageWidget page(&source, nullptr);
-    page.resize(980, 640);
-    page.show();
-    history_sticky_test::settleLayout();
-    auto* row = page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"));
-    require(row != nullptr, "sticky history fixture has an entry");
-    history_sticky_test::verifySelection(page, QStringLiteral("screenshotHistory"),
-                                         row->findChild<adqt::widgets::AdCheckbox*>(), require);
+    source.setRecords(historyRecords(55));
+    storage::InterfaceSettings settings;
+    const int originalPageSize = settings.screenshotHistoryPageSize();
+    const auto restorePageSize =
+        qScopeGuard([&] { settings.setScreenshotHistoryPageSize(originalPageSize); });
+    for (const int pageSize : {10, 20, 50}) {
+        require(settings.setScreenshotHistoryPageSize(pageSize), "save history fixture page size");
+        ScreenshotHistoryPageWidget page(&source, nullptr);
+        require(page.findChild<adqt::widgets::AdPagination*>()->pageSize() == pageSize,
+                "sticky history fixture restores the saved page size");
+        page.resize(980, 640);
+        page.show();
+        history_sticky_test::settleLayout();
+        auto* row = page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"));
+        require(row != nullptr, "sticky history fixture has an entry");
+        history_sticky_test::verifySelection(page, QStringLiteral("screenshotHistory"),
+                                             row->findChild<adqt::widgets::AdCheckbox*>(), require);
+    }
 }
 
 class StyleChangeRecorder final : public QObject {
@@ -1008,6 +1018,70 @@ class PinnedLayoutDataSource final : public PinnedWindowManagementDataSource {
     void showRecords(const QStringList&) override {}
     void removeRecords(const QVector<QString>&) override {}
 };
+
+void pageSizesRememberedIndependently(const QString& storageDirectory) {
+    MutableHistoryDataSource historySource;
+    historySource.setRecords(historyRecords(55));
+    PinnedLayoutDataSource pinnedSource;
+    pinnedSource.record.id = QStringLiteral("page-size-pin");
+    pinnedSource.record.createdUtc = historySource.records().first().createdUtc;
+    int previousHistorySize = 10;
+    int previousPinnedSize = 10;
+
+    for (const auto sizes : {std::pair{20, 50}, std::pair{50, 20}, std::pair{10, 10}}) {
+        {
+            ScreenshotHistoryPageWidget historyPage(&historySource, nullptr);
+            PinnedWindowManagementPageWidget pinnedPage(&pinnedSource, nullptr);
+            auto* historyPagination = historyPage.findChild<adqt::widgets::AdPagination*>();
+            auto* pinnedPagination = pinnedPage.findChild<adqt::widgets::AdPagination*>();
+            require(historyPagination->pageSize() == previousHistorySize &&
+                        pinnedPagination->pageSize() == previousPinnedSize,
+                    "each management page restores its own previous page size");
+            historyPagination->setPageSize(sizes.first);
+            require(pinnedPagination->pageSize() == previousPinnedSize,
+                    "changing history page size leaves pinned management unchanged");
+            pinnedPagination->setPageSize(sizes.second);
+            historyPage.setActive(true);
+            historyPage.refresh();
+            pinnedPage.refresh();
+            require(historyPagination->pageSize() == sizes.first &&
+                        pinnedPagination->pageSize() == sizes.second,
+                    "refresh preserves both selected page sizes");
+            require(historyPage
+                            .findChildren<adqt::widgets::AdCheckbox*>(
+                                QStringLiteral("screenshotHistoryEntrySelection"))
+                            .size() == sizes.first,
+                    "history renders the selected number of entries");
+        }
+
+        storage::ApplicationStorage::instance().shutdown();
+        require(storage::ApplicationStorage::instance()
+                    .initialize({storageDirectory, storageDirectory, 8000})
+                    .success,
+                "reload persisted management page preferences");
+        {
+            ScreenshotHistoryPageWidget historyPage(&historySource, nullptr);
+            PinnedWindowManagementPageWidget pinnedPage(&pinnedSource, nullptr);
+            require(historyPage.findChild<adqt::widgets::AdPagination*>()->pageSize() ==
+                            sizes.first &&
+                        pinnedPage.findChild<adqt::widgets::AdPagination*>()->pageSize() ==
+                            sizes.second,
+                    "both management page sizes survive storage shutdown and reload");
+        }
+        previousHistorySize = sizes.first;
+        previousPinnedSize = sizes.second;
+    }
+
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    for (const auto& key : {QStringLiteral("interface/screenshot_history_page_size"),
+                            QStringLiteral("interface/pinned_window_management_page_size")}) {
+        for (const auto& value : {QJsonValue(0), QJsonValue(15), QJsonValue(100), QJsonValue(20.5),
+                                  QJsonValue(QStringLiteral("20")), QJsonValue(QJsonValue::Null)}) {
+            require(!configuration.setValue(key, value) && configuration.value(key).toInt() == 10,
+                    "unsupported page sizes and invalid types preserve the saved preference");
+        }
+    }
+}
 
 void entryLayoutsMatchAcrossManagementPages() {
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
@@ -1926,6 +2000,12 @@ int main(int argc, char** argv) {
             "isolated application storage must initialize");
     if (application.arguments().contains(QStringLiteral("--sticky-only"))) {
         selectionPanelSticksWhileScrolling();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--page-size-only"))) {
+        pageSizesRememberedIndependently(temporary.path());
         storage::ApplicationStorage::instance().shutdown();
         QCoreApplication::removeTranslator(&englishTranslator);
         return 0;

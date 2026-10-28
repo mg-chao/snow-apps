@@ -143,6 +143,10 @@ class InterfaceSettings final {
     bool setSkinMaskOpacity(int opacity) const;
     [[nodiscard]] bool sidebarCollapsed() const;
     bool setSidebarCollapsed(bool collapsed) const;
+    [[nodiscard]] int screenshotHistoryPageSize() const;
+    bool setScreenshotHistoryPageSize(int pageSize) const;
+    [[nodiscard]] int pinnedWindowManagementPageSize() const;
+    bool setPinnedWindowManagementPageSize(int pageSize) const;
 };
 
 class WindowMemorySettings final {
