@@ -1,6 +1,6 @@
 # OCR protocol 7
 
-Runtime 1.2.0 uses a binary stdin/stdout command channel. Diagnostics use stderr.
+Runtime 1.2.1 uses a binary stdin/stdout command channel. Diagnostics use stderr.
 The application and runtime are released together; earlier protocols are incompatible.
 All integers and IEEE-754 floats are little-endian. A string is a `u32` byte
 length followed by UTF-8. Frames have a 20-byte header: `SOCR`, version `u16`,
@@ -48,6 +48,8 @@ configuration changes and disabling hot start still use it. Protocol 7 workers e
 bounded context and local V6 models, without orientation classification.
 On multi-core workers, detector and recognizer parsing/compilation overlap on
 two bounded tasks. Both are joined before preparation succeeds or fails.
+GPU kernels remain embedded in the executable, compressed at build time and decompressed only
+when a Vulkan pipeline is requested.
 Text detection processing selects the recognizer input-width floor: accuracy first uses
 320, while speed first uses 48 before the existing 32-pixel width alignment.
 Accuracy first is the default. Protocol 7 adds the acceleration preference to

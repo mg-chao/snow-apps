@@ -1,7 +1,7 @@
 # OCR runtime and V6 models
 
 Snow Shot uses CPU inference and optional GPU acceleration through the `simd-paddle-ocr-rs` Git submodule.
-Runtime **1.2.0** uses protocol **7**. Initialize submodules before building;
+Runtime **1.2.1** uses protocol **7**. Initialize submodules before building;
 the worker alone uses the library's pinned `nightly-2026-09-08` compiler.
 Other Rust packages keep their existing toolchain. The runtime takes verified
 local model paths, borrows child-owned BGR pixels, and returns owned text,
@@ -73,7 +73,7 @@ Windows x64 and ARM64 ZIPs contain exactly the versioned worker executable and
 `runtime-manifest.json`. There are no inference DLLs. The trusted descriptors in
 this directory are generated from the actual built bytes, including archive and
 entry hashes. Preparation creates local artifacts; publication is a release step.
-Keep all earlier published archives unchanged. Publish the exact pinned 1.2.0
+Keep all earlier published archives unchanged. Publish the exact pinned 1.2.1
 archives before distributing this application revision.
 
 ```powershell
@@ -114,10 +114,10 @@ Supply verified models as `<model-root>/<cache-id>/<filename>` for real inferenc
 $env:SNOW_TEST_OCR_TEXT_FIXTURE = (Resolve-Path snow_shot/tests/baselines/ocr-model-versions.png).Path
 $test = 'build/windows-msvc-debug/snow_shot/test-bin/Debug/snow-shot-ocr-recognition-service-tests.exe'
 $modelRoot = (Resolve-Path build/ocr-versioned-models).Path
-$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.2.0/snow-ocr-process-1.2.0-windows-x64.exe).Path
+$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.2.1/snow-ocr-process-1.2.1-windows-x64.exe).Path
 & $test "--model-root=$modelRoot" "--worker=$worker"
 & $test "--model-root=$modelRoot" "--worker=$worker" --resident-models
-& $test "--downloaded-runtime=$((Resolve-Path artifacts/snow-ocr-runtime-1.2.0-windows-x64.zip).Path)"
+& $test "--downloaded-runtime=$((Resolve-Path artifacts/snow-ocr-runtime-1.2.1-windows-x64.zip).Path)"
 ```
 
 The downloaded-runtime check copies the prepared archive and models through the
