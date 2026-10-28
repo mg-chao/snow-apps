@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalmousetypes.h"
 #include "snow_shot/app/distribution.h"
+#include "snow_shot/app/edition.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -490,6 +491,80 @@ void markerResolutionAndStatus() {
     require(fallbackStorage.configurationDirectory() == QDir::cleanPath(fallback) &&
                 !fallbackStorage.status().fallbackReason.isEmpty(),
             "unwritable portable target did not report fallback");
+}
+
+void portableSystemIntegrationDefaults() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "portable defaults require isolated storage");
+    const auto cleanup = qScopeGuard([] { storage::ApplicationStorage::instance().shutdown(); });
+    const QString executable = temporary.filePath(QStringLiteral("bin"));
+    const QString fallback = temporary.filePath(QStringLiteral("app-data"));
+    const QString enabledKey = QStringLiteral("system/auto_start_at_boot");
+    const QString menuKey = QStringLiteral("system/context_menu_mode");
+    auto& appStorage = initialize(executable, fallback);
+    require(storage::SystemSettings().autoStartAtBoot() &&
+                appStorage.configuration().value(menuKey) == QStringLiteral("image_files"),
+            "application data storage keeps the standard integration defaults");
+    require(QDir().mkpath(executable), "create a portable executable directory");
+    writeBytes(QDir(executable).filePath(snow_shot::app::edition::portableMarkerName()),
+               QByteArrayLiteral("portable"));
+    static_cast<void>(initialize(executable, fallback));
+    if (snow_shot::app::distribution::isStoreManaged()) {
+        require(appStorage.status().effectiveMode == storage::StorageMode::ApplicationData &&
+                    storage::SystemSettings().autoStartAtBoot() &&
+                    appStorage.configuration().value(menuKey) == QStringLiteral("image_files"),
+                "Store distribution ignores portable defaults");
+        return;
+    }
+    const auto integrationsDisabled = [&] {
+        return !storage::SystemSettings().autoStartAtBoot() &&
+               appStorage.configuration().value(menuKey) == QStringLiteral("disabled");
+    };
+    require(appStorage.status().effectiveMode == storage::StorageMode::Portable &&
+                integrationsDisabled() && appStorage.flushNow().success,
+            "fresh portable storage disables auto-start and the Windows context menu");
+    const QString path =
+        QDir(appStorage.configurationDirectory()).filePath(QStringLiteral("config.json"));
+    {
+        storage::ConfigurationStore persisted(path, true, true, 60000);
+        require(!persisted.value(enabledKey).toBool() &&
+                    persisted.value(menuKey) == QStringLiteral("disabled"),
+                "portable defaults are persisted as disabled preferences");
+    }
+    require(appStorage.configuration().setValues(
+                {{enabledKey, true}, {menuKey, QStringLiteral("image_files")}}) &&
+                appStorage.flushNow().success,
+            "portable users can explicitly enable both integrations");
+    static_cast<void>(initialize(executable, fallback));
+    require(storage::SystemSettings().autoStartAtBoot() &&
+                appStorage.configuration().value(menuKey) == QStringLiteral("image_files"),
+            "portable reload preserves explicitly enabled integrations");
+    require(appStorage.configuration().applySnapshot({}) && integrationsDisabled(),
+            "an empty configuration import restores portable integration defaults");
+    require(appStorage.configuration().setValues(
+                {{enabledKey, false}, {menuKey, QStringLiteral("disabled")}}) &&
+                appStorage.flushNow().success,
+            "portable users can save disabled integrations");
+    static_cast<void>(initialize(executable, fallback));
+    require(integrationsDisabled(), "portable reload preserves explicitly disabled integrations");
+
+    appStorage.shutdown();
+    const QJsonObject version{
+        {QStringLiteral("schema_version"), storage::ConfigurationSchema::currentVersion()}};
+    for (const QJsonObject& system :
+         {QJsonObject{}, QJsonObject{{QStringLiteral("auto_start_at_boot"), QStringLiteral("bad")},
+                                     {QStringLiteral("context_menu_mode"), true}}}) {
+        writeBytes(path, QJsonDocument(QJsonObject{{QStringLiteral("storage"), version},
+                                                   {QStringLiteral("system"), system}})
+                             .toJson());
+        static_cast<void>(initialize(executable, fallback));
+        require(integrationsDisabled(),
+                "missing and invalid portable preferences recover disabled defaults");
+        appStorage.shutdown();
+    }
+    writeBytes(path, QByteArrayLiteral("malformed"));
+    static_cast<void>(initialize(executable, fallback));
+    require(integrationsDisabled(), "corrupt portable configuration recovers disabled defaults");
 }
 
 void distributionStoragePaths() {
@@ -4058,6 +4133,10 @@ int main(int argc, char** argv) {
     }
 #endif
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--portable-system-integration-only"))) {
+        portableSystemIntegrationDefaults();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--distribution-paths-only"))) {
         markerResolutionAndStatus();
         storage::ApplicationStorage::instance().shutdown();
