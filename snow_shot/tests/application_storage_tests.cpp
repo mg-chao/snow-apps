@@ -702,7 +702,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("text_recognition/model_type").toString() == QStringLiteral("small") &&
             defaultValue("text_recognition/detector_resize_policy").toString() ==
                 QStringLiteral("max") &&
-            !defaultValue("text_recognition/resident_process").toBool() &&
+            defaultValue("text_recognition/resident_process").toBool() &&
             !defaultValue("text_recognition/model_hot_start").toBool() &&
             !defaultValue("text_recognition/hardware_acceleration").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
