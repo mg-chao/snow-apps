@@ -34,6 +34,7 @@ mod input;
 mod menu;
 mod pagination;
 mod select_slider;
+mod tabs;
 
 #[test]
 fn popup_gallery_pages_support_navigation_capture_selection_and_responsive_cards() {
@@ -387,8 +388,10 @@ fn catalogue_keeps_reference_order_and_pending_cards_explain_their_status_withou
     assert_eq!(COMPONENTS[4].group, "Navigation");
     assert_eq!(COMPONENTS[5].id, ComponentId::Pagination);
     assert_eq!(COMPONENTS[5].group, "Navigation");
-    assert_eq!(COMPONENTS[6].id, ComponentId::Checkbox);
-    assert_eq!(COMPONENTS[6].group, "Data Entry");
+    assert_eq!(COMPONENTS[6].id, ComponentId::Tabs);
+    assert_eq!(COMPONENTS[6].group, "Navigation");
+    assert_eq!(COMPONENTS[7].id, ComponentId::Checkbox);
+    assert_eq!(COMPONENTS[7].group, "Data Entry");
     assert_eq!(
         COMPONENTS
             .iter()
@@ -876,6 +879,35 @@ fn gallery_options_accept_presentation_flags_and_capture_and_reject_invalid_argu
         assert!(Options::parse(["--window-size".into(), value.into()]).is_err());
     }
     assert!(Options::parse(["--window-size".into()]).is_err());
+}
+
+#[test]
+fn gallery_capture_options_keep_navigation_pages_noninteractive_with_or_without_headless() {
+    assert_eq!(
+        Options::parse(["--headless".into()]).err().as_deref(),
+        Some("--headless requires --capture"),
+    );
+    for (name, component) in [
+        ("menu", ComponentId::Menu),
+        ("pagination", ComponentId::Pagination),
+        ("tabs", ComponentId::Tabs),
+    ] {
+        let interactive = Options::parse(["--component".into(), name.into()]).unwrap();
+        assert_eq!(interactive.component, component);
+        assert!(interactive.interactive());
+        assert!(!interactive.headless);
+        for headless in [false, true] {
+            let mut arguments = vec!["--component", name, "--capture", "gallery.png"];
+            if headless {
+                arguments.push("--headless");
+            }
+            let capture = Options::parse(arguments.into_iter().map(String::from)).unwrap();
+            assert_eq!(capture.component, component);
+            assert!(!capture.interactive());
+            assert_eq!(capture.headless, headless);
+            assert_eq!(capture.capture, Some("gallery.png".into()));
+        }
+    }
 }
 
 #[test]

@@ -6,7 +6,8 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Pagination, Select and Slider visual rules, Select's simple Empty illustration,
+Popover, Popconfirm, Menu, Pagination, Select, Slider and Tabs visual rules,
+Select's simple Empty illustration,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
 Ant Design 6.6.7, commit `f8f5595ab5e891fff6a2a06c5b3b98af643d008e`:
@@ -37,6 +38,8 @@ SOFTWARE.
 The original license is also preserved in `fixtures/theme/licenses/ant-design.txt`.
 Independent Button browser style captures and their input provenance are under
 `fixtures/button/`; their generator executes the original MIT-licensed sources.
+Tabs measurements and hashed source provenance are under `fixtures/tabs/`;
+its generator executes the original Tabs style functions and cssinjs serializer.
 Divider's independent browser measurements and provenance are under
 `fixtures/divider/`; its generator likewise executes the original styles.
 Checkbox's independent browser states and tick geometry measurements are under

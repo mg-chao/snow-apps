@@ -63,6 +63,8 @@ common_messages! {
     more_navigation_items => MoreNavigationItems,
     horizontal_scroll_bar => HorizontalScrollBar,
     vertical_scroll_bar => VerticalScrollBar,
+    add_tab => AddTab,
+    more_tabs => MoreTabs,
 }
 
 /// Popconfirm-owned messages, independent of application-supplied titles.
@@ -195,6 +197,8 @@ impl Locale {
                     more_navigation_items: "More navigation items".into(),
                     horizontal_scroll_bar: "Horizontal scroll bar".into(),
                     vertical_scroll_bar: "Vertical scroll bar".into(),
+                    add_tab: "Add tab".into(),
+                    more_tabs: "More tabs".into(),
                 },
             })
         });
@@ -246,6 +250,8 @@ impl Locale {
                     more_navigation_items: "更多导航项".into(),
                     horizontal_scroll_bar: "水平滚动条".into(),
                     vertical_scroll_bar: "垂直滚动条".into(),
+                    add_tab: "添加标签页".into(),
+                    more_tabs: "更多标签页".into(),
                 },
             })
         });
@@ -297,6 +303,8 @@ impl Locale {
                     more_navigation_items: "更多導覽項目".into(),
                     horizontal_scroll_bar: "水平捲動軸".into(),
                     vertical_scroll_bar: "垂直捲動軸".into(),
+                    add_tab: "新增分頁".into(),
+                    more_tabs: "更多分頁".into(),
                 },
             })
         });

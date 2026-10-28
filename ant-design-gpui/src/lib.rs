@@ -39,6 +39,7 @@ pub use select::{
 mod select_slider_reference_tests;
 pub mod slider;
 pub mod switch;
+pub mod tabs;
 pub mod tag;
 pub mod theme;
 pub mod tooltip;
@@ -70,6 +71,7 @@ pub use scroll_area::{
 pub use segmented::{Segmented, SegmentedOption};
 pub use slider::{Slider, SliderChange, SliderEvent, SliderOptions, SliderState, SliderValue};
 pub use switch::{Switch, SwitchChange};
+pub use tabs::{TabItem, TabPlacement, Tabs, TabsEvent, TabsItems, TabsState, TabsType};
 pub use tag::{CheckableTag, CheckableTagGroup, Tag, TagChange, TagClose, TagOption};
 pub use tooltip::Tooltip;
 

@@ -27,6 +27,8 @@ cargo run --locked --offline --example gallery
 # Open Context Menu directly: -- --component context-menu
 # Open Menu directly: -- --component menu
 # Open Scroll Area directly: -- --component scroll-area
+# Open Tabs directly: -- --component tabs
+# Save a hidden native capture and exit: -- --component tabs --headless --capture C:/temp/tabs.png
 ```
 
 The native gallery has a fixed component sidebar, direct example links and a
@@ -72,6 +74,13 @@ groups, icons, shortcut hints and badges. Scroll areas use one native `ScrollHan
 for wheel input, keyboard navigation, overlay thumb dragging and application updates.
 See the [Context Menu and Scroll Area guide](docs/context-menu-scroll-area.md) for
 integration, behavior and focused verification commands.
+
+Tabs supports line, card and editable-card headers, all four logical placements,
+RTL, retained lazy panes, controlled selection, virtualized overflow menus and
+native keyboard navigation. The gallery contains the 16 public reference demos
+and four debug scenarios, including custom search, sticky headers and drag reordering.
+See the [Tabs guide](docs/tabs.md) for ownership, customization, measurements and
+the focused `cargo test --locked --offline --lib tabs::` command.
 
 Run only this example's offscreen regression tests with
 `cargo test --locked --offline --example gallery`.

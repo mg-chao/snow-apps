@@ -24,6 +24,7 @@ pub(super) enum ComponentId {
     Menu,
     Pagination,
     ScrollArea,
+    Tabs,
 }
 
 pub(super) struct Component {
@@ -76,6 +77,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Navigation",
         title: "Pagination",
         description: "A long list can be divided into several pages, and only one page will be loaded at a time.",
+    },
+    Component {
+        id: ComponentId::Tabs,
+        navigation_id: "gallery.navigation.tabs",
+        group: "Navigation",
+        title: "Tabs",
+        description: "Tabs make it easy to explore and switch between different views.",
     },
     Component {
         id: ComponentId::Checkbox,

@@ -21,6 +21,7 @@ mod select;
 mod shell;
 mod slider;
 mod switch;
+mod tabs;
 mod tag;
 
 #[cfg(test)]
@@ -35,6 +36,7 @@ use gpui::{App, AppContext, Bounds, Focusable, WindowBounds, WindowOptions, px, 
 struct Options {
     component: catalog::ComponentId,
     capture: Option<PathBuf>,
+    headless: bool,
     reduced_motion: bool,
     dark: bool,
     compact: bool,
@@ -44,6 +46,7 @@ struct Options {
 
 impl Options {
     fn interactive(&self) -> bool {
+        // Captures stay hidden; --headless also exits after saving the image.
         self.capture.is_none()
     }
 
@@ -73,9 +76,10 @@ impl Options {
                             Some("menu") => catalog::ComponentId::Menu,
                             Some("pagination") => catalog::ComponentId::Pagination,
                             Some("scroll-area") => catalog::ComponentId::ScrollArea,
+                            Some("tabs") => catalog::ComponentId::Tabs,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, or scroll-area"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, or tabs"
                                     .into(),
                             ),
                         };
@@ -90,6 +94,7 @@ impl Options {
                     );
                 }
                 "--reduced-motion" => options.reduced_motion = true,
+                "--headless" => options.headless = true,
                 "--dark" => options.dark = true,
                 "--compact" => options.compact = true,
                 "--rtl" => options.rtl = true,
@@ -112,13 +117,16 @@ impl Options {
                 _ => return Err(format!("unknown argument: {argument}")),
             }
         }
+        if options.headless && options.capture.is_none() {
+            return Err("--headless requires --capture".into());
+        }
         Ok(options)
     }
 }
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {
@@ -173,6 +181,15 @@ fn main() {
                             cx.background_executor()
                                 .timer(Duration::from_millis(300))
                                 .await;
+                            // Hidden windows do not receive presentation frames.
+                            // Flush layout-dependent controls through the event loop:
+                            // initial measurement, overflow reservation, selection reveal.
+                            for _ in 0..3 {
+                                cx.update(|window, cx| window.draw(cx).clear(cx)).ok();
+                                cx.background_executor()
+                                    .timer(Duration::from_millis(16))
+                                    .await;
+                            }
                             let result = cx.update(|window, cx| {
                                 window.draw(cx).clear(cx);
                                 match window.render_to_image() {
@@ -184,6 +201,9 @@ fn main() {
                                     Err(error) => {
                                         eprintln!("Could not render gallery capture: {error}");
                                     }
+                                }
+                                if options.headless {
+                                    cx.quit();
                                 }
                             });
                             if let Err(error) = result {

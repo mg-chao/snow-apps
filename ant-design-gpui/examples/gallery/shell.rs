@@ -32,6 +32,7 @@ use super::{
     select::{self, SelectPage},
     slider::{self, SliderPage},
     switch::{self, SwitchPage},
+    tabs::{self, TabsPage},
     tag::{self, TagPage},
 };
 
@@ -88,6 +89,7 @@ pub(super) struct Gallery {
     pub menu: Entity<MenuPage>,
     pub pagination: Entity<PaginationPage>,
     pub scroll_area: Entity<ScrollAreaPage>,
+    pub tabs: Entity<TabsPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
@@ -107,6 +109,7 @@ pub(super) struct Gallery {
     menu_anchors: Vec<ScrollAnchor>,
     pagination_anchors: Vec<ScrollAnchor>,
     scroll_area_anchors: Vec<ScrollAnchor>,
+    tabs_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
 
@@ -181,6 +184,10 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let tabs_anchors: Vec<_> = tabs::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let scroll_area_anchors: Vec<_> = scroll_area::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
@@ -196,6 +203,7 @@ impl Gallery {
             scroll_area: cx.new(|cx| {
                 ScrollAreaPage::new(scope.clone(), scroll_area_anchors.clone(), window, cx)
             }),
+            tabs: cx.new(|cx| TabsPage::new(scope.clone(), tabs_anchors.clone(), window, cx)),
             button: cx.new(|cx| ButtonPage::new(scope.clone(), anchors.clone(), cx)),
             checkbox: cx.new(|cx| CheckboxPage::new(scope.clone(), checkbox_anchors.clone(), cx)),
             divider: cx.new(|cx| DividerPage::new(scope.clone(), divider_anchors.clone(), cx)),
@@ -260,6 +268,7 @@ impl Gallery {
             menu_anchors,
             pagination_anchors,
             scroll_area_anchors,
+            tabs_anchors,
         }
     }
 
@@ -402,6 +411,7 @@ impl Gallery {
                         ComponentId::Menu => "Navigation / Menu",
                         ComponentId::Pagination => "Navigation / Pagination",
                         ComponentId::ScrollArea => "Layout / Scroll Area",
+                        ComponentId::Tabs => "Navigation / Tabs",
                     },
                 ))
             })
@@ -508,6 +518,7 @@ impl Gallery {
                                 ComponentId::Menu => IconName::MenuFoldOutlined,
                                 ComponentId::Pagination => IconName::EllipsisOutlined,
                                 ComponentId::ScrollArea => IconName::SwapOutlined,
+                                ComponentId::Tabs => IconName::FolderOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
                             .accessibility_label(component.title)
@@ -686,6 +697,13 @@ impl Gallery {
                         .filter(|_| self.selected == ComponentId::ScrollArea)
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 );
+            let links = links.chain(
+                tabs::DEMOS
+                    .iter()
+                    .zip(&self.tabs_anchors)
+                    .filter(|_| self.selected == ComponentId::Tabs)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
             for (id, title, pending, anchor) in links {
                 let anchor = anchor.clone();
                 let debug_id = format!("gallery.jump.{id}");
@@ -838,6 +856,7 @@ impl Gallery {
                                 ComponentId::Menu => "Open Ant Design Menu reference",
                                 ComponentId::Pagination => "Open Ant Design Pagination reference",
                                 ComponentId::ScrollArea => "Open Ant Design design principles",
+                                ComponentId::Tabs => "Open Ant Design Tabs reference",
                             })
                             .href(match self.selected {
                                 ComponentId::Button => "https://ant.design/components/button",
@@ -860,6 +879,7 @@ impl Gallery {
                                 ComponentId::Pagination => {
                                     "https://ant.design/components/pagination"
                                 }
+                                ComponentId::Tabs => "https://ant.design/components/tabs",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -912,6 +932,7 @@ impl Render for Gallery {
             ComponentId::Menu => menu::DEMOS.len(),
             ComponentId::Pagination => pagination::DEMOS.len(),
             ComponentId::ScrollArea => scroll_area::DEMOS.len(),
+            ComponentId::Tabs => tabs::DEMOS.len(),
         };
         let coverage = match self.selected {
             ComponentId::Input => input_examples::summary(input::DEMOS),
@@ -920,6 +941,7 @@ impl Render for Gallery {
             ComponentId::Slider => input_examples::summary(slider::DEMOS),
             ComponentId::Menu => input_examples::summary(menu::DEMOS),
             ComponentId::Pagination => input_examples::summary(pagination::DEMOS),
+            ComponentId::Tabs => input_examples::summary(tabs::DEMOS),
             _ => format!("{live} live examples"),
         };
         div()
@@ -1029,6 +1051,7 @@ impl Render for Gallery {
                                         ComponentId::Menu => self.menu.clone().into_any_element(),
                                         ComponentId::Pagination => self.pagination.clone().into_any_element(),
                                         ComponentId::ScrollArea => self.scroll_area.clone().into_any_element(),
+                                        ComponentId::Tabs => self.tabs.clone().into_any_element(),
 
                                     })
                                     .child(
@@ -1045,6 +1068,7 @@ impl Render for Gallery {
                                                 ComponentId::ContextMenu => "Right-click to open · Shift+F10 from the keyboard · Arrow keys to navigate · Escape to dismiss",
                                                 ComponentId::Menu => "Tab to enter · Arrow keys to navigate · Enter or Space to select · Escape to close a submenu",
                                                 ComponentId::ScrollArea => "Wheel or drag to scroll · Shift+wheel for horizontal · Arrow and Page keys when focused",
+                                                ComponentId::Tabs => "Arrow keys move focus · Enter or Space selects · Delete requests closing editable tabs",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {

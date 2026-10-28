@@ -79,6 +79,10 @@ harness = false
 name = "menu"
 harness = false
 
+[[bench]]
+name = "tabs"
+harness = false
+
 [profile.dev]
 incremental = false
 
