@@ -264,6 +264,17 @@ void screenshotBehaviorReset(settings::BuiltInSettingsBackend& backend) {
 }
 
 void recognitionOptInResets(settings::BuiltInSettingsBackend& backend) {
+    constexpr auto resident = settings::SettingsSwitchBinding::OcrResidentProcess;
+    require(!storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/resident_process"))
+                    .toBool() &&
+                backend.switchEnabled(resident) && !backend.switchValue(resident),
+            "Mini resident OCR must be available but default off");
+    require(backend.applySwitchValue(resident, true) && backend.switchValue(resident),
+            "Mini resident OCR can be explicitly enabled");
+    require(backend.resetSection(settings::SettingsSectionReset::TextRecognition) &&
+                !backend.switchValue(resident),
+            "Mini recognition reset must restore resident OCR off");
     namespace layout = presentation::toolbar_layout;
     for (const auto kind : {storage::ScreenshotToolbarLayoutKind::ActionTools,
                             storage::ScreenshotToolbarLayoutKind::PinnedActionTools}) {
