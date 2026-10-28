@@ -98,6 +98,8 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void endKeyboardFocusInteraction(QWidget* editor = nullptr);
     void setPaletteScaleMultiplier(qreal multiplier);
     [[nodiscard]] qreal paletteScaleMultiplier() const;
+    // Apply ownership to existing surfaces without materializing either window.
+    static void applyTransientOwnerWindow(QWidget* window, QWidget* owner);
 
   private:
     void updatePaletteGeometryForVisibleContent();

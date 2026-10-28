@@ -8612,6 +8612,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-recording-capture-exclusion-tests
         COMMAND snow-shot-screen-recording-controller-tests --capture-exclusion-only)
+    add_test(NAME snow-shot-recording-toolbar-ownership-tests
+        COMMAND snow-shot-screen-recording-controller-tests --toolbar-ownership-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-toolbar-ownership-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30)
+    if(WIN32)
+        add_test(NAME snow-shot-recording-toolbar-exclusion-stacking-tests
+            COMMAND snow-shot-screen-recording-controller-tests --toolbar-exclusion-stacking-only
+                -platform windows)
+        set_tests_properties(snow-shot-recording-toolbar-exclusion-stacking-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     set_tests_properties(snow-shot-recording-capture-exclusion-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     if(APPLE)

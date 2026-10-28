@@ -67,6 +67,7 @@
 #include <QProcessEnvironment>
 #ifdef Q_OS_WIN
 #include "toolbar_capture_exclusion_native_tests.h"
+#include "../src/platform/windows/captureexclusioncomposition.h"
 #endif
 #include <QElapsedTimer>
 #include <QThread>
@@ -1108,6 +1109,146 @@ void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
             "recording toolbar must retain the area as its transient owner");
     area->setInputMode(previousInputMode);
 }
+
+void recordingToolbarOwnershipSurvivesSurfaceRecreation() {
+    QWidget firstOwner;
+    QWidget secondOwner;
+    ScreenRecordingToolbarWindow toolbar;
+    const auto setOwner = [&](QWidget* owner) {
+        toolbar.setTransientOwnerWindow(owner);
+        toolbar.setAutoHideControlOwner(owner);
+        QWidget* edge = toolbar.autoHideControlWindow();
+        require(!edge->isVisible() && !edge->parentWidget() &&
+                    edge->windowHandle()->transientParent() ==
+                        (owner ? owner->windowHandle() : nullptr),
+                "the hidden auto-hide control must follow owner changes and detachment");
+    };
+    const auto recreate = [&](QWidget* expectedOwner) {
+        const QPointer<QWindow> previousSurface(toolbar.windowHandle());
+        toolbar.releaseNativeSurface();
+        require(previousSurface.isNull() && toolbar.internalWinId() == 0,
+                "surface retirement must not recreate a toolbar while restoring ownership");
+        // Qt's composition transition creates the replacement directly, without
+        // calling the toolbar's explicit restoreNativeSurface() entry point.
+        static_cast<void>(toolbar.winId());
+        require(!toolbar.isVisible() && toolbar.parentWidget() == nullptr &&
+                    toolbar.windowHandle()->transientParent() ==
+                        (expectedOwner ? expectedOwner->windowHandle() : nullptr),
+                "implicit surface recreation must preserve the current transient owner");
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            require(GetWindow(reinterpret_cast<HWND>(toolbar.winId()), GW_OWNER) ==
+                        (expectedOwner ? reinterpret_cast<HWND>(expectedOwner->winId()) : nullptr),
+                    "implicit surface recreation must preserve the current native owner");
+        }
+#endif
+    };
+    setOwner(&firstOwner);
+    recreate(&firstOwner);
+    setOwner(&secondOwner);
+    recreate(&secondOwner);
+    setOwner(nullptr);
+    recreate(nullptr);
+    auto owner = std::make_unique<QWidget>();
+    setOwner(owner.get());
+    owner.reset();
+    recreate(nullptr);
+}
+
+#ifdef Q_OS_WIN
+void recordingCaptureExclusionPreservesToolbarStacking() {
+    namespace composition = snow_shot::platform::windows::detail;
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "toolbar stacking regression requires native Windows surfaces");
+    const snow_shot::storage::RecordingSettings settings;
+    require(settings.setAutoHideToolbar(false) && settings.setStartDelaySeconds(0),
+            "keep the recording toolbar visible and start without a countdown");
+    const QRect screen =
+        ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen());
+    for (const bool captureToolbar : {true, false}) {
+        require(settings.setCaptureToolbarInRecording(captureToolbar), "set toolbar capture");
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open(QRect(screen.topLeft() + QPoint(80, 80), QSize(640, 360)));
+        auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+                area = candidate;
+        }
+        require(toolbar && area && !toolbar->parentWidget(),
+                "recording must use its real parentless toolbar and area");
+        controller.startRecording();
+        waitForRecording(controller);
+        const bool nativeFallback = composition::usesCaptureExclusionComposition(toolbar);
+        std::cout << "capture_toolbar=" << captureToolbar
+                  << " native_composition_fallback=" << nativeFallback << std::endl;
+        if (!captureToolbar) {
+            if (QCoreApplication::arguments().contains(
+                    QStringLiteral("--require-native-composition-fallback"))) {
+                require(nativeFallback, "this run must exercise the OS-triggered fallback");
+            }
+            // Newer Windows versions can accept affinity on raster surfaces.
+            // Exercise the same production transition on those hosts as well.
+            if (!nativeFallback) {
+                require(composition::applyCaptureExclusionCompositionFallback(toolbar),
+                        "exercise the production composition transition");
+                require(snow_shot::platform::setWindowExcludedFromCapture(toolbar, true),
+                        "replacement surface must retain capture exclusion");
+            }
+            QWidget* edge = toolbar->autoHideControlWindow();
+            if (!composition::usesCaptureExclusionComposition(edge)) {
+                require(composition::applyCaptureExclusionCompositionFallback(edge),
+                        "exercise the hidden auto-hide control's composition transition");
+                require(snow_shot::platform::setWindowExcludedFromCapture(edge, true),
+                        "replacement auto-hide control must retain capture exclusion");
+            }
+            require(!edge->isVisible() &&
+                        edge->windowHandle()->transientParent() == area->windowHandle() &&
+                        GetWindow(reinterpret_cast<HWND>(edge->winId()), GW_OWNER) ==
+                            reinterpret_cast<HWND>(area->winId()),
+                    "composition must preserve the hidden auto-hide control's owner");
+        }
+        DWORD affinity = WDA_NONE;
+        const DWORD expectedAffinity = captureToolbar ? WDA_NONE : WDA_EXCLUDEFROMCAPTURE;
+        require(GetWindowDisplayAffinity(reinterpret_cast<HWND>(toolbar->winId()), &affinity) &&
+                    affinity == expectedAffinity,
+                "toolbar stacking must preserve the requested capture policy");
+        for (int presentation = 0; presentation < 2; ++presentation) {
+            if (presentation != 0) {
+                toolbar->hide();
+                toolbar->showWithoutActivating();
+            }
+            requireToolbarAboveArea(area);
+            area->setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+            auto* button = toolbar->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenRecordingPause"));
+            require(button && button->isVisible(), "recording pause button must be available");
+            const QPoint target = area->mapToGlobal(area->rect().center());
+            toolbar->move(toolbar->pos() + target - button->mapToGlobal(button->rect().center()));
+            toolbar->repaint();
+            area->raise();
+            area->activateInput();
+            QCoreApplication::processEvents();
+            const HWND toolbarHandle = reinterpret_cast<HWND>(toolbar->winId());
+            const QPoint local = button->mapTo(toolbar, button->rect().center());
+            POINT point{qRound(local.x() * toolbar->devicePixelRatioF()),
+                        qRound(local.y() * toolbar->devicePixelRatioF())};
+            require(ClientToScreen(toolbarHandle, &point), "map the overlapping button to desktop");
+            require(GetAncestor(WindowFromPoint(point), GA_ROOT) == toolbarHandle,
+                    "the overlapping toolbar button must receive native mouse input");
+        }
+        palette()->recordingStopRequested();
+        waitForIdle(controller);
+        requireToolbarAboveArea(area);
+        require(GetWindowDisplayAffinity(reinterpret_cast<HWND>(toolbar->winId()), &affinity) &&
+                    affinity == WDA_NONE,
+                "stopping must restore capture visibility without losing toolbar ownership");
+        palette()->recordingCloseRequested();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    std::cout << "recording toolbar capture-exclusion stacking passed\n";
+}
+#endif
 
 void recordingExpandsSmallSelectionsOnOpenAndReopen() {
     ScreenRecordingController controller(testEffectsSource);
@@ -7308,7 +7449,15 @@ template <typename Application> int runRecordingControllerTests(Application& app
             "test output directory must be set");
     require(RecordingSettings().setCaptureToolbarInRecording(true),
             "capture exclusion must be disabled for fake backend");
+    if (app.arguments().contains(QStringLiteral("--toolbar-ownership-only"))) {
+        recordingToolbarOwnershipSurvivesSurfaceRecreation();
+        return 0;
+    }
 #ifdef Q_OS_WIN
+    if (app.arguments().contains(QStringLiteral("--toolbar-exclusion-stacking-only"))) {
+        recordingCaptureExclusionPreservesToolbarStacking();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--native-capture-exclusion-only")) ||
         app.arguments().contains(QStringLiteral("--native-capture-exclusion-affinity-only"))) {
         ScreenRecordingToolbarWindow toolbar;

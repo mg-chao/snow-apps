@@ -242,8 +242,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
         if (owner)
             static_cast<void>(owner->winId());
         static_cast<void>(control->winId());
-        adqt::widgets::detail::setTopLevelToolTransientParent(control.get(), owner);
-        screenshot_floating_palette_native::setNativePaletteOwner(control->winId(), owner);
+        toolbar.applyTransientOwnerWindow(control.get(), owner);
     }
 
     void shown() {
@@ -528,6 +527,8 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
     }
 
     bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == control.get() && event->type() == QEvent::WinIdChange)
+            toolbar.applyTransientOwnerWindow(control.get(), controlOwner);
         if (watched == control.get() && collapsed && !changingVisibility &&
             (event->type() == QEvent::WinIdChange || event->type() == QEvent::Hide)) {
             // A replaced native surface has no inherited capture approval.
