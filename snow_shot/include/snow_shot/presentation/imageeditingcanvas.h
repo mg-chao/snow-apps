@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/imageeditingdocument.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
+#include <optional>
 
 namespace snow_shot::presentation {
 class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCustomRenderer {
@@ -30,6 +31,8 @@ class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCust
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
@@ -53,6 +56,7 @@ class ImageEditingCanvas final : public SnowCanvasWidget, private SnowCanvasCust
     bool m_fitted = false;
     bool m_panning = false;
     bool m_cropping = false;
+    std::optional<QPointF> m_pointerView;
     QPointF m_last;
     QPointF m_firstPixel;
     QPointF m_lastPixel;

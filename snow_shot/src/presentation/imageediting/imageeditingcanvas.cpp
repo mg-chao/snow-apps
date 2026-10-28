@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/imageeditingcanvas.h"
 #include "snow_shot/presentation/canvastexteditingpreferences.h"
+#include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include <QPainter>
 #include <QCoreApplication>
 #include <QMouseEvent>
+#include <QEnterEvent>
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QResizeEvent>
@@ -67,11 +69,14 @@ QPointF ImageEditingCanvas::pixelAt(QPointF view) const {
     return m_document.imagePixelAt(canvasToViewTransform().inverted().map(view));
 }
 void ImageEditingCanvas::mousePressEvent(QMouseEvent* event) {
+    const auto previous = cropPreviewDamage();
+    m_pointerView = event->position();
     if (event->button() == Qt::MiddleButton ||
         (m_mode == Mode::Pan && event->button() == Qt::LeftButton)) {
         m_panning = true;
         m_last = event->position();
         setCursor(Qt::ClosedHandCursor);
+        update(previous);
         event->accept();
         return;
     }
@@ -79,18 +84,21 @@ void ImageEditingCanvas::mousePressEvent(QMouseEvent* event) {
         (m_mode == Mode::CropRows || m_mode == Mode::CropColumns)) {
         if (!m_document.bounds().contains(
                 canvasToViewTransform().inverted().map(event->position()))) {
+            update(previous);
             event->accept();
             return;
         }
         m_cropping = true;
         m_firstPixel = m_lastPixel = pixelAt(event->position());
         event->accept();
-        update(cropPreviewDamage());
+        update(QRegion(previous) | cropPreviewDamage());
         return;
     }
     SnowCanvasWidget::mousePressEvent(event);
 }
 void ImageEditingCanvas::mouseMoveEvent(QMouseEvent* event) {
+    const auto previous = cropPreviewDamage();
+    m_pointerView = event->position();
     if (m_panning) {
         m_center -= (event->position() - m_last) / m_zoom;
         m_last = event->position();
@@ -99,8 +107,12 @@ void ImageEditingCanvas::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
     if (m_cropping) {
-        const auto previous = cropPreviewDamage();
         m_lastPixel = pixelAt(event->position());
+        update(QRegion(previous) | cropPreviewDamage());
+        event->accept();
+        return;
+    }
+    if (m_mode == Mode::CropRows || m_mode == Mode::CropColumns) {
         update(QRegion(previous) | cropPreviewDamage());
         event->accept();
         return;
@@ -108,14 +120,16 @@ void ImageEditingCanvas::mouseMoveEvent(QMouseEvent* event) {
     SnowCanvasWidget::mouseMoveEvent(event);
 }
 void ImageEditingCanvas::mouseReleaseEvent(QMouseEvent* event) {
+    const auto previous = cropPreviewDamage();
+    m_pointerView = event->position();
     if (m_panning) {
         m_panning = false;
         setCursor(m_mode == Mode::Pan ? Qt::OpenHandCursor : Qt::CrossCursor);
+        update(QRegion(previous) | cropPreviewDamage());
         event->accept();
         return;
     }
     if (m_cropping && event->button() == Qt::LeftButton) {
-        const auto previous = cropPreviewDamage();
         m_cropping = false;
         m_lastPixel = pixelAt(event->position());
         const bool rows = m_mode == Mode::CropRows;
@@ -124,11 +138,23 @@ void ImageEditingCanvas::mouseReleaseEvent(QMouseEvent* event) {
                                : ImageEditingDocument::CropAxis::Columns,
                           qRound(rows ? m_firstPixel.y() : m_firstPixel.x()),
                           qRound(rows ? m_lastPixel.y() : m_lastPixel.x()));
-        update(previous);
+        update(QRegion(previous) | cropPreviewDamage());
         event->accept();
         return;
     }
     SnowCanvasWidget::mouseReleaseEvent(event);
+}
+void ImageEditingCanvas::enterEvent(QEnterEvent* event) {
+    const auto previous = cropPreviewDamage();
+    m_pointerView = event->position();
+    SnowCanvasWidget::enterEvent(event);
+    update(QRegion(previous) | cropPreviewDamage());
+}
+void ImageEditingCanvas::leaveEvent(QEvent* event) {
+    const auto previous = cropPreviewDamage();
+    m_pointerView.reset();
+    SnowCanvasWidget::leaveEvent(event);
+    update(QRegion(previous) | cropPreviewDamage());
 }
 void ImageEditingCanvas::wheelEvent(QWheelEvent* event) {
     if (hasActiveTextEditing()) {
@@ -149,7 +175,7 @@ void ImageEditingCanvas::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Escape && m_cropping) {
         const auto previous = cropPreviewDamage();
         m_cropping = false;
-        update(previous);
+        update(QRegion(previous) | cropPreviewDamage());
         event->accept();
         return;
     }
@@ -200,13 +226,23 @@ void ImageEditingCanvas::renderOriginalBackground(QPainter& painter,
     renderBeforeCanvas(painter, context);
 }
 QRectF ImageEditingCanvas::cropStrip(int* pixelCount) const {
+    if ((m_mode != Mode::CropRows && m_mode != Mode::CropColumns) || m_panning)
+        return {};
     const auto bounds = m_document.bounds();
     const bool rows = m_mode == Mode::CropRows;
     const int extent = rows ? m_document.image().height() : m_document.image().width();
-    if (extent == 0)
+    if (extent == 0 || bounds.isEmpty())
         return {};
-    const int first = std::clamp(qRound(rows ? m_firstPixel.y() : m_firstPixel.x()), 0, extent);
-    const int last = std::clamp(qRound(rows ? m_lastPixel.y() : m_lastPixel.x()), 0, extent);
+    QPointF firstPixel = m_firstPixel;
+    QPointF lastPixel = m_lastPixel;
+    if (!m_cropping) {
+        if (!m_pointerView || !QRectF(rect()).contains(*m_pointerView) ||
+            !bounds.contains(canvasToViewTransform().inverted().map(*m_pointerView)))
+            return {};
+        firstPixel = lastPixel = pixelAt(*m_pointerView);
+    }
+    const int first = std::clamp(qRound(rows ? firstPixel.y() : firstPixel.x()), 0, extent);
+    const int last = std::clamp(qRound(rows ? lastPixel.y() : lastPixel.x()), 0, extent);
     const double scale = (rows ? bounds.height() : bounds.width()) / extent;
     if (pixelCount)
         *pixelCount = std::abs(first - last);
@@ -216,25 +252,51 @@ QRectF ImageEditingCanvas::cropStrip(int* pixelCount) const {
                          std::abs(first - last) * scale, bounds.height());
 }
 QRect ImageEditingCanvas::cropPreviewDamage() const {
-    if (!m_cropping || cropStrip().isEmpty())
+    const auto strip = cropStrip();
+    // A zero-width/height strip still contains the hover or initial drag guide.
+    if (strip.isNull())
         return {};
     return canvasToViewTransform()
-        .mapRect(cropStrip())
+        .mapRect(strip)
         .toAlignedRect()
         .adjusted(-2, -2, 2, 2)
         .intersected(rect());
 }
 void ImageEditingCanvas::renderAfterCanvas(QPainter& painter,
                                            const SnowCanvasRenderContext& context) {
-    if (!m_cropping)
-        return;
     int pixels = 0;
-    const QRectF view = context.canvasToViewTransform.mapRect(cropStrip(&pixels));
-    if (view.isEmpty())
+    const auto strip = cropStrip(&pixels);
+    if (strip.isNull())
         return;
-    painter.fillRect(view, QColor(240, 65, 65, 95));
-    painter.setPen(Qt::white);
-    painter.drawText(view, Qt::AlignCenter,
-                     QCoreApplication::translate("ImageEditingWindow", "%1 px").arg(pixels));
+    const QRectF view = context.canvasToViewTransform.mapRect(strip);
+    const QRectF imageView = context.canvasToViewTransform.mapRect(m_document.bounds());
+    painter.save();
+    painter.setClipRect(imageView, Qt::IntersectClip);
+    if (pixels > 0) {
+        painter.fillRect(view, QColor(240, 65, 65, 95));
+        painter.setPen(Qt::white);
+        painter.drawText(view, Qt::AlignCenter,
+                         QCoreApplication::translate("ImageEditingWindow", "%1 px").arg(pixels));
+    }
+    const bool rows = m_mode == Mode::CropRows;
+    const qreal minimum = rows ? imageView.top() : imageView.left();
+    const qreal maximum = rows ? imageView.bottom() : imageView.right();
+    // Keep the guide stroke inside the image clip even at the final pixel boundary.
+    const qreal inset =
+        std::min((maximum - minimum) / 2, 0.5 / painter.device()->devicePixelRatioF());
+    const auto guideAt = [&](qreal position) {
+        position = std::clamp(position, minimum + inset, maximum - inset);
+        return rows ? QLineF(imageView.left(), position, imageView.right(), position)
+                    : QLineF(position, imageView.top(), position, imageView.bottom());
+    };
+    const QLineF guides[] = {guideAt(rows ? view.top() : view.left()),
+                             guideAt(rows ? view.bottom() : view.right())};
+    // Match image splitting's selection-blue, one-logical-pixel dashed dividers.
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(QColor(0x40, 0x96, 0xff), 1.0);
+    snowCanvasApplySelectionDashStyle(pen);
+    painter.setPen(pen);
+    painter.drawLines(guides, pixels > 0 ? 2 : 1);
+    painter.restore();
 }
 } // namespace snow_shot::presentation

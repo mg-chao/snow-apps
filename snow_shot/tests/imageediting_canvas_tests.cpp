@@ -3,6 +3,7 @@
 #include "canvas_text_editing_preferences_test_support.h"
 
 #include <QApplication>
+#include <QEnterEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,6 +13,7 @@
 #include <QPainter>
 #include <QPointingDevice>
 #include <QTabletEvent>
+#include <QWheelEvent>
 #include <QtMath>
 #include <array>
 #include <cmath>
@@ -540,11 +542,162 @@ void blankOutsideGesturesCannotCreateAnnotations() {
     drag(fixture.canvas, fixture.view({100, 80}), fixture.view({100, 120}));
     require(crops == 1, "inside-image crop gestures remain functional");
 }
+
+QRect changedPixels(const QImage& before, const QImage& after) {
+    QRect changed;
+    for (int y = 0; y < before.height(); ++y)
+        for (int x = 0; x < before.width(); ++x)
+            if (before.pixel(x, y) != after.pixel(x, y))
+                changed |= QRect(x, y, 1, 1);
+    return changed;
+}
+
+void requireCropGuide(const QImage& image, QRectF guide) {
+    const qreal dpr = image.devicePixelRatio();
+    const auto pixels = QTransform::fromScale(dpr, dpr)
+                            .mapRect(guide.adjusted(-2, -2, 2, 2))
+                            .toAlignedRect()
+                            .intersected(image.rect());
+    int blue = 0;
+    for (int y = pixels.top(); y <= pixels.bottom(); ++y)
+        for (int x = pixels.left(); x <= pixels.right(); ++x) {
+            const auto color = image.pixelColor(x, y);
+            blue += color.blue() > color.green() + 25 && color.green() > color.red() + 10;
+        }
+    const auto minimum = std::max(guide.width(), guide.height()) * dpr / 8;
+    require(blue > minimum, "crop boundaries have image-splitting blue markers across the image");
+}
+
+void cropGuidesTrackRoundedImagePixels() {
+    for (const auto mode :
+         {ImageEditingCanvas::Mode::CropRows, ImageEditingCanvas::Mode::CropColumns}) {
+        Fixture fixture;
+        auto source = patternedSource();
+        source.image.fill(QColor(40, 50, 60));
+        require(fixture.document.load(source), "load crop guide image with offset scaled bounds");
+        fixture.canvas.setMode(mode);
+        const bool rows = mode == ImageEditingCanvas::Mode::CropRows;
+        const auto bounds = fixture.document.bounds();
+        // Both image axes use two source pixels per canvas unit.
+        const auto hover = bounds.topLeft() + QPointF(63.2, 52.7);
+        const auto snapped = bounds.topLeft() + QPointF(63, 52.5);
+        for (const qreal zoom : {0.75, 1.0, 1.25}) {
+            require(fixture.canvas.setViewportCamera(bounds.center().x() + 8,
+                                                     bounds.center().y() - 7, zoom),
+                    "zoom and pan the crop guide fixture");
+            QEvent leave(QEvent::Leave);
+            QApplication::sendEvent(&fixture.canvas, &leave);
+            std::array<QImage, 3> before;
+            const std::array<qreal, 3> dprs{1.0, 1.25, 2.0};
+            for (size_t i = 0; i < dprs.size(); ++i)
+                before[i] = renderWidget(fixture.canvas, dprs[i]);
+            mouse(fixture.canvas, QEvent::MouseMove, fixture.view(hover));
+            const QRectF guide = fixture.canvas.canvasToViewTransform().mapRect(
+                rows ? QRectF(bounds.x(), snapped.y(), bounds.width(), 0)
+                     : QRectF(snapped.x(), bounds.y(), 0, bounds.height()));
+            for (size_t i = 0; i < dprs.size(); ++i) {
+                const auto after = renderWidget(fixture.canvas, dprs[i]);
+                requireCropGuide(after, guide);
+                const auto expected = QTransform::fromScale(dprs[i], dprs[i])
+                                          .mapRect(guide.adjusted(-2, -2, 2, 2))
+                                          .toAlignedRect();
+                const auto changed = changedPixels(before[i], after);
+                require(!changed.isEmpty() && expected.contains(changed),
+                        "hover paints only the guide at the rounded source-pixel boundary");
+                const auto imageRect =
+                    QTransform::fromScale(dprs[i], dprs[i])
+                        .mapRect(fixture.canvas.canvasToViewTransform().mapRect(bounds))
+                        .toAlignedRect();
+                require(imageRect.contains(changed), "crop guides stay within the image");
+            }
+            mouse(fixture.canvas, QEvent::MouseMove,
+                  fixture.view(bounds.topLeft() - QPointF(5, 5)));
+            require(renderWidget(fixture.canvas, 1) == before[0],
+                    "moving outside the image removes the crop guide");
+        }
+        require(fixture.document.image() == source.image && !fixture.document.dirty() &&
+                    fixture.exported() == source.image,
+                "hover guides leave document pixels, history, and exported images unchanged");
+    }
+}
+
+void cropGuidesRemainVisibleAtImageEdges() {
+    for (const auto mode :
+         {ImageEditingCanvas::Mode::CropRows, ImageEditingCanvas::Mode::CropColumns}) {
+        for (const auto color : {Qt::black, Qt::white}) {
+            Fixture fixture;
+            ImageEditingSource source;
+            source.image = QImage(240, 160, QImage::Format_ARGB32_Premultiplied);
+            source.image.fill(color);
+            source.canvasRect = QRectF(0, 0, 240, 160);
+            require(fixture.document.load(source), "load crop edge contrast fixture");
+            require(fixture.canvas.setViewportCamera(120, 80, 1), "set crop edge camera");
+            const auto before = renderWidget(fixture.canvas, 1);
+            fixture.canvas.setMode(mode);
+            for (const auto point : {QPointF(0.1, 0.1), QPointF(239.9, 159.9)}) {
+                mouse(fixture.canvas, QEvent::MouseMove, fixture.view(point));
+                const auto changed = changedPixels(before, renderWidget(fixture.canvas, 1));
+                require(!changed.isEmpty(),
+                        "crop guides remain visible at either image edge on light and dark images");
+            }
+        }
+    }
+}
+
+void cropGuidesFollowPointerAndModeChanges() {
+    Fixture fixture;
+    fixture.canvas.actualSize();
+    const auto before = renderWidget(fixture.canvas, 1);
+    const auto point = fixture.view({83.3, 68.2});
+    mouse(fixture.canvas, QEvent::MouseMove, point);
+    fixture.canvas.setMode(ImageEditingCanvas::Mode::CropRows);
+    require(renderWidget(fixture.canvas, 1) != before,
+            "activating crop shows a guide at the existing pointer position");
+    fixture.canvas.setMode(ImageEditingCanvas::Mode::Pan);
+    require(renderWidget(fixture.canvas, 1) == before, "pan mode removes the crop guide");
+    fixture.canvas.setMode(ImageEditingCanvas::Mode::CropColumns);
+    const auto columns = renderWidget(fixture.canvas, 1);
+    fixture.canvas.setMode(ImageEditingCanvas::Mode::Draw);
+    require(renderWidget(fixture.canvas, 1) == before, "draw mode removes the crop guide");
+    fixture.canvas.setMode(ImageEditingCanvas::Mode::CropColumns);
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(&fixture.canvas, &leave);
+    require(renderWidget(fixture.canvas, 1) == before, "leaving the canvas removes the crop guide");
+    QEnterEvent enter(point, point, fixture.canvas.mapToGlobal(point));
+    QApplication::sendEvent(&fixture.canvas, &enter);
+    require(renderWidget(fixture.canvas, 1) == columns,
+            "entering the canvas restores the guide without requiring mouse motion");
+
+    mouse(fixture.canvas, QEvent::MouseButtonPress, point, Qt::MiddleButton, Qt::MiddleButton);
+    require(renderWidget(fixture.canvas, 1) == before, "panning hides the hover guide");
+    const auto moved = point + QPointF(21, 13);
+    mouse(fixture.canvas, QEvent::MouseMove, moved, Qt::NoButton, Qt::MiddleButton);
+    mouse(fixture.canvas, QEvent::MouseButtonRelease, moved, Qt::MiddleButton);
+    const auto verifyAtPointer = [&] {
+        const auto bounds = fixture.document.bounds();
+        const auto canvasPoint = fixture.canvas.canvasToViewTransform().inverted().map(moved);
+        const auto pixel = fixture.document.imagePixelAt(canvasPoint);
+        const qreal x =
+            bounds.x() + qRound(pixel.x()) * bounds.width() / fixture.document.image().width();
+        requireCropGuide(renderWidget(fixture.canvas, 1),
+                         fixture.canvas.canvasToViewTransform().mapRect(
+                             QRectF(x, bounds.y(), 0, bounds.height())));
+    };
+    verifyAtPointer();
+    QWheelEvent wheel(moved, fixture.canvas.mapToGlobal(moved), {}, {0, 120}, Qt::NoButton,
+                      Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&fixture.canvas, &wheel);
+    verifyAtPointer();
+    fixture.canvas.fit();
+    verifyAtPointer();
+}
+
 void cropPreviewsRepaintOnlyTheirDamageAndCancelCleanly() {
     for (const auto mode :
          {ImageEditingCanvas::Mode::CropRows, ImageEditingCanvas::Mode::CropColumns}) {
         Fixture fixture;
         fixture.canvas.setMode(mode);
+        mouse(fixture.canvas, QEvent::MouseMove, fixture.view({26, 26}));
         QApplication::processEvents();
         const auto before = fixture.canvas.grab().toImage();
         class PaintRegions final : public QObject {
@@ -559,6 +712,14 @@ void cropPreviewsRepaintOnlyTheirDamageAndCancelCleanly() {
         fixture.canvas.installEventFilter(&events);
         mouse(fixture.canvas, QEvent::MouseButtonPress, fixture.view({20, 20}), Qt::LeftButton,
               Qt::LeftButton);
+        const bool rows = mode == ImageEditingCanvas::Mode::CropRows;
+        const auto guideAt = [&](qreal position) {
+            const auto bounds = fixture.document.bounds();
+            return fixture.canvas.canvasToViewTransform().mapRect(
+                rows ? QRectF(bounds.x(), position, bounds.width(), 0)
+                     : QRectF(position, bounds.y(), 0, bounds.height()));
+        };
+        requireCropGuide(renderWidget(fixture.canvas, 1), guideAt(20));
         events.painted = {};
         mouse(fixture.canvas, QEvent::MouseMove, fixture.view({26, 26}), Qt::NoButton,
               Qt::LeftButton);
@@ -567,11 +728,33 @@ void cropPreviewsRepaintOnlyTheirDamageAndCancelCleanly() {
                                           ? damage.height() < fixture.canvas.height() / 2
                                           : damage.width() < fixture.canvas.width() / 2),
                 "crop motion repaints the preview strip without repainting the full canvas");
+        const auto dragging = renderWidget(fixture.canvas, 1);
+        requireCropGuide(dragging, guideAt(20));
+        requireCropGuide(dragging, guideAt(26));
         QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
         QApplication::sendEvent(&fixture.canvas, &escape);
         QApplication::processEvents();
         require(fixture.canvas.grab().toImage() == before && !fixture.document.dirty(),
-                "cancelling the preview restores every pixel without editing the document");
+                "cancelling the preview restores the hover guide without editing the document");
+        int crops = 0;
+        fixture.canvas.cropRequested = [&](ImageEditingDocument::CropAxis axis, int first,
+                                           int last) {
+            require(axis == (rows ? ImageEditingDocument::CropAxis::Rows
+                                  : ImageEditingDocument::CropAxis::Columns) &&
+                        first == 80 && last == 26,
+                    "guides preserve the reverse drag's requested crop pixels");
+            ++crops;
+        };
+        mouse(fixture.canvas, QEvent::MouseButtonPress, fixture.view({80, 80}), Qt::LeftButton,
+              Qt::LeftButton);
+        mouse(fixture.canvas, QEvent::MouseMove, fixture.view({26, 26}), Qt::NoButton,
+              Qt::LeftButton);
+        requireCropGuide(renderWidget(fixture.canvas, 1), guideAt(80));
+        requireCropGuide(renderWidget(fixture.canvas, 1), guideAt(26));
+        mouse(fixture.canvas, QEvent::MouseButtonRelease, fixture.view({26, 26}), Qt::LeftButton);
+        require(
+            crops == 1 && fixture.canvas.grab().toImage() == before,
+            "releasing a reverse crop drag removes both boundaries and restores the hover guide");
     }
 }
 } // namespace
@@ -584,6 +767,9 @@ void runImageEditingCanvasTests() {
     rotationAndTextControlsRemainUsableOutsideImage();
     documentPixelsRemainClippedWhileControlsAreVisible();
     blankOutsideGesturesCannotCreateAnnotations();
+    cropGuidesTrackRoundedImagePixels();
+    cropGuidesRemainVisibleAtImageEdges();
+    cropGuidesFollowPointerAndModeChanges();
     cropPreviewsRepaintOnlyTheirDamageAndCancelCleanly();
 }
 
