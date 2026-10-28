@@ -24,8 +24,12 @@ class ScreenshotOcrSelectionMarqueeItem;
 class ScreenshotOcrTextLayer final : public QGraphicsView {
   public:
     enum class RenderingMode { Normal, SelectionOnly };
+    // Pins scale a single 100% image raster; capture overlays retain device-pixel rendering.
+    enum class HighlightingResolution { Device, Image };
 
-    explicit ScreenshotOcrTextLayer(QWidget* parent = nullptr);
+    explicit ScreenshotOcrTextLayer(
+        QWidget* parent = nullptr,
+        HighlightingResolution highlightingResolution = HighlightingResolution::Device);
     ~ScreenshotOcrTextLayer() override;
 
     void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
@@ -58,6 +62,8 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
     [[nodiscard]] quint64 backgroundRasterBuildCount() const;
     [[nodiscard]] quint64 backgroundRasterHitCount() const;
     [[nodiscard]] qsizetype backgroundRasterBytes() const;
+    [[nodiscard]] quint64 highlightingRasterBuildCount() const;
+    [[nodiscard]] QImage highlightingRasterForTesting() const;
     [[nodiscard]] qsizetype glyphRasterBytes() const;
     [[nodiscard]] quint64 previewRasterBuildCount() const;
     [[nodiscard]] quint64 previewRasterHitCount() const;
@@ -101,6 +107,7 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
     QFont m_layoutFont;
     QColor m_textHighlightColor = QColor(Qt::transparent);
     QPainterPath m_textHighlightMask;
+    const HighlightingResolution m_highlightingResolution;
     bool m_textHighlightGeometryDirty = true;
     RenderingMode m_renderingMode = RenderingMode::Normal;
     std::vector<TextItem> m_textItems;

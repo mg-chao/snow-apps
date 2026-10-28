@@ -369,7 +369,11 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
                           : Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint),
       m_actions(std::move(actions)), m_contentContainer(new QWidget(this)),
       m_stack(new QStackedLayout(m_contentContainer)),
-      m_textLayer(new ScreenshotOcrTextLayer(this)), m_presentationMode(presentationMode) {
+      m_textLayer(new ScreenshotOcrTextLayer(
+          this, presentationMode == PresentationMode::EmbeddedChild
+                    ? ScreenshotOcrTextLayer::HighlightingResolution::Image
+                    : ScreenshotOcrTextLayer::HighlightingResolution::Device)),
+      m_presentationMode(presentationMode) {
     if (shortcutManager == nullptr) {
         m_ownedShortcutManager = std::make_unique<snow_shot::presentation::WindowShortcutManager>();
         shortcutManager = m_ownedShortcutManager.get();

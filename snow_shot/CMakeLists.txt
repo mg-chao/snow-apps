@@ -8823,6 +8823,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/styles/buttonborder.cpp
     )
     snow_shot_link_macos_window_platform(snow-shot-recognition-window-tests)
+    target_compile_definitions(snow-shot-recognition-window-tests PRIVATE SNOW_SHOT_BENCH_INTERNALS=1)
     target_include_directories(snow-shot-recognition-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )

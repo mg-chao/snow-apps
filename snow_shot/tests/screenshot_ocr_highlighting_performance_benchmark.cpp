@@ -24,7 +24,7 @@ void require(bool condition, const char* message) {
     }
 }
 
-void benchmarkLabels(const QSize& size, int count) {
+std::shared_ptr<ScreenshotOcrPresentation> makePresentation(const QSize& size, int count) {
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(QPoint(), size);
     const int columns = count == 20 ? 5 : 20;
@@ -40,6 +40,11 @@ void benchmarkLabels(const QSize& size, int count) {
             QPolygonF({rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()});
         presentation->lines.push_back(std::move(line));
     }
+    return presentation;
+}
+
+void benchmarkLabels(const QSize& size, int count) {
+    const auto presentation = makePresentation(size, count);
     ScreenshotOcrTextLayer layer;
     layer.setPresentation(presentation);
     layer.synchronize(QTransform(), QRect(QPoint(), size));
@@ -109,6 +114,42 @@ void benchmarkLabels(const QSize& size, int count) {
                   << " p95_ms=" << values[(values.size() * 95 + 99) / 100 - 1] << '\n';
     }
 }
+
+void benchmarkZoom(const QSize& size, int count) {
+    const auto presentation = makePresentation(size, count);
+    using Resolution = ScreenshotOcrTextLayer::HighlightingResolution;
+    for (const auto resolution : {Resolution::Device, Resolution::Image}) {
+        ScreenshotOcrTextLayer layer(nullptr, resolution);
+        layer.setPresentation(presentation);
+        layer.setTextHighlighting(true, QColor(0, 0, 0, 128));
+        for (auto* item : layer.scene()->items())
+            item->setOpacity(0); // Isolate the surrounding background from glyph painting.
+        QImage image(size, QImage::Format_ARGB32_Premultiplied);
+        std::vector<double> timings;
+        for (int sample = -1; sample < 20; ++sample) {
+            const qreal zoom = 0.5 + (sample + 1) * 0.05;
+            image.fill(Qt::white);
+            QElapsedTimer timer;
+            timer.start();
+            layer.synchronize(QTransform::fromScale(zoom, zoom), QRect(QPoint(), size));
+            {
+                QPainter painter(&image);
+                layer.scene()->render(&painter, QRectF(image.rect()), layer.sceneRect());
+            }
+            if (sample >= 0)
+                timings.push_back(double(timer.nsecsElapsed()) / 1'000'000.0);
+        }
+        if (resolution == Resolution::Image)
+            require(layer.highlightingRasterBuildCount() == 1,
+                    "zoom benchmark reuses one background raster at image resolution");
+        std::sort(timings.begin(), timings.end());
+        std::cout << "ocr_highlighting_zoom width=" << size.width() << " height=" << size.height()
+                  << " labels=" << count << " cached_native=" << (resolution == Resolution::Image)
+                  << " raster_builds=" << layer.highlightingRasterBuildCount()
+                  << " median_ms=" << timings[timings.size() / 2]
+                  << " p95_ms=" << timings[(timings.size() * 95 + 99) / 100 - 1] << '\n';
+    }
+}
 } // namespace
 
 void runScreenshotOcrHighlightingBenchmark() {
@@ -120,5 +161,6 @@ void runScreenshotOcrHighlightingBenchmark() {
     for (const QSize& size : {QSize(1920, 1080), QSize(3840, 2160)}) {
         for (int count : {20, 500})
             benchmarkLabels(size, count);
+        benchmarkZoom(size, 500);
     }
 }
