@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
 #include <QPainter>
+#include <QVariant>
 #include <QWidget>
 
 // Shared selection surface for the two image history pages.
@@ -14,6 +15,8 @@ class HistorySelectionBar final : public QWidget {
 
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
         m_background = scheme.map.colorFillQuaternary;
+        m_surface = scheme.map.colorBgLayout;
+        m_surface.setAlpha(255);
         m_radius = scheme.metricAlias.borderRadiusLG;
         update();
     }
@@ -24,6 +27,12 @@ class HistorySelectionBar final : public QWidget {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
+        // Scrolling records must not bleed through an affixed action panel,
+        // including when a skin makes the normal page surfaces translucent.
+        if (parentWidget() && parentWidget()->property("pageSticky").toBool()) {
+            painter.setBrush(m_surface);
+            painter.drawRoundedRect(QRectF(rect()), m_radius, m_radius);
+        }
         painter.setBrush(
             snow_shot::presentation::styles::mainWindowBackgroundColor(this, m_background));
         painter.drawRoundedRect(QRectF(rect()), m_radius, m_radius);
@@ -31,6 +40,7 @@ class HistorySelectionBar final : public QWidget {
 
   private:
     QColor m_background;
+    QColor m_surface;
     qreal m_radius = 0.0;
 };
 

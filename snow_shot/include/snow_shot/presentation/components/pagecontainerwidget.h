@@ -22,6 +22,11 @@ class PageContainerWidget final : public QWidget {
     [[nodiscard]] QWidget* contentWidget() const;
     [[nodiscard]] QVBoxLayout* contentLayout() const;
 
+    // Reserve the widget's normal layout space and keep it topMargin below the
+    // viewport's top after scrolling past it. The pageSticky property reports
+    // when it is affixed.
+    void addStickyWidget(QWidget* widget, int topMargin);
+
   private:
     adqt::widgets::AdScrollArea* m_scrollArea = nullptr;
     QWidget* m_contentWidget = nullptr;

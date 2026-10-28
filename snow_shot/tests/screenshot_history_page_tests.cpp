@@ -23,6 +23,7 @@
 #include "widgets/popconfirm.h"
 #include "widgets/message.h"
 #include "widgets/scroll_area.h"
+#include "history_sticky_selection_test_support.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include <QApplication>
@@ -184,6 +185,19 @@ class SkinBackdrop final : public QWidget {
         painter.fillRect(rect(), color);
     }
 };
+
+void selectionPanelSticksWhileScrolling() {
+    MutableHistoryDataSource source;
+    source.setRecords(historyRecords(20));
+    ScreenshotHistoryPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    history_sticky_test::settleLayout();
+    auto* row = page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"));
+    require(row != nullptr, "sticky history fixture has an entry");
+    history_sticky_test::verifySelection(page, QStringLiteral("screenshotHistory"),
+                                         row->findChild<adqt::widgets::AdCheckbox*>(), require);
+}
 
 class StyleChangeRecorder final : public QObject {
   public:
@@ -1910,6 +1924,12 @@ int main(int argc, char** argv) {
                 .initialize({temporary.path(), temporary.path(), 8000})
                 .success,
             "isolated application storage must initialize");
+    if (application.arguments().contains(QStringLiteral("--sticky-only"))) {
+        selectionPanelSticksWhileScrolling();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--entry-layout-only"))) {
         entryLayoutsMatchAcrossManagementPages();
         storage::ApplicationStorage::instance().shutdown();
@@ -1943,6 +1963,7 @@ int main(int argc, char** argv) {
     entryDescriptionsUseSmallThemeText();
     historyThemeChangesDoNotRestyleTwice();
     historyRowsRespectSkinMask();
+    selectionPanelSticksWhileScrolling();
     continuousHistoryPreview();
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
     pageTextAndEmptyStateMatchPinnedWindowManagement();

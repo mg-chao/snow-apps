@@ -1256,7 +1256,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     m_selectionBarLayout->addWidget(m_selectionActions, 0, Qt::AlignRight | Qt::AlignVCenter);
     selectionBarOuterLayout->addWidget(m_selectionPanel);
     m_selectionBar->hide();
-    contentLayout->addWidget(m_selectionBar, 0);
+    pageContainer->addStickyWidget(m_selectionBar, metric.marginSM);
 
     m_deleteAllConfirmation = new adqt::widgets::AdPopconfirm(content);
     m_deleteAllConfirmation->setObjectName(QStringLiteral("screenshotHistoryDeleteAllConfirm"));

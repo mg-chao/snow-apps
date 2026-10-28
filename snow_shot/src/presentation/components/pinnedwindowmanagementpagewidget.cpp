@@ -547,8 +547,8 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
     selectionActionsLayout->addWidget(m_deselect);
     m_selectionLayout->addWidget(m_selectionActions);
     selectionOuter->addWidget(m_selectionPanel);
-    layout->addWidget(m_selectionBar);
     m_selectionBar->hide();
+    container->addStickyWidget(m_selectionBar, metric.marginSM);
 
     m_deleteAllConfirmation = new adqt::widgets::AdPopconfirm(content);
     m_deleteAllConfirmation->setObjectName(QStringLiteral("pinnedManagementDeleteAllConfirm"));

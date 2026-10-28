@@ -16,6 +16,7 @@
 #include "widgets/image.h"
 #include "widgets/context_menu.h"
 #include "widgets/message.h"
+#include "history_sticky_selection_test_support.h"
 #include <QElapsedTimer>
 #include <QTimeZone>
 #include <QThread>
@@ -123,6 +124,25 @@ class SkinBackdrop final : public QWidget {
         painter.fillRect(rect(), color);
     }
 };
+
+void selectionPanelSticksWhileScrolling() {
+    Fixture fixture;
+    for (int index = 0; index < 20; ++index) {
+        storage::PinnedWindowSummary item;
+        item.id = QStringLiteral("sticky-%1").arg(index);
+        item.createdUtc =
+            QDateTime(QDate(2026, 9, 24), QTime(0, 30), QTimeZone::UTC).addSecs(-index);
+        fixture.items.push_back(item);
+    }
+    PinnedWindowManagementPageWidget page(&fixture, nullptr);
+    page.resize(980, 640);
+    page.show();
+    history_sticky_test::settleLayout();
+    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(row != nullptr, "sticky pinned fixture has an entry");
+    history_sticky_test::verifySelection(page, QStringLiteral("pinnedManagement"),
+                                         row->findChild<adqt::widgets::AdCheckbox*>(), require);
+}
 
 class StyleChangeRecorder final : public QObject {
   public:
@@ -994,6 +1014,16 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--sticky-only"))) {
+        QTemporaryDir directory;
+        require(storage::ApplicationStorage::instance()
+                    .initialize({directory.path(), directory.path(), 30000})
+                    .success,
+                "isolated sticky selection storage");
+        selectionPanelSticksWhileScrolling();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     pinnedEntryMoreActionsUseOnlyTheirRecord();
     pinnedCollageSelectionKeepsRecordOrder();
     batchPinRequiresSingleGroup();
@@ -1023,6 +1053,7 @@ int main(int argc, char** argv) {
     pinnedDescriptionsUseSmallThemeText(fixture.items);
     pinnedThemeChangesDoNotRestyleTwice(fixture.items);
     pinnedRowsRespectSkinMask(fixture.items);
+    selectionPanelSticksWhileScrolling();
     pinnedChangesRefreshOnlyVisiblePages(fixture.items);
     pinnedHiddenRecordsUseShowAction(first);
     pinnedFailedPreviewsRetryOnRefresh(fixture.items);
