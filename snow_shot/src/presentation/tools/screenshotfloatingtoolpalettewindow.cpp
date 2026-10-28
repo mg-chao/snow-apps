@@ -57,6 +57,9 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     : QWidget(parent, native::windowFlags()) {
 #ifdef Q_OS_MACOS
     snow_shot::platform::configureControlledWindowDragging(this);
+    // Qt's transient parent alone cannot keep equal-level Cocoa tools above
+    // their owner. Track native child ownership across show/hide and recreation.
+    adqt::widgets::detail::syncMacTopLevelPopupOwnership(this);
 #endif
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.base_ctor");
     applyWindowAttributes();

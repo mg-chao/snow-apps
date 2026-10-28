@@ -201,6 +201,9 @@ void runPinnedOriginalImageTranslationTests();
 void runPinnedHideToTopControllerTests();
 void runImageEditingTests();
 void runImageEditingEntryPointTests();
+#if defined(Q_OS_MACOS)
+void runMacImageEditingToolbarStackingTests();
+#endif
 
 class ScreenshotOriginalImagePreviewWindowTestAccess {
   public:
@@ -26910,6 +26913,13 @@ int main(int argc, char* argv[]) {
             pinnedPassiveCorrectionPreservesPublishedPixels();
             return 0;
         }
+#if defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--image-editing-toolbar-stacking-only"))) {
+            runMacImageEditingToolbarStackingTests();
+            ScreenshotExportCoordinator::shared().shutdown();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--image-editing-entry-points-only"))) {
             runImageEditingEntryPointTests();
             pinnedImageEditingServiceRequests();

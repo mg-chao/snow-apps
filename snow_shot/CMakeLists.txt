@@ -5282,6 +5282,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-image-editing-toolbar-native-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60
             ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    elseif(APPLE)
+        target_sources(snow-shot-pinned-window-tests PRIVATE
+            tests/macos_image_editing_toolbar_tests.mm)
+        add_test(NAME snow-shot-image-editing-toolbar-stacking-tests
+            COMMAND snow-shot-pinned-window-tests --image-editing-toolbar-stacking-only
+                -platform offscreen)
+        set_tests_properties(snow-shot-image-editing-toolbar-stacking-tests PROPERTIES
+            LABELS "unit;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+        add_test(NAME snow-shot-image-editing-toolbar-stacking-native-tests
+            COMMAND snow-shot-pinned-window-tests --image-editing-toolbar-stacking-only
+                -platform cocoa)
+        set_tests_properties(snow-shot-image-editing-toolbar-stacking-native-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
     endif()
     add_test(NAME snow-shot-pinned-wheel-step-tests
         COMMAND snow-shot-pinned-window-tests --wheel-step-only -platform offscreen)
