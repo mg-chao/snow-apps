@@ -30,6 +30,7 @@ fn semantic_adapter_preserves_identity_and_native_properties() {
         busy: true,
         invalid: true,
         read_only: true,
+        current: Some(accesskit::AriaCurrent::Page),
         ..Accessibility::default()
     }
     .label("Save")
@@ -47,6 +48,7 @@ fn semantic_adapter_preserves_identity_and_native_properties() {
     assert!(node.is_disabled());
     assert!(node.is_busy());
     assert!(node.is_read_only());
+    assert_eq!(node.aria_current(), Some(accesskit::AriaCurrent::Page));
     assert_eq!(node.invalid(), Some(accesskit::Invalid::True));
     assert!(!node.supports_action(accesskit::Action::Click));
     assert!(!node.supports_action(accesskit::Action::Focus));

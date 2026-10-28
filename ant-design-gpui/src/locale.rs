@@ -59,6 +59,8 @@ common_messages! {
     clear_selection => ClearSelection,
     remove_selection => RemoveSelection,
     context_menu => ContextMenu,
+    navigation_menu => NavigationMenu,
+    more_navigation_items => MoreNavigationItems,
     horizontal_scroll_bar => HorizontalScrollBar,
     vertical_scroll_bar => VerticalScrollBar,
 }
@@ -91,6 +93,32 @@ impl PopconfirmMessages {
     }
 }
 
+macro_rules! pagination_messages {
+    ($($field:ident),+ $(,)?) => {
+        /// Pagination-owned messages. `{page}` is replaced with a page number.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct PaginationMessages { $(pub $field: SharedString,)+ }
+
+        #[derive(Clone, Debug, Default, PartialEq, Eq)]
+        pub struct PaginationMessagePatch { $(pub $field: Option<SharedString>,)+ }
+
+        impl PaginationMessages {
+            pub fn patched(&self, patch: &PaginationMessagePatch) -> Self {
+                Self { $($field: patch.$field.clone().unwrap_or_else(|| self.$field.clone()),)+ }
+            }
+        }
+
+        impl PaginationMessagePatch {
+            pub fn is_empty(&self) -> bool { $(self.$field.is_none())&&+ }
+        }
+    };
+}
+
+pagination_messages! {
+    root_label, page_label, items_per_page, jump_to, jump_to_confirm, page,
+    prev_page, next_page, prev_5, next_5, prev_3, next_3, page_size,
+}
+
 /// Locale identity is metadata, never a translated display label.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LocaleId {
@@ -118,6 +146,7 @@ pub struct Locale {
     pub id: LocaleId,
     pub common: CommonMessages,
     pub popconfirm: PopconfirmMessages,
+    pub pagination: PaginationMessages,
 }
 
 impl Locale {
@@ -128,6 +157,21 @@ impl Locale {
                 popconfirm: PopconfirmMessages {
                     ok_text: "OK".into(),
                     cancel_text: "Cancel".into(),
+                },
+                pagination: PaginationMessages {
+                    root_label: "Pagination".into(),
+                    page_label: "Page {page}".into(),
+                    items_per_page: "/ page".into(),
+                    jump_to: "Go to".into(),
+                    jump_to_confirm: "confirm".into(),
+                    page: "Page".into(),
+                    prev_page: "Previous Page".into(),
+                    next_page: "Next Page".into(),
+                    prev_5: "Previous 5 Pages".into(),
+                    next_5: "Next 5 Pages".into(),
+                    prev_3: "Previous 3 Pages".into(),
+                    next_3: "Next 3 Pages".into(),
+                    page_size: "Page Size".into(),
                 },
                 common: CommonMessages {
                     placeholder: "Please select".into(),
@@ -147,6 +191,8 @@ impl Locale {
                     clear_selection: "Clear selection".into(),
                     remove_selection: "Remove {label}".into(),
                     context_menu: "Context menu".into(),
+                    navigation_menu: "Navigation menu".into(),
+                    more_navigation_items: "More navigation items".into(),
                     horizontal_scroll_bar: "Horizontal scroll bar".into(),
                     vertical_scroll_bar: "Vertical scroll bar".into(),
                 },
@@ -162,6 +208,21 @@ impl Locale {
                 popconfirm: PopconfirmMessages {
                     ok_text: "确定".into(),
                     cancel_text: "取消".into(),
+                },
+                pagination: PaginationMessages {
+                    root_label: "分页".into(),
+                    page_label: "第 {page} 页".into(),
+                    items_per_page: "条/页".into(),
+                    jump_to: "跳至".into(),
+                    jump_to_confirm: "确定".into(),
+                    page: "页".into(),
+                    prev_page: "上一页".into(),
+                    next_page: "下一页".into(),
+                    prev_5: "向前 5 页".into(),
+                    next_5: "向后 5 页".into(),
+                    prev_3: "向前 3 页".into(),
+                    next_3: "向后 3 页".into(),
+                    page_size: "页码".into(),
                 },
                 common: CommonMessages {
                     placeholder: "请选择".into(),
@@ -181,6 +242,8 @@ impl Locale {
                     clear_selection: "清空选择".into(),
                     remove_selection: "移除 {label}".into(),
                     context_menu: "上下文菜单".into(),
+                    navigation_menu: "导航菜单".into(),
+                    more_navigation_items: "更多导航项".into(),
                     horizontal_scroll_bar: "水平滚动条".into(),
                     vertical_scroll_bar: "垂直滚动条".into(),
                 },
@@ -196,6 +259,21 @@ impl Locale {
                 popconfirm: PopconfirmMessages {
                     ok_text: "確定".into(),
                     cancel_text: "取消".into(),
+                },
+                pagination: PaginationMessages {
+                    root_label: "分頁".into(),
+                    page_label: "第 {page} 頁".into(),
+                    items_per_page: "條/頁".into(),
+                    jump_to: "跳至".into(),
+                    jump_to_confirm: "確定".into(),
+                    page: "頁".into(),
+                    prev_page: "上一頁".into(),
+                    next_page: "下一頁".into(),
+                    prev_5: "向前 5 頁".into(),
+                    next_5: "向後 5 頁".into(),
+                    prev_3: "向前 3 頁".into(),
+                    next_3: "向後 3 頁".into(),
+                    page_size: "頁碼".into(),
                 },
                 common: CommonMessages {
                     placeholder: "請選擇".into(),
@@ -215,6 +293,8 @@ impl Locale {
                     clear_selection: "清空選擇".into(),
                     remove_selection: "移除 {label}".into(),
                     context_menu: "快顯功能表".into(),
+                    navigation_menu: "導覽功能表".into(),
+                    more_navigation_items: "更多導覽項目".into(),
                     horizontal_scroll_bar: "水平捲動軸".into(),
                     vertical_scroll_bar: "垂直捲動軸".into(),
                 },
@@ -229,6 +309,7 @@ impl Locale {
             id: LocaleId::Custom(id.into()),
             common: Self::en_us().common.patched(&common),
             popconfirm: Self::en_us().popconfirm.clone(),
+            pagination: Self::en_us().pagination.clone(),
         })
     }
 
@@ -243,6 +324,7 @@ pub struct LocalePatch {
     pub locale: Option<Arc<Locale>>,
     pub common: CommonMessagePatch,
     pub popconfirm: PopconfirmMessagePatch,
+    pub pagination: PaginationMessagePatch,
 }
 
 impl LocalePatch {
@@ -257,23 +339,31 @@ impl LocalePatch {
         previous: Option<&Arc<Locale>>,
     ) -> Arc<Locale> {
         let base = self.locale.as_ref().unwrap_or(parent);
-        if self.common.is_empty() && self.popconfirm == PopconfirmMessagePatch::default() {
+        if self.common.is_empty()
+            && self.popconfirm == PopconfirmMessagePatch::default()
+            && self.pagination.is_empty()
+        {
             return base.clone();
         }
         let common = base.common.patched(&self.common);
         let popconfirm = base.popconfirm.patched(&self.popconfirm);
-        if common == base.common && popconfirm == base.popconfirm {
+        let pagination = base.pagination.patched(&self.pagination);
+        if common == base.common && popconfirm == base.popconfirm && pagination == base.pagination {
             return base.clone();
         }
-        if let Some(previous) = previous
-            .filter(|old| old.id == base.id && old.common == common && old.popconfirm == popconfirm)
-        {
+        if let Some(previous) = previous.filter(|old| {
+            old.id == base.id
+                && old.common == common
+                && old.popconfirm == popconfirm
+                && old.pagination == pagination
+        }) {
             return previous.clone();
         }
         Arc::new(Locale {
             id: base.id.clone(),
             common,
             popconfirm,
+            pagination,
         })
     }
 }
@@ -281,6 +371,68 @@ impl LocalePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pagination_catalogs_match_reference_and_patch_per_field() {
+        let english = Locale::en_us();
+        assert_eq!(english.pagination.items_per_page.as_ref(), "/ page");
+        assert_eq!(english.pagination.prev_5.as_ref(), "Previous 5 Pages");
+        assert_eq!(english.pagination.page_label.as_ref(), "Page {page}");
+        assert_eq!(Locale::zh_cn().pagination.items_per_page.as_ref(), "条/页");
+        assert_eq!(Locale::zh_tw().pagination.items_per_page.as_ref(), "條/頁");
+        assert_eq!(Locale::zh_cn().pagination.page_size.as_ref(), "页码");
+        assert_eq!(Locale::zh_tw().pagination.page_size.as_ref(), "頁碼");
+        let patch = LocalePatch {
+            pagination: PaginationMessagePatch {
+                jump_to: Some("Jump to".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let scoped = patch.resolve(&english);
+        assert_eq!(scoped.pagination.jump_to.as_ref(), "Jump to");
+        assert_eq!(scoped.pagination.page.as_ref(), "Page");
+        let chinese = patch.resolve(&Locale::zh_tw());
+        assert_eq!(chinese.pagination.jump_to.as_ref(), "Jump to");
+        assert_eq!(chinese.pagination.page.as_ref(), "頁");
+        assert_eq!(scoped.common, english.common);
+        assert_eq!(scoped.popconfirm, english.popconfirm);
+        assert_eq!(
+            Locale::custom("custom", CommonMessagePatch::default()).pagination,
+            english.pagination
+        );
+    }
+
+    #[test]
+    fn pagination_locale_no_op_and_repeated_patches_share_catalogs() {
+        let english = Locale::en_us();
+        let equivalent = LocalePatch {
+            pagination: PaginationMessagePatch {
+                root_label: Some("Pagination".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(Arc::ptr_eq(&english, &equivalent.resolve(&english)));
+        let patch = LocalePatch {
+            pagination: PaginationMessagePatch {
+                page_label: Some("Page number {page}".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let previous = patch.resolve(&english);
+        assert!(Arc::ptr_eq(
+            &previous,
+            &patch.resolve_with_previous(&english, Some(&previous))
+        ));
+        let switched = LocalePatch {
+            locale: Some(Locale::zh_tw()),
+            ..Default::default()
+        }
+        .resolve(&previous);
+        assert_eq!(switched.pagination.page_label.as_ref(), "第 {page} 頁");
+    }
 
     #[test]
     fn popconfirm_catalogs_and_field_overrides_follow_locale_changes() {

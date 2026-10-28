@@ -21,6 +21,8 @@ pub(super) enum ComponentId {
     Popover,
     Popconfirm,
     ContextMenu,
+    Menu,
+    Pagination,
     ScrollArea,
 }
 
@@ -60,6 +62,20 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Navigation",
         title: "Context Menu",
         description: "Actions for the content under your pointer or keyboard focus.",
+    },
+    Component {
+        id: ComponentId::Menu,
+        navigation_id: "gallery.navigation.menu",
+        group: "Navigation",
+        title: "Menu",
+        description: "A versatile menu for navigation.",
+    },
+    Component {
+        id: ComponentId::Pagination,
+        navigation_id: "gallery.navigation.pagination",
+        group: "Navigation",
+        title: "Pagination",
+        description: "A long list can be divided into several pages, and only one page will be loaded at a time.",
     },
     Component {
         id: ComponentId::Checkbox,

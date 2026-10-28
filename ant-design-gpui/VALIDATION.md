@@ -925,3 +925,35 @@ No full crate or repository suite was run. No dependencies were added. The test
 platform cannot initialize a live accessibility tree; semantic nodes are probed
 directly, and painted behavior is tested separately. Live Windows UI Automation,
 screen-reader sessions, macOS and Linux still require native verification.
+
+## Menu — 2026-10-28
+
+Menu uses an immutable indexed model, a retained GPUI controller and renderer,
+native focus and accessibility actions, shared popup ownership, and native lazy
+rows. All 11 public Ant Design Menu examples are included in the gallery. See
+the [integration guide](docs/menu.md) and
+[verification ledger](fixtures/menu/verification.json) for the feature-to-test
+map, exact run counts, source hashes and reproducible commands.
+
+The visual comparison executes Ant Design 6.6.7 at revision
+`f8f5595ab5e891fff6a2a06c5b3b98af643d008e` independently of Rust. It covers 55
+modern component tokens and 640 computed menus, then compares actual browser and
+native Windows captures at 100%, 150% and 200% DPI. Surface, foreground-color,
+root-layout and chevron checks have explicit budgets. Unmasked pixel metrics and
+paired crops retain text and shadow differences for visual review.
+
+Focused library checks cover Menu, shared popups, Context Menu and locale
+regressions. Gallery tests, strict Clippy, scoped rustfmt and native Windows UI
+Automation complement them. No full crate or repository test suite was run.
+
+The Release benchmark uses the configured `windows-msvc-performance` tree with
+benchmarks enabled. It checks bounded construction for 1,000-item roots and
+popups, cached sibling work and zero settled animation frames. Results measure
+CPU/layout work; they do not establish GPU presentation time or input latency.
+The guide explains the pinned GPUI backend's ancestor/focus redraw behavior and
+the bounded custom-content width sampling used by virtualized popups.
+
+Popup motion uses native fade/reveal instead of the reference's subtree scale;
+the pinned GPUI revision is preserved. Text antialiasing and shadow rasterization
+can differ between backends. Interactive screen-reader sessions and native
+macOS/Linux rendering and accessibility were not verified.

@@ -71,6 +71,14 @@ harness = false
 name = "context_scroll"
 harness = false
 
+[[bench]]
+name = "pagination"
+harness = false
+
+[[bench]]
+name = "menu"
+harness = false
+
 [profile.dev]
 incremental = false
 

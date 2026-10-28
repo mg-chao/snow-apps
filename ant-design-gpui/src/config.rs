@@ -64,6 +64,40 @@ pub enum ValidationStatus {
     Validating,
 }
 
+/// Pagination defaults inherited by controls in a retained configuration scope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaginationConfig {
+    /// `None` keeps automatic visibility based on the total item count.
+    pub show_size_changer: Option<bool>,
+    pub total_boundary_show_size_changer: u64,
+}
+
+impl Default for PaginationConfig {
+    fn default() -> Self {
+        Self {
+            show_size_changer: None,
+            total_boundary_show_size_changer: 50,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PaginationConfigPatch {
+    pub show_size_changer: Option<bool>,
+    pub total_boundary_show_size_changer: Option<u64>,
+}
+
+impl PaginationConfigPatch {
+    pub fn resolve(self, parent: PaginationConfig) -> PaginationConfig {
+        PaginationConfig {
+            show_size_changer: self.show_size_changer.or(parent.show_size_changer),
+            total_boundary_show_size_changer: self
+                .total_boundary_show_size_changer
+                .unwrap_or(parent.total_boundary_show_size_changer),
+        }
+    }
+}
+
 /// Unset fields inherit; an explicit `false` overrides an inherited `true`.
 #[derive(Clone, Default, PartialEq)]
 pub struct ConfigPatch {
@@ -77,6 +111,7 @@ pub struct ConfigPatch {
     pub tooltip: TooltipConfigPatch,
     pub popover: PopupConfigPatch,
     pub popconfirm: PopupConfigPatch,
+    pub pagination: PaginationConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -95,6 +130,7 @@ pub struct ResolvedConfig {
     pub tooltip: TooltipConfig,
     pub popover: PopupConfig,
     pub popconfirm: PopupConfig,
+    pub pagination: PaginationConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -114,6 +150,7 @@ impl PartialEq for ResolvedConfig {
             && self.tooltip == other.tooltip
             && self.popover == other.popover
             && self.popconfirm == other.popconfirm
+            && self.pagination == other.pagination
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -144,6 +181,7 @@ impl Default for ResolvedConfig {
                 triggers: PopupTriggers::CLICK,
                 ..Default::default()
             },
+            pagination: PaginationConfig::default(),
         }
     }
 }
@@ -239,6 +277,7 @@ impl ResolvedConfig {
             tooltip: patch.tooltip.resolve(parent.tooltip),
             popover: patch.popover.resolve(parent.popover),
             popconfirm: patch.popconfirm.resolve(parent.popconfirm),
+            pagination: patch.pagination.resolve(parent.pagination),
         })
     }
 }
@@ -444,6 +483,73 @@ mod tests {
     use super::*;
     use crate::locale::{CommonMessagePatch, LocaleId};
     use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn pagination_defaults_inherit_threshold_and_explicit_false(cx: &mut TestAppContext) {
+        let (root, inherited, hidden) = cx.update(|cx| {
+            let root = ConfigScope::new_window(cx);
+            assert_eq!(root.snapshot(cx).pagination, PaginationConfig::default());
+            let inherited = root.child(ConfigPatch::default(), cx).unwrap();
+            let hidden = root
+                .child(
+                    ConfigPatch {
+                        pagination: PaginationConfigPatch {
+                            show_size_changer: Some(false),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    cx,
+                )
+                .unwrap();
+            (root, inherited, hidden)
+        });
+        cx.update(|cx| {
+            root.update_patch(cx, |patch| {
+                patch.pagination.show_size_changer = Some(true);
+                patch.pagination.total_boundary_show_size_changer = Some(100);
+            })
+            .unwrap();
+        });
+        cx.update(|cx| {
+            let inherited_config = inherited.snapshot(cx);
+            assert_eq!(inherited_config.pagination.show_size_changer, Some(true));
+            assert_eq!(
+                inherited_config.pagination.total_boundary_show_size_changer,
+                100
+            );
+            let hidden_config = hidden.snapshot(cx);
+            assert_eq!(hidden_config.pagination.show_size_changer, Some(false));
+            assert_eq!(
+                hidden_config.pagination.total_boundary_show_size_changer,
+                100
+            );
+            let previous = root.snapshot(cx);
+            assert!(!root.update_patch(cx, |_| {}).unwrap());
+            assert!(Arc::ptr_eq(&previous, &root.snapshot(cx)));
+            root.update_patch(cx, |patch| {
+                patch.pagination = PaginationConfigPatch::default();
+            })
+            .unwrap();
+        });
+        cx.update(|cx| {
+            assert_eq!(
+                inherited.snapshot(cx).pagination,
+                PaginationConfig::default()
+            );
+            assert_eq!(
+                hidden.snapshot(cx).pagination.show_size_changer,
+                Some(false)
+            );
+            assert_eq!(
+                hidden
+                    .snapshot(cx)
+                    .pagination
+                    .total_boundary_show_size_changer,
+                50
+            );
+        });
+    }
 
     #[gpui::test]
     fn scopes_inherit_explicit_false_and_remain_isolated(cx: &mut TestAppContext) {

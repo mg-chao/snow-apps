@@ -21,6 +21,8 @@ pub struct Accessibility {
     pub invalid: bool,
     pub hidden: bool,
     pub read_only: bool,
+    /// Identifies the current destination without implying a selectable widget.
+    pub current: Option<accesskit::AriaCurrent>,
 }
 
 impl Accessibility {
@@ -78,6 +80,9 @@ impl Accessibility {
         }
         if self.read_only {
             node.set_read_only();
+        }
+        if let Some(current) = self.current {
+            node.set_aria_current(current);
         }
         if self.disabled || self.busy || self.hidden || self.read_only {
             node.remove_action(accesskit::Action::Click);

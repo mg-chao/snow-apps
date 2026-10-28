@@ -6,7 +6,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Select and Slider visual rules, Select's simple Empty illustration,
+Popover, Popconfirm, Menu, Pagination, Select and Slider visual rules, Select's simple Empty illustration,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
 Ant Design 6.6.7, commit `f8f5595ab5e891fff6a2a06c5b3b98af643d008e`:
@@ -74,6 +74,17 @@ fixture in `fixtures/slider/model.json` executes the original numeric hook;
 its source and generator hashes are recorded in the fixture.
 
 These JavaScript packages are development references, not Rust runtime dependencies.
+
+Native Menu navigation and keyed selection/open behavior follows
+`@rc-component/menu` 1.5.0 (MIT). Its complete upstream notice is preserved in
+`fixtures/menu/licenses/rc-component-menu.txt`. Independent style measurements
+and executable browser/native comparison scenarios are under `fixtures/menu/`.
+
+Pagination's native page-window and editing behavior follows
+`@rc-component/pagination` 1.4.0 (MIT). Its complete upstream notice is preserved
+in `fixtures/pagination/licenses/rc-component-pagination.txt`. Independent behavior
+traces and rendered style measurements execute the original pinned sources;
+their source hashes and package integrity are recorded in `fixtures/pagination/`.
 
 ## Ant Design colors and fast-color
 

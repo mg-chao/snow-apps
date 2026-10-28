@@ -73,7 +73,8 @@ impl Element for PopupElement {
             state.anchor = bounds;
             state.sample_opacity(visible, window, cx)
         });
-        if visible {
+        let exiting = self.state.read(cx).exiting;
+        if visible || exiting {
             let (host, content, handle, options, scope, surface_focus) = {
                 let state = self.state.read(cx);
                 (
@@ -133,6 +134,31 @@ impl Element for PopupElement {
                     })
                     .child(content);
                 body.style().refine(&options.surface_style);
+                if exiting {
+                    // Retain native pixels during the fade, while a top hitbox
+                    // prevents the closing subtree from accepting another gesture.
+                    body = body.relative().child(
+                        div()
+                            .absolute()
+                            .top(px(0.))
+                            .left(px(0.))
+                            .right(px(0.))
+                            .bottom(px(0.))
+                            .occlude()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_mouse_up(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
+                    );
+                    let state = self.state.read(cx);
+                    if state.surface_focus.contains_focused(window, cx) {
+                        let focus = state
+                            .trigger_metadata
+                            .borrow()
+                            .focus
+                            .clone()
+                            .unwrap_or_else(|| state.trigger_focus.clone());
+                        window.focus(&focus, cx);
+                    }
+                }
                 if let Some(margin) = options.viewport_margin {
                     body = body
                         .max_w((window.viewport_size().width - 2. * margin).max(px(0.)))
@@ -157,6 +183,10 @@ impl Element for PopupElement {
                 semantics.description = options.description.clone();
                 semantics.busy = options.busy;
                 semantics.automation_id = options.automation_id.clone();
+                if exiting {
+                    semantics.role = Some(gpui::Role::Group);
+                    semantics.hidden = true;
+                }
                 let surface = PopupSurface {
                     child: semantics.apply(body).into_any_element(),
                     state: self.state.clone(),
@@ -177,19 +207,23 @@ impl Element for PopupElement {
                 });
                 let priority = {
                     let state = self.state.read(cx);
-                    host.borrow_mut().register(
-                        state.id,
-                        Entry {
-                            state: self.state.downgrade(),
-                            parent: state.parent,
-                            trigger: clipped,
-                            surface: state
-                                .layout
-                                .map_or(Bounds::default(), |layout| layout.bounds),
-                            layer: options.z_index,
-                            order: 0,
-                        },
-                    )
+                    if exiting {
+                        options.z_index.saturating_mul(1 << 20)
+                    } else {
+                        host.borrow_mut().register(
+                            state.id,
+                            Entry {
+                                state: self.state.downgrade(),
+                                parent: state.parent,
+                                trigger: clipped,
+                                surface: state
+                                    .layout
+                                    .map_or(Bounds::default(), |layout| layout.bounds),
+                                layer: options.z_index,
+                                order: 0,
+                            },
+                        )
+                    }
                 };
                 window.defer_draw(surface, Point::default(), priority, None);
             }
@@ -341,7 +375,7 @@ impl Element for PopupSurface {
     ) {
         // An earlier trigger in this frame may already have scheduled its draw
         // when a later unique tooltip replaces it. Skip both input and paint.
-        if !self.state.read(cx).presented() {
+        if !self.state.read(cx).presented() && !self.state.read(cx).exiting {
             return;
         }
         let state = self.state.read(cx);
@@ -367,6 +401,20 @@ impl Element for PopupSurface {
             auto_adjust_overflow: options.auto_adjust_overflow,
         }
         .resolve();
+        if let Some(flipped_gap) = options.flipped_gap
+            && layout.placement.before() != options.placement.before()
+        {
+            let original_gap = options
+                .gap
+                .unwrap_or(px(config.theme.tokens.margin_xxs as f32));
+            let offset =
+                (flipped_gap - original_gap) * if layout.placement.before() { -1. } else { 1. };
+            if layout.placement.is_vertical() {
+                layout.bounds.origin.y += offset;
+            } else {
+                layout.bounds.origin.x += offset;
+            }
+        }
         if let Some(margin) = options.viewport_margin {
             let contain = |origin: Pixels, extent: Pixels, viewport: Pixels| {
                 let spare = (viewport - extent).max(px(0.));
@@ -426,7 +474,7 @@ impl Element for PopupSurface {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if !self.state.read(cx).presented() {
+        if !self.state.read(cx).presented() && !self.state.read(cx).exiting {
             return;
         }
         let state = self.state.read(cx);

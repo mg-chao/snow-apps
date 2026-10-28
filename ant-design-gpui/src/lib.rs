@@ -17,6 +17,12 @@ pub use input_number::{
     NumericValue,
 };
 pub mod locale;
+pub mod menu;
+pub use menu::{Menu, MenuMode, MenuState};
+pub mod pagination;
+pub use pagination::{
+    Pagination, PaginationChange, PaginationEvent, PaginationSizeChange, PaginationState,
+};
 pub mod popconfirm;
 pub mod popover;
 pub mod popup;
@@ -40,7 +46,8 @@ pub mod tooltip;
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxChange, CheckboxGroup, CheckboxOption};
 pub use config::{
-    ConfigPatch, ConfigScope, Direction, ResolvedConfig, Size, ValidationStatus, Variant,
+    ConfigPatch, ConfigScope, Direction, PaginationConfig, PaginationConfigPatch, ResolvedConfig,
+    Size, ValidationStatus, Variant,
 };
 pub use context_menu::{
     ContextMenu, ContextMenuState, MenuActivation, MenuActivationSource, MenuCheck, MenuEntry,

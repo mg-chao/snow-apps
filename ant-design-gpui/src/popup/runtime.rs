@@ -145,6 +145,7 @@ pub(super) struct Options {
     pub arrow: PopupArrow,
     pub auto_adjust_overflow: bool,
     pub gap: Option<Pixels>,
+    pub flipped_gap: Option<Pixels>,
     pub offset: Point<Pixels>,
     pub z_index: usize,
     pub enter_delay: Duration,
@@ -166,6 +167,7 @@ pub(super) struct Options {
     pub initial_focus: Option<FocusHandle>,
     pub unique_group: Option<EntityId>,
     pub motion_duration: Option<Duration>,
+    pub exit_duration: Duration,
     pub handoff_duration: Duration,
     pub motion_curve: Option<CubicBezier>,
     pub motion_enabled: Option<bool>,
@@ -183,6 +185,7 @@ impl Default for Options {
             arrow: PopupArrow::default(),
             auto_adjust_overflow: true,
             gap: None,
+            flipped_gap: None,
             offset: Point::default(),
             z_index: 1030,
             enter_delay: Duration::from_millis(100),
@@ -204,6 +207,7 @@ impl Default for Options {
             initial_focus: None,
             unique_group: None,
             motion_duration: None,
+            exit_duration: Duration::ZERO,
             handoff_duration: Duration::from_millis(300),
             motion_curve: None,
             motion_enabled: None,
@@ -336,6 +340,12 @@ impl Popup {
         self.options.gap = Some(gap);
         self
     }
+
+    /// Some menu references keep their wrapper's original padding after a flip.
+    pub(crate) fn flipped_gap(mut self, gap: Pixels) -> Self {
+        self.options.flipped_gap = Some(finite_nonnegative(gap));
+        self
+    }
     pub fn offset(mut self, offset: Point<Pixels>) -> Self {
         self.options.offset = offset;
         self
@@ -415,6 +425,12 @@ impl Popup {
     /// Override the entry fade duration. Reduced motion always takes precedence.
     pub fn motion_duration(mut self, duration: Duration) -> Self {
         self.options.motion_duration = Some(duration);
+        self
+    }
+
+    /// Native navigation menus retain a noninteractive surface during their exit fade.
+    pub(crate) fn exit_duration(mut self, duration: Duration) -> Self {
+        self.options.exit_duration = duration;
         self
     }
 
@@ -537,6 +553,7 @@ pub(super) struct PopupState {
     epoch: Instant,
     opacity: ScalarTransition,
     visual_open: bool,
+    pub exiting: bool,
     entry_started: Duration,
     frame_pending: bool,
     unique_claimed: bool,
@@ -606,6 +623,7 @@ impl PopupState {
             epoch: cx.background_executor().now(),
             opacity: ScalarTransition::new(0., CubicBezier::new(0.08, 0.82, 0.17, 1.)),
             visual_open: false,
+            exiting: false,
             entry_started: Duration::ZERO,
             frame_pending: false,
             unique_claimed: false,
@@ -628,9 +646,12 @@ impl PopupState {
             self.release_unique(Some(cx.background_executor().now()));
         }
         self.options = control.options.clone();
+        if was_open && !self.lifecycle.open() {
+            self.begin_exit(cx);
+        }
         self.on_change = control.on_change.clone();
         self.destroy_on_hidden = control.destroy_on_hidden;
-        if control.destroy_on_hidden && !self.lifecycle.open() {
+        if control.destroy_on_hidden && !self.lifecycle.open() && !self.exiting {
             self.content = None;
         } else if self.lifecycle.open() || control.fresh || self.content.is_none() {
             self.content = Some(control.content.clone());
@@ -647,9 +668,11 @@ impl PopupState {
             self.timer = None;
         }
         if !self.lifecycle.open() {
-            self.release_unique(Some(cx.background_executor().now()));
+            if !self.exiting {
+                self.release_unique(Some(cx.background_executor().now()));
+                self.layout = None;
+            }
             self.host.borrow_mut().entries.remove(&self.id);
-            self.layout = None;
         }
         self.sync_trigger_metadata();
     }
@@ -749,9 +772,7 @@ impl PopupState {
         window.on_next_frame(move |_, cx| {
             let _ = weak.update(cx, |state, cx| {
                 state.frame_pending = false;
-                if state.visual_open && state.presented() {
-                    cx.notify();
-                }
+                cx.notify();
             });
         });
     }
@@ -765,6 +786,29 @@ impl PopupState {
                     .get(&group)
                     .is_some_and(|owner| owner.entity_id() == self.id)
             })
+    }
+
+    fn begin_exit(&mut self, cx: &App) {
+        let config = self.scope.snapshot(cx);
+        let policy = MotionPolicy::new(
+            config.motion
+                && self
+                    .options
+                    .motion_enabled
+                    .unwrap_or(config.theme.tokens.motion),
+            cx.reduce_motion(),
+        );
+        self.exiting = self.visual_open
+            && !self.options.exit_duration.is_zero()
+            && !self.options.disabled
+            && self.options.unique_group.is_none()
+            && policy.allows_motion();
+        if self.exiting {
+            self.visual_open = false;
+            let now = cx.background_executor().now().duration_since(self.epoch);
+            self.opacity
+                .retarget(0., now, self.options.exit_duration, policy);
+        }
     }
 
     pub fn sample_opacity(
@@ -784,10 +828,13 @@ impl PopupState {
             self.visual_open = visible;
             if visible {
                 self.entry_started = now;
-                self.opacity = ScalarTransition::new(
-                    0.,
-                    self.options.motion_curve.unwrap_or(g.motion_ease_out_circ),
-                );
+                if !self.exiting {
+                    self.opacity = ScalarTransition::new(
+                        0.,
+                        self.options.motion_curve.unwrap_or(g.motion_ease_out_circ),
+                    );
+                }
+                self.exiting = false;
                 self.opacity.retarget(
                     1.,
                     now,
@@ -796,7 +843,7 @@ impl PopupState {
                         .unwrap_or(g.motion_duration_mid),
                     policy,
                 );
-            } else {
+            } else if !self.exiting {
                 self.opacity.retarget(0., now, Duration::ZERO, policy);
             }
         }
@@ -805,6 +852,13 @@ impl PopupState {
                 .retarget(f64::from(visible), now, Duration::ZERO, policy);
         }
         let sample = self.opacity.sample(now);
+        if self.exiting && sample.finished {
+            self.exiting = false;
+            if self.destroy_on_hidden {
+                self.content = None;
+            }
+            self.request_frame(window, cx);
+        }
         // Unique content uses Ant's linear fade (motionDurationMid), separate
         // from the decorative background's initial entry and geometry motion.
         let content = if self.options.unique_group.is_some()
@@ -818,7 +872,7 @@ impl PopupState {
         } else {
             1.
         };
-        if visible && (!sample.finished || content < 1.) {
+        if (visible || self.exiting) && (!sample.finished || content < 1.) {
             self.request_frame(window, cx);
         }
         let surface = if self.unique_replacement {
@@ -928,10 +982,13 @@ fn commit(weak: &WeakEntity<PopupState>, generation: u64, window: &mut Window, c
             state.focus_pending = false;
             state.context_position = None;
             if !state.lifecycle.open() {
-                state.release_unique(Some(cx.background_executor().now()));
+                state.begin_exit(cx);
+                if !state.exiting {
+                    state.release_unique(Some(cx.background_executor().now()));
+                    state.layout = None;
+                }
                 state.host.borrow_mut().entries.remove(&state.id);
-                state.layout = None;
-                if state.destroy_on_hidden {
+                if state.destroy_on_hidden && !state.exiting {
                     state.content = None;
                 }
                 if matches!(

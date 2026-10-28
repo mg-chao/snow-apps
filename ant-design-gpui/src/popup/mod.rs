@@ -39,6 +39,8 @@ pub enum PopupWidth {
 #[cfg(test)]
 mod component_tests;
 #[cfg(test)]
+mod exit_tests;
+#[cfg(test)]
 mod placement_tests;
 #[cfg(test)]
 mod reference_tests;

@@ -1,0 +1,587 @@
+{
+  "schema_version": 1,
+  "status": "passed_scoped_checks",
+  "verified_at_utc": "2026-10-27T17:05:28Z",
+  "local_date": "2026-10-28",
+  "timezone": "Asia/Shanghai",
+  "scope": "Windows native GPUI; affected component/shared infrastructure only; no unfiltered suite",
+  "reference": {
+    "ant_design_version": "6.6.7",
+    "ant_design_revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "rc_menu_version": "1.5.0",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "styles": {
+      "modern_tokens": 55,
+      "menus": 640,
+      "rows": 3968,
+      "fixture": {
+        "path": "fixtures/menu/reference.json",
+        "sha256": "6b25dc746e3c6bf41b7986181be5c0e05fcb490faedecaba9677e8de651e6260"
+      }
+    }
+  },
+  "tests": {
+    "library": {
+      "path": "../build/ant-design-gpui/menu-verification/tests.txt",
+      "sha256": "9dcaa613e7713e729e4c482953db4cfc965a0e5a3e053199d91548ddb0219083",
+      "passed": 149,
+      "counts_by_module": {
+        "context_menu": 21,
+        "locale": 7,
+        "menu": 46,
+        "popup": 75
+      },
+      "summary": "test result: ok. 149 passed; 0 failed; 0 ignored; 0 measured; 572 filtered out; finished in 29.00s",
+      "command": "cargo test --locked --offline --lib -- menu:: popup:: locale:: --test-threads=1"
+    },
+    "gallery": {
+      "path": "../build/ant-design-gpui/menu-verification/gallery.txt",
+      "sha256": "6dd96971595a036fe45b1d7b73450cf3028762faa270b9cbe6f345233277e76a",
+      "passed": 5,
+      "counts_by_module": {
+        "tests": 5
+      },
+      "summary": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 9.61s",
+      "menu_tests": 4,
+      "catalogue_tests": 1,
+      "command": "cargo test --locked --offline --example gallery -- menu_gallery catalogue_keeps_reference_order_and_pending_cards_explain_their_status_without_fake_controls --test-threads=1"
+    },
+    "clippy": {
+      "command": "cargo clippy --locked --offline --lib --example menu_visual --example menu_accessibility --bench menu --example gallery -- -D warnings",
+      "status": "passed",
+      "log": {
+        "path": "../build/ant-design-gpui/menu-verification/clippy-selected-final.txt",
+        "sha256": "74ade4d76eacb83012d8ef81cc433ddf3d34e94e4aad504d23ed4fdb31849a50"
+      }
+    },
+    "formatting": "Scoped rustfmt and git diff --check passed after the final source changes."
+  },
+  "public_demo_order": [
+    "horizontal",
+    "inline",
+    "inline-collapsed",
+    "tooltip",
+    "sider-current",
+    "vertical",
+    "theme",
+    "submenu-theme",
+    "switch-mode",
+    "style-class",
+    "custom-popup-render"
+  ],
+  "native_accessibility": {
+    "status": "passed",
+    "runtime": "7.6.7",
+    "utc": "2026-10-27T17:00:22.0382568Z",
+    "executable_sha256": "dfd7e1cbfa1af70d0662cd0602057f17ad5e4351040525a71d3b15eb749bc3c8",
+    "fixture_source_sha256": "b7907702ad07b7824a96d27a1013164e0789af7ab720ad82ec08ce4c959f73d8",
+    "script_sha256": "bcc67dd670c49a4e41e157981979ac94d7505f8a5aff89e238a7e3e468510bd1",
+    "checks": [
+      "menu-role",
+      "menubar-role",
+      "menuitem-role",
+      "disabled",
+      "keyboard-focus",
+      "expand-collapse",
+      "inline-expand",
+      "selection",
+      "native-invoke",
+      "activation-source",
+      "popup-open-close",
+      "horizontal-keyboard",
+      "multiple-menuitemcheckbox",
+      "multiple-toggle-metadata",
+      "native-toggle",
+      "independent-selection",
+      "exactly-once"
+    ],
+    "result": {
+      "path": "../build/ant-design-gpui/menu-uia/result.json",
+      "sha256": "ce8da60ca7b99cb317f968b8a62fac54c67eef808e14240c9d574c5c1122a514"
+    },
+    "state": {
+      "path": "../build/ant-design-gpui/menu-uia/state.json",
+      "sha256": "0dd5178f9e0149028ae8885495917b92e4cdd6cceb979085d5d394d461b2a076"
+    },
+    "event_counts": {
+      "activations": 6,
+      "selections": 5,
+      "deselections": 1
+    },
+    "command": "cargo build --locked --offline --example menu_accessibility; ./scripts/test-menu-accessibility.ps1 -SkipBuild",
+    "screen_reader_sessions": "not performed"
+  },
+  "visual_comparison": {
+    "status": "all scoped checks passed; final 150% paired images reviewed by root and independent capture agent",
+    "totals": {
+      "pairs": 291,
+      "surface_checks": 690,
+      "foreground_color_checks": 1641,
+      "root_layout_checks": 291,
+      "chevron_bounds_checks": 282,
+      "custom_expand_bounds_checks": 24,
+      "checks": 2928
+    },
+    "budgets": {
+      "surface_focus_and_root_geometry_logical_px": 1,
+      "default_and_harness_custom_expand_painted_edges_logical_px": 1,
+      "foreground_rgb_rounding_bytes": 1,
+      "svg_alpha": "8-bit matching; foreground-support mask uses 30% contrast and minimum contrast 12"
+    },
+    "motion": "disabled for settled captures",
+    "native_executable": {
+      "path": "../build/ant-design-gpui/debug/examples/menu_visual.exe",
+      "sha256": "a389417276e14411b5eece59907f784f2c1bf050180ba294acf6796a7e79da62"
+    },
+    "provenance": [
+      {
+        "path": "../build/ant-design-gpui/menu-reference/native-capture-provenance.json",
+        "sha256": "149b64af6d8a1bf6ee5ce8af2c6a8e2157cebc06d8d380646a90f7899e6e0f38"
+      },
+      {
+        "path": "../build/ant-design-gpui/menu-reference/browser/provenance.json",
+        "sha256": "d7d0e3bbacb3c623b22c32d46843c7153570f90a6f37d4baa0cd4ab35fb8da5d"
+      },
+      {
+        "path": "../build/ant-design-gpui/menu-reference/browser-capture-provenance.json",
+        "sha256": "bb12f540ad8d89a132c508f1738f6a1149b0dce2f303e885a0377de9b78364d7"
+      }
+    ],
+    "reports": [
+      {
+        "set": "main",
+        "dpi_percent": 100,
+        "report": "../build/ant-design-gpui/menu-reference/visual-100/comparison.json",
+        "report_sha256": "39a88cbff657d5bde2ea73eab5e3d4cdb038121729dcfde1b503aa33bfa7aea8",
+        "cases": 88,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 222,
+        "foreground_color_checks": 544,
+        "root_layout_checks": 88,
+        "chevron_bounds_checks": 92,
+        "custom_expand_bounds_checks": 8,
+        "passed_surface_checks": 222,
+        "passed_foreground_color_checks": 544,
+        "passed_root_layout_checks": 88,
+        "passed_chevron_bounds_checks": 92,
+        "passed_custom_expand_bounds_checks": 8,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-100/native/native-metrics.json",
+          "sha256": "c30e2b6c8c45513f75987df18d9a26ccb744329ab27a203f310d4563da9d5f1a"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-100/browser/browser-metrics.json",
+          "sha256": "b71362562ce4c05f02c777817124c00e28b5d14a40aa7657fc4ca2d1a0b8893e"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/visual-100/pairs-*.png"
+      },
+      {
+        "set": "main",
+        "dpi_percent": 150,
+        "report": "../build/ant-design-gpui/menu-reference/visual-150/comparison.json",
+        "report_sha256": "da872883cec591419063844f589a24cc9af75c0c58ad33dd8aeaed4e87f0a63b",
+        "cases": 88,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 222,
+        "foreground_color_checks": 544,
+        "root_layout_checks": 88,
+        "chevron_bounds_checks": 92,
+        "custom_expand_bounds_checks": 8,
+        "passed_surface_checks": 222,
+        "passed_foreground_color_checks": 544,
+        "passed_root_layout_checks": 88,
+        "passed_chevron_bounds_checks": 92,
+        "passed_custom_expand_bounds_checks": 8,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-150/native/native-metrics.json",
+          "sha256": "9feb1bd1bc89381a7b3c8367e51e60145fe763a60383df4085397344ed77d7e9"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-150/browser/browser-metrics.json",
+          "sha256": "8ebb0983835c8d2aa21a84521c6fdb5ec13c6385481558c9e845d78c6bdb8097"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/visual-150/pairs-*.png"
+      },
+      {
+        "set": "main",
+        "dpi_percent": 200,
+        "report": "../build/ant-design-gpui/menu-reference/visual-200/comparison.json",
+        "report_sha256": "80707a07b4932ac93b833d5256c3528001ddd44f00f411f73d397f29ec91fedb",
+        "cases": 88,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 222,
+        "foreground_color_checks": 544,
+        "root_layout_checks": 88,
+        "chevron_bounds_checks": 92,
+        "custom_expand_bounds_checks": 8,
+        "passed_surface_checks": 222,
+        "passed_foreground_color_checks": 544,
+        "passed_root_layout_checks": 88,
+        "passed_chevron_bounds_checks": 92,
+        "passed_custom_expand_bounds_checks": 8,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-200/native/native-metrics.json",
+          "sha256": "ba4f36126d449d7e0ad01eaebeaa00e40e8f3a31b697f9c3bb06b222fde82180"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/visual-200/browser/browser-metrics.json",
+          "sha256": "e1fa4f262c2d7f1b5fa32bc5b557dbd37fe713320ab970feb4d9847dc5e0bf0d"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/visual-200/pairs-*.png"
+      },
+      {
+        "set": "structural-edge",
+        "dpi_percent": 100,
+        "report": "../build/ant-design-gpui/menu-reference/edge-100/comparison.json",
+        "report_sha256": "a0ea79ea1e214c54fabcfcca952279647011d610f602209a2df3c6705a223fb7",
+        "cases": 9,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 8,
+        "foreground_color_checks": 3,
+        "root_layout_checks": 9,
+        "chevron_bounds_checks": 2,
+        "custom_expand_bounds_checks": 0,
+        "passed_surface_checks": 8,
+        "passed_foreground_color_checks": 3,
+        "passed_root_layout_checks": 9,
+        "passed_chevron_bounds_checks": 2,
+        "passed_custom_expand_bounds_checks": 0,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-100/native/native-metrics.json",
+          "sha256": "c3d4fde69ca63ecddce9cffd842d77217b26fef61691b54cb994cc313879e8fa"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-100/browser/browser-metrics.json",
+          "sha256": "3aab83c49af8a65a6ad36cc918ff1c35e684bbc28fc7880dbadda8491c2e9181"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/edge-100/pairs-*.png"
+      },
+      {
+        "set": "structural-edge",
+        "dpi_percent": 150,
+        "report": "../build/ant-design-gpui/menu-reference/edge-150/comparison.json",
+        "report_sha256": "66504fa63727b1886c8e939661645f07e2fa2e8c4b0a0a300f5ea8e894b27d2d",
+        "cases": 9,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 8,
+        "foreground_color_checks": 3,
+        "root_layout_checks": 9,
+        "chevron_bounds_checks": 2,
+        "custom_expand_bounds_checks": 0,
+        "passed_surface_checks": 8,
+        "passed_foreground_color_checks": 3,
+        "passed_root_layout_checks": 9,
+        "passed_chevron_bounds_checks": 2,
+        "passed_custom_expand_bounds_checks": 0,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-150/native/native-metrics.json",
+          "sha256": "92524fd9060ec6b95b719ea0f24e9c95bf91d86c8d987cf240253257c72d37d7"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-150/browser/browser-metrics.json",
+          "sha256": "46110841c840ab4a54b03cd4458312181f3a0b2cf4f5a1faa51f0a22081803cb"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/edge-150/pairs-*.png"
+      },
+      {
+        "set": "structural-edge",
+        "dpi_percent": 200,
+        "report": "../build/ant-design-gpui/menu-reference/edge-200/comparison.json",
+        "report_sha256": "fa5a8919dc5d2ef694d6252531e5ee37e3594a42fa3a82de17aaad1551ba0da8",
+        "cases": 9,
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 8,
+        "foreground_color_checks": 3,
+        "root_layout_checks": 9,
+        "chevron_bounds_checks": 2,
+        "custom_expand_bounds_checks": 0,
+        "passed_surface_checks": 8,
+        "passed_foreground_color_checks": 3,
+        "passed_root_layout_checks": 9,
+        "passed_chevron_bounds_checks": 2,
+        "passed_custom_expand_bounds_checks": 0,
+        "native_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-200/native/native-metrics.json",
+          "sha256": "036b58e76450b45745f9e277be2452c2573a7df58c896c85da545d264579b4fa"
+        },
+        "browser_metrics": {
+          "path": "../build/ant-design-gpui/menu-reference/edge-200/browser/browser-metrics.json",
+          "sha256": "11523a241d59f96926166a767a909512e70a748f520927ca06876082c063f360"
+        },
+        "contact_sheets": "../build/ant-design-gpui/menu-reference/edge-200/pairs-*.png"
+      }
+    ],
+    "reviewed_images": [
+      {
+        "path": "../build/ant-design-gpui/menu-reference/final-review-150.png",
+        "sha256": "2cb1e364c125b8b57df9fe65bbff315132aa4dcefcf5215884853bb406ad693f"
+      },
+      {
+        "path": "../build/ant-design-gpui/menu-reference/final-custom-expand-150-2x.png",
+        "sha256": "5d4ef9a8f2a953f09fad93ab23bef269a53fdaf8ab26c1d9456fd33a4739ef09"
+      }
+    ],
+    "negative_controls": [
+      {
+        "artifact": {
+          "path": "../build/ant-design-gpui/menu-reference/chevron-negative-control.json",
+          "sha256": "0cc73486cfb66b03bc6e3c21372bc2f6fda1e1f3b69aaaa4c98090e8d2b985f2"
+        },
+        "expected_rejection": true,
+        "observed_horizontal_displacement_logical_px": 3,
+        "budget_logical_px": 1
+      },
+      {
+        "artifact": {
+          "path": "../build/ant-design-gpui/menu-reference/custom-expand-before-100/comparison.json",
+          "sha256": "c925cae89a71f23acfe475db5e681af88e47e7cce2843910df85602eb2c970b9"
+        },
+        "expected_rejection": true,
+        "cases": 4,
+        "custom_expand_bounds_checks": 8,
+        "rejected_old_custom_glyphs": 8,
+        "other_failed_checks": {
+          "failed_surface_checks": 0,
+          "failed_foreground_color_checks": 0,
+          "failed_root_layout_checks": 0,
+          "failed_chevron_bounds_checks": 0
+        }
+      }
+    ],
+    "capture_note": "One settled 150% browser screenshot repeated stale software-compositor tiles. Only that PNG, DOM snapshot and metrics were replaced after two animation frames plus 100 ms; scenario and React bundle stayed unchanged. The original artifact is retained.",
+    "retained_browser_tile_artifact": {
+      "path": "../build/ant-design-gpui/menu-reference/visual-150/browser/default-light-rtl-inline-open-tokens.software-tile-artifact.png",
+      "sha256": "d279256653e89f0699f39b0766a13acd6de264ef9ba492d61976b80464ce2a14"
+    },
+    "reproduce": "fixtures/menu/README.md"
+  },
+  "performance": {
+    "status": "passed",
+    "started_utc": "2026-10-27T16:59:15.0779103Z",
+    "completed_utc": "2026-10-27T17:00:26.1788908Z",
+    "preset": "windows-msvc-performance",
+    "profile": "bench (Release)",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+    "executable": "../build/windows-msvc-performance/ant-design-gpui/release/deps/menu-6be49bd6dea80741.exe",
+    "executable_sha256": "10759f03b1cf3b844be5600d0bc0e6e27c46e4cefb38bcec938908bf6069da0f",
+    "results": "../build/windows-msvc-performance/ant-design-gpui/menu-results.txt",
+    "results_sha256": "c7d90b6ccf49fffb5fda8f0f9c39dd1e0f717f4b806c723cbfd35c73d260bb42",
+    "sources_unchanged_during_run": true,
+    "source_sha256": {
+      ".cargo/config.toml": "d9151b8e0479bbb5ae75c7fce7a30500936aadccdf3ef6ebdf92cc78b7d07731",
+      "benches/menu.rs": "7ff4e6766a447fe5117caf3f8f64eec1845265e380e935d34e759cb89e4e5a8c",
+      "Cargo.lock": "5a67e919a8f1ee99a4f6f513288b8b09f849c78f28be40dd620ef3fc7f886181",
+      "Cargo.toml": "c86da5d8f19c8a9eac6e162f0cbec5c75a3375e70fbe7ca7ca3268a1ac03dfd0",
+      "rust-toolchain.toml": "86810d0ace88a635a96ed7a8d7d432afa6950c0c0b99f78f6e905ed9616a9882",
+      "scripts/run-menu-perf.ps1": "d15b8d07ea3ef52ef0d85ad0ee460ef0f8833c0d93f115496df8590b4ba43a06",
+      "src/menu/mod.rs": "0f5c7689a8633c0df308de3e94b90675d61ea2c4516d4390bd777bf3188f548b",
+      "src/menu/model.rs": "811a210b9c84fd25addf591855410664008f7fc7733a7f1e5eeed551749db21c",
+      "src/menu/overflow.rs": "443fde237d6682c729517659a04fea35c2318f188e938d40102dc641763c0645",
+      "src/menu/state.rs": "2f0f1d94f6a52ba209f57ef7fe518ab66368389e0258766323a2a0c8f3db882a",
+      "src/menu/style.rs": "a285bc7bd7c3fa7166f26d7aacb1af0c92a8df5a8a262f68b7b7458064b52a44",
+      "src/menu/view.rs": "d4066fb778720840569bfe6cace7bada114387d3766b90c3315f03ed98042d0d",
+      "src/popup/element.rs": "c94e8d09042c07e06ffb4e3caf899685213e784f229e6e9e35b62fc3f57d5e0f",
+      "src/popup/mod.rs": "6c7cdc0e74822fc62e556d3a1a877b8a106c8dc6a3f1171611665cd527f1be32",
+      "src/popup/motion.rs": "3aa73f39d35e52219accaac3d8893eeee98525ee11b6c5255df9d7893a5bf1b2",
+      "src/popup/runtime.rs": "27d9d9393ba030c7657ffff4ef0305461b6385478bf54d135004c30b620f847a"
+    },
+    "provenance": {
+      "path": "../build/windows-msvc-performance/ant-design-gpui/menu-provenance.json",
+      "sha256": "36a88598b702f9e99b3d84091c806b83a618ce450cf8c525af6ff2903f7f6104"
+    },
+    "command": "./scripts/run-menu-perf.ps1",
+    "counters": {
+      "root_initial_content_calls": 14,
+      "root_distant_content_calls": 41,
+      "popup_initial_content_calls": 42,
+      "popup_max_content_calls_per_redraw": 56,
+      "selection_ancestor_renders": 105,
+      "unrelated_cached_sibling_renders": 0,
+      "keyboard_window_refresh_host_renders": 105,
+      "settled_animation_frames": 0
+    },
+    "popup_factory_calls_include": "Visible row construction plus 16 custom-width measurement calls",
+    "factory_call_bound_exclusive": 128,
+    "warmup_updates": 5,
+    "sampled_selection_updates": 100,
+    "text_system": "GPUI offscreen text system; motion disabled",
+    "metric_scope": "CPU/layout; excludes GPU presentation and native input latency",
+    "representative_metrics_ns": {
+      "menu/model/build-1000": {
+        "samples": 100,
+        "batch": 1,
+        "mean_ns": 3029674,
+        "p50_ns": 2927800,
+        "p95_ns": 4628400,
+        "max_ns": 5804300
+      },
+      "menu/model/shared-snapshot-1000": {
+        "samples": 1000,
+        "batch": 1000,
+        "mean_ns": 2.2,
+        "p50_ns": 2.1,
+        "p95_ns": 2.3,
+        "max_ns": 63.2
+      },
+      "menu/model/key-lookup-1000": {
+        "samples": 1000,
+        "batch": 1000,
+        "mean_ns": 24.9,
+        "p50_ns": 25.8,
+        "p95_ns": 30.2,
+        "max_ns": 164
+      },
+      "menu/inline1000/virtualized/cached-scene": {
+        "samples": 100,
+        "batch": 1,
+        "mean_ns": 36135,
+        "p50_ns": 32700,
+        "p95_ns": 62400,
+        "max_ns": 70200
+      },
+      "menu/popup1000/closed/cached-scene": {
+        "samples": 100,
+        "batch": 1,
+        "mean_ns": 19779,
+        "p50_ns": 19400,
+        "p95_ns": 20600,
+        "max_ns": 37700
+      },
+      "menu/popup1000/open-cached-scene": {
+        "samples": 100,
+        "batch": 1,
+        "mean_ns": 142017,
+        "p50_ns": 162500,
+        "p95_ns": 171800,
+        "max_ns": 235400
+      },
+      "menu/popup1000/keyboard-navigation": {
+        "samples": 100,
+        "batch": 1,
+        "mean_ns": 1147355,
+        "p50_ns": 944400,
+        "p95_ns": 1843600,
+        "max_ns": 4323600
+      }
+    },
+    "cache_scope": "State-only selection preserves an unrelated cached sibling. GPUI marks ancestors dirty; native focus also refreshes the whole window.",
+    "gpui_source_evidence": [
+      "https://github.com/mg-chao/gpui/blob/2c0bf70b54c018f99419f386d1cf1105dca57661/crates/gpui/src/window.rs#L2264",
+      "https://github.com/mg-chao/gpui/blob/2c0bf70b54c018f99419f386d1cf1105dca57661/crates/gpui/src/window.rs#L2418"
+    ]
+  },
+  "feature_to_evidence": [
+    {
+      "feature": "Modes, overflow, collapse and collapsed-leaf tooltip composition",
+      "tests": [
+        "menu::interaction_tests::menu_native_horizontal_overflow_resizes_without_losing_selection",
+        "menu::interaction_tests::menu_native_collapse_restores_open_keys_and_hides_inline_children",
+        "menu::interaction_tests::menu_native_overflow_keyboard_visits_indicator_and_hidden_items"
+      ],
+      "visual": "visual-cases.json, all three DPI reports"
+    },
+    {
+      "feature": "Controlled and uncontrolled single/multiple selection",
+      "tests": [
+        "menu::tests::menu_selection_retains_state_and_emits_ordered_proposals",
+        "menu::tests::menu_controlled_values_stay_authoritative_and_setters_are_silent",
+        "menu::tests::menu_default_keys_initialize_once_and_controlled_collapse_keeps_owner_keys",
+        "menu::interaction_tests::menu_native_controlled_keyboard_open_moves_focus_only_after_owner_accepts",
+        "menu::tests::menu_single_activation_closes_flyouts_even_without_selection"
+      ],
+      "native": "UIA independent-selection, native-toggle, exactly-once"
+    },
+    {
+      "feature": "Hover, click, custom content, groups, dividers, disabled and danger",
+      "tests": [
+        "menu::interaction_tests::menu_native_hover_delay_bridge_and_click_trigger",
+        "menu::interaction_tests::menu_native_disabled_root_does_not_accept_keyboard_or_pointer_activation",
+        "menu::interaction_tests::menu_native_popup_measures_custom_content_intrinsic_width",
+        "menu::interaction_tests::menu_native_empty_group_and_divider_heights_match_independent_browser_measurements",
+        "menu::interaction_tests::menu_native_force_render_materializes_closed_content_only_when_requested"
+      ],
+      "visual": "visual-cases.json and edge-cases.json; default chevrons and harness custom +/- glyph bounds checked separately"
+    },
+    {
+      "feature": "Keyboard, RTL, focus, Tab and typeahead",
+      "tests": [
+        "menu::interaction_tests::menu_native_inline_keyboard_traverses_visible_tree_and_skips_disabled",
+        "menu::interaction_tests::menu_native_rtl_reverses_horizontal_navigation_and_flyout_direction",
+        "menu::interaction_tests::menu_native_tab_preserves_persistent_inline_expansion",
+        "menu::interaction_tests::menu_native_first_arrow_after_tab_entry_focuses_the_first_enabled_item",
+        "menu::interaction_tests::menu_native_horizontal_resize_transfers_owned_focus_through_the_overflow_indicator"
+      ],
+      "native": "UIA keyboard-focus, popup-open-close, horizontal-keyboard"
+    },
+    {
+      "feature": "Motion, reduced motion, unmount, dynamic data and stale handlers",
+      "tests": [
+        "menu::interaction_tests::menu_native_inline_motion_interruption_and_reduced_motion_preserve_geometry",
+        "menu::interaction_tests::menu_native_collapse_width_animates_then_reduced_motion_settles",
+        "menu::interaction_tests::menu_native_component_local_motion_override_settles_without_global_motion_changes",
+        "menu::interaction_tests::menu_native_unmount_cancels_delayed_hover_work",
+        "menu::interaction_tests::menu_native_queued_keyboard_event_cannot_activate_a_closed_popup_child",
+        "menu::interaction_tests::menu_native_model_replacement_releases_removed_popup_content_captures"
+      ],
+      "limitation": "Static screenshots disable motion; native fade/reveal differs from reference subtree scaling."
+    },
+    {
+      "feature": "Theme tokens and visual states",
+      "tests": [
+        "menu::style::reference_tests::menu_all_modern_component_tokens_match_original_execution",
+        "menu::style::reference_tests::menu_visual_states_match_original_browser_computed_styles"
+      ],
+      "fixture": "reference.json: 55 modern tokens, 640 computed menus, 3968 rows"
+    },
+    {
+      "feature": "All 11 public demos and retained gallery controls",
+      "tests": [
+        "tests::menu::menu_gallery_preserves_public_reference_order_and_native_navigation",
+        "tests::menu::menu_gallery_retains_selection_across_display_changes_and_page_switches",
+        "tests::menu::menu_gallery_collapse_tooltip_and_mode_controls_update_retained_menus",
+        "tests::menu::menu_gallery_controlled_accordion_closes_other_levels_and_selects_with_keyboard"
+      ],
+      "source": "examples/gallery/menu.rs"
+    },
+    {
+      "feature": "1000-row virtualization, bounded custom measurement, cached siblings and idle frames",
+      "tests": [
+        "menu::interaction_tests::menu_native_bounded_root_materializes_visible_rows_and_reveals_end",
+        "menu::interaction_tests::menu_native_grouped_popup_virtualizes_and_reveals_the_last_leaf",
+        "menu::interaction_tests::menu_native_virtual_popup_measures_custom_content_after_the_sixty_four_item_boundary"
+      ],
+      "benchmark": "benches/menu.rs: initial/distant/render-call bound <128, unrelated cached sibling unchanged, settled frames=0"
+    }
+  ],
+  "verification_input_sha256": {
+    "src/menu/tests.rs": "bbb8dae5d6975cf10ef85efd8048ed098933ef2e1d78ada1f13142c1f026d0bd",
+    "src/menu/interaction_tests.rs": "3605be94cbc8532f2f117ba0e218f5184e0e50bd1461a2eb73878a619bcfb0b3",
+    "src/menu/style_tests.rs": "81405dc964bb304f57ab4af85e0328fa7d39051ba9297182d431e7633c065ea6",
+    "src/menu/reference_tests.rs": "f2b9e1beded9e46f3dd573a18d7cc1ec21eb21ee5d4298e972daec724781e2c9",
+    "examples/gallery/menu.rs": "61166a069d5a9bc3b2aa95bffd1d696619cf8b2f485bc30b64c088f0870ae967",
+    "examples/gallery/tests/menu.rs": "c42c5c15be288801a7161a5a8dcd3a72508e651c74bb60ec436f3e83274ab921",
+    "examples/gallery/catalog.rs": "ef894661413c53e61ae3050287bb83a5db600c43b63698243cc7e8643ba328fc",
+    "examples/gallery/shell.rs": "c60853ce842fb0852b78d77a4970f11c56378c030c3eda11f604aa55b942412f",
+    "examples/gallery/main.rs": "16d6db2c547c97d6eb4e0068b7b10f25adbdb106eae5d3edde1427c270a5490f",
+    "examples/gallery/tests.rs": "116ab7db2c85daac1bb63d6e2c9b3ca6552cede3095fb000428ab671d8356886",
+    "examples/menu_visual.rs": "6d8e5d5d3c670e3dfdf8b3c124ac83dfa62ae9fb35351574300fcbcb1ba6cc42",
+    "examples/menu_accessibility.rs": "b7907702ad07b7824a96d27a1013164e0789af7ab720ad82ec08ce4c959f73d8",
+    "scripts/test-menu-accessibility.ps1": "bcc67dd670c49a4e41e157981979ac94d7505f8a5aff89e238a7e3e468510bd1",
+    "scripts/prepare_menu_reference.mjs": "a5b59a42b4742ea5c09b14c3faf1c65dcc9ff966dbacf17948af623313a8ebd1",
+    "scripts/capture_menu_reference.mjs": "57739083a627e388ed2e969d260461767e6a1c4ca8c3abaa08f74f6c3681f4a7",
+    "scripts/compare_menu_visual.py": "3a91d1e7a60287c565f9e8957ed29bbb23bf9e3edc85d9c97788fe559f6572f0",
+    "scripts/generate_menu_reference.mjs": "e0c4f8952d8090754a4a63178e7b4b97191447bf9a394696d2f89d1eb1710bc1",
+    "fixtures/menu/visual-cases.json": "12dac4e86212093f0e00095d38747e38625fbb22aca553aa099e3d05bbbb5baf",
+    "fixtures/menu/edge-cases.json": "550bf2ea3ca7a1351e2071a8222ae32e8fa0e033cc68cff4715b25202fc1d60d"
+  },
+  "known_differences_and_limits": [
+    "Reactivating the current single-selected item emits Activate only. Upstream rc-menu 1.5.0 also emits onDeselect for this repeat; native Deselect is reserved for removing a key from multiple selection.",
+    "Native popup motion uses fade/reveal instead of scaling an arbitrary subtree; the pinned GPUI revision is unchanged. Motion tests verify interruption, geometry and settling, while screenshots disable motion.",
+    "Virtual custom popup width measures a bounded sample and the active item and may grow when a wider row materializes. Reference DOM measures every row. Set MenuStyles.submenu_list.w(px(...)) for a stable explicit width.",
+    "Full pixel errors and paired images remain available. Text/vector antialiasing and shadow rasterization are backend dependent; automated color/bounds checks do not establish identical arbitrary custom glyph rendering.",
+    "Native Windows roles, properties and actions were exercised through UI Automation. Interactive screen-reader sessions and native macOS/Linux rendering/accessibility were not verified.",
+    "Release timings are local CPU/layout observations. GPUI ancestor invalidation and global focus refresh are included where reported; ancestor/focus isolation and cross-machine latency are not claimed."
+  ]
+}

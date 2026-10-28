@@ -31,6 +31,8 @@ struct Fixture {
 
 mod context_scroll;
 mod input;
+mod menu;
+mod pagination;
 mod select_slider;
 
 #[test]
@@ -381,8 +383,12 @@ fn catalogue_keeps_reference_order_and_pending_cards_explain_their_status_withou
     assert_eq!(COMPONENTS[2].group, "Layout");
     assert_eq!(COMPONENTS[3].id, ComponentId::ContextMenu);
     assert_eq!(COMPONENTS[3].group, "Navigation");
-    assert_eq!(COMPONENTS[4].id, ComponentId::Checkbox);
-    assert_eq!(COMPONENTS[4].group, "Data Entry");
+    assert_eq!(COMPONENTS[4].id, ComponentId::Menu);
+    assert_eq!(COMPONENTS[4].group, "Navigation");
+    assert_eq!(COMPONENTS[5].id, ComponentId::Pagination);
+    assert_eq!(COMPONENTS[5].group, "Navigation");
+    assert_eq!(COMPONENTS[6].id, ComponentId::Checkbox);
+    assert_eq!(COMPONENTS[6].group, "Data Entry");
     assert_eq!(
         COMPONENTS
             .iter()

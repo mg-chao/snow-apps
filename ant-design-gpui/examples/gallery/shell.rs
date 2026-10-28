@@ -23,6 +23,8 @@ use super::{
     input::{self, InputPage},
     input_examples,
     input_number::{self, InputNumberPage},
+    menu::{self, MenuPage},
+    pagination::{self, PaginationPage},
     popup::{self, Kind, PopupPage},
     radio::{self, RadioPage},
     scroll_area::{self, ScrollAreaPage},
@@ -83,6 +85,8 @@ pub(super) struct Gallery {
     pub popover: Entity<PopupPage>,
     pub popconfirm: Entity<PopupPage>,
     pub context_menu: Entity<ContextMenuPage>,
+    pub menu: Entity<MenuPage>,
+    pub pagination: Entity<PaginationPage>,
     pub scroll_area: Entity<ScrollAreaPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
@@ -100,6 +104,8 @@ pub(super) struct Gallery {
     popover_anchors: Vec<ScrollAnchor>,
     popconfirm_anchors: Vec<ScrollAnchor>,
     context_menu_anchors: Vec<ScrollAnchor>,
+    menu_anchors: Vec<ScrollAnchor>,
+    pagination_anchors: Vec<ScrollAnchor>,
     scroll_area_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
@@ -167,11 +173,23 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let menu_anchors: Vec<_> = menu::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
+        let pagination_anchors: Vec<_> = pagination::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let scroll_area_anchors: Vec<_> = scroll_area::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
         Self {
+            menu: cx.new(|cx| MenuPage::new(scope.clone(), menu_anchors.clone(), window, cx)),
+            pagination: cx.new(|cx| {
+                PaginationPage::new(scope.clone(), pagination_anchors.clone(), window, cx)
+            }),
             context_menu: cx.new(|cx| {
                 ContextMenuPage::new(scope.clone(), context_menu_anchors.clone(), window, cx)
             }),
@@ -239,6 +257,8 @@ impl Gallery {
             popover_anchors,
             popconfirm_anchors,
             context_menu_anchors,
+            menu_anchors,
+            pagination_anchors,
             scroll_area_anchors,
         }
     }
@@ -379,6 +399,8 @@ impl Gallery {
                         ComponentId::Popover => "Data Display / Popover",
                         ComponentId::Popconfirm => "Feedback / Popconfirm",
                         ComponentId::ContextMenu => "Navigation / Context Menu",
+                        ComponentId::Menu => "Navigation / Menu",
+                        ComponentId::Pagination => "Navigation / Pagination",
                         ComponentId::ScrollArea => "Layout / Scroll Area",
                     },
                 ))
@@ -483,6 +505,8 @@ impl Gallery {
                                 ComponentId::Slider => IconName::SlidersOutlined,
                                 ComponentId::Tag => IconName::TagsOutlined,
                                 ComponentId::ContextMenu => IconName::MenuOutlined,
+                                ComponentId::Menu => IconName::MenuFoldOutlined,
+                                ComponentId::Pagination => IconName::EllipsisOutlined,
                                 ComponentId::ScrollArea => IconName::SwapOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
@@ -642,6 +666,20 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
+                    menu::DEMOS
+                        .iter()
+                        .zip(&self.menu_anchors)
+                        .filter(|_| self.selected == ComponentId::Menu)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
+                    pagination::DEMOS
+                        .iter()
+                        .zip(&self.pagination_anchors)
+                        .filter(|_| self.selected == ComponentId::Pagination)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
                     scroll_area::DEMOS
                         .iter()
                         .zip(&self.scroll_area_anchors)
@@ -797,6 +835,8 @@ impl Gallery {
                                 ComponentId::Popover => "Open Ant Design Popover reference",
                                 ComponentId::Popconfirm => "Open Ant Design Popconfirm reference",
                                 ComponentId::ContextMenu => "Open Ant Design Dropdown reference",
+                                ComponentId::Menu => "Open Ant Design Menu reference",
+                                ComponentId::Pagination => "Open Ant Design Pagination reference",
                                 ComponentId::ScrollArea => "Open Ant Design design principles",
                             })
                             .href(match self.selected {
@@ -816,6 +856,10 @@ impl Gallery {
                                     "https://ant.design/components/dropdown"
                                 }
                                 ComponentId::ScrollArea => "https://ant.design/docs/spec/motion",
+                                ComponentId::Menu => "https://ant.design/components/menu",
+                                ComponentId::Pagination => {
+                                    "https://ant.design/components/pagination"
+                                }
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
                                 ComponentId::Popover => "https://ant.design/components/popover",
@@ -865,6 +909,8 @@ impl Render for Gallery {
             ComponentId::Popover => popup::POPOVER_DEMOS.len(),
             ComponentId::Popconfirm => popup::POPCONFIRM_DEMOS.len(),
             ComponentId::ContextMenu => context_menu::DEMOS.len(),
+            ComponentId::Menu => menu::DEMOS.len(),
+            ComponentId::Pagination => pagination::DEMOS.len(),
             ComponentId::ScrollArea => scroll_area::DEMOS.len(),
         };
         let coverage = match self.selected {
@@ -872,6 +918,8 @@ impl Render for Gallery {
             ComponentId::InputNumber => input_examples::summary(input_number::DEMOS),
             ComponentId::Select => input_examples::summary(select::DEMOS),
             ComponentId::Slider => input_examples::summary(slider::DEMOS),
+            ComponentId::Menu => input_examples::summary(menu::DEMOS),
+            ComponentId::Pagination => input_examples::summary(pagination::DEMOS),
             _ => format!("{live} live examples"),
         };
         div()
@@ -978,6 +1026,8 @@ impl Render for Gallery {
                                         ComponentId::Popover => self.popover.clone().into_any_element(),
                                         ComponentId::Popconfirm => self.popconfirm.clone().into_any_element(),
                                         ComponentId::ContextMenu => self.context_menu.clone().into_any_element(),
+                                        ComponentId::Menu => self.menu.clone().into_any_element(),
+                                        ComponentId::Pagination => self.pagination.clone().into_any_element(),
                                         ComponentId::ScrollArea => self.scroll_area.clone().into_any_element(),
 
                                     })
@@ -993,8 +1043,10 @@ impl Render for Gallery {
                                             .child(match self.selected {
                                                 ComponentId::Select => "Type to search · Arrow keys to navigate · Enter to select · Escape to dismiss",
                                                 ComponentId::ContextMenu => "Right-click to open · Shift+F10 from the keyboard · Arrow keys to navigate · Escape to dismiss",
+                                                ComponentId::Menu => "Tab to enter · Arrow keys to navigate · Enter or Space to select · Escape to close a submenu",
                                                 ComponentId::ScrollArea => "Wheel or drag to scroll · Shift+wheel for horizontal · Arrow and Page keys when focused",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
+                                                ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {
                                                     "Tab to navigate · Enter or Space to activate"
                                                 }

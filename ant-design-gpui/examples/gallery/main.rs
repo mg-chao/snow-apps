@@ -11,6 +11,8 @@ mod divider;
 mod input;
 mod input_examples;
 mod input_number;
+mod menu;
+mod pagination;
 mod popup;
 mod radio;
 mod scroll_area;
@@ -41,6 +43,10 @@ struct Options {
 }
 
 impl Options {
+    fn interactive(&self) -> bool {
+        self.capture.is_none()
+    }
+
     fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut options = Self::default();
         let mut arguments = arguments.into_iter();
@@ -64,10 +70,12 @@ impl Options {
                             Some("popover") => catalog::ComponentId::Popover,
                             Some("popconfirm") => catalog::ComponentId::Popconfirm,
                             Some("context-menu") => catalog::ComponentId::ContextMenu,
+                            Some("menu") => catalog::ComponentId::Menu,
+                            Some("pagination") => catalog::ComponentId::Pagination,
                             Some("scroll-area") => catalog::ComponentId::ScrollArea,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, or scroll-area"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, or scroll-area"
                                     .into(),
                             ),
                         };
@@ -110,7 +118,7 @@ impl Options {
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|scroll-area] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {
@@ -135,13 +143,19 @@ fn main() {
             .expect("valid gallery configuration");
         let (width, height) = options.window_size.unwrap_or((1280, 900));
         let bounds = Bounds::centered(None, size(px(width as f32), px(height as f32)), cx);
+        let interactive = options.interactive();
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(640.), px(480.))),
+                show: interactive,
+                focus: interactive,
                 ..Default::default()
             },
             |window, cx| {
+                if !interactive {
+                    window.resize(size(px(width as f32), px(height as f32)));
+                }
                 window.set_window_title("Ant Design GPUI · Components");
                 let gallery = cx.new(|cx| {
                     let mut gallery = shell::Gallery::new(scope.clone(), window, cx);
@@ -150,7 +164,9 @@ fn main() {
                 });
                 let root = cx.new(|cx| UiRoot::new(scope, gallery, window, cx));
                 window.focus(&root.focus_handle(cx), cx);
-                window.activate_window();
+                if interactive {
+                    window.activate_window();
+                }
                 if let Some(path) = options.capture {
                     window
                         .spawn(cx, async move |cx| {
@@ -180,6 +196,8 @@ fn main() {
             },
         )
         .expect("open component gallery");
-        cx.activate(true);
+        if interactive {
+            cx.activate(true);
+        }
     });
 }

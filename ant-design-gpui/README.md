@@ -23,7 +23,9 @@ cargo run --locked --offline --example gallery
 # Open InputNumber directly: -- --component input-number
 # Open Select directly: -- --component select
 # Open Slider directly: -- --component slider
+# Open Pagination directly: -- --component pagination
 # Open Context Menu directly: -- --component context-menu
+# Open Menu directly: -- --component menu
 # Open Scroll Area directly: -- --component scroll-area
 ```
 
@@ -60,8 +62,12 @@ groups, dynamic additions, entrance animation, native drag reordering, component
 tokens, disabled controls and semantic styling. Select Tag or use `--component tag`.
 The dynamic examples add sequential labels; text editing belongs to the host app.
 
+Menu provides persistent horizontal, vertical and inline navigation, with collapsed
+rails, responsive overflow, controlled selection/open keys and all 11 public
+reference demos. See the [Menu guide](docs/menu.md) for integration and focused verification.
+
 Context Menu and Scroll Area have retained GPUI controllers and dedicated gallery pages.
-Menus support nested and lazy branches, keyboard navigation, typeahead, checks, radio
+Context menus support nested and lazy branches, keyboard navigation, typeahead, checks, radio
 groups, icons, shortcut hints and badges. Scroll areas use one native `ScrollHandle`
 for wheel input, keyboard navigation, overlay thumb dragging and application updates.
 See the [Context Menu and Scroll Area guide](docs/context-menu-scroll-area.md) for
@@ -76,6 +82,12 @@ Select and Slider have retained native controllers, typed values, virtualized
 options, native text/IME integration and range editing. Their gallery pages cover
 all 27 Select and 14 Slider public reference demos. See the
 [Select and Slider guide](docs/select-slider.md) for APIs and focused verification.
+
+Pagination uses a retained native controller and the existing Input/Select controls.
+Its gallery page covers all 13 public reference demos, including controlled values,
+simple mode, size selection, quick jumping and custom renderers. See the
+[Pagination guide](docs/pagination.md) for APIs and reference details, and the
+[verification report](docs/pagination-verification.md) for measurements and limits.
 
 ```powershell
 cd ant-design-gpui
