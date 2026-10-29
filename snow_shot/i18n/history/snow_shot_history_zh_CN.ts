@@ -1671,10 +1671,6 @@ Files:
             <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销。</translation>
         </message>
         <message>
-            <source>Display text recognition results</source>
-            <translation>显示文本识别结果</translation>
-        </message>
-        <message>
             <source>Enable annotation mode</source>
             <translation>启用标注模式</translation>
         </message>
@@ -1779,6 +1775,10 @@ Files:
             <translation>处理图像</translation>
         </message>
         <message>
+            <source>Recognition results</source>
+            <translation>识别结果</translation>
+        </message>
+        <message>
             <source>Recognizing text</source>
             <translation>正在识别文本</translation>
         </message>
@@ -1823,8 +1823,16 @@ Files:
             <translation>显示阴影</translation>
         </message>
         <message>
+            <source>Show text</source>
+            <translation>显示文本</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>支持的文件 (%1)</translation>
+        </message>
+        <message>
+            <source>Text type: %1</source>
+            <translation>文本类型：%1</translation>
         </message>
         <message>
             <source>The animation could not be played</source>
@@ -1857,6 +1865,10 @@ Files:
         <message>
             <source>Thumbnail mode</source>
             <translation>缩略图模式</translation>
+        </message>
+        <message>
+            <source>Translation results</source>
+            <translation>翻译结果</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>

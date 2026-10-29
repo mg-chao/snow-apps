@@ -2580,6 +2580,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-repository-tests --text-style-only)
     add_test(NAME snow-shot-pinned-window-visibility-storage-tests
              COMMAND snow-shot-pinned-window-repository-tests --visibility-only)
+    add_test(NAME snow-shot-pinned-text-type-storage-tests
+        COMMAND snow-shot-pinned-window-repository-tests --text-type-only)
+    set_tests_properties(snow-shot-pinned-text-type-storage-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-pinned-window-visibility-storage-tests PROPERTIES
         LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-window-repository-tests PROPERTIES
@@ -5447,6 +5452,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --menu-language-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-menu-language-tests PROPERTIES
         LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-text-type-tests
+        COMMAND snow-shot-pinned-window-tests --text-type-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-text-type-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-destroy-shortcut-tests
@@ -8920,6 +8931,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-window-tests --text-editor-layout-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-text-editor-layout-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recognition-text-editor-history-tests
+        COMMAND snow-shot-recognition-window-tests --text-editor-history-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-text-editor-history-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-recognition-window-tests

@@ -44,6 +44,7 @@
 #include "snow_shot/presentation/screenshotanimationplayback.h"
 #include "../src/image/snowimageqtcodec.h"
 #include "pinned_animation_fixtures.h"
+#include "translation_test_support.h"
 #include "pinned_animation_native_fixtures.h"
 #include "pinned_animation_persistence_tests.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
@@ -861,6 +862,8 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_mouseWheelZoomMode = config.mouseWheelZoomMode;
         window.m_originalImage = config.imageSource.materializedImage;
         window.m_originalPixelSize = window.m_originalImage.size();
+        window.m_ocrSupported = screenshotOcrImageWithinPixelLimit(window.m_originalPixelSize);
+        window.initializeTextType(config);
         window.m_transformedImage = window.m_originalImage;
         window.m_persistenceId = config.persistenceId;
         window.m_persistenceWriter = config.persistenceWriter;
@@ -914,7 +917,11 @@ class ScreenshotPinnedWindowTestAccess {
         restoreOffscreen(window, config);
         window.m_recognitionTargetReady = false;
         window.m_recognition = config.recognition;
-        window.m_recognitionResults = config.recognitionResults;
+        window.m_tableRecognition = config.tableRecognition;
+        window.m_recognitionResults = config.persistedRecognitionResults.isEmpty()
+                                          ? config.recognitionResults
+                                          : ScreenshotPinnedWindow::decodeRecognitionSnapshot(
+                                                config.persistedRecognitionResults);
         window.m_automaticTextRecognition = false;
         window.m_ocrMode = false;
         window.m_hiddenTextSelection = false;
@@ -929,6 +936,17 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static bool hiddenSelection(const ScreenshotPinnedWindow& window) {
         return window.m_hiddenTextSelection;
+    }
+    static void toggleTextResults(ScreenshotPinnedWindow& window) {
+        window.toggleTextRecognitionResults();
+    }
+    static void toggleTranslation(ScreenshotPinnedWindow& window) {
+        window.handleTextTranslationRequested();
+    }
+    static void finishInitialTextDisplay(ScreenshotPinnedWindow& window, bool visible) {
+        window.m_initialRecognitionVisible = visible;
+        window.m_firstContentFramePublished = true;
+        window.finishDeferredPresentationSetup(window.m_presentationGeneration);
     }
     static void selectHiddenText(ScreenshotPinnedWindow& window) {
         window.m_displayOcrPresentation->selectAll();
@@ -26480,7 +26498,8 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
                                     QStringLiteral("screenshotPinnedPlaybackSpeedAction")},
                 "playback commands appear in exact order immediately above Process image");
         require(!menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction")) &&
-                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedOcrAction")),
+                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedOcrAction")) &&
+                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedTextTypeAction")),
                 "animation menu omits annotation and recognition entries");
         auto* toggle =
             menu->findChild<QAction*>(QStringLiteral("screenshotPinnedTogglePlaybackAction"));
@@ -26820,6 +26839,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 }
 
 #include "pinned_color_swatch_window_tests.h"
+#include "pinned_text_type_tests.h"
 
 int main(int argc, char* argv[]) {
 
@@ -27617,6 +27637,12 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--menu-language-only"))) {
             pinnedLazyMenuHeadersRetranslate();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--text-type-only"))) {
+            pinnedTextTypeMenuActivatesSelectedResults();
+            pinnedTranslatedTextKeepsWindowCommandsWithoutToolbar();
+            pinnedTextTypeStartsTranslationAfterRecognition();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {

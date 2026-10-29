@@ -197,6 +197,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         snow_shot::storage::PinnedWindowPlacement persistedPreThumbnailPlacement;
         QByteArray persistedCanvasSession;
         QByteArray persistedRecognitionResults;
+        std::optional<snow_shot::storage::PinnedTextType> persistedTextType;
         bool persistedRecognitionVisible = false;
         bool persistedTranslationVisible = false;
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceWriter;
@@ -388,6 +389,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     void endAuxiliaryWindowInteraction();
     void activateRecognitionMode(int mode, bool showToolbar = true);
     void toggleTextRecognitionResults();
+    void initializeTextType(const Config& config);
+    void setTextType(snow_shot::storage::PinnedTextType type);
+    void activateSelectedTextResults();
+    void completePendingTextTranslation();
     void ensureRecognitionProviders();
     void deactivateRecognition();
     void updateRecognitionToolbarState();
@@ -631,6 +636,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<adqt::widgets::AdContextMenu> m_groupMenu;
     QPointer<QAction> m_groupMenuAction;
     QPointer<QAction> m_ocrAction;
+    QPointer<QAction> m_textTypeAction;
+    QPointer<QActionGroup> m_textTypeActions;
     QPointer<QAction> m_drawingAction;
     QPointer<QAction> m_animationToggleAction;
     QPointer<QAction> m_animationSpeedAction;
@@ -759,7 +766,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_hiddenTextSelection = false;
     bool m_initialRecognitionVisible = false;
     bool m_initialTranslationVisible = false;
+    snow_shot::storage::PinnedTextType m_textType =
+        snow_shot::storage::PinnedTextType::RecognitionResults;
     bool m_translateAfterRecognition = false;
+    bool m_preferCachedTranslation = false;
     bool m_automaticTextRecognition = !snow_shot::app::edition::isMini;
     bool m_automationRecognition = false;
     bool m_editingEnabled = true;

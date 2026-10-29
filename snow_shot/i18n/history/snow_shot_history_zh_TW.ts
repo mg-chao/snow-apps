@@ -1671,10 +1671,6 @@ Files:
             <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原。</translation>
         </message>
         <message>
-            <source>Display text recognition results</source>
-            <translation>顯示文字辨識結果</translation>
-        </message>
-        <message>
             <source>Enable annotation mode</source>
             <translation>啟用標註模式</translation>
         </message>
@@ -1779,6 +1775,10 @@ Files:
             <translation>處理影像</translation>
         </message>
         <message>
+            <source>Recognition results</source>
+            <translation>辨識結果</translation>
+        </message>
+        <message>
             <source>Recognizing text</source>
             <translation>正在辨識文字</translation>
         </message>
@@ -1823,8 +1823,16 @@ Files:
             <translation>顯示陰影</translation>
         </message>
         <message>
+            <source>Show text</source>
+            <translation>顯示文字</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>支援的檔案 (%1)</translation>
+        </message>
+        <message>
+            <source>Text type: %1</source>
+            <translation>文字類型：%1</translation>
         </message>
         <message>
             <source>The animation could not be played</source>
@@ -1857,6 +1865,10 @@ Files:
         <message>
             <source>Thumbnail mode</source>
             <translation>縮圖模式</translation>
+        </message>
+        <message>
+            <source>Translation results</source>
+            <translation>翻譯結果</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>

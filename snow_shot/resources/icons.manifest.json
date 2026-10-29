@@ -1439,6 +1439,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "TextType",
+      "name": "text-type",
+      "source": "../src/presentation/components/icons/resources/text-type.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ToolArrow",
       "name": "tool-arrow",
       "source": "../src/presentation/components/icons/resources/tool-arrow.svg",

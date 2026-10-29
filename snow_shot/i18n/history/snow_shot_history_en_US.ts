@@ -1677,10 +1677,6 @@ Files:
             <translation>Destroy this pinned window? This action cannot be undone.</translation>
         </message>
         <message>
-            <source>Display text recognition results</source>
-            <translation>Display text recognition results</translation>
-        </message>
-        <message>
             <source>Enable annotation mode</source>
             <translation>Enable annotation mode</translation>
         </message>
@@ -1785,6 +1781,10 @@ Files:
             <translation>Process image</translation>
         </message>
         <message>
+            <source>Recognition results</source>
+            <translation>Recognition results</translation>
+        </message>
+        <message>
             <source>Recognizing text</source>
             <translation>Recognizing text</translation>
         </message>
@@ -1829,8 +1829,16 @@ Files:
             <translation>Show shadow</translation>
         </message>
         <message>
+            <source>Show text</source>
+            <translation>Show text</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>Supported files (%1)</translation>
+        </message>
+        <message>
+            <source>Text type: %1</source>
+            <translation>Text type: %1</translation>
         </message>
         <message>
             <source>The animation could not be played</source>
@@ -1863,6 +1871,10 @@ Files:
         <message>
             <source>Thumbnail mode</source>
             <translation>Thumbnail mode</translation>
+        </message>
+        <message>
+            <source>Translation results</source>
+            <translation>Translation results</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>

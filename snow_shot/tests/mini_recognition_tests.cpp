@@ -7,7 +7,9 @@
 #include "snow_shot/presentation/screenshotimageconversionpersistence.h"
 #include "snow_shot/presentation/screenshotrecognitionmodelpersistence.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "widgets/context_menu.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QDir>
 #include <QDataStream>
@@ -16,6 +18,22 @@
 
 #include <cstdlib>
 #include <iostream>
+
+class ScreenshotPinnedWindowTestAccess {
+  public:
+    static void textTypeMenu(ScreenshotPinnedWindow& window) {
+        ScreenshotPinnedWindow::Config config;
+        config.restorePersistentState = true;
+        config.persistedTextType = snow_shot::storage::PinnedTextType::TranslationResults;
+        config.persistedTranslationVisible = true;
+        window.initializeTextType(config);
+        window.createContextMenu();
+        QMetaObject::invokeMethod(window.m_textTypeAction->menu(), "aboutToShow",
+                                  Qt::DirectConnection);
+        window.refreshContextMenu();
+        window.setTextType(snow_shot::storage::PinnedTextType::TranslationResults);
+    }
+};
 
 namespace {
 void require(bool condition, const char* message) {
@@ -265,6 +283,21 @@ void removedPaletteToolsCannotMaterializeControls() {
                 palette.activeTool() == Tool::Ocr,
             "disabled palette state must not create controls or change active OCR");
 }
+
+void pinnedTextTypeKeepsTranslationUnavailable() {
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::textTypeMenu(window);
+    auto* original =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRecognitionResultsAction"));
+    auto* translation =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedTranslationResultsAction"));
+    require(original && translation && original->isChecked() && !translation->isChecked() &&
+                !translation->isEnabled() &&
+                window.persistenceSnapshot().textType ==
+                    snow_shot::storage::PinnedTextType::RecognitionResults,
+            "Mini keeps the translation option disabled and sanitizes restored translation "
+            "preferences");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -284,6 +317,7 @@ int main(int argc, char** argv) {
     removedRecognitionViewsRemainUnavailable();
     legacyPinPayloadsRetainOnlySupportedRecognition();
     removedPaletteToolsCannotMaterializeControls();
+    pinnedTextTypeKeepsTranslationUnavailable();
     storage.shutdown();
     return 0;
 }
