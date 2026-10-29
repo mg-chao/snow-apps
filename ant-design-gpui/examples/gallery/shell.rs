@@ -17,11 +17,13 @@ use gpui::{
 use super::{
     alert::{self, AlertPage},
     button::{ButtonPage, DEMOS, Preview},
+    carousel::{self, CarouselPage},
     catalog::{COMPONENTS, ComponentId},
     checkbox::{self, CheckboxPage},
     context_menu::{self, ContextMenuPage},
     descriptions::{self, DescriptionsPage},
     divider::{self, DividerPage},
+    image::{self, ImagePage},
     input::{self, InputPage},
     input_examples,
     input_number::{self, InputNumberPage},
@@ -100,11 +102,13 @@ pub(super) struct Gallery {
     pub tabs: Entity<TabsPage>,
     pub alert: Entity<AlertPage>,
     pub result: Entity<ResultPage>,
+    pub image: Entity<ImagePage>,
     pub descriptions: Entity<DescriptionsPage>,
     pub spin: Entity<SpinPage>,
     pub progress: Entity<ProgressPage>,
     pub message: Entity<MessagePage>,
     pub notification: Entity<NotificationPage>,
+    pub carousel: Entity<CarouselPage>,
     pub modal: Entity<ModalPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
@@ -128,11 +132,13 @@ pub(super) struct Gallery {
     tabs_anchors: Vec<ScrollAnchor>,
     alert_anchors: Vec<ScrollAnchor>,
     result_anchors: Vec<ScrollAnchor>,
+    image_anchors: Vec<ScrollAnchor>,
     descriptions_anchors: Vec<ScrollAnchor>,
     spin_anchors: Vec<ScrollAnchor>,
     progress_anchors: Vec<ScrollAnchor>,
     message_anchors: Vec<ScrollAnchor>,
     notification_anchors: Vec<ScrollAnchor>,
+    carousel_anchors: Vec<ScrollAnchor>,
     modal_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
@@ -232,6 +238,10 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let image_anchors: Vec<_> = image::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let progress_anchors: Vec<_> = progress::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
@@ -248,7 +258,13 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let carousel_anchors: Vec<_> = carousel::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         Self {
+            carousel: cx
+                .new(|cx| CarouselPage::new(scope.clone(), carousel_anchors.clone(), window, cx)),
             notification: cx.new(|cx| {
                 NotificationPage::new(scope.clone(), notification_anchors.clone(), window, cx)
             }),
@@ -258,6 +274,7 @@ impl Gallery {
                 .new(|cx| ProgressPage::new(scope.clone(), progress_anchors.clone(), window, cx)),
             spin: cx.new(|cx| SpinPage::new(scope.clone(), spin_anchors.clone(), cx)),
             result: cx.new(|cx| ResultPage::new(scope.clone(), result_anchors.clone(), cx)),
+            image: cx.new(|cx| ImagePage::new(scope.clone(), image_anchors.clone(), window, cx)),
             descriptions: cx
                 .new(|cx| DescriptionsPage::new(scope.clone(), descriptions_anchors.clone(), cx)),
             modal: cx.new(|cx| ModalPage::new(scope.clone(), modal_anchors.clone(), window, cx)),
@@ -340,11 +357,13 @@ impl Gallery {
             tabs_anchors,
             alert_anchors,
             result_anchors,
+            image_anchors,
             descriptions_anchors,
             spin_anchors,
             progress_anchors,
             message_anchors,
             notification_anchors,
+            carousel_anchors,
             modal_anchors,
         }
     }
@@ -491,11 +510,13 @@ impl Gallery {
                         ComponentId::Tabs => "Navigation / Tabs",
                         ComponentId::Alert => "Feedback / Alert",
                         ComponentId::Result => "Feedback / Result",
+                        ComponentId::Image => "Data Display / Image",
                         ComponentId::Descriptions => "Data Display / Descriptions",
                         ComponentId::Spin => "Feedback / Spin",
                         ComponentId::Progress => "Feedback / Progress",
                         ComponentId::Message => "Feedback / Message",
                         ComponentId::Notification => "Feedback / Notification",
+                        ComponentId::Carousel => "Data Display / Carousel",
                         ComponentId::Modal => "Feedback / Modal",
                     },
                 ))
@@ -606,11 +627,13 @@ impl Gallery {
                                 ComponentId::Tabs => IconName::FolderOutlined,
                                 ComponentId::Alert => IconName::AlertOutlined,
                                 ComponentId::Result => IconName::CheckCircleOutlined,
+                                ComponentId::Image => IconName::PictureOutlined,
                                 ComponentId::Descriptions => IconName::ProfileOutlined,
                                 ComponentId::Spin => IconName::LoadingOutlined,
                                 ComponentId::Progress => IconName::DashboardOutlined,
                                 ComponentId::Message => IconName::MessageOutlined,
                                 ComponentId::Notification => IconName::NotificationOutlined,
+                                ComponentId::Carousel => IconName::PlaySquareOutlined,
                                 ComponentId::Modal => IconName::LayoutOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
@@ -762,6 +785,13 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
+                    image::DEMOS
+                        .iter()
+                        .zip(&self.image_anchors)
+                        .filter(|_| self.selected == ComponentId::Image)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
                     radio::DEMOS
                         .iter()
                         .zip(&self.radio_anchors)
@@ -844,6 +874,13 @@ impl Gallery {
                     .iter()
                     .zip(&self.notification_anchors)
                     .filter(|_| self.selected == ComponentId::Notification)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
+            let links = links.chain(
+                carousel::DEMOS
+                    .iter()
+                    .zip(&self.carousel_anchors)
+                    .filter(|_| self.selected == ComponentId::Carousel)
                     .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
             );
             let links = links.chain(
@@ -1011,6 +1048,7 @@ impl Gallery {
                                 ComponentId::Tabs => "Open Ant Design Tabs reference",
                                 ComponentId::Alert => "Open Ant Design Alert reference",
                                 ComponentId::Result => "Open Ant Design Result reference",
+                                ComponentId::Image => "Open Ant Design Image reference",
                                 ComponentId::Descriptions => {
                                     "Open Ant Design Descriptions reference"
                                 }
@@ -1020,6 +1058,7 @@ impl Gallery {
                                 ComponentId::Notification => {
                                     "Open Ant Design Notification reference"
                                 }
+                                ComponentId::Carousel => "Open Ant Design Carousel reference",
                                 ComponentId::Modal => "Open Ant Design Modal reference",
                             })
                             .href(match self.selected {
@@ -1046,6 +1085,7 @@ impl Gallery {
                                 ComponentId::Tabs => "https://ant.design/components/tabs",
                                 ComponentId::Alert => "https://ant.design/components/alert",
                                 ComponentId::Result => "https://ant.design/components/result",
+                                ComponentId::Image => "https://ant.design/components/image",
                                 ComponentId::Descriptions => {
                                     "https://ant.design/components/descriptions"
                                 }
@@ -1055,6 +1095,7 @@ impl Gallery {
                                 ComponentId::Notification => {
                                     "https://ant.design/components/notification"
                                 }
+                                ComponentId::Carousel => "https://ant.design/components/carousel",
                                 ComponentId::Modal => "https://ant.design/components/modal",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
@@ -1111,11 +1152,13 @@ impl Render for Gallery {
             ComponentId::Tabs => tabs::DEMOS.len(),
             ComponentId::Alert => alert::DEMOS.len(),
             ComponentId::Result => result::DEMOS.len(),
+            ComponentId::Image => image::DEMOS.len(),
             ComponentId::Descriptions => descriptions::DEMOS.len(),
             ComponentId::Spin => spin::DEMOS.len(),
             ComponentId::Progress => progress::DEMOS.len(),
             ComponentId::Message => message::DEMOS.len(),
             ComponentId::Notification => notification::DEMOS.len(),
+            ComponentId::Carousel => carousel::DEMOS.len(),
             ComponentId::Modal => modal::DEMOS.len(),
         };
         let coverage = match self.selected {
@@ -1238,11 +1281,13 @@ impl Render for Gallery {
                                         ComponentId::Tabs => self.tabs.clone().into_any_element(),
                                         ComponentId::Alert => self.alert.clone().into_any_element(),
                                         ComponentId::Result => self.result.clone().into_any_element(),
+                                        ComponentId::Image => self.image.clone().into_any_element(),
                                         ComponentId::Descriptions => self.descriptions.clone().into_any_element(),
                                         ComponentId::Spin => self.spin.clone().into_any_element(),
                                         ComponentId::Progress => self.progress.clone().into_any_element(),
                                         ComponentId::Message => self.message.clone().into_any_element(),
                                         ComponentId::Notification => self.notification.clone().into_any_element(),
+                                        ComponentId::Carousel => self.carousel.clone().into_any_element(),
                                         ComponentId::Modal => self.modal.clone().into_any_element(),
 
                                     })
@@ -1263,11 +1308,13 @@ impl Render for Gallery {
                                                 ComponentId::Tabs => "Arrow keys move focus · Enter or Space selects · Delete requests closing editable tabs",
                                                 ComponentId::Alert => "Tab to navigate actions · Enter or Space to activate or close",
                                                 ComponentId::Result => "Tab to navigate actions · Enter or Space to activate",
+                                                ComponentId::Image => "Click an image to preview · Escape to close · Arrow keys to navigate",
                                                 ComponentId::Descriptions => "Choose a size · Resize the window to change responsive columns · Tab to the Edit action",
                                                 ComponentId::Spin => "Toggle loading or automatic progress · Run progress or a fullscreen operation",
                                                 ComponentId::Progress => "Adjust progress; change dashboard gaps and circular steps",
                                                 ComponentId::Message => "Display a message · Hover to pause dismissal or expand a stack",
                                                 ComponentId::Notification => "Display a notification · Hover to pause dismissal or expand a stack",
+                                                ComponentId::Carousel => "Select a dot or use the arrow keys · Hover to pause automatic scrolling",
                                                 ComponentId::Modal => "Tab stays in the active dialog · Escape closes the top dialog or popup",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",

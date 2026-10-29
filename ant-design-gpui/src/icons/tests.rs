@@ -468,6 +468,59 @@ fn rotating_monochrome_uses_the_same_atlas_tile_without_color_raster_cache_work(
 }
 
 #[test]
+fn fractional_artwork_size_preserves_declared_extent_without_changing_default_slots() {
+    struct FractionalIcons;
+    impl gpui::Render for FractionalIcons {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            gpui::div()
+                .flex()
+                .gap(px(4.))
+                .child(icon(IconName::ZoomInOutlined).size(px(15.)))
+                .child(
+                    icon(IconName::ZoomInOutlined)
+                        .size(px(15.))
+                        .paint_size(size(px(15.), px(15.))),
+                )
+                .child(
+                    icon(IconName::ZoomInOutlined)
+                        .size(px(31.))
+                        .paint_size(size(px(15.), px(15.))),
+                )
+        }
+    }
+    let mut cx = gpui::TestAppContext::single();
+    let window = cx.add_window(|_, _| FractionalIcons);
+    cx.simulate_window_scale_factor_change(window.into(), 1.5);
+    cx.update_window(window.into(), |_, window, cx| {
+        window.draw(cx).clear(cx);
+        let sprites = &window.rendered_scene().monochrome_sprites;
+        assert_eq!(sprites.len(), 3);
+        assert_eq!(sprites[0].tile.tile_id, sprites[1].tile.tile_id);
+        assert_eq!(sprites[0].tile.tile_id, sprites[2].tile.tile_id);
+        let extent = |index: usize| {
+            sprites[index].bounds.size.width.0 * sprites[index].transformation.rotation_scale[0][0]
+                / window.scale_factor()
+        };
+        assert!((extent(0) - 14.666_667).abs() < 1e-5);
+        assert!((extent(1) - 15.).abs() < 1e-5);
+        assert!((extent(2) - 15.).abs() < 1e-5);
+        let centered = &sprites[2];
+        let transform = centered.transformation;
+        let center = centered.bounds.center();
+        assert!(
+            (center.x.0 * transform.rotation_scale[0][0] + transform.translation[0] - 79.).abs()
+                < 1e-4
+        );
+        assert!(
+            (center.y.0 * transform.rotation_scale[1][1] + transform.translation[1] - 23.).abs()
+                < 1e-4
+        );
+        assert_eq!(cx.global::<IconRenderer>().statistics().raster_entries, 0);
+    })
+    .unwrap();
+}
+
+#[test]
 fn app_cache_clear_preserves_live_scene_until_the_replacement_frame() {
     let mut cx = gpui::TestAppContext::single();
     let window = cx.add_window(|_, _| PaintFixture {

@@ -29,8 +29,10 @@ struct Fixture {
     _window: WindowHandle<UiRoot>,
 }
 
+mod carousel;
 mod context_scroll;
 mod descriptions;
+mod image;
 mod input;
 mod menu;
 mod message;
@@ -1076,6 +1078,7 @@ fn gallery_capture_options_keep_navigation_pages_noninteractive_with_or_without_
         ("modal", ComponentId::Modal),
         ("message", ComponentId::Message),
         ("notification", ComponentId::Notification),
+        ("carousel", ComponentId::Carousel),
         ("progress", ComponentId::Progress),
         ("result", ComponentId::Result),
         ("descriptions", ComponentId::Descriptions),

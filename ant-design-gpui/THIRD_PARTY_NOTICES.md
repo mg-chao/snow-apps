@@ -6,7 +6,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 ## Ant Design
 
 Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Descriptions, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Result, Message and Notification visual rules,
+Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Carousel, Result, Message and Notification visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
@@ -62,6 +62,13 @@ motion/util, Ant Design icons and cssinjs packages are retained in
 
 Radio's independent browser measurements and input provenance are under
 `fixtures/radio/`; its generator executes the original token defaults and styles.
+
+Carousel's visual rules, token defaults, translations and examples follow the same
+pinned Ant Design source. Its independent developer fixture executes the original
+Carousel and `@ant-design/react-slick` 2.0.0 (MIT, copyright 2014 Kiran Abburi).
+Complete loaded package licenses and source provenance are preserved under
+`fixtures/carousel/`. These are developer references, with no JavaScript runtime
+dependency in the native component.
 
 Tooltip, Popover and Popconfirm browser measurements and input provenance are
 under `fixtures/popup/`; their generator executes the original styles and rounded
@@ -235,3 +242,15 @@ Ant Design 6.6.7 and @rc-component/notification 2.1.1. Original licenses for eve
 package executed by the fixture bundle are preserved in `fixtures/notification/licenses/`;
 `fixtures/notification/reference-packages.json` records their names, versions, and hashes.
 These developer fixtures add no JavaScript runtime dependency to the native library.
+## Image and PreviewGroup
+
+Image visual token formulas, interaction behavior, and gallery examples follow
+Ant Design 6.6.7 (MIT) and `@rc-component/image` 1.10.0 (MIT). The independent
+developer fixture executes the original sources; complete package notices and
+source hashes are retained under `fixtures/image/licenses/` and its locked
+toolchain manifest. The Rust runtime uses native GPUI elements and rendering.
+The original deterministic fixture artwork under `resources/image/` is
+Apache-2.0, with generator and content provenance in its manifest.
+
+Direct `image` 0.25.10 (MIT OR Apache-2.0) and `data-url` 0.3.2
+(MIT OR Apache-2.0) dependencies support native pixel preparation and data URLs.

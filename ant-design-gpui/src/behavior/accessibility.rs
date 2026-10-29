@@ -59,7 +59,13 @@ impl Accessibility {
 
     fn write(&self, node: &mut accesskit::Node) {
         if let Some(label) = &self.label {
-            node.set_label(label.to_string());
+            // AccessKit static text derives its platform name from value.
+            // Control labels (buttons, dialogs, images) use the label property.
+            if node.role() == Role::Label {
+                node.set_value(label.to_string());
+            } else {
+                node.set_label(label.to_string());
+            }
         }
         if let Some(description) = &self.description {
             node.set_description(description.to_string());

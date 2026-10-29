@@ -23,6 +23,24 @@ fn linear() -> CubicBezier {
 }
 
 #[test]
+fn static_text_uses_accesskit_value_while_controls_keep_label() {
+    let text = Accessibility::new(Role::Label)
+        .label("1 / 3")
+        .apply(div().id("count"));
+    let mut node = accesskit::Node::new(Role::Label);
+    text.write_a11y_info(&mut node);
+    assert_eq!(node.value(), Some("1 / 3"));
+    assert_eq!(node.label(), None);
+    let control = Accessibility::new(Role::Button)
+        .label("Next image")
+        .apply(div().id("next"));
+    let mut node = accesskit::Node::new(Role::Button);
+    control.write_a11y_info(&mut node);
+    assert_eq!(node.label(), Some("Next image"));
+    assert_eq!(node.value(), None);
+}
+
+#[test]
 fn semantic_adapter_preserves_identity_and_native_properties() {
     let element = Accessibility {
         role: Some(Role::Button),

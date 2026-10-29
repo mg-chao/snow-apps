@@ -1,0 +1,235 @@
+{
+  "thumbnails": {
+    "width": 800,
+    "height": 600,
+    "images": [
+      {
+        "src": "landscape",
+        "width": 200
+      },
+      {
+        "src": "portrait",
+        "width": 100,
+        "height": 180
+      },
+      {
+        "src": "transparent",
+        "width": 200,
+        "height": 130
+      }
+    ]
+  },
+  "fallback": {
+    "width": 800,
+    "height": 600,
+    "images": [
+      {
+        "src": "fail",
+        "width": 200,
+        "height": 200,
+        "fallback": "fallback"
+      }
+    ]
+  },
+  "preview-landscape": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "landscape"
+    }
+  },
+  "preview-portrait": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "portrait"
+    }
+  },
+  "preview-transparent": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent"
+    }
+  },
+  "preview-group": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "items": [
+        "landscape",
+        "portrait",
+        "transparent"
+      ],
+      "current": 1
+    }
+  },
+  "preview-transform": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "landscape",
+      "actions": [
+        "zoomIn",
+        "rotateRight",
+        "flipX"
+      ]
+    }
+  },
+  "rotate-90": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent",
+      "actions": [
+        "rotateRight"
+      ]
+    }
+  },
+  "rotate-180": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent",
+      "actions": [
+        "rotateRight",
+        "rotateRight"
+      ]
+    }
+  },
+  "flip-x": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent",
+      "actions": [
+        "flipX"
+      ]
+    }
+  },
+  "flip-y": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent",
+      "actions": [
+        "flipY"
+      ]
+    }
+  },
+  "zoomed-pan": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "transparent",
+      "actions": [
+        "zoomIn",
+        "zoomIn",
+        "zoomIn"
+      ],
+      "pan": [
+        70,
+        -45
+      ]
+    }
+  },
+  "mask-none": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "src": "landscape",
+      "mask": false
+    }
+  },
+  "progress": {
+    "width": 800,
+    "height": 600,
+    "images": [
+      {
+        "width": 200,
+        "height": 200,
+        "progress": true
+      },
+      {
+        "width": 200,
+        "height": 200,
+        "progress": 50
+      },
+      {
+        "width": 200,
+        "height": 200,
+        "progress": 75,
+        "customProgress": true
+      }
+    ]
+  },
+  "custom-cover": {
+    "width": 800,
+    "height": 600,
+    "hover": true,
+    "images": [
+      {
+        "src": "landscape",
+        "width": 200,
+        "cover": "Open image",
+        "placement": "center"
+      },
+      {
+        "src": "landscape",
+        "width": 200,
+        "cover": "Top cover",
+        "placement": "top"
+      },
+      {
+        "src": "landscape",
+        "width": 200,
+        "cover": "Bottom cover",
+        "placement": "bottom"
+      }
+    ]
+  },
+  "tokens": {
+    "width": 800,
+    "height": 600,
+    "preview": {
+      "items": [
+        "landscape",
+        "portrait"
+      ],
+      "current": 0
+    },
+    "tokens": {
+      "previewOperationSize": 24,
+      "previewOperationColor": "#a0d911",
+      "previewOperationHoverColor": "#eaff8f",
+      "previewOperationColorDisabled": "#595959"
+    }
+  },
+  "preview-group-single": {
+    "width": 800,
+    "height": 600,
+    "preview": { "items": ["landscape"], "current": 0 }
+  },
+  "progress-public": {
+    "width": 800,
+    "height": 600,
+    "images": [
+      {
+        "width": 200,
+        "height": 200,
+        "progress": true,
+        "loadingText": "loading..."
+      },
+      {
+        "width": 200,
+        "height": 200,
+        "progress": -10
+      },
+      {
+        "width": 200,
+        "height": 200,
+        "progress": 150
+      }
+    ]
+  }
+}

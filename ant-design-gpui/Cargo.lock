@@ -168,8 +168,10 @@ dependencies = [
 name = "ant-design-gpui"
 version = "0.1.0"
 dependencies = [
+ "data-url",
  "gpui",
  "gpui_platform",
+ "image",
  "num-bigint",
  "num-traits",
  "serde",

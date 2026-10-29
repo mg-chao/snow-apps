@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "utc": "2026-10-29T13:35:43.154867+00:00",
+  "source_root": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-full-source-20261029-current",
+  "copied_from": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+  "snapshot_created_utc": "2026-10-29T13:26:46.443256+00:00",
+  "all_files_before_copy_after_matched": true,
+  "file_count": 2556,
+  "source_bytes": 95945262,
+  "omitted_code_or_modules": [],
+  "all_snapshot_files_unchanged_after_build_and_capture": true,
+  "source_snapshot_manifest_sha256": "18c822da1568d12a3d361e2df0d142baa799d5a600a4f6248037ff2848d0766d",
+  "native_build_manifest_sha256": "415b5177ed4ff994e07cde7639cb0322c383153ca6e7d4ebd88643f66bc7f022",
+  "current_carousel_and_checked_shared_dependencies_match": true,
+  "checked_prefixes": [
+    "src/carousel/",
+    "src/behavior/",
+    "src/theme/",
+    "src/icons/",
+    "src/root/",
+    "src/button/",
+    "src/popup/",
+    "resources/icons/"
+  ],
+  "checked_exact_paths": [
+    ".cargo/config.toml",
+    "Cargo.lock",
+    "Cargo.toml",
+    "examples/carousel_visual.rs",
+    "fixtures/carousel/visual-cases.json",
+    "rust-toolchain.toml",
+    "scripts/capture-carousel-visual.ps1",
+    "src/config.rs",
+    "src/input/motion.rs",
+    "src/lib.rs",
+    "src/locale.rs",
+    "src/root.rs"
+  ],
+  "checked_file_count": 1731,
+  "checked_dependencies_fingerprint_sha256": "d98dd8fe85e46a83d3d17b25725995b36600239cd1799de7bd54da05256c5b08",
+  "fingerprint_format": "SHA256 of sorted UTF-8 lines: relative path, NUL, file SHA256, LF",
+  "other_current_rust_sources_changed_since_copy": [
+    "examples/carousel_accessibility.rs",
+    "examples/image_gpu_perf.rs",
+    "examples/gallery/image.rs",
+    "examples/gallery/tests.rs",
+    "examples/gallery/tests/image.rs",
+    "src/image/configuration_tests.rs",
+    "src/image/performance_tests.rs",
+    "src/image/preview.rs",
+    "src/image/tests.rs",
+    "src/image/thumbnail.rs"
+  ],
+  "limitations": [
+    "This immutable source snapshot is the final native visual and performance build root; UIA reports identify their own build root.",
+    "Concurrent unrelated source edits after snapshot creation are not relabeled as inputs to those binaries."
+  ],
+  "all_600_native_pngs_identical_to_prior_successful_current_tree_run": true,
+  "prior_current_tree_report_sha256": "ba047c2c6cdfdc28eae7c95c9ad09504688ed1f8fbad4cf5c3754422fdd4dcf2",
+  "final_snapshot_report_sha256": "8b7a78f240080db87da0dc3b3ce9327c2ad931d52a0431cf4ef0849670f73fb8"
+}

@@ -1,0 +1,34 @@
+{
+  "license": "Apache-2.0",
+  "generator": "scripts/generate_image_assets.mjs",
+  "images": [
+    {
+      "name": "landscape",
+      "width": 320,
+      "height": 200,
+      "transparent": false,
+      "sha256": "ec5bc20f72536ae02bccafd0bf57bea3dec419f8cbacd402ec8ab29fd806babf"
+    },
+    {
+      "name": "portrait",
+      "width": 300,
+      "height": 560,
+      "transparent": false,
+      "sha256": "5ebf87e09fef1fc99b3fcc91bc54b13bb080b1ed6305955e5ccfb62c3c662b18"
+    },
+    {
+      "name": "transparent",
+      "width": 400,
+      "height": 260,
+      "transparent": true,
+      "sha256": "e98ef97dc5a9ff8d6ca97184f4190a61e944ceba51abc74d2288827119445de1"
+    },
+    {
+      "name": "fallback",
+      "width": 200,
+      "height": 200,
+      "transparent": false,
+      "sha256": "a0ffbc53999d9444dbb07b278c1ec89d3bffc37c2f49f7ad647b23189fe0ed7e"
+    }
+  ]
+}

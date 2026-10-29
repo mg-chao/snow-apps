@@ -5,11 +5,13 @@
 
 mod alert;
 mod button;
+mod carousel;
 mod catalog;
 mod checkbox;
 mod context_menu;
 mod descriptions;
 mod divider;
+mod image;
 mod input;
 mod input_examples;
 mod input_number;
@@ -67,6 +69,7 @@ impl Options {
                 "--component" => {
                     options.component =
                         match arguments.next().as_deref() {
+                            Some("carousel") => catalog::ComponentId::Carousel,
                             Some("button") => catalog::ComponentId::Button,
                             Some("divider") => catalog::ComponentId::Divider,
                             Some("checkbox") => catalog::ComponentId::Checkbox,
@@ -89,6 +92,7 @@ impl Options {
                             Some("modal") => catalog::ComponentId::Modal,
                             Some("alert") => catalog::ComponentId::Alert,
                             Some("result") => catalog::ComponentId::Result,
+                            Some("image") => catalog::ComponentId::Image,
                             Some("descriptions") => catalog::ComponentId::Descriptions,
                             Some("spin") => catalog::ComponentId::Spin,
                             Some("progress") => catalog::ComponentId::Progress,
@@ -96,7 +100,7 @@ impl Options {
                             Some("notification") => catalog::ComponentId::Notification,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, descriptions, spin, progress, message, notification, or modal"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, descriptions, spin, progress, message, notification, carousel, or modal"
                                     .into(),
                             ),
                         };
@@ -155,7 +159,7 @@ impl Options {
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|descriptions|spin|progress|message|notification] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|descriptions|spin|progress|message|notification|modal|carousel] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {

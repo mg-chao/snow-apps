@@ -1048,8 +1048,10 @@ mod tests {
     use super::*;
     use gpui::{Context, Render, Styled, TestAppContext, VisualTestContext, div, prelude::*};
 
+    type ProbeCallback = Rc<dyn Fn(&mut Window, &mut App)>;
+
     struct MeasurementProbe {
-        run: Rc<dyn Fn(&mut Window, &mut App)>,
+        run: ProbeCallback,
         ran: Rc<std::cell::Cell<bool>>,
     }
 

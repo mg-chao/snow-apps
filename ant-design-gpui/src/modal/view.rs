@@ -424,8 +424,17 @@ fn render_surface(
     let handle = ModalHandle::from_entity(state, cx);
     let id = state.entity_id();
     let viewport = window.viewport_size();
-    let width = super::style::width(options.width.as_ref(), kind, f32::from(viewport.width), g);
-    let mut styles = config.modal.styles.clone();
+    let viewport_surface = state.read(cx).viewport_surface;
+    let width = if viewport_surface {
+        f32::from(viewport.width)
+    } else {
+        super::style::width(options.width.as_ref(), kind, f32::from(viewport.width), g)
+    };
+    let mut styles = if viewport_surface {
+        super::ModalStyles::default()
+    } else {
+        config.modal.styles.clone()
+    };
     styles.refine(&options.styles);
     if let Some(resolve) = &options.styles_fn {
         styles.refine(&resolve(

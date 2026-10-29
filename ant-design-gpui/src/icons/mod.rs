@@ -82,6 +82,29 @@ pub struct IconRef {
     colors: IconColors,
 }
 
+impl PartialEq for IconRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.colors == other.colors
+            && match (&self.source, &other.source) {
+                (
+                    IconSource::Embedded { descriptor: a, .. },
+                    IconSource::Embedded { descriptor: b, .. },
+                ) => std::ptr::eq(*a, *b),
+                (
+                    IconSource::Asset {
+                        path: a,
+                        color_model: ac,
+                    },
+                    IconSource::Asset {
+                        path: b,
+                        color_model: bc,
+                    },
+                ) => a == b && ac == bc,
+                _ => false,
+            }
+    }
+}
+
 impl IconRef {
     pub const fn builtin(name: IconName) -> Self {
         Self {
@@ -400,6 +423,12 @@ pub struct IconRenderer {
     statistics: IconCacheStatistics,
 }
 
+#[derive(Clone, Copy)]
+struct PaintGeometry {
+    scale: f32,
+    size: Option<Size<Pixels>>,
+}
+
 impl Global for IconRenderer {}
 
 impl Default for IconRenderer {
@@ -540,21 +569,59 @@ impl IconRenderer {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<(), IconError> {
+        self.paint_artwork(
+            bounds,
+            icon,
+            options,
+            PaintGeometry { scale, size: None },
+            window,
+            cx,
+        )
+    }
+
+    fn paint_artwork(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        icon: &IconRef,
+        options: &IconRenderOptions,
+        geometry: PaintGeometry,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), IconError> {
+        let scale = geometry.scale;
         if !scale.is_finite() || scale <= 0. {
             return Ok(());
         }
+        let painted_size = geometry.size.unwrap_or(bounds.size);
+        if ![painted_size.width, painted_size.height]
+            .into_iter()
+            .all(|value| f32::from(value).is_finite() && value > px(0.))
+        {
+            return Ok(());
+        }
+        let source_bounds = if geometry.size.is_some() {
+            window.pixel_snap_bounds(Bounds::centered_at(bounds.center(), painted_size))
+        } else {
+            bounds
+        };
         let mut options = *options;
-        options.size = bounds.size;
+        options.size = source_bounds.size;
         options.scale_factor = window.scale_factor();
         validate_size(&options)?;
+        let scale_x = scale * (painted_size.width / source_bounds.size.width);
+        let scale_y = scale * (painted_size.height / source_bounds.size.height);
         if icon.color_model() == IconColorModel::Monochrome {
             let colors = resolve_colors(icon, &options)?;
             let center = bounds.center().scale(window.scale_factor());
+            let source_center = source_bounds.center().scale(window.scale_factor());
             let transform = TransformationMatrix::unit()
                 .translate(center)
                 .rotate(options.rotation)
-                .scale(size(if options.mirror { -scale } else { scale }, scale))
-                .translate(center * -1.);
+                .scale(size(
+                    if options.mirror { -scale_x } else { scale_x },
+                    scale_y,
+                ))
+                .translate(source_center * -1.);
             let (path, data) = match &icon.source {
                 IconSource::Embedded {
                     descriptor,
@@ -563,7 +630,14 @@ impl IconRenderer {
                 IconSource::Asset { path, .. } => (path.clone(), None),
             };
             return window
-                .paint_svg(bounds, path, data, transform, rgba(colors.0).into(), cx)
+                .paint_svg(
+                    source_bounds,
+                    path,
+                    data,
+                    transform,
+                    rgba(colors.0).into(),
+                    cx,
+                )
                 .map_err(|error| IconError::InvalidSvg(error.to_string()));
         }
         let renderer = cx.svg_renderer();
@@ -572,7 +646,7 @@ impl IconRenderer {
         lease_image(&raster.resource, window, cx);
         let painted = Bounds::centered_at(
             bounds.center(),
-            bounds.size.map(|dimension| dimension * scale),
+            painted_size.map(|dimension| dimension * scale),
         );
         let result = window
             .paint_image(
@@ -856,6 +930,7 @@ pub struct Icon {
     style: StyleRefinement,
     inherit_color: bool,
     frame_scale: f32,
+    paint_size: Option<Size<Pixels>>,
 }
 
 pub fn icon(reference: impl Into<IconRef>) -> Icon {
@@ -865,10 +940,17 @@ pub fn icon(reference: impl Into<IconRef>) -> Icon {
         style: StyleRefinement::default(),
         inherit_color: false,
         frame_scale: 1.,
+        paint_size: None,
     }
 }
 
 impl Icon {
+    /// Preserve requested artwork dimensions when fractional-DPI layout snaps
+    /// its decorative slot. The slot and containing control retain their layout.
+    pub(crate) fn paint_size(mut self, size: Size<Pixels>) -> Self {
+        self.paint_size = Some(size);
+        self
+    }
     /// Match Ant's cropped catalog frame without resizing the layout slot.
     /// Host-provided artwork keeps its own view box.
     pub(crate) fn ant_design_frame(mut self) -> Self {
@@ -928,11 +1010,14 @@ impl RenderOnce for Icon {
                     cx.set_global(IconRenderer::default());
                 }
                 cx.update_global::<IconRenderer, _>(|renderer, cx| {
-                    let _ = renderer.paint_with_scale(
+                    let _ = renderer.paint_artwork(
                         bounds,
                         &self.reference,
                         &options,
-                        self.frame_scale,
+                        PaintGeometry {
+                            scale: self.frame_scale,
+                            size: self.paint_size,
+                        },
                         window,
                         cx,
                     );

@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+type ViewportKeyHandler = Rc<dyn Fn(&gpui::KeyDownEvent, &mut Window, &mut App)>;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ModalPhase {
     #[default]
@@ -34,6 +36,9 @@ pub enum ModalEvent {
 
 /// A single dialog's lifetime. Setters are silent; interactions emit typed requests.
 pub struct ModalState {
+    pub(super) viewport_surface: bool,
+    pub(super) viewport_keys: Option<ViewportKeyHandler>,
+    viewport_motion: Option<(Duration, bool)>,
     pub(super) options: ModalOptions,
     pub(super) scope: ConfigScope,
     pub(super) open: bool,
@@ -79,6 +84,9 @@ impl ModalState {
         let scope = ConfigScope::application(cx);
         let subscription = scope.observe(cx);
         Self {
+            viewport_surface: false,
+            viewport_keys: None,
+            viewport_motion: None,
             options: ModalOptions::default(),
             scope,
             open: false,
@@ -115,6 +123,36 @@ impl ModalState {
     }
     pub fn is_open(&self) -> bool {
         self.open
+    }
+    /// Specialized native surfaces reuse dialog ownership and focus without
+    /// inheriting the themed card's geometry or semantic-slot styles.
+    pub(crate) fn use_viewport_surface(
+        &mut self,
+        on_key: impl Fn(&gpui::KeyDownEvent, &mut Window, &mut App) + 'static,
+    ) {
+        self.viewport_surface = true;
+        self.opacity = ScalarTransition::new(0., CubicBezier::new(0.25, 0.1, 0.25, 1.));
+        self.viewport_keys = Some(Rc::new(on_key));
+    }
+    pub(crate) fn set_viewport_motion(&mut self, duration: Duration, enabled: bool) {
+        self.viewport_motion = Some((duration, enabled));
+    }
+    fn motion(&self, cx: &App) -> (Duration, MotionPolicy) {
+        let config = self.scope.snapshot(cx);
+        self.viewport_motion.map_or_else(
+            || {
+                (
+                    config.theme.tokens.motion_duration_slow,
+                    config.motion_policy(cx),
+                )
+            },
+            |(duration, enabled)| {
+                (
+                    duration,
+                    MotionPolicy::new(config.motion && enabled, cx.reduce_motion()),
+                )
+            },
+        )
     }
     pub fn phase(&self) -> ModalPhase {
         self.phase
@@ -192,12 +230,11 @@ impl ModalState {
         self.dispatching = false;
         self.mask_down = false;
         self.frame_pending = false;
-        let config = self.scope.snapshot(cx);
-        let policy = config.motion_policy(cx);
+        let (duration, policy) = self.motion(cx);
         self.opacity.retarget(
             if open { 1. } else { 0. },
             self.elapsed(cx),
-            config.theme.tokens.motion_duration_slow,
+            duration,
             policy,
         );
         self.phase = if open {
@@ -284,8 +321,7 @@ impl ModalState {
             .unwrap_or(self.mask(cx))
     }
     pub(super) fn sample(&mut self, window: &mut Window, cx: &mut Context<Self>) -> f32 {
-        let config = self.scope.snapshot(cx);
-        let policy = config.motion_policy(cx);
+        let (_, policy) = self.motion(cx);
         if !policy.allows_motion() || !window.is_visible() {
             self.opacity.retarget(
                 if self.open { 1. } else { 0. },

@@ -7,6 +7,9 @@ license = "Apache-2.0"
 publish = false
 description = "Ant Design components for GPUI"
 
+[features]
+test-support = []
+
 [dependencies]
 # Keep the source, revision and features aligned with snow-draw-engine-gpui.
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions"] }
@@ -15,6 +18,8 @@ unicode-bidi = "0.3"
 unicode-linebreak = "0.1.5"
 num-bigint = "0.4"
 num-traits = "0.2"
+image = { version = "0.25.10", default-features = false }
+data-url = "0.3.2"
 
 [dev-dependencies]
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions", "test-support"] }
@@ -26,6 +31,10 @@ gpui_platform = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54
 
 [[bench]]
 name = "foundation"
+harness = false
+
+[[bench]]
+name = "image"
 harness = false
 
 [[bench]]
@@ -121,3 +130,8 @@ incremental = false
 [[bench]]
 name = "notification"
 harness = false
+
+[[bench]]
+name = "carousel"
+harness = false
+required-features = ["test-support"]

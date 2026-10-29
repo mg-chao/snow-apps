@@ -3,12 +3,24 @@
 
 #![doc = include_str!("../README.md")]
 
+// Bind Cargo's portable local-package fingerprint to this source checkout.
+// Validation copies can share a target directory; recording this built-in
+// environment dependency prevents their artifacts from aliasing this library.
+const _: &str = env!("CARGO_MANIFEST_DIR");
+
 pub mod alert;
 pub use alert::{
     Alert, AlertConfig, AlertConfigPatch, AlertIcon, AlertStyleResolver, AlertType, AlertVariant,
 };
 pub mod behavior;
 pub mod button;
+pub mod carousel;
+pub use carousel::{
+    Carousel, CarouselChange, CarouselConfig, CarouselConfigPatch, CarouselEffect, CarouselEvent,
+    CarouselItems, CarouselItemsError, CarouselOptions, CarouselSlide, CarouselSource,
+    CarouselState, CarouselStyleContext, CarouselStyleResolver, CarouselStyles, CarouselTheme,
+    CarouselTokenPatch, CarouselTokens, DotPlacement,
+};
 pub mod checkbox;
 pub mod config;
 pub mod context_menu;
@@ -20,6 +32,8 @@ pub use descriptions::{
 };
 pub mod divider;
 pub mod icons;
+pub mod image;
+pub use image::{Image, ImageState, PreviewGroup, PreviewState};
 pub mod input;
 pub mod input_number;
 pub use input_number::{

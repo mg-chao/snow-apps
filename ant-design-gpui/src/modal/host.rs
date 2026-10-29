@@ -40,6 +40,12 @@ fn current(window: &Window, cx: &App) -> Option<Host> {
 pub(crate) fn owner(window: &Window, cx: &App) -> Option<EntityId> {
     current(window, cx)?.borrow().owner
 }
+/// Allows specialized dialog surfaces to remain above their owning dialog.
+pub(crate) fn owner_z_index(window: &Window, cx: &App) -> Option<usize> {
+    let host = current(window, cx)?;
+    let state = host.borrow();
+    state.entries.get(&state.owner?).map(|entry| entry.z_index)
+}
 pub(super) fn with_owner<R>(
     id: EntityId,
     window: &mut Window,
@@ -387,6 +393,13 @@ impl Element for HostElement {
                     cx.stop_propagation();
                 }
                 return;
+            }
+            if phase.bubble() {
+                let specialized_keys =
+                    top(w, cx).and_then(|top| top.read(cx).viewport_keys.clone());
+                if let Some(handler) = specialized_keys {
+                    handler(e, w, cx);
+                }
             }
             if !phase.bubble() || e.keystroke.modifiers.modified() || e.keystroke.key != "escape" {
                 return;

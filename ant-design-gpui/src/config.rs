@@ -121,11 +121,13 @@ pub struct ConfigPatch {
     pub alert: AlertConfigPatch,
     pub descriptions: DescriptionsConfigPatch,
     pub result: ResultConfigPatch,
+    pub image: crate::image::ImageConfigPatch,
     pub spin: SpinConfigPatch,
     pub progress: ProgressConfigPatch,
     pub message: MessageConfigPatch,
     pub modal: crate::modal::ModalConfigPatch,
     pub notification: crate::notification::NotificationConfigPatch,
+    pub carousel: crate::carousel::CarouselConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -148,11 +150,13 @@ pub struct ResolvedConfig {
     pub alert: AlertConfig,
     pub descriptions: DescriptionsConfig,
     pub result: ResultConfig,
+    pub image: crate::image::ImageConfig,
     pub spin: SpinConfig,
     pub progress: ProgressConfig,
     pub message: MessageConfig,
     pub modal: crate::modal::ModalConfig,
     pub notification: crate::notification::NotificationConfig,
+    pub carousel: crate::carousel::CarouselConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -176,11 +180,13 @@ impl PartialEq for ResolvedConfig {
             && self.alert == other.alert
             && self.descriptions == other.descriptions
             && self.result == other.result
+            && self.image == other.image
             && self.spin == other.spin
             && self.progress == other.progress
             && self.message == other.message
             && self.modal == other.modal
             && self.notification == other.notification
+            && self.carousel == other.carousel
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -215,11 +221,13 @@ impl Default for ResolvedConfig {
             alert: AlertConfig::default(),
             descriptions: DescriptionsConfig::default(),
             result: ResultConfig::default(),
+            image: Default::default(),
             spin: SpinConfig::default(),
             progress: ProgressConfig::default(),
             message: MessageConfig::default(),
             modal: Default::default(),
             notification: Default::default(),
+            carousel: Default::default(),
         }
     }
 }
@@ -319,11 +327,13 @@ impl ResolvedConfig {
             alert: patch.alert.resolve(&parent.alert),
             descriptions: patch.descriptions.resolve(&parent.descriptions),
             result: patch.result.resolve(&parent.result),
+            image: patch.image.resolve(&parent.image),
             spin: patch.spin.resolve(&parent.spin),
             progress: patch.progress.resolve(&parent.progress),
             message: patch.message.resolve(&parent.message),
             modal: patch.modal.resolve(&parent.modal),
             notification: patch.notification.resolve(&parent.notification),
+            carousel: patch.carousel.resolve(&parent.carousel),
         })
     }
 }
@@ -342,7 +352,9 @@ impl std::error::Error for ConfigError {}
 struct ConfigState {
     parent: Option<ConfigScope>,
     base: Option<Arc<ResolvedConfig>>,
-    patch: ConfigPatch,
+    // Semantic style patches grow with the component catalog. Keep GPUI entity
+    // moves and the closures that create/update them independent of that size.
+    patch: Box<ConfigPatch>,
     snapshot: Arc<ResolvedConfig>,
     last_error: Option<ConfigError>,
     _parent_subscription: Option<Subscription>,
@@ -427,6 +439,7 @@ impl ConfigScope {
     }
 
     pub fn child(&self, patch: ConfigPatch, cx: &mut App) -> Result<Self, ConfigError> {
+        let patch = Box::new(patch);
         let parent = self.clone();
         let base = parent.snapshot(cx);
         let snapshot = Arc::new(ResolvedConfig::resolve(&base, &patch, None)?);
@@ -452,12 +465,13 @@ impl ConfigScope {
     }
 
     pub fn patch(&self, cx: &App) -> ConfigPatch {
-        self.0.read(cx).patch.clone()
+        (*self.0.read(cx).patch).clone()
     }
 
     /// Failure leaves both the patch and effective configuration unchanged.
     /// Returns whether the effective snapshot changed.
     pub fn set_patch(&self, patch: ConfigPatch, cx: &mut App) -> Result<bool, ConfigError> {
+        let patch = Box::new(patch);
         self.0.update(cx, |this, cx| {
             if this.patch == patch {
                 return Ok(false);
@@ -513,10 +527,11 @@ pub(crate) fn initialize(cx: &mut App) {
         return;
     }
     let base = Arc::new(ResolvedConfig::default());
+    let patch = Box::new(ConfigPatch::default());
     let scope = ConfigScope(cx.new(|_| ConfigState {
         parent: None,
         base: Some(base.clone()),
-        patch: ConfigPatch::default(),
+        patch,
         snapshot: base,
         last_error: None,
         _parent_subscription: None,
@@ -529,6 +544,72 @@ mod tests {
     use super::*;
     use crate::locale::{CommonMessagePatch, LocaleId};
     use gpui::TestAppContext;
+
+    #[test]
+    fn retained_config_keeps_entity_creation_and_update_frames_small() {
+        // Native Windows UI threads have a much smaller stack than Rust test
+        // threads. A by-value patch made opening a nested Modal exhaust it as
+        // GPUI moved ConfigState through entity-creation closures.
+        assert!(std::mem::size_of::<ConfigState>() <= 256);
+    }
+
+    #[gpui::test]
+    fn carousel_styles_inherit_and_keep_unrelated_snapshots_shared(cx: &mut TestAppContext) {
+        use gpui::{StyleRefinement, Styled, px};
+
+        let (parent, child) = cx.update(|cx| {
+            let parent = ConfigScope::new_window(cx);
+            let child = parent
+                .child(
+                    ConfigPatch {
+                        carousel: crate::carousel::CarouselConfigPatch {
+                            styles: crate::carousel::CarouselStyles {
+                                dot: StyleRefinement::default().h(px(5.)),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    cx,
+                )
+                .unwrap();
+            parent
+                .update_patch(cx, |patch| {
+                    patch.carousel.styles.root = StyleRefinement::default().pt(px(12.));
+                })
+                .unwrap();
+            (parent, child)
+        });
+        cx.update(|cx| {
+            let snapshot = child.snapshot(cx);
+            assert_eq!(
+                snapshot.carousel.styles.root.padding.top,
+                Some(px(12.).into())
+            );
+            assert_eq!(
+                snapshot.carousel.styles.dot.size.height,
+                Some(px(5.).into())
+            );
+            assert!(!child.update_patch(cx, |_| {}).unwrap());
+            assert!(Arc::ptr_eq(&snapshot, &child.snapshot(cx)));
+            parent
+                .update_patch(cx, |patch| {
+                    patch.carousel.styles.root = StyleRefinement::default().pt(px(24.));
+                })
+                .unwrap();
+        });
+        cx.update(|cx| {
+            assert_eq!(
+                child.snapshot(cx).carousel.styles.root.padding.top,
+                Some(px(24.).into())
+            );
+            assert_eq!(
+                child.snapshot(cx).carousel.styles.dot.size.height,
+                Some(px(5.).into())
+            );
+        });
+    }
 
     #[gpui::test]
     fn message_and_modal_settings_propagate_independently(cx: &mut TestAppContext) {

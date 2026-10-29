@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "status": "passed",
+  "started_utc": "2026-10-29T15:54:11.7669011Z",
+  "completed_utc": "2026-10-29T15:56:34.7534063Z",
+  "runner": {
+    "path": "scripts/test-image.ps1",
+    "sha256": "7448e7f0124a2b13033e2cbc26af2e354a2eb3cefba0cc8729fc44d757bc150b"
+  },
+  "raw_receipt": {
+    "path": "../build/ant-design-gpui/image-current-core-verification/focused-tests.json",
+    "sha256": "c6fa112c7b56d00b206fa52c49a04e493759a775eb0c15eda52a9328e81848d1"
+  },
+  "provenance": {
+    "source_root": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+    "snapshot": "Compiler/test inputs hashed before build and verified after all focused tests",
+    "guarded_input_count": 2276,
+    "sources_unchanged_during_run": true,
+    "test_executables_unchanged_during_run": true,
+    "compiler_dep_info_unchanged_during_run": true,
+    "foreign_compiler_input_paths_rejected": true,
+    "library_manifest_dependencies_verified": true,
+    "provenance_rebuilds": 0,
+    "full_input_hashes": "source_sha256 in raw_receipt"
+  },
+  "results": {
+    "image": 77,
+    "modal": 29,
+    "config": 20,
+    "locale": 8,
+    "root": 5,
+    "behavior": 42,
+    "icons": 20,
+    "image_gallery": 7,
+    "total": 208,
+    "failed": 0
+  },
+  "artifacts": {
+    "library_test": {
+      "executable": "../build/ant-design-gpui/debug/deps/ant_design_gpui-24b72d0d0be8cbda.exe",
+      "sha256": "9a8856ec9781dd551cc8f06594c522b42d4d87bbef70a869b4f48fd2f28f0e2c",
+      "compiler": {
+        "entry_point": "src/lib.rs",
+        "cargo_manifest_dir": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+        "dep_info": "../build/ant-design-gpui/debug/deps/ant_design_gpui-24b72d0d0be8cbda.d",
+        "dep_info_sha256": "9c0e7fe041fa82e5bf6a362680815d442ff0ceb9da9813afa94b6193b5c8b61e",
+        "compiler_input_count": 1159
+      }
+    },
+    "library": {
+      "compiler": {
+        "entry_point": "src/lib.rs",
+        "cargo_manifest_dir": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+        "dep_info": "../build/ant-design-gpui/debug/deps/ant_design_gpui-ce7497cf600a3a92.d",
+        "dep_info_sha256": "241fb7ac420dbd378a5c069d06a441103a33094d348bd8fc5975cb5eac12e237",
+        "compiler_input_count": 1039
+      }
+    },
+    "gallery_test": {
+      "executable": "../build/ant-design-gpui/debug/examples/gallery-5fe7fbc15c13cbeb.exe",
+      "sha256": "669a4b818fd245dae44c79b57000fa272fc8d0355e1f86ff577d06aaad9abeab",
+      "compiler": {
+        "entry_point": "examples/gallery/main.rs",
+        "cargo_manifest_dir": null,
+        "dep_info": "../build/ant-design-gpui/debug/examples/gallery-5fe7fbc15c13cbeb.d",
+        "dep_info_sha256": "786353f527ae8d847624b81976773723c7ff83646205b9b56f709984a1ed779a",
+        "compiler_input_count": 50
+      }
+    }
+  },
+  "log_sha256": {
+    "../build/ant-design-gpui/image-current-core-verification/image-guarded-tests.log": "35a98333e6a377a6a5e553e03e36496054ba8628503ae974d4e91f5cd91445c8",
+    "../build/ant-design-gpui/image-current-core-verification/modal-guarded-tests.log": "0ec8abb7321fcdad64231e843ef9f728d0a71747819b3c668c19eb4f35816552",
+    "../build/ant-design-gpui/image-current-core-verification/config-guarded-tests.log": "04f885733c842c8b7cb28a11eb37b11c6495e7bb70951b97cfe26652f478154b",
+    "../build/ant-design-gpui/image-current-core-verification/locale-guarded-tests.log": "f25821691bc957447eeb6630f779e51bd3caef2cda197a4e924f35a05b0d19d9",
+    "../build/ant-design-gpui/image-current-core-verification/root-guarded-tests.log": "8138ae0c333ffdc27b844a8d0c49b53e91c7f5f4249108119485b638dc70e43d",
+    "../build/ant-design-gpui/image-current-core-verification/behavior-guarded-tests.log": "1e6a7dc3c9282d6e50c156eafd1c79123a5f9520e3a9fe06c042d977ae028e16",
+    "../build/ant-design-gpui/image-current-core-verification/icons-guarded-tests.log": "864ae1ddcbae3cc46364bed4b9d144da25efd1211344f4687b457ecc4fad8cff",
+    "../build/ant-design-gpui/image-current-core-verification/image-gallery-guarded-tests.log": "0c5477bbfd66cb1d7232aae610575d120f03cfe40b5d758dd3076000dee2bd4d"
+  }
+}

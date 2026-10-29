@@ -153,6 +153,67 @@ pagination_messages! {
     prev_page, next_page, prev_5, next_5, prev_3, next_3, page_size,
 }
 
+/// Carousel-owned navigation labels; indices are one-based in spoken text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarouselMessages {
+    pub root_label: SharedString,
+    pub prev_slide: SharedString,
+    pub next_slide: SharedString,
+    pub slide_label: SharedString,
+    pub go_to_slide: SharedString,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CarouselMessagePatch {
+    pub root_label: Option<SharedString>,
+    pub prev_slide: Option<SharedString>,
+    pub next_slide: Option<SharedString>,
+    pub slide_label: Option<SharedString>,
+    pub go_to_slide: Option<SharedString>,
+}
+impl CarouselMessages {
+    fn patched(&self, patch: &CarouselMessagePatch) -> Self {
+        Self {
+            root_label: patch
+                .root_label
+                .clone()
+                .unwrap_or_else(|| self.root_label.clone()),
+            prev_slide: patch
+                .prev_slide
+                .clone()
+                .unwrap_or_else(|| self.prev_slide.clone()),
+            next_slide: patch
+                .next_slide
+                .clone()
+                .unwrap_or_else(|| self.next_slide.clone()),
+            slide_label: patch
+                .slide_label
+                .clone()
+                .unwrap_or_else(|| self.slide_label.clone()),
+            go_to_slide: patch
+                .go_to_slide
+                .clone()
+                .unwrap_or_else(|| self.go_to_slide.clone()),
+        }
+    }
+}
+
+macro_rules! image_messages {
+    ($($field:ident),+ $(,)?) => {
+        /// Image-owned labels. Count patterns use `{current}` and `{total}`.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct ImageMessages { $(pub $field: SharedString,)+ }
+        #[derive(Clone, Debug, Default, PartialEq, Eq)]
+        pub struct ImageMessagePatch { $(pub $field: Option<SharedString>,)+ }
+        impl ImageMessages {
+            fn patched(&self, patch: &ImageMessagePatch) -> Self {
+                Self { $($field: patch.$field.clone().unwrap_or_else(|| self.$field.clone()),)+ }
+            }
+        }
+    };
+}
+image_messages! { root_label, preview, loading, load_error, previous, next, flip_y, flip_x,
+rotate_left, rotate_right, zoom_out, zoom_in, reset, count }
+
 /// Locale identity is metadata, never a translated display label.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LocaleId {
@@ -179,9 +240,11 @@ impl LocaleId {
 pub struct Locale {
     pub id: LocaleId,
     pub common: CommonMessages,
+    pub image: ImageMessages,
     pub popconfirm: PopconfirmMessages,
     pub modal: ModalMessages,
     pub pagination: PaginationMessages,
+    pub carousel: CarouselMessages,
 }
 
 impl Locale {
@@ -189,6 +252,29 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::EnUs,
+                image: ImageMessages {
+                    root_label: "Image preview".into(),
+                    preview: "Preview".into(),
+                    loading: "Loading".into(),
+                    load_error: "Failed to load image".into(),
+                    previous: "Previous image".into(),
+                    next: "Next image".into(),
+                    flip_y: "Flip vertically".into(),
+                    flip_x: "Flip horizontally".into(),
+                    rotate_left: "Rotate left".into(),
+                    rotate_right: "Rotate right".into(),
+                    zoom_out: "Zoom out".into(),
+                    zoom_in: "Zoom in".into(),
+                    reset: "Reset".into(),
+                    count: "{current} / {total}".into(),
+                },
+                carousel: CarouselMessages {
+                    root_label: "Carousel".into(),
+                    prev_slide: "Previous slide".into(),
+                    next_slide: "Next slide".into(),
+                    slide_label: "Slide {index} of {count}".into(),
+                    go_to_slide: "Go to slide {index}".into(),
+                },
                 modal: ModalMessages {
                     ok_text: "OK".into(),
                     cancel_text: "Cancel".into(),
@@ -247,6 +333,29 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhCn,
+                image: ImageMessages {
+                    root_label: "图片预览".into(),
+                    preview: "预览".into(),
+                    loading: "加载中".into(),
+                    load_error: "图片加载失败".into(),
+                    previous: "上一张图片".into(),
+                    next: "下一张图片".into(),
+                    flip_y: "垂直翻转".into(),
+                    flip_x: "水平翻转".into(),
+                    rotate_left: "向左旋转".into(),
+                    rotate_right: "向右旋转".into(),
+                    zoom_out: "缩小".into(),
+                    zoom_in: "放大".into(),
+                    reset: "重置".into(),
+                    count: "{current} / {total}".into(),
+                },
+                carousel: CarouselMessages {
+                    root_label: "轮播图".into(),
+                    prev_slide: "上一张".into(),
+                    next_slide: "下一张".into(),
+                    slide_label: "第 {index} 张，共 {count} 张".into(),
+                    go_to_slide: "转到第 {index} 张".into(),
+                },
                 modal: ModalMessages {
                     ok_text: "确定".into(),
                     cancel_text: "取消".into(),
@@ -305,6 +414,29 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhTw,
+                image: ImageMessages {
+                    root_label: "圖片預覽".into(),
+                    preview: "預覽".into(),
+                    loading: "載入中".into(),
+                    load_error: "圖片載入失敗".into(),
+                    previous: "上一張圖片".into(),
+                    next: "下一張圖片".into(),
+                    flip_y: "垂直翻轉".into(),
+                    flip_x: "水平翻轉".into(),
+                    rotate_left: "向左旋轉".into(),
+                    rotate_right: "向右旋轉".into(),
+                    zoom_out: "縮小".into(),
+                    zoom_in: "放大".into(),
+                    reset: "重設".into(),
+                    count: "{current} / {total}".into(),
+                },
+                carousel: CarouselMessages {
+                    root_label: "輪播圖".into(),
+                    prev_slide: "上一張".into(),
+                    next_slide: "下一張".into(),
+                    slide_label: "第 {index} 張，共 {count} 張".into(),
+                    go_to_slide: "跳至第 {index} 張".into(),
+                },
                 modal: ModalMessages {
                     ok_text: "確定".into(),
                     cancel_text: "取消".into(),
@@ -364,9 +496,11 @@ impl Locale {
         Arc::new(Self {
             id: LocaleId::Custom(id.into()),
             common: Self::en_us().common.patched(&common),
+            image: Self::en_us().image.clone(),
             popconfirm: Self::en_us().popconfirm.clone(),
             modal: Self::en_us().modal.clone(),
             pagination: Self::en_us().pagination.clone(),
+            carousel: Self::en_us().carousel.clone(),
         })
     }
 
@@ -380,9 +514,11 @@ impl Locale {
 pub struct LocalePatch {
     pub locale: Option<Arc<Locale>>,
     pub common: CommonMessagePatch,
+    pub image: ImageMessagePatch,
     pub popconfirm: PopconfirmMessagePatch,
     pub modal: ModalMessagePatch,
     pub pagination: PaginationMessagePatch,
+    pub carousel: CarouselMessagePatch,
 }
 
 impl LocalePatch {
@@ -398,38 +534,48 @@ impl LocalePatch {
     ) -> Arc<Locale> {
         let base = self.locale.as_ref().unwrap_or(parent);
         if self.common.is_empty()
+            && self.image == ImageMessagePatch::default()
             && self.popconfirm == PopconfirmMessagePatch::default()
             && self.modal == ModalMessagePatch::default()
             && self.pagination.is_empty()
+            && self.carousel == CarouselMessagePatch::default()
         {
             return base.clone();
         }
         let common = base.common.patched(&self.common);
+        let image = base.image.patched(&self.image);
         let popconfirm = base.popconfirm.patched(&self.popconfirm);
         let modal = base.modal.patched(&self.modal);
         let pagination = base.pagination.patched(&self.pagination);
+        let carousel = base.carousel.patched(&self.carousel);
         if common == base.common
+            && image == base.image
             && popconfirm == base.popconfirm
             && pagination == base.pagination
             && modal == base.modal
+            && carousel == base.carousel
         {
             return base.clone();
         }
         if let Some(previous) = previous.filter(|old| {
             old.id == base.id
+                && old.image == image
                 && old.common == common
                 && old.popconfirm == popconfirm
                 && old.modal == modal
                 && old.pagination == pagination
+                && old.carousel == carousel
         }) {
             return previous.clone();
         }
         Arc::new(Locale {
             id: base.id.clone(),
             common,
+            image,
             popconfirm,
             modal,
             pagination,
+            carousel,
         })
     }
 }
@@ -437,6 +583,43 @@ impl LocalePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn carousel_catalogs_preserve_placeholders_and_inherit_per_field() {
+        let patch = LocalePatch {
+            carousel: CarouselMessagePatch {
+                root_label: Some("Featured content".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for locale in [Locale::en_us(), Locale::zh_cn(), Locale::zh_tw()] {
+            let resolved = patch.resolve(&locale);
+            assert_eq!(resolved.carousel.root_label.as_ref(), "Featured content");
+            assert_eq!(resolved.carousel.prev_slide, locale.carousel.prev_slide);
+            assert_eq!(resolved.carousel.next_slide, locale.carousel.next_slide);
+            assert!(resolved.carousel.slide_label.contains("{index}"));
+            assert!(resolved.carousel.slide_label.contains("{count}"));
+            assert!(resolved.carousel.go_to_slide.contains("{index}"));
+            assert!(Arc::ptr_eq(
+                &resolved,
+                &patch.resolve_with_previous(&locale, Some(&resolved))
+            ));
+        }
+        let english = Locale::en_us();
+        let equivalent = LocalePatch {
+            carousel: CarouselMessagePatch {
+                root_label: Some(english.carousel.root_label.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(Arc::ptr_eq(&english, &equivalent.resolve(&english)));
+        assert_eq!(
+            Locale::custom("custom", CommonMessagePatch::default()).carousel,
+            english.carousel
+        );
+    }
 
     #[test]
     fn pagination_catalogs_match_reference_and_patch_per_field() {

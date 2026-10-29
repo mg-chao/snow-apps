@@ -1,5 +1,10 @@
 # Ant Design GPUI
 
+Image and PreviewGroup provide native thumbnails, loading/fallback/progress,
+grouped fullscreen previews, keyboard navigation, zoom/pan/rotation/flips,
+custom native content and scoped styling. Open `--component image` in the gallery;
+see the [Image guide](docs/image.md) and [verification](docs/image-verification.md).
+
 Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Descriptions, Result, Spin, Progress, Message and Modal use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
@@ -35,6 +40,7 @@ cargo run --locked --offline --example gallery
 # Open Menu directly: -- --component menu
 # Open Scroll Area directly: -- --component scroll-area
 # Open Tabs directly: -- --component tabs
+# Open Carousel directly: -- --component carousel
 # Save a hidden native capture and exit: -- --component tabs --headless --capture C:/temp/tabs.png
 ```
 
@@ -116,6 +122,12 @@ the focused `cargo test --locked --offline --lib tabs::` command.
 
 Run only this example's offscreen regression tests with
 `cargo test --locked --offline --example gallery`.
+
+Carousel provides native retained slide views, scroll/fade effects, logical dot
+placements, arrows, infinite navigation, dragging, adaptive sizing, and autoplay
+with synchronized dot progress. Its gallery covers the six public reference
+examples and component tokens. Select Carousel or use `--component carousel`;
+see the [Carousel guide](docs/carousel.md) for ownership and focused verification.
 
 Spin provides native four-dot loading, delayed activation, embedded content,
 determinate and automatic progress, custom indicators, and fullscreen masks.

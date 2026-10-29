@@ -637,9 +637,11 @@ fn unmount_settles_lifetimes_and_releases_factories_without_ui_callbacks() {
 #[test]
 fn holder_and_content_semantics_participate_in_native_layout() {
     let mut f = Fixture::new(false);
-    let mut styles = NotificationStyles::default();
-    styles.list = gpui::StyleRefinement::default().p(px(31.));
-    styles.list_content = gpui::StyleRefinement::default().gap(px(37.));
+    let styles = NotificationStyles {
+        list: gpui::StyleRefinement::default().p(px(31.)),
+        list_content: gpui::StyleRefinement::default().gap(px(37.)),
+        ..Default::default()
+    };
     f.configure(NotificationConfigPatch {
         styles,
         stack: Some(NotificationStack::Disabled),

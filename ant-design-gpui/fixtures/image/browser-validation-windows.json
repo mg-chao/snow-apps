@@ -1,0 +1,97 @@
+{
+  "renderer": "Chrome/156.0.8078.48",
+  "captured_utc": "2026-10-29T13:43:56.362Z",
+  "cases": 432,
+  "themes": [
+    "default",
+    "dark",
+    "compact",
+    "dark-compact"
+  ],
+  "directions": [
+    "ltr",
+    "rtl"
+  ],
+  "scales": [
+    1,
+    1.5,
+    2
+  ],
+  "behavior": [
+    {
+      "name": "initial-transform",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotate": 0,
+        "scale": 1,
+        "flipX": false,
+        "flipY": false
+      }
+    },
+    {
+      "name": "pending-load",
+      "placeholder": true,
+      "source": "http://127.0.0.1:64815/held/portrait.png"
+    },
+    {
+      "name": "stale-source-completion",
+      "placeholder": false,
+      "source": "http://127.0.0.1:64815/images/landscape.png",
+      "naturalWidth": 320
+    },
+    {
+      "name": "fallback-after-error",
+      "source": "http://127.0.0.1:64815/images/fallback.png",
+      "naturalWidth": 200,
+      "errors": 1
+    },
+    {
+      "name": "zoomIn",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotate": 0,
+        "scale": 1.5,
+        "flipX": false,
+        "flipY": false
+      }
+    },
+    {
+      "name": "rotateRight",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotate": 90,
+        "scale": 1.5,
+        "flipX": false,
+        "flipY": false
+      }
+    },
+    {
+      "name": "flipX",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotate": 90,
+        "scale": 1.5,
+        "flipX": true,
+        "flipY": false
+      }
+    },
+    {
+      "name": "reset",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotate": 0,
+        "scale": 1,
+        "flipX": false,
+        "flipY": false
+      }
+    }
+  ],
+  "upstream_revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+  "image_version": "1.10.0",
+  "lock_sha256": "7237763f3ac20d1856fa23f0074073c808184cac9cd63b9f26ff2a65c45549de"
+}
