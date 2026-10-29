@@ -149,6 +149,7 @@ pub(crate) struct CaptureSessionConfig {
     pub(crate) mode: CaptureMode,
     /// Packed output layout requested by the caller.
     pub(crate) output_pixel_format: CapturePixelFormat,
+    pub(crate) live_window_fps: Option<u32>,
     /// Record per-stage capture timings onto frame metadata.
     #[cfg(feature = "stage-timing")]
     pub(crate) record_stage_timings: bool,
@@ -164,6 +165,7 @@ impl Default for CaptureSessionConfig {
             capture_retry_count: 1,
             mode: CaptureMode::Snapshot,
             output_pixel_format: CapturePixelFormat::Rgba8,
+            live_window_fps: None,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -180,6 +182,7 @@ impl From<CaptureOptions> for CaptureSessionConfig {
             capture_retry_count: value.capture_retry_count,
             mode: value.workload,
             output_pixel_format: value.output_pixel_format,
+            live_window_fps: value.live_window_fps,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: value.record_stage_timings,
         }
@@ -256,6 +259,15 @@ impl CaptureSessionBuilder {
     }
 
     fn build_uncached(self) -> CaptureResult<CaptureSession> {
+        if let Some(fps) = self.config.live_window_fps
+            && (!matches!(self.target, Some(CaptureTarget::Window(_)))
+                || self.config.mode != CaptureMode::Continuous
+                || !(1..=30).contains(&fps))
+        {
+            return Err(CaptureError::InvalidConfig(
+                "live window capture requires a continuous window session at 1..=30 fps".into(),
+            ));
+        }
         if self.excluded_windows.len() > crate::exclusions::MAX_EXCLUSIONS
             || self.excluded_processes.len() > crate::exclusions::MAX_EXCLUSIONS
         {
@@ -280,6 +292,7 @@ impl CaptureSessionBuilder {
                 capture_retry_count: config.capture_retry_count,
                 workload: config.mode,
                 output_pixel_format: config.output_pixel_format,
+                live_window_fps: config.live_window_fps,
                 excluded_windows,
                 excluded_processes,
                 #[cfg(feature = "stage-timing")]
@@ -1178,6 +1191,16 @@ impl CaptureSession {
         &self,
         target: &CaptureTarget,
     ) -> CaptureResult<CaptureTargetInfo> {
+        if self.config.live_window_fps.is_some()
+            && matches!((target, &self.target),
+                (CaptureTarget::Window(requested), CaptureTarget::Window(current)) if requested == current)
+            && let Some(info) = self
+                .native
+                .as_ref()
+                .and_then(|native| native.retained_target_info())
+        {
+            return Ok(info);
+        }
         inspect_target_from_backend(&self.backend, target)
     }
 
@@ -1561,7 +1584,7 @@ impl CaptureSession {
             self.window_runtime_mut().output.select_reuse(key, reuse);
 
         let cache_output_frame = history_reuse.should_cache_output();
-        let (frame, seq) = self.capture_with_retry(
+        let (mut frame, seq) = self.capture_with_retry(
             history_reuse.frame,
             last_history_seq,
             move |s| {
@@ -1574,6 +1597,30 @@ impl CaptureSession {
                 s.window_runtime_mut().clear_target(key);
             },
         )?;
+        if self.config.live_window_fps.is_some()
+            && let Ok(info) = self
+                .backend
+                .inspect_window_for_backend(&window, frame.metadata.backend_kind)
+        {
+            // Freeze native physical geometry with the observation, before
+            // delivery can be delayed by a consumer or the source can move.
+            frame.metadata.capture_transform = Some(
+                snow_media::geometry::DesktopTransform::new(
+                    snow_media::geometry::DesktopRect {
+                        space: snow_media::geometry::DesktopSpace::PhysicalPixels,
+                        x: f64::from(info.origin_x),
+                        y: f64::from(info.origin_y),
+                        width: f64::from(frame.width()),
+                        height: f64::from(frame.height()),
+                    },
+                    snow_media::geometry::PixelSize {
+                        width: frame.width(),
+                        height: frame.height(),
+                    },
+                )
+                .map_err(|_| CaptureError::BufferOverflow)?,
+            );
+        }
         self.window_runtime_mut()
             .output
             .store_output(key, seq, &frame, cache_output_frame);
@@ -1856,6 +1903,100 @@ mod tests {
     use std::time::Instant;
 
     #[test]
+    fn live_window_profile_is_validated_before_native_backend_creation() {
+        for (target, workload, fps) in [
+            (CaptureTarget::PrimaryMonitor, CaptureMode::Continuous, 30),
+            (
+                CaptureTarget::Window(WindowId::from_windows_handle(1)),
+                CaptureMode::Snapshot,
+                30,
+            ),
+            (
+                CaptureTarget::Window(WindowId::from_windows_handle(1)),
+                CaptureMode::Continuous,
+                0,
+            ),
+            (
+                CaptureTarget::Window(WindowId::from_windows_handle(1)),
+                CaptureMode::Continuous,
+                31,
+            ),
+        ] {
+            let result = CaptureSessionBuilder::new()
+                .target(target)
+                .with_options(CaptureOptions {
+                    workload,
+                    live_window_fps: Some(fps),
+                    ..Default::default()
+                })
+                .build();
+            assert!(matches!(result, Err(CaptureError::InvalidConfig(_))));
+        }
+    }
+
+    #[test]
+    fn live_window_profile_reaches_the_continuous_native_session() {
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let backend = Arc::new(LifecycleBackend {
+            monitor: MonitorId::from_parts(1, 2, 0, "live-window-fixture", true),
+            state: state.clone(),
+            native: true,
+        });
+        let mut session = CaptureSessionBuilder::new()
+            .target(CaptureTarget::Window(WindowId::from_windows_handle(42)))
+            .with_backend(backend)
+            .with_options(CaptureOptions {
+                workload: CaptureMode::Continuous,
+                live_window_fps: Some(30),
+                ..Default::default()
+            })
+            .build()
+            .unwrap();
+        assert_eq!(state.lock().unwrap().live_profiles, [Some(30)]);
+        assert_eq!(session.prepare_target().unwrap().width, 4);
+        assert_eq!(session.capture().unwrap().dimensions(), (4, 4));
+        session.release_capture_access();
+        assert!(!state.lock().unwrap().active);
+    }
+
+    #[test]
+    fn live_window_physical_geometry_is_frozen_before_stream_delivery() {
+        for live_window_fps in [None, Some(30)] {
+            let backend = Arc::new(MockBackend::new(Arc::new(Mutex::new(Vec::new()))));
+            let mut session = CaptureSessionBuilder::new()
+                .target(CaptureTarget::Window(WindowId::from_windows_handle(42)))
+                .with_backend(backend)
+                .with_options(CaptureOptions {
+                    workload: CaptureMode::Continuous,
+                    live_window_fps,
+                    ..Default::default()
+                })
+                .build()
+                .unwrap();
+            let frame = session.capture_frame(None).unwrap();
+            let geometry = frame.metadata().capture_transform();
+            if live_window_fps.is_some() {
+                let geometry = geometry.unwrap();
+                assert_eq!(
+                    geometry.source.space,
+                    snow_media::geometry::DesktopSpace::PhysicalPixels
+                );
+                assert_eq!((geometry.source.x, geometry.source.y), (0.0, 0.0));
+                assert_eq!((geometry.source.width, geometry.source.height), (4.0, 4.0));
+                assert_eq!(
+                    geometry.output,
+                    snow_media::geometry::PixelSize {
+                        width: 4,
+                        height: 4
+                    }
+                );
+            } else {
+                assert!(geometry.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn invalid_exclusions_fail_before_backend_creation() {
         for options in [
             CaptureOptions {
@@ -1959,6 +2100,7 @@ mod tests {
         release_calls: usize,
         fail_capture: bool,
         cursor_visibility: Vec<bool>,
+        live_profiles: Vec<Option<u32>>,
     }
 
     struct LifecycleBackend {
@@ -1992,6 +2134,21 @@ mod tests {
     }
 
     impl MonitorCapturer for LifecycleCapturer {
+        fn retained_target_info(&self) -> Option<CaptureTargetInfo> {
+            self.state
+                .lock()
+                .unwrap()
+                .live_profiles
+                .last()
+                .copied()
+                .flatten()
+                .map(|_| CaptureTargetInfo {
+                    origin_x: 0,
+                    origin_y: 0,
+                    width: 4,
+                    height: 4,
+                })
+        }
         fn set_cursor_visible(&mut self, visible: bool) -> CaptureResult<()> {
             self.state.lock().unwrap().cursor_visibility.push(visible);
             Ok(())
@@ -2039,8 +2196,13 @@ mod tests {
         fn create_target_capturer(
             &self,
             _target: &CaptureTarget,
-            _options: CaptureOptions,
+            options: CaptureOptions,
         ) -> CaptureResult<Option<Box<dyn MonitorCapturer>>> {
+            self.state
+                .lock()
+                .unwrap()
+                .live_profiles
+                .push(options.live_window_fps);
             Ok(self.native.then(|| {
                 Box::new(LifecycleCapturer {
                     state: Arc::clone(&self.state),

@@ -1172,6 +1172,53 @@ Files:
         </message>
     </context>
     <context>
+        <name>LiveWindowSource</name>
+        <message>
+            <source>Allow Accessibility in System Settings to monitor the live window's state.</source>
+            <translation>請在系統設定中允許輔助使用權限，以監測即時視窗的狀態。</translation>
+        </message>
+        <message>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</source>
+            <translation>請在系統設定中允許螢幕與系統音訊錄製權限，以固定即時視窗。</translation>
+        </message>
+        <message>
+            <source>The live window display could not be initialized.</source>
+            <translation>無法初始化視窗即時顯示。</translation>
+        </message>
+        <message>
+            <source>The live window was closed.</source>
+            <translation>即時視窗已關閉。</translation>
+        </message>
+        <message>
+            <source>The selected window is no longer available.</source>
+            <translation>所選視窗已無法使用。</translation>
+        </message>
+        <message>
+            <source>The selected window's identity and state could not be verified.</source>
+            <translation>無法驗證所選視窗的識別資訊與狀態。</translation>
+        </message>
+        <message>
+            <source>The selection does not intersect the selected window.</source>
+            <translation>選取範圍與所選視窗沒有交集。</translation>
+        </message>
+        <message>
+            <source>The window content is temporarily unavailable. Retrying…</source>
+            <translation>視窗內容暫時無法使用，正在重試…</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>視窗已關閉，無法顯示最新內容。</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>視窗已最小化，無法顯示最新內容。</translation>
+        </message>
+        <message>
+            <source>The window state is temporarily unavailable. Retrying…</source>
+            <translation>視窗狀態暫時無法使用，正在重試…</translation>
+        </message>
+    </context>
+    <context>
         <name>PinnedColorSwatch</name>
         <message>
             <source>Color:</source>
@@ -1623,6 +1670,10 @@ Files:
             <translation>確定要關閉此固定到螢幕視窗嗎？</translation>
         </message>
         <message>
+            <source>Convert to Image</source>
+            <translation>轉換為圖片</translation>
+        </message>
+        <message>
             <source>Copy original content</source>
             <translation>複製原始內容</translation>
         </message>
@@ -1715,6 +1766,10 @@ Files:
             <translation>圖片編輯</translation>
         </message>
         <message>
+            <source>Image Splitting</source>
+            <translation>圖片分割</translation>
+        </message>
+        <message>
             <source>Image file</source>
             <translation>影像檔案</translation>
         </message>
@@ -1729,6 +1784,10 @@ Files:
         <message>
             <source>Increase speed</source>
             <translation>提高速度</translation>
+        </message>
+        <message>
+            <source>Live content is unavailable. Retrying...</source>
+            <translation>即時內容暫時無法使用，正在重試...</translation>
         </message>
         <message>
             <source>Load new content</source>
@@ -1831,8 +1890,16 @@ Files:
             <translation>無法播放動畫</translation>
         </message>
         <message>
+            <source>The current window content cannot be captured.</source>
+            <translation>無法擷取視窗的目前內容。</translation>
+        </message>
+        <message>
             <source>The image could not be saved automatically: %1</source>
             <translation>無法自動儲存影像：%1</translation>
+        </message>
+        <message>
+            <source>The live window requires a current frame snapshot.</source>
+            <translation>即時視窗需要取得目前影格快照。</translation>
         </message>
         <message>
             <source>The new content could not be loaded</source>
@@ -1853,6 +1920,18 @@ Files:
         <message>
             <source>The pinned image save could not be started</source>
             <translation>無法開始儲存已固定到螢幕的影像</translation>
+        </message>
+        <message>
+            <source>The window changed while preparing the image. Please try again.</source>
+            <translation>準備圖片時視窗發生變更，請再試一次。</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>視窗已關閉，無法顯示最新內容。</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>視窗已最小化，無法顯示最新內容。</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>

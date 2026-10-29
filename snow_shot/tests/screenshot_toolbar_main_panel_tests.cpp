@@ -513,12 +513,18 @@ void toolbarRowsShareShadowMetrics() {
             qobject_cast<QGraphicsDropShadowEffect*>(toolbar.mainPanel()->graphicsEffect());
         auto* style =
             qobject_cast<QGraphicsDropShadowEffect*>(toolbar.stylePanel()->graphicsEffect());
+#ifdef Q_OS_MACOS
+        require(main == nullptr && style == nullptr &&
+                    ScreenshotToolbarMainPanel::shadowMargins().isNull(),
+                "macOS toolbar rows use native window shadows without Qt effects or padding");
+#else
         require(main != nullptr && style != nullptr && main->blurRadius() == style->blurRadius() &&
                     main->offset() == style->offset() && main->color() == style->color(),
                 "main and secondary rows must use identical shadow metrics at every scale");
         require(qFuzzyCompare(main->blurRadius(), 18.0 * scale) &&
                     main->offset() == QPointF(0.0, 3.0 * scale),
                 "shared toolbar shadows must retain fractional DPI precision");
+#endif
     }
 }
 
@@ -735,10 +741,15 @@ void recordingToolbarUsesTheScreenshotMainPanelContract() {
 
     const auto* shadow =
         qobject_cast<QGraphicsDropShadowEffect*>(recordingToolbar.mainPanel()->graphicsEffect());
+#ifdef Q_OS_MACOS
+    require(shadow == nullptr && margins.isNull(),
+            "macOS recording toolbar retains the shared native-shadow contract");
+#else
     require(shadow != nullptr, "recording shadow should use the reference drop-shadow effect");
     require(qFuzzyCompare(shadow->blurRadius() + 1.0, 19.0) &&
                 shadow->offset() == QPointF(0.0, 3.0) && shadow->color() == QColor(0, 0, 0, 90),
             "recording shadow should preserve the reference visual parameters");
+#endif
 }
 
 void recordingAudioIconsFollowSettings() {
@@ -1215,6 +1226,11 @@ void screenshotToolbarRendersShadowOutsideItsPanel() {
     painter.end();
 
     const QRect panel = toolbar.mainPanel()->geometry();
+#ifdef Q_OS_MACOS
+    require(panel == image.rect() && toolbar.mainPanel()->graphicsEffect() == nullptr &&
+                image.pixelColor(panel.center()).alpha() == 255,
+            "macOS toolbar renders its surface without reserving pixels for a Qt shadow");
+#else
     const QPoint topSample(panel.center().x(), panel.top() - 1);
     const QPoint bottomSample(panel.center().x(), panel.bottom() + 1);
     const QPoint leftSample(panel.left() - 1, panel.center().y());
@@ -1228,6 +1244,7 @@ void screenshotToolbarRendersShadowOutsideItsPanel() {
                 image.pixelColor(leftSample).alpha() < 255 &&
                 image.pixelColor(rightSample).alpha() < 255,
             "screenshot toolbar shadow should remain translucent outside the panel");
+#endif
 }
 
 void filterValuesDoNotRelayoutTheStableControlSet() {
@@ -2031,6 +2048,147 @@ void printToolbarRoutingAndLayoutMigration() {
         require(prints == 2 && saves == 0, "Print source button must route once");
     }
 }
+void liveWindowPinToolbarGroupAndLayoutMigration() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    using Layout = snow_shot::storage::ScreenshotToolbarLayout;
+    const QString pin = QStringLiteral("pin-to-screen");
+    const QString live = QStringLiteral("pin-window-to-screen");
+    const bool supported = snow_shot::app::editionActionToolAvailable(live);
+    const QStringList group = supported ? QStringList{live, pin} : QStringList{pin};
+    require(layout::actionDefaultPositions().contains(group),
+            "live pin shares the default Pin to Screen position");
+    for (const Layout& input :
+         {Layout{{{pin}}, {}}, Layout{{{pin, QStringLiteral("save-as-file")}}, {}},
+          Layout{{{live}, {pin}}, {}}, Layout{{{pin}}, {live}}, Layout{{}, {pin}}}) {
+        const Layout normalized = layout::normalizedLayout(input, Kind::ActionTools);
+        QJsonArray positions;
+        for (const auto& position : input.positions)
+            positions.append(QJsonArray::fromStringList(position));
+        const auto stored = snow_shot::storage::ConfigurationSchema::normalize(
+            QStringLiteral("screenshot_toolbar/action_tools_layout"),
+            QJsonObject{{QStringLiteral("positions"), positions},
+                        {QStringLiteral("hidden"), QJsonArray::fromStringList(input.hidden)}});
+        QJsonArray expected;
+        for (const auto& position : normalized.positions)
+            expected.append(QJsonArray::fromStringList(position));
+        require(stored.valid &&
+                    stored.value.toObject().value(QStringLiteral("positions")) == expected &&
+                    stored.value.toObject().value(QStringLiteral("hidden")) ==
+                        QJsonArray::fromStringList(normalized.hidden) &&
+                    layout::normalizedLayout(normalized, Kind::ActionTools) == normalized,
+                "storage and presentation agree on idempotent live pin layout migration");
+    }
+    if (!supported)
+        return;
+    require(layout::normalizedLayout(Layout{{{pin}}, {}}, Kind::ActionTools).positions.first() ==
+                group,
+            "existing Pin placement gains live pin without changing its primary action");
+    require(layout::normalizedLayout(Layout{{{live}, {pin}}, {}}, Kind::ActionTools)
+                    .positions.first() == QStringList{live},
+            "explicit custom live pin placement is preserved");
+    require(layout::normalizedLayout(Layout{{}, {pin}}, Kind::ActionTools).hidden.contains(live),
+            "live pin inherits a hidden Pin group");
+    require(
+        layout::normalizedLayout(Layout{{{pin}}, {live}}, Kind::ActionTools).hidden.contains(live),
+        "explicitly hidden live pin remains hidden");
+    for (const bool configured : {false, true}) {
+        auto options = screenshotOptions();
+        options.actions = ScreenshotToolPalette::PinAction;
+        if (configured)
+            options.actionToolsLayout = Layout{layout::actionDefaultPositions(), {}};
+        ScreenshotToolPalette palette(options);
+        prepare(palette);
+        palette.show();
+        flushEvents();
+        adqt::widgets::AdButton* trigger = nullptr;
+        int triggers = 0;
+        for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("screenshotToolbarPositionItems").toStringList() == group) {
+                trigger = button;
+                ++triggers;
+            }
+        }
+        require(triggers == 1 && trigger && trigger->property("screenshotToolbarItemId") == pin,
+                "default and configured screenshot toolbars start with one Pin primary");
+        int pins = 0;
+        int lives = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::pinRequested, [&] { ++pins; });
+        QObject::connect(&palette, &ScreenshotToolPalette::pinWindowRequested, [&] { ++lives; });
+        trigger->click();
+        require(pins == 1 && lives == 0, "initial Pin primary dispatches exactly once");
+        auto* popover = trigger->findChild<adqt::widgets::AdPopover*>();
+        require(popover, "Pin group exposes the standard tool group popup");
+        popover->show();
+        flushEvents();
+        auto* content = popover->contentWidget();
+        auto* liveOption = content ? content->findChild<adqt::widgets::AdButton*>(
+                                         QStringLiteral("screenshotActionToolGroupOption-") + live)
+                                   : nullptr;
+        auto* pinOption = content ? content->findChild<adqt::widgets::AdButton*>(
+                                        QStringLiteral("screenshotActionToolGroupOption-") + pin)
+                                  : nullptr;
+        require(pinOption && liveOption &&
+                    content->layout()->indexOf(pinOption) < content->layout()->indexOf(liveOption),
+                "Pin primary leads the live pin option in the standard popup");
+        liveOption->click();
+        require(pins == 1 && lives == 1 && trigger->property("screenshotToolbarItemId") == live,
+                "live popup action dispatches once and becomes the group primary");
+        trigger->click();
+        require(pins == 1 && lives == 2, "changed primary continues routing the live action");
+        popover->show();
+        flushEvents();
+        content = popover->contentWidget();
+        liveOption = content ? content->findChild<adqt::widgets::AdButton*>(
+                                   QStringLiteral("screenshotActionToolGroupOption-") + live)
+                             : nullptr;
+        require(liveOption, "the lazy popup recreates its live option after action execution");
+        class LivePinTranslator final : public QTranslator {
+          public:
+            bool isEmpty() const override {
+                return false;
+            }
+            QString translate(const char* context, const char* source, const char*,
+                              int) const override {
+                if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
+                    qstrcmp(source, "Pin Window to Screen") == 0)
+                    return QStringLiteral("Translated live pin");
+                return {};
+            }
+        } translator;
+        require(QApplication::installTranslator(&translator), "install live pin test translator");
+        flushEvents();
+        require(liveOption->accessibleName() == QStringLiteral("Translated live pin") &&
+                    trigger->accessibleName() == QStringLiteral("Translated live pin"),
+                "the selected live primary and materialized option retranslate on LanguageChange");
+        QApplication::removeTranslator(&translator);
+        flushEvents();
+        require(palette.activateScreenshotShortcut(QStringLiteral("pin_to_screen")) && pins == 2 &&
+                    lives == 2 && trigger->property("screenshotToolbarItemId") == pin,
+                "the existing Pin shortcut selects and executes its standard primary");
+    }
+    for (const Layout& custom : {Layout{{{pin, live}}, {}}, Layout{{{pin}, {live}}, {}}}) {
+        auto options = screenshotOptions();
+        options.actions = ScreenshotToolPalette::PinAction;
+        options.actionToolsLayout = custom;
+        ScreenshotToolPalette palette(options);
+        prepare(palette);
+        int lives = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::pinWindowRequested, [&] { ++lives; });
+        adqt::widgets::AdButton* primary = nullptr;
+        for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+            if (!button->property("screenshotToolbarPositionItems").toStringList().isEmpty() &&
+                button->property("screenshotToolbarItemId") == live) {
+                primary = button;
+                break;
+            }
+        }
+        require(primary, "a custom stack or independent position can use live pin as primary");
+        primary->click();
+        require(lives == 1, "custom live primary dispatches exactly one live action");
+    }
+}
+
 void speechBubbleSharesSerialNumberToolbarGroup() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     const QStringList group{QStringLiteral("speech-bubble"), QStringLiteral("serial-number")};
@@ -2303,6 +2461,10 @@ int main(int argc, char** argv) {
         printToolbarRoutingAndLayoutMigration();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--live-window-pin-only"))) {
+        liveWindowPinToolbarGroupAndLayoutMigration();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--skin-only"))) {
         toolbarSkinProfilesAndLifecycle();
         return 0;
@@ -2316,6 +2478,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     smallToolbarIconStaysVerticallyCentered();
+    liveWindowPinToolbarGroupAndLayoutMigration();
     customToolbarWidgetsKeepCallerMetricsDuringScaling();
     hiddenToolbarPeersKeepVisibleReferenceMetrics();
     drawingSelectsInheritScaleWhenMaterialized();

@@ -84,7 +84,9 @@ class ScreenshotExportSource final {
     fromImageLoader(ImageLoader loader, std::optional<ScreenshotClipboardPlacement> placement = {},
                     std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotExportSource
-    fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory = {});
+    fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory = {},
+                 std::optional<ScreenshotClipboardPlacement> placement = {},
+                 std::optional<ScreenshotClipboardAppearance> appearance = {});
 
     [[nodiscard]] bool isValid() const;
 

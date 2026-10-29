@@ -43,6 +43,7 @@ struct ScreenshotAutomaticSaveRequest final {
 };
 
 namespace snow_shot::presentation {
+class LiveWindowSource;
 class PinnedWindowGroupManager;
 class PinnedWindowSelectionController;
 } // namespace snow_shot::presentation
@@ -70,6 +71,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void cancelClipboardPublication();
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
+    [[nodiscard]] bool
+    presentLiveWindow(std::shared_ptr<snow_shot::presentation::LiveWindowSource> source,
+                      QScreen* screen, const QRect& nativeGeometry, const QSize& initialWindowSize,
+                      PinnedCompletion completion = {});
     // Fits decoded file or drop content on the target screen, retaining its text document.
     [[nodiscard]] bool
     presentDecodedContentOnScreen(ScreenshotClipboardContent content, QScreen* screen,
@@ -137,6 +142,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void setRestoreFailureHandler(std::function<void()> handler) {
         m_restoreFailure = std::move(handler);
     }
+    void setLiveImageEditingHandler(std::function<void(const ScreenshotExportSource&)> handler) {
+        m_liveImageEditingRequested = std::move(handler);
+    }
     void destroyRecords(const QVector<QString>& ids);
     [[nodiscard]] snow_shot::storage::StorageResult tryDestroyRecords(const QVector<QString>& ids);
 
@@ -190,6 +198,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     std::function<void()> m_showMainWindowRequested;
     std::function<void(const ScreenshotPinnedImageSnapshot&)> m_imageSplittingRequested;
     std::function<void(const QString&)> m_imageEditingRequested;
+    std::function<void(const ScreenshotExportSource&)> m_liveImageEditingRequested;
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<snow_shot::presentation::PinnedWindowSelectionController> m_selectionController;

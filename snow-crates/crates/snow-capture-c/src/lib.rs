@@ -368,6 +368,37 @@ pub struct SnowCaptureStreamConfig {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SnowCaptureWindowStreamConfig {
+    pub version: u32,
+    pub struct_size: u32,
+    pub window_id: isize,
+    pub target_fps: u32,
+    pub buffer_depth: u32,
+    pub max_consecutive_errors: u32,
+    pub reserved0: u32,
+    pub capture_retry_count: usize,
+    pub pixel_format: u8,
+    pub reserved: [u8; 31],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SnowCaptureWindowGeometry {
+    pub version: u32,
+    pub struct_size: u32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub generation: u64,
+    pub units: u8,
+    pub reserved: [u8; 7],
+}
+
+#[repr(C)]
 pub struct SnowCaptureStreamEvent {
     pub kind: SnowCaptureStreamEventKind,
     pub frame: *mut SnowCaptureStreamFrameImpl,
@@ -461,6 +492,37 @@ pub const STREAM_CONFIG_VERSION: u32 = 2;
 const STREAM_CONFIG_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamConfig>() as u32;
 pub const STREAM_FRAME_INFO_VERSION: u32 = 1;
 const STREAM_FRAME_INFO_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamFrameInfo>() as u32;
+pub const WINDOW_STREAM_CONFIG_VERSION: u32 = 1;
+const WINDOW_STREAM_CONFIG_SIZE: u32 = std::mem::size_of::<SnowCaptureWindowStreamConfig>() as u32;
+pub const WINDOW_GEOMETRY_VERSION: u32 = 1;
+
+unsafe fn read_window_stream_config(
+    config: *const SnowCaptureWindowStreamConfig,
+) -> Result<SnowCaptureWindowStreamConfig, String> {
+    if config.is_null() {
+        return Err("window stream config is null".into());
+    }
+    let header = unsafe { &*config.cast::<SnowCaptureScreenshotRequestHeader>() };
+    if header.version != WINDOW_STREAM_CONFIG_VERSION {
+        return Err("unsupported window stream config version".into());
+    }
+    if header.struct_size < WINDOW_STREAM_CONFIG_SIZE {
+        return Err("window stream config is too small".into());
+    }
+    let config = unsafe { *config };
+    if config.window_id == 0 {
+        return Err("window stream requires a nonzero window ID".into());
+    }
+    native_window_id(config.window_id)?;
+    if !(1..=30).contains(&config.target_fps) || !(1..=3).contains(&config.buffer_depth) {
+        return Err("window stream frame rate must be 1..30 and buffer depth 1..3".into());
+    }
+    if config.max_consecutive_errors == 0 {
+        return Err("window stream max_consecutive_errors must be greater than zero".into());
+    }
+    parse_pixel_format(config.pixel_format)?;
+    Ok(config)
+}
 
 unsafe fn read_stream_config(
     config: *const SnowCaptureStreamConfig,
@@ -2035,6 +2097,136 @@ fn stream_capture_options(
     }
 }
 
+fn window_stream_options(config: SnowCaptureWindowStreamConfig) -> Result<CaptureOptions, String> {
+    Ok(CaptureOptions {
+        backend_tuning: platform_tuning(snow_capture::tuning::windows::WindowsCaptureOptions {
+            color_correction: ColorCorrection::Disabled,
+            gpu_hdr_conversion: true,
+            hdr_tonemap_lut: true,
+            wgc_update_mode: WgcUpdateMode::CompleteOnly,
+        }),
+        capture_retry_count: config.capture_retry_count.max(1),
+        workload: CaptureWorkload::Continuous,
+        output_pixel_format: parse_pixel_format(config.pixel_format)?,
+        live_window_fps: Some(config.target_fps),
+        ..Default::default()
+    })
+}
+
+fn window_stream_backend() -> CaptureBackendKind {
+    #[cfg(target_os = "macos")]
+    {
+        CaptureBackendKind::ScreenCaptureKit
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        CaptureBackendKind::WindowsGraphicsCapture
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_create_window(
+    config: *const SnowCaptureWindowStreamConfig,
+) -> *mut SnowCaptureStreamImpl {
+    let result = (|| -> Result<_, String> {
+        let config = unsafe { read_window_stream_config(config) }?;
+        let system = CaptureSystem::builder()
+            .with_backend_kind(window_stream_backend())
+            .build()
+            .map_err(|error| error.to_string())?;
+        let target = CaptureTarget::Window(native_window_id(config.window_id)?);
+        let session = system
+            .open_session(target.clone(), window_stream_options(config)?)
+            .map_err(|error| error.to_string())?;
+        let stream = CaptureStream::spawn(
+            session,
+            CaptureStreamConfig {
+                target_fps: config.target_fps,
+                buffer_depth: config.buffer_depth as usize,
+                max_consecutive_errors: config.max_consecutive_errors as usize,
+                adaptive_fps: true,
+                min_fps: config.target_fps.min(15),
+                pause_on_resolution_change: false,
+                include_cursor: false,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(SnowCaptureStreamImpl {
+            stream,
+            origin_x: 0,
+            origin_y: 0,
+            window_target: Some((system, target)),
+        })
+    })();
+    match result {
+        Ok(stream) => {
+            clear_last_error();
+            Box::into_raw(Box::new(stream))
+        }
+        Err(error) => {
+            set_last_error(error);
+            ptr::null_mut()
+        }
+    }
+}
+
+fn stream_window_geometry(
+    frame: &CapturedFrame,
+    source: Option<&(CaptureSystem, CaptureTarget)>,
+) -> Option<SnowCaptureWindowGeometry> {
+    let (system, target) = source?;
+    let transform = frame.metadata().capture_transform();
+    let (x, y, width, height, units) = if let Some(transform) = transform {
+        (
+            transform.source.x,
+            transform.source.y,
+            transform.source.width,
+            transform.source.height,
+            u8::from(cfg!(target_os = "macos")),
+        )
+    } else {
+        let info = system.inspect_target(target).ok()?;
+        (
+            f64::from(info.origin_x),
+            f64::from(info.origin_y),
+            f64::from(frame.width()),
+            f64::from(frame.height()),
+            0,
+        )
+    };
+    Some(SnowCaptureWindowGeometry {
+        version: WINDOW_GEOMETRY_VERSION,
+        struct_size: std::mem::size_of::<SnowCaptureWindowGeometry>() as u32,
+        x,
+        y,
+        width,
+        height,
+        pixel_width: frame.width(),
+        pixel_height: frame.height(),
+        generation: frame.metadata().configuration_generation(),
+        units,
+        reserved: [0; 7],
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_frame_window_geometry(
+    frame: *const SnowCaptureStreamFrameImpl,
+    out_geometry: *mut SnowCaptureWindowGeometry,
+) -> u8 {
+    if out_geometry.is_null() || frame.is_null() {
+        set_last_error("window frame or geometry output is null");
+        return 0;
+    }
+    let Some(geometry) = (unsafe { &*frame }).window_geometry else {
+        set_last_error("frame has no window geometry");
+        return 0;
+    };
+    unsafe { *out_geometry = geometry };
+    clear_last_error();
+    1
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_capture_stream_create_region(
     config: *const SnowCaptureStreamConfig,
@@ -2124,6 +2316,7 @@ pub unsafe extern "C" fn snow_capture_stream_create_region(
         stream,
         origin_x: config.x,
         origin_y: config.y,
+        window_target: None,
     }))
 }
 
@@ -2154,7 +2347,17 @@ pub unsafe extern "C" fn snow_capture_stream_set_target_fps(
         set_last_error("stream is null");
         return 0;
     }
-    unsafe { &*stream }.stream.set_target_fps(target_fps);
+    let stream = unsafe { &*stream };
+    let target_fps = if stream.window_target.is_some() {
+        if target_fps == 0 {
+            30
+        } else {
+            target_fps.min(30)
+        }
+    } else {
+        target_fps
+    };
+    stream.stream.set_target_fps(target_fps);
     clear_last_error();
     1
 }
@@ -2180,10 +2383,14 @@ pub unsafe extern "C" fn snow_capture_stream_receive(
         .recv_timeout(Duration::from_millis(u64::from(timeout_ms)))
     {
         Ok(CaptureEvent::Frame(frame)) => {
+            let window_geometry = stream_window_geometry(&frame, stream.window_target.as_ref());
             let frame = Box::new(SnowCaptureStreamFrameImpl {
                 frame,
-                origin_x: stream.origin_x,
-                origin_y: stream.origin_y,
+                origin_x: window_geometry
+                    .map_or(stream.origin_x, |geometry| geometry.x.round() as i32),
+                origin_y: window_geometry
+                    .map_or(stream.origin_y, |geometry| geometry.y.round() as i32),
+                window_geometry,
             });
             unsafe {
                 (*out_event).kind = SnowCaptureStreamEventKind::Frame;
@@ -2630,12 +2837,14 @@ pub struct SnowCaptureStreamImpl {
     stream: CaptureStream,
     origin_x: i32,
     origin_y: i32,
+    window_target: Option<(CaptureSystem, CaptureTarget)>,
 }
 
 pub struct SnowCaptureStreamFrameImpl {
     frame: CapturedFrame,
     origin_x: i32,
     origin_y: i32,
+    window_geometry: Option<SnowCaptureWindowGeometry>,
 }
 
 #[cfg(target_os = "macos")]
@@ -2645,6 +2854,162 @@ pub mod macos;
 mod tests {
 
     use super::*;
+
+    fn live_window_config() -> SnowCaptureWindowStreamConfig {
+        SnowCaptureWindowStreamConfig {
+            version: WINDOW_STREAM_CONFIG_VERSION,
+            struct_size: WINDOW_STREAM_CONFIG_SIZE,
+            window_id: 42,
+            target_fps: 30,
+            buffer_depth: 1,
+            max_consecutive_errors: 30,
+            reserved0: 0,
+            capture_retry_count: 1,
+            pixel_format: 0,
+            reserved: [0; 31],
+        }
+    }
+
+    #[test]
+    fn live_window_stream_rejects_invalid_admission_before_native_capture() {
+        let valid = live_window_config();
+        assert!(unsafe { read_window_stream_config(&valid) }.is_ok());
+        assert!(unsafe { read_window_stream_config(ptr::null()) }.is_err());
+        for invalid in [
+            SnowCaptureWindowStreamConfig {
+                version: 2,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                struct_size: WINDOW_STREAM_CONFIG_SIZE - 1,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                window_id: 0,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                target_fps: 0,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                target_fps: 31,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                buffer_depth: 0,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                buffer_depth: 4,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                max_consecutive_errors: 0,
+                ..valid
+            },
+            SnowCaptureWindowStreamConfig {
+                pixel_format: 255,
+                ..valid
+            },
+        ] {
+            assert!(unsafe { snow_capture_stream_create_window(&invalid) }.is_null());
+        }
+    }
+
+    #[test]
+    fn live_window_stream_uses_native_independent_capture_without_color_edits() {
+        let options = window_stream_options(live_window_config()).unwrap();
+        assert_eq!(options.workload, CaptureWorkload::Continuous);
+        assert_eq!(options.live_window_fps, Some(30));
+        assert!(options.excluded_windows.is_empty() && options.excluded_processes.is_empty());
+        assert_eq!(options.output_pixel_format, CapturePixelFormat::Rgba8);
+        assert_eq!(
+            options.backend_tuning.windows_or_default().color_correction,
+            ColorCorrection::Disabled
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            window_stream_backend(),
+            CaptureBackendKind::WindowsGraphicsCapture
+        );
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            window_stream_backend(),
+            CaptureBackendKind::ScreenCaptureKit
+        );
+    }
+
+    #[test]
+    fn live_window_geometry_is_owned_by_frame_and_keeps_fractional_desktop_points() {
+        let geometry = SnowCaptureWindowGeometry {
+            version: WINDOW_GEOMETRY_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureWindowGeometry>() as u32,
+            x: -100.25,
+            y: 50.75,
+            width: 1.0,
+            height: 1.5,
+            pixel_width: 2,
+            pixel_height: 3,
+            generation: 17,
+            units: 1,
+            reserved: [0; 7],
+        };
+        let owned = SnowCaptureStreamFrameImpl {
+            frame: Frame::from_rgba8(2, 3, vec![17; 24]).unwrap().into(),
+            origin_x: -100,
+            origin_y: 51,
+            window_geometry: Some(geometry),
+        };
+        let mut output = std::mem::MaybeUninit::uninit();
+        assert_eq!(
+            unsafe { snow_capture_stream_frame_window_geometry(&owned, output.as_mut_ptr()) },
+            1
+        );
+        let output = unsafe { output.assume_init() };
+        assert_eq!(
+            (output.x, output.y, output.width, output.height),
+            (-100.25, 50.75, 1.0, 1.5)
+        );
+        assert_eq!(
+            (output.pixel_width, output.pixel_height, output.generation),
+            (2, 3, 17)
+        );
+        assert_eq!(output.units, 1);
+        let mut sentinel = geometry;
+        sentinel.version = 99;
+        assert_eq!(
+            unsafe { snow_capture_stream_frame_window_geometry(ptr::null(), &mut sentinel) },
+            0
+        );
+        assert_eq!(sentinel.version, 99);
+        assert_eq!(
+            unsafe { snow_capture_stream_frame_window_geometry(&owned, ptr::null_mut()) },
+            0
+        );
+    }
+
+    #[test]
+    fn live_window_stream_abi_layout() {
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureWindowStreamConfig, window_id),
+            8
+        );
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureWindowStreamConfig, target_fps),
+            8 + std::mem::size_of::<isize>()
+        );
+        assert_eq!(
+            std::mem::size_of::<SnowCaptureWindowStreamConfig>(),
+            56 + 2 * std::mem::size_of::<usize>()
+        );
+        assert_eq!(std::mem::size_of::<SnowCaptureWindowGeometry>(), 64);
+        assert_eq!(std::mem::offset_of!(SnowCaptureWindowGeometry, x), 8);
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureWindowGeometry, generation),
+            48
+        );
+    }
 
     #[test]
     fn crosshair_image_view_exposes_shared_immutable_artwork() {
@@ -3269,6 +3634,7 @@ mod tests {
             frame: frame.into(),
             origin_x: -100,
             origin_y: 50,
+            window_geometry: None,
         };
         let mut output = std::mem::MaybeUninit::<SnowCaptureStreamFrameInfo>::uninit();
         write_stream_frame_info(&owned, output.as_mut_ptr()).unwrap();

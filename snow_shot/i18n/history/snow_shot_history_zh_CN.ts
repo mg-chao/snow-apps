@@ -1172,6 +1172,53 @@ Files:
         </message>
     </context>
     <context>
+        <name>LiveWindowSource</name>
+        <message>
+            <source>Allow Accessibility in System Settings to monitor the live window's state.</source>
+            <translation>请在系统设置中允许辅助功能权限，以监测实时窗口的状态。</translation>
+        </message>
+        <message>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</source>
+            <translation>请在系统设置中允许屏幕与系统音频录制权限，以固定实时窗口。</translation>
+        </message>
+        <message>
+            <source>The live window display could not be initialized.</source>
+            <translation>无法初始化窗口实时显示。</translation>
+        </message>
+        <message>
+            <source>The live window was closed.</source>
+            <translation>实时窗口已关闭。</translation>
+        </message>
+        <message>
+            <source>The selected window is no longer available.</source>
+            <translation>所选窗口已不可用。</translation>
+        </message>
+        <message>
+            <source>The selected window's identity and state could not be verified.</source>
+            <translation>无法验证所选窗口的标识和状态。</translation>
+        </message>
+        <message>
+            <source>The selection does not intersect the selected window.</source>
+            <translation>选区与所选窗口没有交集。</translation>
+        </message>
+        <message>
+            <source>The window content is temporarily unavailable. Retrying…</source>
+            <translation>窗口内容暂不可用，正在重试…</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>窗口已关闭，无法显示最新内容。</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>窗口已最小化，无法显示最新内容。</translation>
+        </message>
+        <message>
+            <source>The window state is temporarily unavailable. Retrying…</source>
+            <translation>窗口状态暂不可用，正在重试…</translation>
+        </message>
+    </context>
+    <context>
         <name>PinnedColorSwatch</name>
         <message>
             <source>Color:</source>
@@ -1623,6 +1670,10 @@ Files:
             <translation>确定关闭此固定到屏幕窗口吗？</translation>
         </message>
         <message>
+            <source>Convert to Image</source>
+            <translation>转换为图片</translation>
+        </message>
+        <message>
             <source>Copy original content</source>
             <translation>复制原始内容</translation>
         </message>
@@ -1715,6 +1766,10 @@ Files:
             <translation>图片编辑</translation>
         </message>
         <message>
+            <source>Image Splitting</source>
+            <translation>图片分割</translation>
+        </message>
+        <message>
             <source>Image file</source>
             <translation>图像文件</translation>
         </message>
@@ -1729,6 +1784,10 @@ Files:
         <message>
             <source>Increase speed</source>
             <translation>提高速度</translation>
+        </message>
+        <message>
+            <source>Live content is unavailable. Retrying...</source>
+            <translation>实时内容暂不可用，正在重试...</translation>
         </message>
         <message>
             <source>Load new content</source>
@@ -1831,8 +1890,16 @@ Files:
             <translation>无法播放动画</translation>
         </message>
         <message>
+            <source>The current window content cannot be captured.</source>
+            <translation>无法捕获窗口的当前内容。</translation>
+        </message>
+        <message>
             <source>The image could not be saved automatically: %1</source>
             <translation>无法自动保存图像：%1</translation>
+        </message>
+        <message>
+            <source>The live window requires a current frame snapshot.</source>
+            <translation>实时窗口需要获取当前帧快照。</translation>
         </message>
         <message>
             <source>The new content could not be loaded</source>
@@ -1853,6 +1920,18 @@ Files:
         <message>
             <source>The pinned image save could not be started</source>
             <translation>无法启动已固定到屏幕的图像的保存</translation>
+        </message>
+        <message>
+            <source>The window changed while preparing the image. Please try again.</source>
+            <translation>准备图片时窗口发生了变化，请重试。</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>窗口已关闭，无法显示最新内容。</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>窗口已最小化，无法显示最新内容。</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>

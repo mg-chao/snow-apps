@@ -50,6 +50,8 @@ Qt::CursorShape resizeCursor(int handle) {
 
 bool ScreenshotPinnedWindow::exportDragEnabledAt(const QPoint& position,
                                                  Qt::KeyboardModifiers modifiers) const {
+    if (isLiveWindow())
+        return false;
     return m_presented && !m_closing && !m_clickThroughActive && !m_geometryAnimating &&
            !m_interactionPlacement && !m_windowDragActive && !m_ocrMode &&
            !(m_hiddenTextSelection && modifiers.testFlag(Qt::AltModifier)) && m_canvas &&

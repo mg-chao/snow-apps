@@ -129,6 +129,9 @@ function(snow_shot_add_translations target)
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/nativeprint.cpp"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/nativeprint.mm"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/nativeairdrop.mm"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/livewindowsource.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/livewindownative.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/livewindownative.mm"
         TS_FILES ${_snow_shot_update_ts}
         LUPDATE_TARGET snow_shot_update_translations
         OPTIONS -no-obsolete -locations none

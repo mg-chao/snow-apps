@@ -582,6 +582,7 @@ class ScreenshotToolPalette final : public QWidget,
     void serialNumberIncrementRequested();
     void serialNumberCreateTextRequested();
     void pinRequested();
+    void pinWindowRequested();
     void cancelRequested();
     void copyRequested();
     void confirmRequested();
@@ -1081,6 +1082,7 @@ class ScreenshotToolPalette final : public QWidget,
     QLabel* m_recordMouseClickIcon = nullptr;
     QLabel* m_recordDurationLabel = nullptr;
     adqt::widgets::AdButton* m_pinButton = nullptr;
+    adqt::widgets::AdButton* m_pinWindowButton = nullptr;
     adqt::widgets::AdButton* m_cancelButton = nullptr;
     adqt::widgets::AdButton* m_copyButton = nullptr;
     adqt::widgets::AdButton* m_confirmButton = nullptr;

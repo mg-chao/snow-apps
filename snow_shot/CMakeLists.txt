@@ -1834,6 +1834,7 @@ snow_shot_register_source_capability(airdrop
     FULL_TARGET snow_shot_airdrop MINI_TARGET snow_shot_airdrop_mini)
 snow_shot_source_requires(airdrop SOURCES
     src/presentation/services/screenshotcontroller.cpp
+    src/presentation/pinned/screenshotpinnedlive.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp)
 target_include_directories(snow_shot_airdrop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_airdrop PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
@@ -1850,6 +1851,7 @@ snow_shot_register_source_capability(print
     FULL_TARGET snow_shot_print MINI_TARGET snow_shot_print_mini)
 snow_shot_source_requires(print SOURCES
     src/presentation/services/screenshotcontroller.cpp
+    src/presentation/pinned/screenshotpinnedlive.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/imageediting/imageeditingexportcontroller.cpp)
 target_include_directories(snow_shot_print PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -1999,6 +2001,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedresizegeometry.cpp
     src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
     src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
+    src/presentation/pinned/screenshotpinnedlive.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
@@ -5163,6 +5166,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
+        src/presentation/pinned/screenshotpinnedlive.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
@@ -10139,6 +10143,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
+        src/presentation/pinned/screenshotpinnedlive.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
@@ -13113,6 +13118,109 @@ if(SNOW_APPS_BUILD_BENCHMARKS)
     set_tests_properties(snow-shot-image-content-detection-performance-benchmark PROPERTIES
         LABELS benchmark TIMEOUT 120
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
+# Window capture is shared by live pin shells and screenshot toolbar entry points.
+add_library(snow_shot_live_window STATIC
+    include/snow_shot/presentation/livewindowsource.h
+    src/presentation/pinned/livewindowsource.cpp
+    src/presentation/pinned/livewindownative_p.h)
+target_include_directories(snow_shot_live_window PUBLIC include PRIVATE src
+    "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+target_link_libraries(snow_shot_live_window PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_capture_c)
+if(WIN32)
+    target_sources(snow_shot_live_window PRIVATE src/platform/windows/livewindownative.cpp)
+    target_link_libraries(snow_shot_live_window PRIVATE dwmapi user32 gdi32 uxtheme)
+elseif(APPLE)
+    target_sources(snow_shot_live_window PRIVATE src/platform/macos/livewindownative.mm)
+    target_link_libraries(snow_shot_live_window PRIVATE "-framework AppKit"
+        "-framework ApplicationServices")
+endif()
+snow_shot_register_source_capability(live_window
+    FULL_TARGET snow_shot_live_window MINI_TARGET snow_shot_live_window)
+snow_shot_source_requires(live_window SOURCES
+    src/presentation/pinned/screenshotpinnedlive.cpp
+    src/presentation/pinned/screenshotpinnedwindow.cpp
+    src/presentation/services/screenshotcontroller.cpp
+    src/presentation/selection/screenshotselectionexportuiservices.cpp)
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-live-window-source-tests
+        tests/live_window_source_tests.cpp
+        include/snow_shot/presentation/livewindowsource.h
+        src/presentation/pinned/livewindowsource.cpp)
+    target_include_directories(snow-shot-live-window-source-tests PRIVATE include
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+    target_link_libraries(snow-shot-live-window-source-tests PRIVATE Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-live-window-source-tests)
+    add_test(NAME snow-shot-live-window-source-tests
+        COMMAND snow-shot-live-window-source-tests -platform offscreen)
+    set_tests_properties(snow-shot-live-window-source-tests PROPERTIES
+        LABELS "unit" TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    if(WIN32)
+        add_executable(snow-shot-live-window-native-tests tests/live_window_native_tests.cpp)
+        target_link_libraries(snow-shot-live-window-native-tests PRIVATE snow_shot_live_window)
+        add_test(NAME snow-shot-live-window-native-tests COMMAND snow-shot-live-window-native-tests)
+        set_tests_properties(snow-shot-live-window-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    elseif(APPLE)
+        add_executable(snow-shot-macos-live-window-native-tests
+            tests/macos_live_window_native_tests.mm)
+        set_target_properties(snow-shot-macos-live-window-native-tests PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "top.snowshot.tests.livewindow"
+            MACOSX_BUNDLE_BUNDLE_NAME "Snow Shot Live Window Tests")
+        target_link_libraries(snow-shot-macos-live-window-native-tests PRIVATE
+            snow_shot_live_window "-framework AppKit" "-framework ApplicationServices")
+        if(SNOW_MACOS_CODESIGN_IDENTITY AND NOT SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "-")
+            add_custom_command(TARGET snow-shot-macos-live-window-native-tests POST_BUILD
+                COMMAND /usr/bin/codesign --force --sign "${SNOW_MACOS_CODESIGN_IDENTITY}"
+                    "$<TARGET_BUNDLE_DIR:snow-shot-macos-live-window-native-tests>"
+                VERBATIM)
+        endif()
+        add_test(NAME snow-shot-macos-live-window-native-tests
+            COMMAND snow-shot-macos-live-window-native-tests -platform cocoa)
+        set_tests_properties(snow-shot-macos-live-window-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 180
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+    endif()
+    add_executable(snow-shot-live-window-geometry-tests tests/live_window_geometry_tests.cpp)
+    target_include_directories(snow-shot-live-window-geometry-tests PRIVATE include)
+    target_link_libraries(snow-shot-live-window-geometry-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-live-window-geometry-tests COMMAND snow-shot-live-window-geometry-tests)
+    set_tests_properties(snow-shot-live-window-geometry-tests PROPERTIES LABELS unit TIMEOUT 30)
+    if(TARGET snow-shot-toolbar-main-panel-tests)
+        add_test(NAME snow-shot-live-window-toolbar-tests
+            COMMAND snow-shot-toolbar-main-panel-tests --live-window-pin-only -platform offscreen)
+        set_tests_properties(snow-shot-live-window-toolbar-tests PROPERTIES LABELS unit TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-live-window-pin-tests
+            COMMAND snow-shot-pinned-window-tests --live-window-pin-only -platform offscreen)
+        set_tests_properties(snow-shot-live-window-pin-tests PROPERTIES LABELS unit TIMEOUT 120
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RESOURCE_LOCK snow-shot-system-clipboard)
+        if(WIN32)
+            add_test(NAME snow-shot-live-window-pin-native-tests
+                COMMAND snow-shot-pinned-window-tests --live-window-native-shell-only
+                    -platform windows)
+            set_tests_properties(snow-shot-live-window-pin-native-tests PROPERTIES
+                LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 120
+                ENVIRONMENT "QT_QPA_PLATFORM=windows" RESOURCE_LOCK snow-shot-system-clipboard)
+        endif()
+    endif()
+endif()
+
+if(WIN32 AND SNOW_APPS_BUILD_BENCHMARKS)
+    add_executable(snow-shot-live-window-performance-benchmark
+        tests/live_window_performance_benchmark.cpp)
+    target_link_libraries(snow-shot-live-window-performance-benchmark PRIVATE snow_shot_live_window)
+    add_test(NAME snow-shot-live-window-performance-benchmark
+        COMMAND snow-shot-live-window-performance-benchmark)
+    set_tests_properties(snow-shot-live-window-performance-benchmark PROPERTIES
+        LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 180
+        ENVIRONMENT "QT_QPA_PLATFORM=windows")
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)

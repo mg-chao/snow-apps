@@ -960,6 +960,10 @@
             <translation>從畫布擷取色彩</translation>
         </message>
         <message>
+            <source>Pin Window to Screen</source>
+            <translation>固定視窗到螢幕</translation>
+        </message>
+        <message>
             <source>Pin to screen</source>
             <translation>固定到螢幕</translation>
         </message>

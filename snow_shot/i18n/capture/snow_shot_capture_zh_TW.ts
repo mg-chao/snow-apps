@@ -74,6 +74,14 @@
             <translation>讀取 Finder 中所選檔案的要求逾時，請再試一次。</translation>
         </message>
         <message>
+            <source>Live window display could not be initialized.</source>
+            <translation>無法初始化視窗即時顯示。</translation>
+        </message>
+        <message>
+            <source>No capturable window was found in the selection.</source>
+            <translation>選取範圍內找不到可擷取的視窗。</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>沒有可複製的辨識結果</translation>
         </message>

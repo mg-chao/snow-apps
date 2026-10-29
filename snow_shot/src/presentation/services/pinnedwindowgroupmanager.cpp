@@ -541,17 +541,25 @@ bool PinnedWindowGroupManager::moveWindows(
             return false;
         seen.insert(window.data());
         targets.append(window);
-        if (!window->persistenceId().isEmpty())
+        if (!window->isLiveWindow() && !window->persistenceId().isEmpty())
             persistenceIds.append(window->persistenceId());
     }
     if (targets.isEmpty())
         return false;
-    if (m_repository != nullptr && !m_repository->setRecordsGroup(persistenceIds, groupId).success)
+    if (m_repository != nullptr && !persistenceIds.isEmpty() &&
+        !m_repository->setRecordsGroup(persistenceIds, groupId).success)
         return false;
 
     for (const auto& window : targets) {
         if (!window)
             continue;
+        if (window->isLiveWindow()) {
+            if (window->groupId() != groupId) {
+                markWindowClosing(window);
+                QMetaObject::invokeMethod(window, "closeLiveWindow", Qt::DirectConnection);
+            }
+            continue;
+        }
         const QVariant previousMutation = window->property(kGroupManagerMutationProperty);
         window->setProperty(kGroupManagerMutationProperty, true);
         static_cast<void>(QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,

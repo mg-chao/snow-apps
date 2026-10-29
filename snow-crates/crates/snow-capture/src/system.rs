@@ -17,6 +17,11 @@ pub struct CaptureOptions {
     pub workload: CaptureWorkload,
     /// Packed 8-bit pixel layout returned by capture sessions.
     pub output_pixel_format: CapturePixelFormat,
+    /// Opt in to persistent, independent window capture at the given producer
+    /// frame rate. This profile retains offscreen/minimized macOS windows; the
+    /// caller owns native source-state observation and recovery. Other capture
+    /// workflows keep their existing snapshot/recording policy when unset.
+    pub live_window_fps: Option<u32>,
     /// Session-scoped macOS ScreenCaptureKit exclusions. Other backends ignore
     /// these filters; display and region targets accept them while independent
     /// window targets reject them.
@@ -41,6 +46,7 @@ impl Default for CaptureOptions {
             capture_retry_count: 1,
             workload: CaptureWorkload::Snapshot,
             output_pixel_format: CapturePixelFormat::Rgba8,
+            live_window_fps: None,
             excluded_windows: Arc::from(Vec::<u32>::new()),
             excluded_processes: Arc::from(Vec::<i32>::new()),
             #[cfg(feature = "stage-timing")]

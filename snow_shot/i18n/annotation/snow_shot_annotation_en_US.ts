@@ -960,6 +960,10 @@
             <translation>Pick color from canvas</translation>
         </message>
         <message>
+            <source>Pin Window to Screen</source>
+            <translation>Pin Window to Screen</translation>
+        </message>
+        <message>
             <source>Pin to screen</source>
             <translation>Pin to screen</translation>
         </message>

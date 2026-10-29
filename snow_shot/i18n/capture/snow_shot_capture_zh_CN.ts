@@ -74,6 +74,14 @@
             <translation>读取访达中选中文件的请求超时，请重试。</translation>
         </message>
         <message>
+            <source>Live window display could not be initialized.</source>
+            <translation>无法初始化窗口实时显示。</translation>
+        </message>
+        <message>
+            <source>No capturable window was found in the selection.</source>
+            <translation>选区内未找到可捕获的窗口。</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>没有可复制的识别结果</translation>
         </message>

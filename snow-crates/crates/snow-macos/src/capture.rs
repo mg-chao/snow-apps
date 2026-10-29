@@ -43,6 +43,9 @@ pub struct CaptureConfig {
     pub dynamic_range: DynamicRange,
     pub cursor: CursorMode,
     pub frames_per_second: u32,
+    /// Retain independent-window capture while its source is offscreen or
+    /// minimized. Source-state interpretation belongs to the window owner.
+    pub persistent_window: bool,
     pub excluded_windows: Vec<u32>,
     pub excluded_processes: Vec<i32>,
     pub timeout: Duration,
@@ -57,6 +60,7 @@ impl CaptureConfig {
             dynamic_range: DynamicRange::Sdr,
             cursor: CursorMode::Embedded,
             frames_per_second: 60,
+            persistent_window: false,
             excluded_windows: Vec::new(),
             excluded_processes: Vec::new(),
             timeout: Duration::from_secs(5),
@@ -68,6 +72,7 @@ pub struct NativeFrame {
     pub image: PixelBuffer,
     pub timestamp: MediaTime,
     pub acquired_at: Instant,
+    pub(crate) point_pixel_scale: Option<f64>,
     observation_generation: u64,
 }
 
@@ -78,6 +83,7 @@ impl NativeFrame {
             image,
             timestamp,
             acquired_at: Instant::now(),
+            point_pixel_scale: None,
             observation_generation: 0,
         }
     }
@@ -104,6 +110,7 @@ fn sample_frame(sample: &CMSampleBuffer, color: ColorDescription) -> MacResult<N
             .map_err(|e| MacError::Unsupported(e.to_string()))?;
         Ok(NativeFrame {
             observation_generation: 0,
+            point_pixel_scale: frame_point_pixel_scale(sample),
             image,
             timestamp: MediaTime {
                 value: time.value,
@@ -217,7 +224,7 @@ pub(crate) fn prepare_with(
                 let window = content
                     .windows()
                     .iter()
-                    .find(|v| v.windowID() == id && v.isOnScreen())
+                    .find(|v| v.windowID() == id && (options.persistent_window || v.isOnScreen()))
                     .ok_or(MacError::TargetUnavailable)?;
                 SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &window)
             }
@@ -259,7 +266,9 @@ pub(crate) fn prepare_with(
         config.setShowsCursor(options.cursor == CursorMode::Embedded);
         config.setShowMouseClicks(false);
         config.setIgnoreShadowsSingleWindow(true);
-        config.setScalesToFit(true);
+        // Live pins track a fixed region in source coordinates. Fitting a
+        // resized source into the previous output would distort that region.
+        config.setScalesToFit(!options.persistent_window);
         config.setMinimumFrameInterval(CMTime {
             value: 1,
             timescale: options.frames_per_second as i32,
@@ -424,6 +433,23 @@ fn frame_status(sample: &CMSampleBuffer) -> Option<SCFrameStatus> {
             .objectForKey(SCStreamFrameInfoStatus)
             .and_then(|value| value.downcast::<NSNumber>().ok())
             .map(|status| SCFrameStatus(status.integerValue()))
+    }
+}
+
+fn frame_point_pixel_scale(sample: &CMSampleBuffer) -> Option<f64> {
+    unsafe {
+        let attachments = sample.sample_attachments_array(false)?;
+        let array = &*(CFRetained::as_ptr(&attachments).as_ptr()
+            as *const NSArray<NSDictionary<NSString, AnyObject>>);
+        if array.is_empty() {
+            return None;
+        }
+        array
+            .objectAtIndex(0)
+            .objectForKey(SCStreamFrameInfoScaleFactor)
+            .and_then(|value| value.downcast::<NSNumber>().ok())
+            .map(|scale| scale.doubleValue())
+            .filter(|scale| scale.is_finite() && *scale > 0.0)
     }
 }
 
@@ -599,6 +625,28 @@ impl VideoStream {
             });
         }
         self.update_configuration()
+    }
+    pub(crate) fn set_output_size(&mut self, size: PixelSize) -> MacResult<()> {
+        if !snow_core::raster_admission::allows(size.width, size.height) {
+            return Err(MacError::InvalidConfig("raster admission rejected".into()));
+        }
+        let state = self.output.ivars();
+        state.observation_generation.fetch_add(1, Ordering::AcqRel);
+        while state.discard.try_recv().is_ok() {}
+        while self.frames.try_recv().is_ok() {}
+        unsafe {
+            self.config.setWidth(size.width as usize);
+            self.config.setHeight(size.height as usize);
+        }
+        self.update_configuration()?;
+        // No frame queued during the native mutation may escape with the
+        // replacement geometry. Dimension checking also rejects late callbacks.
+        self.output
+            .ivars()
+            .observation_generation
+            .fetch_add(1, Ordering::AcqRel);
+        while self.frames.try_recv().is_ok() {}
+        Ok(())
     }
     fn update_configuration(&mut self) -> MacResult<()> {
         let (tx, rx) = crossbeam_channel::bounded(1);

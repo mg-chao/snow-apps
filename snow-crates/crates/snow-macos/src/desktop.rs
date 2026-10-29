@@ -134,6 +134,8 @@ pub struct DesktopConfig {
     pub excluded_windows: Vec<u32>,
     pub excluded_processes: Vec<i32>,
     pub opaque: bool,
+    /// Live-window policy; snapshot and recording callers keep the default.
+    pub persistent_window: bool,
 }
 impl DesktopConfig {
     pub fn new(target: DesktopTarget) -> Self {
@@ -148,6 +150,7 @@ impl DesktopConfig {
             excluded_windows: Vec::new(),
             excluded_processes: Vec::new(),
             opaque: false,
+            persistent_window: false,
         }
     }
     fn validate(&self, support: crate::capabilities::CaptureSupport) -> MacResult<()> {
@@ -156,6 +159,13 @@ impl DesktopConfig {
         }
         if self.excluded_windows.len() > 4096 || self.excluded_processes.len() > 4096 {
             return Err(geometry("capture exclusions exceed 4096 entries"));
+        }
+        if self.persistent_window
+            && (!matches!(self.target, DesktopTarget::Window(_)) || self.output.is_some())
+        {
+            return Err(geometry(
+                "persistent window capture requires a window at native output size",
+            ));
         }
         support.native_format(self.dynamic_range)?;
         if !support.metal_composition {
@@ -274,13 +284,43 @@ fn region_plan(
     }
     Ok(Plan { transform, sources })
 }
+
+fn persistent_window_plan(
+    previous: &Plan,
+    probe: WindowProbe,
+    point_pixel_scale: Option<f64>,
+) -> MacResult<Plan> {
+    if previous.sources.len() != 1 || previous.sources[0].process_id != Some(probe.process_id) {
+        return Err(MacError::TargetUnavailable);
+    }
+    let bounds = DesktopRect {
+        space: DesktopSpace::Points,
+        x: probe.x,
+        y: probe.y,
+        width: probe.width,
+        height: probe.height,
+    };
+    // WindowServer geometry remains meaningful when a window is offscreen.
+    // Visibility is deliberately not interpreted as minimization here.
+    bounds.validate().map_err(|_| MacError::Inactive)?;
+    let scale = point_pixel_scale.unwrap_or_else(|| {
+        (f64::from(previous.transform.output.width) / previous.transform.source.width)
+            .max(f64::from(previous.transform.output.height) / previous.transform.source.height)
+    });
+    let output = bounds.pixels_at_scale(scale).map_err(geometry)?;
+    let mut plan = previous.clone();
+    plan.transform = DesktopTransform::new(bounds, output).map_err(geometry)?;
+    plan.sources[0].destination.width = output.width;
+    plan.sources[0].destination.height = output.height;
+    Ok(plan)
+}
 impl Plan {
     fn resolve(config: &DesktopConfig) -> MacResult<Self> {
         let deadline = crate::deadline::Deadline::new(config.timeout)?;
         let content = content::shareable_content_cancelable_filtered(
             deadline.remaining()?,
             &config.cancellation,
-            true,
+            !config.persistent_window,
         )?;
         Self::resolve_with(config, &content)
     }
@@ -296,7 +336,7 @@ impl Plan {
         let (target, process_id, bounds, size) = match config.target {
             DesktopTarget::Window(WindowId(id)) => {
                 let window = content::window_from(content, id)?;
-                if !window.on_screen {
+                if !window.on_screen && !config.persistent_window {
                     return Err(MacError::TargetUnavailable);
                 }
                 let size = window.pixels.ok_or(MacError::TargetUnavailable)?;
@@ -352,6 +392,7 @@ impl Plan {
             dynamic_range: config.dynamic_range,
             cursor: config.cursor,
             frames_per_second: config.fps,
+            persistent_window: config.persistent_window,
             excluded_windows: config.excluded_windows.clone(),
             excluded_processes: config.excluded_processes.clone(),
             timeout: config.timeout,
@@ -601,7 +642,47 @@ impl DesktopSession {
         }
         Ok(())
     }
+    fn refresh_persistent_window(&mut self) -> MacResult<()> {
+        if self.inspected_at.elapsed() < Duration::from_secs_f64(1.0 / f64::from(self.config.fps)) {
+            return Ok(());
+        }
+        let DesktopTarget::Window(WindowId(id)) = self.config.target else {
+            return Err(geometry("persistent capture requires a window"));
+        };
+        let probe = content::probe_window(id).ok_or(MacError::TargetUnavailable)?;
+        let scale = self
+            .latest
+            .first()
+            .and_then(|frame| frame.as_ref())
+            .and_then(|frame| frame.point_pixel_scale);
+        let next = persistent_window_plan(&self.plan, probe, scale)?;
+        if next != self.plan {
+            if next.transform.output != self.plan.transform.output {
+                for stream in &mut self.streams {
+                    stream.set_output_size(next.transform.output)?;
+                }
+                self.latest.fill(None);
+            }
+            self.compositor = None;
+            self.plan = next;
+            self.previous = None;
+            self.generation = self
+                .generation
+                .checked_add(1)
+                .ok_or_else(|| geometry("configuration generation overflow"))?;
+            self.configuration_pending = true;
+        }
+        self.window_probe = Some(probe);
+        self.inspected_at = Instant::now();
+        self.topology = topology()?;
+        Ok(())
+    }
     fn refresh(&mut self) -> MacResult<()> {
+        if self.config.persistent_window {
+            // Native per-window geometry plus frame backing-scale metadata
+            // avoids enumerating every desktop window on each resize frame.
+            return self.refresh_persistent_window();
+        }
         // An acknowledgment must describe the currently active streams. Do
         // not replace them while a native filter mutation is still in flight.
         if matches!(
@@ -731,6 +812,13 @@ impl DesktopSession {
             for (index, stream) in self.streams.iter().enumerate() {
                 match stream.next_frame(Duration::ZERO) {
                     Ok(frame) => {
+                        if self.config.persistent_window
+                            && frame.image.size() != self.plan.transform.output
+                        {
+                            // A callback from before a native size update is
+                            // not a frame in the new source coordinate system.
+                            continue;
+                        }
                         if self.latest[index]
                             .as_ref()
                             .is_none_or(|f| f.timestamp != frame.timestamp)
@@ -945,6 +1033,131 @@ pub fn inspect(config: &DesktopConfig) -> MacResult<DesktopTransform> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn live_window_plan() -> Plan {
+        let bounds = DesktopRect {
+            space: DesktopSpace::Points,
+            x: 10.25,
+            y: 20.5,
+            width: 100.0,
+            height: 80.0,
+        };
+        let output = bounds.pixels_at_scale(2.0).unwrap();
+        Plan {
+            transform: DesktopTransform::new(bounds, output).unwrap(),
+            sources: vec![SourcePlan {
+                target: Target::Window(42),
+                process_id: Some(7),
+                source: None,
+                destination: PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: output.width,
+                    height: output.height,
+                },
+            }],
+        }
+    }
+    fn live_window_probe() -> WindowProbe {
+        WindowProbe {
+            process_id: 7,
+            on_screen: true,
+            x: 10.25,
+            y: 20.5,
+            width: 100.0,
+            height: 80.0,
+        }
+    }
+    #[test]
+    fn live_window_motion_and_offscreen_state_keep_the_independent_source() {
+        let original = live_window_plan();
+        let moved = persistent_window_plan(
+            &original,
+            WindowProbe {
+                x: -1000.5,
+                y: 350.25,
+                on_screen: false,
+                ..live_window_probe()
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(moved.sources, original.sources);
+        assert_eq!(moved.transform.output, original.transform.output);
+        assert_eq!(
+            (moved.transform.source.x, moved.transform.source.y),
+            (-1000.5, 350.25)
+        );
+    }
+    #[test]
+    fn live_window_resize_and_frame_scale_use_native_pixel_dimensions() {
+        let original = live_window_plan();
+        let shrunk = persistent_window_plan(
+            &original,
+            WindowProbe {
+                width: 30.0,
+                height: 20.0,
+                ..live_window_probe()
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            shrunk.transform.output,
+            PixelSize {
+                width: 60,
+                height: 40
+            }
+        );
+        assert_eq!(
+            (
+                shrunk.transform.source.width,
+                shrunk.transform.source.height
+            ),
+            (30.0, 20.0)
+        );
+        let regrown = persistent_window_plan(&shrunk, live_window_probe(), Some(1.0)).unwrap();
+        assert_eq!(
+            regrown.transform.output,
+            PixelSize {
+                width: 100,
+                height: 80
+            }
+        );
+        assert_eq!(regrown.sources[0].target, original.sources[0].target);
+        assert!(matches!(
+            persistent_window_plan(
+                &original,
+                WindowProbe {
+                    process_id: 8,
+                    ..live_window_probe()
+                },
+                None
+            ),
+            Err(MacError::TargetUnavailable)
+        ));
+    }
+    #[test]
+    fn live_window_profile_requires_native_output_and_does_not_change_defaults() {
+        let support = crate::capabilities::CaptureSupport {
+            screen_capture_kit: true,
+            metal_composition: true,
+            hdr_capture: false,
+        };
+        let mut config = DesktopConfig::new(DesktopTarget::Window(WindowId(42)));
+        assert!(!config.persistent_window);
+        config.persistent_window = true;
+        config.validate(support).unwrap();
+        let plan = live_window_plan();
+        assert!(plan.capture_config(&config, 0).persistent_window);
+        config.output = Some(PixelSize {
+            width: 20,
+            height: 20,
+        });
+        assert!(config.validate(support).is_err());
+        config.output = None;
+        config.target = DesktopTarget::PrimaryDisplay;
+        assert!(config.validate(support).is_err());
+    }
     fn display(id: u32, x: f64, width: f64, scale: f64) -> DisplayInfo {
         let bounds = DesktopRect {
             space: DesktopSpace::Points,

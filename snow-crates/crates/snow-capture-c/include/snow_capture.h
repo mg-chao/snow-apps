@@ -242,6 +242,44 @@ typedef struct SnowCaptureStreamConfig {
     SnowCaptureExclusions exclusions;
 } SnowCaptureStreamConfig;
 
+#define SNOW_CAPTURE_WINDOW_STREAM_CONFIG_VERSION 1u
+
+/* Independent native window stream. Windows always uses WGC; macOS uses
+ * ScreenCaptureKit's persistent window profile. Cursor capture is disabled.
+ * target_fps is 1..30 and buffer_depth is 1..3. */
+typedef struct SnowCaptureWindowStreamConfig {
+    uint32_t version;
+    uint32_t struct_size;
+    intptr_t window_id;
+    uint32_t target_fps;
+    uint32_t buffer_depth;
+    uint32_t max_consecutive_errors;
+    uint32_t reserved0;
+    size_t capture_retry_count;
+    uint8_t pixel_format;
+    uint8_t reserved[31];
+} SnowCaptureWindowStreamConfig;
+
+#define SNOW_CAPTURE_WINDOW_GEOMETRY_VERSION 1u
+#define SNOW_CAPTURE_WINDOW_GEOMETRY_PHYSICAL_PIXELS 0u
+#define SNOW_CAPTURE_WINDOW_GEOMETRY_DESKTOP_POINTS 1u
+
+/* Geometry belongs to the retained frame, not to a later window query.
+ * The desktop bounds are in units; pixel dimensions describe the frame raster. */
+typedef struct SnowCaptureWindowGeometry {
+    uint32_t version;
+    uint32_t struct_size;
+    double x;
+    double y;
+    double width;
+    double height;
+    uint32_t pixel_width;
+    uint32_t pixel_height;
+    uint64_t generation;
+    uint8_t units;
+    uint8_t reserved[7];
+} SnowCaptureWindowGeometry;
+
 typedef struct SnowCaptureStreamEvent {
     SnowCaptureStreamEventKind kind;
     SnowCaptureStreamFrame* frame;
@@ -420,6 +458,9 @@ uint8_t snow_capture_region_session_capture(SnowCaptureRegionSession* session,
 /* Starts a continuous region stream. Frames are delivered as explicit leases;
  * a frame event must be released with snow_capture_stream_frame_release(). */
 SnowCaptureStream* snow_capture_stream_create_region(const SnowCaptureStreamConfig* config);
+SnowCaptureStream* snow_capture_stream_create_window(const SnowCaptureWindowStreamConfig* config);
+uint8_t snow_capture_stream_frame_window_geometry(const SnowCaptureStreamFrame* frame,
+                                                  SnowCaptureWindowGeometry* out_geometry);
 void snow_capture_stream_destroy(SnowCaptureStream* stream);
 uint8_t snow_capture_stream_stop(SnowCaptureStream* stream);
 uint8_t snow_capture_stream_set_target_fps(SnowCaptureStream* stream, uint32_t target_fps);

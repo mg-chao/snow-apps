@@ -7,6 +7,13 @@
 
 namespace snow_shot::app {
 [[nodiscard]] inline bool editionActionToolAvailable(const QString& id) {
+    if (id == QStringLiteral("pin-window-to-screen")) {
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        return true;
+#else
+        return false;
+#endif
+    }
     if (id == QStringLiteral("airdrop")) {
 #ifdef Q_OS_MACOS
         return true;

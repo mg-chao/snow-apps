@@ -100,10 +100,10 @@ void PinnedWindowSelectionController::unregisterWindow(ScreenshotPinnedWindow* w
 }
 
 bool PinnedWindowSelectionController::isSelectable(const ScreenshotPinnedWindow* window) const {
-    return window && m_windowIndex.contains(window) && window->m_presented &&
-           window->m_firstContentFramePublished && !window->m_closing && window->isVisible() &&
-           !window->isMinimized() && !window->m_thumbnailMode && !window->hideToTopActive() &&
-           !window->m_clickThroughActive &&
+    return window && !window->isLiveWindow() && m_windowIndex.contains(window) &&
+           window->m_presented && window->m_firstContentFramePublished && !window->m_closing &&
+           window->isVisible() && !window->isMinimized() && !window->m_thumbnailMode &&
+           !window->hideToTopActive() && !window->m_clickThroughActive &&
            (!window->m_groupManager ||
             window->groupId() == window->m_groupManager->activeGroupId());
 }

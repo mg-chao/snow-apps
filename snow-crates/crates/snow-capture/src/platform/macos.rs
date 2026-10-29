@@ -176,6 +176,16 @@ fn native_config(target: &CaptureTarget, options: &CaptureOptions) -> CaptureRes
     });
     config.excluded_windows = options.excluded_windows.iter().copied().collect();
     config.excluded_processes = options.excluded_processes.iter().copied().collect();
+    if let Some(fps) = options.live_window_fps {
+        if !matches!(target, CaptureTarget::Window(_)) || !(1..=30).contains(&fps) {
+            return Err(CaptureError::InvalidConfig(
+                "live window capture requires a window and a frame rate of 1..=30".into(),
+            ));
+        }
+        config.persistent_window = true;
+        config.fps = fps;
+        config.cursor = CursorMode::Hidden;
+    }
     config.excluded_windows.sort_unstable();
     config.excluded_windows.dedup();
     config.excluded_processes.sort_unstable();
@@ -220,13 +230,29 @@ impl MacCapturer {
     }
 }
 impl MonitorCapturer for MacCapturer {
+    fn retained_target_info(&self) -> Option<CaptureTargetInfo> {
+        self.options.live_window_fps.map(|_| {
+            let transform = self.session.transform();
+            CaptureTargetInfo {
+                origin_x: transform.source.x.round() as i32,
+                origin_y: transform.source.y.round() as i32,
+                width: transform.output.width,
+                height: transform.output.height,
+            }
+        })
+    }
     fn set_cancellation(&mut self, token: snow_core::cancellation::CancellationToken) {
         self.session.set_cancellation(token);
     }
     fn set_target_fps(&mut self, fps: u32) -> CaptureResult<()> {
         // ScreenCaptureKit accepts 1..=240; an uncapped stream uses that ceiling.
+        let maximum = if self.options.live_window_fps.is_some() {
+            30
+        } else {
+            240
+        };
         self.session
-            .set_fps(if fps == 0 { 240 } else { fps.min(240) })
+            .set_fps(if fps == 0 { maximum } else { fps.min(maximum) })
             .map_err(map_error)
     }
     fn set_cursor_visible(&mut self, visible: bool) -> CaptureResult<()> {
@@ -253,10 +279,12 @@ impl MonitorCapturer for MacCapturer {
                     DesktopEvent::Configuration { transform, .. } => {
                         if self.transform != transform {
                             self.transform = transform;
-                            return Err(CaptureError::ResolutionChanged(
-                                transform.output.width,
-                                transform.output.height,
-                            ));
+                            if self.options.live_window_fps.is_none() {
+                                return Err(CaptureError::ResolutionChanged(
+                                    transform.output.width,
+                                    transform.output.height,
+                                ));
+                            }
                         }
                     }
                 }
@@ -378,6 +406,35 @@ fn copy_cpu_pixels(cpu: &snow_media::CpuFrame, frame: &mut Frame) -> CaptureResu
 #[cfg(test)]
 mod tuning_tests {
     use super::*;
+    #[test]
+    fn live_window_native_config_is_opt_in_and_retains_native_dimensions() {
+        let target = CaptureTarget::Window(WindowId::from_macos_id(42));
+        let ordinary = native_config(&target, &CaptureOptions::default()).unwrap();
+        assert!(!ordinary.persistent_window);
+        let config = native_config(
+            &target,
+            &CaptureOptions {
+                workload: CaptureWorkload::Continuous,
+                live_window_fps: Some(30),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(config.persistent_window);
+        assert_eq!(config.fps, 30);
+        assert_eq!(config.cursor, CursorMode::Hidden);
+        assert!(config.output.is_none());
+        assert!(
+            native_config(
+                &CaptureTarget::PrimaryMonitor,
+                &CaptureOptions {
+                    live_window_fps: Some(30),
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn cached_output_remains_a_valid_source_after_overwrite_detachment() {
         let mut frame = Frame::from_bgra8(2, 2, (1..=16).collect()).unwrap();

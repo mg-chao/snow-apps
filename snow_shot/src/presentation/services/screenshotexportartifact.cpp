@@ -131,11 +131,15 @@ ScreenshotExportSource::fromImageLoader(ImageLoader loader,
     return source;
 }
 
-ScreenshotExportSource ScreenshotExportSource::fromProducer(ImageProducer producer,
-                                                            RowSourceFactory rowSourceFactory) {
+ScreenshotExportSource
+ScreenshotExportSource::fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory,
+                                     std::optional<ScreenshotClipboardPlacement> placement,
+                                     std::optional<ScreenshotClipboardAppearance> appearance) {
     ScreenshotExportSource source;
     source.m_imageProducer = std::move(producer);
     source.m_rowSourceFactory = std::move(rowSourceFactory);
+    source.m_clipboardPlacement = std::move(placement);
+    source.m_clipboardAppearance = std::move(appearance);
     return source;
 }
 

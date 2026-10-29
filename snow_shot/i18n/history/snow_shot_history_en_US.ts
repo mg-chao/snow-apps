@@ -1172,6 +1172,53 @@ Files:
         </message>
     </context>
     <context>
+        <name>LiveWindowSource</name>
+        <message>
+            <source>Allow Accessibility in System Settings to monitor the live window's state.</source>
+            <translation>Allow Accessibility in System Settings to monitor the live window's state.</translation>
+        </message>
+        <message>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</source>
+            <translation>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</translation>
+        </message>
+        <message>
+            <source>The live window display could not be initialized.</source>
+            <translation>The live window display could not be initialized.</translation>
+        </message>
+        <message>
+            <source>The live window was closed.</source>
+            <translation>The live window was closed.</translation>
+        </message>
+        <message>
+            <source>The selected window is no longer available.</source>
+            <translation>The selected window is no longer available.</translation>
+        </message>
+        <message>
+            <source>The selected window's identity and state could not be verified.</source>
+            <translation>The selected window's identity and state could not be verified.</translation>
+        </message>
+        <message>
+            <source>The selection does not intersect the selected window.</source>
+            <translation>The selection does not intersect the selected window.</translation>
+        </message>
+        <message>
+            <source>The window content is temporarily unavailable. Retrying…</source>
+            <translation>The window content is temporarily unavailable. Retrying…</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>The window is closed. The latest content cannot be displayed.</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>The window is minimized. The latest content cannot be displayed.</translation>
+        </message>
+        <message>
+            <source>The window state is temporarily unavailable. Retrying…</source>
+            <translation>The window state is temporarily unavailable. Retrying…</translation>
+        </message>
+    </context>
+    <context>
         <name>PinnedColorSwatch</name>
         <message>
             <source>Color:</source>
@@ -1629,6 +1676,10 @@ Files:
             <translation>Close this pinned window?</translation>
         </message>
         <message>
+            <source>Convert to Image</source>
+            <translation>Convert to Image</translation>
+        </message>
+        <message>
             <source>Copy original content</source>
             <translation>Copy original content</translation>
         </message>
@@ -1721,6 +1772,10 @@ Files:
             <translation>Image Editing</translation>
         </message>
         <message>
+            <source>Image Splitting</source>
+            <translation>Image Splitting</translation>
+        </message>
+        <message>
             <source>Image file</source>
             <translation>Image file</translation>
         </message>
@@ -1735,6 +1790,10 @@ Files:
         <message>
             <source>Increase speed</source>
             <translation>Increase speed</translation>
+        </message>
+        <message>
+            <source>Live content is unavailable. Retrying...</source>
+            <translation>Live content is unavailable. Retrying...</translation>
         </message>
         <message>
             <source>Load new content</source>
@@ -1837,8 +1896,16 @@ Files:
             <translation>The animation could not be played</translation>
         </message>
         <message>
+            <source>The current window content cannot be captured.</source>
+            <translation>The current window content cannot be captured.</translation>
+        </message>
+        <message>
             <source>The image could not be saved automatically: %1</source>
             <translation>The image could not be saved automatically: %1</translation>
+        </message>
+        <message>
+            <source>The live window requires a current frame snapshot.</source>
+            <translation>The live window requires a current frame snapshot.</translation>
         </message>
         <message>
             <source>The new content could not be loaded</source>
@@ -1859,6 +1926,18 @@ Files:
         <message>
             <source>The pinned image save could not be started</source>
             <translation>The pinned image save could not be started</translation>
+        </message>
+        <message>
+            <source>The window changed while preparing the image. Please try again.</source>
+            <translation>The window changed while preparing the image. Please try again.</translation>
+        </message>
+        <message>
+            <source>The window is closed. The latest content cannot be displayed.</source>
+            <translation>The window is closed. The latest content cannot be displayed.</translation>
+        </message>
+        <message>
+            <source>The window is minimized. The latest content cannot be displayed.</source>
+            <translation>The window is minimized. The latest content cannot be displayed.</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>

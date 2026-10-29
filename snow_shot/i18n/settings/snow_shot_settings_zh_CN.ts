@@ -1042,6 +1042,10 @@
             <translation>没有隐藏的工具</translation>
         </message>
         <message>
+            <source>Pin Window to Screen</source>
+            <translation>固定窗口到屏幕</translation>
+        </message>
+        <message>
             <source>Pin to screen</source>
             <translation>固定到屏幕</translation>
         </message>

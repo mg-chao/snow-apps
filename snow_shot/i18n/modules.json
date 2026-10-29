@@ -137,6 +137,7 @@
     "PinnedColorSwatch",
     "PinnedWindowManagementPageWidget",
     "ScreenshotHistoryPageWidget",
+    "LiveWindowSource",
     "ScreenshotPinnedWindow",
     "WindowGroupSwitcher",
     "snow_shot::presentation::ImageEditingWindow",

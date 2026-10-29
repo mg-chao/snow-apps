@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportnaming.h"
+#include "snow_shot/presentation/screenshotlivewindowrequest.h"
 #include "snow_shot/platform/windows/monitorgeometry.h"
 #include "snow_shot/presentation/historypinplacement.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -124,6 +125,109 @@ void exportWindowLookupUsesSelectionCenter() {
             "restored history must never query the current desktop");
     displays.clear();
     require(names == expected, "export metadata must survive capture teardown");
+}
+
+void liveWindowTargetingUsesCenterThenClockwiseCorners() {
+    using snow_shot::presentation::LiveWindowTarget;
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel display;
+    display.active = true;
+    display.geometryResolved = true;
+    display.physicalRect = QRect(-1600, -100, 1600, 1000);
+    display.logicalRect = QRect(-1280, -80, 1280, 800);
+    display.logicalToPhysicalScale = 1.25;
+    displays.appendDisplay(display);
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    const QVector<quintptr> excluded{12, 34, 56};
+    const QRect selection(10, 20, 70, 50);
+    const QVector<QPoint> expected{QPoint(-1555, -55), QPoint(-1590, -80), QPoint(-1521, -80),
+                                   QPoint(-1521, -31), QPoint(-1590, -31)};
+    for (int hitIndex = 0; hitIndex < expected.size(); ++hitIndex) {
+        QVector<QPoint> probes;
+        const auto request = screenshotLiveWindowRequest(
+            selection, displays, geometry, excluded,
+            [&](const QPoint& point,
+                const QVector<quintptr>& ids) -> std::optional<LiveWindowTarget> {
+                require(ids == excluded, "every native probe receives the exact helper exclusions");
+                probes.push_back(point);
+                if (probes.size() - 1 != hitIndex)
+                    return std::nullopt;
+                return LiveWindowTarget{quintptr(100 + hitIndex), 1, {}, point};
+            });
+        require(request && request->target.nativeId == quintptr(100 + hitIndex) &&
+                    request->nativeSelection == QRect(-1590, -80, 70, 50) &&
+                    probes == expected.mid(0, hitIndex + 1),
+                "center has priority; only failed points advance through clockwise corners");
+    }
+    int failed = 0;
+    require(!screenshotLiveWindowRequest(selection, displays, geometry, excluded,
+                                         [&](const QPoint&, const QVector<quintptr>&) {
+                                             ++failed;
+                                             return std::optional(LiveWindowTarget{});
+                                         }) &&
+                failed == 5,
+            "zero native identities are invalid and every failed probe leaves no request");
+    ScreenshotSelectionModel model;
+    model.setSelectionRegion(
+        ScreenshotRegionGeometry(QRegion(QRect(10, 20, 10, 10)).united(QRect(70, 60, 10, 10))));
+    const auto originalRegion = model.selectionRegion();
+    const auto request =
+        screenshotLiveWindowRequest(model.pixelSelection(), displays, geometry, excluded,
+                                    [](const QPoint& point, const QVector<quintptr>&) {
+                                        return std::optional(LiveWindowTarget{100, 1, {}, point});
+                                    });
+    require(request && request->nativeSelection == QRect(-1590, -80, 70, 50) &&
+                request->target.hitPoint == expected.first() &&
+                model.selectionRegion() == originalRegion,
+            "nonrectangular selections target their entire bounding rectangle without editing it");
+    displays.setImageSources({display});
+    require(!screenshotLiveWindowRequest(
+                selection, displays, geometry, excluded,
+                [](const QPoint&, const QVector<quintptr>&) {
+                    require(false, "restored screenshot sources must not query current windows");
+                    return std::optional<LiveWindowTarget>();
+                }),
+            "history image sources cannot accidentally pin current desktop content");
+}
+
+void liveWindowTargetingPreservesDesktopPointsAndDisplayGaps() {
+    using snow_shot::presentation::LiveWindowTarget;
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel left;
+    left.active = true;
+    left.geometryResolved = true;
+    left.canvasUsesPoints = true;
+    left.physicalRect = QRect(-1200, -200, 2400, 1600);
+    left.logicalRect = QRect(-1200, -200, 1200, 800);
+    left.backingScale = 2;
+    displays.appendDisplay(left);
+    CapturedDisplayModel right = left;
+    right.physicalRect = QRect(300, 100, 1000, 800);
+    right.logicalRect = right.physicalRect;
+    right.backingScale = 1;
+    displays.appendDisplay(right);
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    QVector<QPoint> probes;
+    const auto lookup = [&](const QPoint& point, const QVector<quintptr>&) {
+        probes.push_back(point);
+        return std::optional(LiveWindowTarget{100, 1, {}, point});
+    };
+    const auto request =
+        screenshotLiveWindowRequest(QRect(100, 100, 200, 100), displays, geometry, {}, lookup);
+    require(request && request->target.hitPoint == QPoint(-1000, -50) &&
+                request->nativeSelection == QRect(-1100, -100, 200, 100) && probes.size() == 1,
+            "Retina backing pixels must not alter native desktop-point selections or hit points");
+    probes.clear();
+    const auto gap =
+        screenshotLiveWindowRequest(QRect(1250, 350, 100, 100), displays, geometry, {}, lookup);
+    require(!gap && probes.isEmpty(), "display gaps must never probe a nearest display");
+    const auto spanning =
+        screenshotLiveWindowRequest(QRect(1150, 350, 400, 100), displays, geometry, {}, lookup);
+    require(spanning && probes.size() == 1 && probes.first() == QPoint(-50, 150) &&
+                spanning->nativeSelection == QRect(-50, 150, 400, 100),
+            "a gap center falls back to a real corner while preserving the entire selection");
 }
 
 void requireAspectRatio(const QRectF& selection, const char* message) {
@@ -1851,6 +1955,8 @@ void displayOwnerPreservesProbePriority() {
 
 int main() {
     exportWindowLookupUsesSelectionCenter();
+    liveWindowTargetingUsesCenterThenClockwiseCorners();
+    liveWindowTargetingPreservesDesktopPointsAndDisplayGaps();
     selectionRevisionTracksGeometryEffectsAndNoOpRestoration();
     selectionRevisionTracksRegionsAndIgnoresPresentationCaches();
     selectionRevisionAssignmentsRemainOwnedByTheDestination();

@@ -74,6 +74,14 @@
             <translation>Finder took too long to return the selected files. Please try again.</translation>
         </message>
         <message>
+            <source>Live window display could not be initialized.</source>
+            <translation>Live window display could not be initialized.</translation>
+        </message>
+        <message>
+            <source>No capturable window was found in the selection.</source>
+            <translation>No capturable window was found in the selection.</translation>
+        </message>
+        <message>
             <source>No recognized result is available to copy</source>
             <translation>No recognized result is available to copy</translation>
         </message>
