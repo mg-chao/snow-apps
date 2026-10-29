@@ -243,6 +243,7 @@ SequenceNumberSolidSquare(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SourceRegionOutline(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef TableRecognition(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef TextRecognition(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef TextType(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolArrow(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolEraser(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolFilter(const adqt::icons::IconColors& colors = {});

@@ -55,6 +55,8 @@ enum class PinnedWindowCreationSource {
 };
 enum class PinnedWindowCloseIntent { Preserve, Hide, Close, Destroy };
 
+enum class PinnedTextType { RecognitionResults, TranslationResults };
+
 // These limits govern ignored records only.
 using PinnedWindowPolicy = CaptureHistoryPolicy;
 
@@ -118,6 +120,7 @@ struct PinnedWindowRecord final {
     QByteArray resultStyle;
     QByteArray canvasSession;
     QByteArray recognitionResults;
+    PinnedTextType textType = PinnedTextType::RecognitionResults;
     bool recognitionVisible = false;
     bool translationVisible = false;
     QDateTime updatedUtc;

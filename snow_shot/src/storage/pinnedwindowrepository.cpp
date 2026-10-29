@@ -679,6 +679,9 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
          record.checkerboardEnabled ? QJsonValue(*record.checkerboardEnabled) : QJsonValue()},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
+        {QStringLiteral("text_type"), record.textType == PinnedTextType::TranslationResults
+                                          ? QStringLiteral("translation")
+                                          : QStringLiteral("recognition")},
         {QStringLiteral("pre_thumbnail_geometry"), rectToJson(record.preThumbnailNativeGeometry)},
         {QStringLiteral("original_file_name"), record.originalFileName},
         {QStringLiteral("updated_utc"), record.updatedUtc.toUTC().toString(Qt::ISODateWithMs)},
@@ -1197,6 +1200,11 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     }
     record.recognitionVisible = object.value(QStringLiteral("recognition_visible")).toBool(false);
     record.translationVisible = object.value(QStringLiteral("translation_visible")).toBool(false);
+    const QJsonValue textType = object.value(QStringLiteral("text_type"));
+    record.textType = textType == QJsonValue(QStringLiteral("translation")) ||
+                              (textType.isUndefined() && record.translationVisible)
+                          ? PinnedTextType::TranslationResults
+                          : PinnedTextType::RecognitionResults;
     if (record.thumbnailMode &&
         !rectFromJson(object.value(QStringLiteral("pre_thumbnail_geometry")),
                       &record.preThumbnailNativeGeometry)) {

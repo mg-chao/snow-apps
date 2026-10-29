@@ -157,6 +157,7 @@ class ScreenshotController : public QObject {
     void mcpCanvasChanged();
 
   private:
+    friend class ScreenshotControllerTestAccess;
     struct Impl;
 
     std::unique_ptr<Impl> m_impl;

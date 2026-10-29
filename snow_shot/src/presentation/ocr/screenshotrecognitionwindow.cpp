@@ -1561,7 +1561,7 @@ void ScreenshotRecognitionWindow::showTextEditorWithOwner(
         editor->setDocument(document);
         if (!lifetime || !editor)
             return;
-        editor->setReadOnly(readOnly);
+        editor->setReadOnly(readOnly || !m_textEditorEditingEnabled);
         if (!lifetime || !editor)
             return;
         const adqt::theme::ThemeMapToken theme =
@@ -1581,7 +1581,7 @@ void ScreenshotRecognitionWindow::showTextEditorWithOwner(
     setTextEditorStreaming(streaming);
     if (!lifetime)
         return;
-    if (!readOnly && !m_showOriginalImage) {
+    if (!readOnly && m_textEditorEditingEnabled && !m_showOriginalImage) {
         static_cast<adqt::widgets::AdTextEdit*>(m_textEditor)->focusEditor();
     }
 }
@@ -1746,14 +1746,17 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
 
-    const auto textEditorActive = [this](const ShortcutManager::ActivationContext& context) {
-        return context.scopeWindow == this && focusInside(m_textEditor, context.focusWidget);
+    const auto textEditorWritable = [this](const ShortcutManager::ActivationContext& context) {
+        // Embedded recognition shares its host's top-level shortcut scope. The focused
+        // editor identifies which recognition surface owns the text history command.
+        return context.scopeWindow == window() && m_textEditor != nullptr &&
+               !m_textEditor->isReadOnly() && focusInside(m_textEditor, context.focusWidget);
     };
     ShortcutManager::Binding undo;
     undo.id = QStringLiteral("recognition.text.undo");
     undo.keyCombinations = standardCombinations(QKeySequence::Undo);
     undo.priority = ShortcutManager::StandardPriority::WindowCommand;
-    undo.canActivate = textEditorActive;
+    undo.canActivate = textEditorWritable;
     undo.activate = [this](const auto&) {
         const auto callback = m_actions.handleUndoTextEdit;
         callback();
@@ -1765,7 +1768,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     redo.id = QStringLiteral("recognition.text.redo");
     redo.keyCombinations = standardCombinations(QKeySequence::Redo);
     redo.priority = ShortcutManager::StandardPriority::WindowCommand;
-    redo.canActivate = textEditorActive;
+    redo.canActivate = textEditorWritable;
     redo.activate = [this](const auto&) {
         const auto callback = m_actions.handleRedoTextEdit;
         callback();
@@ -1774,9 +1777,17 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(redo)));
 }
 
-void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
+void ScreenshotRecognitionWindow::setTextEditorEditingEnabled(bool enabled) {
+    m_textEditorEditingEnabled = enabled;
     if (m_textEditor != nullptr) {
-        m_textEditor->setReadOnly(streaming);
+        m_textEditor->setReadOnly(!enabled || m_textEditorStreaming);
+    }
+}
+
+void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
+    m_textEditorStreaming = streaming;
+    if (m_textEditor != nullptr) {
+        m_textEditor->setReadOnly(streaming || !m_textEditorEditingEnabled);
     }
     if (m_textEditorSpin != nullptr) {
         m_textEditorSpin->setSpinning(streaming);
@@ -2097,7 +2108,8 @@ bool ScreenshotRecognitionWindow::activeContentOwnsContextMenu(const QObject* wa
     const auto* widget = qobject_cast<const QWidget*>(watched);
     return widget != nullptr &&
            (focusInside(m_conversionView, widget) || focusInside(m_qrBrowser, widget) ||
-            focusInside(m_textEditor, widget) || focusInside(m_tableEditor, widget));
+            (m_textEditorEditingEnabled && focusInside(m_textEditor, widget)) ||
+            focusInside(m_tableEditor, widget));
 }
 
 void ScreenshotRecognitionWindow::showOcrContextMenu(const QPoint& globalPosition) {

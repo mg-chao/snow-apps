@@ -2014,15 +2014,17 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
         m_recognitionTargetReady && m_recognitionSession != nullptr
             ? serializeRecognitionResults(m_recognitionSession->recognitionResultsSnapshot())
             : serializeRecognitionResults(m_recognitionResults);
+    record.textType = m_textType;
     record.recognitionVisible =
         m_initialRecognitionVisible ||
         (m_ocrMode && m_recognitionSession != nullptr &&
          m_recognitionSession->mode() == ScreenshotRecognitionSessionController::Mode::Text &&
-         !m_recognitionSession->editing() && m_displayOcrPresentation != nullptr);
+         (m_recognitionSession->translating() ||
+          (!m_recognitionSession->editing() && m_displayOcrPresentation != nullptr)));
     record.translationVisible =
         record.recognitionVisible &&
-        (m_initialTranslationVisible || (m_recognitionSession != nullptr &&
-                                         m_recognitionSession->originalImageTranslationActive()));
+        (m_initialTranslationVisible ||
+         (m_recognitionSession != nullptr && m_recognitionSession->translating()));
     record.updatedUtc = QDateTime::currentDateTimeUtc();
     return record;
 }
@@ -2439,10 +2441,10 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_hiddenTextSelection = false;
     m_initialRecognitionVisible = config.restorePersistentState ? config.persistedRecognitionVisible
                                                                 : config.recognitionVisible;
+    initializeTextType(config);
     m_initialTranslationVisible =
-        snow_shot::app::edition::textTranslation && m_initialRecognitionVisible &&
-        (config.restorePersistentState ? config.persistedTranslationVisible
-                                       : config.translationVisible);
+        m_initialRecognitionVisible &&
+        m_textType == snow_shot::storage::PinnedTextType::TranslationResults;
     m_formattedTextDocument = config.formattedTextDocument;
     m_formattedPlainText = config.formattedPlainText;
     m_formattedTextDevicePixelRatio =
@@ -3610,6 +3612,8 @@ void ScreenshotPinnedWindow::executeAnimationCommand(const QString& id) {
 void ScreenshotPinnedWindow::createContextMenu() {
     m_imageEditingAction = nullptr;
     m_ocrAction = nullptr;
+    m_textTypeAction = nullptr;
+    m_textTypeActions = nullptr;
     m_drawingAction = nullptr;
     m_animationToggleAction = nullptr;
     m_animationSpeedAction = nullptr;
@@ -3655,12 +3659,37 @@ void ScreenshotPinnedWindow::createContextMenu() {
         m_ocrAction->setEnabled(false);
         connect(m_ocrAction, &QAction::toggled, this, [this](bool enabled) {
             if (enabled) {
-                activateRecognitionMode(
-                    static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text), false);
+                activateSelectedTextResults();
             } else {
                 deactivateRecognition();
             }
         });
+        m_textTypeAction = m_contextMenu->addLazySubMenu(
+            tr("Text type: %1").arg(tr("Recognition results")),
+            [this](auto* menu) {
+                menu->setObjectName(QStringLiteral("screenshotPinnedTextTypeMenu"));
+                m_textTypeActions = new QActionGroup(menu);
+                m_textTypeActions->setExclusive(true);
+                const auto addType = [&](const char* source, const QString& name,
+                                         snow_shot::storage::PinnedTextType type) {
+                    auto* action = menu->addItem(translatePinnedText(source));
+                    setActionTranslationSource(action, source);
+                    action->setObjectName(name);
+                    action->setCheckable(true);
+                    action->setData(static_cast<int>(type));
+                    m_textTypeActions->addAction(action);
+                    connect(action, &QAction::triggered, this, [this, type] { setTextType(type); });
+                };
+                addType(QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Recognition results"),
+                        QStringLiteral("screenshotPinnedRecognitionResultsAction"),
+                        snow_shot::storage::PinnedTextType::RecognitionResults);
+                addType(QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Translation results"),
+                        QStringLiteral("screenshotPinnedTranslationResultsAction"),
+                        snow_shot::storage::PinnedTextType::TranslationResults);
+                refreshContextMenu();
+            },
+            custom_outlined_icons::TextType());
+        m_textTypeAction->setObjectName(QStringLiteral("screenshotPinnedTextTypeAction"));
     }
 
     m_contextMenu->addSeparator();
@@ -4110,10 +4139,30 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
                                             m_recognitionSession->busy(
                                                 ScreenshotRecognitionSessionController::Mode::Text)
                                         ? tr("Recognizing text")
-                                        : tr("Display text recognition results")));
+                                        : tr("Show text")));
         m_ocrAction->setEnabled(textAvailable);
         const QSignalBlocker blocker(m_ocrAction);
         m_ocrAction->setChecked(activeText);
+        if (m_textTypeAction != nullptr) {
+            m_textTypeAction->setText(
+                tr("Text type: %1")
+                    .arg(m_textType == snow_shot::storage::PinnedTextType::TranslationResults
+                             ? tr("Translation results")
+                             : tr("Recognition results")));
+            m_textTypeAction->setEnabled(textAvailable);
+        }
+        if (m_textTypeActions != nullptr) {
+            for (auto* action : m_textTypeActions->actions()) {
+                const auto type =
+                    static_cast<snow_shot::storage::PinnedTextType>(action->data().toInt());
+                action->setEnabled(
+                    textAvailable &&
+                    (type == snow_shot::storage::PinnedTextType::RecognitionResults ||
+                     snow_shot::app::edition::textTranslation));
+                const QSignalBlocker actionBlocker(action);
+                action->setChecked(type == m_textType);
+            }
+        }
     }
     if (m_drawingAction != nullptr) {
         m_drawingAction->setEnabled(m_editingEnabled);
@@ -4857,14 +4906,11 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.controls_ready");
     if (std::exchange(m_initialRecognitionVisible, false)) {
-        const bool translationVisible = std::exchange(m_initialTranslationVisible, false);
-        if (m_recognitionSession != nullptr && m_recognitionSession->hasTextResult()) {
-            activateRecognitionMode(
-                static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text), false);
-            if (translationVisible) {
-                static_cast<void>(m_recognitionSession->activateCachedTextTranslation());
-            }
-        }
+        m_initialTranslationVisible = false;
+        if (m_recognitionSession != nullptr &&
+            (m_recognitionSession->hasTextResult() ||
+             m_textType == snow_shot::storage::PinnedTextType::TranslationResults))
+            activateSelectedTextResults();
         schedulePersistence();
     }
     if (m_automaticTextRecognition && !m_formattedTextAvailable &&
@@ -4917,6 +4963,8 @@ void ScreenshotPinnedWindow::ensureEditController() {
         new ScreenshotPinnedEditController(*this, *m_canvas, *m_shortcutManager, this);
     connect(m_editController, &ScreenshotPinnedEditController::editModeChanged, this,
             [this](bool enabled) {
+                if (m_recognitionContent != nullptr)
+                    m_recognitionContent->setTextEditorEditingEnabled(enabled);
                 if (m_drawingAction != nullptr) {
                     const QSignalBlocker blocker(m_drawingAction);
                     m_drawingAction->setChecked(enabled);
@@ -4933,6 +4981,7 @@ void ScreenshotPinnedWindow::ensureEditController() {
     if (m_recognitionSession != nullptr) {
         connect(m_editController, &ScreenshotPinnedEditController::textRecognitionRequested, this,
                 [this]() {
+                    m_textType = snow_shot::storage::PinnedTextType::RecognitionResults;
                     m_translateAfterRecognition = false;
                     activateRecognitionMode(
                         static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text));
@@ -5214,6 +5263,54 @@ void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar)
     schedulePersistence();
 }
 
+void ScreenshotPinnedWindow::initializeTextType(const Config& config) {
+    using snow_shot::storage::PinnedTextType;
+    const bool translated = config.restorePersistentState ? config.persistedTranslationVisible
+                                                          : config.translationVisible;
+    m_textType = config.restorePersistentState && config.persistedTextType
+                     ? *config.persistedTextType
+                     : (translated ? PinnedTextType::TranslationResults
+                                   : PinnedTextType::RecognitionResults);
+    if (!snow_shot::app::edition::textTranslation)
+        m_textType = PinnedTextType::RecognitionResults;
+    m_translateAfterRecognition = false;
+    m_preferCachedTranslation = false;
+}
+
+void ScreenshotPinnedWindow::setTextType(snow_shot::storage::PinnedTextType type) {
+    if (type == snow_shot::storage::PinnedTextType::TranslationResults &&
+        !snow_shot::app::edition::textTranslation)
+        return;
+    m_textType = type;
+    m_translateAfterRecognition = false;
+    if (m_initialRecognitionVisible)
+        m_initialTranslationVisible =
+            type == snow_shot::storage::PinnedTextType::TranslationResults;
+    activateSelectedTextResults();
+}
+
+void ScreenshotPinnedWindow::activateSelectedTextResults() {
+    m_translateAfterRecognition =
+        m_textType == snow_shot::storage::PinnedTextType::TranslationResults;
+    m_preferCachedTranslation = true;
+    activateRecognitionMode(static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text),
+                            false);
+    completePendingTextTranslation();
+    refreshContextMenu();
+    schedulePersistence();
+}
+
+void ScreenshotPinnedWindow::completePendingTextTranslation() {
+    if (!m_translateAfterRecognition || m_recognitionSession == nullptr ||
+        !m_recognitionSession->active() ||
+        m_recognitionSession->mode() != ScreenshotRecognitionSessionController::Mode::Text ||
+        !m_recognitionSession->hasTextResult())
+        return;
+    m_translateAfterRecognition = false;
+    if (!m_preferCachedTranslation || !m_recognitionSession->activateCachedTextTranslation())
+        m_recognitionSession->beginTextTranslation();
+}
+
 void ScreenshotPinnedWindow::toggleTextRecognitionResults() {
     if (!recognitionModeAvailable(
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text))) {
@@ -5223,8 +5320,7 @@ void ScreenshotPinnedWindow::toggleTextRecognitionResults() {
         m_recognitionSession->mode() == ScreenshotRecognitionSessionController::Mode::Text) {
         deactivateRecognition();
     } else {
-        activateRecognitionMode(
-            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text), false);
+        activateSelectedTextResults();
     }
 }
 
@@ -5366,6 +5462,8 @@ void ScreenshotPinnedWindow::updateRecognitionToolbarState() {
 }
 
 void ScreenshotPinnedWindow::handleTextEditingRequested() {
+    m_textType = snow_shot::storage::PinnedTextType::RecognitionResults;
+    m_translateAfterRecognition = false;
     if (m_recognitionSession != nullptr) {
         if (m_recognitionSession->translating()) {
             m_recognitionSession->endTextEditing();
@@ -5382,8 +5480,11 @@ void ScreenshotPinnedWindow::handleTextTranslationRequested() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_recognitionSession != nullptr) {
         if (m_recognitionSession->translating()) {
+            m_textType = snow_shot::storage::PinnedTextType::RecognitionResults;
+            m_translateAfterRecognition = false;
             m_recognitionSession->endTextEditing();
         } else {
+            m_textType = snow_shot::storage::PinnedTextType::TranslationResults;
             m_recognitionSession->beginTextTranslation();
         }
     }
@@ -5565,6 +5666,12 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
             },
             [this](bool available, bool translating, bool streaming, bool canUndo, bool canRedo,
                    bool canReset, bool originalImage) {
+                if (available && translating &&
+                    m_textType != snow_shot::storage::PinnedTextType::TranslationResults) {
+                    m_textType = snow_shot::storage::PinnedTextType::TranslationResults;
+                    refreshContextMenu();
+                    schedulePersistence();
+                }
                 if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
                     if (ScreenshotToolPalette* toolbar =
                             m_editController->toolbarWindow()->palette()) {
@@ -5740,13 +5847,8 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 synchronizeHiddenTextSelection();
                 refreshContextMenu();
                 updateRecognitionToolbarState();
-                if (available && m_translateAfterRecognition && m_recognitionSession != nullptr &&
-                    m_recognitionSession->active() &&
-                    m_recognitionSession->mode() ==
-                        ScreenshotRecognitionSessionController::Mode::Text) {
-                    m_translateAfterRecognition = false;
-                    m_recognitionSession->beginTextTranslation();
-                }
+                if (available)
+                    completePendingTextTranslation();
                 schedulePersistence();
             });
     connect(m_recognitionSession.get(), &ScreenshotRecognitionSessionController::textDraftChanged,
@@ -5754,6 +5856,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
     connect(m_recognitionSession.get(), &ScreenshotRecognitionSessionController::textEditingChanged,
             this, [this](bool) {
                 updateRecognitionToolbarState();
+                refreshContextMenu();
                 schedulePersistence();
             });
     connect(m_recognitionSession.get(),
@@ -5814,6 +5917,8 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
             this, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild,
             m_shortcutManager.get());
         content->setObjectName(QStringLiteral("screenshotPinnedRecognitionContent"));
+        content->setTextEditorEditingEnabled(m_editController != nullptr &&
+                                             m_editController->editMode());
         content->setOriginalImagePreviewProvider(
             [this]() -> std::optional<ScreenshotOriginalImagePreviewState> {
                 if (m_closing || m_canvas == nullptr || m_screenshotRenderer == nullptr) {
@@ -6396,6 +6501,8 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
 
 void ScreenshotPinnedWindow::activateTextTranslation() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    m_textType = snow_shot::storage::PinnedTextType::TranslationResults;
+    m_preferCachedTranslation = false;
     m_automationRecognition = false;
     if (m_closing || m_recognitionSession == nullptr ||
         (!m_ocrSupported && !m_formattedTextAvailable)) {
@@ -6408,12 +6515,7 @@ void ScreenshotPinnedWindow::activateTextTranslation() {
         m_editController->toolbarHost()->setActiveTool(
             ScreenshotToolPalette::Tool::TextTranslation);
     }
-    if (m_translateAfterRecognition && m_recognitionSession->active() &&
-        m_recognitionSession->mode() == ScreenshotRecognitionSessionController::Mode::Text &&
-        m_recognitionSession->hasTextResult()) {
-        m_translateAfterRecognition = false;
-        m_recognitionSession->beginTextTranslation();
-    }
+    completePendingTextTranslation();
 #endif
 }
 
@@ -8612,6 +8714,7 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
     finishWindowMove();
     clearWindowDragCursor();
     if (enabled) {
+        deactivateRecognition();
         setEditMode(false);
         m_preThumbnailNativeGeometry = intendedNativeGeometry();
         if (screen())
@@ -9981,6 +10084,9 @@ QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
             return fail("invalid_parameters");
         if (!snow_shot::app::editionRecognitionModeAvailable(static_cast<int>(mode)))
             return fail("action_unavailable");
+        if (mode == static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text))
+            m_textType = snow_shot::storage::PinnedTextType::RecognitionResults;
+        m_translateAfterRecognition = false;
         ensureRecognitionProviders();
         activateRecognitionMode(static_cast<int>(mode), false);
         m_automationRecognition = true;

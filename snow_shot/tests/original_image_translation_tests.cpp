@@ -1499,8 +1499,11 @@ void runPinnedOriginalImageTranslationTests() {
             }
             require(copied, "merged pinned paragraphs must remain visible and copyable");
             const auto record = window->persistenceSnapshot();
+            require(record.textType == snow_shot::storage::PinnedTextType::TranslationResults,
+                    "initial and restored screenshot translations select translation results");
             mergedConfig.recognitionResults = {};
             mergedConfig.persistedRecognitionResults = record.recognitionResults;
+            mergedConfig.persistedTextType = record.textType;
             mergedConfig.persistedRecognitionVisible = record.recognitionVisible;
             mergedConfig.persistedTranslationVisible = record.translationVisible;
             require(mergedServer.streams.size() == 1, "pinning must not retranslate merged text");
@@ -1645,6 +1648,8 @@ void runPinnedOriginalImageTranslationTests() {
             scenario == 3 ? sourceViewRecord.recognitionVisible : visible;
         config.persistedTranslationVisible =
             scenario == 3 ? sourceViewRecord.translationVisible : visible && translated;
+        config.persistedTextType =
+            scenario == 3 ? sourceViewRecord.textType : partialRecord.textType;
         auto* restored = new ScreenshotPinnedWindow;
         QPointer<ScreenshotPinnedWindow> restoredGuard(restored);
         require(restored->present(config), "recreate a saved translation pin");
@@ -1754,13 +1759,16 @@ void runPinnedOriginalImageTranslationTests() {
         require(fallback->present(config), "present a pin without valid translation data");
         auto* session = fallback->findChild<ScreenshotRecognitionSessionController*>();
         waitUntil([&]() { return session->active(); }, "display the valid source OCR fallback");
-        require(!session->translating() &&
-                    session->recognitionClipboardMimeData()->text() ==
-                        QStringLiteral("source 0\nsource 1") &&
-                    fallback->persistenceSnapshot().recognitionVisible &&
-                    !fallback->persistenceSnapshot().translationVisible,
-                "missing or invalid translation must fall back to OCR and clear translation "
-                "visibility");
+        require(
+            session->translating() &&
+                session->cachedRecognitionResults().text->presentation->lines[0].text ==
+                    QStringLiteral("source 0") &&
+                session->cachedRecognitionResults().text->presentation->lines[1].text ==
+                    QStringLiteral("source 1") &&
+                fallback->persistenceSnapshot().recognitionVisible &&
+                fallback->persistenceSnapshot().textType ==
+                    snow_shot::storage::PinnedTextType::TranslationResults,
+            "missing or invalid cached translation starts translation while retaining source OCR");
         fallback->close();
         waitUntil([&]() { return fallbackGuard.isNull(); }, "close the translation fallback pin");
     }

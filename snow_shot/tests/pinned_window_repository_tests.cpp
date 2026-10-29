@@ -1434,6 +1434,59 @@ void recognitionVisibilityRoundTripsAndDefaultsToHidden() {
     require(loaded.has_value() && !loaded->recognitionVisible && !loaded->translationVisible,
             "records without recognition visibility must default to hidden");
 }
+void textTypeRoundTripsAndMigratesLegacyVisibility() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "create text type storage fixture");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage({24, 12}, 9));
+    record.textType = storage::PinnedTextType::TranslationResults;
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "persist hidden translation selection");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textType == storage::PinnedTextType::TranslationResults &&
+                    !loaded->recognitionVisible && !loaded->translationVisible,
+                "text type survives reopening independently of visibility");
+        record.textType = storage::PinnedTextType::RecognitionResults;
+        record.recognitionVisible = true;
+        record.translationVisible = true;
+        require(repository.updateState(record).success && repository.flush().success &&
+                    repository.loadRecord(id)->textType ==
+                        storage::PinnedTextType::RecognitionResults,
+                "explicit recognition selection overrides legacy translation visibility");
+    }
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
+    auto root = QJsonDocument::fromJson(readBytes(manifest)).object();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    require(records.size() == 1, "one text type record is saved");
+    for (int scenario : {0, 1, 2}) {
+        auto legacy = records[0].toObject();
+        legacy.remove(QStringLiteral("text_type"));
+        legacy.insert(QStringLiteral("translation_visible"), scenario == 0);
+        if (scenario == 2)
+            legacy.insert(QStringLiteral("text_type"), QStringLiteral("unknown"));
+        records[0] = legacy;
+        root.insert(QStringLiteral("records"), records);
+        QFile file(manifest);
+        require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+                "write legacy text type fixture");
+        const auto bytes = QJsonDocument(root).toJson();
+        require(file.write(bytes) == bytes.size(), "save legacy text type fixture");
+        file.close();
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textType == (scenario == 0
+                                                   ? storage::PinnedTextType::TranslationResults
+                                                   : storage::PinnedTextType::RecognitionResults),
+                "legacy records infer translation and invalid text types default to recognition");
+    }
+}
+
 void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary click-through storage is unavailable");
@@ -3029,6 +3082,11 @@ int main(int argc, char* argv[]) {
         closeRestoreAndRetentionRevealHiddenSiblings();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--text-type-only"))) {
+        recognitionVisibilityRoundTripsAndDefaultsToHidden();
+        textTypeRoundTripsAndMigratesLegacyVisibility();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--batch-group-only"))) {
         batchGroupAssignmentPreflightsAndNotifiesOnce();
         return 0;
@@ -3091,6 +3149,7 @@ int main(int argc, char* argv[]) {
     removedRecordsPruneTheirPayloads();
     specifiedGroupRemovalIsAtomicAndPersistent();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
+    textTypeRoundTripsAndMigratesLegacyVisibility();
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     pinSourceIdentitySurvivesRestart();

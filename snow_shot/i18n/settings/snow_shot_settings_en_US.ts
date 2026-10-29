@@ -1276,6 +1276,10 @@
             <translation>Allow resizing the selection from its borders while non-move tools are active</translation>
         </message>
         <message>
+            <source>Also copy the screenshot to the clipboard when pinning it to screen</source>
+            <translation>Also copy the screenshot to the clipboard when pinning it to screen</translation>
+        </message>
+        <message>
             <source>Always</source>
             <translation>Always</translation>
         </message>
@@ -1946,6 +1950,10 @@
         <message>
             <source>Copy Translation Results as an Image</source>
             <translation>Copy Translation Results as an Image</translation>
+        </message>
+        <message>
+            <source>Copy after pinning to screen</source>
+            <translation>Copy after pinning to screen</translation>
         </message>
         <message>
             <source>Copy after text recognition</source>

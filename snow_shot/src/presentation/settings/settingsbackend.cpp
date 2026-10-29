@@ -934,6 +934,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
         return storage::ScreenshotSettings().copyImageFileToClipboard();
+    case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
+        return storage::ScreenshotSettings().copyAfterPinningToScreen();
     case SettingsSwitchBinding::ScreenshotShowSaveResult:
         return storage::ScreenshotSettings().showSaveResult();
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
@@ -1244,6 +1246,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard) {
         return storage::ScreenshotSettings().setCopyImageFileToClipboard(value);
     }
+    if (binding == SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen) {
+        return storage::ScreenshotSettings().setCopyAfterPinningToScreen(value);
+    }
     if (binding == SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements) {
         return storage::DrawingSettings().setAutomaticallySelectNewlyCreatedElements(value);
     }
@@ -1418,6 +1423,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::ScreenshotShowSaveResult:
+    case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
     case SettingsSwitchBinding::ShowOriginalImagePreview:
     case SettingsSwitchBinding::ShowTextHighlighting:
@@ -2685,6 +2691,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                        QStringLiteral("screenshot_selection/smart_selection"))
                        .toBool()) &&
                resetAvailableConfigurationValues({
+                   {QStringLiteral("screenshot/copy_after_pinning_to_screen"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/copy_after_pinning_to_screen"))},
                    {QStringLiteral("screenshot/shutter_sound_notification"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/shutter_sound_notification"))},

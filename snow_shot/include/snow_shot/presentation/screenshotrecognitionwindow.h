@@ -169,6 +169,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void showTextEditor(QTextDocument* document, bool readOnly = false, bool streaming = false);
     void showTextEditor(std::shared_ptr<QTextDocument> document, bool readOnly = false,
                         bool streaming = false);
+    void setTextEditorEditingEnabled(bool enabled);
     void setTextEditorStreaming(bool streaming);
     void hideTextEditor();
     void showLatexEditor(QTextDocument* document, std::function<QString()> source = {});
@@ -303,6 +304,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     ScreenshotOcrTextLayer* m_textLayer = nullptr;
     QWidget* m_textEditorContainer = nullptr;
     QTextEdit* m_textEditor = nullptr;
+    bool m_textEditorEditingEnabled = true;
+    bool m_textEditorStreaming = false;
     std::function<bool()> m_translationCopyActive;
     std::function<std::unique_ptr<QMimeData>()> m_translationClipboardProvider;
     std::shared_ptr<QTextDocument> m_textEditorDocumentOwner;
