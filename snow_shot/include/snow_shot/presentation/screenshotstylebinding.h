@@ -2,6 +2,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include <QObject>
 #include <functional>
@@ -28,6 +29,24 @@ class ScreenshotStyleBinding final : public QObject {
 };
 
 void replicateScreenshotStyleEdit(SnowCanvasWidget& peer, const SnowCanvasStyleEdit& edit);
+
+// Shared by the screenshot overlay and the canvas hosts that dispatch style wheel input.
+[[nodiscard]] inline bool strokeWidthWheelTarget(ScreenshotActiveTool tool) {
+    switch (tool) {
+    case ScreenshotActiveTool::SpeechBubble:
+    case ScreenshotActiveTool::Shape:
+    case ScreenshotActiveTool::Distance:
+    case ScreenshotActiveTool::Bracket:
+    case ScreenshotActiveTool::Arrow:
+    case ScreenshotActiveTool::Line:
+    case ScreenshotActiveTool::FreeDraw:
+    case ScreenshotActiveTool::RectangleHighlight:
+    case ScreenshotActiveTool::PenHighlight:
+        return true;
+    default:
+        return false;
+    }
+}
 
 // Returns false for font input, which belongs to the canvas text/draft handler.
 [[nodiscard]] bool stepScreenshotStyle(ScreenshotToolPalette& palette, SnowCanvasWidget& canvas,

@@ -19,6 +19,7 @@
 namespace {
 
 std::atomic<std::uint64_t> nextPathChunkCacheId{1};
+thread_local SnowCanvasSceneItem::PathGeometryDiagnostics pathGeometryDiagnostics;
 
 template <typename T>
 void assignBorrowed(std::vector<T>& destination, const T* source, std::uint32_t count) {
@@ -586,6 +587,7 @@ bool SnowCanvasSceneItem::applyPathGeometryPatch(
             }
         }
         if (unchanged) {
+            pathGeometryDiagnostics.reuses += chunkCount;
             storage.revision = revision;
             for (std::uint32_t i = 0; i < chunkCount; ++i)
                 storage.chunks[i].stableId = chunks[i].stable_id;
@@ -633,6 +635,7 @@ bool SnowCanvasSceneItem::applyPathGeometryPatch(
                 QRectF(QPointF(source.min_x, source.min_y), QPointF(source.max_x, source.max_y))
                     .normalized();
             chunk.cumulativeStartLength = source.cumulative_start_length;
+            ++pathGeometryDiagnostics.builds;
             chunk.canvasPath = canvasPathFromCommands(
                 source.start_x, source.start_y,
                 source.command_count == 0 ? nullptr : commands + source.command_offset,
@@ -792,6 +795,7 @@ void SnowCanvasSceneItem::rebuildAggregateClosedPath(bool geometryChanged) {
 }
 
 const std::vector<SnowCanvasSceneItem::PathChunk>& SnowCanvasSceneItem::pathChunks() const {
+    pathGeometryDiagnostics.reads += m_pathGeometry.chunks.size();
     return m_pathGeometry.chunks;
 }
 
@@ -1048,4 +1052,8 @@ SnowCanvasOverlayItem::strokeRenderingCacheIfPresent() const {
 
 std::uint64_t SnowCanvasOverlayItem::strokeRenderingGeometryRevision() const {
     return m_strokeRenderingGeometryRevision;
+}
+
+SnowCanvasSceneItem::PathGeometryDiagnostics SnowCanvasSceneItem::takePathGeometryDiagnostics() {
+    return std::exchange(pathGeometryDiagnostics, {});
 }

@@ -1000,6 +1000,8 @@ impl Editor {
             .any(|id| document.arrow(*id).is_ok_and(ArrowData::is_distance))
         {
             StyleToolbarSource::SelectedDistance
+        } else if self.has_homogeneous_bracket_selection(document) {
+            StyleToolbarSource::SelectedBracket
         } else if self.has_homogeneous_angle_selection(document) {
             StyleToolbarSource::SelectedAngle
         } else if self.selected_arrow_style(document).is_some() {
@@ -1025,6 +1027,8 @@ impl Editor {
             StyleToolbarSource::SelectedMagnifier
         } else if self.state.active_tool == ActiveTool::Magnifier {
             StyleToolbarSource::DefaultMagnifier
+        } else if self.state.active_tool == ActiveTool::Bracket {
+            StyleToolbarSource::DefaultBracket
         } else if self.state.active_tool == ActiveTool::Angle {
             StyleToolbarSource::DefaultAngle
         } else if self.state.active_tool == ActiveTool::Distance {
@@ -1403,23 +1407,25 @@ impl Editor {
         }
         if matches!(
             self.style_toolbar_source(document),
-            StyleToolbarSource::SelectedDistance | StyleToolbarSource::SelectedAngle
+            StyleToolbarSource::SelectedDistance
+                | StyleToolbarSource::SelectedAngle
+                | StyleToolbarSource::SelectedBracket
         ) {
             let arrow = self
                 .state
                 .selection
                 .primary
                 .and_then(|id| document.arrow(id).ok())
-                .filter(|arrow| arrow.is_generated_annotation())
+                .filter(|arrow| arrow.is_linear_annotation())
                 .or_else(|| {
                     self.state.selection.ids.iter().find_map(|id| {
                         document
                             .arrow(*id)
                             .ok()
-                            .filter(|arrow| arrow.is_generated_annotation())
+                            .filter(|arrow| arrow.is_linear_annotation())
                     })
                 })
-                .expect("the distance style source has a selected distance");
+                .expect("a selected annotation source has an annotation");
             return ShapeStyle::from_rectangle_shape_style(
                 self.state.default_rectangle_shape_style,
             )
@@ -1494,13 +1500,15 @@ impl Editor {
         let source = self.style_toolbar_source(document);
         if matches!(
             source,
-            StyleToolbarSource::SelectedDistance | StyleToolbarSource::SelectedAngle
+            StyleToolbarSource::SelectedDistance
+                | StyleToolbarSource::SelectedAngle
+                | StyleToolbarSource::SelectedBracket
         ) {
             let mut opacity = self.state.selection.ids.iter().filter_map(|id| {
                 document
                     .arrow(*id)
                     .ok()
-                    .filter(|arrow| arrow.is_generated_annotation())
+                    .filter(|arrow| arrow.is_linear_annotation())
                     .map(|arrow| arrow.opacity)
             });
             let Some(first) = opacity.next() else {

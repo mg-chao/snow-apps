@@ -625,6 +625,16 @@ bool SnowCanvasRuntimeEditor::setAngleStyleFromToolbar(const SnowCanvasAngleStyl
     });
 }
 
+bool SnowCanvasRuntimeEditor::setBracketStyleFromToolbar(const SnowCanvasBracketStyle& style,
+                                                         quint32 properties) {
+    if (!snow_canvas_types::validBracketStyle(style))
+        return false;
+    const auto value = snow_canvas_types::toEngineBracketStyle(style);
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_bracket_style_patch_ex(r, v, &value, properties, changed);
+    });
+}
+
 bool SnowCanvasRuntimeEditor::adjustAngleValue(double deltaRadians) {
     if (!std::isfinite(deltaRadians))
         return false;

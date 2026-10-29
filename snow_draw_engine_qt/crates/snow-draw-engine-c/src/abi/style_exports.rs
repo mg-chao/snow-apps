@@ -101,6 +101,31 @@ pub unsafe extern "C" fn snow_viewport_set_angle_style_patch_ex(
     })
 }
 /// # Safety
+/// Handles must be live and pointers readable/writable as indicated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_bracket_style_patch_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowBracketStyle,
+    properties: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null() || out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_bracket_style_patch(id, unsafe { (*style).into() }, properties)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+/// # Safety
 /// Handles must be live and output writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_adjust_angle_value_ex(
@@ -351,7 +376,9 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         distance_style: state.distance_style.into(),
                         distance_style_mixed: state.distance_style_mixed,
                         angle_style: state.angle_style.into(),
+                        bracket_style: state.bracket_style.into(),
                         angle_style_mixed: state.angle_style_mixed,
+                        bracket_style_mixed: state.bracket_style_mixed,
                         distance_measured_length: state.distance_measured_length,
                         magnifier_style: state.magnifier_style.into(),
                         magnifier_style_mixed: state.magnifier_style_mixed,

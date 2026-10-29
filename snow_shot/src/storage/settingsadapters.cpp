@@ -67,8 +67,8 @@ const QStringList& drawingShortcutToolIds() {
         QStringLiteral("eraser"),        QStringLiteral("watermark"),
         QStringLiteral("line"),          QStringLiteral("spotlight"),
         QStringLiteral("distance"),      QStringLiteral("angle"),
-        QStringLiteral("magnifier"),     QStringLiteral("reset_canvas"),
-        QStringLiteral("speech_bubble"),
+        QStringLiteral("bracket"),       QStringLiteral("magnifier"),
+        QStringLiteral("reset_canvas"),  QStringLiteral("speech_bubble"),
     };
     return ids;
 }

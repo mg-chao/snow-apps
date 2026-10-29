@@ -503,6 +503,10 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>Distance annotation</translation>
         </message>
@@ -1518,6 +1522,10 @@
         <message>
             <source>Bottom right</source>
             <translation>Bottom right</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
         </message>
         <message>
             <source>Browse</source>

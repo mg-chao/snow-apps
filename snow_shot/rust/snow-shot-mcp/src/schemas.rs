@@ -89,6 +89,7 @@ struct Selection {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum CanvasTool {
+    Bracket,
     SpeechBubble,
     Magnifier,
     Distance,
@@ -296,6 +297,12 @@ enum Annotation {
         points: [[f64; 2]; 2],
         #[serde(default)]
         style: DistanceAnnotationStyle,
+    },
+    Bracket {
+        /// Upper endpoint, apex, and lower endpoint. The endpoint guide is not exported.
+        points: [[f64; 2]; 3],
+        #[serde(default)]
+        style: BracketAnnotationStyle,
     },
     Angle {
         /// First endpoint, vertex, and a point defining the second side direction.
@@ -755,6 +762,7 @@ bounded_style_number!(DistanceFactor, f64, "number", 0.01, 1000.0);
 bounded_style_number!(DistanceDecimals, u8, "integer", 0, 3);
 bounded_style_number!(DistanceStrokeWidth, f64, "number", 1.0, 72.0);
 bounded_style_number!(AngleDecimals, u8, "integer", 0, 3);
+bounded_style_number!(BracketStrokeWidth, f64, "number", 1.0, 72.0);
 bounded_style_number!(AngleStrokeWidth, f64, "number", 1.0, 72.0);
 bounded_style_number!(MagnifierFactor, f64, "number", 1.0, 10.0);
 bounded_style_number!(MagnifierStrokeWidth, f64, "number", 0.0, 72.0);
@@ -821,6 +829,13 @@ enum AngleUnit {
 enum AngleType {
     Directed,
     Interior,
+}
+
+#[derive(Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+struct BracketAnnotationStyle {
+    stroke: Option<[u8; 4]>,
+    stroke_width: Option<BracketStrokeWidth>,
 }
 
 #[derive(Default, Deserialize, JsonSchema)]
@@ -894,6 +909,7 @@ enum ToolStyle {
     Standard(Box<StandardToolStyle>),
     BrushEraser(BrushEraserToolStyle),
     Angle(AngleToolStyle),
+    Bracket(BracketToolStyle),
 }
 // Serde cannot consume a flattened untagged enum under deny_unknown_fields.
 // Keep the union outside each complete mutation so its strict object branch
@@ -906,6 +922,18 @@ enum ScreenshotToolStyleMutation {
     Standard(Box<Mutation<StandardToolStyle>>),
     BrushEraser(Mutation<BrushEraserToolStyle>),
     Angle(Mutation<AngleToolStyle>),
+    Bracket(Mutation<BracketToolStyle>),
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum BracketTarget {
+    Bracket,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BracketToolStyle {
+    target: BracketTarget,
+    style: BracketAnnotationStyle,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1647,6 +1675,50 @@ mod tests {
                 })),
             );
             assert_eq!(result.is_ok(), angle_type != "unknown");
+        }
+    }
+
+    #[test]
+    fn bracket_schemas_match_the_three_point_and_two_property_contract() {
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool", "session_id"),
+            ("snow_shot_document_set_tool", "document_id"),
+        ] {
+            assert!(
+                schema(
+                    name,
+                    Some(json!({owner:"owned","expected_revision":1,"tool":"bracket"}))
+                )
+                .is_ok()
+            );
+        }
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool_style", "session_id"),
+            ("snow_shot_document_set_tool_style", "document_id"),
+        ] {
+            for width in [1., 2.5, 72.] {
+                assert!(schema(name,Some(json!({owner:"owned","expected_revision":1,"target":"bracket","style":{"stroke_width":width,"stroke":[10,20,30,128]}}))).is_ok());
+            }
+            for style in [
+                json!({"stroke_width":0}),
+                json!({"stroke_width":73}),
+                json!({"unit":"degrees"}),
+                json!({"fill":[0,0,0,255]}),
+            ] {
+                assert!(schema(name,Some(json!({owner:"owned","expected_revision":1,"target":"bracket","style":style}))).is_err());
+            }
+        }
+        for (name, owner) in [
+            ("snow_shot_screenshot_apply_annotations", "session_id"),
+            ("snow_shot_document_apply_annotations", "document_id"),
+        ] {
+            for points in [
+                json!([[0, 0], [80, 100], [0, 200]]),
+                json!([[0, 0], [80, 100]]),
+            ] {
+                let valid = points.as_array().unwrap().len() == 3;
+                assert_eq!(schema(name,Some(json!({owner:"owned","expected_revision":1,"operations":[{"type":"bracket","points":points}]}))).is_ok(),valid);
+            }
         }
     }
 

@@ -31,6 +31,7 @@ pub enum SnowActiveTool {
     Angle = 18,
     Magnifier = 19,
     SpeechBubble = 20,
+    Bracket = 21,
 }
 
 impl SnowActiveTool {
@@ -75,6 +76,8 @@ pub enum SnowStyleToolbarSource {
     SelectedMagnifier = 31,
     DefaultSpeechBubble = 32,
     SelectedSpeechBubble = 33,
+    DefaultBracket = 34,
+    SelectedBracket = 35,
 }
 
 impl SnowStyleToolbarSource {
@@ -177,6 +180,12 @@ snow_c_enum! {
         Directed = 0,
         Interior = 1,
     }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowBracketStyle {
+    pub stroke: SnowColorRgba8,
+    pub stroke_width: f64,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -527,7 +536,9 @@ pub struct SnowStyleToolbarState {
     pub distance_style: SnowDistanceStyle,
     pub distance_style_mixed: u32,
     pub angle_style: SnowAngleStyle,
+    pub bracket_style: SnowBracketStyle,
     pub angle_style_mixed: u32,
+    pub bracket_style_mixed: u32,
     pub distance_measured_length: f64,
     pub magnifier_style: SnowMagnifierStyle,
     pub magnifier_style_mixed: u32,
@@ -552,6 +563,7 @@ pub struct SnowStyleDefaults {
     pub spotlight_shape: SnowRectangleShape,
     pub distance: SnowDistanceStyle,
     pub angle: SnowAngleStyle,
+    pub bracket: SnowBracketStyle,
     pub spotlight_corner_radii: SnowCornerRadii,
     pub magnifier: SnowMagnifierStyle,
     pub speech_bubble: SnowShapeStyle,

@@ -788,7 +788,7 @@ impl Editor {
         let mut handles = Vec::new();
         let points = arrow.global_points();
         let loop_threshold = selection_handle_hit_size(self.camera().zoom) * 0.75;
-        let loop_active = arrow_loop_active(arrow, loop_threshold);
+        let loop_active = !arrow.is_bracket() && arrow_loop_active(arrow, loop_threshold);
         if loop_active {
             handles.push(ArrowHandleState {
                 kind: ArrowHandleKind::LoopEnd,
@@ -867,7 +867,8 @@ impl Editor {
         if arrow.is_pen_highlight() {
             return Vec::new();
         }
-        let show_segment_handles = !arrow.is_generated_annotation()
+        let show_segment_handles = !arrow.is_bracket()
+            && !arrow.is_generated_annotation()
             && (arrow.is_line() || arrow.is_elbow() || arrow.points.len() <= 2);
         if show_segment_handles {
             arrow_segment_midpoints(arrow)
@@ -893,7 +894,7 @@ impl Editor {
         let visual_radius = selection_handle_size(self.camera().zoom) * 1.25 / 2.0;
         let points = arrow.global_points();
         let loop_threshold = handle_tolerance * 1.5;
-        let loop_active = arrow_loop_active(arrow, loop_threshold);
+        let loop_active = !arrow.is_bracket() && arrow_loop_active(arrow, loop_threshold);
         if loop_active {
             let center = Point::new(
                 f64::midpoint(points[0].x, points[points.len() - 1].x),
@@ -930,6 +931,16 @@ impl Editor {
             return Some(ArrowHitTarget::Point(index));
         }
 
+        if arrow.is_bracket()
+            && points.len() == 3
+            && snow_draw_engine_document::bracket_segment_distance(
+                canvas_point,
+                points[0],
+                points[2],
+            ) <= handle_tolerance
+        {
+            return Some(ArrowHitTarget::BracketGuide);
+        }
         if let Some(center) = snow_draw_engine_document::angle_arc_control_point(arrow)
             && point_distance(center, canvas_point) <= turning_radius
         {

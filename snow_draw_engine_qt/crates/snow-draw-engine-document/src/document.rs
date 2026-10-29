@@ -1012,7 +1012,7 @@ impl ElementData {
                 filter.x + filter.width,
                 filter.y + filter.height,
             ),
-            Self::Arrow(arrow) if arrow.is_angle() => {
+            Self::Arrow(arrow) if arrow.is_angle() || arrow.is_bracket() => {
                 let bounds = arrow_bounds(arrow);
                 let half_stroke = arrow.stroke_width.max(0.0) / 2.0;
                 DrawRect::new(
@@ -1097,6 +1097,7 @@ pub enum ElementKind {
     Distance,
     Angle,
     SpeechBubble,
+    Bracket,
 }
 
 impl ElementKind {
@@ -1115,7 +1116,8 @@ impl ElementKind {
             | Self::SerialNumber
             | Self::Spotlight
             | Self::Distance
-            | Self::Angle => false,
+            | Self::Angle
+            | Self::Bracket => false,
             Self::SpeechBubble => false,
         }
     }

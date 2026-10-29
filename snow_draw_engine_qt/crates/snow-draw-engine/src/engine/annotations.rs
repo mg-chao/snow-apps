@@ -1,6 +1,7 @@
 //! Validated automation transactions, separate from internal document recovery JSON.
 use super::*;
 use serde::Deserialize;
+use snow_draw_engine_core::arrow::{ArrowType, StrokeStyle};
 use snow_draw_engine_core::{ColorRgba8, CornerRadii};
 use snow_draw_engine_document::{
     ArrowData, ElementMeta, FillStyle, FilterData, FreeDrawData, FreeDrawStyle, HighlightShape,
@@ -58,6 +59,11 @@ enum Annotation {
         points: Vec<[f64; 2]>,
         #[serde(default)]
         style: Style,
+    },
+    Bracket {
+        points: [[f64; 2]; 3],
+        #[serde(default)]
+        style: BracketAnnotationStyle,
     },
     Angle {
         /// First endpoint, vertex, and second-side direction; both sides use the first length.
@@ -133,6 +139,20 @@ enum Annotation {
 
 fn default_distance_pixel_scale() -> [f64; 2] {
     [1.0, 1.0]
+}
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct BracketAnnotationStyle {
+    stroke: [u8; 4],
+    stroke_width: f64,
+}
+impl Default for BracketAnnotationStyle {
+    fn default() -> Self {
+        Self {
+            stroke: [245, 34, 45, 255],
+            stroke_width: 2.0,
+        }
+    }
 }
 #[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -563,6 +583,25 @@ impl Engine {
                     .ok_or(ErrorCode::InvalidArgument)?;
                     tx.insert_free_draw(id, meta, data);
                 }
+                Annotation::Bracket { points, style } => {
+                    let mut data = ArrowData::from_global_points(
+                        &points.map(|p| Point::new(p[0], p[1])),
+                        rgba(style.stroke),
+                        style.stroke_width,
+                        StrokeStyle::Solid,
+                        ArrowType::Straight,
+                        None,
+                        None,
+                    )
+                    .ok_or(ErrorCode::InvalidArgument)?;
+                    snow_draw_engine_editor::BracketStyle {
+                        stroke: rgba(style.stroke),
+                        stroke_width: style.stroke_width,
+                    }
+                    .apply_to_arrow(&mut data);
+                    snow_draw_engine_document::validate_arrow(&data)?;
+                    tx.insert_arrow(id, meta, data);
+                }
                 Annotation::Angle {
                     points: p,
                     style: s,
@@ -672,7 +711,8 @@ impl Engine {
                         LinearElementKind::PenHighlight => data.into_pen_highlight(),
                         LinearElementKind::Arrow
                         | LinearElementKind::Distance
-                        | LinearElementKind::Angle => data,
+                        | LinearElementKind::Angle
+                        | LinearElementKind::Bracket => data,
                     };
                     tx.insert_arrow(id, meta, data);
                 }

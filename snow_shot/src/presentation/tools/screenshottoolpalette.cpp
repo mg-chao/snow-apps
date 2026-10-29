@@ -289,6 +289,7 @@ bool hasSelectedCanvasElements(const SnowCanvasStyleToolbarState& state) {
            state.source == SnowCanvasStyleToolbarSource::SelectedArrow ||
            state.source == SnowCanvasStyleToolbarSource::SelectedDistance ||
            state.source == SnowCanvasStyleToolbarSource::SelectedAngle ||
+           state.source == SnowCanvasStyleToolbarSource::SelectedBracket ||
            state.source == SnowCanvasStyleToolbarSource::SelectedLine ||
            state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw ||
            state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight ||
@@ -349,6 +350,7 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::Arrow:
     case ScreenshotToolPalette::Tool::Distance:
     case ScreenshotToolPalette::Tool::Angle:
+    case ScreenshotToolPalette::Tool::Bracket:
     case ScreenshotToolPalette::Tool::Line:
     case ScreenshotToolPalette::Tool::FreeDraw:
     case ScreenshotToolPalette::Tool::RectangleHighlight:
@@ -564,6 +566,8 @@ ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
         return ScreenshotToolPalette::Tool::Distance;
     case toolbar_layout::Item::Angle:
         return ScreenshotToolPalette::Tool::Angle;
+    case toolbar_layout::Item::Bracket:
+        return ScreenshotToolPalette::Tool::Bracket;
     case toolbar_layout::Item::Line:
         return ScreenshotToolPalette::Tool::Line;
     case toolbar_layout::Item::FreeDraw:
@@ -608,6 +612,8 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("distance");
     case ScreenshotToolPalette::Tool::Angle:
         return QStringLiteral("angle");
+    case ScreenshotToolPalette::Tool::Bracket:
+        return QStringLiteral("bracket");
     case ScreenshotToolPalette::Tool::Line:
         return QStringLiteral("line");
     case ScreenshotToolPalette::Tool::FreeDraw:
@@ -640,7 +646,7 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
 QString drawingShortcutToolIdForItemId(const QString& itemId) {
     if (itemId == QStringLiteral("magnifier") || itemId == QStringLiteral("line") ||
         itemId == QStringLiteral("spotlight") || itemId == QStringLiteral("distance") ||
-        itemId == QStringLiteral("angle")) {
+        itemId == QStringLiteral("angle") || itemId == QStringLiteral("bracket")) {
         return itemId;
     }
     if (itemId == QStringLiteral("select")) {
@@ -680,6 +686,9 @@ QString drawingShortcutToolIdForItemId(const QString& itemId) {
 }
 
 QString drawingShortcutToolIdForTooltipSource(const QString& source) {
+    if (source == QStringLiteral("Bracket annotation")) {
+        return QStringLiteral("bracket");
+    }
     if (source == QStringLiteral("Angle annotation")) {
         return QStringLiteral("angle");
     }
@@ -840,8 +849,8 @@ initialToolbarLayout(const ScreenshotToolPalette::Options& options) {
     }
     const bool hasDrawingTools =
         options.showShapeTool || options.showSpeechBubbleTool || options.showArrowTool ||
-        options.showDistanceTool || options.showAngleTool || options.showLineTool ||
-        options.showFreeDrawTool || options.showHighlightTool ||
+        options.showDistanceTool || options.showBracketTool || options.showAngleTool ||
+        options.showLineTool || options.showFreeDrawTool || options.showHighlightTool ||
         options.showRectangleHighlightTool || options.showPenHighlightTool ||
         options.showSpotlightTool || options.showMagnifierTool || options.showTextTool ||
         options.showSerialNumberTool || options.showFilterTool || options.showEraserTool ||
@@ -1025,6 +1034,13 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                                             : SnowCanvasStyleEditTarget::Creation;
                     static_cast<void>(
                         submitStyleEdit(SnowCanvasAngleStyleEdit{style, properties, target}));
+                },
+                [this](const SnowCanvasBracketStyle& style, quint32 properties) {
+                    const auto target = m_styleControls->styleState().showingSelectedBracket
+                                            ? SnowCanvasStyleEditTarget::Selection
+                                            : SnowCanvasStyleEditTarget::Creation;
+                    static_cast<void>(
+                        submitStyleEdit(SnowCanvasBracketStyleEdit{style, properties, target}));
                 },
                 [this](const SnowCanvasTextStyle& style, quint32 properties) {
                     static_cast<void>(submitStyleEdit(SnowCanvasTextEdit{style, properties}));
@@ -2005,6 +2021,9 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::Arrow:
     case Tool::Distance:
     case Tool::Angle:
+        activeButton = drawingToolEntryButton(tool);
+        break;
+    case Tool::Bracket:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Line:
@@ -3278,6 +3297,7 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
                    state.source == SnowCanvasStyleToolbarSource::SelectedArrow ||
                    state.source == SnowCanvasStyleToolbarSource::SelectedDistance ||
                    state.source == SnowCanvasStyleToolbarSource::SelectedAngle ||
+                   state.source == SnowCanvasStyleToolbarSource::SelectedBracket ||
                    state.source == SnowCanvasStyleToolbarSource::SelectedLine ||
                    state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw ||
                    state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight ||
@@ -3290,6 +3310,9 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultMagnifier ||
                state.source == SnowCanvasStyleToolbarSource::SelectedMagnifier) {
         activeStyleTool = Tool::Magnifier;
+    } else if (state.source == SnowCanvasStyleToolbarSource::DefaultBracket ||
+               state.source == SnowCanvasStyleToolbarSource::SelectedBracket) {
+        activeStyleTool = Tool::Bracket;
     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultAngle ||
                state.source == SnowCanvasStyleToolbarSource::SelectedAngle) {
         activeStyleTool = Tool::Angle;
@@ -3597,9 +3620,10 @@ QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
         m_rectangleStyleControlsWidget,    m_speechBubbleStyleControlsWidget,
         m_arrowStyleControlsWidget,        m_distanceStyleControlsWidget,
         m_angleStyleControlsWidget,        m_magnifierStyleControlsWidget,
-        m_highlightStyleControlsWidget,    m_penHighlightStyleControlsWidget,
-        m_spotlightStyleControlsWidget,    m_textStyleControlsWidget,
-        m_serialNumberStyleControlsWidget, m_watermarkStyleControlsWidget,
+        m_bracketStyleControlsWidget,      m_highlightStyleControlsWidget,
+        m_penHighlightStyleControlsWidget, m_spotlightStyleControlsWidget,
+        m_textStyleControlsWidget,         m_serialNumberStyleControlsWidget,
+        m_watermarkStyleControlsWidget,
     };
     for (const QWidget* group : controlGroups) {
         if (group == nullptr) {
@@ -4811,6 +4835,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
         return m_distanceButton;
     case toolbar_layout::Item::Angle:
         return m_angleButton;
+    case toolbar_layout::Item::Bracket:
+        return m_bracketButton;
     case toolbar_layout::Item::Line:
         return m_lineButton;
     case toolbar_layout::Item::FreeDraw:
@@ -4902,6 +4928,9 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
         break;
     case Tool::Angle:
         emit angleToolRequested();
+        break;
+    case Tool::Bracket:
+        emit bracketToolRequested();
         break;
     case Tool::Arrow:
         emit arrowRequested();
@@ -5294,7 +5323,10 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
             items == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line"),
                                    QStringLiteral("distance")} ||
             items == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line"),
-                                   QStringLiteral("distance"), QStringLiteral("angle")}) {
+                                   QStringLiteral("distance"), QStringLiteral("angle")} ||
+            items == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line"),
+                                   QStringLiteral("distance"), QStringLiteral("angle"),
+                                   QStringLiteral("bracket")}) {
             config.contentObjectName = QStringLiteral("screenshotArrowLinePopoverContent");
         } else if (items ==
                    QSet<QString>{QStringLiteral("highlighter"), QStringLiteral("spotlight")}) {
@@ -5947,7 +5979,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             const bool arrowLineGroup =
                 groupItems == arrowLineItems || groupItems == distanceArrowLineItems ||
                 groupItems == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line"),
-                                            QStringLiteral("distance"), QStringLiteral("angle")};
+                                            QStringLiteral("distance"), QStringLiteral("angle")} ||
+                groupItems == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line"),
+                                            QStringLiteral("distance"), QStringLiteral("angle"),
+                                            QStringLiteral("bracket")};
             const bool highlightGroup = groupItems == highlightItems;
             group.trigger->setObjectName(
                 arrowLineGroup   ? QStringLiteral("screenshotArrowLineButton")
@@ -6215,6 +6250,14 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         addButton(m_angleButton);
         connect(m_angleButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::Angle); });
+    }
+    if (options.showBracketTool) {
+        m_bracketButton =
+            addToolButton("Bracket annotation", custom_outlined_icons::BracketAnnotation());
+        m_bracketButton->setObjectName(QStringLiteral("screenshotBracketButton"));
+        addButton(m_bracketButton);
+        connect(m_bracketButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Bracket); });
     }
     if (options.showDistanceTool) {
         m_distanceButton =
@@ -6595,6 +6638,8 @@ ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
         tool = Tool::SpeechBubble;
     } else if (toolId == QStringLiteral("arrow")) {
         tool = Tool::Arrow;
+    } else if (toolId == QStringLiteral("bracket")) {
+        tool = Tool::Bracket;
     } else if (toolId == QStringLiteral("angle")) {
         tool = Tool::Angle;
     } else if (toolId == QStringLiteral("distance")) {
@@ -8016,6 +8061,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_arrowStyleControlsWidget = nullptr;
     m_distanceStyleControlsWidget = nullptr;
     m_angleStyleControlsWidget = nullptr;
+    m_bracketStyleControlsWidget = nullptr;
     m_magnifierStyleControlsWidget = nullptr;
     m_highlightStyleControlsWidget = nullptr;
     m_penHighlightStyleControlsWidget = nullptr;
@@ -8259,6 +8305,7 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     clearRemoved(m_arrowStyleControlsWidget);
     clearRemoved(m_distanceStyleControlsWidget);
     clearRemoved(m_angleStyleControlsWidget);
+    clearRemoved(m_bracketStyleControlsWidget);
     clearRemoved(m_magnifierStyleControlsWidget);
     clearRemoved(m_highlightStyleControlsWidget);
     clearRemoved(m_penHighlightStyleControlsWidget);
@@ -9821,6 +9868,13 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         registerStyleFamily(m_angleStyleControlsWidget, {Tool::Angle});
         return;
     }
+    if (tool == Tool::Bracket && m_bracketStyleControlsWidget == nullptr) {
+        m_bracketStyleControlsWidget = m_styleControls->buildBracketFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
+            styleButtonMetrics(m_physicalScale));
+        registerStyleFamily(m_bracketStyleControlsWidget, {Tool::Bracket});
+        return;
+    }
     if (tool == Tool::Distance && m_distanceStyleControlsWidget == nullptr) {
         m_distanceStyleControlsWidget = m_styleControls->buildDistanceFamily(
             m_rectangleStylePanel, makeHost(m_highlightModeGroups),
@@ -10281,27 +10335,17 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
 void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeButton) {
     m_activeToolButton = activeButton;
     adqt::widgets::AdButton* buttons[] = {
-        m_moveButton,
-        m_selectButton,
-        m_shapeButton,
-        m_speechBubbleButton,
-        m_arrowButton,
-        m_distanceButton,
-        m_angleButton,
-        m_lineButton,
-        m_freeDrawButton,
-        m_highlighterButton,
-        m_spotlightButton,
-        m_magnifierButton,
-        m_eraserButton,
-        m_filterButton,
-        m_watermarkButton,
-        m_textButton,
-        m_serialNumberButton,
-        m_ocrButton,
-        m_textTranslationButton,
-        m_tableButton,
-        m_scrollingScreenshotButton,
+        m_moveButton,        m_selectButton,
+        m_shapeButton,       m_speechBubbleButton,
+        m_arrowButton,       m_distanceButton,
+        m_angleButton,       m_bracketButton,
+        m_lineButton,        m_freeDrawButton,
+        m_highlighterButton, m_spotlightButton,
+        m_magnifierButton,   m_eraserButton,
+        m_filterButton,      m_watermarkButton,
+        m_textButton,        m_serialNumberButton,
+        m_ocrButton,         m_textTranslationButton,
+        m_tableButton,       m_scrollingScreenshotButton,
     };
 
     for (adqt::widgets::AdButton* button : buttons) {
@@ -10421,6 +10465,7 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
         m_styleControls->setArrowControlsActive(tool == Tool::Arrow);
         m_styleControls->setDistanceControlsActive(tool == Tool::Distance);
         m_styleControls->setAngleControlsActive(tool == Tool::Angle);
+        m_styleControls->setBracketControlsActive(tool == Tool::Bracket);
         m_styleControls->setTextControlsActive(tool == Tool::Text);
         m_styleControls->setSpeechBubbleControlsActive(tool == Tool::SpeechBubble);
     }

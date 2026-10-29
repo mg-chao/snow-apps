@@ -142,6 +142,15 @@ pub(crate) fn compose_overlay_items(
         }));
     }
 
+    if presentation.selection_arrows.len() == 1 && presentation.selection_elements.is_empty() {
+        let arrow = &presentation.selection_arrows[0].arrow;
+        if arrow.is_bracket() && arrow.points.len() == 3 {
+            let points = arrow.global_points();
+            items.push(OverlayDisplayItem::FocusConnection(focus_connection_item(
+                points[0], points[2], zoom,
+            )));
+        }
+    }
     for handle in &presentation.arrow_handles {
         if handle.kind == ArrowHandleKind::FocusPoint
             && let Some(anchor) = handle.anchor

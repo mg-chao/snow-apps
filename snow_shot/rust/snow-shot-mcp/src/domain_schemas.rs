@@ -129,6 +129,7 @@ enum DocumentToolStyleMutation {
     Standard(Box<DocumentMutation<StandardToolStyle>>),
     BrushEraser(DocumentMutation<BrushEraserToolStyle>),
     Angle(DocumentMutation<AngleToolStyle>),
+    Bracket(DocumentMutation<BracketToolStyle>),
 }
 input!(Section { section: Option<String> });
 choices!(AppAction {
@@ -224,6 +225,7 @@ choices!(DocumentCanvasTool {
     Magnifier,
     Distance,
     Angle,
+    Bracket,
     Select,
     Rectangle,
     Arrow,

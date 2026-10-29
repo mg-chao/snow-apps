@@ -204,6 +204,22 @@
             <translation>粗體</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>括號標註</translation>
+        </message>
+        <message>
+            <source>Bracket stroke color</source>
+            <translation>括號描邊顏色</translation>
+        </message>
+        <message>
+            <source>Bracket stroke color %1</source>
+            <translation>括號描邊顏色 %1</translation>
+        </message>
+        <message>
+            <source>Bracket stroke width %1</source>
+            <translation>括號描邊寬度 %1</translation>
+        </message>
+        <message>
             <source>Brightness</source>
             <translation>亮度</translation>
         </message>
@@ -330,6 +346,10 @@
         <message>
             <source>Current arrow width</source>
             <translation>目前箭頭寬度</translation>
+        </message>
+        <message>
+            <source>Current bracket stroke width</source>
+            <translation>目前括號描邊寬度</translation>
         </message>
         <message>
             <source>Current brush eraser width</source>

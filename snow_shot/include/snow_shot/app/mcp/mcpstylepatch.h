@@ -58,6 +58,7 @@ inline const QHash<QString, SnowCanvasTool>& mcpCanvasTools() {
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
         {QStringLiteral("distance"), SnowCanvasTool::Distance},
         {QStringLiteral("angle"), SnowCanvasTool::Angle},
+        {QStringLiteral("bracket"), SnowCanvasTool::Bracket},
         {QStringLiteral("magnifier"), SnowCanvasTool::Magnifier},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
@@ -187,6 +188,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                    QStringLiteral("factor"),         QStringLiteral("unit"),
                    QStringLiteral("decimal_places"), QStringLiteral("endpoint_scale"),
                    QStringLiteral("endpoint_style")};
+    else if (target == QStringLiteral("bracket"))
+        allowed = {QStringLiteral("stroke"), QStringLiteral("stroke_width")};
     else if (target == QStringLiteral("angle"))
         allowed = {QStringLiteral("stroke"), QStringLiteral("stroke_width"), QStringLiteral("unit"),
                    QStringLiteral("decimal_places"), QStringLiteral("angle_type")};
@@ -284,7 +287,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
             if (it.key() == QStringLiteral("decimal_places") &&
                 (value > 3 || std::floor(value) != value))
                 return false;
-            if ((target == QStringLiteral("distance") || target == QStringLiteral("angle")) &&
+            if ((target == QStringLiteral("distance") || target == QStringLiteral("bracket") ||
+                 target == QStringLiteral("angle")) &&
                 it.key() == QStringLiteral("stroke_width") && (value < 1 || value > 72))
                 return false;
         } else {
@@ -378,6 +382,22 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
             return canvas.commitStyleEdit(SnowCanvasMagnifierEdit{style, flags, editTarget});
         else
             return canvas.setMagnifierStyleFromToolbar(style, flags, creationDefaults);
+    } else if (target == QStringLiteral("bracket")) {
+        auto style = state.bracketStyle;
+        style.stroke = color("stroke", style.stroke);
+        style.strokeWidth = number("stroke_width", style.strokeWidth);
+        const quint32 flags = (patch.contains(QStringLiteral("stroke")) ? 1u : 0u) |
+                              (patch.contains(QStringLiteral("stroke_width")) ? 2u : 0u);
+        const auto editTarget = state.source == SnowCanvasStyleToolbarSource::SelectedBracket
+                                    ? SnowCanvasStyleEditTarget::Selection
+                                    : SnowCanvasStyleEditTarget::Creation;
+        if constexpr (requires {
+                          canvas.commitStyleEdit(
+                              SnowCanvasBracketStyleEdit{style, flags, editTarget});
+                      })
+            return canvas.commitStyleEdit(SnowCanvasBracketStyleEdit{style, flags, editTarget});
+        else
+            return canvas.setBracketStyleFromToolbar(style, flags);
     } else if (target == QStringLiteral("angle")) {
         auto style = state.angleStyle;
         style.angleType = static_cast<SnowCanvasAngleType>(

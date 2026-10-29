@@ -503,6 +503,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>括號標註</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>距離標註</translation>
         </message>
@@ -1518,6 +1522,10 @@
         <message>
             <source>Bottom right</source>
             <translation>右下角</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>括號標註</translation>
         </message>
         <message>
             <source>Browse</source>

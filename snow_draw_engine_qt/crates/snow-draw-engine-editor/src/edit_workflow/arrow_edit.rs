@@ -91,7 +91,39 @@ impl Editor {
             canvas_point.x + state.drag_offset.x,
             canvas_point.y + state.drag_offset.y,
         );
+        if state.original_arrow.is_bracket() {
+            let indices: &[usize] = match state.mode {
+                ArrowEditMode::BracketGuide => &[0, 2],
+                ArrowEditMode::Endpoint(ArrowEndpointEdge::Start) => &[0],
+                ArrowEditMode::Endpoint(ArrowEndpointEdge::End) => &[2],
+                ArrowEditMode::Point(1) => &[1],
+                ArrowEditMode::Move => &[0, 1, 2],
+                _ => &[],
+            };
+            let delta = if indices.len() == 1 {
+                let target = self.snap_linear_arrow_control_point(drag_target, modifiers);
+                let original = state.original_arrow.global_points()[indices[0]];
+                Point::new(target.x - original.x, target.y - original.y)
+            } else {
+                Point::new(
+                    canvas_point.x - state.start_canvas_position.x,
+                    canvas_point.y - state.start_canvas_position.y,
+                )
+            };
+            return ArrowEditPreview {
+                arrow: snow_draw_engine_document::bracket_with_moved_points(
+                    &state.original_arrow,
+                    indices,
+                    delta,
+                )
+                .unwrap_or_else(|| state.preview_arrow.clone()),
+                reorder_targets: Vec::new(),
+                next_mode: None,
+                suggested_binding: None,
+            };
+        }
         match state.mode {
+            ArrowEditMode::BracketGuide => unreachable!("only brackets have an endpoint guide"),
             ArrowEditMode::AngleArc => ArrowEditPreview {
                 arrow: crate::angle::angle_with_dragged_arc(
                     &state.original_arrow,

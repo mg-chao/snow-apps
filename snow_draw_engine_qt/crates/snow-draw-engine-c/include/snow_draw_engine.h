@@ -107,7 +107,8 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_DISTANCE = 17,
     SNOW_ACTIVE_TOOL_ANGLE = 18,
     SNOW_ACTIVE_TOOL_MAGNIFIER = 19,
-    SNOW_ACTIVE_TOOL_SPEECH_BUBBLE = 20
+    SNOW_ACTIVE_TOOL_SPEECH_BUBBLE = 20,
+    SNOW_ACTIVE_TOOL_BRACKET = 21
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -146,7 +147,9 @@ typedef enum SnowStyleToolbarSource {
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_MAGNIFIER = 30,
     SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_MAGNIFIER = 31,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SPEECH_BUBBLE = 32,
-    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPEECH_BUBBLE = 33
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPEECH_BUBBLE = 33,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRACKET = 34,
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_BRACKET = 35
 } SnowStyleToolbarSource;
 #define SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FILTER SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER
 #define SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FILTER                                                  \
@@ -702,6 +705,14 @@ typedef enum SnowAngleType {
     SNOW_ANGLE_TYPE_INTERIOR = 1,
 } SnowAngleType;
 
+typedef struct SnowBracketStyle {
+    SnowColorRgba8 stroke;
+    double stroke_width;
+} SnowBracketStyle;
+#define SNOW_BRACKET_STYLE_PROPERTY_STROKE (1u << 0)
+#define SNOW_BRACKET_STYLE_PROPERTY_STROKE_WIDTH (1u << 1)
+#define SNOW_BRACKET_STYLE_PROPERTY_ALL 3u
+
 typedef struct SnowAngleStyle {
     SnowColorRgba8 stroke;
     double stroke_width;
@@ -766,7 +777,9 @@ typedef struct SnowStyleToolbarState {
     SnowDistanceStyle distance_style;
     uint32_t distance_style_mixed;
     SnowAngleStyle angle_style;
+    SnowBracketStyle bracket_style;
     uint32_t angle_style_mixed;
+    uint32_t bracket_style_mixed;
     /* Calibrated length before applying the factor; zero without a single valid distance. */
     double distance_measured_length;
     SnowMagnifierStyle magnifier_style;
@@ -790,6 +803,7 @@ typedef struct SnowStyleDefaults {
     SnowRectangleShape spotlight_shape;
     SnowDistanceStyle distance;
     SnowAngleStyle angle;
+    SnowBracketStyle bracket;
     SnowCornerRadii spotlight_corner_radii;
     SnowMagnifierStyle magnifier;
     SnowShapeStyle speech_bubble;
@@ -1662,6 +1676,10 @@ SnowError snow_viewport_set_magnifier_style_patch_ex(
 SnowError snow_viewport_set_angle_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
                                                  const SnowAngleStyle* style, uint32_t properties,
                                                  SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_set_bracket_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                   const SnowBracketStyle* style,
+                                                   uint32_t properties,
+                                                   SnowChangedViewportList* out_changed_viewports);
 SnowError snow_viewport_adjust_angle_value_ex(SnowRuntime runtime, SnowViewport viewport,
                                               double delta_radians,
                                               SnowChangedViewportList* out_changed_viewports);

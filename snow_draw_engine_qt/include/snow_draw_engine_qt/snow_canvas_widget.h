@@ -83,6 +83,11 @@ class SnowCanvasWidget : public QWidget {
         const SnowCanvasAngleStyle& style,
         quint32 properties = static_cast<quint32>(SnowCanvasAngleStyleProperty::All));
     bool setCanvasAngleStylePatch(const SnowCanvasAngleStyle& style, quint32 properties);
+    SnowCanvasBracketStyle canvasBracketStyle() const;
+    bool setCanvasBracketStyle(
+        const SnowCanvasBracketStyle& style,
+        quint32 properties = static_cast<quint32>(SnowCanvasBracketStyleProperty::All));
+    bool setCanvasBracketStylePatch(const SnowCanvasBracketStyle& style, quint32 properties);
     // Adjusts the third-point preview, otherwise an angle-only selection, in radians.
     bool adjustAngleValue(double deltaRadians);
     // Factor-wheel ownership follows the active tool or selection, including in host routers.
