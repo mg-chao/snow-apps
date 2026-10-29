@@ -8714,6 +8714,7 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
     finishWindowMove();
     clearWindowDragCursor();
     if (enabled) {
+        deactivateRecognition();
         setEditMode(false);
         m_preThumbnailNativeGeometry = intendedNativeGeometry();
         if (screen())

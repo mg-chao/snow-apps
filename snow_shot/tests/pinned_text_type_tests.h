@@ -9,6 +9,66 @@ QAction* pinnedTextTypeAction(ScreenshotPinnedWindow& window, const char* name) 
     return action;
 }
 
+void pinnedThumbnailExitsTextDisplay() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using snow_shot::storage::PinnedTextType;
+    for (const auto textType :
+         {PinnedTextType::RecognitionResults, PinnedTextType::TranslationResults}) {
+        for (const bool animate : {false, true}) {
+            IdleOcrRecognition recognition;
+            auto config = cachedOcrPinConfig(&recognition);
+            auto translated = std::make_shared<ScreenshotOcrPresentation>();
+            translated->selection = config.recognitionResults.text->presentation->selection;
+            translated->lines = config.recognitionResults.text->presentation->lines;
+            translated->setLineText(0, QStringLiteral("Saved translation"));
+            translated->prepareForRendering();
+            config.recognitionResults.translatedText = translated;
+            ScreenshotPinnedWindow window;
+            auto* session = Access::hiddenSelectionOffscreen(window, config);
+            auto* display = pinnedTextTypeAction(window, "screenshotPinnedOcrAction");
+            auto* thumbnail = pinnedTextTypeAction(window, "screenshotPinnedThumbnailAction");
+            pinnedTextTypeAction(window, textType == PinnedTextType::TranslationResults
+                                             ? "screenshotPinnedTranslationResultsAction"
+                                             : "screenshotPinnedRecognitionResultsAction")
+                ->trigger();
+            auto* canvas = window.findChild<SnowCanvasWidget*>();
+            auto* content = window.findChild<ScreenshotRecognitionWindow*>();
+            require(session->active() && display->isChecked() && canvas && content &&
+                        !canvas->canvasContentVisible() && !content->isHidden() &&
+                        window.findChild<ScreenshotPinnedEditController*>() == nullptr,
+                    "the thumbnail fixture shows cached text without a drawing controller");
+            if (animate) {
+                thumbnail->trigger();
+            } else {
+                Access::thumbnailForAnimationTest(window, true, false);
+            }
+            const auto record = window.persistenceSnapshot();
+            require(thumbnail->isChecked() && !session->active() && !display->isChecked() &&
+                        canvas->canvasContentVisible() && content->isHidden() &&
+                        !Access::hiddenSelection(window),
+                    "entering thumbnail mode immediately exits text display and shows the image");
+            require(record.thumbnailMode && !record.recognitionVisible &&
+                        !record.translationVisible && record.textType == textType,
+                    "thumbnail persistence clears text visibility and preserves the selected type");
+            if (animate) {
+                auto* animation = window.findChild<QVariantAnimation*>(
+                    QStringLiteral("screenshotPinnedGeometryAnimation"));
+                translation_tests::waitUntil(
+                    [&] { return !animation || animation->state() != QAbstractAnimation::Running; },
+                    "the thumbnail animation finishes");
+            }
+            Access::thumbnailForAnimationTest(window, false, false);
+            require(!session->active() && !display->isChecked() && canvas->canvasContentVisible(),
+                    "expanding the thumbnail keeps text display disabled");
+            display->trigger();
+            require(session->active() && display->isChecked() && recognition.requests == 0 &&
+                        session->originalImageTranslationActive() ==
+                            (textType == PinnedTextType::TranslationResults),
+                    "text display can reopen the selected cached results after thumbnail mode");
+        }
+    }
+}
+
 void pinnedTextTypeMenuActivatesSelectedResults() {
     using Access = ScreenshotPinnedWindowTestAccess;
     using snow_shot::storage::PinnedTextType;

@@ -2319,7 +2319,11 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
     window.hideTextEditor();
 }
 
-void textEditorHistoryShortcutsRespectReadOnlyState() {
+void verifyTextEditorHistoryShortcutsRespectReadOnlyState(
+    ScreenshotRecognitionWindow::PresentationMode mode) {
+    QWidget host;
+    host.resize(400, 240);
+    host.show();
     QTextDocument document;
     document.setUndoRedoEnabled(false);
     document.setPlainText(QStringLiteral("Edited translation"));
@@ -2334,7 +2338,7 @@ void textEditorHistoryShortcutsRespectReadOnlyState() {
         ++redoCalls;
         document.setPlainText(QStringLiteral("Edited translation"));
     };
-    ScreenshotRecognitionWindow window(std::move(actions));
+    ScreenshotRecognitionWindow window(std::move(actions), &host, mode);
     window.resize(320, 180);
     window.showTextEditor(&document);
     window.show();
@@ -2390,6 +2394,13 @@ void textEditorHistoryShortcutsRespectReadOnlyState() {
     shortcut(QKeySequence::Undo);
     require(undoCalls == 2 && document.toPlainText() == QStringLiteral("Translation"),
             "ending streaming and reenabling editing restores history shortcuts");
+}
+
+void textEditorHistoryShortcutsRespectReadOnlyState() {
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        verifyTextEditorHistoryShortcutsRespectReadOnlyState(mode);
+    }
 }
 
 void textRecognitionEditorsCollapseMarginsInSmallAreas() {

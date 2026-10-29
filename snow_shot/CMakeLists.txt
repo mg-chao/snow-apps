@@ -5253,7 +5253,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     foreach(_snow_editor_regression IN ITEMS
-        close source smart-erase save canvas document translation branch conversion-availability
+        close source smart-erase save canvas document translation branch history conversion-availability
         automatic-selection)
         set(_snow_editor_regression_test
             "snow-shot-image-editing-${_snow_editor_regression}-tests")
@@ -5541,6 +5541,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-pinned-history-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --history-shortcuts-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-recognition-history-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-history-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-recognition-history-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     if(WIN32)
         add_test(
             NAME snow-shot-pinned-native-drag-shortcut-tests

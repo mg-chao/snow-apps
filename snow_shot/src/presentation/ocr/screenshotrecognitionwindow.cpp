@@ -1747,7 +1747,9 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
 
     const auto textEditorWritable = [this](const ShortcutManager::ActivationContext& context) {
-        return context.scopeWindow == this && m_textEditor != nullptr &&
+        // Embedded recognition shares its host's top-level shortcut scope. The focused
+        // editor identifies which recognition surface owns the text history command.
+        return context.scopeWindow == window() && m_textEditor != nullptr &&
                !m_textEditor->isReadOnly() && focusInside(m_textEditor, context.focusWidget);
     };
     ShortcutManager::Binding undo;

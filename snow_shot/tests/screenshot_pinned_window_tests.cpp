@@ -14314,6 +14314,113 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
             "pinned window was not deleted after the Spotlight wheel test");
 }
 
+void pinnedRecognitionHistoryUsesActiveResult() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const snow_shot::storage::ScreenshotTranslationSettings translationSettings;
+    const bool originalImage = translationSettings.originalImageTranslationEnabled();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(translationSettings.setOriginalImageTranslationEnabled(originalImage));
+    });
+    require(translationSettings.setOriginalImageTranslationEnabled(false),
+            "recognition history uses editable translation results");
+    for (const bool translation : {false, true}) {
+#if !SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        if (translation)
+            continue;
+#endif
+        ScreenshotPinnedWindow window;
+        auto* session = Access::hiddenSelectionOffscreen(window, cachedOcrPinConfig(nullptr));
+        Access::editSelectionOffscreen(window, true);
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+        require(canvas && controller && controller->toolbarWindow(),
+                "recognition history exposes the canvas and toolbar");
+        auto watermark = canvas->canvasWatermarkConfig();
+        watermark.text = QStringLiteral("Retained canvas edit");
+        require(canvas->setCanvasWatermarkConfig(watermark), "seed independent canvas history");
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+        if (translation) {
+            session->beginTextTranslation();
+            session->setTextDraft(QStringLiteral("Translation"));
+        } else {
+            session->beginTextEditing();
+        }
+        auto* text = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+        require(text && text->isVisible() && !text->isReadOnly() && session->editing(),
+                "recognition history targets an editable result");
+        const QString baseline = session->textDraft();
+        auto cursor = text->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(QStringLiteral(" edited"));
+        const QString edited = baseline + QStringLiteral(" edited");
+        require(session->textDraft() == edited, "typing updates the result history");
+        auto* palette = controller->toolbarWindow()->palette();
+        auto* undo =
+            palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
+        auto* redo =
+            palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
+        require(undo && redo && undo->isEnabled(), "typing enables result Undo");
+        undo->click();
+        require(session->textDraft() == baseline &&
+                    canvas->canvasWatermarkConfig().text == watermark.text,
+                "pinned Undo restores the active result and preserves canvas history");
+        require(redo->isEnabled(), "undoing a result enables Redo");
+        redo->click();
+        require(session->textDraft() == edited, "pinned Redo restores the edited result");
+
+        // Finish initial toolbar/preview presentation before simulating activation of the pin.
+        QApplication::processEvents();
+        window.activateWindow();
+        text->setFocus();
+        QApplication::processEvents();
+        require(text->hasFocus(), "recognition history receives keyboard focus");
+        const auto shortcut = [&](QKeySequence::StandardKey command) {
+            const auto combination = QKeySequence::keyBindings(command).first()[0];
+            for (const auto type :
+                 {QEvent::ShortcutOverride, QEvent::KeyPress, QEvent::KeyRelease}) {
+                PhysicalKeyEvent event(type, combination.key(), combination.keyboardModifiers());
+                QApplication::sendEvent(text, &event);
+            }
+        };
+        shortcut(QKeySequence::Undo);
+        require(session->textDraft() == baseline, "keyboard Undo restores the pinned result");
+        shortcut(QKeySequence::Redo);
+        require(session->textDraft() == edited &&
+                    canvas->canvasWatermarkConfig().text == watermark.text,
+                "keyboard Redo restores the pinned result without touching canvas history");
+        window.close();
+    }
+}
+
+void pinnedTableHistoryUsesActiveResult() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    using Access = ScreenshotPinnedWindowTestAccess;
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults.table = SnowShotTableResult{
+        QStringLiteral("<table><tr><td>Original cell</td></tr></table>"), {}, {}, 0};
+    ScreenshotPinnedWindow window;
+    auto* session = Access::hiddenSelectionOffscreen(window, config);
+    Access::editSelectionOffscreen(window, true);
+    session->activate(ScreenshotRecognitionSessionController::Mode::Table);
+    auto* table = window.findChild<ScreenshotTableEditor*>();
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(table && table->isVisible() && controller && controller->toolbarWindow(),
+            "table history exposes the result editor and toolbar");
+    const auto cell = table->model()->index(0, 0);
+    require(table->model()->setData(cell, QStringLiteral("Edited cell"), Qt::EditRole) &&
+                table->commitActiveEdit(),
+            "edit a recognized table cell");
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette->activateScreenshotShortcut(QStringLiteral("undo")) &&
+                table->model()->data(cell).toString() == QStringLiteral("Original cell"),
+            "pinned Undo restores the active table result");
+    require(palette->activateScreenshotShortcut(QStringLiteral("redo")) &&
+                table->model()->data(cell).toString() == QStringLiteral("Edited cell"),
+            "pinned Redo restores the edited table result");
+    window.close();
+#endif
+}
+
 void pinnedHistoryShortcutsFollowSettings() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -27640,6 +27747,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--text-type-only"))) {
+            pinnedThumbnailExitsTextDisplay();
             pinnedTextTypeMenuActivatesSelectedResults();
             pinnedTranslatedTextKeepsWindowCommandsWithoutToolbar();
             pinnedTextTypeStartsTranslationAfterRecognition();
@@ -27659,6 +27767,11 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
             pinnedHistoryShortcutsFollowSettings();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-history-only"))) {
+            pinnedRecognitionHistoryUsesActiveResult();
+            pinnedTableHistoryUsesActiveResult();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--drawing-shortcut-toggle-only"))) {
