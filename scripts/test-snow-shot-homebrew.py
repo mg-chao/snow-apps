@@ -298,6 +298,57 @@ load ARGV[0]
         self.assertTrue(self.current.is_file())
         self.assertTrue((self.tap / 'README.md').is_file())
 
+    def test_incomplete_upload_cannot_remove_published_architectures(self):
+        self.add_intel()
+        complete = self.release['assets'][:]
+        for beta in (False, True):
+            version = '1.2.3-beta.2' if beta else '1.2.3'
+            previous = '1.2.3-beta.1' if beta else '1.2.2'
+            self.release['tag_name'] = f'v{version}_snow-shot'
+            current = self.tap / f'Casks/{brew.cask_name(version)}.rb'
+            current.parent.mkdir(parents=True, exist_ok=True)
+            for published in ({'arm64': '0' * 64}, {'x64': '1' * 64},
+                              {'arm64': '0' * 64, 'x64': '1' * 64}):
+                original = brew.cask(previous, published)
+                current.write_text(original)
+                for missing in published:
+                    suffix = brew.ARCHITECTURES[missing]
+                    self.release['assets'] = [
+                        asset | dict(name=asset['name'].replace('1.2.3', version))
+                        for asset in complete if f'-{suffix}.' not in asset['name']]
+                    with self.subTest(beta=beta, published=published, missing=missing), \
+                            patch.object(brew, 'run', side_effect=self.fake_run) as run:
+                        with self.assertRaisesRegex(ValueError, 'published architecture'):
+                            brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+                        self.assertEqual(run.call_count, 1)
+                        self.assertEqual(current.read_text(), original)
+                        self.assertFalse(self.output.exists())
+            current.unlink()
+
+    def test_incomplete_upload_cannot_leave_published_mini_behind(self):
+        self.add_intel()
+        self.current_version('1.2.2')
+        mini = self.current.with_name('snow-shot-mini.rb')
+        mini.write_text(brew.cask('1.2.2', '1' * 64, edition='mini'))
+        before = {path: path.read_bytes() for path in (self.current, mini)}
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            with self.assertRaisesRegex(ValueError, 'published architecture'):
+                brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertFalse(self.output.exists())
+
+    def test_complete_upload_can_retry_after_incomplete_snapshot(self):
+        self.current_version('1.2.2')
+        self.current.write_text(brew.cask('1.2.2', {'arm64': '0' * 64, 'x64': '1' * 64}))
+        with patch.object(brew, 'run', side_effect=self.fake_run):
+            with self.assertRaisesRegex(ValueError, 'published architecture'):
+                brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+            self.add_intel()
+            brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+        self.assertIn('arch arm: "arm64", intel: "x86_64"', self.current.read_text())
+        self.assertIn('version "1.2.3"', self.current.read_text())
+
     def add_mini(self):
         name = 'snow-shot-mini-1.2.3-macos-arm64.dmg'
         (self.assets / name).write_bytes(b'mini dmg')
@@ -440,6 +491,115 @@ load ARGV[0]
         self.assertEqual(self.current.read_text(), generated)
         self.assertFalse(any(call.args[:3] == ('gh', 'release', 'upload')
                              for call in run.call_args_list))
+
+    def test_explicit_architecture_repair_preserves_existing_archive_and_metadata(self):
+        self.add_intel()
+        for beta in (False, True):
+            version = '1.2.3-beta.2' if beta else '1.2.3'
+            release = self.release | dict(tag_name=f'v{version}')
+            if beta:
+                for path in list(self.assets.iterdir()):
+                    path.rename(path.with_name(path.name.replace('1.2.3', version)))
+                release['assets'] = [asset | dict(name=asset['name'].replace('1.2.3', version))
+                                     for asset in release['assets']]
+                (self.source / 'CMakeLists.txt').write_text(f'set(SNOW_SHOT_VERSION "{version}")')
+            current = self.tap / f'Casks/{brew.cask_name(version)}.rb'
+            current.parent.mkdir(parents=True, exist_ok=True)
+            for architecture in brew.ARCHITECTURES:
+                with self.subTest(beta=beta, architecture=architecture):
+                    archives, old = brew.package_all(release, self.source, self.assets, self.output,
+                                                     current, architectures=[architecture])
+                    original_archive = archives[0].read_bytes()
+                    current.write_text(old)
+                    archives, repaired = brew.package_all(
+                        release, self.source, self.assets, self.output, current,
+                        repair_architectures=True)
+                    selected = next(path for path in archives
+                                    if f'-{brew.ARCHITECTURES[architecture]}-' in path.name)
+                    self.assertEqual(selected.read_bytes(), original_archive)
+                    self.assertIn(brew.digest(selected), repaired)
+                    self.assertIn('arch arm: "arm64", intel: "x86_64"', repaired)
+                    self.assertNotIn('depends_on arch:', repaired)
+                    self.assertEqual(current.read_text(), old)  # Local preparation never edits the tap.
+                    current.write_text(repaired)
+                    self.assertEqual(brew.package_all(
+                        release, self.source, self.assets, self.output, current,
+                        repair_architectures=True), (archives, repaired))
+                    current.unlink()
+
+    def test_architecture_repair_rejects_changed_existing_cask_settings(self):
+        archive, original = self.package()
+        self.add_intel()
+        self.current.parent.mkdir(parents=True)
+        for altered in (
+                original.replace(brew.digest(archive), '0' * 64),
+                original.replace('_snow-shot/', '/'),
+                original.replace('must_succeed: true', 'must_succeed: false'),
+                original.replace('macos: :sequoia', 'macos: :sonoma'),
+                original.replace('Snow Shot.app', 'Different.app')):
+            self.current.write_text(altered)
+            with self.subTest(altered=altered), \
+                    patch.object(brew, 'run', side_effect=self.fake_run) as run:
+                with self.assertRaisesRegex(ValueError, 'already published'):
+                    brew.publish(self.release['tag_name'], self.source, self.tap, self.output,
+                                 repair_architectures=True)
+                self.assertEqual(self.current.read_text(), altered)
+                self.assertFalse(any(call.args[:3] == ('gh', 'release', 'upload')
+                                     or call.args[:1] == ('git',) for call in run.call_args_list))
+
+    def test_architecture_repair_does_not_allow_replacing_dual_cask_bytes(self):
+        self.add_intel()
+        _, generated = brew.package_all(self.release, self.source, self.assets, self.output, self.current)
+        self.current.parent.mkdir(parents=True)
+        self.current.write_text(generated)
+        (self.assets / self.name).write_bytes(b'changed arm dmg')
+        (self.assets / (self.name + '.sha256')).write_text(brew.digest(self.assets / self.name))
+        with self.assertRaisesRegex(ValueError, 'already published'):
+            brew.package_all(self.release, self.source, self.assets, self.output, self.current,
+                             repair_architectures=True)
+        self.assertEqual(self.current.read_text(), generated)
+
+    def test_local_packaging_cannot_remove_a_published_architecture(self):
+        self.add_intel()
+        self.current_version('1.2.2')
+        self.current.write_text(brew.cask('1.2.2', {'arm64': '0' * 64, 'x64': '1' * 64}))
+        for architecture in brew.ARCHITECTURES:
+            with self.subTest(architecture=architecture), self.assertRaisesRegex(ValueError, 'published architecture'):
+                brew.package_all(self.release, self.source, self.assets, self.output, self.current,
+                                 architectures=[architecture], repair_architectures=True)
+            self.assertFalse(self.output.exists())
+
+    def test_unknown_published_architecture_metadata_fails_before_downloads(self):
+        self.current_version('1.2.2')
+        original = self.current.read_text().replace('depends_on arch: :arm64', 'depends_on arch: :unknown')
+        self.current.write_text(original)
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            with self.assertRaisesRegex(ValueError, 'Unrecognized architecture'):
+                brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(self.current.read_text(), original)
+
+    def test_repair_publication_checks_all_existing_archives_before_tap_changes(self):
+        self.add_intel()
+        intel, original = brew.package(self.release, self.source, self.assets, self.output,
+                                       self.current, architecture='x64')
+        self.current.parent.mkdir(parents=True)
+        self.current.write_text(original)
+        self.release['assets'].append(dict(name=intel.name))
+        (self.assets / intel.name).write_bytes(b'conflicting published archive')
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            with self.assertRaisesRegex(ValueError, 'Existing Homebrew archive differs'):
+                brew.publish(self.release['tag_name'], self.source, self.tap, self.output,
+                             repair_architectures=True)
+            self.assertFalse(any(call.args[:3] == ('gh', 'release', 'upload')
+                                 or call.args[:1] == ('git',) for call in run.call_args_list))
+        self.assertEqual(self.current.read_text(), original)
+        shutil.copyfile(intel, self.assets / intel.name)
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish(self.release['tag_name'], self.source, self.tap, self.output,
+                         repair_architectures=True)
+        self.assertIn('arch arm: "arm64", intel: "x86_64"', self.current.read_text())
+        self.assertIn(brew.digest(intel), self.current.read_text())
 
     def test_dual_full_and_arm_mini_publish_all_archives_before_tap_changes(self):
         self.add_intel()

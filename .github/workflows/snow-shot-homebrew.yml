@@ -9,6 +9,10 @@ on:
         description: Published stable or beta Snow Shot tag (v<version> with optional _snow-shot)
         required: true
         type: string
+      repair_architectures:
+        description: Restore a missing architecture without changing existing archive checksums or cask settings
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -62,7 +66,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
-        run: >-
-          python3 scripts/snow-shot-homebrew.py publish
-          --tag "$RELEASE_TAG" --source release-source
-          --tap homebrew-tap --output artifacts/homebrew
+          REPAIR_ARCHITECTURES: ${{ inputs.repair_architectures || false }}
+        run: |
+          args=(publish --tag "$RELEASE_TAG" --source release-source
+                --tap homebrew-tap --output artifacts/homebrew)
+          if [ "$REPAIR_ARCHITECTURES" = true ]; then
+            args+=(--repair-architectures)
+          fi
+          python3 scripts/snow-shot-homebrew.py "${args[@]}"

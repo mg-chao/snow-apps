@@ -98,6 +98,13 @@ git -C "$tap_dir" remote -v
 ls "$tap_dir/Casks/snow-shot.rb"
 ```
 
+An Intel-only hardware requirement on Apple Silicon can also mean the tap was
+published from an incomplete release upload, as happened with 1.4.3. This is a
+cask metadata error when the matching ARM64 release asset exists. After the tap
+is repaired, run `brew update` and retry the install or upgrade above. An update
+cannot resolve it while the remote cask still requires Intel; maintainers should
+follow the repair procedure below.
+
 Finish recordings and quit Snow Shot before upgrading or uninstalling. Homebrew
 owns the final application placement and removal; the cask's vendor installer
 verifies and locally signs a staged copy before the app artifact runs. Unlike
@@ -136,6 +143,43 @@ state to bypass a missing identity. Homebrew handles application rollback during
 an upgrade. Its restored staged backup is signature-verified without requiring
 the signing key again. Inspect its reported recovery result before retrying. Retain the
 previous app backup and original identity until the installation is working.
+
+### Repairing an incomplete Homebrew publication
+
+Keep GitHub releases in draft until every intended asset has been uploaded and
+verified. `scripts/publish-snow-shot-release.ps1` follows this ordering. The
+Homebrew workflow runs on the release's `published` event; publishing first and
+uploading later can expose only one architecture to that job.
+
+The Homebrew publisher now requires every architecture and edition already
+present in the channel's tap to have a valid DMG and checksum in the new release.
+An incomplete snapshot fails before downloads, archive uploads, or tap changes.
+After all uploads finish, rerun **Publish Snow Shot Homebrew cask** for that tag.
+Single-architecture historical releases can still be packaged locally, but cannot
+replace a cask that already supports both architectures.
+
+If the incomplete cask was already published, ordinary retries reject changes at
+the same version. For 1.4.3, run the workflow manually with tag
+`v1.4.3_snow-shot` and `repair_architectures` enabled. This option permits only
+adding the missing architecture: regenerating the existing architecture must
+reproduce its complete cask byte for byte, including its archive checksum and
+installer settings. The publisher also verifies existing release archives before
+uploading anything or changing the tap. It never replaces published asset bytes.
+Stable and beta channels are checked independently; Mini remains ARM64-only.
+
+To review a repair locally first, download the release metadata and its DMGs and
+checksum sidecars, check out the matching tagged source, and run:
+
+```sh
+python3 scripts/snow-shot-homebrew.py package \
+  --release-json release.json --source release-source --assets release-assets \
+  --current-cask homebrew-tap/Casks/snow-shot.rb --output repaired-homebrew \
+  --repair-architectures
+```
+
+This writes the candidate cask and reproducible archives under `repaired-homebrew`
+without changing the tap or publishing anything. Compare the candidate with the
+current cask before running the publication workflow.
 
 ### Installer staging interface
 

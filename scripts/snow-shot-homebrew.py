@@ -69,7 +69,7 @@ def release_version(release):
     return version
 
 
-def check_current(current, version, generated=None, edition='full'):
+def check_current(current, version, generated=None, edition='full', *, architecture_repairs=()):
     if not current.exists():
         return
     text = current.read_text(encoding='utf-8')
@@ -81,8 +81,41 @@ def check_current(current, version, generated=None, edition='full'):
         raise ValueError('Refusing to change the release channel of a cask.')
     if version_key(previous) > version_key(version):
         raise ValueError('Refusing to downgrade the Homebrew tap.')
-    if previous == version and generated is not None and text != generated:
+    if (previous == version and generated is not None and text != generated
+            and text not in architecture_repairs):
         raise ValueError('Refusing to change the contents of an already published cask version.')
+
+
+def published_architectures(current):
+    """Read the architecture forms emitted by this publisher, without executing Ruby."""
+    text = current.read_text(encoding='utf-8')
+    dual = '  arch arm: "arm64", intel: "x86_64"\n' in text
+    requirements = re.findall(r'^  depends_on arch: :([^\n]+)$', text, re.MULTILINE)
+    if dual and not requirements:
+        return list(ARCHITECTURES)
+    if not dual and len(requirements) == 1:
+        for architecture, suffix in ARCHITECTURES.items():
+            if requirements[0] == suffix:
+                return [architecture]
+    raise ValueError(f'Unrecognized architecture metadata in {current.name}; refusing to update the tap.')
+
+
+def check_release_coverage(release, tap, version):
+    # A release event can arrive while assets are still uploading. An incomplete
+    # snapshot must never drop an architecture or leave an existing edition behind.
+    for edition in PRODUCTS:
+        current = tap / f'Casks/{cask_name(version, edition)}.rb'
+        if not current.exists():
+            continue
+        check_current(current, version, edition=edition)
+        for architecture in published_architectures(current):
+            try:
+                required_assets(release, version, edition, architecture)
+            except ValueError as error:
+                raise ValueError(
+                    f'Cannot update {current.name}: published architecture {architecture} '
+                    f'is missing or incomplete. Keep releases in draft until all uploads '
+                    f'finish, then rerun Homebrew publication. {error}') from error
 
 
 def required_assets(release, version, edition='full', architecture='arm64'):
@@ -298,7 +331,8 @@ def package_archive(version, edition, architecture, name, dmg, installer, prefli
     return archive
 
 
-def package_all(release, source, assets, output, current, edition='full', architectures=None):
+def package_all(release, source, assets, output, current, edition='full', architectures=None,
+                *, repair_architectures=False):
     version = release_version(release)
     check_current(current, version, edition=edition)
     available = architectures_for_release(release, version, edition)
@@ -306,6 +340,8 @@ def package_all(release, source, assets, output, current, edition='full', archit
     if not architectures or len(set(architectures)) != len(architectures) or any(
             architecture not in available for architecture in architectures):
         raise ValueError('Requested macOS architecture is missing from the release.')
+    if current.exists() and not set(published_architectures(current)).issubset(architectures):
+        raise ValueError('Refusing to remove a published architecture from the Homebrew cask.')
     installer, preflight = package_source(source, version, edition)
     inputs = []
     for architecture in architectures:
@@ -318,7 +354,13 @@ def package_all(release, source, assets, output, current, edition='full', archit
     checksums = {architecture: digest(archive)
                  for (architecture, _, _), archive in zip(inputs, archives)}
     generated = cask(version, checksums, release['tag_name'], edition)
-    check_current(current, version, generated, edition)
+    # An explicit repair may only extend a canonical single-architecture cask.
+    # Re-rendering its old architecture must reproduce every byte, including its
+    # archive checksum, tag URL, installer arguments, and all other metadata.
+    repairs = [cask(version, {arch: checksum}, release['tag_name'], edition)
+               for arch, checksum in checksums.items()
+               if repair_architectures and len(checksums) == 2]
+    check_current(current, version, generated, edition, architecture_repairs=repairs)
     casks = output / 'Casks'
     casks.mkdir(exist_ok=True)
     (casks / f'{cask_name(version, edition)}.rb').write_text(generated, encoding='utf-8')
@@ -349,12 +391,13 @@ def ensure_asset(release, archive, validate_only=False):
         run('gh', 'release', 'upload', release['tag_name'], str(archive), '--repo', REPOSITORY)
 
 
-def publish(tag, source, tap, output):
+def publish(tag, source, tap, output, *, repair_architectures=False):
     tag_version(tag)
     release = json.loads(run('gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}'))
     if release['tag_name'] != tag:
         raise ValueError('Unexpected release tag returned by GitHub.')
     version = release_version(release)
+    check_release_coverage(release, tap, version)
     editions = products_for_release(release)
     prepared = []
     with tempfile.TemporaryDirectory(prefix='snow-homebrew-assets-') as directory:
@@ -369,7 +412,8 @@ def publish(tag, source, tap, output):
             *patterns, '--dir', directory)
         for edition in editions:
             current = tap / f'Casks/{cask_name(version, edition)}.rb'
-            archives, generated = package_all(release, source, Path(directory), output, current, edition)
+            archives, generated = package_all(release, source, Path(directory), output, current, edition,
+                                               repair_architectures=repair_architectures)
             prepared.append((current, archives, generated))
     # Validate both editions before uploading archives or modifying the tap.
     for _, archives, _ in prepared:
@@ -410,13 +454,18 @@ def main():
     for command in (local, remote):
         command.add_argument('--source', type=Path, required=True)
         command.add_argument('--output', type=Path, required=True)
+        command.add_argument('--repair-architectures', action='store_true',
+                             help='Allow adding a missing architecture at the same version only '
+                                  'when the existing cask and archive checksum are unchanged')
     args = parser.parse_args()
     try:
         if args.command == 'package':
             package_all(json.loads(args.release_json.read_text(encoding='utf-8')), args.source,
-                        args.assets, args.output, args.current_cask, args.edition)
+                        args.assets, args.output, args.current_cask, args.edition,
+                        repair_architectures=args.repair_architectures)
         elif args.command == 'publish':
-            publish(args.tag, args.source, args.tap, args.output)
+            publish(args.tag, args.source, args.tap, args.output,
+                    repair_architectures=args.repair_architectures)
         else:
             print(f'Migrated {migrate_casks(args.tap)} Homebrew cask(s). No release assets were changed.')
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

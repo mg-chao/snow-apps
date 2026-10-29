@@ -49,7 +49,17 @@ and the `.sha256` sidecar when present. At least one checksum source is required
 if both exist, both must match. The Homebrew archive always includes a checksum
 sidecar for the installer, even when the original release uses only GitHub's digest.
 Each architecture has its own reproducible archive. Full casks select the Apple
-Silicon or Intel archive automatically when both are present; releases containing
-only one architecture retain that requirement. Existing archives and casks cannot
-change at the same version, so Intel support for an ARM64-only published version
-must be added in a new release.
+Silicon or Intel archive automatically when both are present; historical releases
+containing only one architecture retain that requirement. Publication refuses to
+remove an architecture or omit an edition already present in that release channel.
+Keep a GitHub release in draft until all assets have been uploaded and verified;
+the Homebrew workflow starts as soon as the release is published. If a partial
+upload is rejected, finish uploading and rerun the workflow for the same tag.
+
+Existing archives cannot change at the same version. To repair a cask published
+with a missing architecture, manually run **Publish Snow Shot Homebrew cask** with
+the same tag and `repair_architectures` enabled. This permits only extending a
+single-architecture cask to both architectures when its existing archive checksum,
+URL, installer arguments, and all other settings are identical. All archives are
+verified before the tap changes. Ordinary publication still rejects same-version
+cask changes. See the [repair procedure](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md#repairing-an-incomplete-homebrew-publication).
