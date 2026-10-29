@@ -5,8 +5,8 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 
 ## Ant Design
 
-Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Divider, Tag, Input, Tooltip,
-Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Result and Message visual rules,
+Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Descriptions, Divider, Tag, Input, Tooltip,
+Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Result, Message and Notification visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
 and common translations are adapted from
@@ -229,3 +229,9 @@ Neither React nor rc-progress is a native runtime dependency. Original notices
 are retained in `fixtures/progress/licenses/rc-component-progress.txt` and
 `fixtures/theme/licenses/ant-design.txt`. See `fixtures/progress/README.md` for
 source revision, provenance and regeneration. No native dependency was added.
+
+Notification's visual defaults, gallery copy, and original browser reference follow
+Ant Design 6.6.7 and @rc-component/notification 2.1.1. Original licenses for every
+package executed by the fixture bundle are preserved in `fixtures/notification/licenses/`;
+`fixtures/notification/reference-packages.json` records their names, versions, and hashes.
+These developer fixtures add no JavaScript runtime dependency to the native library.

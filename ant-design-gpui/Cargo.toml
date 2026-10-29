@@ -111,5 +111,13 @@ harness = false
 [profile.dev]
 incremental = false
 
+[[bench]]
+name = "descriptions"
+harness = false
+
 [profile.test]
 incremental = false
+
+[[bench]]
+name = "notification"
+harness = false

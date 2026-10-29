@@ -20,6 +20,7 @@ use super::{
     catalog::{COMPONENTS, ComponentId},
     checkbox::{self, CheckboxPage},
     context_menu::{self, ContextMenuPage},
+    descriptions::{self, DescriptionsPage},
     divider::{self, DividerPage},
     input::{self, InputPage},
     input_examples,
@@ -27,6 +28,7 @@ use super::{
     menu::{self, MenuPage},
     message::{self, MessagePage},
     modal::{self, ModalPage},
+    notification::{self, NotificationPage},
     pagination::{self, PaginationPage},
     popup::{self, Kind, PopupPage},
     progress::{self, ProgressPage},
@@ -98,9 +100,11 @@ pub(super) struct Gallery {
     pub tabs: Entity<TabsPage>,
     pub alert: Entity<AlertPage>,
     pub result: Entity<ResultPage>,
+    pub descriptions: Entity<DescriptionsPage>,
     pub spin: Entity<SpinPage>,
     pub progress: Entity<ProgressPage>,
     pub message: Entity<MessagePage>,
+    pub notification: Entity<NotificationPage>,
     pub modal: Entity<ModalPage>,
     pub scroll: ScrollHandle,
     anchors: Vec<ScrollAnchor>,
@@ -124,9 +128,11 @@ pub(super) struct Gallery {
     tabs_anchors: Vec<ScrollAnchor>,
     alert_anchors: Vec<ScrollAnchor>,
     result_anchors: Vec<ScrollAnchor>,
+    descriptions_anchors: Vec<ScrollAnchor>,
     spin_anchors: Vec<ScrollAnchor>,
     progress_anchors: Vec<ScrollAnchor>,
     message_anchors: Vec<ScrollAnchor>,
+    notification_anchors: Vec<ScrollAnchor>,
     modal_anchors: Vec<ScrollAnchor>,
     _config: Subscription,
 }
@@ -218,6 +224,10 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let descriptions_anchors: Vec<_> = descriptions::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         let result_anchors: Vec<_> = result::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
@@ -234,13 +244,22 @@ impl Gallery {
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
+        let notification_anchors: Vec<_> = notification::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
         Self {
+            notification: cx.new(|cx| {
+                NotificationPage::new(scope.clone(), notification_anchors.clone(), window, cx)
+            }),
             message: cx
                 .new(|cx| MessagePage::new(scope.clone(), message_anchors.clone(), window, cx)),
             progress: cx
                 .new(|cx| ProgressPage::new(scope.clone(), progress_anchors.clone(), window, cx)),
             spin: cx.new(|cx| SpinPage::new(scope.clone(), spin_anchors.clone(), cx)),
             result: cx.new(|cx| ResultPage::new(scope.clone(), result_anchors.clone(), cx)),
+            descriptions: cx
+                .new(|cx| DescriptionsPage::new(scope.clone(), descriptions_anchors.clone(), cx)),
             modal: cx.new(|cx| ModalPage::new(scope.clone(), modal_anchors.clone(), window, cx)),
             alert: cx.new(|cx| AlertPage::new(scope.clone(), alert_anchors.clone(), cx)),
             menu: cx.new(|cx| MenuPage::new(scope.clone(), menu_anchors.clone(), window, cx)),
@@ -321,9 +340,11 @@ impl Gallery {
             tabs_anchors,
             alert_anchors,
             result_anchors,
+            descriptions_anchors,
             spin_anchors,
             progress_anchors,
             message_anchors,
+            notification_anchors,
             modal_anchors,
         }
     }
@@ -470,9 +491,11 @@ impl Gallery {
                         ComponentId::Tabs => "Navigation / Tabs",
                         ComponentId::Alert => "Feedback / Alert",
                         ComponentId::Result => "Feedback / Result",
+                        ComponentId::Descriptions => "Data Display / Descriptions",
                         ComponentId::Spin => "Feedback / Spin",
                         ComponentId::Progress => "Feedback / Progress",
                         ComponentId::Message => "Feedback / Message",
+                        ComponentId::Notification => "Feedback / Notification",
                         ComponentId::Modal => "Feedback / Modal",
                     },
                 ))
@@ -583,9 +606,11 @@ impl Gallery {
                                 ComponentId::Tabs => IconName::FolderOutlined,
                                 ComponentId::Alert => IconName::AlertOutlined,
                                 ComponentId::Result => IconName::CheckCircleOutlined,
+                                ComponentId::Descriptions => IconName::ProfileOutlined,
                                 ComponentId::Spin => IconName::LoadingOutlined,
                                 ComponentId::Progress => IconName::DashboardOutlined,
                                 ComponentId::Message => IconName::MessageOutlined,
+                                ComponentId::Notification => IconName::NotificationOutlined,
                                 ComponentId::Modal => IconName::LayoutOutlined,
                                 _ => IconName::AppstoreOutlined,
                             })
@@ -723,6 +748,13 @@ impl Gallery {
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
+                    descriptions::DEMOS
+                        .iter()
+                        .zip(&self.descriptions_anchors)
+                        .filter(|_| self.selected == ComponentId::Descriptions)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
                     result::DEMOS
                         .iter()
                         .zip(&self.result_anchors)
@@ -805,6 +837,13 @@ impl Gallery {
                     .iter()
                     .zip(&self.message_anchors)
                     .filter(|_| self.selected == ComponentId::Message)
+                    .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+            );
+            let links = links.chain(
+                notification::DEMOS
+                    .iter()
+                    .zip(&self.notification_anchors)
+                    .filter(|_| self.selected == ComponentId::Notification)
                     .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
             );
             let links = links.chain(
@@ -972,9 +1011,15 @@ impl Gallery {
                                 ComponentId::Tabs => "Open Ant Design Tabs reference",
                                 ComponentId::Alert => "Open Ant Design Alert reference",
                                 ComponentId::Result => "Open Ant Design Result reference",
+                                ComponentId::Descriptions => {
+                                    "Open Ant Design Descriptions reference"
+                                }
                                 ComponentId::Spin => "Open Ant Design Spin reference",
                                 ComponentId::Progress => "Open Ant Design Progress reference",
                                 ComponentId::Message => "Open Ant Design Message reference",
+                                ComponentId::Notification => {
+                                    "Open Ant Design Notification reference"
+                                }
                                 ComponentId::Modal => "Open Ant Design Modal reference",
                             })
                             .href(match self.selected {
@@ -1001,9 +1046,15 @@ impl Gallery {
                                 ComponentId::Tabs => "https://ant.design/components/tabs",
                                 ComponentId::Alert => "https://ant.design/components/alert",
                                 ComponentId::Result => "https://ant.design/components/result",
+                                ComponentId::Descriptions => {
+                                    "https://ant.design/components/descriptions"
+                                }
                                 ComponentId::Spin => "https://ant.design/components/spin",
                                 ComponentId::Progress => "https://ant.design/components/progress",
                                 ComponentId::Message => "https://ant.design/components/message",
+                                ComponentId::Notification => {
+                                    "https://ant.design/components/notification"
+                                }
                                 ComponentId::Modal => "https://ant.design/components/modal",
                                 ComponentId::Tag => "https://ant.design/components/tag",
                                 ComponentId::Tooltip => "https://ant.design/components/tooltip",
@@ -1060,9 +1111,11 @@ impl Render for Gallery {
             ComponentId::Tabs => tabs::DEMOS.len(),
             ComponentId::Alert => alert::DEMOS.len(),
             ComponentId::Result => result::DEMOS.len(),
+            ComponentId::Descriptions => descriptions::DEMOS.len(),
             ComponentId::Spin => spin::DEMOS.len(),
             ComponentId::Progress => progress::DEMOS.len(),
             ComponentId::Message => message::DEMOS.len(),
+            ComponentId::Notification => notification::DEMOS.len(),
             ComponentId::Modal => modal::DEMOS.len(),
         };
         let coverage = match self.selected {
@@ -1185,9 +1238,11 @@ impl Render for Gallery {
                                         ComponentId::Tabs => self.tabs.clone().into_any_element(),
                                         ComponentId::Alert => self.alert.clone().into_any_element(),
                                         ComponentId::Result => self.result.clone().into_any_element(),
+                                        ComponentId::Descriptions => self.descriptions.clone().into_any_element(),
                                         ComponentId::Spin => self.spin.clone().into_any_element(),
                                         ComponentId::Progress => self.progress.clone().into_any_element(),
                                         ComponentId::Message => self.message.clone().into_any_element(),
+                                        ComponentId::Notification => self.notification.clone().into_any_element(),
                                         ComponentId::Modal => self.modal.clone().into_any_element(),
 
                                     })
@@ -1208,9 +1263,11 @@ impl Render for Gallery {
                                                 ComponentId::Tabs => "Arrow keys move focus · Enter or Space selects · Delete requests closing editable tabs",
                                                 ComponentId::Alert => "Tab to navigate actions · Enter or Space to activate or close",
                                                 ComponentId::Result => "Tab to navigate actions · Enter or Space to activate",
+                                                ComponentId::Descriptions => "Choose a size · Resize the window to change responsive columns · Tab to the Edit action",
                                                 ComponentId::Spin => "Toggle loading or automatic progress · Run progress or a fullscreen operation",
                                                 ComponentId::Progress => "Adjust progress; change dashboard gaps and circular steps",
                                                 ComponentId::Message => "Display a message · Hover to pause dismissal or expand a stack",
+                                                ComponentId::Notification => "Display a notification · Hover to pause dismissal or expand a stack",
                                                 ComponentId::Modal => "Tab stays in the active dialog · Escape closes the top dialog or popup",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",

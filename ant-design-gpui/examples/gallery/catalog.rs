@@ -17,6 +17,7 @@ pub(super) enum ComponentId {
     Slider,
     Switch,
     Tag,
+    Descriptions,
     Tooltip,
     Popover,
     Popconfirm,
@@ -30,6 +31,7 @@ pub(super) enum ComponentId {
     Spin,
     Progress,
     Message,
+    Notification,
     Modal,
 }
 
@@ -148,6 +150,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         description: "Used to toggle between two states.",
     },
     Component {
+        id: ComponentId::Descriptions,
+        navigation_id: "gallery.navigation.descriptions",
+        group: "Data Display",
+        title: "Descriptions",
+        description: "Display multiple read-only fields in a group.",
+    },
+    Component {
         id: ComponentId::Tag,
         navigation_id: "gallery.navigation.tag",
         group: "Data Display",
@@ -202,6 +211,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Feedback",
         title: "Message",
         description: "Display global messages as feedback in response to user operations.",
+    },
+    Component {
+        id: ComponentId::Notification,
+        navigation_id: "gallery.navigation.notification",
+        group: "Feedback",
+        title: "Notification",
+        description: "Display global notifications as feedback in response to user operations.",
     },
     Component {
         id: ComponentId::Modal,

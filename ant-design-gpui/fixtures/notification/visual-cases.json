@@ -1,0 +1,546 @@
+{
+  "placement-top": {
+    "placement": "top",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "placement-topLeft": {
+    "placement": "topLeft",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "placement-topRight": {
+    "placement": "topRight",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "placement-bottom": {
+    "placement": "bottom",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "placement-bottomLeft": {
+    "placement": "bottomLeft",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "placement-bottomRight": {
+    "placement": "bottomRight",
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      }
+    ]
+  },
+  "types": {
+    "items": [
+      {
+        "key": "success",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "success"
+      },
+      {
+        "key": "info",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "info"
+      },
+      {
+        "key": "warning",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "warning"
+      },
+      {
+        "key": "error",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "error"
+      }
+    ]
+  },
+  "content": {
+    "items": [
+      {
+        "key": "title",
+        "title": "Notification Title",
+        "description": null
+      },
+      {
+        "key": "description",
+        "title": null,
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "custom",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "icon": "smile"
+      },
+      {
+        "key": "no-close",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "closable": false
+      },
+      {
+        "key": "no-icon",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "info",
+        "icon": "none"
+      }
+    ]
+  },
+  "actions": {
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "actions": true
+      },
+      {
+        "key": "disabled-close",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "closeDisabled": true
+      },
+      {
+        "key": "custom-close",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "closeIcon": "minus"
+      }
+    ]
+  },
+  "text": {
+    "items": [
+      {
+        "key": "whitespace",
+        "title": "  Notification\n Title  ",
+        "description": "  First\n  second\t  third  "
+      },
+      {
+        "key": "long",
+        "title": "Notification Title",
+        "description": "LongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifier"
+      },
+      {
+        "key": "unicode",
+        "title": "Task completed",
+        "description": "مرحبا بالعالم · שלום עולם · 中文通知 · Saved 42 files"
+      }
+    ]
+  },
+  "narrow": {
+    "width": 320,
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "info"
+      },
+      {
+        "key": "long",
+        "title": "Notification Title",
+        "description": "LongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifierLongUnbrokenNotificationIdentifier"
+      },
+      {
+        "key": "action",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "actions": true
+      }
+    ]
+  },
+  "stack": {
+    "stack": true,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      }
+    ]
+  },
+  "expanded": {
+    "stack": true,
+    "hover": true,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      }
+    ]
+  },
+  "count-limit": {
+    "maxCount": 2,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      }
+    ]
+  },
+  "offsets": {
+    "top": 48,
+    "bottom": 60,
+    "items": [
+      {
+        "key": "top",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "topLeft"
+      },
+      {
+        "key": "bottom",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "bottomRight"
+      }
+    ]
+  },
+  "tokens": {
+    "tokenCase": true,
+    "items": [
+      {
+        "key": "success",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "success"
+      },
+      {
+        "key": "info",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "info"
+      },
+      {
+        "key": "warning",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "warning"
+      },
+      {
+        "key": "error",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "error"
+      }
+    ]
+  },
+  "semantic": {
+    "items": [
+      {
+        "key": "styled",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "success",
+        "semantic": true
+      }
+    ]
+  },
+  "progress": {
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "showProgress": true
+      }
+    ]
+  },
+  "progress-gradient": {
+    "tokenCase": true,
+    "items": [
+      {
+        "key": "basic",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "showProgress": true
+      }
+    ]
+  },
+  "stack-bottom": {
+    "stack": true,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      }
+    ],
+    "placement": "bottomLeft"
+  },
+  "stack-one": {
+    "stack": true,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      }
+    ],
+    "threshold": 1
+  },
+  "stack-five": {
+    "stack": true,
+    "items": [
+      {
+        "key": "stack-0",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-1",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-2",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification."
+      },
+      {
+        "key": "stack-3",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This"
+      },
+      {
+        "key": "stack-4",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is "
+      },
+      {
+        "key": "stack-5",
+        "title": "Newest notification",
+        "description": "Short description."
+      }
+    ],
+    "threshold": 5
+  },
+  "multiline-title": {
+    "width": 320,
+    "items": [
+      {
+        "key": "long-title",
+        "title": "A very long notification title that wraps around the close button without clipping",
+        "description": "Details",
+        "type": "info"
+      },
+      {
+        "key": "empty-title",
+        "title": "",
+        "description": "Only a description remains",
+        "type": "success"
+      },
+      {
+        "key": "empty",
+        "title": null,
+        "description": null
+      }
+    ]
+  },
+  "six-groups": {
+    "width": 1440,
+    "items": [
+      {
+        "key": "top",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "top"
+      },
+      {
+        "key": "topLeft",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "topLeft"
+      },
+      {
+        "key": "topRight",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "topRight"
+      },
+      {
+        "key": "bottom",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "bottom"
+      },
+      {
+        "key": "bottomLeft",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "bottomLeft"
+      },
+      {
+        "key": "bottomRight",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "placement": "bottomRight"
+      }
+    ]
+  },
+  "holder-styles": {
+    "items": [
+      {
+        "key": "success",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "success"
+      },
+      {
+        "key": "info",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "info"
+      },
+      {
+        "key": "warning",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "warning"
+      },
+      {
+        "key": "error",
+        "title": "Notification Title",
+        "description": "This is the content of the notification. This is the content of the notification. This is the content of the notification.",
+        "type": "error"
+      }
+    ],
+    "holderStyles": true
+  }
+}

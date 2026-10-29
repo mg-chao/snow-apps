@@ -10,10 +10,9 @@ use std::{
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Context, Edges, Element, ElementId, Entity, EntityId,
-    FocusHandle, Global, GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length,
-    MouseMoveEvent, Pixels, Point, Refineable, RenderOnce, ScrollEvent, SharedString, Style,
-    StyleRefinement, Subscription, WeakEntity, WeakFocusHandle, Window, WindowId, div, point,
-    prelude::*, px, radians, relative, size,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length, MouseMoveEvent, Pixels,
+    Point, Refineable, RenderOnce, ScrollEvent, SharedString, Style, StyleRefinement, Subscription,
+    WeakEntity, Window, div, point, prelude::*, px, radians, relative, size,
 };
 
 use super::{
@@ -360,105 +359,7 @@ impl VisualState {
     }
 }
 
-struct BoundaryState {
-    root: FocusHandle,
-    window: WindowId,
-    return_to: Option<WeakFocusHandle>,
-    closed: Cell<bool>,
-    _focus: Subscription,
-}
-
-#[derive(Default)]
-struct FocusBoundaries(Vec<std::rc::Weak<BoundaryState>>);
-impl Global for FocusBoundaries {}
-
-/// An outgoing rich-content tree keeps its native paint while losing interaction.
-#[derive(Clone)]
-pub(super) struct FocusBoundary(Rc<BoundaryState>);
-
-impl FocusBoundary {
-    fn new(window: &mut Window, cx: &mut App) -> Self {
-        let root = cx.focus_handle();
-        let window_id = window.window_handle().window_id();
-        let return_to = window.focused(cx).map(|focus| focus.downgrade());
-        let state = Rc::new_cyclic(|weak: &std::rc::Weak<BoundaryState>| {
-            let observed = weak.clone();
-            let subscription = window.on_focus_in(&root, cx, move |window, cx| {
-                if let Some(state) = observed.upgrade()
-                    && state.closed.get()
-                {
-                    FocusBoundary(state).skip(window, cx);
-                }
-            });
-            BoundaryState {
-                root,
-                window: window_id,
-                return_to,
-                closed: Cell::new(false),
-                _focus: subscription,
-            }
-        });
-        if !cx.has_global::<FocusBoundaries>() {
-            cx.set_global(FocusBoundaries::default());
-        }
-        let registry = cx.global_mut::<FocusBoundaries>();
-        registry.0.retain(|weak| weak.strong_count() != 0);
-        registry.0.push(Rc::downgrade(&state));
-        Self(state)
-    }
-
-    fn closed_roots(&self, cx: &App) -> Vec<FocusHandle> {
-        cx.try_global::<FocusBoundaries>()
-            .map(|registry| {
-                registry
-                    .0
-                    .iter()
-                    .filter_map(std::rc::Weak::upgrade)
-                    .filter(|boundary| boundary.window == self.0.window && boundary.closed.get())
-                    .map(|boundary| boundary.root.clone())
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![self.0.root.clone()])
-    }
-
-    fn restore(&self, roots: &[FocusHandle], window: &mut Window, cx: &mut App) {
-        if let Some(focus) = self.0.return_to.as_ref().and_then(WeakFocusHandle::upgrade)
-            && !roots.iter().any(|root| root.contains(&focus, window))
-        {
-            window.focus(&focus, cx);
-        } else {
-            window.blur(cx);
-        }
-    }
-
-    pub(super) fn dismiss(&self, window: &mut Window, cx: &mut App) {
-        if self.0.root.contains_focused(window, cx) {
-            self.restore(&self.closed_roots(cx), window, cx);
-        }
-    }
-
-    pub(super) fn is_closed(&self) -> bool {
-        self.0.closed.get()
-    }
-
-    pub(super) fn skip(&self, window: &mut Window, cx: &mut App) {
-        let mut visited = Vec::new();
-        let roots = self.closed_roots(cx);
-        while roots.iter().any(|root| root.contains_focused(window, cx)) {
-            let current = window.focused(cx);
-            if current.is_none() || visited.contains(&current) {
-                self.restore(&roots, window, cx);
-                break;
-            }
-            visited.push(current);
-            if window.modifiers().shift {
-                window.focus_prev(cx);
-            } else {
-                window.focus_next(cx);
-            }
-        }
-    }
-}
+pub(super) use crate::behavior::notice::FocusBoundary;
 
 pub(super) fn closing_boundary(
     visual: &Rc<RefCell<VisualState>>,

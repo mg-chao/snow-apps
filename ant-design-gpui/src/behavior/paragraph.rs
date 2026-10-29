@@ -91,6 +91,63 @@ fn append_glyph(runs: &mut Vec<ShapedRun>, font: FontId, glyph: ShapedGlyph) {
     }
 }
 
+/// Elide a static RTL paragraph at its physical inline end (the left edge).
+/// Preserve the complete paragraph's shaping and glyph indices: reshaping a
+/// logical suffix would lose mixed-direction order and Arabic joining forms.
+/// The original logical text remains available to the semantic text element.
+pub(crate) fn elide_rtl_inline_end(
+    full: &ShapedLine,
+    ellipsis: &ShapedLine,
+    width: Pixels,
+) -> ShapedLine {
+    if full.width() <= width {
+        return full.clone();
+    }
+    let width = width.max(px(0.));
+    let offset = full.width() - width;
+    let cutoff = offset + ellipsis.width();
+    let mut visual = clusters(full, &full.text, 0, px(0.), full.width());
+    visual.sort_by(|left, right| f32::from(left.x).total_cmp(&f32::from(right.x)));
+    // Removing whole graphemes can leave unused space at the inline end.
+    // CSS places the marker immediately beside the first retained cluster,
+    // rather than separating the marker from that text with the remainder.
+    let marker_offset = visual
+        .iter()
+        .find(|cluster| cluster.x >= cutoff)
+        .map_or(px(0.), |cluster| cluster.x - offset - ellipsis.width());
+    let mut runs = Vec::new();
+    for run in &ellipsis.runs {
+        for glyph in &run.glyphs {
+            let mut glyph = glyph.clone();
+            // This helper receives a single uniformly decorated paragraph.
+            // Associate the marker with that same decoration, without adding
+            // invented bytes to its logical source or accessible value.
+            glyph.index = 0;
+            glyph.position.x += marker_offset;
+            append_glyph(&mut runs, run.font_id, glyph);
+        }
+    }
+    for cluster in visual {
+        if cluster.x < cutoff {
+            continue;
+        }
+        for (font, mut glyph) in cluster.glyphs {
+            glyph.position.x -= offset;
+            append_glyph(&mut runs, font, glyph);
+        }
+    }
+    let mut line = full.clone();
+    *line = Arc::new(LineLayout {
+        font_size: full.font_size,
+        width,
+        ascent: full.ascent.max(ellipsis.ascent),
+        descent: full.descent.max(ellipsis.descent),
+        runs,
+        len: full.len(),
+    });
+    line
+}
+
 /// Shape one logical paragraph into native glyph runs in visual order. This
 /// helper is also path-included by the Windows verification surface.
 pub(crate) fn shape_paragraph(

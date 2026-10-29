@@ -30,9 +30,11 @@ struct Fixture {
 }
 
 mod context_scroll;
+mod descriptions;
 mod input;
 mod menu;
 mod message;
+mod notification;
 mod pagination;
 mod progress;
 mod result;
@@ -1073,8 +1075,10 @@ fn gallery_capture_options_keep_navigation_pages_noninteractive_with_or_without_
         ("tabs", ComponentId::Tabs),
         ("modal", ComponentId::Modal),
         ("message", ComponentId::Message),
+        ("notification", ComponentId::Notification),
         ("progress", ComponentId::Progress),
         ("result", ComponentId::Result),
+        ("descriptions", ComponentId::Descriptions),
         ("spin", ComponentId::Spin),
     ] {
         let interactive = Options::parse(["--component".into(), name.into()]).unwrap();

@@ -12,6 +12,12 @@ pub mod button;
 pub mod checkbox;
 pub mod config;
 pub mod context_menu;
+pub mod descriptions;
+pub use descriptions::{
+    DescriptionItem, DescriptionItemStyles, Descriptions, DescriptionsBreakpoints,
+    DescriptionsColumns, DescriptionsConfig, DescriptionsConfigPatch, DescriptionsLayout,
+    DescriptionsSpan, DescriptionsStyleContext, DescriptionsStyleResolver, DescriptionsStyles,
+};
 pub mod divider;
 pub mod icons;
 pub mod input;
@@ -31,6 +37,14 @@ pub use message::{
 };
 pub mod modal;
 pub use modal::{Modal, ModalEvent, ModalHandle, ModalHost, ModalManager, ModalState};
+pub mod notification;
+pub use notification::{
+    Notification, NotificationCloseEvent, NotificationCloseReason, NotificationCompletion,
+    NotificationConfig, NotificationConfigPatch, NotificationHandle, NotificationHost,
+    NotificationIcon, NotificationLayout, NotificationOptions, NotificationPlacement,
+    NotificationStack, NotificationState, NotificationStyleContext, NotificationStyleResolver,
+    NotificationStyles, NotificationType,
+};
 pub mod pagination;
 pub use pagination::{
     Pagination, PaginationChange, PaginationEvent, PaginationSizeChange, PaginationState,

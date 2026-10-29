@@ -8,6 +8,7 @@ mod button;
 mod catalog;
 mod checkbox;
 mod context_menu;
+mod descriptions;
 mod divider;
 mod input;
 mod input_examples;
@@ -15,6 +16,7 @@ mod input_number;
 mod menu;
 mod message;
 mod modal;
+mod notification;
 mod pagination;
 mod popup;
 mod progress;
@@ -87,12 +89,14 @@ impl Options {
                             Some("modal") => catalog::ComponentId::Modal,
                             Some("alert") => catalog::ComponentId::Alert,
                             Some("result") => catalog::ComponentId::Result,
+                            Some("descriptions") => catalog::ComponentId::Descriptions,
                             Some("spin") => catalog::ComponentId::Spin,
                             Some("progress") => catalog::ComponentId::Progress,
                             Some("message") => catalog::ComponentId::Message,
+                            Some("notification") => catalog::ComponentId::Notification,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, spin, progress, message, or modal"
+                                "--component requires button, divider, checkbox, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, descriptions, spin, progress, message, notification, or modal"
                                     .into(),
                             ),
                         };
@@ -151,7 +155,7 @@ impl Options {
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|spin|progress|message] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|descriptions|spin|progress|message|notification] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {

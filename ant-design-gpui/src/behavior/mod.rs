@@ -7,6 +7,7 @@ mod accessibility;
 mod activation;
 mod focus;
 mod motion;
+pub(crate) mod notice;
 pub(crate) mod paragraph;
 pub(crate) mod text;
 mod wave;

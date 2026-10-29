@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "utc": "2026-10-28T17:56:31.711423+00:00",
+  "platform": "windows-x64",
+  "review": "Native gallery screenshots inspected for readable controls, responsive columns, scrolling, and dark/compact/RTL presentation.",
+  "native_executable_sha256": "87035406d030006e07306d180a562bdffe697ee605af175fe86b95a88d70b583",
+  "captures": [
+    {
+      "name": "default-top.png",
+      "sha256": "871a81be7284d0a3252bdd19dc99367e961850b526d690d6a9fdfe95b5f8adb6"
+    },
+    {
+      "name": "default-middle.png",
+      "sha256": "b7ada095b6e71f4fa6fae2b4d9595afba39fa9f755e4c790b326b802750c0291"
+    },
+    {
+      "name": "dark-compact-rtl-bottom.png",
+      "sha256": "3323de180af31796edce4545c7449e41fefd27922dd522bfddc280bd4538debc"
+    },
+    {
+      "name": "narrow-top.png",
+      "sha256": "6049da42926b0b4747beb0d209bf4d33f2992fe22646a8b5d03cc3ca24f9e78e"
+    }
+  ],
+  "source_sha256": {
+    "examples/gallery/notification.rs": "2c50c332843d9a88dd464fb3493918f2cd27b8af8112a71a27de505762c35cdd",
+    "examples/gallery/shell.rs": "93b9c99b53cc98cc2080171224e4f4a4d5244ccde5da2225b80106b16e90ff6c",
+    "examples/gallery/main.rs": "f0ac588f29bdec38f1b33bdd34f1f42d980861a90bacac0e44ac9e65afbde3c7",
+    "examples/gallery/catalog.rs": "2b54b7f3540edb9d37615dc9c74c99469c1f47279399e3eaa0f3c031cf6c3940"
+  }
+}

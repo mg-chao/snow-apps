@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x64",
+  "preset": "windows-msvc-performance",
+  "profile": "release",
+  "utc": "2026-10-28T17:54:17.4584231Z",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "measurement": "CPU layout and scene preparation; diagnostic timings",
+  "native_executable": {
+    "name": "notification-59304fc8d9522ab2.exe",
+    "sha256": "98ef9f93a7c5344c118a2330e3d2d3ae1ec3e0d6320feb062ce8f3c844e7779c"
+  },
+  "source_sha256": {
+    "benches/notification.rs": "6cf0dc4488390b9b85e8d8644e3e9e13c03cc209274aff2bf0abaa72480d7f14",
+    "scripts/run-notification-perf.ps1": "cdfa56ee771147cbaca2502b48df71a36fb526f8f74a18d1bf1fe7d41b779872",
+    "Cargo.toml": "44ae6b159afcc270e73eeece34e7615e03c552a77a3d833ba77e734992b01862",
+    "Cargo.lock": "3863e01aea618961450389bef3877e6cccea54f00028bfc68646e0011fcda954",
+    "src/root.rs": "0ce4bd0dcf032ef0fbe19d639acf28eaf87a31df65a06b99b30ce76cfb4c2928",
+    "src/lib.rs": "e05946458684fa49f768b1027d94322cc1e948f1d48b5a21b76a9719ff920105",
+    "src/config.rs": "9dddca0a24fce3e3c1f5eeb4059fa6a94989c09ebb79c9e37605c530a1b74465",
+    "src/behavior/text.rs": "e335c5072406a30ec1e5a114cb06bbc338602bfe13dfa59fa164f29934612538",
+    "src/behavior/notice.rs": "182be27ea3f40adddc1aff43c11e15ca3d33f43bc54b4f54b26713db1f53c08f",
+    "src/notification/card.rs": "21f1ee9e8ea55cfc5ff5e0e5c649a92d8c0b721e981f5686ac557be13ceaf69b",
+    "src/notification/config.rs": "24ed361245c4a086fecffd75d0b6da847544f93b6613d685e71c7b8df027d07c",
+    "src/notification/geometry.rs": "f9d89337ae756c657c4b962368f49ada264d45ef40497db105f41f9c93d065bb",
+    "src/notification/mod.rs": "8d87aa35136b57de0a8eedbaac8cdafddcf87594f26ac911f683c3334776999c",
+    "src/notification/state.rs": "4877480a9edc55188a7578f37be5097e75a5900c580abdc6e50440a573cdfdf1",
+    "src/notification/style.rs": "279dd118c9058820d7e0cecfe7aebec422bd88f4984436d7d6b7a3d0c367dbfc",
+    "src/notification/tests.rs": "69b053b531926d2525d0697de1fbe1c0a5440828ace153f3b5a67a571a8e4f07",
+    "src/notification/view.rs": "2017c5e3f270bdd851e3fc6864b8c09785692c57dd8b3994daddb90a86c3a808"
+  },
+  "assertions": [
+    "empty and static hosts request zero frames",
+    "active progress requests exactly one callback per controller",
+    "eight forced redraws share one frame callback",
+    "warm icon parse and raster misses remain unchanged",
+    "keyed replacement preserves 100 retained notices",
+    "destruction drains continuous work"
+  ],
+  "measurements": [
+    {
+      "name": "notification/theme/cached-tokens",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 24.906
+    },
+    {
+      "name": "notification/options",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 566.2155
+    },
+    {
+      "name": "notification/1/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 233.0,
+      "p95_microseconds": 667.8
+    },
+    {
+      "name": "notification/1/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 145.3,
+      "p95_microseconds": 275.9
+    },
+    {
+      "name": "notification/1/progress/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 175.79999999999998,
+      "p95_microseconds": 426.5
+    },
+    {
+      "name": "notification/1/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 152.6,
+      "p95_microseconds": 247.9
+    },
+    {
+      "name": "notification/3/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 315.7,
+      "p95_microseconds": 579.7
+    },
+    {
+      "name": "notification/3/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 308.70000000000005,
+      "p95_microseconds": 481.3
+    },
+    {
+      "name": "notification/3/progress/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 290.1,
+      "p95_microseconds": 574.7
+    },
+    {
+      "name": "notification/3/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 313.1,
+      "p95_microseconds": 633.4
+    },
+    {
+      "name": "notification/20/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1616.8,
+      "p95_microseconds": 2636.2999999999997
+    },
+    {
+      "name": "notification/20/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 619.4,
+      "p95_microseconds": 934.8
+    },
+    {
+      "name": "notification/20/progress/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2492.0,
+      "p95_microseconds": 3563.1
+    },
+    {
+      "name": "notification/20/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1781.1000000000001,
+      "p95_microseconds": 3522.6
+    },
+    {
+      "name": "notification/100/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 12581.0,
+      "p95_microseconds": 18828.7
+    },
+    {
+      "name": "notification/100/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3482.4,
+      "p95_microseconds": 5586.1
+    },
+    {
+      "name": "notification/100/progress/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 17837.2,
+      "p95_microseconds": 20986.399999999998
+    },
+    {
+      "name": "notification/100/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 17306.100000000002,
+      "p95_microseconds": 21043.699999999997
+    },
+    {
+      "name": "notification/keyed-update",
+      "iterations": 1000,
+      "median_microseconds": 28.799999999999997,
+      "p95_microseconds": 47.7
+    },
+    {
+      "name": "notification/open",
+      "iterations": 1000,
+      "median_microseconds": 3.1,
+      "p95_microseconds": 4.199999999999999
+    },
+    {
+      "name": "notification/destroy",
+      "iterations": 1000,
+      "median_microseconds": 1.0,
+      "p95_microseconds": 1.4
+    }
+  ],
+  "limitations": [
+    "CPU layout and scene preparation rather than GPU frame times.",
+    "Diagnostic timings on this machine; no hardware-independent timing threshold."
+  ]
+}

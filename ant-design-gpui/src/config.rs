@@ -5,6 +5,7 @@
 
 use crate::{
     alert::{AlertConfig, AlertConfigPatch},
+    descriptions::{DescriptionsConfig, DescriptionsConfigPatch},
     icons::IconPalette,
     locale::{Locale, LocalePatch},
     message::{MessageConfig, MessageConfigPatch},
@@ -118,11 +119,13 @@ pub struct ConfigPatch {
     pub popconfirm: PopupConfigPatch,
     pub pagination: PaginationConfigPatch,
     pub alert: AlertConfigPatch,
+    pub descriptions: DescriptionsConfigPatch,
     pub result: ResultConfigPatch,
     pub spin: SpinConfigPatch,
     pub progress: ProgressConfigPatch,
     pub message: MessageConfigPatch,
     pub modal: crate::modal::ModalConfigPatch,
+    pub notification: crate::notification::NotificationConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -143,11 +146,13 @@ pub struct ResolvedConfig {
     pub popconfirm: PopupConfig,
     pub pagination: PaginationConfig,
     pub alert: AlertConfig,
+    pub descriptions: DescriptionsConfig,
     pub result: ResultConfig,
     pub spin: SpinConfig,
     pub progress: ProgressConfig,
     pub message: MessageConfig,
     pub modal: crate::modal::ModalConfig,
+    pub notification: crate::notification::NotificationConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -169,11 +174,13 @@ impl PartialEq for ResolvedConfig {
             && self.popconfirm == other.popconfirm
             && self.pagination == other.pagination
             && self.alert == other.alert
+            && self.descriptions == other.descriptions
             && self.result == other.result
             && self.spin == other.spin
             && self.progress == other.progress
             && self.message == other.message
             && self.modal == other.modal
+            && self.notification == other.notification
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -206,11 +213,13 @@ impl Default for ResolvedConfig {
             },
             pagination: PaginationConfig::default(),
             alert: AlertConfig::default(),
+            descriptions: DescriptionsConfig::default(),
             result: ResultConfig::default(),
             spin: SpinConfig::default(),
             progress: ProgressConfig::default(),
             message: MessageConfig::default(),
             modal: Default::default(),
+            notification: Default::default(),
         }
     }
 }
@@ -308,11 +317,13 @@ impl ResolvedConfig {
             popconfirm: patch.popconfirm.resolve(parent.popconfirm),
             pagination: patch.pagination.resolve(parent.pagination),
             alert: patch.alert.resolve(&parent.alert),
+            descriptions: patch.descriptions.resolve(&parent.descriptions),
             result: patch.result.resolve(&parent.result),
             spin: patch.spin.resolve(&parent.spin),
             progress: patch.progress.resolve(&parent.progress),
             message: patch.message.resolve(&parent.message),
             modal: patch.modal.resolve(&parent.modal),
+            notification: patch.notification.resolve(&parent.notification),
         })
     }
 }

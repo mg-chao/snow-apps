@@ -1,6 +1,6 @@
 # Ant Design GPUI
 
-Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Result, Spin, Progress, Message and Modal use
+Apache-2.0 Ant Design controls built with GPUI. Button, Checkbox, Radio, Divider, Segmented, Tag, Alert, Descriptions, Result, Spin, Progress, Message and Modal use
 native layout, focus, accessibility and motion, with retained configuration,
 localization, complete themes and all 829 pinned icons.
 
@@ -24,6 +24,7 @@ cargo run --locked --offline --example gallery
 # Open Progress directly: -- --component progress
 # Open Message directly: -- --component message
 # Open Result directly: -- --component result
+# Open Descriptions directly: -- --component descriptions
 # Open Modal directly: -- --component modal
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
@@ -79,6 +80,15 @@ Result provides all seven statuses, the original exception illustrations, custom
 content and actions, inherited semantic styling, and component tokens. Its gallery
 follows the nine public reference examples and includes the token example. Select
 Result or use `--component result`; see the [Result guide](docs/result.md).
+
+Descriptions displays read-only fields in horizontal or vertical layouts, with
+optional borders, responsive columns and spans, filled rows, custom content,
+semantic styles and component tokens. Its gallery follows all eight public
+reference examples and includes an additional token example. Select Descriptions
+or use `--component descriptions`; size controls and Edit actions use native focus
+and keyboard behavior. Responsive breakpoints follow the window width. See the
+[Descriptions guide](docs/descriptions.md) for APIs, content ownership, styling,
+accessibility, and native layout details.
 
 Modal provides controlled dialogs and context-aware confirmation, information, success,
 warning and error helpers. Its 17 reference examples cover asynchronous actions,
@@ -1001,3 +1011,20 @@ Progress provides controlled native line, circle and dashboard indicators with
 success segments, steps, gradients, custom content and logical label placement.
 Its gallery contains all sixteen public reference examples and a token example.
 See the [API guide](docs/progress.md) and [verification report](docs/progress-verification.md).
+
+## Notification
+
+Notification provides six window placements, status and custom icons, native
+content and actions, timed progress, keyed updates, count limits, expandable
+stacks, and scoped semantic styles. `UiRoot` supplies the default window service;
+independent retained controllers use `NotificationHost`. See the
+[Notification guide](docs/notification.md) and
+[verification guide](docs/notification-verification.md).
+
+```powershell
+cargo run --locked --offline --example gallery -- --component notification
+cargo test --locked --offline --lib notification:: -- --test-threads=1
+cargo test --locked --offline --example gallery notification_gallery
+./scripts/test-notification-accessibility.ps1
+./scripts/run-notification-perf.ps1
+```

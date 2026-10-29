@@ -18,6 +18,7 @@ pub struct UiRoot {
     content: AnyView,
     focus: FocusHandle,
     messages: Entity<MessageState>,
+    notifications: Entity<crate::NotificationState>,
     _config_subscription: Subscription,
     _focus_subscription: Subscription,
 }
@@ -36,6 +37,8 @@ impl UiRoot {
         let subscription = scope.observe(cx);
         let messages = cx.new(|cx| MessageState::new(scope.clone(), window, cx));
         Message::new(&messages).register(window, cx);
+        let notifications = cx.new(|cx| crate::NotificationState::new(scope.clone(), window, cx));
+        crate::Notification::new(&notifications).register(window, cx);
         let focus = cx.focus_handle();
         if window.focused(cx).is_none() {
             window.focus(&focus, cx);
@@ -51,6 +54,7 @@ impl UiRoot {
             content: content.into(),
             focus,
             messages,
+            notifications,
             _config_subscription: subscription,
             _focus_subscription: focus_subscription,
         }
@@ -58,6 +62,10 @@ impl UiRoot {
 
     pub fn config(&self) -> ConfigScope {
         self.scope.clone()
+    }
+
+    pub fn notifications(&self) -> crate::Notification {
+        crate::Notification::new(&self.notifications)
     }
 
     pub fn messages(&self) -> Message {
@@ -84,12 +92,16 @@ impl Render for UiRoot {
             .line_height(relative(tokens.line_height as f32))
             .when(config.direction == Direction::Rtl, |root| root.text_right())
             .child(self.content.clone());
-        MessageHost::new(
-            "ant-design-message-host",
-            &self.messages,
-            crate::ModalHost::new(
-                "ant-design-modal-host",
-                PopupHost::new("ant-design-popup-host", content),
+        crate::NotificationHost::new(
+            "ant-design-notification-host",
+            &self.notifications,
+            MessageHost::new(
+                "ant-design-message-host",
+                &self.messages,
+                crate::ModalHost::new(
+                    "ant-design-modal-host",
+                    PopupHost::new("ant-design-popup-host", content),
+                ),
             ),
         )
     }
