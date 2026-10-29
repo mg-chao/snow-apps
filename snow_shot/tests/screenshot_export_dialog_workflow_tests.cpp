@@ -383,6 +383,33 @@ void persistence(const QTemporaryDir& temp) {
             "dialog setting did not persist");
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto pinCopyBinding =
+        settings::SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen;
+    const QString pinCopyKey = QStringLiteral("screenshot/copy_after_pinning_to_screen");
+    const auto* pinCopyField = settings::builtInSettingsRegistry().fieldForSwitch(pinCopyBinding);
+    require(pinCopyField && pinCopyField->pageId == QStringLiteral("screenshots") &&
+                pinCopyField->sectionId == QStringLiteral("screenshot-settings") &&
+                pinCopyField->configurationKey == pinCopyKey &&
+                pinCopyField->reset == settings::SettingsSectionReset::ScreenshotSettings,
+            "copy after pinning belongs to screenshot interaction settings");
+    require(!storage::ConfigurationSchema::defaultValue(pinCopyKey).toBool() &&
+                !adapter.copyAfterPinningToScreen() && !backend.switchValue(pinCopyBinding) &&
+                backend.switchEnabled(pinCopyBinding),
+            "copy after pinning defaults off and is available");
+    require(!storage::ConfigurationSchema::normalize(pinCopyKey, QStringLiteral("true")).valid,
+            "copy after pinning rejects non-boolean configuration values");
+    settings::SettingsRuntimeSession pinCopySession(settings::builtInSettingsRegistry(), backend);
+    require(pinCopySession.applySwitchValue(pinCopyBinding, true) &&
+                adapter.copyAfterPinningToScreen() && backend.switchValue(pinCopyBinding) &&
+                storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "copy after pinning round-trips through the runtime settings session");
+    {
+        storage::ConfigurationStore reloaded(
+            QDir(storage::ApplicationStorage::instance().configurationDirectory())
+                .filePath(QStringLiteral("config.json")),
+            true, true, 60000);
+        require(reloaded.value(pinCopyKey).toBool(), "copy after pinning survives a reload");
+    }
     require(backend.selectValue(settings::SettingsSelectBinding::ScreenshotSaveAsFileDialog) ==
                 QStringLiteral("snow_shot"),
             "settings backend failed to read dialog selection");
@@ -409,6 +436,7 @@ void persistence(const QTemporaryDir& temp) {
     require(adapter.setAutoSaveAfterExecutionActions(autoSaveActions) &&
                 adapter.setCopyImageFileToClipboard(true) &&
                 backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                !adapter.copyAfterPinningToScreen() && !backend.switchValue(pinCopyBinding) &&
                 adapter.autoSaveAfterExecutionActions() == autoSaveActions &&
                 adapter.copyImageFileToClipboard() &&
                 adapter.saveAsFileDialog() == QStringLiteral("snow_shot"),

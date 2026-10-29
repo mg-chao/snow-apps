@@ -1094,6 +1094,14 @@ bool ScreenshotSettings::setCopyImageFileToClipboard(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/copy_image_file_to_clipboard"), enabled);
 }
 
+bool ScreenshotSettings::copyAfterPinningToScreen() const {
+    return cache().value(QStringLiteral("screenshot/copy_after_pinning_to_screen")).toBool();
+}
+
+bool ScreenshotSettings::setCopyAfterPinningToScreen(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/copy_after_pinning_to_screen"), enabled);
+}
+
 QString ScreenshotSettings::imageSaveDirectory() const {
     return cache().value(QStringLiteral("screenshot/image_save_directory")).toString();
 }

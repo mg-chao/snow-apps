@@ -11304,6 +11304,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-copy-after-pinning-tests
+        COMMAND snow_shot --clipboard-pin-tests --copy-after-pin-tests)
+    set_tests_properties(snow-shot-copy-after-pinning-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 90 RUN_SERIAL TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-controlled-interaction-tests
         COMMAND snow-shot-pinned-window-tests --controlled-interaction-only -platform offscreen)
     add_test(NAME snow-shot-pinned-pointer-routing-tests

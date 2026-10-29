@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="DisplayName" xml:space="preserve"><value>Snow Shot</value></data>
-  <data name="Description" xml:space="preserve"><value>截取、标注、贴图和识别屏幕内容。</value></data>
+  <data name="Description" xml:space="preserve"><value>截取、标注和识别屏幕内容，并将内容固定到屏幕。</value></data>
   <data name="FileTypesDisplayName" xml:space="preserve"><value>图像和文本文档</value></data>
   <data name="EditVerb" xml:space="preserve"><value>使用 Snow Shot 编辑</value></data>
 </root>

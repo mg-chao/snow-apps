@@ -1221,7 +1221,7 @@
         </message>
         <message>
             <source>Add Edit with Snow Shot to the Windows context menu to pin a supported image or document file to the screen.</source>
-            <translation>將「使用 Snow Shot 編輯」新增至 Windows 快顯功能表，以將支援的影像或文件檔案貼到螢幕。</translation>
+            <translation>將「使用 Snow Shot 編輯」新增至 Windows 快顯功能表，以將支援的影像或文件檔案固定到螢幕。</translation>
         </message>
         <message>
             <source>Add a mask to highlight text recognition results</source>
@@ -1270,6 +1270,10 @@
         <message>
             <source>Allow resizing the selection from its borders while non-move tools are active</source>
             <translation>啟用非移動工具時，允許從選取區域邊緣調整大小</translation>
+        </message>
+        <message>
+            <source>Also copy the screenshot to the clipboard when pinning it to screen</source>
+            <translation>將擷取畫面固定到螢幕時，同時複製到剪貼簿</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1693,11 +1697,11 @@
         </message>
         <message>
             <source>Choose the default font for newly pinned text</source>
-            <translation>選擇新貼圖文字的預設字型</translation>
+            <translation>為新固定到螢幕的文字選擇預設字型</translation>
         </message>
         <message>
             <source>Choose the default font size for newly pinned text</source>
-            <translation>選擇新貼圖文字的預設字型大小</translation>
+            <translation>為新固定到螢幕的文字選擇預設字型大小</translation>
         </message>
         <message>
             <source>Choose the dialog used for manual image saves</source>
@@ -1940,6 +1944,10 @@
             <translation>將翻譯結果複製為圖片</translation>
         </message>
         <message>
+            <source>Copy after pinning to screen</source>
+            <translation>固定到螢幕後複製</translation>
+        </message>
+        <message>
             <source>Copy after text recognition</source>
             <translation>文字辨識後複製</translation>
         </message>
@@ -2153,7 +2161,7 @@
         </message>
         <message>
             <source>Defaults for newly pinned text; source formatting is preserved</source>
-            <translation>設定新貼圖文字的預設樣式，並保留來源格式</translation>
+            <translation>為新固定到螢幕的文字設定預設樣式，並保留來源格式</translation>
         </message>
         <message>
             <source>Delay %1s to execute</source>
@@ -2389,7 +2397,7 @@
         </message>
         <message>
             <source>Exit annotation mode and keep the pinned window open when closing.</source>
-            <translation>關閉時退出標註模式，並保持貼圖視窗開啟。</translation>
+            <translation>關閉時退出標註模式，並保持固定到螢幕視窗開啟。</translation>
         </message>
         <message>
             <source>Exit annotation mode before closing</source>
@@ -2849,7 +2857,7 @@
         </message>
         <message>
             <source>Limit the width of pinned text, including padding</source>
-            <translation>限制貼圖文字的寬度，包括內距</translation>
+            <translation>限制固定到螢幕的文字寬度，包括內距</translation>
         </message>
         <message>
             <source>Line</source>
@@ -3241,7 +3249,7 @@
         </message>
         <message>
             <source>Pin images, supported files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>將剪貼簿中的影像、支援的檔案、格式化文字或 HTML 貼到螢幕</translation>
+            <translation>將剪貼簿中的影像、支援的檔案、格式化文字或 HTML 固定到螢幕</translation>
         </message>
         <message>
             <source>Pin screenshot to screen</source>
@@ -3249,11 +3257,11 @@
         </message>
         <message>
             <source>Pin selected image or document files from File Explorer or the desktop to the screen</source>
-            <translation>將檔案總管或桌面中選取的影像或文件檔案貼到螢幕</translation>
+            <translation>將檔案總管或桌面中選取的影像或文件檔案固定到螢幕</translation>
         </message>
         <message>
             <source>Pin selected image or document files from Finder or the desktop to the screen</source>
-            <translation>將 Finder 或桌面中選取的影像或文件檔案貼到螢幕</translation>
+            <translation>將 Finder 或桌面中選取的影像或文件檔案固定到螢幕</translation>
         </message>
         <message>
             <source>Pin selection</source>

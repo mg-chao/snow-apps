@@ -487,6 +487,19 @@ void builtInCatalogIsCompleteAndValid() {
                     QStringLiteral("screenshot.middle-mouse-button-action") &&
                 quickModificationSection->items.at(5).id == quickModification->id,
             "quick selection modification must immediately follow middle mouse button action");
+    const auto* copyAfterPinning =
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.copy-after-pinning-to-screen")});
+    require(copyAfterPinning &&
+                copyAfterPinning->title.translated() ==
+                    QStringLiteral("Copy after pinning to screen") &&
+                copyAfterPinning->configurationKey ==
+                    QStringLiteral("screenshot/copy_after_pinning_to_screen") &&
+                !storage::ConfigurationSchema::defaultValue(copyAfterPinning->configurationKey)
+                     .toBool() &&
+                std::get<settings::SettingsSwitchDefinition>(copyAfterPinning->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen,
+            "copy after pinning must expose its own default-off screenshot setting");
     const std::pair<QString, QString> pointerActions[] = {
         {QStringLiteral("copy"), QStringLiteral("Copy to clipboard")},
         {QStringLiteral("save"), QStringLiteral("Save as file")},

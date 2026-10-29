@@ -3433,6 +3433,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                      screenshotDoubleClickActionItem(),
                      screenshotMiddleClickActionItem(),
                      quickSelectionModificationItem(),
+                     switchItem(
+                         QStringLiteral("screenshot.copy-after-pinning-to-screen"),
+                         QT_TRANSLATE_NOOP("SettingsCatalog", "Copy after pinning to screen"),
+                         QT_TRANSLATE_NOOP(
+                             "SettingsCatalog",
+                             "Also copy the screenshot to the clipboard when pinning it to screen"),
+                         QStringLiteral("screenshot/copy_after_pinning_to_screen"),
+                         SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen),
                      screenshotShutterSoundNotificationItem(),
                      screenshotSoundNotificationItem(),
                      screenshotConfirmBeforeExitingViaShortcutItem(),
@@ -5240,6 +5248,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
                         expectedKey = QStringLiteral("screenshot/copy_image_file_to_clipboard");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
+                        expectedKey = QStringLiteral("screenshot/copy_after_pinning_to_screen");
                         break;
                     case SettingsSwitchBinding::ScreenshotShowSaveResult:
                         expectedKey = QStringLiteral("screenshot/show_save_result");
