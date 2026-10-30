@@ -153,9 +153,18 @@ void shortcutAndMouseResets(settings::BuiltInSettingsBackend& backend) {
     require(configuration.setValue(QStringLiteral("global_shortcuts/global_canvas"),
                                    QJsonArray{QStringLiteral("Ctrl+Alt+F10")}),
             "customize retained other shortcut before resetting");
+#ifdef Q_OS_WIN
+    const QString topmostKey =
+        QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top");
+    require(configuration.setValue(topmostKey, QJsonArray{QStringLiteral("Ctrl+Alt+F11")}),
+            "customize Mini window-under-cursor topmost before resetting");
+#endif
     require(backend.resetSection(settings::SettingsSectionReset::OtherShortcuts),
             "Mini other shortcut reset must skip unavailable selected-text translation");
     requireDefault(QStringLiteral("global_shortcuts/global_canvas"));
+#ifdef Q_OS_WIN
+    requireDefault(topmostKey);
+#endif
 
     require(backend.applyGlobalMouseCombination(
                 settings::SettingsGlobalMouseAction::ScreenshotCopy,

@@ -4488,6 +4488,10 @@
             <translation>Thumbnail mode</translation>
         </message>
         <message>
+            <source>Toggle Always on Top for the Window Under the Cursor</source>
+            <translation>Toggle Always on Top for the Window Under the Cursor</translation>
+        </message>
+        <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>Toggle Global/Relative Coordinates</translation>
         </message>
@@ -4502,6 +4506,10 @@
         <message>
             <source>Toggle hotkeys</source>
             <translation>Toggle hotkeys</translation>
+        </message>
+        <message>
+            <source>Toggle whether the window under the cursor stays above other windows</source>
+            <translation>Toggle whether the window under the cursor stays above other windows</translation>
         </message>
         <message>
             <source>Tool positions</source>

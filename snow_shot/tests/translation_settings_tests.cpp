@@ -122,6 +122,88 @@ void requireCompactTrayOptions(QWidget* widget) {
     }
 }
 
+#ifdef Q_OS_WIN
+void windowAlwaysOnTopShortcutSettings() {
+    using namespace snow_shot::presentation;
+    namespace storage = snow_shot::storage;
+    constexpr auto action = GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop;
+    const QString id = QStringLiteral("quick.toggle-window-under-cursor-always-on-top");
+    const QString fullscreenKey =
+        QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+    auto& store = storage::ApplicationStorage::instance().configuration();
+    const auto previousFullscreen = store.value(fullscreenKey);
+    const storage::ShortcutSettings persisted;
+    const snow_shot::shortcuts::ShortcutBindingList keys{QStringLiteral("Ctrl+Alt+F11"),
+                                                         QStringLiteral("Ctrl+Alt+F12")};
+    require(persisted.toggleWindowUnderCursorAlwaysOnTop().isEmpty() &&
+                !storage::TraySettings().menuOptions().contains(id),
+            "window-under-cursor topmost has neither a shortcut nor a tray entry by default");
+    require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
+            "disable translation independently of the topmost action");
+    {
+        auto native = std::make_unique<FakeTranslationHotkeyBackend>();
+        auto* input = native.get();
+        bool fullscreen = false;
+        GlobalShortcutManager manager(std::move(native), nullptr, [&] { return fullscreen; });
+        settings::BuiltInSettingsBackend backend(manager);
+        settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        manager.initialize();
+        require(session.state(id).visible && session.state(id).enabled &&
+                    manager.state(action).status == GlobalShortcutStatus::Unset,
+                "the topmost action is usable while translation is disabled");
+        require(session.applyShortcuts(action, keys) &&
+                    persisted.toggleWindowUnderCursorAlwaysOnTop() == keys &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered,
+                "both topmost bindings register and persist through settings");
+        int activations = 0;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction received) {
+                             require(received == action,
+                                     "topmost bindings dispatch their own action");
+                             ++activations;
+                         });
+        const auto activate = [&] {
+            for (const auto& binding : manager.state(action).bindings) {
+                for (auto it = input->registrations.cbegin(); it != input->registrations.cend();
+                     ++it) {
+                    if (it.value() == binding.binding)
+                        input->handler(it.key());
+                }
+            }
+        };
+        activate();
+        require(activations == 2, "each assigned topmost shortcut activates once");
+        manager.setGlobalHotkeysEnabled(false);
+        require(manager.state(action).status == GlobalShortcutStatus::Disabled,
+                "manual global suppression disables topmost shortcuts");
+        manager.setGlobalHotkeysEnabled(true);
+        require(store.setValue(fullscreenKey, true), "enable fullscreen suppression");
+        fullscreen = true;
+        manager.refreshFocusedFullscreenState();
+        require(manager.state(action).status == GlobalShortcutStatus::Disabled,
+                "fullscreen suppression also disables topmost shortcuts");
+        fullscreen = false;
+        manager.refreshFocusedFullscreenState();
+        require(manager.state(action).status == GlobalShortcutStatus::Registered,
+                "leaving fullscreen restores topmost shortcuts");
+    }
+    {
+        GlobalShortcutManager manager(std::make_unique<FakeTranslationHotkeyBackend>(), nullptr,
+                                      [] { return false; });
+        settings::BuiltInSettingsBackend backend(manager);
+        manager.initialize();
+        require(manager.state(action).shortcuts == keys &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered,
+                "topmost bindings survive manager recreation");
+        require(backend.resetSection(settings::SettingsSectionReset::OtherShortcuts) &&
+                    persisted.toggleWindowUnderCursorAlwaysOnTop().isEmpty() &&
+                    manager.state(action).status == GlobalShortcutStatus::Unset,
+                "Other reset clears topmost shortcuts and their native registrations");
+    }
+    require(store.setValue(fullscreenKey, previousFullscreen), "restore fullscreen preference");
+}
+#endif
+
 void selectedTextShortcutSettings() {
     using namespace snow_shot::presentation;
     namespace storage = snow_shot::storage;
@@ -593,6 +675,13 @@ int main(int argc, char** argv) {
     auto& applicationStorage = storage::ApplicationStorage::instance();
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success,
             "initialize translation settings storage");
+#ifdef Q_OS_WIN
+    if (application.arguments().contains(QStringLiteral("--window-always-on-top-only"))) {
+        windowAlwaysOnTopShortcutSettings();
+        applicationStorage.shutdown();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--translation-confidence-only"))) {
         languageDetectionConfidenceDefaultsPersistsAndResets();
         applicationStorage.shutdown();

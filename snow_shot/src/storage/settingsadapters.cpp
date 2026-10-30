@@ -909,6 +909,26 @@ bool ShortcutSettings::setTranslateSelectedText(
 }
 #endif
 
+shortcuts::ShortcutBindingList ShortcutSettings::toggleWindowUnderCursorAlwaysOnTop() const {
+#ifdef Q_OS_WIN
+    return shortcutValue(
+        QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"));
+#else
+    return {};
+#endif
+}
+
+bool ShortcutSettings::setToggleWindowUnderCursorAlwaysOnTop(
+    const shortcuts::ShortcutBindingList& bindings) const {
+#ifdef Q_OS_WIN
+    return setShortcutValue(
+        QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"), bindings);
+#else
+    Q_UNUSED(bindings);
+    return false;
+#endif
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::pinClipboardContent() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"));
 }

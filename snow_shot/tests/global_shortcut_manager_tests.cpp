@@ -53,6 +53,9 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
+#ifdef Q_OS_WIN
+    GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
+#endif
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::HideShowAllWindows,

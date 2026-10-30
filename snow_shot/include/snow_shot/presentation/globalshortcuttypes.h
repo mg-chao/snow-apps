@@ -38,6 +38,7 @@ enum class GlobalShortcutAction {
     StitchSelectedImages,
     SplitSelectedImages,
     ScreenshotOcrCopy,
+    ToggleWindowUnderCursorAlwaysOnTop,
 };
 
 [[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {

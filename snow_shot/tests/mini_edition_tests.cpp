@@ -53,6 +53,16 @@ void settingsExcludeRemovedFeatures() {
                     nullptr,
             "translation shortcuts must not be exposed");
     const settings::SettingsSearchIndex index(registry);
+#ifdef Q_OS_WIN
+    const auto* other = catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
+    require(
+        other &&
+            other->items.at(4).id ==
+                QStringLiteral("quick.toggle-window-under-cursor-always-on-top") &&
+            catalog.itemForShortcut(
+                snow_shot::presentation::GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop),
+        "Mini exposes window-under-cursor topmost before the hotkey toggles without translation");
+#endif
     require(index.search(QStringLiteral("API Key")).isEmpty(),
             "Mini search must not advertise credentials for unavailable online providers");
     for (const auto& entry : index.entries()) {

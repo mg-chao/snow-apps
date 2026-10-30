@@ -272,7 +272,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void cancelAutomationRecognition();
     [[nodiscard]] bool automationWorkflowBusy() const;
 
+    // nullopt means the surface does not belong to a pin. Owned surfaces route
+    // through the pin's command so its controls and persisted state stay in sync.
+    [[nodiscard]] static std::optional<bool> toggleAlwaysOnTopForSurface(WId id);
+
   public slots:
+    void setAlwaysOnTop(bool enabled);
     void setGroupId(const QString& id);
     void closeForInactiveGroup();
     Q_INVOKABLE bool requestHide();
@@ -494,7 +499,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool hideToTopActive() const;
     [[nodiscard]] bool setClickThroughMode(bool enabled);
     void toggleClickThrough();
-    void setAlwaysOnTop(bool enabled);
     void toggleAlwaysOnTop();
     void setShowBorder(bool enabled);
     void toggleShowBorder();

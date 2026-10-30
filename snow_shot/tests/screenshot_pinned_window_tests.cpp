@@ -39,6 +39,9 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#ifdef Q_OS_WIN
+#include "snow_shot/platform/windows/windowalwaysontop.h"
+#endif
 #include "snow_shot/presentation/collagedocument.h"
 #include "../src/presentation/collage/collageresourcebudget_p.h"
 #include "snow_shot/presentation/screenshotanimationplayback.h"
@@ -12752,6 +12755,78 @@ void pinnedAlwaysOnTopOffscreen() {
                 exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
                 window.persistenceSnapshot().alwaysOnTop,
             "re-checking must restore the topmost band for the pin and its click-through controls");
+    window.setAlwaysOnTop(false);
+    waitForUi(20);
+    require(!alwaysOnTop->isChecked() && !window.persistenceSnapshot().alwaysOnTop &&
+                !exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+            "the public topmost command synchronizes the pin, menu, and auxiliary window");
+    waitForUi(300);
+    require(!lastPersisted.alwaysOnTop,
+            "the public topmost command persists the window-under-cursor change");
+    window.setAlwaysOnTop(true);
+    waitForUi(20);
+    require(alwaysOnTop->isChecked() && window.persistenceSnapshot().alwaysOnTop &&
+                exitButton->windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+            "the public topmost command restores every stacking surface");
+
+    {
+        auto* moveButton = Access::clickThroughMoveButton(window);
+        auto* opacityEditor = Access::clickThroughOpacityEditor(window);
+        require(moveButton && opacityEditor, "topmost routing needs every click-through surface");
+        QWidget child(&window);
+        QWindow intermediate;
+        intermediate.setTransientParent(window.windowHandle());
+        intermediate.create();
+        QWidget nested(nullptr, Qt::Tool);
+        nested.winId();
+        nested.windowHandle()->setTransientParent(&intermediate);
+        const auto dispatchSurface = [](QWidget* surface) {
+#ifdef Q_OS_WIN
+            using namespace snow_shot::platform::windows;
+            const WId id = surface->winId();
+            const WindowAlwaysOnTopAccess access{[] { return std::optional<QPoint>(QPoint()); },
+                                                 [id](const QPoint&) { return id; },
+                                                 [](WId hit) { return hit; },
+                                                 [](WId) { return true; },
+                                                 {},
+                                                 {}};
+            require(toggleWindowUnderCursorAlwaysOnTop(
+                        access, &ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface) ==
+                        WindowAlwaysOnTopResult::ChangeRequested,
+                    "pin surfaces must use their owner without reading or writing native state");
+#else
+            require(ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(surface->winId()) == true,
+                    "pin surfaces must use their owner's stateful toggle");
+#endif
+        };
+        const auto requireStacking = [&](bool enabled) {
+            require(window.persistenceSnapshot().alwaysOnTop == enabled &&
+                        alwaysOnTop->isChecked() == enabled,
+                    "surface dispatch synchronizes the pin's model and menu");
+            for (auto* surface : QList<QWidget*>{&window, exitButton, moveButton, opacityEditor}) {
+                require(surface->windowFlags().testFlag(Qt::WindowStaysOnTopHint) == enabled,
+                        "surface dispatch keeps all click-through controls in the pin's band");
+            }
+        };
+        for (auto* surface :
+             QList<QWidget*>{&window, exitButton, moveButton, opacityEditor, &child, &nested}) {
+            dispatchSurface(surface);
+            waitForUi(20);
+            requireStacking(false);
+            waitForUi(300);
+            require(!lastPersisted.alwaysOnTop, "surface dispatch persists the pin's opt-out");
+            dispatchSurface(surface);
+            waitForUi(20);
+            requireStacking(true);
+        }
+        QWidget unrelated;
+        require(!ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(unrelated.winId()) &&
+                    !ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(0),
+                "unrelated and unknown surfaces remain available to the native fallback");
+        requireStacking(true);
+        waitForUi(300);
+        require(lastPersisted.alwaysOnTop, "surface dispatch persists the restored pin state");
+    }
     static_cast<void>(Access::setClickThrough(window, false));
 
     verifyPinnedWindowManagementShortcut(window, *alwaysOnTop, QStringLiteral("always_on_top"),

@@ -1224,6 +1224,20 @@ SettingsItemDefinition translateSelectedTextItem() {
 }
 #endif
 
+#ifdef Q_OS_WIN
+SettingsItemDefinition toggleWindowUnderCursorAlwaysOnTopItem() {
+    return quickActionItem(
+        QStringLiteral("quick.toggle-window-under-cursor-always-on-top"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Toggle Always on Top for the Window Under the Cursor"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Toggle whether the window under the cursor stays above other windows"),
+        {}, GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
+        QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"),
+        []() { return outlined_icons::ToTop(); });
+}
+#endif
+
 SettingsItemDefinition toggleGlobalHotkeysItem() {
     return quickActionItem(
         QStringLiteral("quick.toggle-global-hotkeys"),
@@ -3248,6 +3262,9 @@ QVector<SettingsPageDefinition> builtInPages() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                         translateSelectedTextItem(),
 #endif
+#ifdef Q_OS_WIN
+                        toggleWindowUnderCursorAlwaysOnTopItem(),
+#endif
                         toggleGlobalHotkeysItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
                     },
@@ -4409,6 +4426,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/hide_show_all_windows");
     case GlobalShortcutAction::TranslateSelectedText:
         return QStringLiteral("global_shortcuts/translate_selected_text");
+    case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
+        return QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top");
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return QStringLiteral("global_shortcuts/toggle_global_hotkeys");
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -4803,6 +4822,13 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
                 GlobalShortcutAction::TranslateSelectedText,
                 []() { return custom_outlined_icons::OcrTranslate(); }),
+#ifdef Q_OS_WIN
+          quick(QStringLiteral("quick.toggle-window-under-cursor-always-on-top"),
+                QT_TRANSLATE_NOOP("SettingsCatalog",
+                                  "Toggle Always on Top for the Window Under the Cursor"),
+                GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
+                []() { return outlined_icons::ToTop(); }),
+#endif
           quick(
               QStringLiteral("quick.toggle-global-hotkeys"),
               QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys"),

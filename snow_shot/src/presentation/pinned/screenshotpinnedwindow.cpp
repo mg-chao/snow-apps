@@ -126,6 +126,7 @@
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QRegion>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QShowEvent>
 #include <QSizePolicy>
@@ -8630,6 +8631,25 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
 
 void ScreenshotPinnedWindow::toggleClickThrough() {
     static_cast<void>(setClickThroughMode(!m_clickThroughActive));
+}
+
+std::optional<bool> ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(WId id) {
+    auto* widget = QWidget::find(id);
+    if (widget == nullptr)
+        return std::nullopt;
+
+    // Auxiliary tools are separate native top-level windows with a transient
+    // owner, not QWidget children. Follow that chain before changing any HWND.
+    QSet<QWindow*> visited;
+    for (auto* surface = widget->window()->windowHandle();
+         surface != nullptr && !visited.contains(surface); surface = surface->transientParent()) {
+        visited.insert(surface);
+        if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(QWidget::find(surface->winId()))) {
+            pin->toggleAlwaysOnTop();
+            return true;
+        }
+    }
+    return std::nullopt;
 }
 
 void ScreenshotPinnedWindow::setAlwaysOnTop(bool enabled) {

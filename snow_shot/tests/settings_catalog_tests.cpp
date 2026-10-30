@@ -23,6 +23,11 @@ namespace storage = snow_shot::storage;
 namespace presentation = snow_shot::presentation;
 
 namespace {
+#ifdef Q_OS_WIN
+constexpr int WINDOW_TOPMOST_ACTION_COUNT = 1;
+#else
+constexpr int WINDOW_TOPMOST_ACTION_COUNT = 0;
+#endif
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -2465,6 +2470,12 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
          "global_shortcuts/translate_selected_text",
          settings::SettingsCommandKind::ExecuteQuickAction},
+#ifdef Q_OS_WIN
+        {Action::ToggleWindowUnderCursorAlwaysOnTop, "other",
+         "quick.toggle-window-under-cursor-always-on-top",
+         "global_shortcuts/toggle_window_under_cursor_always_on_top",
+         settings::SettingsCommandKind::ExecuteQuickAction},
+#endif
         {Action::ToggleGlobalHotkeys, "other", "quick.toggle-global-hotkeys",
          "global_shortcuts/toggle_global_hotkeys",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -2517,9 +2528,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(
-        actions.size() == expectations.size() && expectations.size() == 27,
-        "the global-hotkeys catalog must expose all twenty-seven shortcut actions exactly once");
+    require(actions.size() == expectations.size() &&
+                expectations.size() == 27 + WINDOW_TOPMOST_ACTION_COUNT,
+            "the global-hotkeys catalog must expose all shortcut actions exactly once");
     const auto* stitch = catalog.itemForShortcut(Action::StitchSelectedImages);
     const auto* stitchSchema = storage::ConfigurationSchema::entry(
         QStringLiteral("global_shortcuts/stitch_selected_images"));
@@ -2613,9 +2624,10 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
-                trayGroups.at(3).options.size() == 7 &&
+                trayGroups.at(3).options.size() == 7 + WINDOW_TOPMOST_ACTION_COUNT &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 30 &&
+                trayGroups.at(4).options.size() == 4 &&
+                trayOptionIds.size() == 30 + WINDOW_TOPMOST_ACTION_COUNT &&
                 trayOptionIds.at(7) == QStringLiteral("quick.screenshot-save") &&
                 trayOptionIds.at(8) == QStringLiteral("quick.screenshot-quick-save") &&
                 trayOptionIds.at(11) == QStringLiteral("quick.pin-clipboard-content") &&
@@ -2631,21 +2643,25 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayOptionIds.at(21) == QStringLiteral("quick.stitch-selected-images") &&
                 trayOptionIds.at(22) == QStringLiteral("quick.split-selected-images") &&
                 trayOptionIds.at(23) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(24) == QStringLiteral("quick.toggle-global-hotkeys") &&
-                trayOptionIds.at(25) ==
+                trayOptionIds.at(24 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                trayOptionIds.at(25 + WINDOW_TOPMOST_ACTION_COUNT) ==
                     QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
-                trayOptionIds.at(26) == QStringLiteral("tray.window-grouping") &&
+                trayOptionIds.at(26 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(27) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(28) == QStringLiteral("tray.restart-app") &&
+                trayOptionIds.at(27 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(28 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("tray.restart-app") &&
                 trayGroups.at(4).options.at(2).kind ==
                     settings::SettingsTrayMenuOptionKind::RestartApp &&
                 trayGroups.at(4).options.at(2).iconFactory &&
                 trayGroups.at(4).options.at(2).iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::Restart() &&
-                trayOptionIds.at(29) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
-                trayMenuSchema->allowedStringValues == trayOptionIds,
+                trayOptionIds.at(29 + WINDOW_TOPMOST_ACTION_COUNT) == QStringLiteral("tray.exit") &&
+                trayMenuSchema != nullptr && trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
     const QJsonArray allTrayOptions = QJsonArray::fromStringList(trayOptionIds);
@@ -2804,17 +2820,41 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 7 &&
+    require(otherShortcuts != nullptr &&
+                otherShortcuts->items.size() == 7 + WINDOW_TOPMOST_ACTION_COUNT &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
                 otherShortcuts->items.at(1).id == QStringLiteral("quick.global-canvas") &&
                 otherShortcuts->items.at(2).id == QStringLiteral("quick.stitch-selected-images") &&
                 otherShortcuts->items.at(3).id == QStringLiteral("quick.split-selected-images") &&
                 otherShortcuts->items.at(4).id == QStringLiteral("quick.translate-selected-text") &&
-                otherShortcuts->items.at(5).id == QStringLiteral("quick.toggle-global-hotkeys") &&
-                otherShortcuts->items.at(6).id ==
+                otherShortcuts->items.at(5 + WINDOW_TOPMOST_ACTION_COUNT).id ==
+                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                otherShortcuts->items.at(6 + WINDOW_TOPMOST_ACTION_COUNT).id ==
                     QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
             "Other quick actions expose history, canvas, stitching, splitting, translation, and "
             "hotkey toggles");
+#ifdef Q_OS_WIN
+    const auto* windowTopmost = catalog.itemForShortcut(Action::ToggleWindowUnderCursorAlwaysOnTop);
+    require(windowTopmost && otherShortcuts->items.at(5).id == windowTopmost->id &&
+                windowTopmost->title.translated() ==
+                    QStringLiteral("Toggle Always on Top for the Window Under the Cursor") &&
+                trayOptionIds.at(24) == windowTopmost->id &&
+                !trayMenuSchema->defaultValue.toArray().contains(windowTopmost->id),
+            "window-under-cursor topmost follows translation and starts hidden in the tray");
+    const settings::SettingsSearchIndex topmostSearch(settings::builtInSettingsRegistry());
+    const auto topmostResults = topmostSearch.search(QStringLiteral("Window Under the Cursor"));
+    require(std::any_of(
+                topmostResults.cbegin(), topmostResults.cend(),
+                [&](const auto& result) { return result.location.itemId == windowTopmost->id; }),
+            "the window-under-cursor topmost action is searchable");
+#else
+    require(!catalog.itemForShortcut(Action::ToggleWindowUnderCursorAlwaysOnTop) &&
+                !storage::ConfigurationSchema::contains(
+                    QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top")) &&
+                !trayOptionIds.contains(
+                    QStringLiteral("quick.toggle-window-under-cursor-always-on-top")),
+            "other platforms omit the window-under-cursor topmost setting and tray option");
+#endif
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(
@@ -2960,6 +3000,9 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::PinClipboardContent,
           presentation::GlobalShortcutAction::PinSelectedFiles,
           presentation::GlobalShortcutAction::TranslateSelectedText,
+#ifdef Q_OS_WIN
+          presentation::GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
+#endif
           presentation::GlobalShortcutAction::ToggleGlobalHotkeys}) {
         require(compact.shortcutActionTitle(action, 0) == catalog.shortcutActionTitle(action, 0) &&
                     compact.shortcutActionTitle(action, 99) ==

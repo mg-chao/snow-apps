@@ -4488,6 +4488,10 @@
             <translation>缩略图模式</translation>
         </message>
         <message>
+            <source>Toggle Always on Top for the Window Under the Cursor</source>
+            <translation>切换鼠标所在窗口的置顶状态</translation>
+        </message>
+        <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>切换全局/相对坐标</translation>
         </message>
@@ -4502,6 +4506,10 @@
         <message>
             <source>Toggle hotkeys</source>
             <translation>切换快捷键</translation>
+        </message>
+        <message>
+            <source>Toggle whether the window under the cursor stays above other windows</source>
+            <translation>切换鼠标指针下的窗口是否始终显示在其他窗口之上</translation>
         </message>
         <message>
             <source>Tool positions</source>

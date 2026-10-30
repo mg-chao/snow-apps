@@ -73,6 +73,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     case Action::HideShowAllWindows:
     case Action::PinSelectedFiles:
     case Action::ToggleGlobalHotkeys:
+    case Action::ToggleWindowUnderCursorAlwaysOnTop:
     case Action::ToggleDisableOnFocusedFullscreenWindow:
         return {};
     }

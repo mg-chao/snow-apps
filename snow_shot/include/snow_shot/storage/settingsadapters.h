@@ -221,6 +221,9 @@ class ShortcutSettings final {
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
 #endif
 
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleWindowUnderCursorAlwaysOnTop() const;
+    bool
+    setToggleWindowUnderCursorAlwaysOnTop(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
     bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;

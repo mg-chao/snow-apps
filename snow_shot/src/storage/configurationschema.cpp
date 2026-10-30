@@ -583,6 +583,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {},
      2},
 #endif
+#ifdef Q_OS_WIN
+    {QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+#endif
     {QStringLiteral("global_shortcuts/pin_clipboard_content"),
      QJsonArray{QStringLiteral("F3")},
      ConfigurationValueKind::StringList,
@@ -1657,6 +1665,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("quick.stitch-selected-images"),
       QStringLiteral("quick.split-selected-images"),
       QStringLiteral("quick.translate-selected-text"),
+#ifdef Q_OS_WIN
+      QStringLiteral("quick.toggle-window-under-cursor-always-on-top"),
+#endif
       QStringLiteral("quick.toggle-global-hotkeys"),
       QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
       QStringLiteral("tray.window-grouping"),

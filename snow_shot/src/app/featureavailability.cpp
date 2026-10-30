@@ -35,6 +35,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::OpenPinToScreenManagement:
     case Action::OpenSettings:
     case Action::TranslateSelectedText:
+    case Action::ToggleWindowUnderCursorAlwaysOnTop:
     case Action::ToggleGlobalHotkeys:
     case Action::ToggleDisableOnFocusedFullscreenWindow:
         return std::nullopt;

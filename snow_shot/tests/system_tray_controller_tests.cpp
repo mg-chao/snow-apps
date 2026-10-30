@@ -208,6 +208,11 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
     using Action = snow_shot::presentation::GlobalShortcutAction;
     const auto stitchId = QStringLiteral("quick.stitch-selected-images");
     const auto splitId = QStringLiteral("quick.split-selected-images");
+#ifdef Q_OS_WIN
+    const auto topmostId = QStringLiteral("quick.toggle-window-under-cursor-always-on-top");
+    require(!TraySettings().menuOptions().contains(topmostId),
+            "window-under-cursor topmost starts unchecked in the tray");
+#endif
     require(!TraySettings().menuOptions().contains(stitchId) &&
                 !TraySettings().menuOptions().contains(splitId),
             "selected-image stitching and splitting start unchecked in the tray");
@@ -258,6 +263,18 @@ void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayControll
     require(imageActions ==
                 QVector<Action>{Action::StitchSelectedImages, Action::SplitSelectedImages},
             "selected-image tray entries dispatch their own action exactly once");
+#ifdef Q_OS_WIN
+    QAction* topmost = nullptr;
+    for (auto* action : menu->actions()) {
+        if (action->data().toString() == topmostId)
+            topmost = action;
+    }
+    require(topmost && topmost->isVisible(), "the topmost action can be enabled in the tray");
+    topmost->trigger();
+    require(imageActions.size() == 3 &&
+                imageActions.last() == Action::ToggleWindowUnderCursorAlwaysOnTop,
+            "the optional topmost tray entry dispatches its own action exactly once");
+#endif
     menu->dismissPopup();
     drainMenus();
     require(!menu, "the configured tray session retires after dismissal");

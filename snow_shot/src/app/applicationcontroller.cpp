@@ -95,6 +95,7 @@
 #include <future>
 #include <thread>
 #ifdef Q_OS_WIN
+#include "snow_shot/platform/windows/windowalwaysontop.h"
 #include <qt_windows.h>
 #endif
 
@@ -1981,6 +1982,12 @@ class ApplicationController::Impl {
             if (storage::ExtendedFeaturesSettings().translationPageEnabled()) {
                 ensureSelectedTextTranslationCoordinator().capture();
             }
+#endif
+            break;
+        case presentation::GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
+#ifdef Q_OS_WIN
+            static_cast<void>(platform::windows::toggleWindowUnderCursorAlwaysOnTop(
+                &ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface));
 #endif
             break;
         case presentation::GlobalShortcutAction::PinSelectedFiles: {

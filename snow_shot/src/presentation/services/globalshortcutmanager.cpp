@@ -23,7 +23,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 28;
+constexpr std::size_t ACTION_COUNT = 29;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -49,6 +49,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
+    GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::HideShowAllWindows,
@@ -193,6 +194,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
 #else
         return {};
 #endif
+    case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
+        return settings.toggleWindowUnderCursorAlwaysOnTop();
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.toggleGlobalHotkeys();
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -264,6 +267,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
 #else
         return false;
 #endif
+    case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
+        return settings.setToggleWindowUnderCursorAlwaysOnTop(bindings);
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.setToggleGlobalHotkeys(bindings);
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -490,6 +495,10 @@ class GlobalShortcutManager::Impl {
     }
 
     bool actionAvailable(GlobalShortcutAction action) const {
+#ifndef Q_OS_WIN
+        if (action == GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop)
+            return false;
+#endif
         if (action != GlobalShortcutAction::TranslateSelectedText) {
             return true;
         }

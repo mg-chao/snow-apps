@@ -990,6 +990,8 @@ set(SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
 )
 if(WIN32)
     list(APPEND SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+        include/snow_shot/platform/windows/windowalwaysontop.h
+        src/platform/windows/windowalwaysontop.cpp
         src/platform/windows/globalshortcutbackend.cpp
         src/platform/windows/focusedfullscreenwindow.cpp)
 elseif(APPLE)
@@ -2956,6 +2958,20 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
 
+        add_executable(snow-shot-window-always-on-top-tests
+            tests/window_always_on_top_tests.cpp
+            src/platform/windows/windowalwaysontop.cpp)
+        target_include_directories(snow-shot-window-always-on-top-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-window-always-on-top-tests PRIVATE Qt6::Widgets user32)
+        snow_shot_import_offscreen_platform(snow-shot-window-always-on-top-tests)
+        add_test(NAME snow-shot-window-always-on-top-tests
+            COMMAND snow-shot-window-always-on-top-tests -platform offscreen)
+        set_tests_properties(snow-shot-window-always-on-top-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 20
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
         add_executable(snow-shot-window-cursor-refresh-tests
             tests/window_cursor_refresh_tests.cpp
             src/platform/windows/windowchrome.cpp
@@ -3381,6 +3397,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_image_codec
     )
     add_test(NAME snow-shot-translation-settings-tests COMMAND snow-shot-translation-settings-tests)
+    if(WIN32)
+        add_test(NAME snow-shot-window-always-on-top-settings-tests
+            COMMAND snow-shot-translation-settings-tests --window-always-on-top-only -platform offscreen)
+        set_tests_properties(snow-shot-window-always-on-top-settings-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-translation-confidence-settings-tests
         COMMAND snow-shot-translation-settings-tests --translation-confidence-only -platform offscreen)
     set_tests_properties(snow-shot-translation-confidence-settings-tests PROPERTIES
@@ -5248,6 +5272,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_window_shortcuts
     )
     if(WIN32)
+        target_sources(snow-shot-pinned-window-tests PRIVATE
+            src/platform/windows/windowalwaysontop.cpp)
         target_link_libraries(snow-shot-pinned-window-tests PRIVATE
             comctl32
             dwmapi
