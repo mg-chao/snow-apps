@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotshadowprofile.h"
 
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/image/screenshotdisplayimage.h"
 #include "widgets/checkerboard.h"
 
 #include <QPainter>
@@ -1360,20 +1361,7 @@ ScreenshotResultLayout ScreenshotResultCompositor::layoutForContent(
 }
 
 QImage ScreenshotResultCompositor::normalizeImage(const QImage& image) {
-    if (image.isNull()) {
-        return {};
-    }
-    const QColorSpace srgb(QColorSpace::SRgb);
-    // Imported pins can have an ICC profile. Convert their pixels before painting
-    // alongside sRGB screenshots; QPainter does not perform this conversion.
-    QImage normalized =
-        image.colorSpace().isValid() && image.colorSpace() != srgb
-            ? snowCanvasColorConvertedImage(image, srgb, QImage::Format_ARGB32_Premultiplied)
-            : snowCanvasConvertImage(image, QImage::Format_ARGB32_Premultiplied);
-    if (normalized.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(normalized))
-        return {};
-    normalized.setDevicePixelRatio(1.0);
-    return normalized;
+    return snow_shot::image::normalizeScreenshotDisplayImage(image);
 }
 
 QImage ScreenshotResultCompositor::maskBackgroundForSelection(QImage background,

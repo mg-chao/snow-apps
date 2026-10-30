@@ -1026,6 +1026,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     case SettingsSwitchBinding::LaunchAsAdministrator:
         return !app::distribution::isStoreManaged() &&
                storage::SystemSettings().launchAsAdministrator();
+    case SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing:
+        return storage::SystemSettings().annotationModeWhenOpeningForEditing();
     case SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements:
         return storage::DrawingSettings().automaticallySelectNewlyCreatedElements();
     case SettingsSwitchBinding::DrawingDeleteTextAfterCursor:
@@ -1056,8 +1058,9 @@ bool BuiltInSettingsBackend::applyContextMenuSettings(const QJsonValue& mode,
         {kContextMenuModeKey, requestedMode.value},
         {kContextMenuShortcutKey, requestedShortcuts.value},
     };
-    auto result = m_shellContextMenu->changeEnabled(
-        requestedMode.value.toString() == QStringLiteral("image_files"),
+    auto result = m_shellContextMenu->changeMode(
+        platform::windows::ShellContextMenuRegistration::modeFromValue(
+            requestedMode.value.toString()),
         contextMenuAccessKey(requestedShortcuts.value),
         [&] { return configuration.setValues(requested) && configuration.flushNow().success; });
     if (!result.success) {
@@ -1176,6 +1179,9 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (binding == SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing)
+        return switchEnabled(binding) &&
+               storage::SystemSettings().setAnnotationModeWhenOpeningForEditing(value);
     if (binding == SettingsSwitchBinding::OcrHardwareAcceleration) {
         const bool accepted = storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("text_recognition/hardware_acceleration"), value);
@@ -1458,6 +1464,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::McpEnabled:
     case SettingsSwitchBinding::AutoStartAtBoot:
     case SettingsSwitchBinding::LaunchAsAdministrator:
+    case SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing:
     case SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements:
     case SettingsSwitchBinding::DrawingDeleteTextAfterCursor:
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
@@ -3031,9 +3038,20 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                 .toBool());
     case SettingsSectionReset::SystemGeneral: {
         const auto& configuration = storage::ApplicationStorage::instance().configuration();
+        const bool annotationAccepted =
+#ifdef Q_OS_WIN
+            applySwitchValue(
+                SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing,
+                configuration
+                    .defaultValue(QStringLiteral("system/annotation_mode_when_opening_for_editing"))
+                    .toBool());
+#else
+            true;
+#endif
         if (app::distribution::isStoreManaged())
             return applySelectValue(SettingsSelectBinding::ContextMenuMode,
-                                    configuration.defaultValue(kContextMenuModeKey).toVariant());
+                                    configuration.defaultValue(kContextMenuModeKey).toVariant()) &&
+                   annotationAccepted;
         emit synchronized();
         const auto result = applyStartupSettings(
             configuration.defaultValue(QStringLiteral("system/auto_start_at_boot")).toBool(),
@@ -3041,7 +3059,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();
-        bool accepted = result.success;
+        bool accepted = result.success && annotationAccepted;
 #ifdef Q_OS_WIN
         accepted = applySelectValue(SettingsSelectBinding::ContextMenuMode,
                                     configuration.defaultValue(kContextMenuModeKey).toVariant()) &&

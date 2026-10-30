@@ -59,7 +59,8 @@ class ScreenshotController : public QObject {
     [[nodiscard]] bool
     handleActiveScreenshotShortcut(snow_shot::presentation::GlobalShortcutAction action);
     void pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
-    void pinFilesToScreen(QStringList paths);
+    // Finishes once the first file is presented, consumed as a duplicate, or fails.
+    void pinFilesToScreen(QStringList paths, std::function<void()> firstFileFinished = {});
     explicit ScreenshotController(
         QObject* parent = nullptr,
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,

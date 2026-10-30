@@ -31,6 +31,10 @@ bool isStartupUpdateRelaunch(const QStringList& arguments) {
     return arguments.contains(QString::fromLatin1(kSkipStartupUpdate));
 }
 
+bool startupUpdateMayDelayLaunch(const QStringList& arguments) {
+    return !app::parseShellImageLaunchRequest(arguments).requested;
+}
+
 QStringList normalStartupArguments(QStringList arguments) {
     arguments.removeAll(QString::fromLatin1(kSkipStartupUpdate));
     return arguments;

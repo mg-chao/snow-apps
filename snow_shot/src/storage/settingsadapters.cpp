@@ -2798,6 +2798,17 @@ bool TraySettings::setMenuOptions(const QStringList& options) const {
     return cache().setValue(QStringLiteral("tray/menu_options"), stringArray(options));
 }
 
+bool SystemSettings::annotationModeWhenOpeningForEditing() const {
+    return cache()
+        .value(QStringLiteral("system/annotation_mode_when_opening_for_editing"))
+        .toBool();
+}
+
+bool SystemSettings::setAnnotationModeWhenOpeningForEditing(bool enabled) const {
+    return cache().setValue(QStringLiteral("system/annotation_mode_when_opening_for_editing"),
+                            enabled);
+}
+
 bool SystemSettings::launchAsAdministrator() const {
     return autoStartAtBoot() &&
            cache().value(QStringLiteral("system/launch_as_administrator")).toBool();

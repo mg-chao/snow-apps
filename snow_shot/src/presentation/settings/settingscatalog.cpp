@@ -2467,7 +2467,9 @@ SettingsItemDefinition contextMenuModeItem() {
                           "Add Edit with Snow Shot to the Windows context menu to pin a "
                           "supported image or document file to the screen."),
         QStringLiteral("system/context_menu_mode"), SettingsSelectBinding::ContextMenuMode,
-        {{QStringLiteral("image_files"),
+        {{QStringLiteral("images_only"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image files"))},
+         {QStringLiteral("image_files"),
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image and document files"))},
          {QStringLiteral("disabled"),
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disabled"))}});
@@ -3400,6 +3402,15 @@ QVector<SettingsPageDefinition> builtInPages() {
 #endif
 #ifdef Q_OS_WIN
                   contextMenuModeItem(),
+                  switchItem(
+                      QStringLiteral("system.annotation-mode-when-opening-for-editing"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Enable annotation mode when opening for editing"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Automatically enable annotation mode in new Pin to Screen "
+                                        "windows opened with Edit with Snow Shot."),
+                      QStringLiteral("system/annotation_mode_when_opening_for_editing"),
+                      SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing),
 #endif
                   updateModeItem()},
              },
@@ -5408,6 +5419,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::AutoStartAtBoot:
                         expectedKey = QStringLiteral("system/auto_start_at_boot");
+                        break;
+                    case SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing:
+                        expectedKey =
+                            QStringLiteral("system/annotation_mode_when_opening_for_editing");
                         break;
                     case SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements:
                         expectedKey =

@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PLATFORM_WINDOWS_SHELLCONTEXTMENUREGISTRATION_H
 #define SNOW_SHOT_PLATFORM_WINDOWS_SHELLCONTEXTMENUREGISTRATION_H
 
+#include "snow_shot/platform/windows/shellcontextmenumode.h"
+
 #include <QByteArray>
 #include <QMap>
 #include <QString>
@@ -62,30 +64,31 @@ class ShellContextMenuRegistration final {
     explicit ShellContextMenuRegistration(Options options);
 
     [[nodiscard]] static bool isSupported();
+    [[nodiscard]] static ShellContextMenuMode modeFromValue(const QString& value);
     [[nodiscard]] QString expectedCommand() const;
     [[nodiscard]] ShellContextMenuRegistrationSnapshot snapshot() const;
     [[nodiscard]] bool restore(const ShellContextMenuRegistrationSnapshot& previous,
                                QString* error = nullptr) const;
-    [[nodiscard]] bool setEnabled(bool enabled, QString* error = nullptr) const;
-    [[nodiscard]] bool setEnabled(bool enabled, const QString& accessKey,
-                                  QString* error = nullptr) const;
+    [[nodiscard]] bool setMode(ShellContextMenuMode mode, QString* error = nullptr) const;
+    [[nodiscard]] bool setMode(ShellContextMenuMode mode, const QString& accessKey,
+                               QString* error = nullptr) const;
     [[nodiscard]] bool refreshLabels(QString* error = nullptr) const;
     [[nodiscard]] bool refreshLabels(const QString& accessKey, QString* error = nullptr) const;
     // Native changes and the preference commit form one transaction.
     [[nodiscard]] ShellContextMenuResult
-    changeEnabled(bool enabled, const std::function<bool()>& commitPreference) const;
+    changeMode(ShellContextMenuMode mode, const std::function<bool()>& commitPreference) const;
     [[nodiscard]] ShellContextMenuResult
-    changeEnabled(bool enabled, const QString& accessKey,
-                  const std::function<bool()>& commitPreference) const;
+    changeMode(ShellContextMenuMode mode, const QString& accessKey,
+               const std::function<bool()>& commitPreference) const;
 
   private:
     [[nodiscard]] ShellContextMenuResult
-    changePackagedEnabled(bool enabled, const QString& accessKey,
-                          const std::function<bool()>& commitPreference) const;
+    changePackagedMode(ShellContextMenuMode mode, const QString& accessKey,
+                       const std::function<bool()>& commitPreference) const;
     [[nodiscard]] bool ownedByProduct(const ShellContextMenuRegistryKey& key) const;
     [[nodiscard]] ShellContextMenuRegistryKey enabledKey(ShellContextMenuRegistryKey previous,
                                                          const QString& accessKey) const;
-    [[nodiscard]] bool apply(bool enabled, const QString& accessKey,
+    [[nodiscard]] bool apply(ShellContextMenuMode mode, const QString& accessKey,
                              const ShellContextMenuRegistrationSnapshot& previous,
                              QString* error) const;
     QString m_associationsRoot;

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <new>
+#include <span>
 #include <utility>
 
 namespace snow_shot::platform::windows::explorer {
@@ -95,7 +96,8 @@ void appendQuoted(std::wstring_view argument, std::wstring* commandLine) {
     commandLine->push_back(L'"');
 }
 
-HRESULT selectionPaths(IShellItemArray* items, std::vector<std::wstring>* paths) {
+HRESULT selectionPaths(IShellItemArray* items, std::vector<std::wstring>* paths,
+                       ShellContextMenuMode mode) {
     if (!items)
         return E_INVALIDARG;
     DWORD count = 0;
@@ -134,7 +136,7 @@ HRESULT selectionPaths(IShellItemArray* items, std::vector<std::wstring>* paths)
             throw;
         }
         CoTaskMemFree(nativePath);
-        if (!isSupportedPath(path))
+        if (!isSupportedPath(path, mode))
             return E_INVALIDARG;
         paths->push_back(std::move(path));
     }
@@ -246,10 +248,11 @@ class EditCommand final : public IExplorerCommand {
             return E_POINTER;
         *state = ECS_HIDDEN;
         try {
-            if (!m_preferenceReader().enabled)
+            const auto preference = m_preferenceReader();
+            if (preference.mode == ShellContextMenuMode::Disabled)
                 return S_OK;
             std::vector<std::wstring> paths;
-            if (FAILED(selectionPaths(items, &paths)))
+            if (FAILED(selectionPaths(items, &paths, preference.mode)))
                 return S_OK;
             std::wstring executable;
             std::wstring commandLine;
@@ -264,10 +267,11 @@ class EditCommand final : public IExplorerCommand {
 
     HRESULT STDMETHODCALLTYPE Invoke(IShellItemArray* items, IBindCtx*) override {
         try {
-            if (!m_preferenceReader().enabled)
+            const auto preference = m_preferenceReader();
+            if (preference.mode == ShellContextMenuMode::Disabled)
                 return E_ACCESSDENIED;
             std::vector<std::wstring> paths;
-            HRESULT result = selectionPaths(items, &paths);
+            HRESULT result = selectionPaths(items, &paths, preference.mode);
             if (FAILED(result))
                 return result;
             std::wstring executable;
@@ -366,8 +370,8 @@ class CommandFactory final : public IClassFactory {
 
 } // namespace
 
-bool isSupportedPath(std::wstring_view path) noexcept {
-    if (!isAbsolutePath(path))
+bool isSupportedPath(std::wstring_view path, ShellContextMenuMode mode) noexcept {
+    if (mode == ShellContextMenuMode::Disabled || !isAbsolutePath(path))
         return false;
     for (wchar_t character : path)
         if (character == L'"' || character < L' ' || (character >= 127 && character <= 159))
@@ -378,7 +382,10 @@ bool isSupportedPath(std::wstring_view path) noexcept {
         (separator != std::wstring_view::npos && dot <= separator))
         return false;
     const auto suffix = path.substr(dot);
-    for (const auto extension : kSupportedExtensions) {
+    const auto extensions = mode == ShellContextMenuMode::ImageFiles
+                                ? std::span<const std::wstring_view>(kSupportedImageExtensions)
+                                : std::span<const std::wstring_view>(kSupportedExtensions);
+    for (const auto extension : extensions) {
         if (suffix.size() != extension.size())
             continue;
         bool matches = true;

@@ -1460,6 +1460,10 @@
             <translation>Automatically disable when a focused fullscreen window exists</translation>
         </message>
         <message>
+            <source>Automatically enable annotation mode in new Pin to Screen windows opened with Edit with Snow Shot.</source>
+            <translation>Automatically enable annotation mode in new Pin to Screen windows opened with Edit with Snow Shot.</translation>
+        </message>
+        <message>
             <source>Automatically exit screen recording after the recording is saved.</source>
             <translation>Automatically exit screen recording after the recording is saved.</translation>
         </message>
@@ -2356,6 +2360,10 @@
             <translation>Enable MCP integration</translation>
         </message>
         <message>
+            <source>Enable annotation mode when opening for editing</source>
+            <translation>Enable annotation mode when opening for editing</translation>
+        </message>
+        <message>
             <source>Enable edit mode</source>
             <translation>Enable edit mode</translation>
         </message>
@@ -2678,6 +2686,10 @@
         <message>
             <source>Image export</source>
             <translation>Image export</translation>
+        </message>
+        <message>
+            <source>Image files</source>
+            <translation>Image files</translation>
         </message>
         <message>
             <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>

@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 
 #include "snow_shot/platform/selectedfiles.h"
+#include "snow_shot/image/screenshotdisplayimage.h"
 
 #include <QPointer>
 #include <QTimer>
@@ -10,6 +11,20 @@ namespace {
 // decodes use it fully while bounding decoded-but-unpresented images to this
 // count (the image being presented is the only additional one).
 constexpr qsizetype kDecodeDepth = 2;
+
+std::optional<ScreenshotClipboardContent>
+decodePinContent(ScreenshotClipboardContentSnapshot snapshot,
+                 const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
+    auto content = ScreenshotClipboardContentReader::decode(std::move(snapshot), cancelled);
+    if (!content || (cancelled && cancelled()))
+        return std::nullopt;
+    if (content->preparedDisplayImage.isNull())
+        content->preparedDisplayImage =
+            snow_shot::image::normalizeScreenshotDisplayImage(content->image);
+    if (content->preparedDisplayImage.isNull() || (cancelled && cancelled()))
+        return std::nullopt;
+    return content;
+}
 } // namespace
 
 ScreenshotFilePinBatch::ScreenshotFilePinBatch(QObject* parent) : QObject(parent) {}
@@ -136,8 +151,8 @@ void ScreenshotFilePinBatch::startSource(Source source, Present present, Failure
                 snapshot.localImage = files->constFirst();
                 snapshot.textStyle = textStyle;
                 snapshot.colorSwatchStyle = colorSwatchStyle;
-                *first = ScreenshotClipboardContentReader::decode(
-                    std::move(snapshot), [&token]() { return token.isCancellationRequested(); });
+                *first = decodePinContent(std::move(snapshot),
+                                          [&token]() { return token.isCancellationRequested(); });
             }
             return ScreenshotExportTaskResult{};
         },
@@ -182,8 +197,8 @@ void ScreenshotFilePinBatch::submitDecode(quint64 generation, qsizetype index) {
         this, ScreenshotExportCoordinator::Priority::Foreground,
         [snapshot = std::move(snapshot),
          content](const ScreenshotExportCancellation& token) mutable {
-            *content = ScreenshotClipboardContentReader::decode(
-                std::move(snapshot), [&token]() { return token.isCancellationRequested(); });
+            *content = decodePinContent(std::move(snapshot),
+                                        [&token]() { return token.isCancellationRequested(); });
             return ScreenshotExportTaskResult{};
         },
         [this, generation, index, content](ScreenshotExportTaskResult result) {

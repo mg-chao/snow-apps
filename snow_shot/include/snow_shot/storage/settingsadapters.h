@@ -734,6 +734,8 @@ class TraySettings final {
 
 class SystemSettings final {
   public:
+    [[nodiscard]] bool annotationModeWhenOpeningForEditing() const;
+    [[nodiscard]] bool setAnnotationModeWhenOpeningForEditing(bool enabled) const;
     [[nodiscard]] bool autoStartAtBoot() const;
     [[nodiscard]] bool launchAsAdministrator() const;
     [[nodiscard]] bool setLaunchAsAdministrator(bool enabled) const;

@@ -2500,6 +2500,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     if (m_shakeMessage)
         m_shakeMessage->close();
     m_deferredPresentationSetupScheduled = false;
+    m_initialAnnotationMode = config.initialAnnotationMode;
     m_recognitionTargetReady = false;
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
@@ -2516,8 +2517,16 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
             m_originalImage = {};
         m_originalImage.setDevicePixelRatio(1.0);
     }
-    m_transformedImage = animatedImage()
-                             ? m_animationSource->firstDisplayFrame
+    const QImage& preparedDisplay = config.preparedDisplayImage;
+    const bool displayPrepared = !m_originalImage.isNull() &&
+                                 preparedDisplay.size() == m_originalImage.size() &&
+                                 preparedDisplay.format() == QImage::Format_ARGB32_Premultiplied &&
+                                 preparedDisplay.devicePixelRatio() == 1.0 &&
+                                 (!preparedDisplay.colorSpace().isValid() ||
+                                  preparedDisplay.colorSpace() == QColorSpace(QColorSpace::SRgb));
+    m_transformedImage = animatedImage() ? m_animationSource->firstDisplayFrame
+                         : displayPrepared
+                             ? preparedDisplay
                              : ScreenshotResultCompositor::normalizeImage(m_originalImage);
     if (!m_transformedImage.isNull()) {
         // Keep the source mapping for baked images that extend beyond the content.
@@ -5134,6 +5143,8 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
         m_editButton->show();
     }
     updateControlsGeometry();
+    if (std::exchange(m_initialAnnotationMode, false) && m_editingEnabled)
+        setEditMode(true);
     refreshContextMenuIfVisible();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_target_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
@@ -5173,6 +5184,7 @@ void ScreenshotPinnedWindow::finishPresentation(bool succeeded, QImage image) {
         succeeded = initializeLivePresentation(&error);
     }
     if (!succeeded) {
+        m_initialAnnotationMode = false;
         m_sourcePinAvailable = false;
         m_attentionPending = false;
     } else if (m_attentionPending) {
@@ -7426,6 +7438,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
     m_quickSavePending = false;
     cancelCloudUpload();
     ++m_presentationGeneration;
+    m_initialAnnotationMode = false;
     m_deferredPresentationSetupScheduled = false;
     stopRecognition();
     m_recognitionResults = {};
@@ -7580,7 +7593,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,

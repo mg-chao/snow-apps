@@ -223,6 +223,15 @@ bool roundTripRequiredFormats(const std::array<uint8_t, 3U * 2U * 4U>& pixels,
             decoded.data != nullptr && decoded.width == 3 && decoded.height == 2 &&
             decoded.row_stride == 3U * 4U && decoded.size == 3U * 2U * 4U;
 
+        // Decoded buffers must outlive the encoded input borrowed by the bridge.
+        std::vector<uint8_t> expectedPixels;
+        if (roundTripped)
+            expectedPixels.assign(decoded.data, decoded.data + decoded.size);
+        std::memset(encoded.data, 0, static_cast<std::size_t>(encoded.size));
+        snow_shot_image_codec_release_buffer(&encoded);
+        const bool independentPixels =
+            roundTripped && std::equal(expectedPixels.begin(), expectedPixels.end(), decoded.data);
+
         StreamContext streamContext{pixels.data()};
         SnowShotImageCodecRgba8Source source = bridgeSource(&streamContext);
         SnowShotImageCodecByteSink sink = bridgeSink(&streamContext);
@@ -240,8 +249,7 @@ bool roundTripRequiredFormats(const std::array<uint8_t, 3U * 2U * 4U>& pixels,
                                          ? SNOW_SHOT_IMAGE_CODEC_PIXEL_ROUND_TRIP_EXACT
                                          : SNOW_SHOT_IMAGE_CODEC_PIXEL_ROUND_TRIP_CODEC_ARTIFACT);
         snow_shot_image_codec_release_buffer(&decoded);
-        snow_shot_image_codec_release_buffer(&encoded);
-        if (!inspected || !roundTripped || !receiptMatches) {
+        if (!inspected || !roundTripped || !independentPixels || !receiptMatches) {
             std::cerr << format.name << " inspect/decode failed: " << error->data() << '\n';
             return false;
         }

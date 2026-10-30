@@ -20,8 +20,10 @@
 #include <QImage>
 #include <QPointer>
 #include <QScreen>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 
 #include <algorithm>
 #include <iomanip>
@@ -40,13 +42,18 @@ struct Scenario final {
     const char* format;
     int quality;
     bool prewarm;
+    QColorSpace::NamedColorSpace colorSpace = QColorSpace::SRgb;
+    bool alpha = false;
 };
 
 struct Sample final {
+    qint64 firstDecodeNanoseconds = 0;
     qint64 firstPinNanoseconds = 0;
     qint64 totalNanoseconds = 0;
     qint64 duplicateNanoseconds = 0;
+    qint64 maximumEventGapNanoseconds = 0;
     int presents = 0;
+    int painted = 0;
 };
 
 [[noreturn]] void fail(const QString& message) {
@@ -73,7 +80,7 @@ void initializeIsolatedStorage(const QString& root) {
             QStringLiteral("failed to initialize isolated benchmark storage"));
 }
 
-QImage makeImage(QSize size) {
+QImage makeImage(QSize size, QColorSpace::NamedColorSpace colorSpace, bool alpha) {
     QImage image(size, QImage::Format_RGBA8888);
     require(!image.isNull(), QStringLiteral("could not allocate benchmark source image"));
     for (int y = 0; y < size.height(); ++y) {
@@ -82,16 +89,16 @@ QImage makeImage(QSize size) {
             row[x * 4] = uchar((x + y * 3) & 0xff);
             row[x * 4 + 1] = uchar((x * 5 + y) & 0xff);
             row[x * 4 + 2] = uchar((x * 3 + y * 7) & 0xff);
-            row[x * 4 + 3] = 255;
+            row[x * 4 + 3] = alpha ? uchar(64 + ((x + y) % 192)) : 255;
         }
     }
-    image.setColorSpace(QColorSpace::SRgb);
+    image.setColorSpace(colorSpace);
     return image;
 }
 
 QStringList writeFixtureFiles(const QString& name, const Scenario& scenario,
                               const QString& directory) {
-    const QImage image = makeImage(scenario.imageSize);
+    const QImage image = makeImage(scenario.imageSize, scenario.colorSpace, scenario.alpha);
     QStringList paths;
     for (int index = 0; index < scenario.fileCount; ++index) {
         const QString path = QDir(directory).filePath(
@@ -132,42 +139,62 @@ void closePresentedWindows() {
 }
 
 Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& screen,
-                 bool measureDuplicates) {
+                 bool measureDuplicates, bool shellQueue) {
     // A fresh services object per sample gives every variant an empty window
     // pool, so "noprewarm" truly pays cold shell construction on the first
     // present and "prewarm" truly benefits from the prebuilt spare.
     ScreenshotSelectionExportUiServices services;
     ScreenshotFilePinBatch batch;
+    ScreenshotFilePinQueue queue;
     Sample sample;
     QElapsedTimer timer;
+    QTimer responsiveness;
+    responsiveness.setTimerType(Qt::PreciseTimer);
+    qint64 previousEvent = 0;
+    QObject::connect(&responsiveness, &QTimer::timeout, &responsiveness, [&] {
+        const qint64 now = timer.nsecsElapsed();
+        sample.maximumEventGapNanoseconds =
+            std::max(sample.maximumEventGapNanoseconds, now - previousEvent);
+        previousEvent = now;
+    });
     const auto present = [&sample, &timer, &screen, &services](ScreenshotClipboardContent content) {
         if (sample.presents++ == 0) {
-            sample.firstPinNanoseconds = timer.nsecsElapsed();
+            sample.firstDecodeNanoseconds = timer.nsecsElapsed();
         }
-        const auto fit = ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-            content.image.size(), screen.availableGeometry(), screen.geometry(),
-            ScreenshotGeometryMapper::physicalRectForScreen(screen), 16);
-        require(fit.valid, QStringLiteral("pinned geometry fit failed"));
-        static_cast<void>(services.presentPinnedImage(
-            content.image, &screen, fit.nativeGeometry, fit.initialWindowSize, {}, {}, 1.0,
-            std::move(content.originalContent), {}, {}, {}, {},
-            snow_shot::storage::PinnedWindowCreationSource::SelectedFiles,
-            std::move(content.sourceIdentity)));
+        require(services.presentDecodedContentOnScreen(
+                    std::move(content), &screen, true,
+                    snow_shot::storage::PinnedWindowCreationSource::SelectedFiles, false,
+                    [&sample, &timer](bool success, QImage) {
+                        require(success, QStringLiteral("first content frame failed"));
+                        if (sample.painted++ == 0)
+                            sample.firstPinNanoseconds = timer.nsecsElapsed();
+                    }),
+                QStringLiteral("pinned presentation failed"));
         return true;
     };
     timer.start();
-    batch.start(paths, present);
+    responsiveness.start(1);
+    if (shellQueue) {
+        queue.enqueue(
+            paths, [present] { return ScreenshotFilePinQueue::Options{present, {}}; },
+            [](const QString& path) { fail(QStringLiteral("could not pin %1").arg(path)); });
+    } else {
+        batch.start(paths, present);
+    }
     if (scenario.prewarm) {
         services.prewarmPinnedWindow(&screen);
     }
     QElapsedTimer timeout;
     timeout.start();
-    while (batch.active() && timeout.elapsed() < 120000) {
+    while ((batch.active() || queue.active() || sample.painted < scenario.fileCount) &&
+           timeout.elapsed() < 120000) {
         QApplication::processEvents(QEventLoop::AllEvents, 20);
         QThread::msleep(1);
     }
-    require(!batch.active(), QStringLiteral("the file-pin batch timed out"));
+    require(!batch.active() && !queue.active() && sample.painted == scenario.fileCount,
+            QStringLiteral("the file-pin presentation timed out"));
     sample.totalNanoseconds = timer.nsecsElapsed();
+    responsiveness.stop();
     require(sample.presents == scenario.fileCount,
             QStringLiteral("expected %1 pinned files, presented %2")
                 .arg(scenario.fileCount)
@@ -225,17 +252,25 @@ void report(const Scenario& scenario, const std::vector<Sample>& samples) {
     };
     std::cout << std::left << std::setw(11) << scenario.name << ' '
               << (scenario.prewarm ? "prewarm  " : "noprewarm") << std::fixed
-              << std::setprecision(2) << " files=" << scenario.fileCount << " first_pin_ms="
-              << milliseconds(
-                     median(values([](const Sample& value) { return value.firstPinNanoseconds; })))
+              << std::setprecision(2) << " files=" << scenario.fileCount
+              << " first_decode_ms=" << milliseconds(median(values([](const Sample& value) {
+                     return value.firstDecodeNanoseconds;
+                 })))
+              << " first_content_frame_ms=" << milliseconds(median(values([](const Sample& value) {
+                     return value.firstPinNanoseconds;
+                 })))
               << " total_ms=" << milliseconds(median(values([](const Sample& value) {
                      return value.totalNanoseconds;
+                 })))
+              << " max_event_gap_ms=" << milliseconds(median(values([](const Sample& value) {
+                     return value.maximumEventGapNanoseconds;
                  })))
               << " duplicate_ms=" << milliseconds(median(values([](const Sample& value) {
                      return value.duplicateNanoseconds;
                  })))
               << " presents="
-              << median(values([](const Sample& value) { return qint64(value.presents); })) << '\n';
+              << median(values([](const Sample& value) { return qint64(value.presents); }))
+              << std::endl;
 }
 } // namespace
 
@@ -260,6 +295,11 @@ int main(int argc, char* argv[]) {
                                      QStringLiteral("count"), QStringLiteral("5"));
     parser.addOption(samplesOption);
     parser.addOption(
+        {QStringLiteral("shell-queue"),
+         QStringLiteral("Use the Explorer launch queue instead of a replaceable batch")});
+    parser.addOption({QStringLiteral("scenario"), QStringLiteral("Run only the named scenario"),
+                      QStringLiteral("name")});
+    parser.addOption(
         {QStringLiteral("duplicates"),
          QStringLiteral(
              "Also measure repeated batches without decoding or presenting duplicate images")});
@@ -272,6 +312,9 @@ int main(int argc, char* argv[]) {
     }
 
     const std::vector<Scenario> scenarios{
+        {"jpeg-single", 1, QSize(4000, 3000), "jpg", 85, true},
+        {"jpeg-huge", 1, QSize(8000, 6000), "jpg", 85, true},
+        {"png-profiled", 1, QSize(4000, 3000), "png", -1, true, QColorSpace::DisplayP3, true},
         {"jpeg-large", 8, QSize(4000, 3000), "jpg", 85, true},
         {"jpeg-large", 8, QSize(4000, 3000), "jpg", 85, false},
         {"png-small", 24, QSize(320, 240), "png", -1, true},
@@ -284,14 +327,21 @@ int main(int argc, char* argv[]) {
         QTemporaryDir storageDirectory;
         require(storageDirectory.isValid(),
                 QStringLiteral("temporary storage directory unavailable"));
-        initializeIsolatedStorage(storageDirectory.path());
         QTemporaryDir fixtureDirectory;
         require(fixtureDirectory.isValid(),
                 QStringLiteral("temporary fixture directory unavailable"));
+        initializeIsolatedStorage(storageDirectory.path());
+        const auto cleanup = qScopeGuard([] {
+            ScreenshotExportCoordinator::shared().shutdown();
+            snow_shot::storage::ApplicationStorage::instance().shutdown();
+        });
         std::cout << "File-pin batch medians, samples=" << sampleCount << '\n';
         QString fixtureName;
         QStringList fixturePaths;
         for (const Scenario& scenario : scenarios) {
+            if (parser.isSet(QStringLiteral("scenario")) &&
+                parser.value(QStringLiteral("scenario")) != QLatin1String(scenario.name))
+                continue;
             if (scenario.name != fixtureName) {
                 fixturePaths = writeFixtureFiles(scenario.name, scenario, fixtureDirectory.path());
                 fixtureName = scenario.name;
@@ -300,7 +350,8 @@ int main(int argc, char* argv[]) {
             samples.reserve(size_t(sampleCount));
             for (int sample = 0; sample < sampleCount; ++sample)
                 samples.push_back(runSample(scenario, fixturePaths, *screen,
-                                            parser.isSet(QStringLiteral("duplicates"))));
+                                            parser.isSet(QStringLiteral("duplicates")),
+                                            parser.isSet(QStringLiteral("shell-queue"))));
             report(scenario, samples);
         }
     } catch (const std::exception& error) {

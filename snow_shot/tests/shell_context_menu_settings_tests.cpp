@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/platform/windows/packagedcontextmenupreference.h"
 
 #include <QApplication>
@@ -27,6 +28,10 @@ namespace storage = snow_shot::storage;
 
 const QString kKey = QStringLiteral("system/context_menu_mode");
 const QString kId = QStringLiteral("system.context-menu-mode");
+const QString kAnnotationKey = QStringLiteral("system/annotation_mode_when_opening_for_editing");
+const QString kAnnotationId = QStringLiteral("system.annotation-mode-when-opening-for-editing");
+constexpr auto kAnnotationBinding =
+    settings::SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing;
 const QString kShortcutKey = QStringLiteral("context_menu_shortcuts/edit_with_snow_shot");
 const QString kShortcutId = QStringLiteral("edit_with_snow_shot");
 constexpr auto kScope = settings::SettingsLocalShortcutScope::WindowsContextMenu;
@@ -43,9 +48,10 @@ void catalogAndDefaults(const QString& configurationPath) {
     const auto* schema = storage::ConfigurationSchema::entry(kKey);
     require(schema && schema->defaultValue == QStringLiteral("image_files") &&
                 schema->valueKind == storage::ConfigurationValueKind::String &&
-                schema->allowedStringValues ==
-                    QStringList{QStringLiteral("image_files"), QStringLiteral("disabled")},
-            "shared schema defaults to Image and document files with two exact string values");
+                schema->allowedStringValues == QStringList{QStringLiteral("images_only"),
+                                                           QStringLiteral("image_files"),
+                                                           QStringLiteral("disabled")},
+            "shared schema defaults to Image and document files with three exact string values");
     const auto& registry = settings::builtInSettingsRegistry();
     require(registry.isValid(), "the context menu setting preserves valid catalog bindings");
     const auto* field = registry.field(kId);
@@ -80,20 +86,32 @@ void catalogAndDefaults(const QString& configurationPath) {
                 field->definition->title.translated() == QStringLiteral("Windows context menu"),
             "Windows exposes the dropdown in General's system integration section");
     const auto& select = std::get<settings::SettingsSelectDefinition>(field->definition->payload);
-    require(select.source == settings::SettingsSelectSource::Fixed && select.options.size() == 2 &&
-                select.options[0].value == QStringLiteral("image_files") &&
-                select.options[0].label.translated() ==
+    require(select.source == settings::SettingsSelectSource::Fixed && select.options.size() == 3 &&
+                select.options[0].value == QStringLiteral("images_only") &&
+                select.options[0].label.translated() == QStringLiteral("Image files") &&
+                select.options[1].value == QStringLiteral("image_files") &&
+                select.options[1].label.translated() ==
                     QStringLiteral("Image and document files") &&
-                select.options[1].value == QStringLiteral("disabled") &&
-                select.options[1].label.translated() == QStringLiteral("Disabled") &&
+                select.options[2].value == QStringLiteral("disabled") &&
+                select.options[2].label.translated() == QStringLiteral("Disabled") &&
                 !search.search(QStringLiteral("Windows context menu")).isEmpty(),
             "dropdown uses the requested option order, labels and searchable title");
+    const auto* annotation = registry.field(kAnnotationId);
+    require(annotation && annotation->configurationKey == kAnnotationKey &&
+                annotation->defaultValue == true &&
+                annotation->reset == settings::SettingsSectionReset::SystemGeneral &&
+                registry.fieldForSwitch(kAnnotationBinding) == annotation &&
+                !search.search(QStringLiteral("Enable annotation mode when opening for editing"))
+                     .isEmpty(),
+            "annotation switch is searchable and defaults to enabled in the same reset section");
     const auto* section = registry.catalog().section(field->pageId, field->sectionId);
     require(section && section->items[3].id == kId &&
-                section->items[2].id == QStringLiteral("system.restart-as-administrator"),
+                section->items[2].id == QStringLiteral("system.restart-as-administrator") &&
+                section->items[4].id == kAnnotationId,
             "context menu dropdown follows the adjacent administrator startup controls");
 #else
-    require(!shortcutField && !field && !registry.fieldForSelect(kBinding) &&
+    require(!shortcutField && !field && !registry.field(kAnnotationId) &&
+                !registry.fieldForSelect(kBinding) &&
                 search.search(QStringLiteral("Windows context menu")).isEmpty(),
             "other platforms omit the Windows context menu control and search entry");
 #endif
@@ -111,7 +129,7 @@ void catalogAndDefaults(const QString& configurationPath) {
     file.close();
     storage::ConfigurationStore store(configurationPath, true, true, 60000);
     require(store.value(kKey) == QStringLiteral("image_files") &&
-                store.value(kShortcutKey) == QJsonArray{} &&
+                store.value(kAnnotationKey).toBool() && store.value(kShortcutKey) == QJsonArray{} &&
                 store.value(QStringLiteral("system/application_priority")) ==
                     QStringLiteral("normal"),
             "old configurations acquire Image and document files without changing existing "
@@ -127,6 +145,63 @@ void catalogAndDefaults(const QString& configurationPath) {
     require(!store.setValue(kKey, false) && !store.setValue(kKey, QStringLiteral("unknown")) &&
                 store.revision() == revision,
             "direct writes reject non-string and unsupported context menu preferences");
+}
+
+void annotationSettingsTransactions() {
+#ifdef Q_OS_WIN
+    Registry registry;
+    QTemporaryDir nativePreference;
+    require(nativePreference.isValid(), "isolate the Store annotation settings fixture");
+    auto options = registry.options();
+    options.packagedPreferencePath =
+        nativePreference.filePath(QStringLiteral("context-menu-enabled"));
+    windows::ShellContextMenuRegistration registration(options);
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    settings::BuiltInSettingsBackend backend(
+        shortcuts, nullptr, nullptr, nullptr, nullptr, &registration,
+        [&](bool enabled, bool elevated) {
+            const bool saved = configuration.setValues(
+                {{QStringLiteral("system/auto_start_at_boot"), enabled},
+                 {QStringLiteral("system/launch_as_administrator"), elevated}});
+            return windows::AdministratorResult{saved, false, {}};
+        });
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    require(storage::SystemSettings().annotationModeWhenOpeningForEditing() &&
+                session.state(kAnnotationId).acceptedValue.toBool(),
+            "existing configurations acquire automatic annotation by default");
+    require(session.applySwitchValue(kAnnotationBinding, false) &&
+                !backend.switchValue(kAnnotationBinding) && !session.hasDirtyFields() &&
+                configuration.flushNow().success,
+            "the annotation switch saves immediately and accepts its disabled value");
+    storage::ConfigurationStore persisted(
+        storage::ApplicationStorage::instance().configurationDirectory() +
+            QStringLiteral("/config.json"),
+        true, true, 60000);
+    require(!persisted.value(kAnnotationKey).toBool(), "annotation preference survives reload");
+    configuration.suspendWrites(true);
+    require(!session.applySwitchValue(kAnnotationBinding, true) &&
+                !configuration.value(kAnnotationKey).toBool(),
+            "read-only storage rejects annotation changes without changing their accepted value");
+    configuration.suspendWrites(false);
+    auto imported = configuration.snapshot();
+    imported.remove(kAnnotationKey);
+    require(backend.importConfigurationSnapshot(imported,
+                                                storage::ConfigurationSchema::currentVersion()) &&
+                backend.switchValue(kAnnotationBinding),
+            "older imported configurations enable annotation by default");
+    imported.insert(kAnnotationKey, false);
+    imported.insert(kKey, QStringLiteral("images_only"));
+    require(backend.importConfigurationSnapshot(imported,
+                                                storage::ConfigurationSchema::currentVersion()) &&
+                !backend.switchValue(kAnnotationBinding) &&
+                configuration.value(kKey) == QStringLiteral("images_only"),
+            "imports preserve the new scope and explicit annotation preference");
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                backend.switchValue(kAnnotationBinding) &&
+                configuration.value(kKey) == QStringLiteral("image_files"),
+            "section reset restores automatic annotation and the broad scope in every edition");
+#endif
 }
 
 void accessKeySchemaValidation() {
@@ -176,7 +251,8 @@ void settingsTransactions(const QString& configurationDirectory, const QString& 
 #ifdef Q_OS_WIN
     require(backend.selectValue(kBinding) == QStringLiteral("image_files") &&
                 session.state(kId).acceptedValue == QStringLiteral("image_files") &&
-                registration.setEnabled(true) && registry.keys.size() == 2,
+                registration.setMode(windows::ShellContextMenuMode::ImageAndDocumentFiles) &&
+                registry.keys.size() == 2,
             "first launch applies the default Image and document files mode");
     require(
         session.applySelectValue(kBinding, QStringLiteral("disabled")) && registry.keys.isEmpty() &&
@@ -301,7 +377,8 @@ void portableSettingsTransactions(const QString& root) {
     const auto startupBinding = settings::SettingsSwitchBinding::AutoStartAtBoot;
     require(!backend.switchValue(startupBinding) &&
                 session.state(kId).acceptedValue == QStringLiteral("disabled") &&
-                registration.setEnabled(false) && registry.keys.isEmpty(),
+                registration.setMode(windows::ShellContextMenuMode::Disabled) &&
+                registry.keys.isEmpty(),
             "portable settings expose both integrations as disabled on first launch");
     const auto enableIntegrations = [&] {
         return session.applySwitchValue(startupBinding, true) &&
@@ -344,7 +421,8 @@ void accessKeyTransactions(const QString& configurationDirectory, const QString&
         return stringText(
             registry.keys.value(Registry::path(QStringLiteral("png"))).values.value({}));
     };
-    require(backend.localShortcuts(kScope, kShortcutId).isEmpty() && registration.setEnabled(true),
+    require(backend.localShortcuts(kScope, kShortcutId).isEmpty() &&
+                registration.setMode(windows::ShellContextMenuMode::ImageAndDocumentFiles),
             "prepare the default unassigned menu");
     ShortcutBinding physical{QStringLiteral("e")};
     physical.physicalKeys.insert(snow_shot::shortcuts::ShortcutPlatform::MacOS, 14);
@@ -458,6 +536,7 @@ int main(int argc, char** argv) {
         auto& storage = storage::ApplicationStorage::instance();
         require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
                 "initialize isolated Store settings");
+        annotationSettingsTransactions();
         Registry registry;
         auto options = registry.options();
         options.packagedPreferencePath = temporary.filePath(QStringLiteral("context-menu-enabled"));
@@ -610,6 +689,7 @@ int main(int argc, char** argv) {
     require(blocker.open(QIODevice::WriteOnly),
             "create a file that blocks configuration persistence");
     blocker.close();
+    annotationSettingsTransactions();
     settingsTransactions(applicationStorage.configurationDirectory(), blocker.fileName());
     accessKeyTransactions(applicationStorage.configurationDirectory(), blocker.fileName());
     applicationStorage.shutdown();

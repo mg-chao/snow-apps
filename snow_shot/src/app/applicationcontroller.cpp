@@ -1,6 +1,7 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
+#include <QScopeGuard>
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/app/storeupdatelifecycle.h"
 #include "snow_shot/app/shellimagelaunch.h"
@@ -758,12 +759,17 @@ class ApplicationController::Impl {
     }
 
 #ifdef Q_OS_WIN
-    void pinShellFiles(QStringList paths) {
-        static_cast<void>(featureRouter.dispatch(
-            FeatureFamily::PinToScreen, [this, paths = std::move(paths)]() mutable {
-                if (auto* controller = ensureScreenshotController())
-                    controller->pinFilesToScreen(std::move(paths));
-            }));
+    void pinShellFiles(QStringList paths, std::function<void()> finished = {}) {
+        if (!featureRouter.dispatch(FeatureFamily::PinToScreen,
+                                    [this, paths = std::move(paths), finished]() mutable {
+                                        if (auto* controller = ensureScreenshotController())
+                                            controller->pinFilesToScreen(std::move(paths),
+                                                                         std::move(finished));
+                                        else if (finished)
+                                            finished();
+                                    }) &&
+            finished)
+            finished();
     }
 
     void preserveShellLaunchForUpdate(const QStringList& paths, bool foreground) {
@@ -1466,12 +1472,11 @@ class ApplicationController::Impl {
             done({}, {}, QStringLiteral("unsupported_source"));
     }
 
-    void start() {
+    void start(const QStringList& initialArguments, std::function<void()> maintenance) {
         if (started) {
             return;
         }
         started = true;
-        updates->start();
 
 #ifdef Q_OS_MACOS
         permissions.setMicrophoneEnabled(storage::RecordingSettings().microphoneEnabled());
@@ -1505,6 +1510,31 @@ class ApplicationController::Impl {
 #endif
                              }
                          });
+        const QPointer<ApplicationController> guard(&q);
+        auto resume = [guard, maintenance = std::move(maintenance)]() mutable {
+            if (guard)
+                guard->m_impl->finishStartup(std::move(maintenance));
+        };
+        if (parseShellImageLaunchRequest(initialArguments).requested)
+            q.handleLaunchRequest(initialArguments, std::move(resume));
+        else
+            resume();
+    }
+
+    void finishStartup(std::function<void()> maintenance) {
+        if (backgroundStartupScheduled)
+            return;
+        backgroundStartupScheduled = true;
+        // Return from the first-frame callback before any unrelated work can run.
+        QTimer::singleShot(0, &q, [this, maintenance = std::move(maintenance)] {
+            startBackgroundWork();
+            if (maintenance)
+                maintenance();
+        });
+    }
+
+    void startBackgroundWork() {
+        updates->start();
         static_cast<void>(featureRouter.dispatch(
             FeatureFamily::Screenshot,
             [this]() {
@@ -2247,6 +2277,7 @@ class ApplicationController::Impl {
     std::unique_ptr<platform::macos::ApplicationReopenHandler> reopenHandler;
 #endif
     bool started = false;
+    bool backgroundStartupScheduled = false;
     std::unique_ptr<runtime::MemoryOptimizationController> memoryOptimization;
     std::unique_ptr<StoreUpdateLifecycle> storeLifecycle;
     update::UpdateService* updates = nullptr;
@@ -2263,15 +2294,21 @@ ApplicationController::ApplicationController(QApplication& application, QObject*
 
 ApplicationController::~ApplicationController() = default;
 
-void ApplicationController::start() {
-    m_impl->start();
+void ApplicationController::start(const QStringList& initialArguments,
+                                  std::function<void()> maintenance) {
+    m_impl->start(initialArguments, std::move(maintenance));
 }
 
 void ApplicationController::showMainWindow() {
     m_impl->showMainWindow();
 }
 
-void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
+void ApplicationController::handleLaunchRequest(const QStringList& arguments,
+                                                std::function<void()> firstFileFinished) {
+    const auto finishUnhandled = qScopeGuard([&] {
+        if (firstFileFinished)
+            firstFileFinished();
+    });
 #ifdef Q_OS_WIN
     const auto request = parseShellImageLaunchRequest(arguments);
     if (request.requested) {
@@ -2298,7 +2335,8 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
             m_impl->preserveShellLaunchForUpdate(supportedPaths, foreground);
         } else {
             if (!supportedPaths.isEmpty())
-                m_impl->pinShellFiles(std::move(supportedPaths));
+                m_impl->pinShellFiles(std::move(supportedPaths),
+                                      std::exchange(firstFileFinished, {}));
             if (foreground)
                 m_impl->showMainWindow();
         }

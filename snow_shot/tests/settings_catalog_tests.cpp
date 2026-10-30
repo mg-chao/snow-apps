@@ -652,6 +652,7 @@ void builtInCatalogIsCompleteAndValid() {
         QStringLiteral("system.launch-as-administrator"),
         QStringLiteral("system.restart-as-administrator"),
         QStringLiteral("system.context-menu-mode"),
+        QStringLiteral("system.annotation-mode-when-opening-for-editing"),
         QStringLiteral("windows-context-menu-shortcut.edit_with_snow_shot"),
         QStringLiteral("screenshot.api-mode"),
         QStringLiteral("screen-recording.api-mode"),

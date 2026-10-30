@@ -20,7 +20,9 @@ using ProcessLauncher = HRESULT (*)(const std::wstring& executable,
                                     const std::wstring& commandLine);
 using PreferenceReader = packaged_context_menu::Preference (*)();
 
-[[nodiscard]] bool isSupportedPath(std::wstring_view path) noexcept;
+[[nodiscard]] bool
+isSupportedPath(std::wstring_view path,
+                ShellContextMenuMode mode = ShellContextMenuMode::ImageAndDocumentFiles) noexcept;
 [[nodiscard]] HRESULT buildCommandLine(const std::wstring& executable,
                                        const std::vector<std::wstring>& paths,
                                        std::wstring* commandLine);

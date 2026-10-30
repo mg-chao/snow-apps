@@ -10205,8 +10205,18 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # file-pin batch snapshot/decode/presentation pipeline with real pinned
     # windows and reports hardware-sensitive medians for explicit Release
     # sessions.
+    add_executable(snow-shot-shell-launch-performance-benchmark
+        tests/shell_image_launch_performance_benchmark.cpp
+        include/snow_shot/app/singleinstancecoordinator.h
+        src/app/singleinstancecoordinator.cpp)
+    target_include_directories(snow-shot-shell-launch-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-shell-launch-performance-benchmark PRIVATE
+        snow_shot_distribution Qt6::Core Qt6::Network)
+
     add_executable(snow-shot-file-pin-batch-performance-benchmark
         src/presentation/services/pinnedtextstylecapture.cpp
+        src/presentation/imageediting/imageeditingsource.cpp
         tests/screenshot_file_pin_batch_performance_benchmark.cpp
         tests/screenshot_pinned_lifecycle_performance_benchmark.cpp
         src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
@@ -11426,6 +11436,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    if(WIN32)
+        add_test(NAME snow-shot-shell-file-startup-tests COMMAND snow_shot --shell-file-startup-tests)
+        set_tests_properties(snow-shot-shell-file-startup-tests PROPERTIES
+            LABELS unit TIMEOUT 60 RUN_SERIAL TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    endif()
     add_test(NAME snow-shot-image-editing-pin-controller-tests
         COMMAND snow_shot --image-editor-pin-tests)
     set_tests_properties(snow-shot-image-editing-pin-controller-tests PROPERTIES
@@ -11538,6 +11554,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-decoded-content-presentation-tests
         COMMAND snow-shot-pinned-window-tests --decoded-content-only -platform offscreen)
     set_tests_properties(snow-shot-decoded-content-presentation-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-shell-file-annotation-tests
+        COMMAND snow-shot-pinned-window-tests --shell-file-annotation-only -platform offscreen)
+    set_tests_properties(snow-shot-shell-file-annotation-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-color-space-tests

@@ -76,10 +76,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                       QScreen* screen, const QRect& nativeGeometry, const QSize& initialWindowSize,
                       PinnedCompletion completion = {});
     // Fits decoded file or drop content on the target screen, retaining its text document.
-    [[nodiscard]] bool
-    presentDecodedContentOnScreen(ScreenshotClipboardContent content, QScreen* screen,
-                                  bool autoResizeWindow,
-                                  snow_shot::storage::PinnedWindowCreationSource source);
+    [[nodiscard]] bool presentDecodedContentOnScreen(
+        ScreenshotClipboardContent content, QScreen* screen, bool autoResizeWindow,
+        snow_shot::storage::PinnedWindowCreationSource source, bool initialAnnotationMode = false,
+        PinnedCompletion completion = {});
     // A null image is accepted when imageLoader is provided and
     // initialWindowSize supplies the known canvas dimensions.
     [[nodiscard]] bool presentPinnedImage(
@@ -96,7 +96,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
         std::optional<bool> initialBorderVisible = {},
         std::optional<bool> initialShadowVisible = {},
-        std::shared_ptr<const ScreenshotAnimationSource> animationSource = {});
+        std::shared_ptr<const ScreenshotAnimationSource> animationSource = {},
+        bool initialAnnotationMode = false, QImage preparedDisplayImage = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -177,7 +178,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
         std::optional<bool> initialBorderVisible = {},
         std::optional<bool> initialShadowVisible = {},
-        std::shared_ptr<const ScreenshotAnimationSource> animationSource = {});
+        std::shared_ptr<const ScreenshotAnimationSource> animationSource = {},
+        bool initialAnnotationMode = false, QImage preparedDisplayImage = {});
 
     QHash<QString, QList<QPointer<ScreenshotPinnedWindow>>> m_sourceWindows;
     std::function<void()> m_restoreFailure;

@@ -13,6 +13,8 @@
 #pragma warning(pop)
 #endif
 
+#include <algorithm>
+#include <iterator>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -21,6 +23,7 @@
 namespace {
 using namespace snow_shot::platform::windows::explorer;
 using Microsoft::WRL::ComPtr;
+using snow_shot::platform::windows::ShellContextMenuMode;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -209,13 +212,31 @@ void commandBehavior() {
                                                    selection[2].path},
             "Invoke forwards every supported selected path with its own typed operand");
 
-    menuPreference.enabled = false;
+    menuPreference.mode = ShellContextMenuMode::Disabled;
     require(command->GetState(valid.Get(), FALSE, &state) == S_OK && state == ECS_HIDDEN &&
                 command->Invoke(valid.Get(), nullptr) == E_ACCESSDENIED && launchCount == 1,
             "disabling hides an existing command and prevents stale menu invocations");
-    menuPreference.enabled = true;
+    menuPreference.mode = ShellContextMenuMode::ImageAndDocumentFiles;
     require(command->GetState(valid.Get(), FALSE, &state) == S_OK && state == ECS_ENABLED,
             "reenabling is visible without recreating the command or restarting Explorer");
+
+    menuPreference.mode = ShellContextMenuMode::ImageFiles;
+    const auto images = Microsoft::WRL::Make<ShellItems>(
+        std::vector<Entry>{{L"C:\\images\\one.PNG"}, {L"C:\\images\\two.JPEG"}});
+    require(command->GetState(images.Get(), FALSE, &state) == S_OK && state == ECS_ENABLED,
+            "image-only mode accepts multiple images case-insensitively");
+    require(command->GetState(valid.Get(), FALSE, &state) == S_OK && state == ECS_HIDDEN &&
+                command->Invoke(valid.Get(), nullptr) == E_INVALIDARG && launchCount == 1,
+            "switching to image-only hides mixed selections and rejects stale invocations");
+    for (const auto extension : kSupportedExtensions) {
+        const auto path = std::wstring(L"C:\\files\\item") + std::wstring(extension);
+        const bool image =
+            std::find(std::begin(kSupportedImageExtensions), std::end(kSupportedImageExtensions),
+                      extension) != std::end(kSupportedImageExtensions);
+        require(isSupportedPath(path, ShellContextMenuMode::ImageFiles) == image,
+                "image-only mode excludes every supported document suffix");
+    }
+    menuPreference.mode = ShellContextMenuMode::ImageAndDocumentFiles;
 
     for (const auto& entries :
          {std::vector<Entry>{}, std::vector<Entry>{{L"C:\\images\\valid.png"}, {L"C:\\bad.exe"}},

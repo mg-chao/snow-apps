@@ -181,6 +181,11 @@ void profiledFilesSurviveBatchDecode() {
     batch.start({path}, [&](ScreenshotClipboardContent content) {
         require(content.image == source,
                 "asynchronous file pinning must preserve the embedded profile and pixels");
+        require(content.preparedDisplayImage ==
+                        source.convertedToColorSpace(QColorSpace(QColorSpace::SRgb),
+                                                     QImage::Format_ARGB32_Premultiplied) &&
+                    content.preparedImageTransform.isIdentity(),
+                "file decoding prepares the sRGB display raster before GUI presentation");
         ++presented;
         return true;
     });
@@ -208,6 +213,9 @@ void alphaBmpFilesSurviveBatchDecode() {
                     content.sourceIdentity == files.first().sourceIdentity &&
                     !content.animationSource,
                 "asynchronous BMP pinning preserves RGBA pixels and original file identity");
+        require(content.preparedDisplayImage ==
+                    source.convertToFormat(QImage::Format_ARGB32_Premultiplied),
+                "prepared BMP display pixels preserve premultiplied alpha");
         ++presented;
         return true;
     });

@@ -297,6 +297,15 @@ bool ShellContextMenuRegistration::isSupported() {
 #endif
 }
 
+ShellContextMenuMode ShellContextMenuRegistration::modeFromValue(const QString& value) {
+    // The legacy image_files preference includes documents; do not reinterpret saved values.
+    if (value == QStringLiteral("image_files"))
+        return ShellContextMenuMode::ImageAndDocumentFiles;
+    if (value == QStringLiteral("images_only"))
+        return ShellContextMenuMode::ImageFiles;
+    return ShellContextMenuMode::Disabled;
+}
+
 QString ShellContextMenuRegistration::expectedCommand() const {
     return QStringLiteral("\"%1\" --edit-with-snow-shot \"%2\"")
         .arg(m_executable, QStringLiteral("%1"));
@@ -356,13 +365,19 @@ ShellContextMenuRegistration::enabledKey(ShellContextMenuRegistryKey previous,
     return previous;
 }
 
-bool ShellContextMenuRegistration::apply(bool enabled, const QString& accessKey,
+bool ShellContextMenuRegistration::apply(ShellContextMenuMode mode, const QString& accessKey,
                                          const ShellContextMenuRegistrationSnapshot& previous,
                                          QString* error) const {
     QSet<QString> enabledPaths;
-    if (enabled)
-        for (const auto& extension : m_extensions)
+    if (mode != ShellContextMenuMode::Disabled) {
+        const auto imageExtensions = image::supportedImageFileExtensions();
+        for (const auto& extension : m_extensions) {
+            if (mode == ShellContextMenuMode::ImageFiles &&
+                !imageExtensions.contains(extension.mid(1), Qt::CaseInsensitive))
+                continue;
             enabledPaths.insert(verbPath(m_associationsRoot, extension, m_verbName).toLower());
+        }
+    }
     bool changed = false;
     for (auto item = previous.keys.cbegin(); item != previous.keys.cend(); ++item) {
         auto requested = item.value();
@@ -421,13 +436,14 @@ bool ShellContextMenuRegistration::restore(const ShellContextMenuRegistrationSna
 }
 
 ShellContextMenuResult
-ShellContextMenuRegistration::changeEnabled(bool enabled,
-                                            const std::function<bool()>& commitPreference) const {
-    return changeEnabled(enabled, QString(), commitPreference);
+ShellContextMenuRegistration::changeMode(ShellContextMenuMode mode,
+                                         const std::function<bool()>& commitPreference) const {
+    return changeMode(mode, QString(), commitPreference);
 }
 
-ShellContextMenuResult ShellContextMenuRegistration::changePackagedEnabled(
-    bool enabled, const QString& accessKey, const std::function<bool()>& commitPreference) const {
+ShellContextMenuResult ShellContextMenuRegistration::changePackagedMode(
+    ShellContextMenuMode mode, const QString& accessKey,
+    const std::function<bool()>& commitPreference) const {
     const auto failure = [] {
         return ShellContextMenuResult{
             false, contextMenuText(
@@ -454,7 +470,10 @@ ShellContextMenuResult ShellContextMenuRegistration::changePackagedEnabled(
         return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() &&
                file.commit();
     };
-    if (!write((enabled ? QByteArray("1") : QByteArray("0")) + accessKey.toLatin1()))
+    const QByteArray modeByte = mode == ShellContextMenuMode::Disabled     ? QByteArray("0")
+                                : mode == ShellContextMenuMode::ImageFiles ? QByteArray("2")
+                                                                           : QByteArray("1");
+    if (!write(modeByte + accessKey.toLatin1()))
         return failure();
     if (commitPreference && !commitPreference()) {
         auto result = failure();
@@ -473,18 +492,18 @@ ShellContextMenuResult ShellContextMenuRegistration::changePackagedEnabled(
 }
 
 ShellContextMenuResult
-ShellContextMenuRegistration::changeEnabled(bool enabled, const QString& accessKey,
-                                            const std::function<bool()>& commitPreference) const {
+ShellContextMenuRegistration::changeMode(ShellContextMenuMode mode, const QString& accessKey,
+                                         const std::function<bool()>& commitPreference) const {
     const QString canonicalKey = shortcuts::canonicalMenuAccessKey(accessKey);
     if (!accessKey.isEmpty() && canonicalKey.isEmpty())
         return {false, invalidAccessKeyError()};
     if (app::distribution::isStoreManaged())
-        return changePackagedEnabled(enabled, canonicalKey, commitPreference);
+        return changePackagedMode(mode, canonicalKey, commitPreference);
     const auto previous = snapshot();
     if (!previous.valid)
         return {false, previous.error};
     QString error;
-    if (apply(enabled, canonicalKey, previous, &error)) {
+    if (apply(mode, canonicalKey, previous, &error)) {
         if (!commitPreference || commitPreference())
             return {true, {}};
         error = contextMenuText(QT_TRANSLATE_NOOP(
@@ -500,13 +519,13 @@ ShellContextMenuRegistration::changeEnabled(bool enabled, const QString& accessK
     return {false, error};
 }
 
-bool ShellContextMenuRegistration::setEnabled(bool enabled, QString* error) const {
-    return setEnabled(enabled, QString(), error);
+bool ShellContextMenuRegistration::setMode(ShellContextMenuMode mode, QString* error) const {
+    return setMode(mode, QString(), error);
 }
 
-bool ShellContextMenuRegistration::setEnabled(bool enabled, const QString& accessKey,
-                                              QString* error) const {
-    const auto result = changeEnabled(enabled, accessKey, {});
+bool ShellContextMenuRegistration::setMode(ShellContextMenuMode mode, const QString& accessKey,
+                                           QString* error) const {
+    const auto result = changeMode(mode, accessKey, {});
     if (error)
         *error = result.error;
     return result.success;

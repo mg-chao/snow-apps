@@ -181,6 +181,7 @@ enum class SettingsSwitchBinding {
     McpEnabled,
     AutoStartAtBoot,
     LaunchAsAdministrator,
+    AnnotationModeWhenOpeningForEditing,
     DrawingAutomaticallySelectNewlyCreatedElements,
     DrawingDeleteTextAfterCursor,
     DrawingRememberLastUsedTool,

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "canvas_automatic_selection_test_support.h"
 #include "screenshot_controller_test_access.h"
+#include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/app/shellimagelaunch.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -28,6 +31,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMimeData>
+#include <QJsonArray>
 #include <QScopeGuard>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -362,6 +366,68 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+    if (application.arguments().contains(QStringLiteral("--shell-file-startup-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        auto& configuration = storage.configuration();
+        QMap<QString, QJsonValue> isolated{
+            {QStringLiteral("tray/enabled"), false},
+            {QStringLiteral("mcp/enabled"), false},
+            {QStringLiteral("updates/mode"), QStringLiteral("manual")}};
+        const auto snapshot = configuration.snapshot();
+        for (auto it = snapshot.cbegin(); it != snapshot.cend(); ++it) {
+            if (it.key().startsWith(QStringLiteral("global_shortcuts/")) && it.value().isArray())
+                isolated.insert(it.key(), QJsonArray{});
+            if (it.key().startsWith(QStringLiteral("global_mouse/")) && it.value().isObject())
+                isolated.insert(it.key(), QJsonObject{});
+        }
+        require(configuration.setValues(isolated),
+                "startup fixture disables global input and updates");
+        snow_shot::presentation::LanguageManager::instance().initialize();
+        snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
+        const auto path = directory.filePath(QStringLiteral("startup.png"));
+        const auto source = fixture();
+        require(source.save(path, "PNG"), "write shell startup fixture");
+        for (const auto& selected : {path, directory.filePath(QStringLiteral("missing.png")),
+                                     QStringLiteral("relative.png")}) {
+            snow_shot::app::ApplicationController controller(application);
+            int maintenance = 0;
+            controller.start(snow_shot::app::shellImageLaunchArguments({selected}), [&] {
+                ++maintenance;
+                if (selected == path) {
+                    const auto pins = visiblePins();
+                    require(pins.size() == 1 &&
+                                pins.first()
+                                    ->automationState()
+                                    .value(QStringLiteral("ready"))
+                                    .toBool() &&
+                                pins.first()->persistenceSnapshot().image == source,
+                            "startup maintenance runs only after the requested content frame");
+                }
+            });
+            require(maintenance == 0,
+                    "maintenance does not delay dispatch or run in the launch stack");
+            waitUntil([&] { return maintenance == 1; },
+                      "startup resumes after presentation or failure");
+            controller.start({}, [&] { ++maintenance; });
+            require(maintenance == 1, "startup maintenance runs only once");
+            closePins();
+        }
+        {
+            ScreenshotController controller;
+            int completed = 0;
+            controller.pinFilesToScreen({path}, [&] { ++completed; });
+            waitUntil([&] { return completed == 1; }, "first shell pin finishes");
+            require(settings.setDuplicateContentAction(QStringLiteral("none")),
+                    "consume duplicates");
+            controller.pinFilesToScreen({path}, [&] { ++completed; });
+            waitUntil([&] { return completed == 2; }, "duplicate also finishes the launch");
+            require(visiblePins().size() == 1, "duplicate completion creates no second window");
+            controller.pinFilesToScreen({}, [&] { ++completed; });
+            require(completed == 3, "empty launches also finish");
+            closePins();
+        }
+        return EXIT_SUCCESS;
+    }
     if (application.arguments().contains(QStringLiteral("--image-editor-pin-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         ScreenshotController controller;

@@ -775,6 +775,9 @@ class ScreenshotPinnedWindowTestAccess {
     static const QImage& originalImage(const ScreenshotPinnedWindow& window) {
         return window.m_originalImage;
     }
+    static const QImage& displayImage(const ScreenshotPinnedWindow& window) {
+        return window.m_transformedImage;
+    }
     static QByteArray drawingHistory(const ScreenshotPinnedWindow& window) {
         return window.m_runtime.serializeDocumentHistory();
     }
@@ -789,6 +792,12 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static bool recognitionReady(const ScreenshotPinnedWindow& window) {
         return window.m_recognitionTargetReady;
+    }
+    static bool annotationMode(const ScreenshotPinnedWindow& window) {
+        return window.m_editController && window.m_editController->editMode();
+    }
+    static bool initialAnnotationPending(const ScreenshotPinnedWindow& window) {
+        return window.m_initialAnnotationMode;
     }
     static void rejectReplacementGeometry(ScreenshotPinnedWindow& window) {
         window.m_nativeGeometryController.reset();
@@ -4676,15 +4685,31 @@ void fileBatchCreatesIndependentCenteredWindows() {
                           ScreenshotGeometryMapper::physicalRectForScreen(*screen));
             require(fit.valid, "each file must have valid centered geometry");
             expectedGeometry.insert(content.originalContent.localFilePath, fit.nativeGeometry);
-            require(services.presentPinnedImage(content.image, screen, fit.nativeGeometry,
-                                                fit.initialWindowSize, {}, {}, 1.0,
-                                                std::move(content.originalContent), {},
-                                                [&](bool success, QImage image) {
-                                                    require(success && !image.isNull(),
-                                                            "each file must complete presentation");
-                                                    ++completed;
-                                                }),
-                    "each file must present independently");
+            require(!content.preparedDisplayImage.isNull(),
+                    "file workers prepare the display before presentation");
+            const auto preparedKey = content.preparedDisplayImage.cacheKey();
+            require(
+                services.presentDecodedContentOnScreen(
+                    std::move(content), screen, autoResize,
+                    snow_shot::storage::PinnedWindowCreationSource::SelectedFiles, false,
+                    [&, preparedKey](bool success, QImage image) {
+                        require(success && !image.isNull(), "each file must complete presentation");
+                        const auto windows = topLevelPinnedWindows();
+                        require(std::any_of(
+                                    windows.cbegin(), windows.cend(),
+                                    [&](auto* window) {
+                                        return window->isVisible() &&
+                                               ScreenshotPinnedWindowTestAccess::shakeContentReady(
+                                                   *window) &&
+                                               ScreenshotPinnedWindowTestAccess::displayImage(
+                                                   *window)
+                                                       .cacheKey() == preparedKey &&
+                                               window->persistenceSnapshot().image == image;
+                                    }),
+                                "decoded-content completion follows the matching first frame");
+                        ++completed;
+                    }),
+                "each file must present independently");
             return true;
         });
         QElapsedTimer timer;
@@ -19762,7 +19787,7 @@ void pinnedImportedColorsMatchLiveRendering() {
     require(directory.isValid(), "profile fixture directory must exist");
     const QString path = directory.filePath(QStringLiteral("profile.png"));
     const QColorSpace srgb(QColorSpace::SRgb);
-    enum class Presentation { Immediate, Restored, Deferred };
+    enum class Presentation { Immediate, Restored, Deferred, Prepared, InvalidPrepared };
     for (const QColorSpace& space :
          {QColorSpace{}, srgb, QColorSpace(QColorSpace::DisplayP3),
           QColorSpace(QColorSpace::AdobeRgb), QColorSpace(QColorSpace::SRgbLinear)}) {
@@ -19780,7 +19805,8 @@ void pinnedImportedColorsMatchLiveRendering() {
                 : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
         require(!expected.isNull(), "profile fixture must convert to sRGB");
         for (const auto presentation :
-             {Presentation::Immediate, Presentation::Restored, Presentation::Deferred}) {
+             {Presentation::Immediate, Presentation::Restored, Presentation::Deferred,
+              Presentation::Prepared, Presentation::InvalidPrepared}) {
             const bool deferred = presentation == Presentation::Deferred;
             const QRectF sourceRect(QPointF(30, 40), QSizeF(source.size()));
             ScreenshotImageLoadCallback deliver;
@@ -19797,6 +19823,10 @@ void pinnedImportedColorsMatchLiveRendering() {
             config.surfaceCanvasRect = sourceRect;
             config.automaticTextRecognition = false;
             config.restorePersistentState = presentation == Presentation::Restored;
+            if (presentation == Presentation::Prepared)
+                config.preparedDisplayImage = expected;
+            else if (presentation == Presentation::InvalidPrepared)
+                config.preparedDisplayImage = expected.copy(0, 0, 1, 1);
             if (deferred) {
                 config.imageLoader = [&deliver](QObject*, ScreenshotImageLoadCallback callback) {
                     deliver = std::move(callback);
@@ -19805,6 +19835,10 @@ void pinnedImportedColorsMatchLiveRendering() {
                 config.imageSource = ScreenshotImageSource::fromImage(imported, sourceRect);
             }
             require(window.present(config), "profiled pin must present");
+            if (presentation == Presentation::Prepared)
+                require(ScreenshotPinnedWindowTestAccess::displayImage(window).cacheKey() ==
+                            expected.cacheKey(),
+                        "initial presentation reuses prepared pixels without another conversion");
             if (deferred) {
                 require(static_cast<bool>(deliver), "deferred profile loader must start");
                 deliver(imported);
@@ -21203,6 +21237,149 @@ void decodedContentPresentationPreservesText() {
     present(std::move(image), Source::Clipboard);
     require(!services.presentDecodedContentOnScreen({}, screen, false, Source::Other),
             "invalid decoded content must be rejected");
+}
+
+void shellFileAnnotationPresentation() {
+    IsolatedPinnedStorage storage;
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Source = snow_shot::storage::PinnedWindowCreationSource;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen, "shell annotation fixtures require a screen");
+    ScreenshotSelectionExportUiServices services;
+    services.prewarmPinnedWindow(screen);
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 5000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    const auto content = [](const QString& key) {
+        ScreenshotClipboardContent image;
+        image.image = QImage(160, 100, QImage::Format_ARGB32_Premultiplied);
+        image.image.fill(Qt::green);
+        image.sourceIdentity.key = key;
+        return image;
+    };
+    for (bool document : {false, true}) {
+        for (bool annotate : {false, true}) {
+            auto decoded =
+                content(QStringLiteral("shell-annotation-%1-%2").arg(document).arg(annotate));
+            if (document) {
+                ScreenshotClipboardContentSnapshot snapshot;
+                snapshot.text = QStringLiteral("A document opened for editing");
+                const auto text = ScreenshotClipboardContentReader::decode(snapshot);
+                require(text && text->isFormattedText(), "decode document annotation fixture");
+                const auto identity = decoded.sourceIdentity;
+                decoded = *text;
+                decoded.sourceIdentity = identity;
+            }
+            const auto identity = decoded.sourceIdentity;
+            require(services.presentDecodedContentOnScreen(std::move(decoded), screen, false,
+                                                           Source::SelectedFiles, annotate),
+                    "present shell-opened file with its annotation intent");
+            QPointer<ScreenshotPinnedWindow> window = services.findDuplicatePin(identity);
+            require(window, "the file pin retains its identity");
+            wait(
+                [&] {
+                    return window && Access::recognitionReady(*window) &&
+                           !Access::initialAnnotationPending(*window);
+                },
+                "file presentation completes deferred annotation setup");
+            require(Access::annotationMode(*window) == annotate,
+                    "static images and document pins honor the requested annotation mode");
+            Access::editSelectionOffscreen(*window, false);
+            Access::finishInitialTextDisplay(*window, false);
+            require(!Access::annotationMode(*window),
+                    "later deferred setup cannot reactivate a consumed annotation request");
+            bool restored = false;
+            require(services.handleDuplicatePin(identity, QStringLiteral("none"), restored) &&
+                        !Access::annotationMode(*window),
+                    "handling a duplicate file does not enter annotation on the existing pin");
+            window->close();
+            require(processUntilDeleted(window, 2000), "close the annotated file fixture");
+        }
+    }
+
+    const auto fixture = pinned_animation_fixtures::images().front();
+    const auto animation = snow_shot::image_codec::decodeAnimationSource(fixture.bytes);
+    require(animation && animation->isAnimated(), "decode animated shell fixture");
+    auto animated = content(QStringLiteral("shell-animation"));
+    animated.image = animation->firstFrame;
+    animated.animationSource = animation;
+    const auto animationIdentity = animated.sourceIdentity;
+    require(services.presentDecodedContentOnScreen(std::move(animated), screen, false,
+                                                   Source::SelectedFiles, true),
+            "present animated file with automatic annotation enabled");
+    QPointer<ScreenshotPinnedWindow> window = services.findDuplicatePin(animationIdentity);
+    wait(
+        [&] {
+            return window && window->sourcePinAvailable() &&
+                   !Access::initialAnnotationPending(*window);
+        },
+        "animation finishes presentation without annotation");
+    const auto animatedRecord = window->persistenceSnapshot();
+    require(!Access::annotationMode(*window) && Access::playback(*window).requestedPlaying() &&
+                animatedRecord.animationSource &&
+                animatedRecord.animationSource->encoded == animation->encoded,
+            "automatic annotation preserves the animated source and playback");
+    window->close();
+    require(processUntilDeleted(window, 2000), "close animated shell fixture");
+
+    auto cancelled = content(QStringLiteral("cancelled-shell-open"));
+    const auto cancelledIdentity = cancelled.sourceIdentity;
+    require(services.presentDecodedContentOnScreen(std::move(cancelled), screen, false,
+                                                   Source::SelectedFiles, true),
+            "present a file that closes before deferred setup");
+    window = services.findDuplicatePin(cancelledIdentity);
+    require(window, "find closing file pin");
+    window->close();
+    require(processUntilDeleted(window, 2000), "closing cancels deferred annotation activation");
+    auto ordinary = content(QStringLiteral("ordinary-pin-after-shell-open"));
+    const auto ordinaryIdentity = ordinary.sourceIdentity;
+    require(
+        services.presentDecodedContentOnScreen(std::move(ordinary), screen, false, Source::Other),
+        "present an ordinary pin using the default presentation options");
+    window = services.findDuplicatePin(ordinaryIdentity);
+    wait([&] { return window && Access::recognitionReady(*window); },
+         "ordinary pin finishes its deferred setup");
+    require(!Access::annotationMode(*window),
+            "ordinary and prepared pins do not inherit shell annotation");
+    window->close();
+    require(processUntilDeleted(window, 2000), "close ordinary pin");
+
+    QTemporaryDir files;
+    require(files.isValid(), "create queued shell file fixtures");
+    ScreenshotFilePinQueue queue;
+    QList<QPair<snow_shot::storage::PinnedSourceIdentity, bool>> queued;
+    bool failed = false;
+    for (bool annotate : {true, false}) {
+        const QString path = files.filePath(QStringLiteral("queued-%1.png").arg(annotate));
+        require(content({}).image.save(path), "encode queued shell file");
+        queue.enqueue(
+            {path},
+            [&, annotate] {
+                return ScreenshotFilePinQueue::Options{
+                    [&, annotate](ScreenshotClipboardContent decoded) {
+                        queued.append({decoded.sourceIdentity, annotate});
+                        return services.presentDecodedContentOnScreen(
+                            std::move(decoded), screen, false, Source::SelectedFiles, annotate);
+                    },
+                    {}};
+            },
+            [&](const QString&) { failed = true; });
+    }
+    wait([&] { return !queue.active(); }, "independent shell requests drain their queue");
+    require(!failed && queued.size() == 2, "both queued shell files are presented");
+    for (const auto& [identity, annotate] : queued) {
+        window = services.findDuplicatePin(identity);
+        wait([&] { return window && Access::recognitionReady(*window); },
+             "queued shell pin completes deferred setup");
+        require(Access::annotationMode(*window) == annotate,
+                "queued requests retain independent annotation choices");
+        window->close();
+        require(processUntilDeleted(window, 2000), "close queued shell pin");
+    }
 }
 
 void duplicatePinActions() {
@@ -28112,6 +28289,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--decoded-content-only"))) {
             decodedContentPresentationPreservesText();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shell-file-annotation-only"))) {
+            shellFileAnnotationPresentation();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--history-selection-only"))) {

@@ -343,14 +343,6 @@ bool optionsFromBridge(const SnowShotImageCodecEncodeOptions* source,
     return true;
 }
 
-std::shared_ptr<const std::vector<std::byte>> ownedInput(const uint8_t* encoded, std::size_t size) {
-    auto bytes = std::make_shared<std::vector<std::byte>>(size);
-    if (size > 0) {
-        std::memcpy(bytes->data(), encoded, size);
-    }
-    return bytes;
-}
-
 bool publishBytes(std::span<const std::byte> source, SnowShotImageCodecBuffer* output, char* error,
                   uint64_t errorCapacity) noexcept {
     if (source.empty()) {
@@ -761,8 +753,8 @@ constexpr std::uint64_t kSkinOutputLimit = 256ULL << 20U;
 constexpr std::uint32_t kSkinDimensionLimit = 16384;
 constexpr std::uint32_t kSkinPreviewExtent = 4096;
 
-// The adapter keeps its QByteArray alive throughout the call. Avoid the extra
-// ownedInput/memory_input copy used by the general screenshot bridge.
+// Synchronous bridge calls keep the caller's input alive until decoding returns.
+// Decode sinks own their pixels and metadata independently of this borrowed source.
 class BorrowedByteSource final : public snow::image::ByteSource {
   public:
     explicit BorrowedByteSource(std::span<const std::byte> bytes) : m_bytes(bytes) {}
@@ -1251,12 +1243,9 @@ int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t exp
             setError(error, errorCapacity, "The encoded image input is invalid.");
             return 0;
         }
-        const snow::image::Input input =
-            firstFrameOnly
-                ? snow::image::Input{std::make_shared<BorrowedByteSource>(std::span(
-                                         reinterpret_cast<const std::byte*>(encoded), inputSize)),
-                                     nameHint(format)}
-                : snow::image::memory_input(ownedInput(encoded, inputSize), nameHint(format));
+        const snow::image::Input input{std::make_shared<BorrowedByteSource>(std::span(
+                                           reinterpret_cast<const std::byte*>(encoded), inputSize)),
+                                       nameHint(format)};
         auto options = firstFrameOnly ? snow_shot::image_codec::imageImportOptions()
                                       : snow::image::DecodeOptions{};
         options.output_format = outputFormat;

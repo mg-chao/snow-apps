@@ -201,6 +201,13 @@ int main(int argc, char** argv) {
     const QStringList original{QStringLiteral("snow-shot"), QStringLiteral("--autostart"),
                                QStringLiteral("--skip-startup-update")};
     require(snow_shot::update::isStartupUpdateRelaunch(original), "detect updater relaunch guard");
+    require(snow_shot::update::startupUpdateMayDelayLaunch(original) &&
+                !snow_shot::update::startupUpdateMayDelayLaunch(
+                    snow_shot::app::shellImageLaunchArguments(
+                        {QDir::temp().filePath(QStringLiteral("edit.png"))})) &&
+                !snow_shot::update::startupUpdateMayDelayLaunch(
+                    {QStringLiteral("--edit-with-snow-shot")}),
+            "ordinary startup can update, while file opens and invalid operands resolve promptly");
     require(snow_shot::update::normalStartupArguments(original) ==
                 QStringList{QStringLiteral("snow-shot"), QStringLiteral("--autostart")},
             "strip updater guard before ordinary launch processing");

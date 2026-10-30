@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <charconv>
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -19,11 +21,68 @@ double median_milliseconds(std::vector<double> samples) {
                                     : samples[middle];
 }
 
+int compare_preview(snow::image::Service& service, const snow::image::Input& input, int iterations,
+                    std::uint32_t extent) {
+    snow::image::DecodeOptions full_options;
+    full_options.output_format = snow::image::kRgba8;
+    full_options.frame_index = 0;
+    auto preview_options = full_options;
+    preview_options.maximum_extent = extent;
+    std::vector<double> full_times, preview_times, complete_times;
+    std::uint32_t preview_width = 0, preview_height = 0;
+    std::uint32_t full_width = 0, full_height = 0;
+    const auto milliseconds_since = [](auto started) {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
+    };
+    for (int iteration = -1; iteration < iterations; ++iteration) {
+        // Alternate the paths; iteration -1 warms decoder and filesystem caches.
+        {
+            const auto started = std::chrono::steady_clock::now();
+            auto full = service.decode(input, full_options);
+            if (!full) {
+                std::cerr << full.error().message << '\n';
+                return 1;
+            }
+            if (iteration >= 0)
+                full_times.push_back(milliseconds_since(started));
+            full_width = full.value().canvas_width;
+            full_height = full.value().canvas_height;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        auto preview = service.decode(input, preview_options);
+        if (!preview) {
+            std::cerr << preview.error().message << '\n';
+            return 1;
+        }
+        if (iteration >= 0)
+            preview_times.push_back(milliseconds_since(started));
+        preview_width = preview.value().canvas_width;
+        preview_height = preview.value().canvas_height;
+        // Retain the displayed preview while preparing the original for editing.
+        auto original = service.decode(input, full_options);
+        if (!original) {
+            std::cerr << original.error().message << '\n';
+            return 1;
+        }
+        if (iteration >= 0)
+            complete_times.push_back(milliseconds_since(started));
+    }
+    std::cout << std::fixed << std::setprecision(3)
+              << "preview comparison: iterations=" << iterations << " full=" << full_width << 'x'
+              << full_height << " preview=" << preview_width << 'x' << preview_height
+              << " full_ms=" << median_milliseconds(full_times)
+              << " first_preview_ms=" << median_milliseconds(preview_times)
+              << " preview_then_full_ms=" << median_milliseconds(complete_times) << '\n';
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: snow_image_benchmark <image> [iterations]\n";
+        std::cerr << "usage: snow_image_benchmark <image> [iterations] "
+                     "[--preview-comparison <maximum-extent>]\n";
         return 2;
     }
     const int iterations = argc > 2 ? std::max(1, std::atoi(argv[2])) : 3;
@@ -34,6 +93,18 @@ int main(int argc, char** argv) {
         return 1;
     }
     snow::image::Service service;
+    if (argc > 3) {
+        if (argc != 5 || std::string_view(argv[3]) != "--preview-comparison")
+            return 2;
+        const std::string_view argument(argv[4]);
+        std::uint32_t extent = 0;
+        const auto parsed =
+            std::from_chars(argument.data(), argument.data() + argument.size(), extent);
+        if (parsed.ec != std::errc{} || parsed.ptr != argument.data() + argument.size() ||
+            extent == 0)
+            return 2;
+        return compare_preview(service, input.value(), iterations, extent);
+    }
     snow::image::Result<snow::image::Document> source = service.decode(input.value());
     if (!source) {
         std::cerr << source.error().message << '\n';

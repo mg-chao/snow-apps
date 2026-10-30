@@ -174,6 +174,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotImageSource imageSource;
         std::shared_ptr<snow_shot::presentation::LiveWindowSource> liveSource;
         std::shared_ptr<const ScreenshotAnimationSource> animationSource;
+        // Identity-transform sRGB view of imageSource; original pixels remain available.
+        QImage preparedDisplayImage;
         QImage initialPreparedAnimationFrame;
         QTransform initialPreparedAnimationTransform;
         ScreenshotImageLoader imageLoader;
@@ -181,6 +183,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotAirDropService* airDropService = nullptr;
         QScreen* screen = nullptr;
         bool enableEditing = true;
+        bool initialAnnotationMode = false;
         bool automaticTextRecognition = !snow_shot::app::edition::isMini;
         std::shared_ptr<QTextDocument> formattedTextDocument;
         QString formattedPlainText;
@@ -714,6 +717,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_completePresentationAfterFirstFrame = false;
     bool m_recognitionTargetReady = false;
     bool m_deferredPresentationSetupScheduled = false;
+    bool m_initialAnnotationMode = false;
     quint64 m_presentationGeneration = 0;
     SnowCanvasWidget* m_canvas = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;

@@ -916,7 +916,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
 
 bool ScreenshotSelectionExportUiServices::presentDecodedContentOnScreen(
     ScreenshotClipboardContent content, QScreen* screen, bool autoResizeWindow,
-    snow_shot::storage::PinnedWindowCreationSource source) {
+    snow_shot::storage::PinnedWindowCreationSource source, bool initialAnnotationMode,
+    PinnedCompletion completion) {
     if (screen == nullptr || !content.isValid()) {
         return false;
     }
@@ -929,14 +930,17 @@ bool ScreenshotSelectionExportUiServices::presentDecodedContentOnScreen(
            presentPinnedImage(
                content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
                std::move(content.formattedDocument), content.plainText,
-               content.formattedTextDevicePixelRatio, std::move(content.originalContent), {}, {},
+               content.formattedTextDevicePixelRatio, std::move(content.originalContent), {},
+               std::move(completion),
                content.appearance ? content.appearance->borderAppearance : std::nullopt,
                content.appearance ? std::optional(content.appearance->checkerboardEnabled)
                                   : std::nullopt,
                source, std::move(content.sourceIdentity),
                content.appearance ? content.appearance->showBorder : std::nullopt,
                content.appearance ? content.appearance->showShadow : std::nullopt,
-               std::move(content.animationSource));
+               std::move(content.animationSource), initialAnnotationMode,
+               content.preparedImageTransform.isIdentity() ? std::move(content.preparedDisplayImage)
+                                                           : QImage{});
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
@@ -949,7 +953,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
     snow_shot::storage::PinnedSourceIdentity sourceIdentity,
     std::optional<bool> initialBorderVisible, std::optional<bool> initialShadowVisible,
-    std::shared_ptr<const ScreenshotAnimationSource> animationSource) {
+    std::shared_ptr<const ScreenshotAnimationSource> animationSource, bool initialAnnotationMode,
+    QImage preparedDisplayImage) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
@@ -962,7 +967,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
         formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
         std::move(imageLoader), std::move(completion), std::move(borderAppearance),
         checkerboardEnabled, source, nullptr, std::move(sourceIdentity), initialBorderVisible,
-        initialShadowVisible, std::move(animationSource));
+        initialShadowVisible, std::move(animationSource), initialAnnotationMode,
+        std::move(preparedDisplayImage));
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -992,7 +998,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
     const ScreenshotHistoryEntry* document, snow_shot::storage::PinnedSourceIdentity sourceIdentity,
     std::optional<bool> initialBorderVisible, std::optional<bool> initialShadowVisible,
-    std::shared_ptr<const ScreenshotAnimationSource> animationSource) {
+    std::shared_ptr<const ScreenshotAnimationSource> animationSource, bool initialAnnotationMode,
+    QImage preparedDisplayImage) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -1024,6 +1031,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
     config.creationSource = source;
+    config.initialAnnotationMode = initialAnnotationMode;
+    config.preparedDisplayImage = std::move(preparedDisplayImage);
     config.sourceIdentity = std::move(sourceIdentity);
     config.animationSource = std::move(animationSource);
     config.nativeGeometry = nativeGeometry;

@@ -11,6 +11,8 @@ namespace snow_shot::update {
 
 // Internal updater relaunches skip the startup gate once, including after rollback.
 [[nodiscard]] bool isStartupUpdateRelaunch(const QStringList& arguments);
+// Explicit file opens keep background updates but do not wait for the startup gate.
+[[nodiscard]] bool startupUpdateMayDelayLaunch(const QStringList& arguments);
 [[nodiscard]] QStringList normalStartupArguments(QStringList arguments);
 // Automatic updates return to the tray unless a new launch requests the main window.
 [[nodiscard]] QStringList startupUpdateRelaunchArguments(bool foregroundRequested = false,

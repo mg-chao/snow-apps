@@ -1460,6 +1460,10 @@
             <translation>存在焦点全屏窗口时自动禁用</translation>
         </message>
         <message>
+            <source>Automatically enable annotation mode in new Pin to Screen windows opened with Edit with Snow Shot.</source>
+            <translation>通过“使用 Snow Shot 编辑”打开新的贴图窗口时，自动启用标注模式。</translation>
+        </message>
+        <message>
             <source>Automatically exit screen recording after the recording is saved.</source>
             <translation>保存录制内容后自动退出屏幕录制。</translation>
         </message>
@@ -2356,6 +2360,10 @@
             <translation>启用 MCP 集成</translation>
         </message>
         <message>
+            <source>Enable annotation mode when opening for editing</source>
+            <translation>打开编辑时启用标注模式</translation>
+        </message>
+        <message>
             <source>Enable edit mode</source>
             <translation>启用编辑模式</translation>
         </message>
@@ -2678,6 +2686,10 @@
         <message>
             <source>Image export</source>
             <translation>图像导出</translation>
+        </message>
+        <message>
+            <source>Image files</source>
+            <translation>图像文件</translation>
         </message>
         <message>
             <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>

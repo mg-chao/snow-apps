@@ -5,6 +5,9 @@
 
 namespace snow_shot::platform::windows::explorer {
 
+inline constexpr std::wstring_view kSupportedImageExtensions[] = {
+@SNOW_EXPLORER_IMAGE_SUFFIXES@};
+
 inline constexpr std::wstring_view kSupportedExtensions[] = {
 @SNOW_EXPLORER_SUFFIXES@};
 

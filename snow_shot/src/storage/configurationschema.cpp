@@ -309,7 +309,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      QStringLiteral("image_files"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("image_files"), QStringLiteral("disabled")}},
+     {QStringLiteral("images_only"), QStringLiteral("image_files"), QStringLiteral("disabled")}},
+    {QStringLiteral("system/annotation_mode_when_opening_for_editing"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("system/launch_as_administrator"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("mcp/enabled"), false, ConfigurationValueKind::Boolean},
 #ifdef Q_OS_MACOS

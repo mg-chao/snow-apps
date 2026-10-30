@@ -5,6 +5,7 @@
 #include <QStringList>
 
 #include <memory>
+#include <functional>
 
 class QApplication;
 
@@ -16,9 +17,11 @@ class ApplicationController final : public QObject {
     explicit ApplicationController(QApplication& application, QObject* parent = nullptr);
     ~ApplicationController() override;
 
-    void start();
+    // Explicit file launches present before background startup and maintenance.
+    void start(const QStringList& initialArguments = {}, std::function<void()> maintenance = {});
     void showMainWindow();
-    void handleLaunchRequest(const QStringList& arguments);
+    void handleLaunchRequest(const QStringList& arguments,
+                             std::function<void()> firstFileFinished = {});
     void restorePinnedWindows();
 
   private:
