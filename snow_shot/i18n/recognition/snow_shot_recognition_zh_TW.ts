@@ -137,6 +137,10 @@
             <translation>套件中的文字辨識執行階段遺失或已損壞。請透過 Microsoft Store 修復或重新安裝 Snow Shot。</translation>
         </message>
         <message>
+            <source>The text recognition component could not be started: %1</source>
+            <translation>無法啟動文字辨識元件：%1</translation>
+        </message>
+        <message>
             <source>Unable to open the recognized link</source>
             <translation>無法開啟辨識出的連結</translation>
         </message>

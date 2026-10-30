@@ -59,7 +59,7 @@ class ScreenshotOcrTransport final : public QObject {
         std::function<void(QByteArray)> output;
         std::function<void(QByteArray)> errorOutput;
         std::function<void(int, QProcess::ExitStatus)> finished;
-        std::function<void(QString)> failed;
+        std::function<void(QString, QString)> failed;
     };
 
     ScreenshotOcrTransport(QObject* receiver, Callbacks callbacks)
@@ -96,7 +96,8 @@ class ScreenshotOcrTransport final : public QObject {
         connect(m_process.get(), &QProcess::errorOccurred, this,
                 [this](QProcess::ProcessError error) {
                     if (error == QProcess::FailedToStart)
-                        post(m_callbacks.failed, QStringLiteral("start_failed"));
+                        post(m_callbacks.failed, QStringLiteral("start_failed"),
+                             m_process->errorString());
                 });
         connect(m_process.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
                 [this](int code, QProcess::ExitStatus status) {
@@ -111,7 +112,7 @@ class ScreenshotOcrTransport final : public QObject {
 
     void allocateBuffer(qsizetype bytes, quint64 generation) {
         if (!m_buffer.allocate(bytes, generation)) {
-            post(m_callbacks.failed, QStringLiteral("shared_memory"));
+            post(m_callbacks.failed, QStringLiteral("shared_memory"), QString{});
             return;
         }
         QByteArray payload;
@@ -130,7 +131,7 @@ class ScreenshotOcrTransport final : public QObject {
         uchar* header = m_buffer.data();
         if (!transport_detail::copyImageToTransferSlot(image, header, m_buffer.capacity(),
                                                        sequence)) {
-            post(m_callbacks.failed, QStringLiteral("image_transfer"));
+            post(m_callbacks.failed, QStringLiteral("image_transfer"), QString{});
             return;
         }
         const quint32 stride = static_cast<quint32>(image.width()) * 4;

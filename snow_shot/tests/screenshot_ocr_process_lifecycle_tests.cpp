@@ -67,6 +67,78 @@ QList<QJsonObject> processExits() {
     return recordsFor(QStringLiteral("ocr.process_exit"));
 }
 
+void processStartFailuresRetainSystemError() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "OCR startup fixture directory must exist");
+    const QString processPath = directory.filePath(QStringLiteral("invalid-ocr-worker.exe"));
+    QFile worker(processPath);
+    require(worker.open(QIODevice::WriteOnly), "invalid OCR worker must be writable");
+    require(worker.write("invalid executable\n") > 0, "invalid OCR worker must contain data");
+    worker.close();
+    require(worker.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                  QFileDevice::ExeOwner),
+            "invalid OCR worker must reach the operating system loader");
+
+    QProcess probe;
+    probe.setWorkingDirectory(directory.path());
+    probe.start(processPath);
+    require(!probe.waitForStarted(5000) && probe.error() == QProcess::FailedToStart,
+            "the invalid executable must produce an operating system startup error");
+    const QString systemError = probe.errorString();
+    require(!systemError.isEmpty(), "the operating system startup error must describe the cause");
+
+    ScreenshotOcrRecognitionService::Options options;
+    options.processPath = processPath;
+    options.detectorModelPath = processPath;
+    options.recognizerModelPath = processPath;
+    options.dictionaryPath = processPath;
+    ScreenshotOcrRecognitionService service(options);
+    QObject receiver;
+    QImage image(8, 8, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    const qsizetype initialFailures = recordsFor(QStringLiteral("ocr.process_failed")).size();
+    const qsizetype initialStarts = recordsFor(QStringLiteral("ocr.process_started")).size();
+    int completions = 0;
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        const auto token = service.recognize(
+            {image, QRectF(0, 0, 8, 8)}, &receiver, [&](ScreenshotOcrRecognitionResult result) {
+                require(result.error.contains(systemError),
+                        "OCR startup failure must expose the operating system reason to the user");
+                ++completions;
+            });
+        require(token != 0 && waitUntil([&] { return completions == attempt; }),
+                "each failed OCR startup attempt must complete its request exactly once");
+        const auto failures = recordsFor(QStringLiteral("ocr.process_failed"));
+        require(failures.size() == initialFailures + attempt,
+                "each failed OCR startup must produce exactly one diagnostic record");
+        const auto failure = failures.back();
+        const auto fields = failure.value(QStringLiteral("fields")).toObject();
+        require(failure.value(QStringLiteral("message")).toString() ==
+                        snow_shot::diagnostics::DiagnosticsService::sanitize(systemError) &&
+                    fields.value(QStringLiteral("stage")) == QStringLiteral("start_failed") &&
+                    fields.value(QStringLiteral("child_pid")).toInteger() == 0,
+                "startup diagnostics must retain the system reason before destroying QProcess");
+        require(fields.value(QStringLiteral("program")).toString() ==
+                        snow_shot::diagnostics::DiagnosticsService::sanitize(processPath) &&
+                    fields.value(QStringLiteral("working_directory")).toString() ==
+                        snow_shot::diagnostics::DiagnosticsService::sanitize(directory.path()) &&
+                    fields.value(QStringLiteral("program_exists")).toBool() &&
+                    fields.value(QStringLiteral("working_directory_exists")).toBool() &&
+                    !fields.value(QStringLiteral("version")).toString().isEmpty(),
+                "startup diagnostics must identify the resolved executable and working directory");
+        require(service.processId() == 0 && service.modelFilesReady(),
+                "startup failure must preserve independent resource readiness");
+        require(waitUntil([&] {
+                    return service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"))
+                        .isEmpty();
+                }),
+                "failed startup must retire its transport thread before retrying");
+    }
+    require(recordsFor(QStringLiteral("ocr.process_started")).size() == initialStarts &&
+                completions == 2,
+            "failed startups must neither report a child PID nor duplicate request completion");
+}
+
 void imageTransfersConvertDirectlyWithoutPublishingReady() {
     using namespace snow_shot::ocr;
     QImage fixture(17, 11, QImage::Format_RGBA8888);
@@ -1034,6 +1106,7 @@ void ocrProcessLifecycleTests() {
                 "protocol 6 workers must be rejected explicitly");
         qunsetenv("SNOW_TEST_OCR_OLD_PROTOCOL");
     }
+    processStartFailuresRetainSystemError();
     diagnostics.shutdown();
     qunsetenv("SNOW_TEST_OCR_LIFECYCLE_CHILD");
     qunsetenv("SNOW_TEST_OCR_LIFECYCLE_MARKER");

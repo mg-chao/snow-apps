@@ -526,9 +526,9 @@ class ScreenshotOcrRecognitionService::Impl final {
                  else
                      processFailed();
              },
-             [this, valid](const QString& stage) {
+             [this, valid](const QString& stage, const QString& error) {
                  if (valid())
-                     processFailed(stage.toLatin1().constData());
+                     processFailed(stage.toLatin1().constData(), error);
              }});
         // Each transport owns one child-process lifetime. Retiring its thread
         // also releases the I/O stack when nonresident OCR returns to idle.
@@ -1213,15 +1213,24 @@ class ScreenshotOcrRecognitionService::Impl final {
         scheduleReconcile();
     }
 
-    void processFailed(const char* stage = "process_exit") {
+    void processFailed(const char* stage = "process_exit", const QString& error = {}) {
         if (m_transport == nullptr || m_stopping || processStopping())
             return;
-        snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.ocr"),
-                                         QStringLiteral("ocr.process_failed"),
-                                         {{QStringLiteral("stage"), QString::fromLatin1(stage)},
-                                          {QStringLiteral("child_pid"), m_childPid},
-                                          {QStringLiteral("outcome"), QStringLiteral("failed")}},
-                                         QtWarningMsg);
+        QJsonObject fields{{QStringLiteral("stage"), QString::fromLatin1(stage)},
+                           {QStringLiteral("child_pid"), m_childPid},
+                           {QStringLiteral("outcome"), QStringLiteral("failed")}};
+        if (qstrcmp(stage, "start_failed") == 0) {
+            fields.insert(QStringLiteral("program"), m_assets.processPath);
+            fields.insert(QStringLiteral("working_directory"), m_assets.runtimeDirectory);
+            fields.insert(QStringLiteral("program_exists"),
+                          QFileInfo(m_assets.processPath).isFile());
+            fields.insert(QStringLiteral("working_directory_exists"),
+                          QFileInfo(m_assets.runtimeDirectory).isDir());
+            fields.insert(QStringLiteral("version"), m_assets.runtimeVersion);
+        }
+        snow_shot::diagnostics::DiagnosticsService::instance().record(
+            QtWarningMsg, QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.process_failed"),
+            error, fields);
         std::vector<std::shared_ptr<Job>> failed;
         for (const auto& job : m_deliveryQueue) {
             if (!job->localRendering && !job->result.has_value())
@@ -1254,11 +1263,17 @@ class ScreenshotOcrRecognitionService::Impl final {
             else
                 scheduleRetry(static_cast<int>(m_crashes.size()));
         }
+        const QString message =
+            error.isEmpty()
+                ? QCoreApplication::translate("ScreenshotOcrController",
+                                              "Text recognition components could not be prepared")
+                : QCoreApplication::translate(
+                      "ScreenshotOcrController",
+                      "The text recognition component could not be started: %1")
+                      .arg(error);
         for (const auto& job : failed) {
             job->childPid = m_childPid;
-            failJobLocked(job, QCoreApplication::translate(
-                                   "ScreenshotOcrController",
-                                   "Text recognition components could not be prepared"));
+            failJobLocked(job, message);
         }
     }
 

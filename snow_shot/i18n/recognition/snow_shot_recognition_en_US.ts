@@ -137,6 +137,10 @@
             <translation>The packaged text recognition runtime is missing or damaged. Repair or reinstall Snow Shot from Microsoft Store.</translation>
         </message>
         <message>
+            <source>The text recognition component could not be started: %1</source>
+            <translation>The text recognition component could not be started: %1</translation>
+        </message>
+        <message>
             <source>Unable to open the recognized link</source>
             <translation>Unable to open the recognized link</translation>
         </message>
