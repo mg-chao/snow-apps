@@ -56,6 +56,8 @@ using ScreenshotToolPaletteNumericPresetEditor =
 using ScreenshotToolPaletteTextEmphasisEditor =
     snow_shot::presentation::ScreenshotToolPaletteTextEmphasisEditor;
 using ScreenshotToolPaletteFontEditor = snow_shot::presentation::ScreenshotToolPaletteFontEditor;
+using ScreenshotToolPaletteDistanceUnitEditor =
+    snow_shot::presentation::ScreenshotToolPaletteDistanceUnitEditor;
 using ScreenshotToolPaletteIconOptionEditor =
     snow_shot::presentation::ScreenshotToolPaletteIconOptionEditor;
 using ScreenshotToolPaletteColorEditorConfig =
@@ -585,7 +587,7 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_distanceWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_distanceEndpointEditor;
     QPointer<adqt::widgets::AdInputNumber> m_distanceValueInput;
-    QPointer<adqt::widgets::AdRadioButtonGroup> m_distanceUnitGroup;
+    std::unique_ptr<ScreenshotToolPaletteDistanceUnitEditor> m_distanceUnitEditor;
     ScreenshotToolPaletteSelectEditor m_distanceDecimalsEditor;
     QPointer<IconNumericValuePreviewButton> m_distanceScaleEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_arrowStrokeWidthEditor;

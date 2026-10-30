@@ -704,6 +704,22 @@ void conversionsAndStateChanges() {
                 millimeterAbi.unit == SNOW_DISTANCE_UNIT_MM &&
                 snow_canvas_types::toCanvasDistanceStyle(millimeterAbi) == millimeters,
             "millimeter styles validate and round trip through the ABI");
+    for (auto unit :
+         {SnowCanvasDistanceUnit::Px, SnowCanvasDistanceUnit::Cm, SnowCanvasDistanceUnit::M,
+          SnowCanvasDistanceUnit::Km, SnowCanvasDistanceUnit::Mm, SnowCanvasDistanceUnit::Pt,
+          SnowCanvasDistanceUnit::In, SnowCanvasDistanceUnit::Ft, SnowCanvasDistanceUnit::Um}) {
+        auto candidate = style;
+        candidate.unit = unit;
+        require(snow_canvas_types::validDistanceStyle(candidate) &&
+                    snow_canvas_types::toCanvasDistanceStyle(
+                        snow_canvas_types::toEngineDistanceStyle(candidate)) == candidate,
+                "every distance unit validates and round trips without changing calibration");
+    }
+    for (int invalid : {-1, 9}) {
+        auto candidate = style;
+        candidate.unit = static_cast<SnowCanvasDistanceUnit>(invalid);
+        require(!snow_canvas_types::validDistanceStyle(candidate), "unknown units must fail");
+    }
     SnowStyleToolbarState original{};
     SnowStyleToolbarState changed = original;
     changed.distance_style = abi;

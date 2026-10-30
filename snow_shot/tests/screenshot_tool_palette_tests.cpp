@@ -13388,8 +13388,9 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     require(emitted.unit == SnowCanvasDistanceUnit::Mm &&
                 properties == SnowCanvasDistanceStylePropertyUnit,
             "millimeter selection should commit a unit edit");
-    units->button(static_cast<int>(SnowCanvasDistanceUnit::Px))->click();
     for (QAbstractButton* button : units->buttons()) {
+        if (button->objectName() == QStringLiteral("screenshotDistanceMoreUnitsButton"))
+            continue;
         button->click();
         require(properties == SnowCanvasDistanceStylePropertyUnit &&
                     emitted.unit == static_cast<SnowCanvasDistanceUnit>(units->id(button)),
@@ -13611,6 +13612,153 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     hiddenPalette.hide();
 }
 
+void distanceMoreUnitsFollowAuthoritativeSelection() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto moreButton = [&]() {
+        return palette.findChild<adqt::widgets::AdRadio*>(
+            QStringLiteral("screenshotDistanceMoreUnitsButton"));
+    };
+    auto* more = moreButton();
+    auto* group = palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceUnitButtonGroup"))
+                      ->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    auto* popover = popoverForTrigger(more);
+    require(more && popover && group && group->buttons().size() == 5 &&
+                !group->button(static_cast<int>(SnowCanvasDistanceUnit::Px)) &&
+                popover->triggers() ==
+                    adqt::widgets::AdPopover::Triggers(adqt::widgets::AdPopover::Trigger::Hover) &&
+                popover->placement() == adqt::widgets::AdPopover::Placement::Bottom &&
+                popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool &&
+                !popover->contentWidget(),
+            "distance units have four inline units and a lazy native hover More popover");
+    const QIcon moreIcon = more->icon();
+    SnowCanvasDistanceStyle current = palette.creationStyleDefaults().distance;
+    int edits = 0;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        const auto* distance = std::get_if<SnowCanvasDistanceEdit>(&edit);
+        require(distance && distance->properties == SnowCanvasDistanceStylePropertyUnit &&
+                    distance->style.factor == current.factor,
+                "unit choices change only the suffix, preserving calibration");
+        current = distance->style;
+        ++edits;
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    more->click();
+    require(edits == 0 && !more->isChecked() &&
+                group->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm),
+            "clicking More cannot change the current unit or its highlight");
+    const QPoint previousCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([&] { QCursor::setPos(previousCursor); });
+    const QPoint local = more->rect().center();
+    QCursor::setPos(more->mapToGlobal(local));
+    QEventLoop loop;
+    QObject::connect(popover, &adqt::widgets::AdPopover::visibleChanged, &loop,
+                     [&loop](bool visible) {
+                         if (visible)
+                             loop.quit();
+                     });
+    QEnterEvent enter(local, more->mapTo(more->window(), local), more->mapToGlobal(local));
+    QApplication::sendEvent(more, &enter);
+    QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+    if (!popover->isVisible())
+        loop.exec();
+    require(popover->isVisible() && popover->contentWidget() &&
+                popover->contentWidget()->isVisible() && edits == 0 && !more->isChecked(),
+            "hovering More opens visible unit choices without changing selection");
+    const auto buttons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
+    const QStringList labels{QStringLiteral("px"), QStringLiteral("pt"), QStringLiteral("in"),
+                             QStringLiteral("ft"), QString::fromUtf8("μm")};
+    const SnowCanvasDistanceUnit values[] = {SnowCanvasDistanceUnit::Px, SnowCanvasDistanceUnit::Pt,
+                                             SnowCanvasDistanceUnit::In, SnowCanvasDistanceUnit::Ft,
+                                             SnowCanvasDistanceUnit::Um};
+    require(buttons.size() == 5, "the overflow contains exactly five unit icons");
+    for (int index = 0; index < buttons.size(); ++index) {
+        require(buttons[index]->accessibleName() == labels[index] &&
+                    buttons[index]->text().isEmpty() &&
+                    (index == 0 || buttons[index]->x() > buttons[index - 1]->x()),
+                "unit icons appear in the requested horizontal order with accessible labels");
+        popover->show();
+        buttons[index]->click();
+        require(current.unit == values[index] && edits == index + 1 && more->isChecked() &&
+                    !popover->isVisible() && more->icon().cacheKey() == moreIcon.cacheKey(),
+                "an overflow choice highlights the fixed More icon after closing the popover");
+        popover->show();
+        for (int option = 0; option < buttons.size(); ++option)
+            require((buttons[option]->buttonStyle() ==
+                     adqt::widgets::AdButton::ButtonStyle::Tonal) == (option == index),
+                    "only the current overflow unit is highlighted on reopening");
+        popover->hide();
+    }
+    group->button(static_cast<int>(SnowCanvasDistanceUnit::Mm))->click();
+    require(current.unit == SnowCanvasDistanceUnit::Mm && !more->isChecked(),
+            "inline unit selection clears More highlighting");
+    for (auto* button : buttons)
+        require(button->buttonStyle() != adqt::widgets::AdButton::ButtonStyle::Tonal,
+                "inline selection clears all overflow option highlights");
+
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedDistance;
+    selected.selectedElementCount = 2;
+    selected.distanceStyle = current;
+    selected.distanceStyle.unit = SnowCanvasDistanceUnit::Um;
+    selected.distanceStyleMixed = SnowCanvasDistanceStyleMixedUnit;
+    const int beforeStateChanges = edits;
+    palette.setStyleToolbarState(selected);
+    more->click();
+    require(group->checkedId() == -1 && !more->isChecked() && edits == beforeStateChanges,
+            "mixed units have no highlighted segment, including after clicking More");
+    for (auto* button : buttons)
+        require(button->buttonStyle() != adqt::widgets::AdButton::ButtonStyle::Tonal,
+                "mixed units have no highlighted overflow option");
+    selected.distanceStyleMixed = 0;
+    palette.setStyleToolbarState(selected);
+    require(more->isChecked() &&
+                buttons.last()->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal &&
+                edits == beforeStateChanges,
+            "external selected-unit state refreshes both highlights without emitting edits");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    palette.setStyleToolbarState(selected);
+    QCoreApplication::processEvents();
+    more = moreButton();
+    require(more && more->isChecked(), "More highlighting survives editor reuse");
+    popover = showPopoverForTrigger(more);
+    clickPopoverStyleControl(popover, "pt");
+    require(edits == beforeStateChanges + 1 && current.unit == SnowCanvasDistanceUnit::Pt &&
+                more->isChecked(),
+            "reused popup callbacks commit exactly once");
+
+    popover = showPopoverForTrigger(more);
+    const auto popupButtons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
+    const QSize popupButtonSize = popupButtons.first()->size();
+    const QSize triggerSize = more->size();
+    require(palette.setPhysicalScale(1.5), "distance toolbar accepts a changed display scale");
+    QCoreApplication::processEvents();
+    require(more->size() ==
+                    QSize(qRound(triggerSize.width() * 1.5), qRound(triggerSize.height() * 1.5)) &&
+                popupButtons.first()->size() == popupButtonSize && more->isChecked(),
+            "More scales with toolbar segments while the popup keeps its own display scale");
+    require(palette.setPhysicalScale(1.0), "restore the distance toolbar scale");
+    popover->hide();
+
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    const auto previousLanguage = language.languagePreference();
+    const auto restoreLanguage =
+        qScopeGuard([&] { static_cast<void>(language.setLanguage(previousLanguage)); });
+    for (const auto& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(language.setLanguage(locale), "load distance unit translations");
+        QCoreApplication::processEvents();
+        require(more->accessibleName() == QCoreApplication::translate("ScreenshotToolPalette",
+                                                                      "More distance units") &&
+                    more->isChecked(),
+                "More retranslates without losing its selected state");
+    }
+}
+
 void distanceActualValueUpdatesTheCanvasAndUndo() {
     ScreenshotToolPalette::Options options;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
@@ -13683,6 +13831,25 @@ void distanceActualValueUpdatesTheCanvasAndUndo() {
             "undo should restore the factor and actual value input");
     require(canvas.redo() && value->displayText() == QStringLiteral("25.125"),
             "redo should restore the user's actual value");
+    auto* more = palette.findChild<adqt::widgets::AdRadio*>(
+        QStringLiteral("screenshotDistanceMoreUnitsButton"));
+    require(more, "selected distance exposes More units");
+    const QStringList unitLabels{QStringLiteral("px"), QStringLiteral("pt"), QStringLiteral("in"),
+                                 QStringLiteral("ft"), QString::fromUtf8("μm")};
+    for (const auto& unitLabel : unitLabels) {
+        const auto before = canvas.canvasDistanceStyle();
+        clickPopoverStyleControl(showPopoverForTrigger(more), unitLabel.toUtf8().constData());
+        require(more->isChecked() && canvas.canvasDistanceStyle().factor == before.factor &&
+                    value->displayText() == QStringLiteral("25.125") &&
+                    record(QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                        QStringLiteral("25.125 %1").arg(unitLabel) &&
+                    record(QStringLiteral("Arrow")).value(QStringLiteral("points")) == points,
+                "unit changes preserve the value and geometry while rendering the selected suffix");
+        require(canvas.undo() && canvas.canvasDistanceStyle() == before && !more->isChecked(),
+                "undoing overflow selection restores the inline unit and clears More");
+        require(canvas.redo() && more->isChecked(), "redo restores More highlighting");
+        require(canvas.undo() && !more->isChecked(), "restore mm for the next unit");
+    }
     const double factor = canvas.canvasDistanceStyle().factor;
     mouse(QEvent::MouseButtonPress, {130, 220}, Qt::LeftButton, Qt::LeftButton);
     mouse(QEvent::MouseMove, {160, 260}, Qt::NoButton, Qt::LeftButton);
@@ -20408,6 +20575,7 @@ int main(int argc, char** argv) {
         arrowAndLineRemainDirectWhenConfiguredIndividually();
         editorlessToolsRejectStaleStyleToolbarState();
         distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+        distanceMoreUnitsFollowAuthoritativeSelection();
         distanceActualValueUpdatesTheCanvasAndUndo();
         return 0;
     }
@@ -20742,6 +20910,7 @@ int main(int argc, char** argv) {
     disabledSelectionOpacityRejectsWheelSteps();
     magnifierControlsRetranslateAndRenderPreviews();
     angleSettingsAndWheelPreserveIndependentProperties();
+    distanceMoreUnitsFollowAuthoritativeSelection();
     distanceActualValueUpdatesTheCanvasAndUndo();
     arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();

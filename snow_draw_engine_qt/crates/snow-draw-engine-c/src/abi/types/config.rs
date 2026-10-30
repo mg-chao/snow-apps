@@ -162,6 +162,10 @@ snow_c_enum! {
         M = 2,
         Km = 3,
         Mm = 4,
+        Pt = 5,
+        In = 6,
+        Ft = 7,
+        Um = 8,
     }
 }
 

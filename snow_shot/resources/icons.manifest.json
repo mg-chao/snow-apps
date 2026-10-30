@@ -543,6 +543,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DistanceUnitFt",
+      "name": "distance-unit-ft",
+      "source": "../src/presentation/components/icons/resources/distance-unit-ft.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitIn",
+      "name": "distance-unit-in",
+      "source": "../src/presentation/components/icons/resources/distance-unit-in.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "DistanceUnitKm",
       "name": "distance-unit-km",
       "source": "../src/presentation/components/icons/resources/distance-unit-km.svg",
@@ -567,9 +583,25 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DistanceUnitPt",
+      "name": "distance-unit-pt",
+      "source": "../src/presentation/components/icons/resources/distance-unit-pt.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "DistanceUnitPx",
       "name": "distance-unit-px",
       "source": "../src/presentation/components/icons/resources/distance-unit-px.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitUm",
+      "name": "distance-unit-um",
+      "source": "../src/presentation/components/icons/resources/distance-unit-um.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

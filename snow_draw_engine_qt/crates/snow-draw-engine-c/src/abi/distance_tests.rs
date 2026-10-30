@@ -43,12 +43,32 @@ fn presentation_scope_ffi_validation_keeps_scopes_balanced() {
 
 #[test]
 fn distance_abi_values_layout_and_round_trip() {
+    use super::raw_enum::SnowRawEnum;
+    for invalid in [-1, 9, i32::MAX] {
+        assert_eq!(SnowDistanceUnit::from_raw(invalid), None);
+    }
     assert_eq!(SnowDistanceStyle::default().unit, SnowDistanceUnit::Cm);
     assert_eq!(SnowDistanceUnit::Px as u32, 0);
     assert_eq!(SnowDistanceUnit::Cm as u32, 1);
     assert_eq!(SnowDistanceUnit::M as u32, 2);
     assert_eq!(SnowDistanceUnit::Km as u32, 3);
     assert_eq!(SnowDistanceUnit::Mm as u32, 4);
+    for (unit, value, suffix) in [
+        (SnowDistanceUnit::Pt, 5, "pt"),
+        (SnowDistanceUnit::In, 6, "in"),
+        (SnowDistanceUnit::Ft, 7, "ft"),
+        (SnowDistanceUnit::Um, 8, "μm"),
+    ] {
+        assert_eq!(unit as u32, value);
+        assert_eq!(SnowDistanceUnit::from_raw(value as i32), Some(unit));
+        let style = SnowDistanceStyle {
+            unit,
+            ..SnowDistanceStyle::default()
+        };
+        let rust: snow_draw_engine::DistanceStyle = style.into();
+        assert_eq!(rust.unit.suffix(), suffix);
+        assert_eq!(SnowDistanceStyle::from(rust), style);
+    }
     assert_eq!(SnowActiveTool::Distance as u32, 17);
     assert_eq!(SnowStyleToolbarSource::DefaultDistance as u32, 26);
     assert_eq!(SnowStyleToolbarSource::SelectedDistance as u32, 27);

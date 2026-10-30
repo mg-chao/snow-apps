@@ -49,8 +49,17 @@ void persistedDefaultsMergeDistanceProperties() {
     changed.strokeWidth = 4;
     require(restored.distance == changed && restored.arrow == initial.arrow,
             "property edits preserve other distance settings and independent arrow defaults");
+    for (auto unit :
+         {SnowCanvasDistanceUnit::Px, SnowCanvasDistanceUnit::Pt, SnowCanvasDistanceUnit::In,
+          SnowCanvasDistanceUnit::Ft, SnowCanvasDistanceUnit::Um}) {
+        changed.unit = unit;
+        require(persistScreenshotCanvasStyleEdit(
+                    SnowCanvasDistanceEdit{changed, SnowCanvasDistanceStylePropertyUnit}) &&
+                    screenshotCanvasToolStyleDefaults().distance == changed,
+                "additional units persist without altering calibration or other settings");
+    }
     SnowCanvasWidget canvas;
-    applyScreenshotCanvasToolStyles(canvas, restored);
+    applyScreenshotCanvasToolStyles(canvas, screenshotCanvasToolStyleDefaults());
     require(canvas.setCanvasTool(SnowCanvasTool::Distance) &&
                 canvas.canvasDistanceStyle() == changed,
             "a new canvas restores distance creation defaults");
@@ -59,8 +68,9 @@ void persistedDefaultsMergeDistanceProperties() {
 void distanceToolsParticipateInConfiguration() {
     using namespace snow_shot;
     const auto positions = presentation::toolbar_layout::defaultPositions();
-    require(positions.contains({QStringLiteral("angle"), QStringLiteral("distance"),
-                                QStringLiteral("line"), QStringLiteral("arrow")}),
+    require(positions.contains({QStringLiteral("bracket"), QStringLiteral("angle"),
+                                QStringLiteral("distance"), QStringLiteral("line"),
+                                QStringLiteral("arrow")}),
             "distance joins the arrow and line stack without changing its arrow trigger");
     const auto defaults = storage::DrawingShortcutSettings().allShortcuts();
     require(defaults.contains(QStringLiteral("distance")) &&
@@ -98,8 +108,8 @@ void distanceToolsParticipateInConfiguration() {
                 QJsonObject{{QStringLiteral("positions"), defaultsWithHiddenTool},
                             {QStringLiteral("hidden"), QJsonArray{QStringLiteral("eraser")}}}) &&
                 toolbar.layout(kind).positions.contains(
-                    {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
-                     QStringLiteral("arrow")}) &&
+                    {QStringLiteral("bracket"), QStringLiteral("angle"), QStringLiteral("distance"),
+                     QStringLiteral("line"), QStringLiteral("arrow")}) &&
                 toolbar.layout(kind).hidden == QStringList{QStringLiteral("eraser")},
             "a previous default layout upgrades its stack while preserving another hidden tool");
     auto customized = toolbar.layout(kind);
@@ -160,6 +170,17 @@ void distanceMcpStyleValidationMatchesControls() {
     require(apply({{QStringLiteral("unit"), QStringLiteral("mm")}}) &&
                 editor.canvasStyleToolbarState().distanceStyle.unit == SnowCanvasDistanceUnit::Mm,
             "MCP accepts millimeter distance labels");
+    const QStringList additionalUnits{QStringLiteral("pt"), QStringLiteral("in"),
+                                      QStringLiteral("ft"), QStringLiteral("um")};
+    for (int index = 0; index < additionalUnits.size(); ++index) {
+        const auto before = editor.canvasStyleToolbarState().distanceStyle;
+        require(apply({{QStringLiteral("unit"), additionalUnits.at(index)}}),
+                "MCP accepts every additional distance unit");
+        auto expected = before;
+        expected.unit = static_cast<SnowCanvasDistanceUnit>(5 + index);
+        require(editor.canvasStyleToolbarState().distanceStyle == expected,
+                "MCP unit edits preserve other style properties");
+    }
     const auto millimeters = editor.canvasStyleToolbarState().distanceStyle;
     for (const auto& invalid :
          {QJsonObject{{QStringLiteral("factor"), 0}},

@@ -8,8 +8,10 @@
 #include "widgets/color_picker.h"
 #include "widgets/control_scale.h"
 #include "widgets/popover.h"
+#include "widgets/radio_button_group.h"
 #include "widgets/select.h"
 #include "antd_icons.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 
 #include <QBoxLayout>
 #include <QCoreApplication>
@@ -1768,6 +1770,145 @@ void ScreenshotToolPaletteFontEditor::release() {
     m_setSize.reset();
     m_setFamily.reset();
     m_fontFamiliesLoaded.reset();
+    releaseRoot();
+}
+
+namespace {
+// Presentation-only ID: the More segment never represents a distance unit edit.
+constexpr int kDistanceMoreId = 1000;
+} // namespace
+
+void ScreenshotToolPaletteDistanceUnitEditor::build(
+    QBoxLayout* layout, QWidget* parent, const Commit& commit,
+    const ScreenshotToolPaletteEditorServices& services,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (layout == nullptr || parent == nullptr)
+        return;
+    auto* rootLayout = createRoot(layout, parent);
+    rebind(commit);
+    namespace unitIcons = snow_shot::presentation::icons::custom::outlined;
+    ScreenshotToolPaletteRadioEditorConfig config;
+    config.objectName = QStringLiteral("screenshotDistanceUnitButtonGroup");
+    config.useButtonMetrics = true;
+    config.options = {
+        {static_cast<int>(SnowCanvasDistanceUnit::Mm),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "mm"), unitIcons::DistanceUnitMm()},
+        {static_cast<int>(SnowCanvasDistanceUnit::Cm),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "cm"), unitIcons::DistanceUnitCm()},
+        {static_cast<int>(SnowCanvasDistanceUnit::M),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "m"), unitIcons::DistanceUnitM()},
+        {static_cast<int>(SnowCanvasDistanceUnit::Km),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "km"), unitIcons::DistanceUnitKm()},
+        {kDistanceMoreId, QT_TRANSLATE_NOOP("ScreenshotToolPalette", "More distance units"),
+         adqt::icons::antd::outlined::More()},
+    };
+    const auto editor = createScreenshotToolPaletteRadioEditor(rootWidget(), config, metrics);
+    rootLayout->addWidget(editor.container);
+    m_group = editor.group;
+    auto* more = m_group->button(kDistanceMoreId);
+    more->setObjectName(QStringLiteral("screenshotDistanceMoreUnitsButton"));
+    configureScreenshotToolPaletteTooltip(editor.container, "Distance unit");
+    m_options = {
+        {static_cast<int>(SnowCanvasDistanceUnit::Px),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "px"), unitIcons::DistanceUnitPx()},
+        {static_cast<int>(SnowCanvasDistanceUnit::Pt),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "pt"), unitIcons::DistanceUnitPt()},
+        {static_cast<int>(SnowCanvasDistanceUnit::In),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "in"), unitIcons::DistanceUnitIn()},
+        {static_cast<int>(SnowCanvasDistanceUnit::Ft),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "ft"), unitIcons::DistanceUnitFt()},
+        {static_cast<int>(SnowCanvasDistanceUnit::Um),
+         QT_TRANSLATE_NOOP("ScreenshotToolPalette", "μm"), unitIcons::DistanceUnitUm()},
+    };
+    m_popover = new adqt::widgets::AdPopover(more);
+    observePopupLifecycle(m_popover, services, callbackContext());
+    m_popover->setSourceWidget(more);
+    m_popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_popover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_popover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_popover->setArrowVisible(true);
+    m_popover->setContentMargins(QMargins(8, 8, 8, 8));
+    const auto popupMetrics = popupButtonMetrics(metrics);
+    m_popover->setContentFactory(
+        [this, popupMetrics, context = QPointer<QObject>(callbackContext())]() -> QWidget* {
+            return context != nullptr ? createPopupContent(popupMetrics) : nullptr;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::Retained);
+    QObject::connect(m_group, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+                     callbackContext(), [this](int id) {
+                         if (id != kDistanceMoreId && id >= 0 && m_commit)
+                             m_commit(static_cast<SnowCanvasDistanceUnit>(id));
+                         // Restore authoritative selection even when More is clicked or an
+                         // edit is rejected. Hovering/clicking More cannot select a unit.
+                         update(m_unit, m_mixed);
+                     });
+    update(m_unit, m_mixed);
+    finalizeRoot();
+}
+
+void ScreenshotToolPaletteDistanceUnitEditor::rebind(const Commit& commit) {
+    m_commit = commit;
+}
+
+QWidget* ScreenshotToolPaletteDistanceUnitEditor::createPopupContent(
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    auto* content = new QWidget;
+    content->setObjectName(QStringLiteral("screenshotDistanceMoreUnitsContent"));
+    auto* layout = new QHBoxLayout(content);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(colorPickerOptionSpacing(metrics));
+    for (const auto& option : m_options) {
+        auto* button =
+            createScreenshotToolPaletteStyleActionButton(content, nullptr, option.icon, metrics);
+        configureScreenshotToolPaletteTooltip(button, option.tooltip);
+        layout->addWidget(button);
+        m_buttons.push_back(button);
+        QObject::connect(button, &adqt::widgets::AdButton::clicked, callbackContext(),
+                         [this, unit = static_cast<SnowCanvasDistanceUnit>(option.value)]() {
+                             if (m_commit)
+                                 m_commit(unit);
+                             m_popover->hide();
+                         });
+    }
+    update(m_unit, m_mixed);
+    return content;
+}
+
+void ScreenshotToolPaletteDistanceUnitEditor::update(SnowCanvasDistanceUnit unit, bool mixed) {
+    m_unit = unit;
+    m_mixed = mixed;
+    const int value = static_cast<int>(unit);
+    if (m_group != nullptr) {
+        const QSignalBlocker blocker(m_group);
+        m_group->setCheckedId(mixed                               ? -1
+                              : m_group->button(value) != nullptr ? value
+                                                                  : kDistanceMoreId);
+    }
+    for (int index = 0; index < m_buttons.size(); ++index)
+        setScreenshotToolPaletteStyleButtonActive(m_buttons.at(index),
+                                                  !mixed && m_options.at(index).value == value);
+}
+
+void ScreenshotToolPaletteDistanceUnitEditor::refreshMetrics(
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    configureScreenshotToolPaletteStyleRadioButtonGroup(m_group, metrics, true);
+    refreshRootMetrics(metrics);
+    resetPopupMetrics(metrics);
+}
+
+void ScreenshotToolPaletteDistanceUnitEditor::resetPopupMetrics(
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    static_cast<void>(metrics);
+    for (auto* button : m_buttons)
+        ensurePopupControlScope(button->parentWidget());
+}
+
+void ScreenshotToolPaletteDistanceUnitEditor::release() {
+    m_commit = {};
+    m_group = nullptr;
+    m_popover = nullptr;
+    m_options.clear();
+    m_buttons.clear();
     releaseRoot();
 }
 

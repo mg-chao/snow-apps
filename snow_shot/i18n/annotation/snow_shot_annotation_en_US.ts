@@ -844,6 +844,10 @@
             <translation>Mixed</translation>
         </message>
         <message>
+            <source>More distance units</source>
+            <translation>More distance units</translation>
+        </message>
+        <message>
             <source>Mosaic</source>
             <translation>Mosaic</translation>
         </message>
@@ -1592,6 +1596,14 @@
             <translation>cm</translation>
         </message>
         <message>
+            <source>ft</source>
+            <translation>ft</translation>
+        </message>
+        <message>
+            <source>in</source>
+            <translation>in</translation>
+        </message>
+        <message>
             <source>km</source>
             <translation>km</translation>
         </message>
@@ -1613,12 +1625,20 @@
             <translation>ms</translation>
         </message>
         <message>
+            <source>pt</source>
+            <translation>pt</translation>
+        </message>
+        <message>
             <source>px</source>
             <translation>px</translation>
         </message>
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</translation>
+        </message>
+        <message>
+            <source>μm</source>
+            <translation>μm</translation>
         </message>
     </context>
     <context>

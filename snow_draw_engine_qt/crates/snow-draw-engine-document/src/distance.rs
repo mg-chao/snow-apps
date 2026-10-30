@@ -14,6 +14,10 @@ pub enum DistanceUnit {
     M,
     Km,
     Mm,
+    Pt,
+    In,
+    Ft,
+    Um,
 }
 
 impl DistanceUnit {
@@ -24,6 +28,10 @@ impl DistanceUnit {
             Self::M => "m",
             Self::Km => "km",
             Self::Mm => "mm",
+            Self::Pt => "pt",
+            Self::In => "in",
+            Self::Ft => "ft",
+            Self::Um => "μm",
         }
     }
 }
@@ -122,6 +130,30 @@ pub fn distance_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Opti
 mod tests {
     use super::*;
     use snow_draw_engine_core::{ColorRgba8, Point, arrow::ArrowType, arrow::StrokeStyle};
+
+    #[test]
+    fn distance_units_preserve_wire_names_and_display_suffixes() {
+        for (unit, wire, display) in [
+            (DistanceUnit::Px, "px", "px"),
+            (DistanceUnit::Cm, "cm", "cm"),
+            (DistanceUnit::M, "m", "m"),
+            (DistanceUnit::Km, "km", "km"),
+            (DistanceUnit::Mm, "mm", "mm"),
+            (DistanceUnit::Pt, "pt", "pt"),
+            (DistanceUnit::In, "in", "in"),
+            (DistanceUnit::Ft, "ft", "ft"),
+            (DistanceUnit::Um, "um", "μm"),
+        ] {
+            let serialized = serde_json::to_value(unit).unwrap();
+            assert_eq!(serialized, wire);
+            assert_eq!(
+                serde_json::from_value::<DistanceUnit>(serialized).unwrap(),
+                unit
+            );
+            assert_eq!(unit.suffix(), display);
+        }
+        assert!(serde_json::from_str::<DistanceUnit>(r#""unsupported""#).is_err());
+    }
 
     #[test]
     fn distance_label_font_grows_sublinearly_across_supported_stroke_widths() {

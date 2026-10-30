@@ -463,6 +463,34 @@ struct ScreenshotToolPaletteIconOption {
     adqt::icons::IconRef icon;
 };
 
+class ScreenshotToolPaletteDistanceUnitEditor final
+    : public ScreenshotToolPaletteStyleEditorComponent {
+  public:
+    using Commit = std::function<void(SnowCanvasDistanceUnit)>;
+    ~ScreenshotToolPaletteDistanceUnitEditor() override {
+        release();
+    }
+    void build(QBoxLayout* layout, QWidget* parent, const Commit& commit,
+               const ScreenshotToolPaletteEditorServices& services,
+               const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const Commit& commit);
+    void update(SnowCanvasDistanceUnit unit, bool mixed);
+    void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
+    void resetPopupMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
+    void release() override;
+
+  private:
+    QWidget* createPopupContent(const ScreenshotToolPaletteButtonMetrics& metrics);
+
+    adqt::widgets::AdRadioButtonGroup* m_group = nullptr;
+    adqt::widgets::AdPopover* m_popover = nullptr;
+    QVector<ScreenshotToolPaletteIconOption> m_options;
+    QVector<adqt::widgets::AdButton*> m_buttons;
+    SnowCanvasDistanceUnit m_unit = SnowCanvasDistanceUnit::Cm;
+    bool m_mixed = false;
+    Commit m_commit;
+};
+
 struct ScreenshotToolPaletteIconOptionEditorConfig {
     QString accessibleName;
     QString triggerTooltip;

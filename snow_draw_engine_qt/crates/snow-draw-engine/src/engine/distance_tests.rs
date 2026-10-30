@@ -486,7 +486,11 @@ fn distance_annotation_json_defaults_to_cm_and_preserves_explicit_units() {
             {"type":"distance","points":[[0,0],[10,0]]},
             {"type":"distance","points":[[0,50],[10,50]],"style":{}},
             {"type":"distance","points":[[0,100],[10,100]],"style":{"unit":"px"}},
-            {"type":"distance","points":[[0,150],[10,150]],"style":{"unit":"mm"}}
+            {"type":"distance","points":[[0,150],[10,150]],"style":{"unit":"mm"}},
+            {"type":"distance","points":[[0,200],[10,200]],"style":{"unit":"pt"}},
+            {"type":"distance","points":[[0,250],[10,250]],"style":{"unit":"in"}},
+            {"type":"distance","points":[[0,300],[10,300]],"style":{"unit":"ft"}},
+            {"type":"distance","points":[[0,350],[10,350]],"style":{"unit":"um"}}
         ]),
     )
     .unwrap();
@@ -495,6 +499,10 @@ fn distance_annotation_json_defaults_to_cm_and_preserves_explicit_units() {
         DistanceUnit::Cm,
         DistanceUnit::Px,
         DistanceUnit::Mm,
+        DistanceUnit::Pt,
+        DistanceUnit::In,
+        DistanceUnit::Ft,
+        DistanceUnit::Um,
     ]) {
         assert_eq!(
             engine.model.arrow(*id).unwrap().distance.unwrap().unit,
@@ -1056,7 +1064,7 @@ fn distance_invalid_annotations_and_masked_style_patches_are_atomic() {
         json!({"type":"distance","points":[[0,0],[10,0]],"style":{"factor":0}}),
         json!({"type":"distance","points":[[0,0],[10,0]],"style":{"factor":1001}}),
         json!({"type":"distance","points":[[0,0],[10,0]],"style":{"decimal_places":4}}),
-        json!({"type":"distance","points":[[0,0],[10,0]],"style":{"unit":"in"}}),
+        json!({"type":"distance","points":[[0,0],[10,0]],"style":{"unit":"unsupported"}}),
         json!({"type":"distance","points":[[0,0],[10,0]],"style":{"endpoint_style":"invalid"}}),
         json!({"type":"distance","points":[[0,0],[10,0]],"style":{"endpoint_scale":0.4}}),
         json!({"type":"distance","points":[[0,0],[10,0]],"pixel_scale":[0,1]}),
@@ -1138,6 +1146,10 @@ fn distance_units_are_suffixes_and_decimals_have_fixed_precision() {
         DistanceUnit::M,
         DistanceUnit::Km,
         DistanceUnit::Px,
+        DistanceUnit::Pt,
+        DistanceUnit::In,
+        DistanceUnit::Ft,
+        DistanceUnit::Um,
     ] {
         for decimals in 0..=3 {
             let style = DistanceStyle {

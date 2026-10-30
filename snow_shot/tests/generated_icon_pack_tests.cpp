@@ -1064,11 +1064,46 @@ void borderFillIconMatchesToolbarGeometry() {
         require(preview.save(path), "save Border icon inspection sheet");
 }
 
+void distanceUnitIconsFollowThemeAtToolbarSizes() {
+    namespace icons = snow_shot::presentation::icons::custom::outlined;
+    const QList<adqt::icons::IconRef> refs{icons::DistanceUnitPx(), icons::DistanceUnitPt(),
+                                           icons::DistanceUnitIn(), icons::DistanceUnitFt(),
+                                           icons::DistanceUnitUm()};
+    QImage preview(400, 160, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    for (int row = 0; row < 2; ++row) {
+        const QColor foreground = row ? QColor("#f0f0f0") : QColor("#262626");
+        painter.fillRect(QRect(0, row * 80, 400, 80), row ? QColor("#141414") : QColor("#ffffff"));
+        for (int index = 0; index < refs.size(); ++index) {
+            const auto ref = refs[index].withColors(adqt::icons::IconColors::primary(foreground));
+            require(adqt::icons::describeIcon(ref).colorModel ==
+                        adqt::icons::IconColorModel::Monochrome,
+                    "distance unit icons use theme colors");
+            for (int size : {16, 20, 32}) {
+                const auto pixmap = render(ref, QSize(size, size));
+                require(!alphaBounds(pixmap.toImage()).isEmpty() &&
+                            containsOpaqueColor(pixmap.toImage(), foreground),
+                        "each unit icon renders clearly in light and dark themes");
+                painter.drawPixmap(index * 80 + (size == 32 ? 40 : 8),
+                                   row * 80 + (size == 20 ? 44 : 12), pixmap);
+            }
+        }
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_DISTANCE_UNIT_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save distance unit icon preview");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--distance-units-only"))) {
+            distanceUnitIconsFollowThemeAtToolbarSizes();
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--airdrop-only"))) {
             airDropIconFollowsAntDesign();
             return 0;
@@ -1129,6 +1164,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         everySnowShotEntryRenders();
+        distanceUnitIconsFollowThemeAtToolbarSizes();
         arrowheadIconsFaceTheirRespectiveEndpoints();
         indentedTriangleCornersAreSymmetric();
         conversionIconsUseTheSuppliedProjectAssets();

@@ -86,7 +86,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         target == QStringLiteral("angle")
             ? QStringList{QStringLiteral("degrees"), QStringLiteral("radians")}
             : QStringList{QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"),
-                          QStringLiteral("km"), QStringLiteral("mm")};
+                          QStringLiteral("km"), QStringLiteral("mm"), QStringLiteral("pt"),
+                          QStringLiteral("in"), QStringLiteral("ft"), QStringLiteral("um")};
     QStringList shapes{QStringLiteral("rectangle"), QStringLiteral("ellipse"),
                        QStringLiteral("diamond")};
     if (target == QStringLiteral("speech_bubble"))

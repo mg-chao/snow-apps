@@ -666,7 +666,11 @@ typedef enum SnowDistanceUnit {
     SNOW_DISTANCE_UNIT_CM = 1,
     SNOW_DISTANCE_UNIT_M = 2,
     SNOW_DISTANCE_UNIT_KM = 3,
-    SNOW_DISTANCE_UNIT_MM = 4
+    SNOW_DISTANCE_UNIT_MM = 4,
+    SNOW_DISTANCE_UNIT_PT = 5,
+    SNOW_DISTANCE_UNIT_IN = 6,
+    SNOW_DISTANCE_UNIT_FT = 7,
+    SNOW_DISTANCE_UNIT_UM = 8
 } SnowDistanceUnit;
 
 typedef struct SnowDistanceStyle {

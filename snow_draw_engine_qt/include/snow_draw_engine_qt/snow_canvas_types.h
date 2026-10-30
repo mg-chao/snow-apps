@@ -418,7 +418,7 @@ inline bool operator!=(const SnowCanvasAngleStyle& lhs, const SnowCanvasAngleSty
     return !(lhs == rhs);
 }
 
-enum class SnowCanvasDistanceUnit { Px, Cm, M, Km, Mm };
+enum class SnowCanvasDistanceUnit { Px, Cm, M, Km, Mm, Pt, In, Ft, Um };
 
 enum SnowCanvasDistanceStyleProperty : quint32 {
     SnowCanvasDistanceStylePropertyStrokeColor = 1u << 0,
