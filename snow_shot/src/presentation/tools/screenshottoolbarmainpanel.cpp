@@ -10,6 +10,7 @@
 #include "antd_icons.h"
 #include "theme/theme_manager.h"
 #include "widgets/control_scale.h"
+#include "widgets/detail/qt_tooltip_bridge.h"
 
 #include <QBoxLayout>
 #include <QEvent>
@@ -306,6 +307,7 @@ void ScreenshotToolbarPanel::paintEvent(QPaintEvent* event) {
 ScreenshotToolbarMainPanel::ScreenshotToolbarMainPanel(const Options& options, QWidget* parent)
     : ScreenshotToolbarPanel(parent) {
     setObjectName(QStringLiteral("screenshotToolbarMainPanel"));
+    setProperty(adqt::widgets::detail::kTooltipWakeUpDelayProperty, 0);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     auto* layout = new QHBoxLayout(this);

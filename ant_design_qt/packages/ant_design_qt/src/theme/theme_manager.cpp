@@ -1,7 +1,9 @@
 #include "theme_manager.h"
+#include "../widgets/detail/qt_tooltip_bridge.h"
 
 #include <QProxyStyle>
 #include <QStyleFactory>
+#include <QVariant>
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +44,19 @@ class AdThemeProxyStyle final : public QProxyStyle {
                 const QWidget* widget = nullptr,
                 QStyleHintReturn* returnData = nullptr) const override {
     switch (hint) {
+      case SH_ToolTip_WakeUpDelay:
+        for (const QWidget* scope = widget; scope; scope = scope->parentWidget()) {
+          bool ok = false;
+          const int delay =
+              scope->property(widgets::detail::kTooltipWakeUpDelayProperty).toInt(&ok);
+          if (ok) {
+            return std::max(0, delay);
+          }
+          if (scope->isWindow()) {
+            break;
+          }
+        }
+        return QProxyStyle::styleHint(hint, option, widget, returnData);
       case SH_Menu_SubMenuPopupDelay:
       case SH_ToolButton_PopupDelay:
         return theme_.motion.timingMenuOpenDelayMs;

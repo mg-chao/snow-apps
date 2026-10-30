@@ -1,6 +1,7 @@
 #include "palette_style_edit_test_support.h"
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshotdrawingtoolbaroptions.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
@@ -37,15 +38,18 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHideEvent>
+#include <QHelpEvent>
 #include <QLabel>
 #include <QLayout>
 #include <QBoxLayout>
 #include <QLineEdit>
 #include <QMargins>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
 #include <QShowEvent>
+#include <QStyle>
 #include <QVector>
 #include <QTemporaryDir>
 #include <QScopeGuard>
@@ -982,6 +986,72 @@ void toolbarTooltipsUseApplicationBridge() {
                 "toolbar tooltips should be rendered by the application QtTooltipBridge");
     }
     require(tooltipTriggerCount > 0, "screenshot toolbar should expose tooltip triggers");
+}
+
+void mainToolbarTooltipsOpenWithoutHoverDelay() {
+    adqt::theme::ThemeManager::instance().applyTo(*qApp);
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    QWidget ordinaryControl;
+    const int normalDelay = ordinaryControl.style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay,
+                                                               nullptr, &ordinaryControl);
+    require(normalDelay > 0, "ordinary controls should retain the normal tooltip delay");
+
+    for (const auto& options :
+         {screenshotOptions(), snow_shot::presentation::screenshotDrawingToolbarOptions(),
+          recordingOptions()}) {
+        ScreenshotToolPalette toolbar(options);
+        prepare(toolbar);
+        toolbar.resize(toolbar.contentSizeHint());
+        toolbar.show();
+        flushEvents();
+
+        ScreenshotToolbarPanel secondaryPanel(&toolbar);
+        QLabel secondaryControl(&secondaryPanel);
+        QWidget popup(toolbar.mainPanel(), Qt::Tool);
+        QLabel popupControl(&popup);
+        for (QWidget* control : {&secondaryControl, &popupControl}) {
+            require(control->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, control) ==
+                        normalDelay,
+                    "main toolbar tooltip timing should not extend to secondary rows or popups");
+        }
+
+        QWidget nestedContainer(toolbar.mainPanel());
+        QLabel lateControl(&nestedContainer);
+        require(lateControl.style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr,
+                                               &lateControl) == 0,
+                "late-created nested main toolbar controls should inherit immediate tooltips");
+
+        int hoveredControls = 0;
+        for (QWidget* control : toolbar.mainPanel()->findChildren<QWidget*>()) {
+            if (control->toolTip().isEmpty()) {
+                continue;
+            }
+            require(control->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, control) ==
+                        0,
+                    "every main toolbar tooltip should have zero wake-up delay");
+            if (!control->isVisible() || !control->isEnabled()) {
+                continue;
+            }
+            const QPoint center = control->rect().center();
+            const QPoint global = control->mapToGlobal(center);
+            QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton,
+                             Qt::NoModifier);
+            QApplication::sendEvent(control, &move);
+            QHelpEvent help(QEvent::ToolTip, center, global);
+            QApplication::sendEvent(control, &help);
+            bool visible = false;
+            for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
+                visible |= tooltip->isVisible() && tooltip->targetWidget() == control &&
+                           tooltip->text() == control->toolTip();
+            }
+            require(help.isAccepted() && visible,
+                    "hover should show or switch main toolbar tooltips without waiting");
+            ++hoveredControls;
+        }
+        require(hoveredControls >= 2, "exercise initial hover and switching toolbar controls");
+        toolbar.hide();
+        flushEvents();
+    }
 }
 
 void cornerRadiusTextKeepsItsPhysicalSizeAcrossDpiChanges() {
@@ -2444,6 +2514,11 @@ int main(int argc, char** argv) {
             "initialize isolated toolbar test configuration");
     const auto shutdownStorage =
         qScopeGuard([] { snow_shot::storage::ApplicationStorage::instance().shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--tooltips-only"))) {
+        toolbarTooltipsUseApplicationBridge();
+        mainToolbarTooltipsOpenWithoutHoverDelay();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
         recordingAudioIconsFollowSettings();
         return 0;
@@ -2503,5 +2578,6 @@ int main(int argc, char** argv) {
     duplicateStyleStateDoesNotInvalidateToolbarGeometry();
     filterValuesDoNotRelayoutTheStableControlSet();
     spotlightConfigSurvivesStyleRowEviction();
+    mainToolbarTooltipsOpenWithoutHoverDelay();
     return 0;
 }
