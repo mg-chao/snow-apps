@@ -135,3 +135,12 @@ harness = false
 name = "carousel"
 harness = false
 required-features = ["test-support"]
+
+[[bench]]
+name = "color_picker"
+harness = false
+required-features = ["test-support"]
+
+[[example]]
+name = "color_picker_accessibility"
+required-features = ["test-support"]

@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "completed_utc": "2026-10-29T19:25:46.5054993Z",
+  "scope": "CPU and allocations with deterministic offscreen GPUI; not GPU presentation or physical input latency",
+  "preset": "windows-msvc-performance",
+  "profile": "Release",
+  "environment": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "architecture": "X64",
+    "processor_count": 24,
+    "processor_model": "AMD Ryzen 9 5950X 16-Core Processor            "
+  },
+  "provenance": {
+    "source_root": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+    "git_head": "414ce2ac19d5b244924db6f782eab3407cc348ed",
+    "source_file_count": 1983,
+    "source_map_sha256": "17fc1cf8bb31e04c357b8dfbf49d8f08f29c08a5b6d7f882479342e7e3914d4b",
+    "source_map_digest_encoding": "SHA256 of UTF-8 JSON with sorted keys and compact separators",
+    "executable": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\windows-msvc-performance\\ant-design-gpui\\release\\deps\\color_picker-cec7a651af8b46a3.exe",
+      "sha256": "83ff9c45754796e9a0d61c42c2bac2654fa9268df514429cd1f05f9ee82bec8c"
+    },
+    "cmake_cache_sha256": "b67758cfc9c342d6d4b276c76a95e397bd49900cfac4c96be8c111a97f336898",
+    "raw_results": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\windows-msvc-performance\\ant-design-gpui\\color-picker-results.jsonl",
+      "sha256": "45f505fdb9a3dcf2cf740b6ee7ce695e7bbaa833ec343cfbb8eba8b5b299f342"
+    },
+    "full_provenance": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\windows-msvc-performance\\ant-design-gpui\\color-picker-provenance.json",
+      "sha256": "43cd69467f91b98efd9da0cc91bc2d7481673bce3867b5b9a9ee58ee57040c42"
+    },
+    "gpui_git_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661"
+  },
+  "measurement_method": {
+    "warmup_iterations_per_workload": 5,
+    "measured_iterations": 4000,
+    "time_unit": "microseconds",
+    "allocation_unit": "mean allocation calls per iteration",
+    "allocated_bytes_unit": "mean bytes requested per iteration, including reallocations",
+    "fixtures": "deterministic offscreen GPUI TestAppContext; persistent six editor entities; reused preset Arc storage",
+    "assertions": [
+      "Six editor EntityIds remain unchanged after each redraw/edit",
+      "Settled window schedules zero additional frames",
+      "Scene primitives remain within recorded workload limit",
+      "Path vertices remain within primitive_limit * 64"
+    ],
+    "primitive_limits": {
+      "closed": 64,
+      "open": 256,
+      "gradient_stops": "256 + 4 * stop_count",
+      "presets": "256 + 8 * preset_count"
+    }
+  },
+  "measurements": [
+    {
+      "name": "color-picker/hsba-to-rgba",
+      "iterations": 1000,
+      "us": {
+        "p50": 0.0,
+        "p95": 0.09999999999999999,
+        "p99": 0.09999999999999999
+      },
+      "allocations": 0.0,
+      "allocated_bytes": 0.0
+    },
+    {
+      "name": "color-picker/parse-rgba",
+      "iterations": 1000,
+      "us": {
+        "p50": 0.3,
+        "p95": 0.39999999999999997,
+        "p99": 0.6
+      },
+      "allocations": 3.0,
+      "allocated_bytes": 92.0
+    },
+    {
+      "name": "color-picker/closed-trigger-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 73.2,
+        "p95": 83.5,
+        "p99": 99.6
+      },
+      "allocations": 176.0,
+      "allocated_bytes": 62241.0
+    },
+    {
+      "name": "color-picker/open-panel-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 400.0,
+        "p95": 430.4,
+        "p99": 450.90000000000003
+      },
+      "allocations": 1429.0,
+      "allocated_bytes": 537136.0
+    },
+    {
+      "name": "color-picker/palette-drag",
+      "iterations": 200,
+      "us": {
+        "p50": 839.6999999999999,
+        "p95": 884.0,
+        "p99": 940.9000000000001
+      },
+      "allocations": 3023.52,
+      "allocated_bytes": 1080862.2
+    },
+    {
+      "name": "color-picker/hue-drag",
+      "iterations": 200,
+      "us": {
+        "p50": 844.3,
+        "p95": 911.6,
+        "p99": 930.4
+      },
+      "allocations": 2999.0,
+      "allocated_bytes": 1080760.0
+    },
+    {
+      "name": "color-picker/alpha-drag",
+      "iterations": 200,
+      "us": {
+        "p50": 830.6999999999999,
+        "p95": 877.1,
+        "p99": 951.3
+      },
+      "allocations": 2977.5,
+      "allocated_bytes": 1079976.5
+    },
+    {
+      "name": "color-picker/opaque-gradient-2-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 412.09999999999997,
+        "p95": 432.2,
+        "p99": 450.4
+      },
+      "allocations": 1548.0,
+      "allocated_bytes": 598198.0
+    },
+    {
+      "name": "color-picker/opaque-gradient-8-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 475.3,
+        "p95": 503.50000000000006,
+        "p99": 541.7
+      },
+      "allocations": 1823.0,
+      "allocated_bytes": 770720.0
+    },
+    {
+      "name": "color-picker/opaque-gradient-32-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 713.1999999999999,
+        "p95": 746.5,
+        "p99": 792.0
+      },
+      "allocations": 2898.0,
+      "allocated_bytes": 1489007.0
+    },
+    {
+      "name": "color-picker/translucent-gradient-2-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 476.9,
+        "p95": 515.0,
+        "p99": 549.0999999999999
+      },
+      "allocations": 1930.0,
+      "allocated_bytes": 1001487.0
+    },
+    {
+      "name": "color-picker/translucent-gradient-8-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 531.5,
+        "p95": 556.4,
+        "p99": 602.5
+      },
+      "allocations": 2204.0,
+      "allocated_bytes": 1169737.0
+    },
+    {
+      "name": "color-picker/translucent-gradient-32-stops-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 774.5999999999999,
+        "p95": 874.6,
+        "p99": 1003.5
+      },
+      "allocations": 3279.0,
+      "allocated_bytes": 1893448.0
+    },
+    {
+      "name": "color-picker/translucent-gradient-32-stops-stop-drag",
+      "iterations": 200,
+      "us": {
+        "p50": 1567.3,
+        "p95": 1648.1,
+        "p99": 1706.2
+      },
+      "allocations": 6877.5,
+      "allocated_bytes": 3827658.0
+    },
+    {
+      "name": "color-picker/presets-24-warm-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 726.7,
+        "p95": 769.4000000000001,
+        "p99": 809.3
+      },
+      "allocations": 2825.0,
+      "allocated_bytes": 1166788.0
+    },
+    {
+      "name": "color-picker/presets-240-warm-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 3509.1,
+        "p95": 3872.7000000000003,
+        "p99": 4366.2
+      },
+      "allocations": 14566.0,
+      "allocated_bytes": 6512868.0
+    }
+  ],
+  "scene_primitives": [
+    {
+      "name": "color-picker/closed-trigger",
+      "kind": "scene-primitives",
+      "quads": 12,
+      "paths": 0,
+      "shadows": 1,
+      "glyph_sprites": 0,
+      "path_vertices": 0,
+      "primitive_limit": 64
+    },
+    {
+      "name": "color-picker/open-panel",
+      "kind": "scene-primitives",
+      "quads": 50,
+      "paths": 8,
+      "shadows": 8,
+      "glyph_sprites": 2,
+      "path_vertices": 288,
+      "primitive_limit": 256
+    },
+    {
+      "name": "color-picker/opaque-gradient-2-stops",
+      "kind": "scene-primitives",
+      "quads": 54,
+      "paths": 10,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 405,
+      "primitive_limit": 264
+    },
+    {
+      "name": "color-picker/opaque-gradient-8-stops",
+      "kind": "scene-primitives",
+      "quads": 66,
+      "paths": 22,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 771,
+      "primitive_limit": 288
+    },
+    {
+      "name": "color-picker/opaque-gradient-32-stops",
+      "kind": "scene-primitives",
+      "quads": 114,
+      "paths": 70,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 2271,
+      "primitive_limit": 384
+    },
+    {
+      "name": "color-picker/translucent-gradient-2-stops",
+      "kind": "scene-primitives",
+      "quads": 54,
+      "paths": 136,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 4362,
+      "primitive_limit": 264
+    },
+    {
+      "name": "color-picker/translucent-gradient-8-stops",
+      "kind": "scene-primitives",
+      "quads": 66,
+      "paths": 148,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 4746,
+      "primitive_limit": 288
+    },
+    {
+      "name": "color-picker/translucent-gradient-32-stops",
+      "kind": "scene-primitives",
+      "quads": 114,
+      "paths": 196,
+      "shadows": 9,
+      "glyph_sprites": 2,
+      "path_vertices": 6255,
+      "primitive_limit": 384
+    },
+    {
+      "name": "color-picker/presets-24",
+      "kind": "scene-primitives",
+      "quads": 195,
+      "paths": 8,
+      "shadows": 32,
+      "glyph_sprites": 3,
+      "path_vertices": 288,
+      "primitive_limit": 448
+    },
+    {
+      "name": "color-picker/presets-240",
+      "kind": "scene-primitives",
+      "quads": 1107,
+      "paths": 8,
+      "shadows": 184,
+      "glyph_sprites": 3,
+      "path_vertices": 288,
+      "primitive_limit": 2176
+    }
+  ],
+  "limitations": [
+    "Measurements describe this Windows machine and pinned renderer.",
+    "These measurements do not measure GPU presentation time or physical input latency.",
+    "The 240-preset stress scene is viewport clipped; primitive counts describe the visible offscreen viewport.",
+    "No blanket frame-rate or cross-platform performance claim is made."
+  ]
+}

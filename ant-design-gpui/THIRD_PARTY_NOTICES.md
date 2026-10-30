@@ -5,7 +5,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 
 ## Ant Design
 
-Theme derivation, token defaults, Alert, Button, Checkbox, Radio, Descriptions, Divider, Tag, Input, Tooltip,
+Theme derivation, token defaults, Alert, Button, Checkbox, ColorPicker, Radio, Descriptions, Divider, Tag, Input, Tooltip,
 Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Carousel, Result, Message and Notification visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
@@ -69,6 +69,13 @@ Carousel and `@ant-design/react-slick` 2.0.0 (MIT, copyright 2014 Kiran Abburi).
 Complete loaded package licenses and source provenance are preserved under
 `fixtures/carousel/`. These are developer references, with no JavaScript runtime
 dependency in the native component.
+
+ColorPicker's appearance, translations, examples and observable editing behavior
+follow the same pinned Ant Design source and `@rc-component/color-picker` 3.1.1.
+Color conversion and named-color references use `@ant-design/fast-color` 3.0.1.
+Complete original loaded-package licenses and independently captured source
+provenance are preserved under `fixtures/color_picker/`. These JavaScript packages
+are developer references; the native component has no JavaScript runtime dependency.
 
 Tooltip, Popover and Popconfirm browser measurements and input provenance are
 under `fixtures/popup/`; their generator executes the original styles and rounded

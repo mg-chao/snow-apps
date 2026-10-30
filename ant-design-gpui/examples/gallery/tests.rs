@@ -30,6 +30,7 @@ struct Fixture {
 }
 
 mod carousel;
+mod color_picker;
 mod context_scroll;
 mod descriptions;
 mod image;

@@ -9,6 +9,7 @@ pub(super) enum ComponentId {
     Button,
     Divider,
     Checkbox,
+    ColorPicker,
     Input,
     InputNumber,
     Radio,
@@ -101,6 +102,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Data Entry",
         title: "Checkbox",
         description: "Collect user's choices.",
+    },
+    Component {
+        id: ComponentId::ColorPicker,
+        navigation_id: "gallery.navigation.color-picker",
+        group: "Data Entry",
+        title: "ColorPicker",
+        description: "Used for color selection.",
     },
     Component {
         id: ComponentId::Radio,

@@ -33,6 +33,7 @@ pub struct InputNumber {
     up_icon: IconRef,
     down_icon: IconRef,
     style: StyleRefinement,
+    token_override: Option<Arc<super::InputNumberTokens>>,
 }
 
 impl InputNumber {
@@ -50,6 +51,7 @@ impl InputNumber {
             up_icon: IconName::UpOutlined.into(),
             down_icon: IconName::DownOutlined.into(),
             style: StyleRefinement::default(),
+            token_override: None,
         }
     }
     pub fn scope(mut self, scope: ConfigScope) -> Self {
@@ -121,6 +123,12 @@ impl InputNumber {
     pub fn control_icons(mut self, up: impl Into<IconRef>, down: impl Into<IconRef>) -> Self {
         self.up_icon = up.into();
         self.down_icon = down.into();
+        self
+    }
+    /// Composite controls retain their native editor while applying their own
+    /// measured channel metrics without introducing a configuration subtree.
+    pub(crate) fn with_tokens(mut self, tokens: Arc<super::InputNumberTokens>) -> Self {
+        self.token_override = Some(tokens);
         self
     }
 }
@@ -214,7 +222,10 @@ impl RenderOnce for InputNumber {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let scope = self.scope.unwrap_or_else(|| ConfigScope::application(cx));
         let config = scope.snapshot(cx);
-        let tokens = config.theme.component::<InputNumberTheme>();
+        let tokens = self
+            .token_override
+            .take()
+            .unwrap_or_else(|| config.theme.component::<InputNumberTheme>());
         let mounted = window.use_keyed_state((self.id, "numeric"), cx, |window, cx| {
             MountedNumber::new(self.state.clone(), window, cx)
         });

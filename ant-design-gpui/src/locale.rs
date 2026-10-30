@@ -214,6 +214,29 @@ macro_rules! image_messages {
 image_messages! { root_label, preview, loading, load_error, previous, next, flip_y, flip_x,
 rotate_left, rotate_right, zoom_out, zoom_in, reset, count }
 
+macro_rules! color_picker_messages {
+    ($($field:ident),+ $(,)?) => {
+        /// Color picker labels. Stop and preset patterns use `{index}` and `{color}`.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct ColorPickerMessages { $(pub $field: SharedString,)+ }
+        #[derive(Clone, Debug, Default, PartialEq, Eq)]
+        pub struct ColorPickerMessagePatch { $(pub $field: Option<SharedString>,)+ }
+        impl ColorPickerMessages {
+            fn patched(&self, patch: &ColorPickerMessagePatch) -> Self {
+                Self { $($field: patch.$field.clone().unwrap_or_else(|| self.$field.clone()),)+ }
+            }
+        }
+        impl ColorPickerMessagePatch {
+            pub fn is_empty(&self) -> bool { $(self.$field.is_none())&&+ }
+        }
+    };
+}
+color_picker_messages! {
+    root_label, panel_label, clear, color, hex, red, green, blue, hue, saturation,
+    brightness, alpha, format, single, gradient, gradient_stop, add_stop, remove_stop,
+    preset_color, preset_empty, transparent, expand_presets, collapse_presets,
+}
+
 /// Locale identity is metadata, never a translated display label.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LocaleId {
@@ -245,6 +268,7 @@ pub struct Locale {
     pub modal: ModalMessages,
     pub pagination: PaginationMessages,
     pub carousel: CarouselMessages,
+    pub color_picker: ColorPickerMessages,
 }
 
 impl Locale {
@@ -252,6 +276,31 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::EnUs,
+                color_picker: ColorPickerMessages {
+                    root_label: "Choose color".into(),
+                    panel_label: "Color picker".into(),
+                    clear: "Clear color".into(),
+                    color: "Color".into(),
+                    hex: "Hex color".into(),
+                    red: "Red".into(),
+                    green: "Green".into(),
+                    blue: "Blue".into(),
+                    hue: "Hue".into(),
+                    saturation: "Saturation".into(),
+                    brightness: "Brightness".into(),
+                    alpha: "Alpha".into(),
+                    format: "Color format".into(),
+                    single: "Single".into(),
+                    gradient: "Gradient".into(),
+                    gradient_stop: "Gradient stop {index}".into(),
+                    add_stop: "Add gradient stop".into(),
+                    remove_stop: "Remove gradient stop".into(),
+                    preset_color: "Preset {color}".into(),
+                    preset_empty: "Empty".into(),
+                    transparent: "Transparent".into(),
+                    expand_presets: "Expand preset colors".into(),
+                    collapse_presets: "Collapse preset colors".into(),
+                },
                 image: ImageMessages {
                     root_label: "Image preview".into(),
                     preview: "Preview".into(),
@@ -333,6 +382,31 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhCn,
+                color_picker: ColorPickerMessages {
+                    root_label: "选择颜色".into(),
+                    panel_label: "颜色选择器".into(),
+                    clear: "清空颜色".into(),
+                    color: "颜色".into(),
+                    hex: "十六进制颜色".into(),
+                    red: "红色".into(),
+                    green: "绿色".into(),
+                    blue: "蓝色".into(),
+                    hue: "色相".into(),
+                    saturation: "饱和度".into(),
+                    brightness: "亮度".into(),
+                    alpha: "透明度".into(),
+                    format: "颜色格式".into(),
+                    single: "单色".into(),
+                    gradient: "渐变色".into(),
+                    gradient_stop: "渐变色节点 {index}".into(),
+                    add_stop: "添加渐变色节点".into(),
+                    remove_stop: "移除渐变色节点".into(),
+                    preset_color: "预设颜色 {color}".into(),
+                    preset_empty: "暂无".into(),
+                    transparent: "无色".into(),
+                    expand_presets: "展开预设颜色".into(),
+                    collapse_presets: "收起预设颜色".into(),
+                },
                 image: ImageMessages {
                     root_label: "图片预览".into(),
                     preview: "预览".into(),
@@ -414,6 +488,31 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhTw,
+                color_picker: ColorPickerMessages {
+                    root_label: "選擇顏色".into(),
+                    panel_label: "顏色選擇器".into(),
+                    clear: "清除顏色".into(),
+                    color: "顏色".into(),
+                    hex: "十六進位顏色".into(),
+                    red: "紅色".into(),
+                    green: "綠色".into(),
+                    blue: "藍色".into(),
+                    hue: "色相".into(),
+                    saturation: "飽和度".into(),
+                    brightness: "亮度".into(),
+                    alpha: "透明度".into(),
+                    format: "顏色格式".into(),
+                    single: "單色".into(),
+                    gradient: "漸層色".into(),
+                    gradient_stop: "漸層色節點 {index}".into(),
+                    add_stop: "新增漸層色節點".into(),
+                    remove_stop: "移除漸層色節點".into(),
+                    preset_color: "預設顏色 {color}".into(),
+                    preset_empty: "暫無".into(),
+                    transparent: "透明".into(),
+                    expand_presets: "展開預設顏色".into(),
+                    collapse_presets: "收合預設顏色".into(),
+                },
                 image: ImageMessages {
                     root_label: "圖片預覽".into(),
                     preview: "預覽".into(),
@@ -501,6 +600,7 @@ impl Locale {
             modal: Self::en_us().modal.clone(),
             pagination: Self::en_us().pagination.clone(),
             carousel: Self::en_us().carousel.clone(),
+            color_picker: Self::en_us().color_picker.clone(),
         })
     }
 
@@ -519,6 +619,7 @@ pub struct LocalePatch {
     pub modal: ModalMessagePatch,
     pub pagination: PaginationMessagePatch,
     pub carousel: CarouselMessagePatch,
+    pub color_picker: ColorPickerMessagePatch,
 }
 
 impl LocalePatch {
@@ -539,6 +640,7 @@ impl LocalePatch {
             && self.modal == ModalMessagePatch::default()
             && self.pagination.is_empty()
             && self.carousel == CarouselMessagePatch::default()
+            && self.color_picker.is_empty()
         {
             return base.clone();
         }
@@ -548,12 +650,14 @@ impl LocalePatch {
         let modal = base.modal.patched(&self.modal);
         let pagination = base.pagination.patched(&self.pagination);
         let carousel = base.carousel.patched(&self.carousel);
+        let color_picker = base.color_picker.patched(&self.color_picker);
         if common == base.common
             && image == base.image
             && popconfirm == base.popconfirm
             && pagination == base.pagination
             && modal == base.modal
             && carousel == base.carousel
+            && color_picker == base.color_picker
         {
             return base.clone();
         }
@@ -565,6 +669,7 @@ impl LocalePatch {
                 && old.modal == modal
                 && old.pagination == pagination
                 && old.carousel == carousel
+                && old.color_picker == color_picker
         }) {
             return previous.clone();
         }
@@ -576,6 +681,7 @@ impl LocalePatch {
             modal,
             pagination,
             carousel,
+            color_picker,
         })
     }
 }
@@ -583,6 +689,48 @@ impl LocalePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_picker_catalogs_preserve_reference_copy_and_inherit_overrides() {
+        let english = Locale::en_us();
+        assert_eq!(english.color_picker.single.as_ref(), "Single");
+        assert_eq!(english.color_picker.gradient.as_ref(), "Gradient");
+        assert_eq!(english.color_picker.preset_empty.as_ref(), "Empty");
+        assert_eq!(english.color_picker.transparent.as_ref(), "Transparent");
+        assert_eq!(Locale::zh_cn().color_picker.preset_empty.as_ref(), "暂无");
+        assert_eq!(Locale::zh_cn().color_picker.transparent.as_ref(), "无色");
+        assert_eq!(Locale::zh_tw().color_picker.gradient.as_ref(), "漸層色");
+        let patch = LocalePatch {
+            color_picker: ColorPickerMessagePatch {
+                root_label: Some("Accent color".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for locale in [Locale::en_us(), Locale::zh_cn(), Locale::zh_tw()] {
+            let resolved = patch.resolve(&locale);
+            assert_eq!(resolved.color_picker.root_label.as_ref(), "Accent color");
+            assert_eq!(resolved.color_picker.clear, locale.color_picker.clear);
+            assert!(resolved.color_picker.gradient_stop.contains("{index}"));
+            assert!(resolved.color_picker.preset_color.contains("{color}"));
+            assert!(Arc::ptr_eq(
+                &resolved,
+                &patch.resolve_with_previous(&locale, Some(&resolved))
+            ));
+        }
+        let equivalent = LocalePatch {
+            color_picker: ColorPickerMessagePatch {
+                root_label: Some(english.color_picker.root_label.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(Arc::ptr_eq(&english, &equivalent.resolve(&english)));
+        assert_eq!(
+            Locale::custom("custom", CommonMessagePatch::default()).color_picker,
+            english.color_picker
+        );
+    }
 
     #[test]
     fn carousel_catalogs_preserve_placeholders_and_inherit_per_field() {

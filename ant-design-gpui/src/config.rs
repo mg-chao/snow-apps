@@ -128,6 +128,7 @@ pub struct ConfigPatch {
     pub modal: crate::modal::ModalConfigPatch,
     pub notification: crate::notification::NotificationConfigPatch,
     pub carousel: crate::carousel::CarouselConfigPatch,
+    pub color_picker: crate::color_picker::ColorPickerConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -157,6 +158,7 @@ pub struct ResolvedConfig {
     pub modal: crate::modal::ModalConfig,
     pub notification: crate::notification::NotificationConfig,
     pub carousel: crate::carousel::CarouselConfig,
+    pub color_picker: crate::color_picker::ColorPickerConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -187,6 +189,7 @@ impl PartialEq for ResolvedConfig {
             && self.modal == other.modal
             && self.notification == other.notification
             && self.carousel == other.carousel
+            && self.color_picker == other.color_picker
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -228,6 +231,7 @@ impl Default for ResolvedConfig {
             modal: Default::default(),
             notification: Default::default(),
             carousel: Default::default(),
+            color_picker: Default::default(),
         }
     }
 }
@@ -334,6 +338,7 @@ impl ResolvedConfig {
             modal: patch.modal.resolve(&parent.modal),
             notification: patch.notification.resolve(&parent.notification),
             carousel: patch.carousel.resolve(&parent.carousel),
+            color_picker: patch.color_picker.resolve(&parent.color_picker),
         })
     }
 }
@@ -551,6 +556,59 @@ mod tests {
         // threads. A by-value patch made opening a nested Modal exhaust it as
         // GPUI moved ConfigState through entity-creation closures.
         assert!(std::mem::size_of::<ConfigState>() <= 256);
+    }
+
+    #[gpui::test]
+    fn color_picker_arrow_styles_and_locale_follow_scoped_updates(cx: &mut TestAppContext) {
+        use gpui::{StyleRefinement, Styled, px};
+        let (parent, child) = cx.update(|cx| {
+            let parent = ConfigScope::new_window(cx);
+            let child = parent
+                .child(
+                    ConfigPatch {
+                        color_picker: crate::color_picker::ColorPickerConfigPatch {
+                            arrow: Some(false.into()),
+                            styles: crate::color_picker::ColorPickerStyles {
+                                content: StyleRefinement::default().p(px(10.)),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    cx,
+                )
+                .unwrap();
+            parent
+                .update_patch(cx, |p| {
+                    p.color_picker.styles.root = StyleRefinement::default().mt(px(8.));
+                    p.locale.color_picker.root_label = Some("Brand color".into());
+                })
+                .unwrap();
+            (parent, child)
+        });
+        cx.update(|cx| {
+            let snapshot = child.snapshot(cx);
+            assert!(!snapshot.color_picker.arrow.visible);
+            assert_eq!(
+                snapshot.color_picker.styles.root.margin.top,
+                Some(px(8.).into())
+            );
+            assert_eq!(
+                snapshot.color_picker.styles.content.padding.top,
+                Some(px(10.).into())
+            );
+            assert_eq!(
+                snapshot.locale.color_picker.root_label.as_ref(),
+                "Brand color"
+            );
+            assert!(!child.update_patch(cx, |_| {}).unwrap());
+            assert!(Arc::ptr_eq(&snapshot, &child.snapshot(cx)));
+            parent
+                .update_patch(cx, |p| p.color_picker.arrow = Some(true.into()))
+                .unwrap();
+            assert!(!child.snapshot(cx).color_picker.arrow.visible);
+        });
     }
 
     #[gpui::test]

@@ -22,6 +22,14 @@ pub use carousel::{
     CarouselTokenPatch, CarouselTokens, DotPlacement,
 };
 pub mod checkbox;
+pub mod color_picker;
+pub use color_picker::{
+    ColorPicker, ColorPickerChange, ColorPickerChangeSource, ColorPickerConfig,
+    ColorPickerConfigPatch, ColorPickerError, ColorPickerEvent, ColorPickerFormat, ColorPickerMode,
+    ColorPickerPanel, ColorPickerPanelParts, ColorPickerPreset, ColorPickerState,
+    ColorPickerStyleContext, ColorPickerStyleResolver, ColorPickerStyles, ColorPickerTheme,
+    ColorPickerTokenPatch, ColorPickerTokens, ColorPickerValue, ColorStop, PickerColor,
+};
 pub mod config;
 pub mod context_menu;
 pub mod descriptions;

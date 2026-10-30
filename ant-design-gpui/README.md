@@ -1,5 +1,9 @@
 # Ant Design GPUI
 
+ColorPicker provides native solid-color and gradient editing with HEX/RGB/HSB
+inputs, alpha, presets and custom panels. Open `--component color-picker` in the
+gallery; see the [ColorPicker guide](docs/color-picker.md).
+
 Image and PreviewGroup provide native thumbnails, loading/fallback/progress,
 grouped fullscreen previews, keyboard navigation, zoom/pan/rotation/flips,
 custom native content and scoped styling. Open `--component image` in the gallery;
@@ -33,6 +37,7 @@ cargo run --locked --offline --example gallery
 # Open Modal directly: -- --component modal
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
+# Open ColorPicker directly: -- --component color-picker
 # Open Select directly: -- --component select
 # Open Slider directly: -- --component slider
 # Open Pagination directly: -- --component pagination
