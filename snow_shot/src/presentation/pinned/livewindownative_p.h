@@ -10,21 +10,31 @@ struct NativeState {
     QString error;
 };
 
-class NativeWindow {
+class NativeWindowMonitor {
   public:
     // Native adapters invoke this on the GUI thread for lifecycle/geometry
     // events; polling remains a fallback for providers without notifications.
     std::function<void()> changed;
-    virtual ~NativeWindow() = default;
+    virtual ~NativeWindowMonitor() = default;
     virtual bool initialize(QString* error) = 0;
     virtual NativeState inspect() = 0;
+    virtual bool hasLifecycleNotifications() const {
+        return false;
+    }
+};
+
+class NativeWindowPresentation {
+  public:
+    virtual ~NativeWindowPresentation() = default;
     virtual bool present(const LiveWindowPresentation& presentation, const QRectF& crop,
-                         const QRectF& initialBounds, QString* error) = 0;
+                         const QRect& sourceBounds, QString* error) = 0;
     virtual bool presenting() const = 0;
     virtual void stopPresentation() = 0;
 };
 
-std::unique_ptr<NativeWindow> createNativeWindow(const LiveWindowTarget& target);
+std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target);
+std::unique_ptr<NativeWindowPresentation>
+createNativeWindowPresentation(const LiveWindowTarget& target);
 
 // A fixed source-local rectangle is intersected without changing its destination extent.
 struct CropMapping {

@@ -1,5 +1,6 @@
 #include "../../presentation/pinned/livewindownative_p.h"
 #include "selectorwindowtarget_p.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -97,7 +98,24 @@ bool matchingBounds(AXUIElementRef element, const QRect& nativeBounds) {
            qAbs(bounds->height() - nativeBounds.height()) <= tolerance;
 }
 
-class MacLiveWindow final : public live_window_detail::NativeWindow {
+// AX messaging can take its configured timeout. Its retained element and state
+// outlive the monitor only until the cancelled background query returns.
+struct MacWindowPollState {
+    ~MacWindowPollState() {
+        if (window)
+            CFRelease(window);
+    }
+    AXUIElementRef window = nullptr;
+    snow_shot::runtime::RuntimeActivityLease retirementActivity;
+    std::atomic<bool> closed{false};
+    std::atomic<bool> minimized{false};
+    std::atomic<bool> available{true};
+    std::atomic<bool> stopping{false};
+    std::mutex mutex;
+    std::condition_variable changed;
+};
+
+class MacLiveWindow final : public live_window_detail::NativeWindowMonitor {
   public:
     explicit MacLiveWindow(LiveWindowTarget target) : m_target(std::move(target)) {}
     ~MacLiveWindow() override {
@@ -105,10 +123,13 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
             [NSNotificationCenter.defaultCenter removeObserver:m_localCloseObserver];
             [m_localCloseObserver release];
         }
-        m_stopping = true;
-        m_pollChanged.notify_all();
-        if (m_stateWorker.joinable())
-            m_stateWorker.join();
+        {
+            std::lock_guard lock(m_poll->mutex);
+            m_poll->retirementActivity =
+                snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+            m_poll->stopping = true;
+        }
+        m_poll->changed.notify_all();
         if (m_observer) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(m_observer),
                                   kCFRunLoopCommonModes);
@@ -138,7 +159,7 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
                                 object:m_localWindow
                                  queue:nil
                             usingBlock:^(NSNotification*) {
-                              m_closed = true;
+                              m_poll->closed = true;
                               const auto notify = changed;
                               if (notify)
                                   notify();
@@ -219,41 +240,45 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
         bool minimized = false;
         if (!attributeBoolean(m_window, kAXMinimizedAttribute, &minimized))
             return fail(error);
-        m_minimized = minimized;
+        m_poll->minimized = minimized;
         if (AXObserverCreate(pid, observed, &m_observer) == kAXErrorSuccess && m_observer) {
+            m_notificationsAvailable = true;
             for (CFStringRef notification :
                  {kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
                   kAXUIElementDestroyedNotification})
-                AXObserverAddNotification(m_observer, m_window, notification, this);
+                m_notificationsAvailable &=
+                    AXObserverAddNotification(m_observer, m_window, notification, this) ==
+                    kAXErrorSuccess;
             CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(m_observer),
                                kCFRunLoopCommonModes);
         }
-        m_stateWorker = std::thread([this] {
-            while (!m_stopping && !m_closed) {
+        m_poll->window = static_cast<AXUIElementRef>(CFRetain(m_window));
+        std::thread([state = m_poll, notifications = m_notificationsAvailable] {
+            while (!state->stopping && !state->closed) {
                 bool minimized = false;
                 AXError error = kAXErrorSuccess;
-                m_stateAvailable =
-                    attributeBoolean(m_window, kAXMinimizedAttribute, &minimized, &error);
+                state->available =
+                    attributeBoolean(state->window, kAXMinimizedAttribute, &minimized, &error);
                 if (error == kAXErrorInvalidUIElement)
-                    m_closed = true;
-                if (m_stateAvailable)
-                    m_minimized = minimized;
-                std::unique_lock lock(m_pollMutex);
-                m_pollChanged.wait_for(lock, std::chrono::milliseconds(250),
-                                       [this] { return m_stopping.load(); });
+                    state->closed = true;
+                if (state->available)
+                    state->minimized = minimized;
+                std::unique_lock lock(state->mutex);
+                state->changed.wait_for(lock, std::chrono::milliseconds(notifications ? 2000 : 250),
+                                        [&] { return state->stopping.load(); });
             }
-        });
+        }).detach();
         return true;
     }
     live_window_detail::NativeState inspect() override {
         if (m_targetApplication && m_targetApplication.terminated)
-            m_closed = true;
-        if (m_closed)
+            m_poll->closed = true;
+        if (m_poll->closed)
             return {LiveWindowState::Closed, {}, {}};
         // WindowServer may temporarily omit minimized or transitioning windows.
         // Native/AX lifecycle state is authoritative; absence is not closure.
         if ((m_localWindow && m_localWindow.miniaturized) ||
-            (!m_localWindow && m_window && m_stateAvailable && m_minimized))
+            (!m_localWindow && m_window && m_poll->available && m_poll->minimized))
             return {LiveWindowState::Minimized, {}, {}};
         bool exists = false;
         bool querySucceeded = false;
@@ -274,20 +299,18 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
                         "The window content is temporarily unavailable. Retrying…"))};
         if (m_localWindow)
             return {LiveWindowState::Live, bounds, {}};
-        if (!m_window || !m_stateAvailable)
+        if (!m_window || !m_poll->available)
             return {
                 LiveWindowState::Unavailable, bounds,
                 nativeText(QT_TRANSLATE_NOOP(
                     "LiveWindowSource", "The window state is temporarily unavailable. Retrying…"))};
         return {LiveWindowState::Live, bounds, {}};
     }
-    bool present(const LiveWindowPresentation&, const QRectF&, const QRectF&, QString*) override {
-        return true;
+    bool hasLifecycleNotifications() const override {
+        // Local NSWindow state is cheap and still polled until all lifecycle
+        // notifications (not just close) are registered for that path.
+        return m_notificationsAvailable;
     }
-    bool presenting() const override {
-        return false;
-    }
-    void stopPresentation() override {}
 
   private:
     bool fail(QString* error) {
@@ -300,11 +323,11 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
     static void observed(AXObserverRef, AXUIElementRef, CFStringRef notification, void* data) {
         auto* self = static_cast<MacLiveWindow*>(data);
         if (CFEqual(notification, kAXUIElementDestroyedNotification))
-            self->m_closed = true;
+            self->m_poll->closed = true;
         if (CFEqual(notification, kAXWindowMiniaturizedNotification))
-            self->m_minimized = true;
+            self->m_poll->minimized = true;
         if (CFEqual(notification, kAXWindowDeminiaturizedNotification))
-            self->m_minimized = false;
+            self->m_poll->minimized = false;
         const auto changed = self->changed;
         if (changed)
             changed();
@@ -316,13 +339,8 @@ class MacLiveWindow final : public live_window_detail::NativeWindow {
     AXUIElementRef m_application = nullptr;
     AXUIElementRef m_window = nullptr;
     AXObserverRef m_observer = nullptr;
-    std::atomic<bool> m_closed{false};
-    std::atomic<bool> m_minimized{false};
-    std::atomic<bool> m_stateAvailable{true};
-    std::atomic<bool> m_stopping{false};
-    std::thread m_stateWorker;
-    std::mutex m_pollMutex;
-    std::condition_variable m_pollChanged;
+    bool m_notificationsAvailable = false;
+    std::shared_ptr<MacWindowPollState> m_poll = std::make_shared<MacWindowPollState>();
 };
 } // namespace
 
@@ -350,8 +368,11 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
                             point};
 }
 namespace live_window_detail {
-std::unique_ptr<NativeWindow> createNativeWindow(const LiveWindowTarget& target) {
+std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<MacLiveWindow>(target);
+}
+std::unique_ptr<NativeWindowPresentation> createNativeWindowPresentation(const LiveWindowTarget&) {
+    return {};
 }
 } // namespace live_window_detail
 } // namespace snow_shot::presentation

@@ -39,15 +39,36 @@ if [[ "$clean" == 1 && -e "$snow_build_dir" ]]; then
     esac
 fi
 configure=(--preset "$snow_preset" -D "Qt6_DIR=$snow_qt_dir")
+compiler_stamp="$snow_build_dir/.snow-compiler-signature"
+existing_build=0
+if [[ -f "$snow_build_dir/build.ninja" ]]; then existing_build=1; fi
 if [[ -f "$snow_build_dir/CMakeCache.txt" ]]; then
     if snow_cache_aligned "$snow_build_dir/CMakeCache.txt"; then
-        printf 'Reusing the existing CMake cache for preset %s.\n' "$snow_preset"
+        compiler_signature="$(snow_compiler_signature "$snow_build_dir/CMakeCache.txt")" ||
+            snow_die 'Unable to determine the configured compiler versions.'
+        if [[ -f "$compiler_stamp" && "$(cat "$compiler_stamp")" == "$compiler_signature" ]]; then
+            printf 'Reusing the existing CMake cache for preset %s.\n' "$snow_preset"
+        else
+            printf 'Compiler versions changed or were not recorded; configuring from a fresh cache.\n'
+            configure=(--fresh "${configure[@]}")
+        fi
     else
         printf 'The existing CMake cache does not match preset %s; configuring from a fresh cache.\n' "$snow_preset"
         configure=(--fresh "${configure[@]}")
     fi
 fi
 cmake "${configure[@]}" "$@"
+compiler_signature="$(snow_compiler_signature "$snow_build_dir/CMakeCache.txt")" ||
+    snow_die 'Unable to determine the configured compiler versions.'
+if [[ "$existing_build" == 1 ]] &&
+    [[ ! -f "$compiler_stamp" || "$(cat "$compiler_stamp")" != "$compiler_signature" ]]; then
+    # --fresh refreshes compiler detection, but leaves incompatible PCH/object
+    # files intact. Clean all targets before accepting the new compiler stamp.
+    printf 'Removing build outputs from the previous compiler.\n'
+    cmake --build "$snow_build_dir" --target clean
+fi
+printf '%s\n' "$compiler_signature" > "$compiler_stamp.tmp"
+mv -f "$compiler_stamp.tmp" "$compiler_stamp"
 if [[ ${#targets[@]} == 0 ]]; then
     targets=(snow_shot)
     if grep -Eq '^SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=(ON|TRUE|1)$' "$snow_build_dir/CMakeCache.txt"; then

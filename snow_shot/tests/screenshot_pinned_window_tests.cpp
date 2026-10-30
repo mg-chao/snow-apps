@@ -26822,6 +26822,9 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_color_swatch_window_tests.h"
 #include "screenshot_live_pinned_window_tests.h"
 #include "screenshot_live_pinned_window_native_tests.h"
+#ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
+#include "screenshot_live_window_performance_benchmark.h"
+#endif
 
 int main(int argc, char* argv[]) {
 
@@ -26843,6 +26846,12 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+#ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
+        if (app.arguments().contains(QStringLiteral("--live-window-performance-only"))) {
+            live_pinned_benchmark::run();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--live-window-pin-only"))) {
             pinnedLiveWindowTests();
             return 0;

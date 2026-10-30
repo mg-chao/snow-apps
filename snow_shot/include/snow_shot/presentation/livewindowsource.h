@@ -51,6 +51,8 @@ class LiveWindowSource : public QObject {
     ~LiveWindowSource() override = default;
     virtual void initialize(InitializationCompletion completion) = 0;
     virtual QImage initialFrame() const = 0;
+    // The shell owns its first painted image after successful presentation.
+    virtual void releaseInitialFrame() = 0;
     virtual QRect initialDesktopRegion() const = 0;
     virtual LiveWindowState state() const = 0;
     virtual QString stateMessage() const = 0;

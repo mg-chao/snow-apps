@@ -57,6 +57,9 @@ class ScreenshotLivePinnedWindowTestAccess {
     static bool frameProcessing(const ScreenshotPinnedWindow& window) {
         return window.m_liveFrameProcessing || !window.m_livePendingFrame.isNull();
     }
+    static const void* frameWatcher(const ScreenshotPinnedWindow& window) {
+        return window.m_liveFrameWatcher;
+    }
     static bool snapshotPending(const ScreenshotPinnedWindow& window) {
         return window.m_liveSnapshotPending;
     }
@@ -105,6 +108,7 @@ class FakeSource final : public Source {
     State currentState = State::Live;
     int requests = 0;
     int shutdowns = 0;
+    int initialFrameReleases = 0;
     bool deferFrames = false;
     bool nativePresentation = false;
     QVector<std::pair<QImage, FrameCompletion>> pending;
@@ -117,7 +121,10 @@ class FakeSource final : public Source {
         completion(true, {});
     }
     QImage initialFrame() const override {
-        return frame;
+        return initialFrameReleases ? QImage() : frame;
+    }
+    void releaseInitialFrame() override {
+        ++initialFrameReleases;
     }
     QRect initialDesktopRegion() const override {
         return region;
@@ -380,11 +387,16 @@ void frameSnapshotsAndTransforms() {
     auto source = std::make_shared<FakeSource>();
     ScreenshotPinnedWindow window;
     present(window, config(source));
+    require(source->initialFrameReleases == 1 && source->initialFrame().isNull(),
+            "successful first presentation releases the source's obsolete initialization image");
     const QRect originalGeometry = window.currentNativeGeometry();
     const QSize originalOutput = exportSize(window);
     auto frozen = Access::artifact(window);
     require(source->requests == 1, "export requests the current frame at action execution");
     source->publish(Qt::green);
+    require(!Access::frameProcessing(window) && !Access::frameWatcher(window) &&
+                Access::original(window).pixelColor(0, 0) == QColor(Qt::green),
+            "identity frames install directly without a worker allocation or queued completion");
     const auto exported = image(frozen, &window);
     require(exported.size() == originalOutput &&
                 exported.pixelColor(exported.rect().center()) == QColor(Qt::red) &&
@@ -401,7 +413,10 @@ void frameSnapshotsAndTransforms() {
                 std::abs(scaled.pixelColor(scaled.rect().center()).alpha() - 128) <= 1,
             "exports apply current display scaling and the standard window opacity");
     Access::command(window, QStringLiteral("rotate_clockwise"));
+    require(Access::transform(window).isIdentity() && Access::frameProcessing(window),
+            "rotation prepares pixels asynchronously while retaining the committed transform");
     wait([&] { return !Access::frameProcessing(window); }, "rotation must settle");
+    const auto* watcher = Access::frameWatcher(window);
     require(window.isLiveWindow() && !Access::transform(window).isIdentity() &&
                 source->shutdowns == 0,
             "rotation retains its live source association");
@@ -416,6 +431,8 @@ void frameSnapshotsAndTransforms() {
         "coalesced live frame delivery must eventually display the newest frame");
     require(Access::transformed(window).size() == QSize(40, 80),
             "new live frames retain the rotation instead of returning to an image");
+    require(watcher && Access::frameWatcher(window) == watcher,
+            "continuous transforms reuse one worker completion watcher");
     Access::command(window, QStringLiteral("flip_horizontal"));
     Access::command(window, QStringLiteral("flip_vertical"));
     require(window.isLiveWindow() && source->shutdowns == 0,
@@ -432,6 +449,52 @@ void frameSnapshotsAndTransforms() {
     require(source->shutdowns == 1 && peer.isVisible() && peerSource->shutdowns == 0,
             "closing one pin releases only its own source");
     peer.closeLiveWindow();
+}
+
+void liveFramesReplacePixelsWithoutEditingSetup() {
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    const QRect geometry = window.currentNativeGeometry();
+    auto& renderer = ScreenshotPinnedWindowTestAccess::renderer(window);
+    for (const auto color : {QColor(Qt::blue), QColor(Qt::transparent), QColor(Qt::green)}) {
+        source->publish(color);
+        wait(
+            [&] {
+                return !Access::frameProcessing(window) &&
+                       Access::original(window).pixelColor(0, 0) == color;
+            },
+            "live frames replace both opaque and transparent content");
+        const auto displayed = renderer.imageSourceSnapshot();
+        require(displayed.opacityMetadata && displayed.opacityMetadata->entries.isEmpty(),
+                "live frame installation does not scan pixel opacity on the GUI thread");
+        const auto samples = renderer.baseImageSources();
+        require(samples.size() == 1 &&
+                    samples.front().image.cacheKey() == displayed.materializedImage.cacheKey(),
+                "live sampling retains the current frame instead of the initial still image");
+        QImage raster(window.size(), QImage::Format_ARGB32_Premultiplied);
+        raster.fill(Qt::transparent);
+        window.render(&raster);
+        requireColorNear(raster.pixelColor(raster.rect().center()), color, 0,
+                         "live rendering clears old pixels when transparent frames arrive");
+        // The canvas clears transparency independently of the shell backdrop.
+        // Compare against the ordinary renderer to cover the complete paint result.
+        renderer.setImageSource(displayed);
+        QImage reference(window.size(), QImage::Format_ARGB32_Premultiplied);
+        reference.fill(Qt::transparent);
+        window.render(&reference);
+        require(imagesPixelAligned(raster, reference, {}, 0),
+                "the live update path preserves the ordinary renderer's pixels and alpha");
+        renderer.setPinnedLiveFrame(displayed);
+        require(window.currentNativeGeometry() == geometry,
+                "content-only frame replacement preserves the viewport geometry");
+    }
+    Access::convert(window);
+    wait([&] { return !window.isLiveWindow(); }, "live streaming can return to editable content");
+    const auto converted = renderer.imageSourceSnapshot();
+    require(converted.imageIsOpaque(converted.materializedImage),
+            "conversion restores ordinary image metadata and editing setup");
+    window.close();
 }
 
 void deferredCopyRetainsItsActionTimeFrame() {
@@ -1129,6 +1192,7 @@ void nativePresentationPreservesShell() {
 } // namespace live_pinned_tests
 
 void pinnedLiveWindowTests() {
+    live_pinned_tests::liveFramesReplacePixelsWithoutEditingSetup();
     live_pinned_tests::nativePresentationPreservesShell();
     live_pinned_tests::contextMenuMatchesOrdinaryContent();
     live_pinned_tests::retiredMenuDoesNotReceiveCurrentState();

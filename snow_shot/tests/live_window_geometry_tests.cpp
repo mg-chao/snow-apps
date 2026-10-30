@@ -1,4 +1,5 @@
 #include "../src/presentation/pinned/livewindownative_p.h"
+#include "../src/presentation/pinned/livewindowframecropper_p.h"
 
 #include <QCoreApplication>
 #include <cstdlib>
@@ -18,10 +19,58 @@ bool same(const QRectF& actual, const QRectF& expected) {
            qAbs(actual.width() - expected.width()) < tolerance &&
            qAbs(actual.height() - expected.height()) < tolerance;
 }
+
+void frameCropsPreservePixelsAndReuseReleasedStorage() {
+    using namespace snow_shot::presentation::live_window_detail;
+    QImage image(32, 24, QImage::Format_RGBA8888);
+    image.setColorSpace(QColorSpace::SRgb);
+    for (int y = 0; y < image.height(); ++y)
+        for (int x = 0; x < image.width(); ++x)
+            image.setPixelColor(x, y, QColor(x * 7, y * 9, 90, 128 + x));
+    const QRectF bounds(100, 200, 32, 24);
+    FrameCropper cropper;
+    const auto whole = cropper.crop(image, bounds, QRectF(0, 0, 32, 24), image.size());
+    require(whole.constBits() == image.constBits(), "A complete unscaled frame shares its pixels.");
+    const QRect region(3, 4, 8, 6);
+    auto first = cropper.crop(image, bounds, region, region.size());
+    auto second = cropper.crop(image, bounds, region.translated(1, 1), region.size());
+    require(first == image.copy(region) && second == image.copy(region.translated(1, 1)),
+            "Integral crops preserve exact source pixels, including alpha and row offsets.");
+    const auto* released = first.constBits();
+    first = {};
+    auto reused = cropper.crop(image, bounds, region.translated(2, 2), region.size());
+    require(reused.constBits() == released && reused == image.copy(region.translated(2, 2)),
+            "A released crop allocation is reused without detaching a retained reader.");
+    require(second == image.copy(region.translated(1, 1)),
+            "Reusing a crop never overwrites a frame still held by a reader.");
+    const auto padded = cropper.crop(image, bounds, QRectF(29, 21, 8, 6), region.size());
+    require(padded.size() == region.size() && padded.pixelColor(0, 0) == image.pixelColor(29, 21) &&
+                padded.pixelColor(3, 0).alpha() == 0 && padded.pixelColor(0, 3).alpha() == 0,
+            "A shrinking source leaves the missing crop edges transparent.");
+    const auto blank = cropper.crop(image, bounds, QRectF(40, 40, 8, 6), region.size());
+    require(blank.pixelColor(0, 0).alpha() == 0 && blank.pixelColor(7, 5).alpha() == 0,
+            "A crop outside the source clears every reused pixel.");
+    const QRectF fractional(1.25, 2.75, 10.5, 8.5);
+    const QSize scaled(21, 17);
+    const auto actual = cropper.crop(image, bounds, fractional, scaled);
+    QImage reference(scaled, QImage::Format_RGBA8888);
+    reference.fill(Qt::transparent);
+    reference.setColorSpace(image.colorSpace());
+    {
+        QPainter painter(&reference);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.drawImage(QRectF(QPointF(), scaled), image, fractional);
+    }
+    require(actual == reference, "Fractional and scaled crops retain smooth raster sampling.");
+    cropper.clear();
+    require(second == image.copy(region.translated(1, 1)),
+            "Releasing the crop pool preserves outstanding immutable frames.");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    frameCropsPreservePixelsAndReuseReleasedStorage();
     using snow_shot::presentation::live_window_detail::cropMapping;
     using snow_shot::presentation::live_window_detail::windowRelativeCrop;
     for (const QPoint& origin : {QPoint(118, 120), QPoint(-1800, -400)}) {

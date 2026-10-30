@@ -218,7 +218,8 @@ void run() {
         "native shell fixture resolves exactly one real source top-level window");
     const QRect selection(hit - QPoint(64, 40), QSize(128, 80));
     auto source = initializeSource(*target, selection);
-    require(colorMatches(source->initialFrame(), fixture.color),
+    const auto initialFrame = source->initialFrame();
+    require(colorMatches(initialFrame, fixture.color),
             "native pin initialization receives actual unedited source pixels");
     int stopped = 0;
     QObject::connect(source.get(), &Source::stopped, [&] { ++stopped; });
@@ -244,7 +245,7 @@ void run() {
                      "native live content must be composited underneath the Qt border");
     const int rim = qCeil(window.devicePixelRatioF());
     const QRect interior = shellPixels.rect().adjusted(rim, rim, -rim, -rim);
-    requirePinnedPixels(shellPixels.copy(interior), source->initialFrame().copy(interior), 0,
+    requirePinnedPixels(shellPixels.copy(interior), initialFrame.copy(interior), 0,
                         "live native content alignment");
     ScreenshotPinnedWindowTestAccess::shadowState(window, false, false);
     fixture.marker = false;

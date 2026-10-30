@@ -40,6 +40,8 @@
 #include <functional>
 #include <vector>
 
+template <typename T> class QFutureWatcher;
+
 namespace adqt::widgets {
 class AdButton;
 class AdContextMenu;
@@ -303,6 +305,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::shared_ptr<snow_shot::presentation::LiveWindowSource> m_liveSource;
     QLabel* m_liveStatusLabel = nullptr;
     QImage m_livePendingFrame;
+    QFutureWatcher<QImage>* m_liveFrameWatcher = nullptr;
+    QImage m_liveProcessingOriginal;
+    quint64 m_liveProcessingGeneration = 0;
+    std::optional<QTransform> m_requestedLiveTransform;
+    int m_requestedLiveQuarterTurns = 0;
     quint64 m_liveFrameGeneration = 0;
     bool m_liveFrameProcessing = false;
     bool m_livePresentationUpdatePending = false;
@@ -470,6 +477,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
     void applyImageTransform(const QTransform& transform, int quarterTurns);
+    bool commitImageTransformGeometry(const QTransform& transform, int quarterTurns);
     void commitPreparedAnimationTransform(const QTransform& transform, int quarterTurns,
                                           QImage original, QImage transformed, int frameIndex,
                                           quint64 token);

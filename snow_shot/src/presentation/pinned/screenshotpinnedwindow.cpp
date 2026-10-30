@@ -7329,7 +7329,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -7752,15 +7752,18 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
     if (!QTransform::quadToQuad(sourceQuad, targetQuad, combined)) {
         return;
     }
-    const int priorQuarterTurns =
-        m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns : m_quarterTurns;
+    const int priorQuarterTurns = m_requestedLiveTransform        ? m_requestedLiveQuarterTurns
+                                  : m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns
+                                                                  : m_quarterTurns;
     const int quarterTurns = ((priorQuarterTurns + quarterTurnDelta) % 4 + 4) % 4;
     applyImageTransform(normalizedImageTransform(combined, m_originalImage.size()), quarterTurns);
 }
 
 void ScreenshotPinnedWindow::resetImageTransform() {
     if (contentReplacementTransform().isIdentity() &&
-        (m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns : m_quarterTurns) == 0) {
+        (m_requestedLiveTransform        ? m_requestedLiveQuarterTurns
+         : m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns
+                                         : m_quarterTurns) == 0) {
         return;
     }
     if (m_originalImage.isNull()) {
@@ -7776,8 +7779,14 @@ void ScreenshotPinnedWindow::resetImageTransform() {
 }
 
 void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, int quarterTurns) {
-    if (isLiveWindow())
+    if (isLiveWindow()) {
         ++m_liveFrameGeneration;
+        m_requestedLiveTransform = transform;
+        m_requestedLiveQuarterTurns = quarterTurns;
+        m_automationRevision = snow_shot::presentation::nextAutomationRevision();
+        queueLiveFrame(m_originalImage);
+        return;
+    }
     if (m_animationPlayback) {
         m_requestedAnimationTransform = transform;
         m_requestedAnimationQuarterTurns = quarterTurns;
@@ -7806,6 +7815,19 @@ void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, in
             });
         return;
     }
+    if (!commitImageTransformGeometry(transform, quarterTurns))
+        return;
+    rebuildTransformedImage();
+    updateCanvasViewport();
+    updateControlsGeometry();
+    if (m_editController != nullptr) {
+        m_editController->updatePlacement();
+    }
+    schedulePersistence();
+}
+
+bool ScreenshotPinnedWindow::commitImageTransformGeometry(const QTransform& transform,
+                                                          int quarterTurns) {
     const bool dimensionsChange = (m_quarterTurns % 2) != (quarterTurns % 2);
     // Native size constraints need the proposed orientation during SetWindowPos.
     // Keep the rendered image unchanged until that geometry transaction succeeds.
@@ -7815,25 +7837,18 @@ void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, in
         const QRect nativeTarget = imageTransformGeometry(quarterTurns);
         m_preserveScaleForSettledGeometry = true;
         if (!applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform)) {
-            return;
+            return false;
         }
     }
     orientation.commit();
     preserveScale.commit();
     m_imageTransform = transform;
-    rebuildTransformedImage();
-    scheduleLivePresentation();
-    if (m_animationPlayback)
-        m_animationPlayback->setTransform(m_imageTransform);
-    updateCanvasViewport();
-    updateControlsGeometry();
-    if (m_editController != nullptr) {
-        m_editController->updatePlacement();
-    }
-    schedulePersistence();
+    return true;
 }
 
 QTransform ScreenshotPinnedWindow::contentReplacementTransform() const {
+    if (m_requestedLiveTransform)
+        return *m_requestedLiveTransform;
     return m_requestedAnimationTransform.value_or(m_imageTransform);
 }
 

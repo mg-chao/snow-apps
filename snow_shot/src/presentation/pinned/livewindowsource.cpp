@@ -1,12 +1,13 @@
 #include "snow_shot/presentation/livewindowsource.h"
 #include "livewindownative_p.h"
+#include "livewindowframecropper_p.h"
 #include "snow_capture.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QColorSpace>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QMetaObject>
-#include <QPainter>
 #include <QTimer>
 #include <QWidget>
 #include <atomic>
@@ -45,7 +46,6 @@ struct CapturedWindowFrame {
     quint64 requestGeneration = 0;
     bool duplicate = false;
     QRect initialDesktopRegion;
-    QRectF initialBounds;
     QRectF crop;
 };
 
@@ -88,6 +88,11 @@ class SharedWindowCapture final {
     ~SharedWindowCapture() {
         m_stopping = true;
         m_changed.notify_all();
+        {
+            std::lock_guard lock(m_streamMutex);
+            if (m_stream)
+                snow_capture_stream_stop(m_stream);
+        }
         if (m_worker.joinable())
             m_worker.join();
     }
@@ -137,6 +142,12 @@ class SharedWindowCapture final {
             fail();
             return;
         }
+        {
+            std::lock_guard lock(m_streamMutex);
+            m_stream = stream;
+            if (m_stopping)
+                snow_capture_stream_stop(stream);
+        }
         while (!m_stopping) {
             SnowCaptureStreamEvent event{};
             if (!snow_capture_stream_receive(stream, 50, &event) ||
@@ -161,6 +172,10 @@ class SharedWindowCapture final {
             }
             m_changed.notify_all();
         }
+        {
+            std::lock_guard lock(m_streamMutex);
+            m_stream = nullptr;
+        }
         snow_capture_stream_destroy(stream);
     }
     LiveWindowTarget m_target;
@@ -170,6 +185,8 @@ class SharedWindowCapture final {
     quint64 m_sequence = 0;
     QString m_error;
     std::atomic<bool> m_stopping{false};
+    std::mutex m_streamMutex;
+    SnowCaptureStream* m_stream = nullptr;
     std::thread m_worker;
 };
 
@@ -192,25 +209,281 @@ std::shared_ptr<SharedWindowCapture> sharedCapture(const LiveWindowTarget& targe
     return capture;
 }
 
-QImage croppedFrame(const CapturedWindowFrame& frame, const QRectF& crop, const QSize& pixels) {
-    if (frame.image.isNull() || frame.desktopBounds.isEmpty() || crop.isEmpty())
-        return {};
-    QImage result(pixels, QImage::Format_RGBA8888);
-    result.fill(Qt::transparent);
-    result.setColorSpace(frame.image.colorSpace());
-    const auto mapping = live_window_detail::cropMapping(
-        crop, QRectF(QPointF(), frame.desktopBounds.size()), QRectF(QPointF(), pixels));
-    if (mapping.source.isEmpty())
-        return result;
-    const qreal scaleX = frame.image.width() / frame.desktopBounds.width();
-    const qreal scaleY = frame.image.height() / frame.desktopBounds.height();
-    const QRectF source(mapping.source.x() * scaleX, mapping.source.y() * scaleY,
-                        mapping.source.width() * scaleX, mapping.source.height() * scaleY);
-    QPainter painter(&result);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.drawImage(mapping.destination, frame.image, source);
-    return result;
+class SharedWindowMonitor final : public QObject,
+                                  public std::enable_shared_from_this<SharedWindowMonitor> {
+    Q_OBJECT
+  public:
+    explicit SharedWindowMonitor(const LiveWindowTarget& target)
+        : m_native(live_window_detail::createNativeWindowMonitor(target)) {}
+    ~SharedWindowMonitor() override {
+        if (m_native)
+            m_native->changed = {};
+    }
+    bool initialize(QString* error) {
+        if (!m_native || !m_native->initialize(error))
+            return false;
+        m_state = m_native->inspect();
+        m_native->changed = [this] { refresh(); };
+        m_timer.setInterval(m_native->hasLifecycleNotifications() ? 2000 : 200);
+        connect(&m_timer, &QTimer::timeout, this, &SharedWindowMonitor::refresh);
+        m_timer.start();
+        return true;
+    }
+    const live_window_detail::NativeState& state() const {
+        return m_state;
+    }
+    void refresh() {
+        const auto keepAlive = shared_from_this();
+        if (m_state.state == LiveWindowState::Closed)
+            return;
+        auto state = m_native->inspect();
+        if (state.state == m_state.state && state.desktopBounds == m_state.desktopBounds &&
+            state.error == m_state.error)
+            return;
+        m_state = std::move(state);
+        if (m_state.state == LiveWindowState::Closed)
+            m_timer.stop();
+        emit changed();
+    }
+
+  signals:
+    void changed();
+
+  private:
+    std::unique_ptr<live_window_detail::NativeWindowMonitor> m_native;
+    live_window_detail::NativeState m_state;
+    QTimer m_timer;
+};
+
+std::shared_ptr<SharedWindowMonitor> sharedMonitor(const LiveWindowTarget& target, QString* error) {
+    // Sources and native observers belong to the GUI thread. Only capture pixels
+    // cross into the worker; monitoring is shared independently of presentation.
+    static std::map<std::pair<quintptr, qint64>, std::weak_ptr<SharedWindowMonitor>> monitors;
+    const auto key = std::make_pair(target.nativeId, target.processId);
+    auto monitor = monitors[key].lock();
+    if (!monitor || monitor->state().state == LiveWindowState::Closed) {
+        monitor = std::make_shared<SharedWindowMonitor>(target);
+        if (!monitor->initialize(error))
+            return {};
+        monitors[key] = monitor;
+    }
+    for (auto iterator = monitors.begin(); iterator != monitors.end();) {
+        if (iterator->second.expired())
+            iterator = monitors.erase(iterator);
+        else
+            ++iterator;
+    }
+    return monitor;
 }
+
+// The worker owns no QObject. Closing a pin invalidates its dispatch target on
+// the GUI thread; in-flight native capture and stream destruction can then finish
+// without retaining or joining the shell.
+class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureWorker> {
+  public:
+    LiveCaptureWorker(LiveWindowTarget target, QRect selection, QObject* receiver,
+                      std::function<void(CapturedWindowFrame)> deliver,
+                      std::function<void(const QString&)> fail)
+        : m_target(std::move(target)), m_selection(selection), m_receiver(receiver),
+          m_deliver(std::move(deliver)), m_fail(std::move(fail)) {}
+    void start() {
+        std::thread([self = shared_from_this()] { self->captureLoop(); }).detach();
+    }
+    void stop() {
+        {
+            // Serialize invokeMethod with invalidation before QObject destruction.
+            std::lock_guard lock(m_dispatchMutex);
+            m_receiver = nullptr;
+            m_deliver = {};
+            m_fail = {};
+        }
+        {
+            std::lock_guard lock(m_workMutex);
+            m_retirementActivity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
+            m_stopped = true;
+            m_continuous = false;
+            m_captureRequested = false;
+        }
+        {
+            std::lock_guard lock(m_frameMutex);
+            m_queuedFrame = {};
+        }
+        m_workChanged.notify_all();
+    }
+    quint64 requestCapture() {
+        std::lock_guard lock(m_workMutex);
+        m_captureRequested = true;
+        m_workChanged.notify_all();
+        return ++m_requestGeneration;
+    }
+    void setContinuous(bool value) {
+        std::lock_guard lock(m_workMutex);
+        m_continuous = value;
+        m_workChanged.notify_all();
+    }
+    void cancelRequest() {
+        std::lock_guard lock(m_workMutex);
+        m_captureRequested = false;
+    }
+
+  private:
+    void postFailure(const QString& error) {
+        std::lock_guard lock(m_dispatchMutex);
+        if (m_receiver) {
+            QMetaObject::invokeMethod(
+                m_receiver,
+                [self = shared_from_this(), fail = m_fail, error] {
+                    if (!self->m_stopped)
+                        fail(error);
+                },
+                Qt::QueuedConnection);
+        }
+    }
+    void captureLoop() {
+        std::shared_ptr<SharedWindowCapture> capture;
+        live_window_detail::FrameCropper cropper;
+        quint64 sequence = 0;
+        quint64 lastRequest = 0;
+        QRectF initialBounds;
+        QRect initialRegion;
+        QRectF crop;
+        QSize cropPixels;
+        auto requestDeadline = std::chrono::steady_clock::time_point::max();
+        while (!m_stopped) {
+            bool requested = false;
+            quint64 generation = 0;
+            {
+                std::unique_lock lock(m_workMutex);
+                if (!m_continuous && !m_captureRequested) {
+                    lock.unlock();
+                    capture.reset();
+                    cropper.clear();
+                    lock.lock();
+                    m_workChanged.wait(
+                        lock, [this] { return m_stopped || m_continuous || m_captureRequested; });
+                }
+                if (m_stopped)
+                    break;
+                if (!m_continuous && !m_captureRequested)
+                    continue;
+                // Coalesce at the shared raw-frame broker before allocating or
+                // cropping another image while the GUI still has a delivery queued.
+                m_workChanged.wait(lock, [this] { return m_stopped || !m_deliveryQueued; });
+                if (m_stopped)
+                    break;
+                if (!m_continuous && !m_captureRequested)
+                    continue;
+                requested = m_captureRequested;
+                generation = m_requestGeneration;
+            }
+            if (!capture) {
+                capture = sharedCapture(m_target);
+                sequence = 0;
+            }
+            if (requested && lastRequest != generation) {
+                lastRequest = generation;
+                // Even an unchanged source produces a new stream observation.
+                // A fresh action waits beyond the broker's current observation.
+                sequence = capture->sequence();
+                requestDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            }
+            QString error;
+            auto frame = capture->receive(&sequence, &error);
+            if (!error.isEmpty() ||
+                (requested && std::chrono::steady_clock::now() >= requestDeadline)) {
+                capture.reset();
+                {
+                    std::lock_guard lock(m_workMutex);
+                    m_captureRequested = false;
+                    m_continuous = false;
+                }
+                if (error.isEmpty())
+                    error = liveText(QT_TRANSLATE_NOOP(
+                        "LiveWindowSource",
+                        "The window content is temporarily unavailable. Retrying…"));
+                postFailure(error);
+                continue;
+            }
+            if (frame.image.isNull() || (frame.duplicate && !requested && !crop.isEmpty()))
+                continue;
+            if (crop.isEmpty()) {
+                initialBounds = frame.desktopBounds;
+                const QRectF intersection = QRectF(m_selection).intersected(initialBounds);
+                if (intersection.isEmpty()) {
+                    {
+                        std::lock_guard lock(m_workMutex);
+                        m_captureRequested = false;
+                        m_continuous = false;
+                    }
+                    capture.reset();
+                    postFailure(liveText(QT_TRANSLATE_NOOP(
+                        "LiveWindowSource",
+                        "The selection does not intersect the selected window.")));
+                    continue;
+                }
+                initialRegion = intersection.toAlignedRect();
+                crop = intersection.translated(-initialBounds.topLeft());
+                cropPixels = QSize(
+                    qMax(1, qRound(crop.width() * frame.image.width() / initialBounds.width())),
+                    qMax(1, qRound(crop.height() * frame.image.height() / initialBounds.height())));
+            }
+            frame.image = cropper.crop(frame.image, frame.desktopBounds, crop, cropPixels);
+            frame.initialDesktopRegion = initialRegion;
+            frame.crop = crop;
+            frame.requestGeneration = generation;
+            {
+                std::lock_guard lock(m_workMutex);
+                if (generation == m_requestGeneration)
+                    m_captureRequested = false;
+            }
+            bool queueDelivery = false;
+            {
+                std::lock_guard lock(m_frameMutex);
+                m_queuedFrame = std::move(frame);
+                queueDelivery = !m_deliveryQueued.exchange(true);
+            }
+            if (queueDelivery) {
+                const auto self = shared_from_this();
+                std::lock_guard dispatchLock(m_dispatchMutex);
+                if (m_receiver) {
+                    QMetaObject::invokeMethod(
+                        m_receiver,
+                        [self, deliver = m_deliver] {
+                            CapturedWindowFrame frame;
+                            {
+                                std::lock_guard lock(self->m_frameMutex);
+                                frame = std::move(self->m_queuedFrame);
+                            }
+                            if (!self->m_stopped)
+                                deliver(std::move(frame));
+                            {
+                                std::lock_guard lock(self->m_workMutex);
+                                self->m_deliveryQueued = false;
+                            }
+                            self->m_workChanged.notify_all();
+                        },
+                        Qt::QueuedConnection);
+                }
+            }
+        }
+    }
+    LiveWindowTarget m_target;
+    QRect m_selection;
+    std::mutex m_dispatchMutex;
+    QObject* m_receiver;
+    snow_shot::runtime::RuntimeActivityLease m_retirementActivity;
+    std::function<void(CapturedWindowFrame)> m_deliver;
+    std::function<void(const QString&)> m_fail;
+    std::atomic<bool> m_stopped{false};
+    std::mutex m_workMutex;
+    std::condition_variable m_workChanged;
+    bool m_continuous = false;
+    bool m_captureRequested = false;
+    quint64 m_requestGeneration = 0;
+    std::mutex m_frameMutex;
+    CapturedWindowFrame m_queuedFrame;
+    std::atomic<bool> m_deliveryQueued{false};
+};
 
 class CapturedLiveWindowSource final
     : public LiveWindowSource,
@@ -218,11 +491,10 @@ class CapturedLiveWindowSource final
   public:
     CapturedLiveWindowSource(LiveWindowTarget target, QRect selection)
         : m_target(std::move(target)), m_selection(selection),
-          m_native(live_window_detail::createNativeWindow(m_target)) {
-        if (m_native)
-            m_native->changed = [this] { inspectSource(); };
-        m_inspectTimer.setInterval(200);
-        connect(&m_inspectTimer, &QTimer::timeout, this, [this] { inspectSource(); });
+          m_native(live_window_detail::createNativeWindowPresentation(m_target)) {
+        m_retryTimer.setSingleShot(true);
+        m_retryTimer.setTimerType(Qt::PreciseTimer);
+        connect(&m_retryTimer, &QTimer::timeout, this, [this] { inspectSource(); });
     }
     ~CapturedLiveWindowSource() override {
         shutdown();
@@ -237,19 +509,32 @@ class CapturedLiveWindowSource final
                                          "The live window display could not be initialized.")));
             return;
         }
+        if (m_worker)
+            m_worker->stop();
+        m_worker.reset();
+        if (m_monitor)
+            disconnect(m_monitor.get(), nullptr, this, nullptr);
         QString error;
-        if (!m_native || !m_native->initialize(&error)) {
+        m_monitor = sharedMonitor(m_target, &error);
+        if (!m_monitor) {
             completion(false, error);
             return;
         }
         m_initializing = true;
+        connect(m_monitor.get(), &SharedWindowMonitor::changed, this, [this] { inspectSource(); });
         m_initializationCompletion = std::move(completion);
-        m_worker = std::thread([this] { captureLoop(); });
-        m_inspectTimer.start();
+        m_worker = std::make_shared<LiveCaptureWorker>(
+            m_target, m_selection, this,
+            [this](CapturedWindowFrame frame) { acceptFrame(std::move(frame)); },
+            [this](const QString& failure) { failCapture(failure); });
+        m_worker->start();
         requestCapture();
     }
     QImage initialFrame() const override {
         return m_initialFrame;
+    }
+    void releaseInitialFrame() override {
+        m_initialFrame = {};
     }
     QRect initialDesktopRegion() const override {
         return m_initialDesktopRegion;
@@ -282,7 +567,7 @@ class CapturedLiveWindowSource final
             presentation.imageTransform.isIdentity() && m_state == LiveWindowState::Live;
         if (native) {
             m_frameHandoffPending = false;
-            if (!m_native->present(presentation, m_crop, m_initialBounds, error)) {
+            if (!m_native->present(presentation, m_crop, m_monitor->state().desktopBounds, error)) {
                 setState(LiveWindowState::Unavailable, error ? *error : QString());
                 if (m_stopped)
                     return false;
@@ -302,7 +587,7 @@ class CapturedLiveWindowSource final
                     requestCapture();
                 }
             } else {
-                m_native->stopPresentation();
+                stopNativePresentation();
             }
         }
         if (m_stopped)
@@ -323,23 +608,17 @@ class CapturedLiveWindowSource final
         const auto keepAlive = weak_from_this().lock();
         if (m_stopped.exchange(true))
             return;
-        m_inspectTimer.stop();
-        {
-            std::lock_guard lock(m_workMutex);
-            m_continuous = false;
-            m_captureRequested = false;
-        }
-        m_workChanged.notify_all();
-        if (m_worker.joinable())
-            m_worker.join();
+        m_retryTimer.stop();
+        if (m_monitor)
+            disconnect(m_monitor.get(), nullptr, this, nullptr);
+        if (m_worker)
+            m_worker->stop();
+        m_worker.reset();
         if (m_native)
             m_native->stopPresentation();
         m_native.reset();
+        m_monitor.reset();
         m_initialFrame = {};
-        {
-            std::lock_guard lock(m_frameMutex);
-            m_queuedFrame = {};
-        }
         const auto pending = std::exchange(m_pendingFrames, {});
         for (const auto& pendingFrame : pending)
             pendingFrame.second(
@@ -353,12 +632,20 @@ class CapturedLiveWindowSource final
     }
 
   private:
+    void stopNativePresentation() {
+        if (m_native)
+            m_native->stopPresentation();
+    }
     bool event(QEvent* event) override {
         const auto keepAlive = weak_from_this().lock();
         if (event && event->type() == QEvent::LanguageChange && !m_stopped) {
             QString error;
-            if (m_state == LiveWindowState::Unavailable && m_native) {
-                const auto current = m_native->inspect();
+            if (m_state == LiveWindowState::Unavailable && m_monitor) {
+                const auto monitor = m_monitor;
+                monitor->refresh();
+                if (m_stopped)
+                    return LiveWindowSource::event(event);
+                const auto current = monitor->state();
                 if (current.state == LiveWindowState::Unavailable)
                     error = current.error;
             }
@@ -376,19 +663,17 @@ class CapturedLiveWindowSource final
     }
     void inspectSource() {
         const auto keepAlive = shared_from_this();
-        if (m_stopped || !m_native || m_state == LiveWindowState::Closed)
+        if (m_stopped || !m_monitor || m_state == LiveWindowState::Closed)
             return;
-        const auto current = m_native->inspect();
+        const auto current = m_monitor->state();
         if (current.state != LiveWindowState::Live) {
             m_retryPending = false;
             const bool native = usesNativePresentation();
-            m_native->stopPresentation();
+            stopNativePresentation();
             m_frameHandoffPending = false;
             setContinuous(false);
-            {
-                std::lock_guard lock(m_workMutex);
-                m_captureRequested = false;
-            }
+            if (m_worker)
+                m_worker->cancelRequest();
             setState(current.state, current.error);
             if (m_stopped)
                 return;
@@ -422,7 +707,7 @@ class CapturedLiveWindowSource final
 #ifdef Q_OS_WIN
         if (m_presentation.owner && m_presentation.imageTransform.isIdentity()) {
             QString error;
-            if (!m_native->present(m_presentation, m_crop, m_initialBounds, &error)) {
+            if (!m_native->present(m_presentation, m_crop, current.desktopBounds, &error)) {
                 setState(LiveWindowState::Unavailable, error);
                 if (m_stopped)
                     return;
@@ -433,21 +718,11 @@ class CapturedLiveWindowSource final
 #endif
     }
     quint64 requestCapture() {
-        quint64 generation = 0;
-        {
-            std::lock_guard lock(m_workMutex);
-            m_captureRequested = true;
-            generation = ++m_requestGeneration;
-        }
-        m_workChanged.notify_all();
-        return generation;
+        return m_worker->requestCapture();
     }
     void setContinuous(bool continuous) {
-        {
-            std::lock_guard lock(m_workMutex);
-            m_continuous = continuous;
-        }
-        m_workChanged.notify_all();
+        if (m_worker)
+            m_worker->setContinuous(continuous);
     }
     void acceptFrame(CapturedWindowFrame frame) {
         const auto keepAlive = shared_from_this();
@@ -455,7 +730,11 @@ class CapturedLiveWindowSource final
             return;
         m_retryPending = false;
         if (!m_initialized || m_state != LiveWindowState::Live) {
-            const auto nativeState = m_native->inspect();
+            const auto monitor = m_monitor;
+            monitor->refresh();
+            if (m_stopped)
+                return;
+            const auto nativeState = monitor->state();
             if (nativeState.state != LiveWindowState::Live) {
                 setState(nativeState.state, nativeState.error);
                 if (m_stopped)
@@ -467,7 +746,6 @@ class CapturedLiveWindowSource final
             }
         }
         if (!m_initialized) {
-            m_initialBounds = frame.initialBounds;
             m_initialDesktopRegion = frame.initialDesktopRegion;
             m_crop = frame.crop;
             m_initialFrame = frame.image;
@@ -503,7 +781,7 @@ class CapturedLiveWindowSource final
             return;
         if (m_frameHandoffPending && !m_presentation.imageTransform.isIdentity()) {
             m_frameHandoffPending = false;
-            m_native->stopPresentation();
+            stopNativePresentation();
             emit nativePresentationChanged(false);
         }
         if (m_stopped)
@@ -535,13 +813,17 @@ class CapturedLiveWindowSource final
         scheduleRetry();
         setContinuous(false);
         const bool native = usesNativePresentation();
-        m_native->stopPresentation();
+        stopNativePresentation();
         m_frameHandoffPending = false;
         if (native)
             emit nativePresentationChanged(false);
         if (m_stopped)
             return;
-        const auto state = m_native->inspect();
+        const auto monitor = m_monitor;
+        monitor->refresh();
+        if (m_stopped)
+            return;
+        const auto state = monitor->state();
         setState(state.state == LiveWindowState::Live ? LiveWindowState::Unavailable : state.state,
                  error);
         if (m_stopped)
@@ -561,135 +843,18 @@ class CapturedLiveWindowSource final
         constexpr int delays[] = {500, 1000, 2000, 5000};
         m_retryAt = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds(delays[qMin(m_retryAttempt, 3)]);
+        m_retryTimer.start(delays[qMin(m_retryAttempt, 3)]);
         m_retryAttempt = qMin(m_retryAttempt + 1, 3);
-    }
-    void captureLoop() {
-        std::shared_ptr<SharedWindowCapture> capture;
-        quint64 sequence = 0;
-        quint64 lastRequest = 0;
-        QRectF initialBounds;
-        QRect initialRegion;
-        QRectF crop;
-        QSize cropPixels;
-        auto requestDeadline = std::chrono::steady_clock::time_point::max();
-        while (!m_stopped) {
-            bool requested = false;
-            quint64 generation = 0;
-            {
-                std::unique_lock lock(m_workMutex);
-                if (!m_continuous && !m_captureRequested) {
-                    lock.unlock();
-                    capture.reset();
-                    lock.lock();
-                    m_workChanged.wait_for(lock, std::chrono::milliseconds(100), [this] {
-                        return m_stopped || m_continuous || m_captureRequested;
-                    });
-                }
-                if (m_stopped)
-                    break;
-                if (!m_continuous && !m_captureRequested)
-                    continue;
-                requested = m_captureRequested;
-                generation = m_requestGeneration;
-            }
-            if (!capture) {
-                capture = sharedCapture(m_target);
-                sequence = 0;
-            }
-            if (requested && lastRequest != generation) {
-                lastRequest = generation;
-                // Even an unchanged source produces a new stream observation.
-                // A fresh action waits beyond the broker's current observation.
-                sequence = capture->sequence();
-                requestDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-            }
-            QString error;
-            auto frame = capture->receive(&sequence, &error);
-            if (!error.isEmpty() ||
-                (requested && std::chrono::steady_clock::now() >= requestDeadline)) {
-                capture.reset();
-                {
-                    std::lock_guard lock(m_workMutex);
-                    m_captureRequested = false;
-                    m_continuous = false;
-                }
-                if (error.isEmpty())
-                    error = liveText(QT_TRANSLATE_NOOP(
-                        "LiveWindowSource",
-                        "The window content is temporarily unavailable. Retrying…"));
-                QMetaObject::invokeMethod(
-                    this, [this, error] { failCapture(error); }, Qt::QueuedConnection);
-                continue;
-            }
-            if (frame.image.isNull() || (frame.duplicate && !requested && !crop.isEmpty()))
-                continue;
-            if (crop.isEmpty()) {
-                initialBounds = frame.desktopBounds;
-                const QRectF intersection = QRectF(m_selection).intersected(initialBounds);
-                if (intersection.isEmpty()) {
-                    {
-                        std::lock_guard lock(m_workMutex);
-                        m_captureRequested = false;
-                        m_continuous = false;
-                    }
-                    capture.reset();
-                    QMetaObject::invokeMethod(
-                        this,
-                        [this] {
-                            failCapture(liveText(QT_TRANSLATE_NOOP(
-                                "LiveWindowSource",
-                                "The selection does not intersect the selected window.")));
-                        },
-                        Qt::QueuedConnection);
-                    continue;
-                }
-                initialRegion = intersection.toAlignedRect();
-                crop = intersection.translated(-initialBounds.topLeft());
-                cropPixels = QSize(
-                    qMax(1, qRound(crop.width() * frame.image.width() / initialBounds.width())),
-                    qMax(1, qRound(crop.height() * frame.image.height() / initialBounds.height())));
-            }
-            frame.image = croppedFrame(frame, crop, cropPixels);
-            frame.initialBounds = initialBounds;
-            frame.initialDesktopRegion = initialRegion;
-            frame.crop = crop;
-            frame.requestGeneration = generation;
-            {
-                std::lock_guard lock(m_workMutex);
-                if (generation == m_requestGeneration)
-                    m_captureRequested = false;
-            }
-            bool queueDelivery = false;
-            {
-                std::lock_guard lock(m_frameMutex);
-                m_queuedFrame = std::move(frame);
-                queueDelivery = !m_deliveryQueued.exchange(true);
-            }
-            if (queueDelivery) {
-                QMetaObject::invokeMethod(
-                    this,
-                    [this] {
-                        CapturedWindowFrame frame;
-                        {
-                            std::lock_guard lock(m_frameMutex);
-                            frame = std::move(m_queuedFrame);
-                            m_deliveryQueued = false;
-                        }
-                        acceptFrame(std::move(frame));
-                    },
-                    Qt::QueuedConnection);
-            }
-        }
     }
     LiveWindowTarget m_target;
     QRect m_selection;
-    std::unique_ptr<live_window_detail::NativeWindow> m_native;
-    QTimer m_inspectTimer;
+    std::unique_ptr<live_window_detail::NativeWindowPresentation> m_native;
+    std::shared_ptr<SharedWindowMonitor> m_monitor;
+    QTimer m_retryTimer;
     InitializationCompletion m_initializationCompletion;
     QVector<std::pair<quint64, FrameCompletion>> m_pendingFrames;
     QImage m_initialFrame;
     QRect m_initialDesktopRegion;
-    QRectF m_initialBounds;
     QRectF m_crop;
     LiveWindowPresentation m_presentation;
     LiveWindowState m_state = LiveWindowState::Initializing;
@@ -701,15 +866,7 @@ class CapturedLiveWindowSource final
     int m_retryAttempt = 0;
     std::chrono::steady_clock::time_point m_retryAt = std::chrono::steady_clock::now();
     std::atomic<bool> m_stopped{false};
-    std::thread m_worker;
-    std::mutex m_workMutex;
-    std::condition_variable m_workChanged;
-    bool m_continuous = false;
-    bool m_captureRequested = false;
-    quint64 m_requestGeneration = 0;
-    std::mutex m_frameMutex;
-    CapturedWindowFrame m_queuedFrame;
-    std::atomic<bool> m_deliveryQueued{false};
+    std::shared_ptr<LiveCaptureWorker> m_worker;
 };
 } // namespace
 
@@ -720,3 +877,5 @@ std::shared_ptr<LiveWindowSource> createLiveWindowSource(const LiveWindowTarget&
     return std::make_shared<CapturedLiveWindowSource>(target, selection);
 }
 } // namespace snow_shot::presentation
+
+#include "livewindowsource.moc"

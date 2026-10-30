@@ -77,6 +77,8 @@ bool ScreenshotPinnedWindow::initializeLivePresentation(QString* error) {
     reloadPinnedWindowShortcuts();
     const bool result = synchronizeLivePresentation(error);
     updateLiveState();
+    if (result && m_liveSource && !m_closing)
+        m_liveSource->releaseInitialFrame();
     return result;
 }
 
@@ -172,28 +174,42 @@ void ScreenshotPinnedWindow::queueLiveFrame(QImage frame) {
     m_livePendingFrame = std::move(frame);
     if (m_liveFrameProcessing)
         return;
-    m_liveFrameProcessing = true;
     QImage original = std::exchange(m_livePendingFrame, {});
-    const QTransform transform = m_imageTransform;
-    const quint64 generation = m_liveFrameGeneration;
-    auto* watcher = new QFutureWatcher<QImage>(this);
-    connect(watcher, &QFutureWatcher<QImage>::finished, this,
-            [this, watcher, original, generation] {
-                QImage transformed = watcher->result();
-                watcher->deleteLater();
-                m_liveFrameProcessing = false;
-                if (m_liveSource && !m_closing && generation == m_liveFrameGeneration &&
-                    !transformed.isNull())
-                    installLiveFrame(original, std::move(transformed));
-                if (!m_livePendingFrame.isNull())
-                    queueLiveFrame(std::exchange(m_livePendingFrame, {}));
-            });
-    watcher->setFuture(QtConcurrent::run([original, transform] {
+    const QTransform transform = m_requestedLiveTransform.value_or(m_imageTransform);
+    if (transform.isIdentity()) {
+        installLiveFrame(original, original);
+        return;
+    }
+    if (!m_liveFrameWatcher) {
+        m_liveFrameWatcher = new QFutureWatcher<QImage>(this);
+        connect(m_liveFrameWatcher, &QFutureWatcher<QImage>::finished, this, [this] {
+            QImage transformed = m_liveFrameWatcher->future().takeResult();
+            QImage original = std::exchange(m_liveProcessingOriginal, {});
+            m_liveFrameProcessing = false;
+            if (m_liveSource && !m_closing && m_liveProcessingGeneration == m_liveFrameGeneration &&
+                !transformed.isNull())
+                installLiveFrame(std::move(original), std::move(transformed));
+            if (!m_livePendingFrame.isNull())
+                queueLiveFrame(std::exchange(m_livePendingFrame, {}));
+        });
+    }
+    m_liveFrameProcessing = true;
+    m_liveProcessingOriginal = original;
+    m_liveProcessingGeneration = m_liveFrameGeneration;
+    m_liveFrameWatcher->setFuture(QtConcurrent::run([original, transform] {
         return snowCanvasTransformImage(original, transform, Qt::SmoothTransformation);
     }));
 }
 
 void ScreenshotPinnedWindow::installLiveFrame(QImage original, QImage transformed) {
+    const bool transformChanged = m_requestedLiveTransform.has_value();
+    if (transformChanged) {
+        const auto transform = *std::exchange(m_requestedLiveTransform, {});
+        if (!commitImageTransformGeometry(transform, m_requestedLiveQuarterTurns))
+            return;
+    }
+    const QRectF previousBackground = m_backgroundCanvasRect;
+    const QRectF previousSurface = m_resultSurfaceCanvasRect;
     m_originalImage = std::move(original);
     m_transformedImage = std::move(transformed);
     m_originalPixelSize = m_originalImage.size();
@@ -205,12 +221,17 @@ void ScreenshotPinnedWindow::installLiveFrame(QImage original, QImage transforme
                QSizeF(m_transformedImage.width() * scaleX, m_transformedImage.height() * scaleY));
     m_resultSurfaceCanvasRect = m_backgroundCanvasRect;
     m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
-    m_screenshotRenderer->setImageSource(m_imageSource);
-    m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect, m_resultSurfaceCanvasRect,
-                                                 m_resultStyle);
-    updateCanvasViewport();
-    if (m_canvas)
-        m_canvas->update();
+    m_screenshotRenderer->setPinnedLiveFrame(m_imageSource);
+    if (transformChanged || previousBackground != m_backgroundCanvasRect ||
+        previousSurface != m_resultSurfaceCanvasRect) {
+        m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect,
+                                                     m_resultSurfaceCanvasRect, m_resultStyle);
+        updateCanvasViewport();
+    }
+    if (transformChanged) {
+        scheduleLivePresentation();
+        updateControlsGeometry();
+    }
 }
 
 ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindowOpacity) {
@@ -254,8 +275,13 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
             result.setColorSpace(transformed.colorSpace());
             QPainter painter(&result);
             painter.setRenderHint(QPainter::SmoothPixmapTransform);
-            painter.setOpacity(opacity);
             painter.drawImage(QRect(QPoint(), output), transformed);
+            if (opacity < 1.0) {
+                // Match ordinary pinned exports. Applying painter opacity during
+                // scaled sampling quantizes alpha twice on some raster backends.
+                painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                painter.fillRect(result.rect(), QColor(0, 0, 0, qRound(opacity * 255.0)));
+            }
             return result;
         },
         {}, placement, appearance);
@@ -292,13 +318,14 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
     m_liveSnapshotPending = true;
     const QTransform transform = m_imageTransform;
     const QSize size = authoritativeContentNativeGeometry().size();
+    const quint64 generation = m_liveFrameGeneration;
     requestLiveSnapshot(
-        [this, transform, size](QImage image, const QString& error) {
+        [this, transform, size, generation](QImage image, const QString& error) {
             m_liveSnapshotPending = false;
             if (m_closing || !m_liveSource)
                 return;
             if (!image.isNull() && error.isEmpty() && liveFrameAvailable() &&
-                transform == m_imageTransform &&
+                generation == m_liveFrameGeneration && transform == m_imageTransform &&
                 size == authoritativeContentNativeGeometry().size()) {
                 finishLiveConversion(std::move(image));
             } else if (liveFrameAvailable()) {
@@ -320,6 +347,7 @@ void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
     const QRect geometry = authoritativeContentNativeGeometry();
     ++m_liveFrameGeneration;
     m_livePendingFrame = {};
+    m_requestedLiveTransform.reset();
     m_imageTransform.reset();
     m_quarterTurns = 0;
     m_canvasSourceRect = QRectF(QPointF(), QSizeF(geometry.size()));
@@ -329,6 +357,7 @@ void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
     installLiveFrame(image, image);
     stopLiveSource();
     m_liveSource.reset();
+    m_screenshotRenderer->setImageSource(m_imageSource);
     m_liveNativePresentation = false;
     if (m_liveStatusLabel)
         m_liveStatusLabel->hide();
@@ -384,6 +413,8 @@ void ScreenshotPinnedWindow::editLiveImage() {
 void ScreenshotPinnedWindow::stopLiveSource() {
     ++m_liveFrameGeneration;
     m_livePendingFrame = {};
+    m_liveProcessingOriginal = {};
+    m_requestedLiveTransform.reset();
     if (m_liveSource) {
         disconnect(m_liveSource.get(), nullptr, this, nullptr);
         m_liveSource->shutdown();

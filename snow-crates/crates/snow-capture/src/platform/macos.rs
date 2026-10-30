@@ -207,7 +207,7 @@ struct MacCapturer {
     session: DesktopSession,
     options: CaptureOptions,
     transform: DesktopTransform,
-    cpu: Option<snow_media::CpuFrame>,
+    cached_frame: Option<Frame>,
 }
 impl MacCapturer {
     fn new(target: CaptureTarget, options: CaptureOptions) -> CaptureResult<Self> {
@@ -225,7 +225,7 @@ impl MacCapturer {
             session,
             options,
             transform,
-            cpu: None,
+            cached_frame: None,
         })
     }
 }
@@ -292,28 +292,27 @@ impl MonitorCapturer for MacCapturer {
         } else {
             self.session.snapshot().map_err(map_error)?
         };
-        let mut frame = reuse.unwrap_or_else(Frame::empty);
         let swap = self.options.output_pixel_format == CapturePixelFormat::Rgba8;
-        if native.duplicate
-            && let Some(cpu) = self.cpu.as_ref()
-        {
-            frame.prepare_for_overwrite(
-                cpu.size.width,
-                cpu.size.height,
-                self.options.output_pixel_format,
-            )?;
-            copy_cpu_pixels(cpu, &mut frame)?;
+        let size = native.image.size();
+        let mut frame;
+        if let Some(cached) = take_duplicate_frame(
+            &mut self.cached_frame,
+            native.duplicate,
+            native.generation,
+            size,
+        ) {
+            // Only metadata changes for a new observation of unchanged pixels.
+            // Frame clones share immutable storage and detach on future writes.
+            frame = cached;
         } else {
-            let size = native.image.size();
+            frame = reuse.unwrap_or_else(Frame::empty);
             frame.prepare_for_overwrite(
                 size.width,
                 size.height,
                 self.options.output_pixel_format,
             )?;
             match native.image.copy_packed(frame.as_mut_bytes(), swap) {
-                Ok(()) => {
-                    self.cpu = native.duplicate.then(|| cached_output(&frame));
-                }
+                Ok(()) => {}
                 Err(snow_media::macos::PixelBufferError::Conversion(_)) => {
                     let cpu = native
                         .image
@@ -323,7 +322,6 @@ impl MonitorCapturer for MacCapturer {
                     if swap {
                         snow_media::convert::swap_red_blue(frame.as_mut_bytes());
                     }
-                    self.cpu = native.duplicate.then(|| cached_output(&frame));
                 }
                 Err(error) => return Err(CaptureError::platform(anyhow::anyhow!(error))),
             }
@@ -348,37 +346,30 @@ impl MonitorCapturer for MacCapturer {
         frame.metadata.capture_transform = Some(native.transform);
         frame.metadata.backend_kind = CaptureBackendKind::ScreenCaptureKit;
         frame.metadata.is_duplicate = native.duplicate;
+        self.cached_frame = native.duplicate.then(|| frame.clone());
         Ok(frame)
     }
     fn release_capture_access(&mut self) {
         self.session.release_capture_access();
-        self.cpu = None;
+        self.cached_frame = None;
     }
     fn capture_access_active(&self) -> bool {
         self.session.active_sources() != 0
     }
 }
 
-fn cached_output(frame: &Frame) -> snow_media::CpuFrame {
-    let row_bytes = frame.width() as usize * 4;
-    snow_media::CpuFrame {
-        size: snow_media::geometry::PixelSize::new(frame.width(), frame.height())
-            .expect("captured frame dimensions"),
-        format: if frame.pixel_format() == CapturePixelFormat::Rgba8 {
-            snow_media::PixelFormat::Rgba8
-        } else {
-            snow_media::PixelFormat::Bgra8
-        },
-        color: snow_media::ColorDescription::SRGB,
-        planes: vec![snow_media::PlaneLayout {
-            offset: 0,
-            width: frame.width() as usize,
-            height: frame.height() as usize,
-            stride: row_bytes,
-            row_bytes,
-        }],
-        bytes: frame.shared_bytes(),
-    }
+fn take_duplicate_frame(
+    cache: &mut Option<Frame>,
+    duplicate: bool,
+    generation: u64,
+    size: snow_media::geometry::PixelSize,
+) -> Option<Frame> {
+    cache.take().filter(|frame| {
+        duplicate
+            && frame.metadata.configuration_generation == generation
+            && frame.width() == size.width
+            && frame.height() == size.height
+    })
 }
 
 fn copy_cpu_pixels(cpu: &snow_media::CpuFrame, frame: &mut Frame) -> CaptureResult<()> {
@@ -436,20 +427,38 @@ mod tuning_tests {
         );
     }
     #[test]
-    fn cached_output_remains_a_valid_source_after_overwrite_detachment() {
+    fn duplicate_frames_share_pixels_without_sharing_observation_metadata() {
         let mut frame = Frame::from_bgra8(2, 2, (1..=16).collect()).unwrap();
+        frame.metadata.configuration_generation = 7;
+        frame.metadata.sequence = 10;
         let previous = frame.clone();
-        let cpu = cached_output(&frame);
         let pointer = frame.as_bytes().as_ptr();
-        frame
+        let size = snow_media::geometry::PixelSize::new(2, 2).unwrap();
+        let mut cache = Some(frame);
+        let mut duplicate = take_duplicate_frame(&mut cache, true, 7, size).unwrap();
+        assert_eq!(duplicate.as_bytes().as_ptr(), pointer);
+        assert_eq!(duplicate.as_bytes(), previous.as_bytes());
+        duplicate.metadata.sequence = 11;
+        assert_eq!(previous.metadata.sequence, 10);
+        duplicate
             .prepare_for_overwrite(2, 2, CapturePixelFormat::Bgra8)
             .unwrap();
-        assert_ne!(frame.as_bytes().as_ptr(), pointer);
-        assert!(frame.as_bytes().iter().all(|&byte| byte == 0));
-        copy_cpu_pixels(&cpu, &mut frame).unwrap();
-        assert_eq!(frame.as_bytes(), previous.as_bytes());
-        assert_eq!(cpu.bytes.as_ptr(), pointer);
-        assert_eq!(cpu.bytes.as_slice(), previous.as_bytes());
+        duplicate.as_mut_bytes().fill(99);
+        assert_ne!(duplicate.as_bytes().as_ptr(), pointer);
+        assert_eq!(previous.as_bytes(), &(1..=16).collect::<Vec<_>>());
+        for (unchanged, generation, width) in [(false, 7, 2), (true, 8, 2), (true, 7, 3)] {
+            let mut cache = Some(previous.clone());
+            assert!(
+                take_duplicate_frame(
+                    &mut cache,
+                    unchanged,
+                    generation,
+                    snow_media::geometry::PixelSize::new(width, 2).unwrap(),
+                )
+                .is_none()
+            );
+            assert!(cache.is_none());
+        }
     }
 
     #[test]

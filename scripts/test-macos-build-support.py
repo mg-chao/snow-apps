@@ -1053,6 +1053,11 @@ if name == 'sysctl': print(os.environ.get('SNOW_TEST_PHYSICAL_ARM64', '1' if os.
 if name == 'arch' and os.environ.get('FAIL_ROSETTA'): sys.exit(9)
 if name == 'configure': sys.exit(17)
 if name == 'xcode-select': print('/mock Xcode')
+if name in ('cc', 'c++', 'clang++'):
+    if os.environ.get('FAIL_COMPILER_VERSION'): sys.exit(17)
+    language = {'cc': 'C', 'c++': 'CXX', 'clang++': 'OBJCXX'}[name]
+    build = os.environ.get('SNOW_TEST_' + language + '_CLANG_BUILD', '2100.3.34.2')
+    print(f'Apple clang version 21.0.0 (clang-{build})')
 if name == 'git' and 'rev-parse' in sys.argv: print('4497409a47f19db373a410a0efb84eca4747adbf')
 if name == 'cmake' and '--version' in sys.argv: print('cmake version 4.4.3')
 if name in ('rustc', 'rustup'):
@@ -1091,6 +1096,8 @@ if name == 'cmake' and '--preset' in sys.argv and '--build' not in sys.argv:
         f'VCPKG_INSTALLED_DIR:PATH={installed}',
         f'CMAKE_HOME_DIRECTORY:INTERNAL={root}', 'CMAKE_GENERATOR:INTERNAL=Ninja',
     ]
+    for language, compiler in (('C', 'cc'), ('CXX', 'c++'), ('OBJCXX', 'clang++')):
+        entries.append(f'CMAKE_{language}_COMPILER:FILEPATH={root / ".tools/macos-dev/bin" / compiler}')
     mini = 'ON' if arch == 'arm64' else 'OFF'
     for argument in sys.argv:
         if argument.startswith('-DSNOW_APPS_BUILD_SNOW_SHOT_MINI='):
@@ -1103,7 +1110,14 @@ if name == 'cmake' and '--preset' in sys.argv and '--build' not in sys.argv:
                     'SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC:INTERNAL=ON',
                     'QT_FEATURE_static:INTERNAL=ON']
     (build / 'CMakeCache.txt').write_text('\\n'.join(entries) + '\\n')
+    (build / 'build.ninja').touch()
 if name == 'cmake' and '--build' in sys.argv:
+    if 'clean' in sys.argv:
+        if os.environ.get('FAIL_CLEAN'): sys.exit(17)
+        build = pathlib.Path(sys.argv[sys.argv.index('--build') + 1])
+        for pattern in ('*.pch', '*.o'):
+            for output in build.rglob(pattern): output.unlink()
+        sys.exit(0)
     preset = sys.argv[sys.argv.index('--preset') + 1].removeprefix('build-')
     for target in ('snow_shot', 'snow_shot_mini'):
         if target in sys.argv:
@@ -1137,7 +1151,7 @@ if name == 'openssl':
 """
         tools = ("cmake", "cpack", "ninja", "cargo", "rustc", "rustup", "pkg-config", "uname",
                  "open", "ps", "xcode-select", "xcrun", "git", "lsregister", "security",
-                 "openssl", "arch", "sysctl")
+                 "openssl", "arch", "sysctl", "cc", "c++", "clang++")
         for name in tools:
             path = self.bin / name
             path.write_text(mock)
@@ -1208,6 +1222,71 @@ if name == 'openssl':
                          and '--build' not in call)
         self.assertEqual(configure[1], '--fresh')
         self.assertIn('configuring from a fresh cache', self.last_result.stdout)
+
+    def test_build_reuses_outputs_when_compiler_builds_match(self):
+        self.run_script('build.sh', '--skip-bootstrap')
+        build = self.root / 'build/snow-shot-macos-arm64-debug'
+        pch = build / 'cached.pch'
+        pch.touch()
+        self.log.unlink()
+        calls = self.run_script('build.sh', '--skip-bootstrap')
+        self.assertTrue(pch.exists())
+        self.assertFalse(any('--fresh' in call or 'clean' in call for call in calls))
+        self.assertIn('Reusing the existing CMake cache', self.last_result.stdout)
+
+    def test_compiler_build_change_refreshes_cache_and_cleans_before_building(self):
+        self.run_script('build.sh', '--skip-bootstrap')
+        build = self.root / 'build/snow-shot-macos-arm64-debug'
+        for language in ('C', 'CXX', 'OBJCXX'):
+            with self.subTest(language=language):
+                pch, obj = build / 'cached.pch', build / 'cached.o'
+                pch.touch()
+                obj.touch()
+                self.env[f'SNOW_TEST_{language}_CLANG_BUILD'] = '2100.4.1.1'
+                self.log.unlink()
+                calls = self.run_script('build.sh', '--skip-bootstrap')
+                configure = next(call for call in calls if call[0] == 'cmake'
+                                 and '--preset' in call and '--build' not in call)
+                self.assertIn('--fresh', configure)
+                clean = ['cmake', '--build', str(build), '--target', 'clean']
+                self.assertIn(clean, calls)
+                compile_index = next(i for i, call in enumerate(calls)
+                                     if '--build' in call and 'clean' not in call)
+                self.assertLess(calls.index(clean), compile_index)
+                self.assertFalse(pch.exists())
+                self.assertFalse(obj.exists())
+
+    def test_launch_recovers_existing_build_without_compiler_stamp(self):
+        self.run_script('build.sh', '--skip-bootstrap')
+        build = self.root / 'build/snow-shot-macos-arm64-debug'
+        (build / '.snow-compiler-signature').unlink(missing_ok=True)
+        pch = build / 'cached.pch'
+        pch.touch()
+        self.log.unlink()
+        calls = self.run_script('run-snow-shot.sh')
+        self.assertIn(['cmake', '--build', str(build), '--target', 'clean'], calls)
+        self.assertFalse(pch.exists())
+        self.assertEqual(calls[-1][0], 'open')
+
+    def test_failed_compiler_cleanup_stops_before_build_and_is_retried(self):
+        self.run_script('build.sh', '--skip-bootstrap')
+        build = self.root / 'build/snow-shot-macos-arm64-debug'
+        self.env['SNOW_TEST_CXX_CLANG_BUILD'] = '2100.4.1.1'
+        self.env['FAIL_CLEAN'] = '1'
+        self.log.unlink()
+        calls = self.run_script('build.sh', '--skip-bootstrap', success=False)
+        self.assertFalse(any('--build' in call and 'clean' not in call for call in calls))
+        del self.env['FAIL_CLEAN']
+        self.log.unlink()
+        calls = self.run_script('build.sh', '--skip-bootstrap')
+        self.assertIn(['cmake', '--build', str(build), '--target', 'clean'], calls)
+
+    def test_compiler_probe_failure_stops_before_reusing_outputs(self):
+        self.run_script('build.sh', '--skip-bootstrap')
+        self.env['FAIL_COMPILER_VERSION'] = '1'
+        self.log.unlink()
+        calls = self.run_script('build.sh', '--skip-bootstrap', success=False)
+        self.assertFalse(any('--build' in call for call in calls))
 
     def test_configure_failure_stops_build(self):
         self.env['FAIL_CONFIGURE'] = '1'

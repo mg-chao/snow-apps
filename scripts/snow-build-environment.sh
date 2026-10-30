@@ -135,3 +135,20 @@ snow_cache_aligned() {
         grep -Fqx "CMAKE_HOME_DIRECTORY:INTERNAL=$snow_repo_root" "$cache_path" &&
         grep -Fqx 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache_path"
 }
+
+snow_compiler_signature() {
+    local cache_path="$1"
+    local language compiler version
+    # /usr/bin compiler paths survive Xcode updates. Include the complete build
+    # identifier: two incompatible Apple Clang builds can share the same version.
+    for language in C CXX OBJCXX; do
+        compiler="$(sed -n "s/^CMAKE_${language}_COMPILER:[^=]*=//p" "$cache_path")"
+        if [[ -z "$compiler" ]]; then
+            [[ "$language" != CXX ]] || return 1
+            continue
+        fi
+        version="$("$compiler" --version)" || return 1
+        [[ -n "$version" ]] || return 1
+        printf '%s=%s\n%s\n' "$language" "$compiler" "$version"
+    done
+}

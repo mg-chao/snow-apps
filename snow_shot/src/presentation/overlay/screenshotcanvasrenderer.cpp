@@ -2609,6 +2609,7 @@ bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
 
 void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage,
                                               const ScreenshotImageSource& samplingSource) {
+    m_pinnedLiveFrames = false;
     QList<QRectF> opaqueRects;
     // DPR normalization can detach the QImage. Check the shared source key first
     // so every overlay reuses the answer for the same captured pixel buffer.
@@ -2683,6 +2684,26 @@ void ScreenshotCanvasRenderer::setPinnedAnimationFrame(const QImage& image,
     m_opaqueCoverageValid = false;
     invalidateCachedContent();
     m_canvas.update(canvasImageDamageRegion(canvasRect));
+}
+
+void ScreenshotCanvasRenderer::setPinnedLiveFrame(ScreenshotImageSource source) {
+    const QRectF previous = m_imageSource.materializedCanvasRect;
+    if (!m_pinnedLiveFrames) {
+        m_pinnedLiveFrames = true;
+        // Release the initial still image held by the editing engine. Conversion
+        // back to an editable image reinstalls its sources through setImageSource.
+        m_canvas.setBaseImageSources({});
+        clearOcrFilteredImage();
+    }
+    m_imageSource = std::move(source);
+    m_samplingImageSource = m_imageSource;
+    refreshBaseImageSources();
+    // Conservatively repaint the backdrop without scanning alpha on the GUI thread.
+    m_opaqueImageCanvasRects.clear();
+    m_opaqueCoverageValid = false;
+    invalidateCachedContent();
+    m_canvas.update(canvasImageDamageRegion(previous) +
+                    canvasImageDamageRegion(m_imageSource.materializedCanvasRect));
 }
 
 void ScreenshotCanvasRenderer::setPinnedViewportRect(const QRectF& rect) {
@@ -3132,6 +3153,7 @@ void ScreenshotCanvasRenderer::reset() {
                           m_guideLinesVisible;
     m_imageSource = {};
     m_samplingImageSource = {};
+    m_pinnedLiveFrames = false;
     m_baseImageSources.clear();
     m_opaqueImageCanvasRects.clear();
     m_opaqueImageViewCoverage = {};

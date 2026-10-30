@@ -13124,7 +13124,8 @@ endif()
 add_library(snow_shot_live_window STATIC
     include/snow_shot/presentation/livewindowsource.h
     src/presentation/pinned/livewindowsource.cpp
-    src/presentation/pinned/livewindownative_p.h)
+    src/presentation/pinned/livewindownative_p.h
+    src/presentation/pinned/livewindowframecropper_p.h)
 target_include_directories(snow_shot_live_window PUBLIC include PRIVATE src
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
 target_link_libraries(snow_shot_live_window PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_capture_c)
@@ -13213,6 +13214,15 @@ if(SNOW_SHOT_BUILD_TESTS)
                 ENVIRONMENT "QT_QPA_PLATFORM=windows" RESOURCE_LOCK snow-shot-system-clipboard)
         endif()
     endif()
+endif()
+
+if(SNOW_APPS_BUILD_BENCHMARKS AND TARGET snow-shot-pinned-window-tests)
+    target_compile_definitions(snow-shot-pinned-window-tests PRIVATE
+        SNOW_SHOT_LIVE_WINDOW_BENCHMARK=1)
+    add_test(NAME snow-shot-live-window-frame-performance-benchmark
+        COMMAND snow-shot-pinned-window-tests --live-window-performance-only -platform offscreen)
+    set_tests_properties(snow-shot-live-window-frame-performance-benchmark PROPERTIES
+        LABELS benchmark RUN_SERIAL TRUE TIMEOUT 120 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(WIN32 AND SNOW_APPS_BUILD_BENCHMARKS)

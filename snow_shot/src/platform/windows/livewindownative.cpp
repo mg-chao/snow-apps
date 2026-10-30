@@ -38,12 +38,10 @@ bool validWindow(HWND window) {
     return wcscmp(name, L"Progman") != 0 && wcscmp(name, L"WorkerW") != 0;
 }
 
-class WindowsLiveWindow final : public live_window_detail::NativeWindow {
+class WindowsLiveWindow final : public live_window_detail::NativeWindowMonitor {
   public:
-    explicit WindowsLiveWindow(LiveWindowTarget target)
-        : m_target(std::move(target)), m_surface(hwnd(m_target.nativeId)) {}
+    explicit WindowsLiveWindow(LiveWindowTarget target) : m_target(std::move(target)) {}
     ~WindowsLiveWindow() override {
-        stopPresentation();
         stopMonitoring();
     }
     bool initialize(QString* error) override {
@@ -63,7 +61,15 @@ class WindowsLiveWindow final : public live_window_detail::NativeWindow {
             static_cast<DWORD>(m_target.processId), 0, WINEVENT_OUTOFCONTEXT);
         if (m_locationHook)
             destroyHooks().insert(m_locationHook, this);
+        m_minimizeHook = SetWinEventHook(
+            EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, nullptr, sourceDestroyed,
+            static_cast<DWORD>(m_target.processId), 0, WINEVENT_OUTOFCONTEXT);
+        if (m_minimizeHook)
+            destroyHooks().insert(m_minimizeHook, this);
         return true;
+    }
+    bool hasLifecycleNotifications() const override {
+        return m_destroyHook && m_locationHook && m_minimizeHook;
     }
     live_window_detail::NativeState inspect() override {
         if (m_closed) {
@@ -89,31 +95,10 @@ class WindowsLiveWindow final : public live_window_detail::NativeWindow {
                         "The window content is temporarily unavailable. Retrying…"))};
         return {LiveWindowState::Live, bounds, {}};
     }
-    bool present(const LiveWindowPresentation& presentation, const QRectF& crop,
-                 const QRectF& initialBounds, QString* error) override {
-        Q_UNUSED(initialBounds);
-        const auto native = inspect();
-        if (native.state != LiveWindowState::Live) {
-            stopPresentation();
-            return true;
-        }
-        if (m_surface.present(presentation, crop, native.desktopBounds))
-            return true;
-        if (error)
-            *error = nativeText(QT_TRANSLATE_NOOP(
-                "LiveWindowSource", "The live window display could not be initialized."));
-        return false;
-    }
-    bool presenting() const override {
-        return m_surface.presenting();
-    }
-    void stopPresentation() override {
-        m_surface.stop();
-    }
 
   private:
     void stopMonitoring() {
-        for (auto* hook : {&m_destroyHook, &m_locationHook}) {
+        for (auto* hook : {&m_destroyHook, &m_locationHook, &m_minimizeHook}) {
             if (*hook) {
                 destroyHooks().remove(*hook);
                 UnhookWinEvent(*hook);
@@ -128,8 +113,10 @@ class WindowsLiveWindow final : public live_window_detail::NativeWindow {
     static void CALLBACK sourceDestroyed(HWINEVENTHOOK hook, DWORD event, HWND window, LONG object,
                                          LONG child, DWORD, DWORD) {
         auto* self = destroyHooks().value(hook, nullptr);
-        if (!self || window != hwnd(self->m_target.nativeId) || object != OBJID_WINDOW ||
-            child != CHILDID_SELF)
+        if (!self || window != hwnd(self->m_target.nativeId))
+            return;
+        if (event != EVENT_SYSTEM_MINIMIZESTART && event != EVENT_SYSTEM_MINIMIZEEND &&
+            (object != OBJID_WINDOW || child != CHILDID_SELF))
             return;
         if (event == EVENT_OBJECT_DESTROY)
             self->m_closed = true;
@@ -138,10 +125,34 @@ class WindowsLiveWindow final : public live_window_detail::NativeWindow {
             changed();
     }
     LiveWindowTarget m_target;
-    LiveWindowPresentationSurface m_surface;
     HWINEVENTHOOK m_destroyHook = nullptr;
     HWINEVENTHOOK m_locationHook = nullptr;
+    HWINEVENTHOOK m_minimizeHook = nullptr;
     bool m_closed = false;
+};
+
+class WindowsLivePresentation final : public live_window_detail::NativeWindowPresentation {
+  public:
+    explicit WindowsLivePresentation(const LiveWindowTarget& target)
+        : m_surface(hwnd(target.nativeId)) {}
+    bool present(const LiveWindowPresentation& presentation, const QRectF& crop,
+                 const QRect& sourceBounds, QString* error) override {
+        if (m_surface.present(presentation, crop, sourceBounds))
+            return true;
+        if (error)
+            *error = nativeText(QT_TRANSLATE_NOOP(
+                "LiveWindowSource", "The live window display could not be initialized."));
+        return false;
+    }
+    bool presenting() const override {
+        return m_surface.presenting();
+    }
+    void stopPresentation() override {
+        m_surface.stop();
+    }
+
+  private:
+    LiveWindowPresentationSurface m_surface;
 };
 } // namespace
 
@@ -160,8 +171,12 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
     return std::nullopt;
 }
 namespace live_window_detail {
-std::unique_ptr<NativeWindow> createNativeWindow(const LiveWindowTarget& target) {
+std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<WindowsLiveWindow>(target);
+}
+std::unique_ptr<NativeWindowPresentation>
+createNativeWindowPresentation(const LiveWindowTarget& target) {
+    return std::make_unique<WindowsLivePresentation>(target);
 }
 } // namespace live_window_detail
 } // namespace snow_shot::presentation
