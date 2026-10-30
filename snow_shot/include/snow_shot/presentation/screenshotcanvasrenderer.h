@@ -153,6 +153,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     // View-space bounds of a pinned window's content, excluding its permanent shadow margin.
     // Fractional coordinates are intentional: 16 Windows device pixels need not be integral dp.
     void setPinnedViewportRect(const QRectF& rect);
+    void setPinnedContentClip(std::optional<QRectF> rect);
     void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
     qsizetype selectionOutlineCacheBytes() const {
@@ -331,6 +332,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     std::optional<Qt::Orientation> m_scrollingCropGuide;
     QSize m_imageViewportPhysicalSize;
     std::optional<QRectF> m_pinnedViewportRect;
+    std::optional<QRectF> m_pinnedContentClip;
     QRectF m_pinnedContentCanvasRect;
     QRectF m_pinnedSurfaceCanvasRect;
     ScreenshotResultStyle m_pinnedResultStyle;

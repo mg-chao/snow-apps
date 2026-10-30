@@ -443,6 +443,15 @@ fn extract_with_progress(
             error,
         )
     })?;
+    // Header consistency checks are opt-in in zip. Reject ambiguous headers, duplicate
+    // names, and overlapping entries before trusting the inventory or staging any file.
+    archive.validate_header_consistency().map_err(|error| {
+        io_error(
+            "invalid_archive_entry",
+            "Invalid update archive entry",
+            error,
+        )
+    })?;
     // Validate the complete central directory before creating a single staged file. This keeps
     // unknown, duplicate, encrypted, linked, or otherwise unsigned data from being partially
     // materialized even inside the isolated stage tree.
@@ -460,7 +469,16 @@ fn extract_with_progress(
                 error,
             )
         })?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|error| {
+                io_error(
+                    "invalid_archive_entry",
+                    "Invalid update archive entry",
+                    error,
+                )
+            })?
+            .into_owned();
         let descriptor = expected.remove(&name).ok_or_else(|| {
             UpdateError::new(
                 "unsafe_archive_entry",
@@ -507,7 +525,16 @@ fn extract_with_progress(
                 error,
             )
         })?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|error| {
+                io_error(
+                    "invalid_archive_entry",
+                    "Invalid update archive entry",
+                    error,
+                )
+            })?
+            .into_owned();
         let descriptor = descriptors.get(name.as_str()).ok_or_else(|| {
             UpdateError::new(
                 "unsafe_archive_entry",
@@ -1723,6 +1750,115 @@ mod tests {
         assert!(!image.exists());
         assert!(!transaction_pending(&root));
         prune_update_work(&root).unwrap();
+    }
+
+    #[test]
+    fn archive_stored_and_deflated_files_preserve_signed_paths_and_contents() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("payload.zip");
+        let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+        let entries = [
+            ("bin/stored.dll", zip::CompressionMethod::Stored),
+            ("bin/雪图 🧊.dll", zip::CompressionMethod::Deflated),
+        ];
+        for (name, method) in entries {
+            writer
+                .start_file(
+                    name,
+                    SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(name.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+        let test_package = package(
+            entries
+                .iter()
+                .map(|(name, _)| descriptor(name, name.as_bytes()))
+                .collect(),
+        );
+        let destination = directory.path().join("stage");
+        extract(&archive, &destination, &test_package).unwrap();
+        for (name, _) in entries {
+            assert_eq!(fs::read(destination.join(name)).unwrap(), name.as_bytes());
+        }
+    }
+
+    #[test]
+    fn archive_header_mismatches_are_rejected_before_extraction() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("payload.zip");
+        write_zip(
+            &archive,
+            &[
+                ("bin/first.dll", b"first", None),
+                ("bin/known.dll", b"known", None),
+            ],
+        );
+        let original = fs::read(&archive).unwrap();
+        let mut reader = zip::ZipArchive::new(File::open(&archive).unwrap()).unwrap();
+        let local = reader.by_index_raw(1).unwrap().header_start() as usize;
+        drop(reader);
+        let test_package = package(vec![
+            descriptor("bin/first.dll", b"first"),
+            descriptor("bin/known.dll", b"known"),
+        ]);
+        // ZIP local header offsets: flags 6, method 8, time 10, CRC 14, sizes 18/22,
+        // filename 30. Keep the signed central directory and payload unchanged.
+        for (label, offset) in [
+            ("filename", 30),
+            ("encryption flag", 6),
+            ("compression method", 8),
+            ("timestamp", 10),
+            ("CRC", 14),
+            ("compressed size", 18),
+            ("uncompressed size", 22),
+        ] {
+            let mut bytes = original.clone();
+            bytes[local + offset] ^= 1;
+            fs::write(&archive, bytes).unwrap();
+            let destination = directory.path().join(label);
+            fs::create_dir_all(&destination).unwrap();
+            assert!(
+                extract(&archive, &destination, &test_package).is_err(),
+                "{label} mismatch must be rejected"
+            );
+            assert!(
+                fs::read_dir(&destination).unwrap().next().is_none(),
+                "{label} mismatch must be rejected before staging any file"
+            );
+        }
+    }
+
+    #[test]
+    fn archive_duplicate_filenames_are_rejected_before_extraction() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("payload.zip");
+        write_zip(
+            &archive,
+            &[
+                ("bin/other.dll", b"hidden", None),
+                ("bin/known.dll", b"known", None),
+            ],
+        );
+        let mut reader = zip::ZipArchive::new(File::open(&archive).unwrap()).unwrap();
+        let entry = reader.by_index_raw(0).unwrap();
+        let local = entry.header_start() as usize;
+        let central = entry.central_header_start() as usize;
+        drop(entry);
+        drop(reader);
+        let mut bytes = fs::read(&archive).unwrap();
+        // Rename the first entry in both headers so it is shadowed by the second
+        // entry in the reader's filename index, despite having different contents.
+        for offset in [local + 30, central + 46] {
+            bytes[offset..offset + b"bin/known.dll".len()].copy_from_slice(b"bin/known.dll");
+        }
+        fs::write(&archive, bytes).unwrap();
+        let destination = directory.path().join("stage");
+        fs::create_dir_all(&destination).unwrap();
+        let test_package = package(vec![descriptor("bin/known.dll", b"known")]);
+        assert!(extract(&archive, &destination, &test_package).is_err());
+        assert!(fs::read_dir(&destination).unwrap().next().is_none());
     }
 
     #[test]

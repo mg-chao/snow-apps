@@ -634,10 +634,15 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("id"), record.id},
         {QStringLiteral("group_id"), record.groupId},
         {QStringLiteral("source_kind"), sourceKindToString(record.sourceKind)},
+        {QStringLiteral("crop_rect"), record.cropRect ? QJsonValue(rectFToJson(*record.cropRect))
+                                                      : QJsonValue(QJsonValue::Null)},
+        {QStringLiteral("animation_crop_rect"), rectToJson(record.animationCropRect)},
         {QStringLiteral("canvas_source_rect"), rectFToJson(record.canvasSourceRect)},
         {QStringLiteral("content_canvas_rect"), rectFToJson(record.contentCanvasRect)},
         {QStringLiteral("surface_canvas_rect"), rectFToJson(record.surfaceCanvasRect)},
         {QStringLiteral("initial_window_size"), sizeToJson(record.initialWindowSize)},
+        {QStringLiteral("exact_initial_window_rect"),
+         rectFToJson(QRectF(QPointF(), record.exactInitialWindowSize))},
         {QStringLiteral("placement"),
          placementToJson(placementForRecord(record.placement, record.nativeGeometry, record))},
         {QStringLiteral("pre_thumbnail_placement"),
@@ -985,6 +990,26 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
                 image_codec::decodeAnimationSource(encoded, nullptr, {}, allocationCheck);
             if (!validAnimationSource(record->animationSource))
                 return false;
+            if (!record->animationCropRect.isEmpty() &&
+                !QRect(QPoint(), record->animationSource->canvasSize)
+                     .contains(record->animationCropRect))
+                record->animationCropRect = {};
+            if (!record->animationCropRect.isEmpty()) {
+                const auto region = record->animationCropRect;
+                auto cropped =
+                    std::make_shared<ScreenshotAnimationSource>(*record->animationSource);
+                cropped->sourceCropRect = region;
+                cropped->canvasSize = region.size();
+                cropped->firstFrame = cropped->firstFrame.copy(region);
+                cropped->firstDisplayFrame =
+                    record->animationSource->firstFrame.constBits() ==
+                            record->animationSource->firstDisplayFrame.constBits()
+                        ? cropped->firstFrame
+                        : cropped->firstDisplayFrame.copy(region);
+                record->animationSource = std::move(cropped);
+                if (!validAnimationSource(record->animationSource))
+                    return false;
+            }
             record->image = record->animationSource->firstFrame;
         }
     } else if (record->sourceKind == PinnedWindowSourceKind::ImageData) {
@@ -1104,6 +1129,14 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         record.textFormat = PinnedTextFormat::Markdown;
     else if (formatName != QStringLiteral("plain_text"))
         return false;
+    QRectF exactWindow;
+    if (rectFFromJson(object.value(QStringLiteral("exact_initial_window_rect")), &exactWindow))
+        record.exactInitialWindowSize = exactWindow.size();
+    QRectF crop;
+    if (rectFFromJson(object.value(QStringLiteral("crop_rect")), &crop) && !crop.isEmpty())
+        record.cropRect = crop;
+    static_cast<void>(rectFromJson(object.value(QStringLiteral("animation_crop_rect")),
+                                   &record.animationCropRect));
     record.id = object.value(QStringLiteral("id")).toString();
     record.groupId = object.value(QStringLiteral("group_id")).toString();
     if (!textStyleFromJson(object.value(QStringLiteral("text_style")), &record.textStyle))

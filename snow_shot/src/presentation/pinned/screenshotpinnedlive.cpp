@@ -188,6 +188,8 @@ bool ScreenshotPinnedWindow::liveFrameAvailable() const {
 bool ScreenshotPinnedWindow::liveCommandAllowed(const QString& command) const {
     if (!isLiveWindow())
         return true;
+    if (command == u"apply_crop")
+        return cropApplyAllowed();
     if (command == u"copy_to_clipboard" || command == u"save_as_file" ||
         command == u"convert_to_image" || command == u"split_image" || command == u"image_editing")
         return liveFrameAvailable();
@@ -201,6 +203,16 @@ bool ScreenshotPinnedWindow::liveCommandAllowed(const QString& command) const {
         QStringLiteral("show_border"),      QStringLiteral("show_shadow"),
         QStringLiteral("close_window"),     QStringLiteral("close")};
     return commands.contains(command) || command.startsWith(u"move_cursor_");
+}
+
+QRectF ScreenshotPinnedWindow::liveSourceViewport() const {
+    const QRectF base = m_liveAppliedCrop.isEmpty() ? QRectF(0, 0, 1, 1) : m_liveAppliedCrop;
+    if (!m_cropRect || m_originalPixelSize.isEmpty())
+        return base;
+    return QRectF(base.x() + base.width() * m_cropRect->x() / m_originalPixelSize.width(),
+                  base.y() + base.height() * m_cropRect->y() / m_originalPixelSize.height(),
+                  base.width() * m_cropRect->width() / m_originalPixelSize.width(),
+                  base.height() * m_cropRect->height() / m_originalPixelSize.height());
 }
 
 bool ScreenshotPinnedWindow::initializeLivePresentation(QString* error) {
@@ -255,6 +267,7 @@ bool ScreenshotPinnedWindow::synchronizeLivePresentation(QString* error) {
     presentation.clickThrough = m_clickThroughActive;
     presentation.visible = isVisible() && !isMinimized();
     presentation.imageTransform = m_imageTransform;
+    presentation.sourceViewport = liveSourceViewport();
     presentation.backgroundColor =
         adqt::theme::ThemeManager::instance().resolveTheme(this).colorBgContainer;
     if (!presentation.backgroundColor.isValid())
@@ -314,12 +327,29 @@ void ScreenshotPinnedWindow::updateLiveState() {
 void ScreenshotPinnedWindow::queueLiveFrame(QImage frame) {
     if (!m_liveSource || m_closing || frame.isNull())
         return;
+    if (!m_liveAppliedCrop.isEmpty()) {
+        const QRectF pixels(
+            m_liveAppliedCrop.x() * frame.width(), m_liveAppliedCrop.y() * frame.height(),
+            m_liveAppliedCrop.width() * frame.width(), m_liveAppliedCrop.height() * frame.height());
+        frame = frame.copy(pixels.toAlignedRect().intersected(frame.rect()));
+    }
     installLiveFrame(std::move(frame));
 }
 
 void ScreenshotPinnedWindow::installLiveFrame(QImage original) {
     const QRectF previousBackground = m_backgroundCanvasRect;
     const QRectF previousSurface = m_resultSurfaceCanvasRect;
+    const bool sourceResized =
+        !m_originalPixelSize.isEmpty() && m_originalPixelSize != original.size();
+    if (sourceResized) {
+        const auto mapping =
+            QTransform::fromScale(qreal(original.width()) / m_originalPixelSize.width(),
+                                  qreal(original.height()) / m_originalPixelSize.height());
+        if (m_cropRect)
+            m_cropRect = mapping.mapRect(*m_cropRect);
+        if (m_interactionCropRect)
+            m_interactionCropRect = mapping.mapRect(*m_interactionCropRect);
+    }
     m_originalImage = std::move(original);
     // Only static content owns a materialized transformed raster. Live actions
     // acquire their own snapshot; presentation samples these original pixels.
@@ -336,7 +366,7 @@ void ScreenshotPinnedWindow::installLiveFrame(QImage original) {
     m_resultSurfaceCanvasRect = m_backgroundCanvasRect;
     m_imageSource = ScreenshotImageSource::fromImage(m_originalImage, m_backgroundCanvasRect);
     m_screenshotRenderer->setPinnedLiveFrame(m_imageSource, m_imageTransform);
-    if (previousBackground != m_backgroundCanvasRect ||
+    if (sourceResized || previousBackground != m_backgroundCanvasRect ||
         previousSurface != m_resultSurfaceCanvasRect) {
         m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect,
                                                      m_resultSurfaceCanvasRect, m_resultStyle);
@@ -354,6 +384,7 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
     const QSize output(std::max(1, qRound(content.width() * backingScale)),
                        std::max(1, qRound(content.height() * backingScale)));
     const QTransform transform = m_imageTransform;
+    const QRectF visible = liveSourceViewport();
     const qreal opacity = applyWindowOpacity ? m_opacityPercent / 100.0 : 1.0;
     const auto placement = screenshotClipboardSelectionPlacement(content, content.size(), screen());
     ScreenshotClipboardAppearance appearance;
@@ -367,15 +398,22 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
     m_liveSource->requestFrame(
         [promise](const QImage& frame, const QString&) { promise->set_value(frame); });
     return ScreenshotExportSource::fromProducer(
-        [future, output, transform, opacity](const ScreenshotExportCancellation& cancellation) {
+        [future, output, transform, opacity,
+         visible](const ScreenshotExportCancellation& cancellation) {
             while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
                 if (cancellation.isCancellationRequested())
                     return QImage{};
             if (cancellation.isCancellationRequested())
                 return QImage{};
-            const QImage frame = future.get();
+            QImage frame = future.get();
             if (frame.isNull())
                 return QImage{};
+            if (visible != QRectF(0, 0, 1, 1))
+                frame = frame.copy(QRectF(visible.x() * frame.width(), visible.y() * frame.height(),
+                                          visible.width() * frame.width(),
+                                          visible.height() * frame.height())
+                                       .toAlignedRect()
+                                       .intersected(frame.rect()));
             const QImage transformed =
                 snowCanvasTransformImage(frame, transform, Qt::SmoothTransformation);
             QImage result(output, QImage::Format_ARGB32_Premultiplied);
@@ -428,15 +466,17 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
     m_liveSnapshotPending = true;
     const QTransform transform = m_imageTransform;
     const QSize size = authoritativeContentNativeGeometry().size();
+    const QRectF sourceViewport = liveSourceViewport();
     const quint64 generation = m_liveFrameGeneration;
     requestLiveSnapshot(
-        [this, transform, size, generation](QImage image, const QString& error) {
+        [this, transform, size, sourceViewport, generation](QImage image, const QString& error) {
             m_liveSnapshotPending = false;
             if (m_closing || !m_liveSource)
                 return;
             if (!image.isNull() && error.isEmpty() && liveFrameAvailable() &&
                 generation == m_liveFrameGeneration && transform == m_imageTransform &&
-                size == authoritativeContentNativeGeometry().size()) {
+                size == authoritativeContentNativeGeometry().size() &&
+                sourceViewport == liveSourceViewport()) {
                 finishLiveConversion(std::move(image));
             } else if (liveFrameAvailable()) {
                 adqt::widgets::AdMessage::Request request;
@@ -454,19 +494,40 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
 void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
     if (image.isNull() || !isLiveWindow() || m_closing)
         return;
+    endCropSelection(true);
+    if (m_interactionCropRect)
+        endControlledInteraction(false);
     const QRect geometry = authoritativeContentNativeGeometry();
-    ++m_liveFrameGeneration;
+    stopLiveSource();
+    m_liveSource.reset();
+    ++m_contentReplacementGeneration;
+
+    // The snapshot already contains the viewport crop and orientation. It is a new
+    // static source, not a resized frame from the old live source coordinate system.
+    m_cropRect.reset();
+    m_liveAppliedCrop = {};
+    m_exactInitialWindowSize = {};
     m_imageTransform.reset();
     m_quarterTurns = 0;
     m_canvasSourceRect = QRectF(QPointF(), QSizeF(geometry.size()));
+    m_backgroundCanvasRect = m_canvasSourceRect;
+    m_resultSurfaceCanvasRect = m_canvasSourceRect;
     m_initialWindowSize = geometry.size();
     m_scalePercent = 100;
+    m_preserveScaleForSettledGeometry = false;
     m_resultStyle = {};
-    installLiveFrame(std::move(image));
-    stopLiveSource();
-    m_liveSource.reset();
+    m_borderAppearance.reset();
+    m_originalImage = std::move(image);
+    m_originalPixelSize = m_originalImage.size();
+    m_transformedImage = m_originalImage;
+    m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
     m_screenshotRenderer->setImageSource(m_imageSource);
+    m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect, m_resultSurfaceCanvasRect,
+                                                 m_resultStyle);
     m_liveNativePresentation = false;
+    applyRuntimeBorderColor();
+    updateCanvasViewport();
+    updateControlsGeometry();
     if (m_liveStatusView)
         m_liveStatusView->hide();
     m_canvas->show();

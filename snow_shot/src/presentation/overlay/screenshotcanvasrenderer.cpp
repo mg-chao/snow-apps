@@ -2709,13 +2709,21 @@ void ScreenshotCanvasRenderer::setPinnedLiveFrame(ScreenshotImageSource source,
                     canvasImageDamageRegion(m_imageSource.materializedCanvasRect));
 }
 
+void ScreenshotCanvasRenderer::setPinnedContentClip(std::optional<QRectF> rect) {
+    if (m_pinnedContentClip == rect)
+        return;
+    m_pinnedContentClip = rect;
+    invalidateCachedContent(false);
+    m_canvas.update();
+}
+
 void ScreenshotCanvasRenderer::setPinnedViewportRect(const QRectF& rect) {
     const std::optional<QRectF> normalized =
         rect.isValid() && !rect.isEmpty() ? std::optional<QRectF>(rect.normalized()) : std::nullopt;
     if (m_pinnedViewportRect == normalized)
         return;
     m_pinnedViewportRect = normalized;
-    invalidateCachedContent();
+    invalidateCachedContent(false);
     m_canvas.update();
 }
 
@@ -3167,6 +3175,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_canvas.setBaseImageSources({});
     m_imageViewportPhysicalSize = QSize();
     m_pinnedViewportRect.reset();
+    m_pinnedContentClip.reset();
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
@@ -3680,6 +3689,9 @@ void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
     if (m_renderMode == RenderMode::PinnedResult && m_pinnedViewportRect) {
         viewportGuard.emplace(&painter);
         painter.setClipRect(pinnedViewportForContext(context), Qt::IntersectClip);
+        if (m_pinnedContentClip)
+            painter.setClipRect(context.canvasToViewTransform.mapRect(*m_pinnedContentClip),
+                                Qt::IntersectClip);
     }
 
     if (!m_imageSource.isValid()) {

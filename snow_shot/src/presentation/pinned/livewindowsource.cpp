@@ -570,7 +570,8 @@ class CapturedLiveWindowSource final
             presentation.imageTransform.isIdentity() && m_state == LiveWindowState::Live;
         if (native) {
             m_frameHandoffPending = false;
-            if (!m_native->present(presentation, m_crop, m_monitor->state().desktopBounds, error)) {
+            if (!m_native->present(presentation, presentationCrop(),
+                                   m_monitor->state().desktopBounds, error)) {
                 setState(LiveWindowState::Unavailable, error ? *error : QString());
                 if (m_stopped)
                     return false;
@@ -710,7 +711,8 @@ class CapturedLiveWindowSource final
 #ifdef Q_OS_WIN
         if (m_presentation.owner && m_presentation.imageTransform.isIdentity()) {
             QString error;
-            if (!m_native->present(m_presentation, m_crop, current.desktopBounds, &error)) {
+            if (!m_native->present(m_presentation, presentationCrop(), current.desktopBounds,
+                                   &error)) {
                 setState(LiveWindowState::Unavailable, error);
                 if (m_stopped)
                     return;
@@ -857,6 +859,12 @@ class CapturedLiveWindowSource final
     InitializationCompletion m_initializationCompletion;
     QVector<std::pair<quint64, FrameCompletion>> m_pendingFrames;
     QImage m_initialFrame;
+    QRectF presentationCrop() const {
+        const QRectF region = m_presentation.sourceViewport.intersected(QRectF(0, 0, 1, 1));
+        return QRectF(m_crop.x() + region.x() * m_crop.width(),
+                      m_crop.y() + region.y() * m_crop.height(), region.width() * m_crop.width(),
+                      region.height() * m_crop.height());
+    }
     QRect m_initialDesktopRegion;
     QRectF m_crop;
     LiveWindowPresentation m_presentation;

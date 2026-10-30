@@ -336,6 +336,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         const bool captureLost = nativeMessage->message == WM_CANCELMODE ||
                                  (nativeMessage->message == WM_CAPTURECHANGED &&
                                   reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd);
+        if (window.m_cropSelectionOrigin && captureLost &&
+            (nativeMessage->message == WM_CANCELMODE || nativeMessage->lParam != 0 ||
+             (GetKeyState(VK_RBUTTON) & 0x8000) != 0))
+            window.endCropSelection(true);
         // Qt releases its automatic capture before dispatching the button-up
         // event. Keep a pending click alive for that release; explicit shared
         // geometry owns capture until its transaction has ended instead.
@@ -463,9 +467,16 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             const QSize baseline = window.orientedInitialWindowSize();
             auto* limits = pointerFromLParam<MINMAXINFO>(nativeMessage->lParam);
             if (limits != nullptr && baseline.isValid() && !baseline.isEmpty()) {
-                const QSize minimumSize = physicalSizeAtScale(baseline, kMinimumScalePercent);
+                const QSize minimumSize =
+                    window.m_cropRect ? snow_shot::presentation::pinnedOuterSize(QSize(1, 1))
+                                      : physicalSizeAtScale(baseline, kMinimumScalePercent);
                 const QSize maximumSize =
-                    physicalSizeAtScale(baseline, kMaximumScalePercent).expandedTo(minimumSize);
+                    physicalSizeAtScale(window.m_cropRect
+                                            ? window.m_initialWindowSize.expandedTo(
+                                                  window.m_initialWindowSize.transposed())
+                                            : baseline,
+                                        kMaximumScalePercent)
+                        .expandedTo(minimumSize);
                 const auto trackLimits = resize_geometry::trackSizeLimits(
                     minimumSize, maximumSize,
                     window.m_nativeGeometryController->committedGeometry().size(),
@@ -481,7 +492,8 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
-        if (window.m_interactionResizeHandle && nativeMessage->message == WM_NCHITTEST) {
+        if ((window.m_interactionResizeHandle || window.m_cropSelectionOrigin) &&
+            nativeMessage->message == WM_NCHITTEST) {
             if (result)
                 *result = HTCLIENT;
             return true;
@@ -620,7 +632,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             return true;
         }
 
-        if (nativeMessage->message == WM_NCRBUTTONDOWN && nativeMessage->wParam == HTCAPTION) {
+        if (nativeMessage->message == WM_NCRBUTTONDOWN) {
+            window.m_cropContextSuppressed = false;
+            window.beginCropSelection(
+                QPointF(GET_X_LPARAM(nativeMessage->lParam), GET_Y_LPARAM(nativeMessage->lParam)));
             // The image surface is a synthetic native caption. Suppress the
             // default half of the non-client context interaction.
             if (result != nullptr) {
@@ -637,7 +652,13 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             // coordinates.
             const QPoint nativePosition(GET_X_LPARAM(nativeMessage->lParam),
                                         GET_Y_LPARAM(nativeMessage->lParam));
-            window.showContextMenu(window.globalPositionForNativePosition(nativePosition));
+            if (window.m_cropSelectionOrigin) {
+                window.updateCropSelection(nativePosition);
+                window.endCropSelection(false,
+                                        window.globalPositionForNativePosition(nativePosition));
+            } else if (!window.m_cropContextSuppressed) {
+                window.showContextMenu(window.globalPositionForNativePosition(nativePosition));
+            }
             if (result != nullptr) {
                 *result = 0;
             }

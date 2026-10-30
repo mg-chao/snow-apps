@@ -129,7 +129,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   public:
     QRectF autoFilterSourceBounds() const {
-        return m_backgroundCanvasRect;
+        return m_cropRect ? visibleCanvasRect() : m_backgroundCanvasRect;
     }
     void requestAutoFilterSource(std::function<void(QImage)> completion);
     [[nodiscard]] const snow_shot::storage::PinnedSourceIdentity& sourceIdentity() const {
@@ -200,6 +200,9 @@ class ScreenshotPinnedWindow final : public QWidget {
         double persistedFirstCreationTextDpi = 1.0;
         int persistedOpacityPercent = 100;
         int persistedClickThroughOpacityPercent = 50;
+        QSizeF persistedExactInitialWindowSize;
+        double persistedScalePercent = 0;
+        std::optional<QRectF> persistedCropRect;
         QTransform persistedImageTransform;
         int persistedQuarterTurns = 0;
         bool persistedHideToTopMode = false;
@@ -363,6 +366,38 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool acceptsDrop(const QDropEvent& event) const;
     void setFileDragActive(bool active);
 
+    [[nodiscard]] QRectF visibleCanvasRect() const;
+    [[nodiscard]] QRectF exportVisibleCanvasRect() const;
+    [[nodiscard]] QSizeF scaleReferenceSize() const;
+    [[nodiscard]] bool cropSelectionAllowed() const;
+    [[nodiscard]] bool cropApplyAllowed() const;
+    bool beginCropSelection(const QPointF& nativePosition);
+    void updateCropSelection(const QPointF& nativePosition);
+    void endCropSelection(bool cancel, const QPoint& menuPosition = {});
+    bool handleCropPointer(QObject* watched, QEvent* event);
+    bool setCropCanvasRect(const QRectF& rect);
+    void applyCrop();
+    bool commitPreparedCrop(const QRect& pixels, QImage original, QImage transformed,
+                            const QTransform& transform,
+                            std::shared_ptr<const ScreenshotAnimationSource> animation,
+                            bool bakedStyle);
+    bool m_cropApplying = false;
+    void updateCropOverlay();
+    void updateCropPresentation();
+    QSizeF m_exactInitialWindowSize;
+    std::optional<QRectF> m_cropRect;
+    std::optional<QPointF> m_cropSelectionOrigin;
+    QPointF m_cropSelectionEnd;
+    QRect m_cropSelectionGeometry;
+    QRectF m_cropSelectionCanvas;
+    QRectF m_cropSelectionBounds;
+    qreal m_cropSelectionScale = 1;
+    QPointer<QWidget> m_cropOverlay;
+    bool m_cropContextSuppressed = false;
+    std::optional<QRectF> m_interactionCropRect;
+    QRectF m_interactionCropCanvas;
+    QRectF m_liveAppliedCrop;
+
     void createUi();
     void registerWindowShortcuts();
     void reloadPinnedWindowShortcuts();
@@ -370,6 +405,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void createContextMenu();
     void resetContextMenuActions();
     [[nodiscard]] bool liveCommandAllowed(const QString& command) const;
+    [[nodiscard]] QRectF liveSourceViewport() const;
     bool initializeLivePresentation(QString* error = nullptr);
     void scheduleLivePresentation();
     bool synchronizeLivePresentation(QString* error = nullptr);
@@ -703,6 +739,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<QAction> m_ocrAction;
     QPointer<QAction> m_textTypeAction;
     QPointer<QActionGroup> m_textTypeActions;
+    QPointer<QAction> m_applyCropAction;
     QPointer<QAction> m_drawingAction;
     QPointer<QAction> m_animationToggleAction;
     QPointer<QAction> m_animationSpeedAction;

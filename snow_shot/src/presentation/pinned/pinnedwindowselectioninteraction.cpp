@@ -74,7 +74,7 @@ struct PinnedWindowSelectionController::GeometryState {
         PinnedPlacement placement;
         QPointF desktopContentOrigin;
         QPointer<QScreen> display;
-        QSize baseline;
+        QSizeF baseline;
         double scale = 100;
         bool preserveScale = false;
         bool persistenceDirty = false;
@@ -157,7 +157,7 @@ struct PinnedWindowSelectionController::GeometryState {
                                          pinnedShadowMargin(placement->units))
                     .topLeft();
             member.display = display;
-            member.baseline = window->orientedInitialWindowSize();
+            member.baseline = window->scaleReferenceSize();
             member.scale = window->m_scalePercent;
             member.preserveScale = window->m_preserveScaleForSettledGeometry;
             member.persistenceDirty = window->m_selectionPersistenceDirty;
@@ -230,10 +230,12 @@ struct PinnedWindowSelectionController::GeometryState {
                 std::move(placement), pinnedDisplayGeometry(*display), origins[index],
                 pinnedShadowMargin(member.placement.units));
             if (resizing && std::abs(factor - 1.) > 1.e-12)
-                placement.windowSize =
-                    pinnedOuterSize(screenshot_pinned_resize_geometry::scaledSize(
-                                        member.baseline, member.scale * factor / 100.),
-                                    placement.units);
+                placement.windowSize = pinnedOuterSize(
+                    QSize(
+                        std::max(1, qRound(member.baseline.width() * member.scale * factor / 100.)),
+                        std::max(1,
+                                 qRound(member.baseline.height() * member.scale * factor / 100.))),
+                    placement.units);
             const QRect requested = pinnedWindowRect(placement, *display);
             const bool geometryChanged =
                 window->m_nativeGeometryController->targetGeometry() != requested ||
@@ -675,6 +677,8 @@ bool PinnedWindowSelectionController::handlePointer(ScreenshotPinnedWindow* wind
     const auto handle = selectable && window->interactiveResizingEnabled() && !controls
                             ? window->resizeHandleAt(local)
                             : std::optional<int>{};
+    if (handle && window->m_cropRect)
+        return window->beginControlledInteraction(mouse->globalPosition(), handle);
     const bool move = selectable && !controls &&
                       window->windowMoveEligibleForPointer(local.toPoint(), mouse->modifiers());
     if (!command && !handle && !move && window->m_recognitionContent != nullptr &&
@@ -743,7 +747,7 @@ bool PinnedWindowSelectionController::eventFilter(QObject* watched, QEvent* even
         if (!window || !m_windowIndex.contains(window))
             return QObject::eventFilter(watched, event);
     }
-    if (handlePointer(window, watched, event))
+    if (window->handleCropPointer(watched, event) || handlePointer(window, watched, event))
         return true;
     if (event->type() == QEvent::ContextMenu && !geometryActive()) {
         if (watched == window->m_canvas && window->m_canvas->interactionEnabled()) {

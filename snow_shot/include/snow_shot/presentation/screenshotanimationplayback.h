@@ -84,6 +84,8 @@ class ScreenshotAnimationPlayback final : public QObject {
 
     void setSource(std::shared_ptr<const ScreenshotAnimationSource> source, bool playing = true,
                    int speed = 100, QImage initialTransformed = {});
+    bool adoptCroppedSource(std::shared_ptr<const ScreenshotAnimationSource> source,
+                            QImage original, QImage transformed, const QTransform& transform);
     void clear();
     void setSuspended(bool suspended);
     void setTransform(const QTransform& transform);

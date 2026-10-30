@@ -23,6 +23,24 @@ QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot
         stopped()) {
         return {};
     }
+    if (snapshot.visibleCanvasRect) {
+        auto full = snapshot;
+        full.visibleCanvasRect.reset();
+        // A viewport retains the source geometry; compacting it would relocate hidden text.
+        full.layoutCompaction.enabled = false;
+        const auto image = renderScreenshotRecognitionImage(full, cancelled);
+        const auto visible = *snapshot.visibleCanvasRect;
+        const qreal sx = snapshot.image.width() / rect.width();
+        const qreal sy = snapshot.image.height() / rect.height();
+        const auto style = ScreenshotResultCompositor::scaledStyle(snapshot.resultStyle, sx);
+        const auto layout =
+            ScreenshotResultCompositor::layoutForContent(snapshot.image.size(), style);
+        const QRect pixels(qRound((visible.x() - rect.x()) * sx) - layout.outputRect.x(),
+                           qRound((visible.y() - rect.y()) * sy) - layout.outputRect.y(),
+                           std::max(1, qRound(visible.width() * sx)),
+                           std::max(1, qRound(visible.height() * sy)));
+        return image.isNull() ? QImage() : image.copy(pixels);
+    }
     QImage image = snowCanvasConvertImage(snapshot.image, QImage::Format_ARGB32_Premultiplied);
     if (!snowCanvasDetachImage(image))
         return {};

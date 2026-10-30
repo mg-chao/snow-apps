@@ -40,6 +40,53 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
         source.contentPixelSize.isEmpty()) {
         return {};
     }
+    if (source.visibleCanvasRect) {
+        const QRectF visible = *source.visibleCanvasRect;
+        if (!visible.isValid() || visible.isEmpty())
+            return {};
+        const qreal sx = source.contentPixelSize.width() / source.backgroundCanvasRect.width();
+        const qreal sy = source.contentPixelSize.height() / source.backgroundCanvasRect.height();
+        const QSize output(std::max(1, qRound(visible.width() * sx)),
+                           std::max(1, qRound(visible.height() * sy)));
+        // Complex selection masks retain their full-source shape and effect origin.
+        // Ordinary rectangular pins render just the requested region below.
+        if (source.resultStyle.region || source.resultStyle.cornerRadius > 0 ||
+            source.resultStyle.effectWidth() > 0) {
+            auto full = source;
+            full.visibleCanvasRect.reset();
+            const QImage image = renderPinnedViewport(full, cancellation);
+            const auto layout = ScreenshotResultCompositor::layoutForContent(
+                source.contentPixelSize, source.resultStyle);
+            const QPoint offset(qRound((visible.x() - source.backgroundCanvasRect.x()) * sx) -
+                                    layout.outputRect.x(),
+                                qRound((visible.y() - source.backgroundCanvasRect.y()) * sy) -
+                                    layout.outputRect.y());
+            return image.isNull() ? QImage() : image.copy(QRect(offset, output));
+        }
+        QList<SnowCanvasBaseImageSource> sampling = source.samplingSources;
+        if (sampling.isEmpty())
+            sampling.append({source.backgroundImage, source.backgroundCanvasRect});
+        QList<CanvasExportSource> sources;
+        for (const auto& item : sampling)
+            sources.append({item.image, item.canvasRect, item.coverage});
+        QImage result;
+        if (source.documentSession.isEmpty()) {
+            result = SnowCanvasRuntime::renderImageSourcesToImage(visible, output, sources);
+        } else {
+            SnowCanvasRuntime runtime(
+                SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
+            if (!runtime.isValid() || !runtime.restoreDocumentSession(source.documentSession) ||
+                !runtime.prepareSmartEraseForExport(source.smartErase, sampling, visible, [&] {
+                    return cancellation.isCancellationRequested();
+                }))
+                return {};
+            result = runtime.renderToImage(visible, output, sources);
+        }
+        if (result.isNull() || cancellation.isCancellationRequested())
+            return {};
+        result.setColorSpace(source.backgroundImage.colorSpace());
+        return ScreenshotResultCompositor::compose(result, {}, 1.0, source.outputOpacity);
+    }
     QImage content;
     if (source.documentSession.isEmpty()) {
         // An empty document needs only the source projection. Match the canvas

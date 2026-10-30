@@ -22,6 +22,7 @@ struct ScreenshotRecognitionImageSnapshot final {
     ScreenshotLayoutCompaction layoutCompaction = {};
     qreal outputOpacity = 1.0;
     QList<CanvasExportSource> backgroundSources;
+    std::optional<QRectF> visibleCanvasRect = std::nullopt;
 };
 
 [[nodiscard]] QImage

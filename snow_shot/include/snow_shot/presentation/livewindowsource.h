@@ -41,6 +41,8 @@ struct LiveWindowPresentation {
     bool clickThrough = false;
     bool visible = true;
     QTransform imageTransform;
+    // Untransformed normalized region of the initially captured content.
+    QRectF sourceViewport = QRectF(0, 0, 1, 1);
 };
 
 class LiveWindowSource : public QObject {

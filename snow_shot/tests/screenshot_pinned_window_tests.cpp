@@ -345,6 +345,78 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+#ifdef Q_OS_WIN
+    static bool cropNativeInput(ScreenshotPinnedWindow& window, UINT type, WPARAM hit,
+                                LPARAM point) {
+        MSG message{};
+        message.hwnd = reinterpret_cast<HWND>(window.winId());
+        message.message = type;
+        message.wParam = hit;
+        message.lParam = point;
+        qintptr result = 0;
+        return window.nativeEvent(QByteArrayLiteral("windows_generic_MSG"), &message, &result);
+    }
+#endif
+    static QPointF cropScreenPoint(const ScreenshotPinnedWindow& window, const QPointF& canvas) {
+        return window.nativePositionForWindowPosition(
+            window.m_canvas->canvasToViewTransform().map(canvas));
+    }
+    static bool cropSelecting(const ScreenshotPinnedWindow& window) {
+        return window.m_cropSelectionOrigin.has_value();
+    }
+    static void startApplyCrop(ScreenshotPinnedWindow& window) {
+        window.applyCrop();
+    }
+    static bool cropApplying(const ScreenshotPinnedWindow& window) {
+        return window.m_cropApplying;
+    }
+    static void cropActive(ScreenshotPinnedWindow& window, bool active) {
+        window.m_windowActive = active;
+        window.applyRuntimeBorderColor();
+    }
+    static bool crop(ScreenshotPinnedWindow& window, const QRectF& canvas) {
+        return window.setCropCanvasRect(canvas);
+    }
+    static void applyCrop(ScreenshotPinnedWindow& window) {
+        window.applyCrop();
+        QElapsedTimer deadline;
+        deadline.start();
+        while (window.m_cropApplying && deadline.elapsed() < 10000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(1);
+        }
+        if (window.m_cropApplying)
+            throw std::runtime_error("crop preparation did not complete");
+    }
+    static QRectF visibleCrop(const ScreenshotPinnedWindow& window) {
+        return window.visibleCanvasRect();
+    }
+    static bool cropAllowed(const ScreenshotPinnedWindow& window) {
+        return window.cropSelectionAllowed();
+    }
+    static QAction* applyCropAction(const ScreenshotPinnedWindow& window) {
+        return window.m_applyCropAction;
+    }
+    static bool beginCrop(ScreenshotPinnedWindow& window, const QPointF& point) {
+        return window.beginCropSelection(point);
+    }
+    static void endCrop(ScreenshotPinnedWindow& window, const QPointF& point, bool cancel = false) {
+        window.updateCropSelection(point);
+        window.endCropSelection(cancel, point.toPoint());
+    }
+    static bool beginCropResize(ScreenshotPinnedWindow& window, const QPointF& point, int handle) {
+        return window.beginControlledInteraction(point, handle);
+    }
+    static void moveCropResize(ScreenshotPinnedWindow& window, const QPointF& point) {
+        window.updateControlledInteraction(point);
+    }
+    static void endCropResize(ScreenshotPinnedWindow& window, bool cancel = false) {
+        window.endControlledInteraction(cancel);
+    }
+    static std::shared_ptr<ScreenshotExportArtifact> cropSave(ScreenshotPinnedWindow& window) {
+        return window.fileSaveArtifact();
+    }
+
     static bool beginShakeDrag(ScreenshotPinnedWindow& window, const QPointF& pointer = {}) {
         // QWindow routing updates Qt's global held-button state, as real input does.
         const QPointF local = window.windowHandle()->mapFromGlobal(pointer);
@@ -27109,6 +27181,11 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #endif
 #include "pinned_text_type_tests.h"
 #include "pinned_shake_window_tests.h"
+#include "screenshot_pinned_crop_tests.h"
+#include "screenshot_pinned_menu_lifetime_tests.h"
+#ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
+#include "screenshot_pinned_crop_performance_benchmark.h"
+#endif
 
 int main(int argc, char* argv[]) {
 
@@ -27130,6 +27207,26 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--live-window-crop-only"))) {
+            livePinnedCropTests();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--crop-only"))) {
+            pinnedCropTests();
+            return 0;
+        }
+#ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
+        if (app.arguments().contains(QStringLiteral("--crop-performance-only"))) {
+            pinnedCropPerformance();
+            return 0;
+        }
+#endif
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--crop-native-only"))) {
+            pinned_crop_tests::nativeInput();
+            return 0;
+        }
+#endif
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
         if (app.arguments().contains(QStringLiteral("--live-window-performance-only"))) {
             live_pinned_benchmark::run();
@@ -27948,6 +28045,10 @@ int main(int argc, char* argv[]) {
             pinnedLazyMenuHeadersRetranslate();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--menu-lifetime-only"))) {
+            pinnedMenuActionLifetime();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--text-type-only"))) {
             pinnedThumbnailExitsTextDisplay();
             pinnedTextTypeMenuActivatesSelectedResults();
@@ -28199,6 +28300,7 @@ int main(int argc, char* argv[]) {
             pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
             return 0;
         }
+        pinnedMenuActionLifetime();
         pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
         pinnedPhysicalPixelsFillClientArea(sourceRuntime);
         pinnedBorderUsesCeiledWindowDpiPhysicalPixels(sourceRuntime);

@@ -1655,6 +1655,10 @@ Files:
             <translation>Annotation mode</translation>
         </message>
         <message>
+            <source>Apply Crop</source>
+            <translation>Apply Crop</translation>
+        </message>
+        <message>
             <source>Batch Actions</source>
             <translation>Batch Actions</translation>
         </message>

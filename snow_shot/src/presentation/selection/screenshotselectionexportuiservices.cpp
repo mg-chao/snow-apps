@@ -1553,6 +1553,9 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.initialPreparedAnimationTransform = initialPreparedAnimationTransform;
     config.persistedAnimationSpeedPercent = record.animationSpeedPercent;
     config.persistedAnimationPlaying = record.animationPlaying;
+    config.persistedExactInitialWindowSize = record.exactInitialWindowSize;
+    config.persistedCropRect = record.cropRect;
+    config.persistedScalePercent = record.scalePercent;
     config.persistedImageTransform = record.imageTransform;
     config.persistedQuarterTurns = record.quarterTurns;
     config.persistedHideToTopMode = record.hideToTopMode;

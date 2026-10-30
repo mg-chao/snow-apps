@@ -249,6 +249,8 @@ QImage AnimationDecoder::snapshot(QString* error) {
     image.setColorSpace(impl_->frameColorSpace);
     if (impl_->info.orientation > 1 && impl_->info.orientation <= 8)
         image = snowCanvasTransformImage(image, orientationTransform(impl_->info.orientation));
+    if (impl_->source && !impl_->source->sourceCropRect.isEmpty())
+        image = snowCanvasCopyImage(image, impl_->source->sourceCropRect);
     reportError(error, image.isNull() ? "Frame transformation failed." : "");
     return image;
 }
