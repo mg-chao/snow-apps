@@ -23,6 +23,18 @@ bool same(const QRectF& actual, const QRectF& expected) {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     using snow_shot::presentation::live_window_detail::cropMapping;
+    using snow_shot::presentation::live_window_detail::windowRelativeCrop;
+    for (const QPoint& origin : {QPoint(118, 120), QPoint(-1800, -400)}) {
+        const QRectF selected(238, 200, 128, 80);
+        require(same(windowRelativeCrop(selected, origin, origin - QPoint(9, 0)),
+                     QRectF(247, 200, 128, 80)),
+                "A native source crop includes invisible frame margins without scaling pixels.");
+        require(same(windowRelativeCrop(selected, origin, origin), selected),
+                "Frameless source crops retain their original coordinates and size.");
+        require(same(windowRelativeCrop(QRectF(0, 0, 40, 20), origin, origin - QPoint(12, 8)),
+                     QRectF(12, 8, 40, 20)),
+                "Clipped source crops use the same outer-window origin on both axes.");
+    }
     const QRectF crop(30, 40, 100, 80);
     const QRectF destination(5, 7, 200, 160);
     const auto initial = cropMapping(crop, QRectF(0, 0, 300, 200), destination);

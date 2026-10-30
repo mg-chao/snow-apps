@@ -1772,10 +1772,6 @@ Files:
             <translation>Image Editing</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>Image Splitting</translation>
-        </message>
-        <message>
             <source>Image file</source>
             <translation>Image file</translation>
         </message>

@@ -30,6 +30,12 @@ class ScreenshotLivePinnedWindowTestAccess {
     static void opacity(ScreenshotPinnedWindow& window, int percent) {
         window.setOpacityPercent(percent);
     }
+    static void alwaysOnTop(ScreenshotPinnedWindow& window, bool enabled) {
+        window.setAlwaysOnTop(enabled);
+    }
+    static adqt::widgets::AdContextMenu* currentContextMenu(const ScreenshotPinnedWindow& window) {
+        return window.m_contextMenu;
+    }
     static void scale(ScreenshotPinnedWindow& window, int percent) {
         window.applyScale(percent);
     }
@@ -100,6 +106,7 @@ class FakeSource final : public Source {
     int requests = 0;
     int shutdowns = 0;
     bool deferFrames = false;
+    bool nativePresentation = false;
     QVector<std::pair<QImage, FrameCompletion>> pending;
     QVector<Presentation> presentations;
 
@@ -134,7 +141,7 @@ class FakeSource final : public Source {
         return shutdowns == 0;
     }
     bool usesNativePresentation() const override {
-        return false;
+        return nativePresentation;
     }
     void shutdown() override {
         if (shutdowns)
@@ -148,6 +155,10 @@ class FakeSource final : public Source {
         frame = QImage(frame.size(), frame.format());
         frame.fill(color);
         emit frameChanged(frame);
+    }
+    void setNativePresentation(bool native) {
+        nativePresentation = native;
+        emit nativePresentationChanged(native);
     }
     void setState(State state) {
         currentState = state;
@@ -500,14 +511,18 @@ void statusAndCapabilityGates() {
     for (const auto state : {State::Minimized, State::Closed, State::Unavailable}) {
         source->setState(state);
         auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+        materializePinnedMenuTree(window);
         for (const QString& command : frameCommands)
             require(!Access::allowed(window, command), "source status disables frame operations");
         for (const QString& command : independent)
             require(Access::allowed(window, command), "source status retains window operations");
-        for (auto* action : menu->findChildren<QAction*>()) {
-            const QString command = action->property("liveCommand").toString();
-            if (frameCommands.contains(command))
-                require(!action->isEnabled(), "open menu frame operations track source status");
+        for (const char* name :
+             {"screenshotPinnedCopyAction", "screenshotPinnedSaveAsFileAction",
+              "screenshotPinnedConvertToImageAction", "screenshotPinnedSplitImageAction",
+              "screenshotPinnedImageEditingAction"}) {
+            auto* action = menu->findChild<QAction*>(QString::fromLatin1(name));
+            require(action && !action->isEnabled(),
+                    "all materialized menu frame operations track source status");
         }
         const auto* label = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedLiveStatus"));
         require(label && label->isVisible() && !label->text().isEmpty() && window.isVisible(),
@@ -544,11 +559,25 @@ void statusAndCapabilityGates() {
                 "automation cannot execute nonwhitelisted commands");
     }
     auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    materializePinnedMenuTree(window);
+    for (const char* name :
+         {"screenshotPinnedCopyAction", "screenshotPinnedSaveAsFileAction",
+          "screenshotPinnedConvertToImageAction", "screenshotPinnedSplitImageAction",
+          "screenshotPinnedImageEditingAction"}) {
+        auto* action = menu->findChild<QAction*>(QString::fromLatin1(name));
+        require(action && action->isEnabled(),
+                "source recovery reenables materialized frame actions");
+    }
     for (const QString& name : {QStringLiteral("screenshotPinnedDrawingAction"),
                                 QStringLiteral("screenshotPinnedDestroyAction"),
                                 QStringLiteral("screenshotPinnedPrintAction"),
                                 QStringLiteral("screenshotPinnedHideToTopAction"),
-                                QStringLiteral("screenshotPinnedThumbnailAction")})
+                                QStringLiteral("screenshotPinnedThumbnailAction"),
+                                QStringLiteral("screenshotPinnedCopyOriginalAction"),
+                                QStringLiteral("screenshotPinnedGroupAction"),
+                                QStringLiteral("screenshotPinnedLoadContentAction"),
+                                QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"),
+                                QStringLiteral("screenshotPinnedCloseAllWindowsAction")})
         require(!menu->findChild<QAction*>(name), "nonwhitelisted features have no menu entry");
     Access::lock(window, true);
     source->publish(Qt::blue);
@@ -556,6 +585,142 @@ void statusAndCapabilityGates() {
          "locked pins continue displaying source updates");
     require(window.automationState().value(QStringLiteral("locked")).toBool(),
             "live lock follows ordinary pin state");
+    window.closeLiveWindow();
+}
+
+struct MenuAppearance {
+    QString name;
+    QString text;
+    adqt::icons::IconRef icon;
+    bool separator = false;
+    bool checkable = false;
+    QList<MenuAppearance> children;
+    bool operator==(const MenuAppearance&) const = default;
+};
+
+MenuAppearance menuAppearance(adqt::widgets::AdContextMenu* menu, QAction* action) {
+    MenuAppearance appearance{action->objectName(),     action->text(),
+                              menu->actionIcon(action), action->isSeparator(),
+                              action->isCheckable(),    {}};
+    if (auto* child = qobject_cast<adqt::widgets::AdContextMenu*>(action->menu()))
+        for (auto* entry : child->actions())
+            appearance.children.append(menuAppearance(child, entry));
+    return appearance;
+}
+
+void contextMenuMatchesOrdinaryContent() {
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    const auto named = [](QMenu* parent, const char* name) {
+        auto* action = parent->findChild<QAction*>(QString::fromLatin1(name));
+        if (!action)
+            std::cerr << "Missing shared menu action: " << name << '\n';
+        require(action, "the shared menu exposes its named action");
+        return action;
+    };
+    auto* process = named(menu, "screenshotPinnedProcessImageMenu");
+    require(!process->icon().isNull() && process->menu() && process->menu()->actions().isEmpty(),
+            "live image processing has the standard icon and populates only when opened");
+    auto* management = named(menu, "screenshotPinnedWindowManagementAction");
+    require(!management->icon().isNull() && management->menu() &&
+                management->menu()->actions().isEmpty(),
+            "live window management uses the standard icon and lazy submenu");
+    auto* convert = named(menu, "screenshotPinnedConvertToImageAction");
+    require(!convert->icon().isNull(), "the live-only conversion action has an image icon");
+    materializePinnedMenuTree(window);
+    const QList<const char*> common{
+        "screenshotPinnedCopyAction",       "screenshotPinnedSaveAsFileAction",
+        "screenshotPinnedProcessImageMenu", "screenshotPinnedClickThroughAction",
+        "screenshotPinnedLockAction",       "screenshotPinnedCloseAction"};
+    QList<MenuAppearance> before;
+    for (const char* name : common) {
+        auto* action = named(menu, name);
+        require(!action->icon().isNull(), "shared live root actions have standard icons");
+        before.append(menuAppearance(menu, action));
+    }
+    const auto managementIcon = menu->actionIcon(management);
+    const auto managementRows = menuAppearance(menu, management).children;
+    require(managementRows.size() == 3, "live management retains its supported appearance actions");
+
+    const auto checkSeparators = [](auto&& self, QMenu* current) -> void {
+        bool previousSeparator = true;
+        for (auto* action : current->actions()) {
+            require(!action->isSeparator() || !previousSeparator,
+                    "capability filtering leaves no leading or adjacent menu separators");
+            previousSeparator = action->isSeparator();
+            if (action->menu())
+                self(self, action->menu());
+        }
+        require(!previousSeparator, "capability filtering leaves no trailing menu separator");
+    };
+    checkSeparators(checkSeparators, menu);
+    Access::opacity(window, 75);
+    Access::scale(window, 125);
+    require(named(menu, "screenshotPinnedOpacityReadoutAction")->text() ==
+                    QStringLiteral("Current: 75%") &&
+                named(menu, "screenshotPinnedScaleReadoutAction")->text() ==
+                    QStringLiteral("Current: 125%"),
+            "open live opacity and scale menus update their standard current-value readouts");
+    require(!named(menu, "screenshotPinnedOpacityReadoutAction")->isEnabled() &&
+                !named(menu, "screenshotPinnedScaleReadoutAction")->isEnabled(),
+            "live current-value readouts remain informational");
+    Access::opacity(window, 100);
+    Access::scale(window, 100);
+
+    convert->trigger();
+    wait([&] { return !window.isLiveWindow(); }, "the menu converts the live pin in place");
+    menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    require(!menu->findChild<QAction*>(QStringLiteral("screenshotPinnedConvertToImageAction")),
+            "an ordinary image has no live-only conversion entry");
+    materializePinnedMenuTree(window);
+    for (qsizetype index = 0; index < common.size(); ++index)
+        require(menuAppearance(menu, named(menu, common[index])) == before[index],
+                "shared actions retain the same labels, icons, hierarchy and separators after "
+                "conversion");
+    management = named(menu, "screenshotPinnedWindowManagementAction");
+    const auto after = menuAppearance(menu, management);
+    require(menu->actionIcon(management) == managementIcon &&
+                after.children.first(3) == managementRows,
+            "common management controls share the ordinary menu presentation");
+    require(menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction")) &&
+                menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction")),
+            "conversion restores ordinary image capabilities in the shared menu");
+    window.close();
+}
+
+void retiredMenuDoesNotReceiveCurrentState() {
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    materializePinnedMenuTree(window);
+    QPointer<adqt::widgets::AdContextMenu> retired =
+        ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    auto* oldReadout =
+        retired->findChild<QAction*>(QStringLiteral("screenshotPinnedOpacityReadoutAction"));
+    require(oldReadout, "the materialized live menu has an opacity readout");
+    const QString oldText = oldReadout->text();
+    retired->popupAt(window.mapToGlobal(QPoint(10, 10)));
+    retired->hide();
+    require(retired && retired->isRetiring(), "the closed popup awaits deferred deletion");
+    auto* current = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    require(current != retired, "reopening creates a fresh menu before the old one is deleted");
+    Access::opacity(window, 75);
+    require(oldReadout->text() == oldText,
+            "state changes never update action references belonging to a retired popup");
+    materializePinnedMenuTree(window);
+    auto* readout =
+        current->findChild<QAction*>(QStringLiteral("screenshotPinnedOpacityReadoutAction"));
+    require(readout && readout->text() == QStringLiteral("Current: 75%"),
+            "a newly opened lazy submenu reads current state");
+    // Popup retirement queues deleteLater after the action dispatch has unwound.
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!retired, "the retired menu is released independently of the current popup");
+    Access::opacity(window, 50);
+    require(readout->text() == QStringLiteral("Current: 50%"),
+            "current menu state remains bound after deletion of its predecessor");
     window.closeLiveWindow();
 }
 
@@ -572,7 +737,13 @@ void splittingAndEditingRetainTheirLiveSource() {
                          split = value;
                          splitReceived = true;
                      });
-    Access::split(window);
+    materializePinnedMenuTree(window);
+    auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    auto* splitAction =
+        menu->findChild<QAction*>(QStringLiteral("screenshotPinnedSplitImageAction"));
+    require(splitAction && splitAction->isEnabled(),
+            "live splitting is available in the shared menu");
+    splitAction->trigger();
     source->publish(Qt::blue);
     require(splitReceived && split.source.isValid() && split.outputSize == output,
             "splitting imports the current live frame using the existing snapshot contract");
@@ -587,7 +758,10 @@ void splittingAndEditingRetainTheirLiveSource() {
                          edited = value;
                          editReceived = true;
                      });
-    Access::edit(window);
+    auto* editAction =
+        menu->findChild<QAction*>(QStringLiteral("screenshotPinnedImageEditingAction"));
+    require(editAction && editAction->isEnabled(), "live editing is available in the shared menu");
+    editAction->trigger();
     source->publish(Qt::green);
     wait([&] { return editReceived; }, "editing imports its current live frame asynchronously");
     require(edited.flattened && edited.pixelSize == output && edited.image.size() == output &&
@@ -891,9 +1065,74 @@ void liveBackdropFollowsThemeChanges() {
     }
     window.closeLiveWindow();
 }
+
+void presentationFollowsOwnerGeometryAndLifetime() {
+    auto source = std::make_shared<FakeSource>();
+    Presentation retained;
+    {
+        ScreenshotPinnedWindow window;
+        present(window, config(source));
+        QCoreApplication::processEvents();
+        require(!source->presentations.isEmpty(), "the live pin publishes its presentation");
+        retained = source->presentations.back();
+        const auto content = [&] {
+            return window.currentNativeGeometry().marginsRemoved(retained.nativeContentMargins);
+        };
+        require(content() == Access::contentGeometry(window),
+                "presentation margins describe the pin's native content, including decoration");
+        const QSize before = content().size();
+        Access::scale(window, 150);
+        QCoreApplication::processEvents();
+        require(content().size() != before && content() == Access::contentGeometry(window),
+                "a retained presentation follows resized content without stale desktop bounds");
+        Access::opacity(window, 80);
+        QCoreApplication::processEvents();
+        require(source->presentations.back().nativeContentMargins == retained.nativeContentMargins,
+                "appearance refreshes preserve the owner-relative placement contract");
+        window.closeLiveWindow();
+    }
+    require(retained.owner.isNull(),
+            "retained presentations cannot keep a dangling pointer to a destroyed pin");
+}
+
+void nativePresentationPreservesShell() {
+    auto source = std::make_shared<FakeSource>();
+    source->region = QRect(80, 90, 480, 400);
+    ScreenshotPinnedWindow window;
+    auto value = config(source);
+    value.initialBorderVisible = true;
+    value.initialShadowVisible = true;
+    present(window, value);
+    auto* border = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedBorder"));
+    require(border, "live pin has its ordinary decoration layer");
+    for (const bool native : {false, true, false, true}) {
+        source->setNativePresentation(native);
+        QCoreApplication::processEvents();
+        require(Access::contentGeometry(window) == source->region,
+                "switching live presentation preserves the selected desktop content rectangle");
+        QImage raster((QSizeF(window.size()) * window.devicePixelRatioF()).toSize(),
+                      QImage::Format_ARGB32_Premultiplied);
+        raster.setDevicePixelRatio(window.devicePixelRatioF());
+        raster.fill(Qt::transparent);
+        window.render(&raster);
+        const int margin = qRound(snow_shot::presentation::pinnedShadowMargin() *
+                                  (snow_shot::presentation::kPinnedGeometryUnits ==
+                                           snow_shot::storage::PinnedGeometryUnits::LogicalPixels
+                                       ? window.devicePixelRatioF()
+                                       : 1));
+        requireColorNear(raster.pixelColor(margin, raster.height() / 2),
+                         border->property("borderColor").value<QColor>(), 0,
+                         "native live content retains the shell's visible border");
+    }
+    window.closeLiveWindow();
+}
 } // namespace live_pinned_tests
 
 void pinnedLiveWindowTests() {
+    live_pinned_tests::nativePresentationPreservesShell();
+    live_pinned_tests::contextMenuMatchesOrdinaryContent();
+    live_pinned_tests::retiredMenuDoesNotReceiveCurrentState();
+    live_pinned_tests::presentationFollowsOwnerGeometryAndLifetime();
     live_pinned_tests::frameSnapshotsAndTransforms();
     live_pinned_tests::deferredCopyRetainsItsActionTimeFrame();
     live_pinned_tests::stoppedSourceClosesOnlyItsPin();

@@ -1034,7 +1034,7 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
     case Icon::PinToScreen:
         return custom::PinToScreen();
     case Icon::PinWindowToScreen:
-        return custom::ScreenshotFocusedWindow();
+        return custom::PinWindowToScreen();
     case Icon::TextRecognition:
         return custom::TextRecognition();
     case Icon::TextTranslation:

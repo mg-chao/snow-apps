@@ -8,6 +8,7 @@
 #include <QMetaObject>
 #include <QPainter>
 #include <QTimer>
+#include <QWidget>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

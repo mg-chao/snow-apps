@@ -13129,8 +13129,11 @@ target_include_directories(snow_shot_live_window PUBLIC include PRIVATE src
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
 target_link_libraries(snow_shot_live_window PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_capture_c)
 if(WIN32)
-    target_sources(snow_shot_live_window PRIVATE src/platform/windows/livewindownative.cpp)
-    target_link_libraries(snow_shot_live_window PRIVATE dwmapi user32 gdi32 uxtheme)
+    target_sources(snow_shot_live_window PRIVATE
+        src/platform/windows/livewindownative.cpp
+        src/platform/windows/livewindowpresentation.cpp
+        src/platform/windows/livewindowpresentation.h)
+    target_link_libraries(snow_shot_live_window PRIVATE dwmapi user32 gdi32 uxtheme comctl32)
 elseif(APPLE)
     target_sources(snow_shot_live_window PRIVATE src/platform/macos/livewindownative.mm)
     target_link_libraries(snow_shot_live_window PRIVATE "-framework AppKit"

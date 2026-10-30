@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QColor>
 #include <QImage>
+#include <QMargins>
+#include <QPointer>
 #include <QRect>
 #include <QTransform>
 #include <QVector>
@@ -27,8 +29,10 @@ struct LiveWindowTarget {
 };
 
 struct LiveWindowPresentation {
-    QWidget* owner = nullptr;
-    QRect nativeContentGeometry;
+    QPointer<QWidget> owner;
+    // Insets from the owner's native client rectangle, in physical pixels on Windows.
+    // Placement and size belong to the owner; source refreshes never supply desktop geometry.
+    QMargins nativeContentMargins;
     qreal effectiveOpacity = 1;
     QColor backgroundColor = Qt::white;
     bool alwaysOnTop = true;

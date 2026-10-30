@@ -229,7 +229,6 @@ void callbacksMayShutdownTheirSource() {
             QWidget owner;
             LiveWindowPresentation presentation;
             presentation.owner = &owner;
-            presentation.nativeContentGeometry = QRect(0, 0, 60, 40);
             require(source->setPresentation(presentation),
                     "Initialize the native display fixture.");
             if (scenario == 2) {
@@ -307,7 +306,6 @@ int main(int argc, char** argv) {
     QWidget owner;
     LiveWindowPresentation presentation;
     presentation.owner = &owner;
-    presentation.nativeContentGeometry = QRect(0, 0, 60, 40);
     presentation.imageTransform.scale(-1, 1);
     require(first->setPresentation(presentation) && second->setPresentation(presentation),
             "Both consumers can request continuous transformed display.");

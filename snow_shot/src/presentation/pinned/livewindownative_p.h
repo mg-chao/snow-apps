@@ -31,6 +31,13 @@ struct CropMapping {
     QRectF source;
     QRectF destination;
 };
+
+// Both origins and the crop use native desktop units. Invisible source-window
+// margins shift the crop origin without scaling its pixel extent.
+inline QRectF windowRelativeCrop(const QRectF& visibleFrameCrop, const QPoint& visibleFrameOrigin,
+                                 const QPoint& windowOrigin) {
+    return visibleFrameCrop.translated(visibleFrameOrigin - windowOrigin);
+}
 inline CropMapping cropMapping(const QRectF& crop, const QRectF& available,
                                const QRectF& destination) {
     const QRectF source = crop.intersected(available);

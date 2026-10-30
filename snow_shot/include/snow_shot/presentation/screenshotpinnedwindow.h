@@ -350,7 +350,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void reloadPinnedWindowShortcuts();
     void refreshMenuShortcutDisplays();
     void createContextMenu();
-    void createLiveContextMenu();
+    void resetContextMenuActions();
     [[nodiscard]] bool liveCommandAllowed(const QString& command) const;
     bool initializeLivePresentation(QString* error = nullptr);
     void scheduleLivePresentation();

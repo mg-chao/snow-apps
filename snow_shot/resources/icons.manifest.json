@@ -943,6 +943,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "PinWindowToScreen",
+      "name": "pin-window-to-screen",
+      "source": "../src/presentation/components/icons/resources/pin-window-to-screen.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "PinnedWindowBorder",
       "name": "pinned-window-border",
       "source": "../src/presentation/components/icons/resources/pinned-window-border.svg",

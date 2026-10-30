@@ -1766,10 +1766,6 @@ Files:
             <translation>圖片編輯</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>圖片分割</translation>
-        </message>
-        <message>
             <source>Image file</source>
             <translation>影像檔案</translation>
         </message>

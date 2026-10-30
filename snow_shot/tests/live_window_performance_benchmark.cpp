@@ -94,13 +94,8 @@ int main(int argc, char** argv) {
     shell.setGeometry(1100, 100, 400, 300);
     shell.show();
     QApplication::processEvents();
-    RECT shellBounds{};
-    GetWindowRect(reinterpret_cast<HWND>(shell.winId()), &shellBounds);
     LiveWindowPresentation presentation;
     presentation.owner = &shell;
-    presentation.nativeContentGeometry =
-        QRect(shellBounds.left, shellBounds.top, shellBounds.right - shellBounds.left,
-              shellBounds.bottom - shellBounds.top);
     require(source->setPresentation(presentation) && source->usesNativePresentation(),
             "Normal live display must use DWM.");
     int deliveries = 0;

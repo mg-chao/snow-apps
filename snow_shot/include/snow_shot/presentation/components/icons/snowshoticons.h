@@ -161,6 +161,7 @@ MoveSelectionVertical(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinToScreen(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef
 PinToScreenManagement(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef PinWindowToScreen(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinnedWindowBorder(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinnedWindowShadow(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef QuickSave(const adqt::icons::IconColors& colors = {});

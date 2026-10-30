@@ -8,6 +8,7 @@ using Source = snow_shot::presentation::LiveWindowSource;
 class SourceWindow final : public QWidget {
   public:
     QColor color{32, 96, 192};
+    bool marker = true;
 
     SourceWindow() {
         setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
@@ -18,6 +19,8 @@ class SourceWindow final : public QWidget {
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         painter.fillRect(rect(), color);
+        if (marker)
+            painter.fillRect(QRect(width() / 2 - 20, height() / 2 - 10, 8, 8), Qt::red);
     }
 
     void paintColor(const QColor& next) {
@@ -227,6 +230,54 @@ void run() {
                 nativeGeometry(host) == Access::contentGeometry(window),
             "actual DWM destination matches the topmost pin's displayed content bounds");
     const QRect originalGeometry = window.currentNativeGeometry();
+    require(Access::contentGeometry(window) == selection,
+            "native live presentation keeps content at the original screenshot selection");
+    ScreenshotPinnedWindowTestAccess::shadowState(window, true, true);
+    QCoreApplication::processEvents();
+    DwmFlush();
+    const QImage shellPixels = capturePresentedPixels(Access::contentGeometry(window));
+    auto* border = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedBorder"));
+    require(GetWindow(initialShell, GW_HWNDNEXT) == host,
+            "native content stays immediately below the Qt decoration and input layer");
+    requireColorNear(shellPixels.pixelColor(0, shellPixels.height() / 2),
+                     border->property("borderColor").value<QColor>(), 2,
+                     "native live content must be composited underneath the Qt border");
+    const int rim = qCeil(window.devicePixelRatioF());
+    const QRect interior = shellPixels.rect().adjusted(rim, rim, -rim, -rim);
+    requirePinnedPixels(shellPixels.copy(interior), source->initialFrame().copy(interior), 0,
+                        "live native content alignment");
+    ScreenshotPinnedWindowTestAccess::shadowState(window, false, false);
+    fixture.marker = false;
+
+    // Cross the two HWNDs and then stop moving. A synthetic shell leave reproduces
+    // USER32's leave after Qt registers tracking on the forwarded mouse move.
+    POINT originalCursor{};
+    require(GetCursorPos(&originalCursor), "preserve the pointer for native live controls");
+    {
+        const auto restoreCursor =
+            qScopeGuard([&] { SetCursorPos(originalCursor.x, originalCursor.y); });
+        Access::scale(window, 500);
+        QCoreApplication::processEvents();
+        const QPoint contentCenter = Access::contentGeometry(window).center();
+        require(SetCursorPos(contentCenter.x(), contentCenter.y()),
+                "enter the native live content");
+        auto* panel = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedControlsPanel"));
+        live_pinned_tests::wait([&] { return panel && panel->isVisible(); },
+                                "the close button appears over native live content");
+        SendMessageW(initialShell, WM_MOUSELEAVE, 0, 0);
+        QCoreApplication::processEvents();
+        auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
+        require(!timer.isActive(),
+                "crossing native surfaces must not start the controls exit timer");
+        require(QMetaObject::invokeMethod(&timer, "timeout") && panel->isVisible(),
+                "stationary native content hover retains the close button");
+        const QPoint outside = window.currentNativeGeometry().bottomRight() + QPoint(40, 40);
+        require(SetCursorPos(outside.x(), outside.y()), "leave both native live surfaces");
+        live_pinned_tests::wait([&] { return !panel->isVisible(); },
+                                "leaving the composite pin hides its controls");
+        Access::scale(window, 100);
+        QCoreApplication::processEvents();
+    }
 
     fixture.paintColor(QColor(48, 160, 80));
     const auto current = live_pinned_tests::image(Access::artifact(window), &window);
@@ -265,6 +316,53 @@ void run() {
         diagnoseClipboardCopy(copied, current.size(), fixture.color, window, *source);
     require(copyCorrect, "native live Copy preserves dimensions, pixels, and DWM association");
 
+    // Exercise the actual shell, including its native resize frame and geometry controller.
+    for (int step = 1; step <= 12; ++step) {
+        const QRect frame = nativeGeometry(initialShell);
+        require(SetWindowPos(initialShell, nullptr, frame.x() + 3, frame.y() + 2, 0, 0,
+                             SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER),
+                "move the actual live pin through native placement");
+        require(nativeGeometry(host) == Access::contentGeometry(window),
+                "actual live content and controls move together before queued Qt work");
+    }
+    QPointer<adqt::widgets::AdContextMenu> liveMenu;
+    // Qt's mouse-triggered WM_CONTEXTMENU uses MSG.pt (the real desktop cursor). Use the
+    // keyboard form to exercise native menu forwarding without moving the user's cursor.
+    require(PostMessageW(host, WM_CONTEXTMENU, reinterpret_cast<WPARAM>(host), -1),
+            "request the actual pin menu through the native live content surface");
+    live_pinned_tests::wait(
+        [&] {
+            liveMenu = Access::currentContextMenu(window);
+            return liveMenu && liveMenu->isVisible();
+        },
+        "show the actual live pin menu");
+    const HWND menuHandle = reinterpret_cast<HWND>(liveMenu->winId());
+    const auto menuAbovePin = [&] {
+        for (HWND candidate = GetTopWindow(nullptr); candidate;
+             candidate = GetWindow(candidate, GW_HWNDNEXT)) {
+            if (candidate == menuHandle)
+                return true;
+            if (candidate == initialShell || candidate == host)
+                return false;
+        }
+        return false;
+    };
+    require(menuAbovePin(), "the actual live pin menu starts above its DWM content");
+    QElapsedTimer menuInspection;
+    menuInspection.start();
+    live_pinned_tests::wait(
+        [&] {
+            if (!menuAbovePin())
+                std::cerr << "Live menu visible=" << (liveMenu && liveMenu->isVisible())
+                          << " hostTopmost=" << topmost(host)
+                          << " shellTopmost=" << topmost(initialShell) << '\n';
+            require(menuAbovePin(), "source refreshes leave the actual context menu above the pin");
+            return menuInspection.elapsed() >= 650;
+        },
+        "inspect several live source refreshes with the actual context menu open");
+    liveMenu->hide();
+    const QRect movedGeometry = window.currentNativeGeometry();
+
     Access::command(window, QStringLiteral("rotate_clockwise"));
     live_pinned_tests::wait(
         [&] { return !source->usesNativePresentation() && !isDwmHost(owner(shell(window))); },
@@ -301,7 +399,8 @@ void run() {
         "resetting actual pin rotation and flips returns to DWM presentation");
     host = owner(shell(window));
     require(Access::transform(window).isIdentity() &&
-                window.currentNativeGeometry() == originalGeometry,
+                window.currentNativeGeometry().size() == originalGeometry.size() &&
+                window.currentNativeGeometry().topLeft() == movedGeometry.topLeft(),
             "actual transform reset restores the original displayed orientation and dimensions");
 
     Access::appearance(window);
@@ -311,6 +410,12 @@ void run() {
                    hostOpacity(owner(shell(window)), 70);
         },
         "native DWM and Qt shell synchronize always-on-top and opacity changes");
+    Access::alwaysOnTop(window, true);
+    live_pinned_tests::wait([&] { return topmost(shell(window)) && topmost(host); },
+                            "re-enable always-on-top for both native surfaces");
+    Access::alwaysOnTop(window, false);
+    live_pinned_tests::wait([&] { return !topmost(shell(window)) && !topmost(host); },
+                            "return both native surfaces to the ordinary window band");
     auto* decoration = ScreenshotPinnedWindowTestAccess::decoration(window);
     require(decoration && !decoration->property("showBorder").toBool() &&
                 decoration->property("showShadow").toBool(),

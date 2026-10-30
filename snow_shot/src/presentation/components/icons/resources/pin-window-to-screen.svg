@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M416 824H172a72 72 0 0 1-72-72V236a72 72 0 0 1 72-72h612a72 72 0 0 1 72 72v164M100 340h756"/>
+  <g transform="rotate(45 752 664)">
+    <path d="M664 536h176M688 536v144l-64 64h256l-64-64V536M752 744v192"/>
+  </g>
+</svg>

@@ -2149,8 +2149,7 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
 
 bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (event &&
-        (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
-         event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+        (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
          event->type() == QEvent::WinIdChange || event->type() == QEvent::WindowStateChange ||
          event->type() == QEvent::DevicePixelRatioChange))
         scheduleLivePresentation();
@@ -3648,18 +3647,38 @@ void ScreenshotPinnedWindow::executeAnimationCommand(const QString& id) {
     refreshContextMenu();
 }
 
-void ScreenshotPinnedWindow::createContextMenu() {
-    if (isLiveWindow()) {
-        createLiveContextMenu();
-        return;
-    }
-    m_imageEditingAction = nullptr;
+void ScreenshotPinnedWindow::resetContextMenuActions() {
+    // A retiring popup may still own its actions until deferred deletion. References below
+    // belong exclusively to the current popup, including lazily constructed submenus.
+    m_groupMenu = nullptr;
+    m_groupMenuAction = nullptr;
     m_ocrAction = nullptr;
     m_drawingAction = nullptr;
     m_animationToggleAction = nullptr;
     m_animationSpeedAction = nullptr;
     m_animationDecreaseAction = nullptr;
     m_animationIncreaseAction = nullptr;
+    m_thumbnailAction = nullptr;
+    m_hideToTopAction = nullptr;
+    m_clickThroughAction = nullptr;
+    m_lockAction = nullptr;
+    m_alwaysOnTopAction = nullptr;
+    m_showBorderAction = nullptr;
+    m_showShadowAction = nullptr;
+    m_showMainInterfaceAction = nullptr;
+    m_closeAction = nullptr;
+    m_loadContentAction = nullptr;
+    m_splitImageAction = nullptr;
+    m_imageEditingAction = nullptr;
+    m_opacityActions = nullptr;
+    m_scaleActions = nullptr;
+    m_scaleMenuAction = nullptr;
+    m_opacityReadoutAction = nullptr;
+    m_scaleReadoutAction = nullptr;
+}
+
+void ScreenshotPinnedWindow::createContextMenu() {
+    resetContextMenuActions();
     m_contextMenu = new adqt::widgets::AdContextMenu(this);
     m_contextMenu->setDeleteOnHide();
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
@@ -3668,30 +3687,44 @@ void ScreenshotPinnedWindow::createContextMenu() {
     QAction* copyAction = m_contextMenu->addItem(tr("Copy to clipboard"), outlined_icons::Copy());
     setActionTranslationSource(copyAction, "Copy to clipboard");
     copyAction->setObjectName(QStringLiteral("screenshotPinnedCopyAction"));
+    copyAction->setProperty("liveCommand", QStringLiteral("copy_to_clipboard"));
     connect(copyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::copyCurrentViewport);
 
-    QAction* copyOriginalAction =
-        m_contextMenu->addItem(tr("Copy original content"), outlined_icons::FileImage());
-    setActionTranslationSource(copyOriginalAction, "Copy original content");
-    copyOriginalAction->setObjectName(QStringLiteral("screenshotPinnedCopyOriginalAction"));
-    connect(copyOriginalAction, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::copyOriginalContent);
+    if (!isLiveWindow()) {
+        QAction* copyOriginalAction =
+            m_contextMenu->addItem(tr("Copy original content"), outlined_icons::FileImage());
+        setActionTranslationSource(copyOriginalAction, "Copy original content");
+        copyOriginalAction->setObjectName(QStringLiteral("screenshotPinnedCopyOriginalAction"));
+        connect(copyOriginalAction, &QAction::triggered, this,
+                &ScreenshotPinnedWindow::copyOriginalContent);
+    }
 
     QAction* saveAction = m_contextMenu->addItem(tr("Save as file"), custom_outlined_icons::Save());
     setActionTranslationSource(saveAction, "Save as file");
     saveAction->setObjectName(QStringLiteral("screenshotPinnedSaveAsFileAction"));
+    saveAction->setProperty("liveCommand", QStringLiteral("save_as_file"));
     connect(saveAction, &QAction::triggered, this, &ScreenshotPinnedWindow::saveAsFile);
 
+    if (isLiveWindow()) {
+        auto* convert = m_contextMenu->addItem(tr("Convert to Image"), outlined_icons::FileImage());
+        setActionTranslationSource(convert, "Convert to Image");
+        convert->setObjectName(QStringLiteral("screenshotPinnedConvertToImageAction"));
+        convert->setProperty("liveCommand", QStringLiteral("convert_to_image"));
+        connect(convert, &QAction::triggered, this, &ScreenshotPinnedWindow::convertLiveToImage);
+    }
+
 #ifdef Q_OS_MACOS
-    // Animated pins have no editing toolbar. Keep sharing reachable for every pin.
-    QAction* airDropAction =
-        m_contextMenu->addItem(tr("AirDrop"), custom_outlined_icons::AirDrop());
-    setActionTranslationSource(airDropAction, "AirDrop");
-    airDropAction->setObjectName(QStringLiteral("screenshotPinnedAirDropAction"));
-    connect(airDropAction, &QAction::triggered, this, &ScreenshotPinnedWindow::airDropContent);
+    if (!isLiveWindow()) {
+        // Animated pins have no editing toolbar; retain sharing in their menu.
+        QAction* airDropAction =
+            m_contextMenu->addItem(tr("AirDrop"), custom_outlined_icons::AirDrop());
+        setActionTranslationSource(airDropAction, "AirDrop");
+        airDropAction->setObjectName(QStringLiteral("screenshotPinnedAirDropAction"));
+        connect(airDropAction, &QAction::triggered, this, &ScreenshotPinnedWindow::airDropContent);
+    }
 #endif
 
-    if (!animatedImage()) {
+    if (!isLiveWindow() && !animatedImage()) {
         m_ocrAction = m_contextMenu->addItem(tr("Recognizing text"),
                                              custom_outlined_icons::TextRecognition());
         setActionTranslationSource(m_ocrAction, "Recognizing text");
@@ -3710,14 +3743,14 @@ void ScreenshotPinnedWindow::createContextMenu() {
 
     m_contextMenu->addSeparator();
 
-    if (!animatedImage()) {
+    if (!isLiveWindow() && !animatedImage()) {
         m_drawingAction = m_contextMenu->addItem(tr("Annotation mode"), outlined_icons::Edit());
         setActionTranslationSource(m_drawingAction, "Annotation mode");
         m_drawingAction->setObjectName(QStringLiteral("screenshotPinnedDrawingAction"));
         m_drawingAction->setCheckable(true);
         connect(m_drawingAction, &QAction::toggled, this,
                 [this](bool enabled) { setEditMode(enabled); });
-    } else {
+    } else if (animatedImage()) {
         m_animationToggleAction = m_contextMenu->addItem(tr("Pause"));
         m_animationToggleAction->setObjectName(
             QStringLiteral("screenshotPinnedTogglePlaybackAction"));
@@ -3893,7 +3926,12 @@ void ScreenshotPinnedWindow::createContextMenu() {
                     "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting")),
                 custom_outlined_icons::ImageSplitting());
             m_splitImageAction->setObjectName(QStringLiteral("screenshotPinnedSplitImageAction"));
+            m_splitImageAction->setProperty("liveCommand", QStringLiteral("split_image"));
             connect(m_splitImageAction, &QAction::triggered, this, [this] {
+                if (isLiveWindow()) {
+                    splitLiveImage();
+                    return;
+                }
                 if (m_closing || !m_firstContentFramePublished || m_transformedImage.isNull())
                     return;
                 emit splitRequested(splittingSnapshot());
@@ -3903,7 +3941,12 @@ void ScreenshotPinnedWindow::createContextMenu() {
             setActionTranslationSource(m_imageEditingAction, "Image Editing");
             m_imageEditingAction->setObjectName(
                 QStringLiteral("screenshotPinnedImageEditingAction"));
+            m_imageEditingAction->setProperty("liveCommand", QStringLiteral("image_editing"));
             connect(m_imageEditingAction, &QAction::triggered, this, [this] {
+                if (isLiveWindow()) {
+                    editLiveImage();
+                    return;
+                }
                 if (m_closing || !m_firstContentFramePublished ||
                     (m_transformedImage.isNull() && !m_imageSource.isValid()))
                     return;
@@ -3918,29 +3961,33 @@ void ScreenshotPinnedWindow::createContextMenu() {
 
     m_contextMenu->addSeparator();
 
-    m_groupMenuAction = m_contextMenu->addLazySubMenu(
-        QString(),
-        [this](auto* menu) {
-            m_groupMenu = menu;
-            menu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
-            menu->setMinimumWidth(300);
-            rebuildGroupMenu();
-        },
-        custom_outlined_icons::Group());
-    m_groupMenuAction->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
+    if (!isLiveWindow()) {
+        m_groupMenuAction = m_contextMenu->addLazySubMenu(
+            QString(),
+            [this](auto* menu) {
+                m_groupMenu = menu;
+                menu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
+                menu->setMinimumWidth(300);
+                rebuildGroupMenu();
+            },
+            custom_outlined_icons::Group());
+        m_groupMenuAction->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
 
-    m_thumbnailAction = m_contextMenu->addItem(tr("Thumbnail mode"), outlined_icons::Compress());
-    setActionTranslationSource(m_thumbnailAction, "Thumbnail mode");
-    m_thumbnailAction->setObjectName(QStringLiteral("screenshotPinnedThumbnailAction"));
-    m_thumbnailAction->setCheckable(true);
-    connect(m_thumbnailAction, &QAction::toggled, this,
-            [this](bool enabled) { setThumbnailMode(enabled); });
+        m_thumbnailAction =
+            m_contextMenu->addItem(tr("Thumbnail mode"), outlined_icons::Compress());
+        setActionTranslationSource(m_thumbnailAction, "Thumbnail mode");
+        m_thumbnailAction->setObjectName(QStringLiteral("screenshotPinnedThumbnailAction"));
+        m_thumbnailAction->setCheckable(true);
+        connect(m_thumbnailAction, &QAction::toggled, this,
+                [this](bool enabled) { setThumbnailMode(enabled); });
 
-    m_hideToTopAction = m_contextMenu->addItem(tr("Hide to Top"), outlined_icons::ArrowUp());
-    setActionTranslationSource(m_hideToTopAction, "Hide to Top");
-    m_hideToTopAction->setObjectName(QStringLiteral("screenshotPinnedHideToTopAction"));
-    m_hideToTopAction->setCheckable(true);
-    connect(m_hideToTopAction, &QAction::triggered, this, &ScreenshotPinnedWindow::toggleHideToTop);
+        m_hideToTopAction = m_contextMenu->addItem(tr("Hide to Top"), outlined_icons::ArrowUp());
+        setActionTranslationSource(m_hideToTopAction, "Hide to Top");
+        m_hideToTopAction->setObjectName(QStringLiteral("screenshotPinnedHideToTopAction"));
+        m_hideToTopAction->setCheckable(true);
+        connect(m_hideToTopAction, &QAction::triggered, this,
+                &ScreenshotPinnedWindow::toggleHideToTop);
+    }
 
     m_clickThroughAction =
         m_contextMenu->addItem(tr("Click-through"), custom_outlined_icons::Mouse());
@@ -3982,64 +4029,69 @@ void ScreenshotPinnedWindow::createContextMenu() {
             m_showShadowAction->setCheckable(true);
             connect(m_showShadowAction, &QAction::triggered, this,
                     &ScreenshotPinnedWindow::toggleShowShadow);
-            windowManagementMenu->addSeparator();
-            QAction* hideAllWindowsToTop = windowManagementMenu->addItem(
-                tr("Hide All Windows to Top"), outlined_icons::ArrowUp());
-            setActionTranslationSource(hideAllWindowsToTop, "Hide All Windows to Top");
-            hideAllWindowsToTop->setObjectName(
-                QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
-            connect(hideAllWindowsToTop, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::hideAllPinnedWindowsToTop);
-            m_loadContentAction = windowManagementMenu->addLazySubMenu(
-                tr("Load new content"),
-                [this](auto* loadMenu) {
-                    loadMenu->setObjectName(QStringLiteral("screenshotPinnedLoadContentMenu"));
-                    QAction* loadFile =
-                        loadMenu->addItem(tr("Image file"), outlined_icons::FileImage());
-                    setActionTranslationSource(loadFile, "Image file");
-                    loadFile->setObjectName(QStringLiteral("screenshotPinnedLoadImageFileAction"));
-                    connect(loadFile, &QAction::triggered, this,
-                            &ScreenshotPinnedWindow::loadImageFile);
-                    QAction* loadClipboard =
-                        loadMenu->addItem(tr("Clipboard"), custom_outlined_icons::PinClipboard());
-                    setActionTranslationSource(loadClipboard, "Clipboard");
-                    loadClipboard->setObjectName(
-                        QStringLiteral("screenshotPinnedLoadClipboardAction"));
-                    connect(loadClipboard, &QAction::triggered, this,
-                            &ScreenshotPinnedWindow::loadClipboardContent);
-                },
-                outlined_icons::Reload());
-            setActionTranslationSource(m_loadContentAction, "Load new content");
-            m_loadContentAction->setObjectName(QStringLiteral("screenshotPinnedLoadContentAction"));
+            if (!isLiveWindow()) {
+                windowManagementMenu->addSeparator();
+                QAction* hideAllWindowsToTop = windowManagementMenu->addItem(
+                    tr("Hide All Windows to Top"), outlined_icons::ArrowUp());
+                setActionTranslationSource(hideAllWindowsToTop, "Hide All Windows to Top");
+                hideAllWindowsToTop->setObjectName(
+                    QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
+                connect(hideAllWindowsToTop, &QAction::triggered, this,
+                        &ScreenshotPinnedWindow::hideAllPinnedWindowsToTop);
+                m_loadContentAction = windowManagementMenu->addLazySubMenu(
+                    tr("Load new content"),
+                    [this](auto* loadMenu) {
+                        loadMenu->setObjectName(QStringLiteral("screenshotPinnedLoadContentMenu"));
+                        QAction* loadFile =
+                            loadMenu->addItem(tr("Image file"), outlined_icons::FileImage());
+                        setActionTranslationSource(loadFile, "Image file");
+                        loadFile->setObjectName(
+                            QStringLiteral("screenshotPinnedLoadImageFileAction"));
+                        connect(loadFile, &QAction::triggered, this,
+                                &ScreenshotPinnedWindow::loadImageFile);
+                        QAction* loadClipboard = loadMenu->addItem(
+                            tr("Clipboard"), custom_outlined_icons::PinClipboard());
+                        setActionTranslationSource(loadClipboard, "Clipboard");
+                        loadClipboard->setObjectName(
+                            QStringLiteral("screenshotPinnedLoadClipboardAction"));
+                        connect(loadClipboard, &QAction::triggered, this,
+                                &ScreenshotPinnedWindow::loadClipboardContent);
+                    },
+                    outlined_icons::Reload());
+                setActionTranslationSource(m_loadContentAction, "Load new content");
+                m_loadContentAction->setObjectName(
+                    QStringLiteral("screenshotPinnedLoadContentAction"));
 
-            windowManagementMenu->addSeparator();
-            QAction* showAllWindows =
-                windowManagementMenu->addItem(tr("Show all windows"), outlined_icons::Expand());
-            setActionTranslationSource(showAllWindows, "Show all windows");
-            showAllWindows->setObjectName(QStringLiteral("screenshotPinnedShowAllWindowsAction"));
-            connect(showAllWindows, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::showAllPinnedWindows);
-            QAction* hideOtherWindows = windowManagementMenu->addItem(
-                tr("Hide other windows"), outlined_icons::EyeInvisible());
-            setActionTranslationSource(hideOtherWindows, "Hide other windows");
-            hideOtherWindows->setObjectName(
-                QStringLiteral("screenshotPinnedHideOtherWindowsAction"));
-            connect(hideOtherWindows, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::hideOtherPinnedWindows);
-            QAction* closeOtherWindows =
-                windowManagementMenu->addItem(tr("Close other windows"), outlined_icons::Close());
-            setActionTranslationSource(closeOtherWindows, "Close other windows");
-            closeOtherWindows->setObjectName(
-                QStringLiteral("screenshotPinnedCloseOtherWindowsAction"));
-            connect(closeOtherWindows, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::closeOtherPinnedWindows);
-            QAction* closeAll = windowManagementMenu->addItem(tr("Close all windows"),
-                                                              outlined_icons::CloseCircle());
-            setActionTranslationSource(closeAll, "Close all windows");
-            closeAll->setObjectName(QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
-            windowManagementMenu->setActionDanger(closeAll);
-            connect(closeAll, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::closeAllPinnedWindows);
+                windowManagementMenu->addSeparator();
+                QAction* showAllWindows =
+                    windowManagementMenu->addItem(tr("Show all windows"), outlined_icons::Expand());
+                setActionTranslationSource(showAllWindows, "Show all windows");
+                showAllWindows->setObjectName(
+                    QStringLiteral("screenshotPinnedShowAllWindowsAction"));
+                connect(showAllWindows, &QAction::triggered, this,
+                        &ScreenshotPinnedWindow::showAllPinnedWindows);
+                QAction* hideOtherWindows = windowManagementMenu->addItem(
+                    tr("Hide other windows"), outlined_icons::EyeInvisible());
+                setActionTranslationSource(hideOtherWindows, "Hide other windows");
+                hideOtherWindows->setObjectName(
+                    QStringLiteral("screenshotPinnedHideOtherWindowsAction"));
+                connect(hideOtherWindows, &QAction::triggered, this,
+                        &ScreenshotPinnedWindow::hideOtherPinnedWindows);
+                QAction* closeOtherWindows = windowManagementMenu->addItem(
+                    tr("Close other windows"), outlined_icons::Close());
+                setActionTranslationSource(closeOtherWindows, "Close other windows");
+                closeOtherWindows->setObjectName(
+                    QStringLiteral("screenshotPinnedCloseOtherWindowsAction"));
+                connect(closeOtherWindows, &QAction::triggered, this,
+                        &ScreenshotPinnedWindow::closeOtherPinnedWindows);
+                QAction* closeAll = windowManagementMenu->addItem(tr("Close all windows"),
+                                                                  outlined_icons::CloseCircle());
+                setActionTranslationSource(closeAll, "Close all windows");
+                closeAll->setObjectName(QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
+                windowManagementMenu->setActionDanger(closeAll);
+                connect(closeAll, &QAction::triggered, this,
+                        &ScreenshotPinnedWindow::closeAllPinnedWindows);
+            }
 
             refreshMenuShortcutDisplays();
             refreshContextMenu();
@@ -4049,30 +4101,36 @@ void ScreenshotPinnedWindow::createContextMenu() {
     managementAction->setObjectName(QStringLiteral("screenshotPinnedWindowManagementAction"));
 
     m_contextMenu->addSeparator();
-    m_showMainInterfaceAction =
-        m_contextMenu->addItem(tr("Show main interface"), custom_outlined_icons::Window());
-    setActionTranslationSource(m_showMainInterfaceAction, "Show main interface");
-    m_showMainInterfaceAction->setObjectName(
-        QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
-    connect(m_showMainInterfaceAction, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::showMainWindowRequested);
+    if (!isLiveWindow()) {
+        m_showMainInterfaceAction =
+            m_contextMenu->addItem(tr("Show main interface"), custom_outlined_icons::Window());
+        setActionTranslationSource(m_showMainInterfaceAction, "Show main interface");
+        m_showMainInterfaceAction->setObjectName(
+            QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
+        connect(m_showMainInterfaceAction, &QAction::triggered, this,
+                &ScreenshotPinnedWindow::showMainWindowRequested);
+    }
 
     m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
     setActionTranslationSource(m_closeAction, "Close");
     m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));
     connect(m_closeAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestUserClose);
-    QAction* destroyAction =
-        m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
-    setActionTranslationSource(destroyAction, "Destroy");
-    destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
-    m_contextMenu->setActionDanger(destroyAction);
-    connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::confirmDestroy);
+    if (!isLiveWindow()) {
+        QAction* destroyAction =
+            m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
+        setActionTranslationSource(destroyAction, "Destroy");
+        destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
+        m_contextMenu->setActionDanger(destroyAction);
+        connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::confirmDestroy);
+    }
+
     refreshMenuShortcutDisplays();
     updateShowMainInterfaceAction();
     connect(m_contextMenu, &QMenu::aboutToShow, this, [this] {
         exitHideToTop();
         refreshContextMenu();
     });
+    refreshContextMenu();
 }
 
 void ScreenshotPinnedWindow::applyRuntimeBorderColor() {

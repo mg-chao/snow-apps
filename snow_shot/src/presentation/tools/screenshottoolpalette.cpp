@@ -6512,8 +6512,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         connect(m_pinButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("pin-to-screen")); });
         if (snow_shot::app::editionActionToolAvailable(QStringLiteral("pin-window-to-screen"))) {
-            m_pinWindowButton = addActionButton("Pin Window to Screen",
-                                                custom_outlined_icons::ScreenshotFocusedWindow());
+            m_pinWindowButton =
+                addActionButton("Pin Window to Screen", custom_outlined_icons::PinWindowToScreen());
             m_pinWindowButton->setObjectName(QStringLiteral("screenshotPinWindowToScreenButton"));
             addButton(m_pinWindowButton);
             connect(m_pinWindowButton, &adqt::widgets::AdButton::clicked, this,

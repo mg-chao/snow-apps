@@ -98,7 +98,11 @@ bool ScreenshotPinnedWindow::synchronizeLivePresentation(QString* error) {
         return true;
     snow_shot::presentation::LiveWindowPresentation presentation;
     presentation.owner = this;
-    presentation.nativeContentGeometry = authoritativeContentNativeGeometry();
+    const QRect outer = authoritativeNativeGeometry();
+    const QRect content = authoritativeContentNativeGeometry();
+    presentation.nativeContentMargins =
+        QMargins(content.left() - outer.left(), content.top() - outer.top(),
+                 outer.right() - content.right(), outer.bottom() - content.bottom());
     presentation.effectiveOpacity =
         (m_clickThroughActive ? m_clickThroughOpacityPercent : m_opacityPercent) / 100.0;
     presentation.alwaysOnTop = m_alwaysOnTop;
@@ -349,16 +353,7 @@ void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
         m_contextMenu->deleteLater();
         m_contextMenu = nullptr;
     }
-    m_splitImageAction = nullptr;
-    m_imageEditingAction = nullptr;
-    m_lockAction = nullptr;
-    m_closeAction = nullptr;
-    m_alwaysOnTopAction = nullptr;
-    m_showBorderAction = nullptr;
-    m_showShadowAction = nullptr;
-    m_clickThroughAction = nullptr;
-    m_opacityActions = nullptr;
-    m_scaleActions = nullptr;
+    resetContextMenuActions();
     if (m_selectionController)
         m_selectionController->registerWindow(this);
     reloadPinnedWindowShortcuts();
@@ -402,131 +397,4 @@ void ScreenshotPinnedWindow::closeLiveWindow() {
     m_inactiveGroupClosing = true;
     m_deferredInactiveGroupClose = false;
     close();
-}
-
-void ScreenshotPinnedWindow::createLiveContextMenu() {
-    using adqt::widgets::AdContextMenu;
-    m_contextMenu = new AdContextMenu(this);
-    m_contextMenu->setDeleteOnHide();
-    m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
-    m_contextMenu->setFixedWidth(300);
-    const auto add = [this](AdContextMenu* menu, const char* text, const char* name,
-                            const QString& command, std::function<void()> activate) {
-        auto* action = menu->addItem(QCoreApplication::translate("ScreenshotPinnedWindow", text));
-        action->setObjectName(QString::fromLatin1(name));
-        action->setProperty("screenshotPinnedTranslationSource", QString::fromUtf8(text));
-        action->setProperty("liveCommand", command);
-        action->setEnabled(liveCommandAllowed(command));
-        connect(action, &QAction::triggered, this, [this, command, activate = std::move(activate)] {
-            if (liveCommandAllowed(command))
-                activate();
-        });
-        return action;
-    };
-    add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Copy to clipboard"),
-        "screenshotPinnedCopyAction", QStringLiteral("copy_to_clipboard"),
-        [this] { copyCurrentViewport(); });
-    add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Save as file"),
-        "screenshotPinnedSaveAsFileAction", QStringLiteral("save_as_file"),
-        [this] { saveAsFile(); });
-    add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Convert to Image"),
-        "screenshotPinnedConvertToImageAction", QStringLiteral("convert_to_image"),
-        [this] { convertLiveToImage(); });
-    auto* process = m_contextMenu->addSubMenu(tr("Process image"));
-    process->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
-    process->menuAction()->setProperty("screenshotPinnedTranslationSource", "Process image");
-    auto* opacityMenu = process->addSubMenu(tr("Opacity"));
-    opacityMenu->menuAction()->setProperty("screenshotPinnedTranslationSource", "Opacity");
-    add(opacityMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Increase 10%"),
-        "screenshotPinnedIncreaseOpacityAction", QStringLiteral("increase_opacity"),
-        [this] { executeImageCommand(QStringLiteral("increase_opacity")); });
-    add(opacityMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Decrease 10%"),
-        "screenshotPinnedDecreaseOpacityAction", QStringLiteral("decrease_opacity"),
-        [this] { executeImageCommand(QStringLiteral("decrease_opacity")); });
-    m_opacityActions = new QActionGroup(opacityMenu);
-    m_opacityActions->setExclusive(true);
-    auto* scaleMenu = process->addSubMenu(tr("Scale"));
-    scaleMenu->menuAction()->setProperty("screenshotPinnedTranslationSource", "Scale");
-    add(scaleMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Increase 10%"),
-        "screenshotPinnedIncreaseScaleAction", QStringLiteral("increase_scale"),
-        [this] { executeImageCommand(QStringLiteral("increase_scale")); });
-    add(scaleMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Decrease 10%"),
-        "screenshotPinnedDecreaseScaleAction", QStringLiteral("decrease_scale"),
-        [this] { executeImageCommand(QStringLiteral("decrease_scale")); });
-    m_scaleActions = new QActionGroup(scaleMenu);
-    m_scaleActions->setExclusive(true);
-    for (int percent : {25, 50, 75, 100}) {
-        auto* opacity = opacityMenu->addItem(tr("%1%").arg(percent));
-        opacity->setCheckable(true);
-        opacity->setData(percent);
-        m_opacityActions->addAction(opacity);
-        auto* scale = scaleMenu->addItem(tr("%1%").arg(percent));
-        scale->setCheckable(true);
-        scale->setData(percent);
-        m_scaleActions->addAction(scale);
-    }
-    connect(m_opacityActions, &QActionGroup::triggered, this,
-            [this](QAction* action) { setOpacityPercent(action->data().toInt()); });
-    connect(m_scaleActions, &QActionGroup::triggered, this,
-            [this](QAction* action) { applyScale(action->data().toInt()); });
-    const struct {
-        const char* text;
-        const char* name;
-        const char* command;
-    } commands[] = {{QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Rotate clockwise"),
-                     "screenshotPinnedRotateClockwiseAction", "rotate_clockwise"},
-                    {QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Rotate counterclockwise"),
-                     "screenshotPinnedRotateCounterClockwiseAction", "rotate_counterclockwise"},
-                    {QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Flip horizontally"),
-                     "screenshotPinnedFlipHorizontalAction", "flip_horizontal"},
-                    {QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Flip vertically"),
-                     "screenshotPinnedFlipVerticalAction", "flip_vertical"},
-                    {QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Reset transform"),
-                     "screenshotPinnedResetTransformAction", "reset_transform"}};
-    for (const auto& item : commands) {
-        const QString command = QString::fromLatin1(item.command);
-        auto* action = add(process, item.text, item.name, command,
-                           [this, command] { executeImageCommand(command); });
-        action->setProperty("screenshotPinnedTranslationSource", item.text);
-    }
-    m_splitImageAction =
-        add(process, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image Splitting"),
-            "screenshotPinnedSplitImageAction", QStringLiteral("split_image"),
-            [this] { splitLiveImage(); });
-    m_imageEditingAction =
-        add(process, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image Editing"),
-            "screenshotPinnedImageEditingAction", QStringLiteral("image_editing"),
-            [this] { editLiveImage(); });
-    m_contextMenu->addSeparator();
-    m_clickThroughAction =
-        add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Click-through"),
-            "screenshotPinnedClickThroughAction", QStringLiteral("toggle_click_through"),
-            [this] { toggleClickThrough(); });
-    m_clickThroughAction->setCheckable(true);
-    m_lockAction = add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Lock mode"),
-                       "screenshotPinnedLockAction", QStringLiteral("toggle_lock"),
-                       [this] { setLockedMode(!m_lockedMode); });
-    m_lockAction->setCheckable(true);
-    auto* management = m_contextMenu->addSubMenu(tr("Window Management"));
-    management->menuAction()->setProperty("screenshotPinnedTranslationSource", "Window Management");
-    m_alwaysOnTopAction =
-        add(management, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Always on Top"),
-            "screenshotPinnedAlwaysOnTopAction", QStringLiteral("always_on_top"),
-            [this] { toggleAlwaysOnTop(); });
-    m_alwaysOnTopAction->setCheckable(true);
-    m_showBorderAction = add(management, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Show border"),
-                             "screenshotPinnedShowBorderAction", QStringLiteral("show_border"),
-                             [this] { toggleShowBorder(); });
-    m_showBorderAction->setCheckable(true);
-    m_showShadowAction = add(management, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Show shadow"),
-                             "screenshotPinnedShowShadowAction", QStringLiteral("show_shadow"),
-                             [this] { toggleShowShadow(); });
-    m_showShadowAction->setCheckable(true);
-    m_contextMenu->addSeparator();
-    m_closeAction = add(m_contextMenu, QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
-                        "screenshotPinnedCloseAction", QStringLiteral("close_window"),
-                        [this] { requestUserClose(); });
-    connect(m_contextMenu, &QMenu::aboutToShow, this, [this] { refreshContextMenu(); });
-    refreshMenuShortcutDisplays();
-    refreshContextMenu();
 }

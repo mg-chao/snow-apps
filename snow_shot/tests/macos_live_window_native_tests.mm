@@ -165,7 +165,6 @@ int runFixture() {
                                              [&](const QImage& image) { latest = image; });
     LiveWindowPresentation presentation;
     presentation.owner = &shell;
-    presentation.nativeContentGeometry = shell.geometry();
     QString error;
     require(source->setPresentation(presentation, &error) && !source->usesNativePresentation(),
             "macOS display must use continuous independent native window frames.");
@@ -203,11 +202,10 @@ int runFixture() {
     require(throughHelper && throughHelper->nativeId == id,
             "Target lookup must step below explicitly excluded helper windows.");
     occluder.hide();
-    const QRect pinnedGeometry = presentation.nativeContentGeometry;
+    const QRect pinnedGeometry = shell.geometry();
     window->move(window->pos() + QPoint(100, 80));
     QApplication::processEvents();
-    require(hasColor(sample(), window->color) &&
-                presentation.nativeContentGeometry == pinnedGeometry,
+    require(hasColor(sample(), window->color) && shell.geometry() == pinnedGeometry,
             "Moving the source must preserve its local crop and pin placement.");
     const QSize originalSize = window->size();
     window->resize(30, 30);
