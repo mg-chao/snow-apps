@@ -407,6 +407,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void createContextMenu();
     void resetContextMenuActions();
     [[nodiscard]] bool liveCommandAllowed(const QString& command) const;
+    [[nodiscard]] QRectF liveSourceViewport() const;
     bool initializeLivePresentation(QString* error = nullptr);
     void scheduleLivePresentation();
     bool synchronizeLivePresentation(QString* error = nullptr);

@@ -3,6 +3,7 @@
 #include "../src/presentation/pinned/screenshotpinnedcropgeometry.h"
 #include "../src/presentation/pinned/screenshotpinnedgeometrymapping.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
+#include <QThreadPool>
 
 namespace pinned_crop_tests {
 using Access = ScreenshotPinnedWindowTestAccess;
@@ -579,6 +580,186 @@ void liveWindow() {
     window.closeLiveWindow();
 }
 
+std::shared_ptr<live_pinned_tests::FakeSource> patternedLiveSource() {
+    auto source = std::make_shared<live_pinned_tests::FakeSource>();
+    for (int y = 0; y < source->frame.height(); ++y)
+        for (int x = 0; x < source->frame.width(); ++x)
+            source->frame.setPixelColor(x, y, QColor(x * 3, y * 5, 80));
+    return source;
+}
+
+void liveConversion() {
+    for (const int cropState : {0, 1, 2}) {
+        for (const bool transformed : {false, true}) {
+            auto source = patternedLiveSource();
+            std::optional<snow_shot::storage::PinnedWindowRecord> persisted;
+            ScreenshotPinnedWindow window;
+            auto setup = live_pinned_tests::config(source);
+            setup.initialShadowVisible = true;
+            setup.persistenceWriter = [&](const auto& record) { persisted = record; };
+            live_pinned_tests::present(window, setup);
+            require(Access::crop(window, {20, 10, 60, 40}), "live conversion crop fixture");
+            if (cropState != 0)
+                Access::applyCrop(window);
+            if (cropState == 2)
+                require(Access::crop(window, {30, 20, 30, 20}),
+                        "temporary crop inside a committed live crop");
+            if (transformed) {
+                LiveAccess::command(window, QStringLiteral("rotate_clockwise"));
+                translation_tests::waitUntil([&] { return !LiveAccess::frameProcessing(window); },
+                                             "live conversion rotation settles");
+                LiveAccess::command(window, QStringLiteral("flip_horizontal"));
+                translation_tests::waitUntil([&] { return !LiveAccess::frameProcessing(window); },
+                                             "live conversion reflection settles");
+            }
+            LiveAccess::scale(window, 137);
+            const QRect geometry = LiveAccess::contentGeometry(window);
+            const QImage expected = exportImage(window, LiveAccess::artifact(window, false));
+            require(expected.pixelColor(1, 1) !=
+                        expected.pixelColor(expected.width() - 2, expected.height() - 2),
+                    "conversion fixture distinguishes source positions and orientation");
+            require(!persisted, "live crop changes do not persist a static image");
+            LiveAccess::convert(window);
+            translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
+                                         "cropped live window converts");
+
+            const auto record = window.persistenceSnapshot();
+            const QRectF canvas(QPointF(), QSizeF(geometry.size()));
+            require(!record.cropRect && record.imageTransform.isIdentity() &&
+                        record.quarterTurns == 0 && Access::originalImage(window) == expected &&
+                        exportImage(window, Access::cropSave(window)) == expected,
+                    "conversion bakes crop and orientation exactly once into the new source");
+            require(LiveAccess::contentGeometry(window) == geometry &&
+                        record.canvasSourceRect == canvas && record.contentCanvasRect == canvas &&
+                        record.surfaceCanvasRect == canvas &&
+                        Access::visibleCrop(window) == canvas && record.scalePercent == 100,
+                    "converted snapshot owns a new canvas and a one-hundred-percent baseline");
+            const auto editor = window.imageEditingSnapshot();
+            require(editor.image == expected && editor.canvasRect == canvas,
+                    "editing receives the complete converted snapshot");
+            auto* border = Access::decoration(window);
+            require(!border->property("cropped").toBool() &&
+                        !border->property("showBorder").toBool() &&
+                        border->property("showShadow").toBool(),
+                    "conversion clears crop decorations and restores configured appearance");
+            require(persisted && !persisted->cropRect && persisted->image == expected &&
+                        persisted->canvasSourceRect == canvas &&
+                        persisted->initialWindowSize == geometry.size() &&
+                        persisted->scalePercent == 100,
+                    "the first persisted image contains the normalized conversion state");
+            LiveAccess::scale(window, 100);
+            require(LiveAccess::contentGeometry(window) == geometry,
+                    "one-hundred-percent zoom preserves converted geometry");
+            LiveAccess::scale(window, 200);
+            require(LiveAccess::contentGeometry(window).size() == geometry.size() * 2,
+                    "zoom uses the converted extent instead of an applied crop's old baseline");
+            LiveAccess::scale(window, 100);
+            source->publish(Qt::magenta);
+            QCoreApplication::processEvents();
+            require(source->shutdowns == 1 && Access::originalImage(window) == expected &&
+                        exportImage(window, Access::cropSave(window)) == expected,
+                    "source updates and zoom cannot alter the converted snapshot");
+            window.hide();
+        }
+    }
+}
+
+void liveConversionRejectsChangedCrop() {
+    auto source = patternedLiveSource();
+    ScreenshotPinnedWindow window;
+    live_pinned_tests::present(window, live_pinned_tests::config(source));
+    require(Access::crop(window, {20, 10, 60, 40}), "deferred conversion crop fixture");
+    const QRect initialGeometry = LiveAccess::contentGeometry(window);
+    source->deferFrames = true;
+    LiveAccess::convert(window);
+    require(LiveAccess::snapshotPending(window) && source->pending.size() == 1,
+            "conversion waits for its captured frame");
+    const QPointF press = initialGeometry.topLeft() + QPoint(0, 20);
+    require(Access::beginCropResize(window, press, int(Handle::Left)),
+            "resize a crop while its conversion is pending");
+    Access::moveCropResize(window, press + QPointF(120, 0));
+    Access::endCropResize(window);
+    require(LiveAccess::contentGeometry(window).size() == initialGeometry.size() &&
+                Access::visibleCrop(window) == QRectF(80, 10, 60, 40),
+            "crossing the opposite edge changes the source viewport without changing its size");
+    source->deliver();
+    translation_tests::waitUntil([&] { return !LiveAccess::snapshotPending(window); },
+                                 "obsolete crop conversion finishes");
+    require(window.isLiveWindow() && source->shutdowns == 0 &&
+                Access::visibleCrop(window) == QRectF(80, 10, 60, 40),
+            "conversion cannot install pixels from a superseded source viewport");
+    source->deferFrames = false;
+    const QImage expected = exportImage(window, LiveAccess::artifact(window, false));
+    LiveAccess::convert(window);
+    translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
+                                 "conversion can retry using the current crop");
+    require(exportImage(window, Access::cropSave(window)) == expected,
+            "conversion retry installs the current source region exactly once");
+    window.hide();
+}
+
+void liveConversionEndsCropInteraction() {
+    for (const bool resizing : {false, true}) {
+        auto source = patternedLiveSource();
+        ScreenshotPinnedWindow window;
+        live_pinned_tests::present(window, live_pinned_tests::config(source));
+        require(Access::crop(window, {20, 10, 60, 40}), "conversion interaction crop fixture");
+        const QImage expected = exportImage(window, LiveAccess::artifact(window, false));
+        source->deferFrames = true;
+        LiveAccess::convert(window);
+        const QRect geometry = LiveAccess::contentGeometry(window);
+        if (resizing)
+            require(Access::beginCropResize(window, geometry.topLeft(), int(Handle::Left)),
+                    "begin crop edge interaction before conversion completes");
+        else
+            require(Access::beginCrop(window, geometry.center()),
+                    "begin crop selection before conversion completes");
+        source->deliver();
+        translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
+                                     "conversion ends the obsolete crop interaction");
+        require(!Access::cropSelecting(window) && !Access::interactionActive(window) &&
+                    !window.persistenceSnapshot().cropRect &&
+                    LiveAccess::contentGeometry(window) == geometry &&
+                    exportImage(window, Access::cropSave(window)) == expected,
+                "conversion releases crop interaction ownership without changing the snapshot");
+        window.hide();
+    }
+}
+
+void liveConversionDiscardsPendingCrop() {
+    auto source = patternedLiveSource();
+    ScreenshotPinnedWindow window;
+    live_pinned_tests::present(window, live_pinned_tests::config(source));
+    require(Access::crop(window, {20, 10, 60, 40}), "pending apply conversion fixture");
+    const QImage expected = exportImage(window, LiveAccess::artifact(window, false));
+    auto* pool = QThreadPool::globalInstance();
+    const int workers = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    const auto started = std::make_shared<QSemaphore>();
+    const auto release = std::make_shared<QSemaphore>();
+    const auto restoreWorkers = qScopeGuard([&] {
+        release->release();
+        pool->setMaxThreadCount(workers);
+    });
+    pool->start([started, release] {
+        started->release();
+        release->acquire();
+    });
+    require(started->tryAcquire(1, 5000), "hold crop preparation until after conversion");
+    Access::startApplyCrop(window);
+    require(Access::cropApplying(window), "crop preparation remains pending");
+    LiveAccess::convert(window);
+    translation_tests::waitUntil([&] { return !window.isLiveWindow(); },
+                                 "conversion installs its independently prepared snapshot");
+    release->release();
+    translation_tests::waitUntil([&] { return !Access::cropApplying(window); },
+                                 "obsolete crop preparation retires");
+    require(!window.persistenceSnapshot().cropRect && Access::originalImage(window) == expected &&
+                exportImage(window, Access::cropSave(window)) == expected,
+            "pending crop work cannot overwrite the converted source");
+    window.hide();
+}
+
 void restorationAndTransforms() {
     QTemporaryDir directory;
     require(directory.isValid(), "crop repository fixture directory");
@@ -773,4 +954,8 @@ void pinnedCropTests() {
     pinned_crop_tests::styledAndTransformedApply();
     pinned_crop_tests::animations();
     pinned_crop_tests::liveWindow();
+    pinned_crop_tests::liveConversion();
+    pinned_crop_tests::liveConversionRejectsChangedCrop();
+    pinned_crop_tests::liveConversionEndsCropInteraction();
+    pinned_crop_tests::liveConversionDiscardsPendingCrop();
 }
