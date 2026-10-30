@@ -40,12 +40,8 @@ struct ScreenshotShortcutExitConfirmation::Impl {
         suspension = shortcutManager.suspendInput();
 
         AdModalService::Request request;
-#ifdef Q_OS_MACOS
-        // A child overlay cannot cover the native floating screenshot toolbar.
+        // A child overlay cannot cover native floating screenshot tools such as the magnifier.
         request.mode = AdModal::Mode::Window;
-#else
-        request.mode = AdModal::Mode::Overlay;
-#endif
         request.title = QCoreApplication::translate("ScreenshotController", "Exit screenshot?");
         request.text = QCoreApplication::translate("ScreenshotController",
                                                    "Your current screenshot will be discarded.");

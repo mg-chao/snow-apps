@@ -7469,6 +7469,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(snow-shot-color-picker-lifecycle-tests
         tests/screenshot_color_picker_lifecycle_tests.cpp
+        src/presentation/services/screenshotshortcutexitconfirmation.cpp
         src/presentation/services/screenshotcanvascolorsampler.cpp
         src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotcolorpickercontroller.cpp
@@ -7512,6 +7513,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
+    add_test(NAME snow-shot-exit-confirmation-stacking-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --exit-confirmation-stacking-only -platform offscreen)
+    set_tests_properties(snow-shot-exit-confirmation-stacking-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-canvas-sampling-session-tests
         COMMAND snow-shot-color-picker-lifecycle-tests --canvas-sampler-only -platform offscreen)
     set_tests_properties(snow-shot-canvas-sampling-session-tests PROPERTIES LABELS "unit" TIMEOUT 60
@@ -7544,6 +7551,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-color-picker-lifecycle-tests --stacking-only -platform windows)
         set_tests_properties(snow-shot-tool-stacking-native-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE)
+        add_test(NAME snow-shot-exit-confirmation-stacking-native-tests
+            COMMAND snow-shot-color-picker-lifecycle-tests --exit-confirmation-stacking-only -platform windows)
+        set_tests_properties(snow-shot-exit-confirmation-stacking-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     set_tests_properties(snow-shot-color-picker-lifecycle-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
