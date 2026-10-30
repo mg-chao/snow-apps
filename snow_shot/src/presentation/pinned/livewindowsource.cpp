@@ -545,6 +545,9 @@ class CapturedLiveWindowSource final
     QString stateMessage() const override {
         return m_message;
     }
+    QString windowTitle() const override {
+        return m_target.title;
+    }
     void requestFrame(FrameCompletion completion) override {
         if (!m_initialized || m_state != LiveWindowState::Live || m_stopped) {
             completion({}, m_message.isEmpty()

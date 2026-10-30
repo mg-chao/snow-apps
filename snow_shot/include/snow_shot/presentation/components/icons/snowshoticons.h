@@ -273,6 +273,10 @@ SequenceNumberSolidSquare(const adqt::icons::IconColors& colors = {});
 } // namespace outlined
 
 namespace twotone {
+[[nodiscard]] adqt::icons::IconRef LiveWindowClosed(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef LiveWindowMinimized(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+LiveWindowUnavailable(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ScreenshotFeature(const adqt::icons::IconColors& colors = {});
 } // namespace twotone
 

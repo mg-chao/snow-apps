@@ -1095,11 +1095,42 @@ void distanceUnitIconsFollowThemeAtToolbarSizes() {
         require(preview.save(path), "save distance unit icon preview");
 }
 
+void liveWindowStatusIconsRetainWindowFrame() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto colors = adqt::icons::IconColors::twoTone(QColor("#595959"), QColor("#faad14"));
+    const adqt::icons::IconRef refs[] = {icons::twotone::LiveWindowClosed(colors),
+                                         icons::twotone::LiveWindowMinimized(colors),
+                                         icons::twotone::LiveWindowUnavailable(colors)};
+    QImage preview(576, 192, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    for (int index = 0; index < 3; ++index) {
+        const auto pixmap = render(refs[index], QSize(192, 192));
+        painter.drawPixmap(index * 192, 0, pixmap);
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_LIVE_WINDOW_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save live window status icon inspection sheet");
+    for (const auto& ref : refs) {
+        for (const qreal dpr : {1.0, 1.5, 2.0}) {
+            const auto image = render(ref, QSize(96, 96), dpr).toImage();
+            require(image.pixelColor(qRound(44 * dpr), qRound(14 * dpr)).alpha() > 100,
+                    "live window status artwork retains the top window border");
+            require(image.pixelColor(qRound(44 * dpr), qRound(32 * dpr)).alpha() > 100,
+                    "live window status artwork retains the title bar divider");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--live-window-status-only"))) {
+            liveWindowStatusIconsRetainWindowFrame();
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--distance-units-only"))) {
             distanceUnitIconsFollowThemeAtToolbarSizes();
             return 0;
@@ -1163,6 +1194,7 @@ int main(int argc, char** argv) {
             everySnowShotEntryRenders();
             return 0;
         }
+        liveWindowStatusIconsRetainWindowFrame();
         everySnowShotEntryRenders();
         distanceUnitIconsFollowThemeAtToolbarSizes();
         arrowheadIconsFaceTheirRespectiveEndpoints();

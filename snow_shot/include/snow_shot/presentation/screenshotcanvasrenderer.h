@@ -139,8 +139,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                         const ScreenshotImageSource& samplingSource = {});
     // Pinned animation bypasses canvas reconstruction and annotation caches.
     void setPinnedAnimationFrame(const QImage& image, const QRectF& canvasRect);
-    // Live pins have no annotations; frame replacement must not rebuild editing state.
-    void setPinnedLiveFrame(ScreenshotImageSource source);
+    // Live pixels retain their capture orientation. The canvas rectangle is the
+    // displayed extent after imageTransform; painting applies it without a new raster.
+    void setPinnedLiveFrame(ScreenshotImageSource source, const QTransform& imageTransform = {});
     [[nodiscard]] ScreenshotImageSource imageSourceSnapshot() const {
         return m_imageSource;
     }
@@ -317,6 +318,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     ScreenshotImageSource m_imageSource;
     ScreenshotImageSource m_samplingImageSource;
     bool m_pinnedLiveFrames = false;
+    QTransform m_pinnedLiveTransform;
     QList<SnowCanvasBaseImageSource> m_baseImageSources;
     // Source opacity is checked once per image, independently of moving selection damage.
     QList<QRectF> m_opaqueImageCanvasRects;

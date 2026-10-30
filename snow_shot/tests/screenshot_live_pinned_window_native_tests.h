@@ -575,10 +575,8 @@ void run() {
     fixture.paintColor(QColor(192, 96, 32));
     live_pinned_tests::wait(
         [&] {
-            return !Access::frameProcessing(window) &&
-                   colorMatches(Access::original(window), fixture.color) &&
-                   Access::transformed(window).size() ==
-                       QSize(selection.height(), selection.width());
+            return colorMatches(Access::original(window), fixture.color) &&
+                   Access::transformed(window).isNull() && !Access::transform(window).isIdentity();
         },
         "the rotated actual pin continuously receives and transforms WGC source updates");
     const QTransform rotated = Access::transform(window);
@@ -592,7 +590,7 @@ void run() {
     fixture.paintColor(QColor(144, 48, 176));
     live_pinned_tests::wait(
         [&] {
-            return !source->usesNativePresentation() && !Access::frameProcessing(window) &&
+            return !source->usesNativePresentation() &&
                    colorMatches(Access::original(window), fixture.color);
         },
         "both actual flip operations retain continuous WGC updates");

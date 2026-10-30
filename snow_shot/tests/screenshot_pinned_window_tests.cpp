@@ -27136,6 +27136,12 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--live-window-status-only"))) {
+            live_pinned_tests::statusFitsConstrainedContent();
+            live_pinned_tests::statusAndCapabilityGates();
+            live_pinned_tests::statusLayoutFollowsContent();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--live-window-pin-only"))) {
             pinnedLiveWindowTests();
             return 0;

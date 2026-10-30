@@ -421,7 +421,8 @@ void callbacksMayShutdownTheirSource() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     using namespace snow_shot::presentation;
-    const LiveWindowTarget target{42, 7, QRect(100, 200, 100, 80), QPoint(150, 240)};
+    const LiveWindowTarget target{42, 7, QRect(100, 200, 100, 80), QPoint(150, 240),
+                                  QStringLiteral("Source document — Editor")};
     auto first = createLiveWindowSource(target, QRect(120, 220, 60, 40));
     auto second = createLiveWindowSource(target, QRect(130, 230, 20, 20));
     int initialized = 0;
@@ -434,6 +435,8 @@ int main(int argc, char** argv) {
         ++initialized;
     });
     require(waitFor([&] { return initialized == 2; }), "Both initialization callbacks complete.");
+    require(first->windowTitle() == target.title && second->windowTitle() == target.title,
+            "Each crop retains its selected source window title.");
     require(first->initialFrame().size() == QSize(60, 40) &&
                 second->initialFrame().size() == QSize(20, 20),
             "Matching source consumers retain independent fixed crop extents.");
@@ -520,6 +523,8 @@ int main(int argc, char** argv) {
     sourceState = LiveWindowState::Closed;
     require(waitFor([&] { return second->state() == LiveWindowState::Closed; }),
             "A destroyed source enters the terminal closed-source state.");
+    require(second->windowTitle() == target.title,
+            "A closed source retains its title for the pinned error heading.");
     stateMessagesFollowLanguageChanges(
         *second, "The window is closed. The latest content cannot be displayed.");
     sourceState = LiveWindowState::Live;

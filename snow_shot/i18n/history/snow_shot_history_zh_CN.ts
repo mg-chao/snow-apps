@@ -1684,6 +1684,10 @@ Files:
             <translation>确定关闭此固定到屏幕窗口吗？</translation>
         </message>
         <message>
+            <source>Closed</source>
+            <translation>已关闭</translation>
+        </message>
+        <message>
             <source>Convert to Image</source>
             <translation>转换为图片</translation>
         </message>
@@ -1822,6 +1826,10 @@ Files:
         <message>
             <source>Lock mode</source>
             <translation>锁定模式</translation>
+        </message>
+        <message>
+            <source>Minimized</source>
+            <translation>已最小化</translation>
         </message>
         <message>
             <source>Move window</source>
@@ -2016,6 +2024,14 @@ Files:
         <message>
             <source>Translation results</source>
             <translation>翻译结果</translation>
+        </message>
+        <message>
+            <source>Unavailable</source>
+            <translation>暂不可用</translation>
+        </message>
+        <message>
+            <source>Untitled window</source>
+            <translation>无标题窗口</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>

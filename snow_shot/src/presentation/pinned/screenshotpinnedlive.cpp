@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 
 #include "snow_shot/presentation/livewindowsource.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/imageeditingdocument.h"
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
@@ -15,19 +16,22 @@
 #include "widgets/context_menu.h"
 #include "widgets/button.h"
 #include "widgets/message.h"
+#include "widgets/result.h"
+#include "icon_renderer.h"
 #include "theme/theme_manager.h"
 #include "pinnedwindowplatform.h"
 #include "screenshotclipboardplacementgeometry.h"
+#include "livewindowframerenderer_p.h"
 
 #include <QAction>
 #include <QActionGroup>
 #include <QColorSpace>
 #include <QApplication>
-#include <QFutureWatcher>
 #include <QLabel>
+#include <QLayout>
+#include <QScopedValueRollback>
 #include <QPainter>
 #include <QTimer>
-#include <QtConcurrentRun>
 #include <chrono>
 #include <future>
 #include <algorithm>
@@ -35,6 +39,146 @@
 
 using snow_shot::presentation::LiveWindowSource;
 using snow_shot::presentation::LiveWindowState;
+
+namespace {
+// A pin can be smaller than a Result's artwork, padding, or wrapped title. Select
+// the richest presentation that fits, prioritizing the state over the source title.
+// Child size hints must never constrain the independently resizable pin.
+class LiveWindowStatusView final : public QWidget {
+  public:
+    explicit LiveWindowStatusView(QWidget* parent) : QWidget(parent) {
+        setObjectName(QStringLiteral("screenshotPinnedLiveStatusView"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        m_result = new adqt::widgets::AdResult(this);
+        m_result->setObjectName(QStringLiteral("screenshotPinnedLiveStatus"));
+        m_result->layout()->setSizeConstraint(QLayout::SetNoConstraint);
+        adqt::widgets::AdResult::ComponentTokens tokens;
+        tokens.titleFontSize = 20;
+        tokens.iconFontSize = 64;
+        m_result->setComponentTokens(tokens);
+        m_description = new QLabel(this);
+        m_description->setObjectName(QStringLiteral("screenshotPinnedLiveStatusDescription"));
+        m_summary = new QLabel(this);
+        m_summary->setObjectName(QStringLiteral("screenshotPinnedLiveStatusSummary"));
+        m_icon = new QLabel(this);
+        m_icon->setObjectName(QStringLiteral("screenshotPinnedLiveStatusCompactIcon"));
+        for (auto* label : {m_description, m_summary, m_icon}) {
+            label->setAlignment(Qt::AlignCenter);
+            label->setTextFormat(Qt::PlainText);
+            label->setWordWrap(true);
+        }
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { updateAppearance(); });
+        updateAppearance();
+    }
+
+    void setState(LiveWindowState state, const QString& title, const QString& description,
+                  const QString& summary) {
+        m_state = state;
+        m_result->setTitle(title);
+        m_result->setSubTitle(description);
+        m_description->setText(description);
+        m_summary->setText(summary);
+        setAccessibleName(title);
+        setAccessibleDescription(description);
+        for (auto* label : {m_description, m_summary, m_icon})
+            label->setAccessibleName(description);
+        updateAppearance();
+    }
+
+  protected:
+    bool event(QEvent* event) override {
+        const bool handled = QWidget::event(event);
+        switch (event->type()) {
+        case QEvent::FontChange:
+            updateAppearance();
+            break;
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::LayoutRequest:
+        case QEvent::DevicePixelRatioChange:
+            updateLayout();
+            break;
+        default:
+            break;
+        }
+        return handled;
+    }
+
+  private:
+    void updateAppearance() {
+        if (!m_icon)
+            return;
+        using namespace snow_shot::presentation::icons::custom;
+        const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
+        QFont textFont = font();
+        textFont.setPixelSize(qRound(theme.fontSize));
+        QPalette textPalette = palette();
+        textPalette.setColor(QPalette::WindowText, theme.colorTextSecondary);
+        for (auto* label : {m_description, m_summary}) {
+            label->setFont(textFont);
+            label->setPalette(textPalette);
+        }
+        m_compactPadding = qRound(theme.sizeXXS);
+        const bool closed = m_state == LiveWindowState::Closed;
+        m_result->setStatus(closed ? adqt::widgets::AdResult::Status::Error
+                                   : adqt::widgets::AdResult::Status::Warning);
+        const auto colors = adqt::icons::IconColors::twoTone(
+            theme.colorTextTertiary, closed ? theme.colorError : theme.colorWarning);
+        const auto icon = closed ? twotone::LiveWindowClosed(colors)
+                          : m_state == LiveWindowState::Minimized
+                              ? twotone::LiveWindowMinimized(colors)
+                              : twotone::LiveWindowUnavailable(colors);
+        m_result->setIcon(adqt::icons::makeIcon(icon));
+        updateLayout();
+    }
+
+    void updateLayout() {
+        if (!m_icon || m_updatingLayout)
+            return;
+        const QScopedValueRollback<bool> updating(m_updatingLayout, true);
+        const int width = std::min(this->width(), 520);
+        // Adopt the wrapping width before measuring Result's nested layouts.
+        m_result->resize(width, m_result->height());
+        m_result->layout()->activate();
+        const int height = m_result->heightForWidth(width);
+        QWidget* visible = nullptr;
+        if (width >= m_result->minimumSizeHint().width() && height <= this->height()) {
+            m_result->setGeometry((this->width() - width) / 2, (this->height() - height) / 2, width,
+                                  height);
+            visible = m_result;
+        } else if (!rect().isEmpty()) {
+            const int padding =
+                std::min(m_compactPadding, std::min(this->width(), this->height()) / 4);
+            const QRect content = rect().adjusted(padding, padding, -padding, -padding);
+            for (auto* label : {m_description, m_summary}) {
+                label->setGeometry(content);
+                if (content.width() >= label->minimumSizeHint().width() &&
+                    label->heightForWidth(content.width()) <= content.height()) {
+                    visible = label;
+                    break;
+                }
+            }
+            if (!visible) {
+                const int side = std::min({content.width(), content.height(), 32});
+                m_icon->setGeometry(content);
+                m_icon->setPixmap(m_result->icon().pixmap(QSize(side, side), devicePixelRatioF()));
+                visible = m_icon;
+            }
+        }
+        for (auto* widget : {static_cast<QWidget*>(m_result), static_cast<QWidget*>(m_description),
+                             static_cast<QWidget*>(m_summary), static_cast<QWidget*>(m_icon)})
+            widget->setVisible(widget == visible);
+    }
+    adqt::widgets::AdResult* m_result = nullptr;
+    QLabel* m_description = nullptr;
+    QLabel* m_summary = nullptr;
+    QLabel* m_icon = nullptr;
+    LiveWindowState m_state = LiveWindowState::Unavailable;
+    int m_compactPadding = 0;
+    bool m_updatingLayout = false;
+};
+} // namespace
 
 bool ScreenshotPinnedWindow::liveFrameAvailable() const {
     return m_liveSource && m_liveSource->state() == LiveWindowState::Live &&
@@ -118,8 +262,6 @@ bool ScreenshotPinnedWindow::synchronizeLivePresentation(QString* error) {
     presentation.backgroundColor.setAlpha(255);
     const bool result = m_liveSource->setPresentation(presentation, error);
     m_liveNativePresentation = m_liveSource->usesNativePresentation();
-    if (m_liveStatusLabel)
-        m_liveStatusLabel->setGeometry(contentViewRect().toAlignedRect());
     if (m_canvas)
         m_canvas->setVisible(liveFrameAvailable() && !m_liveNativePresentation);
     update();
@@ -130,35 +272,36 @@ void ScreenshotPinnedWindow::updateLiveState() {
     if (!m_liveSource || m_closing)
         return;
     const bool available = liveFrameAvailable();
-    if (!available && !m_liveStatusLabel) {
-        m_liveStatusLabel = new QLabel(this);
-        m_liveStatusLabel->setObjectName(QStringLiteral("screenshotPinnedLiveStatus"));
-        m_liveStatusLabel->setWordWrap(true);
-        m_liveStatusLabel->setAlignment(Qt::AlignCenter);
-        m_liveStatusLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        m_liveStatusLabel->setContentsMargins(12, 12, 12, 12);
-    }
-    if (m_liveStatusLabel) {
+    if (!available && !m_liveStatusView)
+        m_liveStatusView = new LiveWindowStatusView(this);
+    if (m_liveStatusView) {
         QString text;
+        QString summary;
         switch (m_liveSource->state()) {
         case LiveWindowState::Minimized:
             text = tr("The window is minimized. The latest content cannot be displayed.");
+            summary = tr("Minimized");
             break;
         case LiveWindowState::Closed:
             text = tr("The window is closed. The latest content cannot be displayed.");
+            summary = tr("Closed");
             break;
         case LiveWindowState::Initializing:
         case LiveWindowState::Unavailable:
             text = tr("Live content is unavailable. Retrying...");
+            summary = tr("Unavailable");
             break;
         case LiveWindowState::Live:
             break;
         }
-        m_liveStatusLabel->setText(text);
-        m_liveStatusLabel->setToolTip(m_liveSource->stateMessage());
-        m_liveStatusLabel->setGeometry(contentViewRect().toAlignedRect());
-        m_liveStatusLabel->setVisible(!available);
-        m_liveStatusLabel->raise();
+        const QString title = m_liveSource->windowTitle();
+        static_cast<LiveWindowStatusView*>(m_liveStatusView)
+            ->setState(m_liveSource->state(), title.isEmpty() ? tr("Untitled window") : title, text,
+                       summary);
+        m_liveStatusView->setToolTip(m_liveSource->stateMessage());
+        m_liveStatusView->setGeometry(contentViewRect().toAlignedRect());
+        m_liveStatusView->setVisible(!available);
+        m_liveStatusView->raise();
     }
     if (m_canvas)
         m_canvas->setVisible(available && !m_liveNativePresentation);
@@ -171,66 +314,33 @@ void ScreenshotPinnedWindow::updateLiveState() {
 void ScreenshotPinnedWindow::queueLiveFrame(QImage frame) {
     if (!m_liveSource || m_closing || frame.isNull())
         return;
-    m_livePendingFrame = std::move(frame);
-    if (m_liveFrameProcessing)
-        return;
-    QImage original = std::exchange(m_livePendingFrame, {});
-    const QTransform transform = m_requestedLiveTransform.value_or(m_imageTransform);
-    if (transform.isIdentity()) {
-        installLiveFrame(original, original);
-        return;
-    }
-    if (!m_liveFrameWatcher) {
-        m_liveFrameWatcher = new QFutureWatcher<QImage>(this);
-        connect(m_liveFrameWatcher, &QFutureWatcher<QImage>::finished, this, [this] {
-            QImage transformed = m_liveFrameWatcher->future().takeResult();
-            QImage original = std::exchange(m_liveProcessingOriginal, {});
-            m_liveFrameProcessing = false;
-            if (m_liveSource && !m_closing && m_liveProcessingGeneration == m_liveFrameGeneration &&
-                !transformed.isNull())
-                installLiveFrame(std::move(original), std::move(transformed));
-            if (!m_livePendingFrame.isNull())
-                queueLiveFrame(std::exchange(m_livePendingFrame, {}));
-        });
-    }
-    m_liveFrameProcessing = true;
-    m_liveProcessingOriginal = original;
-    m_liveProcessingGeneration = m_liveFrameGeneration;
-    m_liveFrameWatcher->setFuture(QtConcurrent::run([original, transform] {
-        return snowCanvasTransformImage(original, transform, Qt::SmoothTransformation);
-    }));
+    installLiveFrame(std::move(frame));
 }
 
-void ScreenshotPinnedWindow::installLiveFrame(QImage original, QImage transformed) {
-    const bool transformChanged = m_requestedLiveTransform.has_value();
-    if (transformChanged) {
-        const auto transform = *std::exchange(m_requestedLiveTransform, {});
-        if (!commitImageTransformGeometry(transform, m_requestedLiveQuarterTurns))
-            return;
-    }
+void ScreenshotPinnedWindow::installLiveFrame(QImage original) {
     const QRectF previousBackground = m_backgroundCanvasRect;
     const QRectF previousSurface = m_resultSurfaceCanvasRect;
     m_originalImage = std::move(original);
-    m_transformedImage = std::move(transformed);
+    // Only static content owns a materialized transformed raster. Live actions
+    // acquire their own snapshot; presentation samples these original pixels.
+    m_transformedImage = m_imageTransform.isIdentity() ? m_originalImage : QImage();
     m_originalPixelSize = m_originalImage.size();
     const QSizeF sourceSize = m_canvasSourceRect.size();
     const qreal scaleX = sourceSize.width() / m_originalImage.width();
     const qreal scaleY = sourceSize.height() / m_originalImage.height();
+    const auto displayedPixels = snow_shot::presentation::live_window_detail::transformedFrameSize(
+        m_originalPixelSize, m_imageTransform);
     m_backgroundCanvasRect =
         QRectF(m_canvasSourceRect.topLeft(),
-               QSizeF(m_transformedImage.width() * scaleX, m_transformedImage.height() * scaleY));
+               QSizeF(displayedPixels.width() * scaleX, displayedPixels.height() * scaleY));
     m_resultSurfaceCanvasRect = m_backgroundCanvasRect;
-    m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
-    m_screenshotRenderer->setPinnedLiveFrame(m_imageSource);
-    if (transformChanged || previousBackground != m_backgroundCanvasRect ||
+    m_imageSource = ScreenshotImageSource::fromImage(m_originalImage, m_backgroundCanvasRect);
+    m_screenshotRenderer->setPinnedLiveFrame(m_imageSource, m_imageTransform);
+    if (previousBackground != m_backgroundCanvasRect ||
         previousSurface != m_resultSurfaceCanvasRect) {
         m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect,
                                                      m_resultSurfaceCanvasRect, m_resultStyle);
         updateCanvasViewport();
-    }
-    if (transformChanged) {
-        scheduleLivePresentation();
-        updateControlsGeometry();
     }
 }
 
@@ -346,21 +456,19 @@ void ScreenshotPinnedWindow::finishLiveConversion(QImage image) {
         return;
     const QRect geometry = authoritativeContentNativeGeometry();
     ++m_liveFrameGeneration;
-    m_livePendingFrame = {};
-    m_requestedLiveTransform.reset();
     m_imageTransform.reset();
     m_quarterTurns = 0;
     m_canvasSourceRect = QRectF(QPointF(), QSizeF(geometry.size()));
     m_initialWindowSize = geometry.size();
     m_scalePercent = 100;
     m_resultStyle = {};
-    installLiveFrame(image, image);
+    installLiveFrame(std::move(image));
     stopLiveSource();
     m_liveSource.reset();
     m_screenshotRenderer->setImageSource(m_imageSource);
     m_liveNativePresentation = false;
-    if (m_liveStatusLabel)
-        m_liveStatusLabel->hide();
+    if (m_liveStatusView)
+        m_liveStatusView->hide();
     m_canvas->show();
     m_persistenceEnabled = true;
     m_editingEnabled = m_staticEditingEnabled;
@@ -412,9 +520,6 @@ void ScreenshotPinnedWindow::editLiveImage() {
 
 void ScreenshotPinnedWindow::stopLiveSource() {
     ++m_liveFrameGeneration;
-    m_livePendingFrame = {};
-    m_liveProcessingOriginal = {};
-    m_requestedLiveTransform.reset();
     if (m_liveSource) {
         disconnect(m_liveSource.get(), nullptr, this, nullptr);
         m_liveSource->shutdown();

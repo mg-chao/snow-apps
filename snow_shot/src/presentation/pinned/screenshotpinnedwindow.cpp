@@ -4263,9 +4263,9 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
         const QString label = QCoreApplication::translate("ImageSplitWindow", "Image Splitting");
         m_splitImageAction->setText(label);
         m_splitImageAction->setToolTip(label);
-        m_splitImageAction->setEnabled(liveCommandAllowed(QStringLiteral("split_image")) &&
-                                       m_firstContentFramePublished &&
-                                       !m_transformedImage.isNull() && !m_closing);
+        m_splitImageAction->setEnabled(
+            liveCommandAllowed(QStringLiteral("split_image")) && m_firstContentFramePublished &&
+            (isLiveWindow() || !m_transformedImage.isNull()) && !m_closing);
     }
     if (m_loadContentAction != nullptr) {
         m_loadContentAction->setEnabled(m_firstContentFramePublished && !m_originalImage.isNull() &&
@@ -4615,6 +4615,8 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
 }
 
 void ScreenshotPinnedWindow::updateCanvasViewport() {
+    if (m_liveStatusView)
+        m_liveStatusView->setGeometry(contentViewRect().toAlignedRect());
     if (m_canvas == nullptr || m_platform->isMinimized()) {
         return;
     }
@@ -7760,7 +7762,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
         });
         return;
     }
-    if (m_transformedImage.isNull() || m_backgroundCanvasRect.isEmpty()) {
+    if ((!isLiveWindow() && m_transformedImage.isNull()) || m_backgroundCanvasRect.isEmpty()) {
         return;
     }
 
@@ -7896,18 +7898,15 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
     if (!QTransform::quadToQuad(sourceQuad, targetQuad, combined)) {
         return;
     }
-    const int priorQuarterTurns = m_requestedLiveTransform        ? m_requestedLiveQuarterTurns
-                                  : m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns
-                                                                  : m_quarterTurns;
+    const int priorQuarterTurns =
+        m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns : m_quarterTurns;
     const int quarterTurns = ((priorQuarterTurns + quarterTurnDelta) % 4 + 4) % 4;
     applyImageTransform(normalizedImageTransform(combined, m_originalImage.size()), quarterTurns);
 }
 
 void ScreenshotPinnedWindow::resetImageTransform() {
     if (contentReplacementTransform().isIdentity() &&
-        (m_requestedLiveTransform        ? m_requestedLiveQuarterTurns
-         : m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns
-                                         : m_quarterTurns) == 0) {
+        (m_requestedAnimationTransform ? m_requestedAnimationQuarterTurns : m_quarterTurns) == 0) {
         return;
     }
     if (m_originalImage.isNull()) {
@@ -7924,11 +7923,13 @@ void ScreenshotPinnedWindow::resetImageTransform() {
 
 void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, int quarterTurns) {
     if (isLiveWindow()) {
+        if (!commitImageTransformGeometry(transform, quarterTurns))
+            return;
         ++m_liveFrameGeneration;
-        m_requestedLiveTransform = transform;
-        m_requestedLiveQuarterTurns = quarterTurns;
         m_automationRevision = snow_shot::presentation::nextAutomationRevision();
         queueLiveFrame(m_originalImage);
+        scheduleLivePresentation();
+        updateControlsGeometry();
         return;
     }
     if (m_animationPlayback) {
@@ -7991,8 +7992,6 @@ bool ScreenshotPinnedWindow::commitImageTransformGeometry(const QTransform& tran
 }
 
 QTransform ScreenshotPinnedWindow::contentReplacementTransform() const {
-    if (m_requestedLiveTransform)
-        return *m_requestedLiveTransform;
     return m_requestedAnimationTransform.value_or(m_imageTransform);
 }
 
@@ -8116,6 +8115,10 @@ QRect ScreenshotPinnedWindow::imageTransformGeometry(int quarterTurns) const {
 }
 
 void ScreenshotPinnedWindow::rebuildTransformedImage() {
+    if (isLiveWindow()) {
+        queueLiveFrame(m_originalImage);
+        return;
+    }
     if (m_originalImage.isNull()) {
         requestMaterializedImage([this](bool succeeded) {
             if (succeeded && !m_closing) {
