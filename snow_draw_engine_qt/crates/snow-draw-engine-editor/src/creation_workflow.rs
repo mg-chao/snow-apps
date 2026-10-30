@@ -208,7 +208,9 @@ impl Editor {
         } else {
             None
         };
-        let mut transaction = Transaction::new(if arrow.is_angle() {
+        let mut transaction = Transaction::new(if arrow.is_bracket() {
+            "create bracket"
+        } else if arrow.is_angle() {
             "create angle"
         } else if arrow.is_distance() {
             "create distance"
@@ -706,6 +708,9 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.state.active_tool == ActiveTool::Bracket {
+            return self.process_bracket_creation_pointer_event(document, event);
+        }
         if self.state.active_tool == ActiveTool::Angle {
             return self.process_angle_creation_pointer_event(document, event);
         }

@@ -34,6 +34,8 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.distance.strokeWidth = 2.0;
     defaults.angle.stroke = red;
     defaults.angle.strokeWidth = 2.0;
+    defaults.bracket.stroke = red;
+    defaults.bracket.strokeWidth = 2.0;
     defaults.magnifier.stroke = red;
     defaults.magnifier.strokeWidth = 2.0;
 
@@ -120,6 +122,7 @@ inline QSet<SnowCanvasTool> screenshotDrawingTools(const QStringList& toolIds) {
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
         {QStringLiteral("distance"), SnowCanvasTool::Distance},
         {QStringLiteral("angle"), SnowCanvasTool::Angle},
+        {QStringLiteral("bracket"), SnowCanvasTool::Bracket},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("free-draw"), SnowCanvasTool::FreeDraw},
         {QStringLiteral("rectangle-highlight"), SnowCanvasTool::RectangleHighlight},

@@ -36,6 +36,12 @@ class SnowCanvasSceneItem : public SnowSceneDisplayItem {
         double failedPhysicalScale = 0.0;
         double exteriorGuard = 0.0;
     };
+    struct PathGeometryDiagnostics {
+        std::uint64_t builds = 0;
+        std::uint64_t reuses = 0;
+        std::uint64_t reads = 0;
+    };
+    static PathGeometryDiagnostics takePathGeometryDiagnostics();
     SnowCanvasSceneItem();
     ~SnowCanvasSceneItem();
     explicit SnowCanvasSceneItem(const SnowSceneDisplayItem& item);

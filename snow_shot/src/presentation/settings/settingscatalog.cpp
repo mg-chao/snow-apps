@@ -1752,6 +1752,8 @@ QVector<SettingsOptionDefinition> drawingSelectableToolOptions() {
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Distance annotation"))},
         {QStringLiteral("angle"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Angle annotation"))},
+        {QStringLiteral("bracket"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Bracket annotation"))},
         {QStringLiteral("free-draw"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pen"))},
         {QStringLiteral("rectangle-highlight"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Rectangle highlight"))},
@@ -2675,6 +2677,9 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("distance"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Distance annotation"),
                           []() { return custom_outlined_icons::DistanceAnnotation(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("bracket"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Bracket annotation"),
+                          []() { return custom_outlined_icons::BracketAnnotation(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("angle"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Angle annotation"),
                           []() { return custom_outlined_icons::AngleAnnotation(); }),
@@ -2876,6 +2881,14 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
                           QStringLiteral("reset_transform"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Reset transform"),
                           []() { return outlined_icons::Reload(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_select_all"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Select All"),
+                          []() { return outlined_icons::Appstore(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_save_as_file"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Save as File"),
+                          []() { return custom_outlined_icons::Save(); }),
     };
 }
 

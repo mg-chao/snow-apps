@@ -129,6 +129,16 @@ impl Editor {
                     start_view_position: event.position,
                 })
             }
+            ArrowHitTarget::BracketGuide => InteractionState::EditingArrow(EditArrowState {
+                pointer_id: event.pointer_id,
+                arrow_id,
+                preview_arrow: original_arrow.clone(),
+                original_arrow,
+                mode: ArrowEditMode::BracketGuide,
+                start_canvas_position: canvas_point,
+                drag_offset: Point::new(0.0, 0.0),
+                suggested_binding: None,
+            }),
             ArrowHitTarget::AngleArc => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
                 arrow_id,

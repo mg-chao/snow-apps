@@ -46,6 +46,8 @@ pub struct PersistedEditorSession {
     #[serde(default)]
     angle: crate::AngleStyle,
     #[serde(default)]
+    bracket: crate::BracketStyle,
+    #[serde(default)]
     magnifier: crate::MagnifierStyle,
     line: super::ShapeStyle,
     free_draw: super::ShapeStyle,
@@ -362,6 +364,7 @@ impl EditorSession {
             arrow: state.default_arrow_style,
             distance: state.default_distance_style,
             angle: state.default_angle_style,
+            bracket: state.default_bracket_style,
             magnifier: state.default_magnifier_style,
             line: state.default_line_style,
             free_draw: state.default_free_draw_style,
@@ -401,8 +404,10 @@ impl EditorSession {
         state.default_arrow_style = persisted.arrow;
         state.default_distance_style = persisted.distance;
         state.default_angle_style = persisted.angle;
+        state.default_bracket_style = persisted.bracket;
         state.default_magnifier_style = persisted.magnifier;
         crate::validate_angle_style(persisted.angle)?;
+        crate::validate_bracket_style(persisted.bracket)?;
         state.default_line_style = ShapeStyle {
             brush_mode: Default::default(),
             arrow_type: crate::style::normalized_line_arrow_type(persisted.line.arrow_type),
@@ -617,6 +622,21 @@ impl EditorSession {
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         self.editor
             .set_angle_style_patch(document, style, properties)
+    }
+    pub fn bracket_style(&self, document: &DocumentModel) -> crate::BracketStyle {
+        self.editor.bracket_style(document)
+    }
+    pub fn bracket_style_mixed(&self, document: &DocumentModel) -> u32 {
+        self.editor.bracket_style_mixed(document)
+    }
+    pub fn set_bracket_style_patch(
+        &mut self,
+        document: &DocumentModel,
+        style: crate::BracketStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor
+            .set_bracket_style_patch(document, style, properties)
     }
     pub fn adjust_angle_value(
         &mut self,
@@ -1249,6 +1269,7 @@ pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<
     super::style::validate_arrow_style(defaults.arrow)?;
     crate::validate_distance_style(defaults.distance)?;
     crate::validate_angle_style(defaults.angle)?;
+    crate::validate_bracket_style(defaults.bracket)?;
     for style in [
         defaults.line,
         defaults.free_draw,
@@ -1295,6 +1316,7 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
     super::style::validate_speech_bubble_style(persisted.speech_bubble)?;
     crate::validate_distance_style(persisted.distance)?;
     crate::validate_angle_style(persisted.angle)?;
+    crate::validate_bracket_style(persisted.bracket)?;
     fn finite_non_negative(value: f64) -> bool {
         value.is_finite() && value >= 0.0
     }

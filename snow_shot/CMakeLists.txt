@@ -2000,6 +2000,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
     src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
+    src/presentation/pinned/screenshotpinnedbatchsave.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
     src/presentation/services/screenshotpresentationframescheduler.cpp
@@ -3120,6 +3121,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-settings-catalog-tests --storage-directory-only)
     set_tests_properties(snow-shot-storage-directory-catalog-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-batch-shortcut-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --pinned-batch-shortcuts-only)
+    set_tests_properties(snow-shot-pinned-batch-shortcut-catalog-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
     add_test(NAME snow-shot-tray-icon-settings-catalog-tests
@@ -4367,6 +4371,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-angle-wheel-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-screenshot-bracket-wheel-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --bracket-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-bracket-wheel-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     set_tests_properties(snow-shot-region-overlay-input-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-independent-region-input-tests
         COMMAND snow-shot-screenshot-history-tests --independent-regions-only)
@@ -5178,6 +5187,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h
@@ -5398,6 +5408,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         RUN_SERIAL TRUE TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-management-lifecycle-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-batch-actions-tests
+        COMMAND snow-shot-pinned-window-tests --batch-actions-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-batch-actions-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
     add_test(NAME snow-shot-pinned-hide-to-top-tests
         COMMAND snow-shot-pinned-window-tests --hide-to-top-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-hide-to-top-tests PROPERTIES LABELS "unit"
@@ -6512,6 +6526,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-bracket-annotation-integration-tests
+        tests/bracket_annotation_integration_tests.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp)
+    target_include_directories(snow-shot-bracket-annotation-integration-tests PRIVATE include)
+    target_link_libraries(snow-shot-bracket-annotation-integration-tests PRIVATE
+        snow_shot_storage snow_shot_window_shortcuts snow_draw_engine_qt_canvas
+        ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-bracket-annotation-integration-tests)
+    add_test(NAME snow-shot-bracket-annotation-integration-tests
+        COMMAND snow-shot-bracket-annotation-integration-tests -platform offscreen)
+    set_tests_properties(snow-shot-bracket-annotation-integration-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-distance-annotation-integration-tests
         tests/distance_annotation_integration_tests.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp)
@@ -6616,6 +6645,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-tool-palette-magnifier-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --magnifier-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-tool-palette-magnifier-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-screenshot-tool-palette-bracket-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --bracket-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-tool-palette-bracket-tests
         PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screenshot-tool-palette-angle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --angle-only -platform offscreen)
@@ -10171,6 +10204,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h

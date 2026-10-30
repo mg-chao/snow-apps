@@ -59,6 +59,7 @@ enum class Item {
     Distance,
     Angle,
     SpeechBubble,
+    Bracket,
 };
 
 enum class Icon {
@@ -108,6 +109,7 @@ enum class Icon {
     Distance,
     Angle,
     SpeechBubble,
+    Bracket,
 };
 
 struct Descriptor {
@@ -140,6 +142,9 @@ struct EditorDescriptor {
          Icon::Distance},
         {Item::Angle, "angle",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Angle annotation"), Icon::Angle},
+        {Item::Bracket, "bracket",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Bracket annotation"),
+         Icon::Bracket},
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
         {Item::FreeDraw, "free-draw",
@@ -420,8 +425,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("select")},
         {QStringLiteral("select-separator")},
         {QStringLiteral("shape")},
-        {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
-         QStringLiteral("arrow")},
+        {QStringLiteral("bracket"), QStringLiteral("angle"), QStringLiteral("distance"),
+         QStringLiteral("line"), QStringLiteral("arrow")},
         {QStringLiteral("free-draw")},
         {QStringLiteral("magnifier"), QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
@@ -721,8 +726,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     }
     auto previousDrawingDefaults = defaultLayout;
     QStringList missingAnnotations;
-    for (const QString& id :
-         {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("magnifier")}) {
+    for (const QString& id : {QStringLiteral("bracket"), QStringLiteral("angle"),
+                              QStringLiteral("distance"), QStringLiteral("magnifier")}) {
         if (known.contains(id) && !positioned.contains(id) && !hidden.contains(id)) {
             missingAnnotations.push_back(id);
             for (auto& position : previousDrawingDefaults)
@@ -972,6 +977,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::DistanceAnnotation();
     case Icon::Angle:
         return custom::AngleAnnotation();
+    case Icon::Bracket:
+        return custom::BracketAnnotation();
     case Icon::Line:
         return custom::ToolLine();
     case Icon::FreeDraw:

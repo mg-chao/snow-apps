@@ -1038,6 +1038,18 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_firstContentFramePublished = true;
         selection.registerWindow(&window);
     }
+    static QList<QPointer<ScreenshotPinnedWindow>> batchTargets(ScreenshotPinnedWindow& window) {
+        return window.displayedPinnedWindows();
+    }
+    static void batchSave(ScreenshotPinnedWindow& window, const QString& directory) {
+        window.saveDisplayedPinnedWindowsToDirectory(directory);
+    }
+    static bool batchSaving() {
+        return ScreenshotPinnedWindow::batchSavePending();
+    }
+    static void changeBatchIdentity(ScreenshotPinnedWindow& window) {
+        ++window.m_presentationGeneration;
+    }
     static void detachSelection(ScreenshotPinnedWindow& window) {
         if (window.m_selectionController) {
             window.m_selectionController->unregisterWindow(&window);
@@ -6678,8 +6690,8 @@ void pinnedLazyMenuHeadersRetranslate() {
     ScreenshotPinnedWindow window;
     materializePinnedMenuTree(window);
     auto* hideAll =
-        window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
-    require(hideAll && hideAll->text() == QStringLiteral("Hide All Windows to Top"),
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
+    require(hideAll && hideAll->text() == QStringLiteral("Enable Hide to Top"),
             "the bulk Hide to Top action must use its English source label");
     const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
                                 QStringLiteral("screenshotPinnedScaleMenu"),
@@ -6699,7 +6711,7 @@ void pinnedLazyMenuHeadersRetranslate() {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
                 (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
                  QByteArray(source) == "Load new content" ||
-                 QByteArray(source) == "Hide All Windows to Top")) {
+                 QByteArray(source) == "Enable Hide to Top")) {
                 return QStringLiteral("Translated ") + QString::fromUtf8(source);
             }
             return {};
@@ -6709,7 +6721,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Translated Hide All Windows to Top"),
+    require(hideAll->text() == QStringLiteral("Translated Enable Hide to Top"),
             "an existing bulk Hide to Top action must follow LanguageChange");
     const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
                                        QStringLiteral("Translated Scale"),
@@ -6721,7 +6733,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     QCoreApplication::removeTranslator(&translator);
     removeTranslator.dismiss();
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Hide All Windows to Top"),
+    require(hideAll->text() == QStringLiteral("Enable Hide to Top"),
             "the bulk Hide to Top action must restore its original language");
     for (int index = 0; index < headers.size(); ++index) {
         require(headers.at(index)->text() == originalLabels.at(index),
@@ -11259,7 +11271,7 @@ void closedPinnedWindowIgnoresThemeUpdates() {
     }
 }
 
-void pinnedHideAllWindowsToTop() {
+void pinnedBatchHideToTop() {
     IsolatedPinnedStorage isolated;
     using Access = ScreenshotPinnedWindowTestAccess;
     auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
@@ -11290,6 +11302,7 @@ void pinnedHideAllWindowsToTop() {
     for (auto* pin :
          {&window, &thumbnail, &locked, &clickThrough, &alreadyHidden, &closing, &inactive}) {
         Access::restoreOffscreen(*pin, config);
+        Access::automationReady(*pin, {});
         pin->show();
     }
     Access::registerLockGroup(window, groups);
@@ -11315,17 +11328,18 @@ void pinnedHideAllWindowsToTop() {
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedWindowManagementMenu"));
     auto* hideAll =
-        window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
     auto* shadow = window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowShadowAction"));
     auto* load = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadContentAction"));
     require(menu && hideAll && shadow && load && !hideAll->isCheckable(),
             "Window Management must expose the non-checkable bulk Hide to Top action");
+    auto* batch = window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchActionsAction"));
     const auto actions = menu->actions();
     const auto shadowIndex = actions.indexOf(shadow);
-    require(shadowIndex >= 0 && actions.indexOf(hideAll) == shadowIndex + 2 &&
+    require(batch && shadowIndex >= 0 && actions.indexOf(batch) == shadowIndex + 2 &&
                 actions.at(shadowIndex + 1)->isSeparator() &&
-                actions.indexOf(load) == actions.indexOf(hideAll) + 1,
-            "Show shadow must be followed by a separator, bulk Hide to Top, then Load content");
+                actions.indexOf(load) == actions.indexOf(batch) + 1,
+            "Show shadow is followed by a separator, Batch Actions, then Load content");
 
     hideAll->trigger();
     for (auto* pin : {&window, &thumbnail, &locked, &clickThrough}) {
@@ -22650,6 +22664,8 @@ class PinnedSelectionFixture final {
     }
 };
 
+#include "pinned_batch_actions_tests.h"
+
 void pinnedRightQuickSelectionPreservesWindowSelection() {
     using canvas_quick_selection_test::mouse;
     for (const bool selectDrawingWindow : {false, true}) {
@@ -27176,6 +27192,10 @@ int main(int argc, char* argv[]) {
             pinnedImageStitchingTextAndDeferredContent();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--batch-actions-only"))) {
+            pinnedBatchActionsTests();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--multi-selection-only"))) {
             pinnedImageStitchingSnapshots();
             pinnedImageStitchingTextAndDeferredContent();
@@ -27667,7 +27687,7 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {
             runPinnedHideToTopControllerTests();
             closedPinnedWindowIgnoresThemeUpdates();
-            pinnedHideAllWindowsToTop();
+            pinnedBatchHideToTop();
             pinnedHideToTopIntegration(false);
             return 0;
         }

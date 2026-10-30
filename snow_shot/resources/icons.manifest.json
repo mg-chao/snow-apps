@@ -455,6 +455,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "BracketAnnotation",
+      "name": "bracket-annotation",
+      "source": "../src/presentation/components/icons/resources/bracket-annotation.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "BrushPressureSensitive",
       "name": "brush-pressure-sensitive",
       "source": "../src/presentation/components/icons/resources/brush-pressure-sensitive.svg",

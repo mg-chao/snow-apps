@@ -222,6 +222,7 @@ constexpr char kSignatureMagnifierSourceOutline[] = "toggle:magnifier-source-out
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Leader line arrowhead"),
 };
 constexpr char kRoleAngleColor[] = "angle-color";
+constexpr char kRoleBracketColor[] = "bracket-color";
 constexpr char kRoleAngleType[] = "angle-type";
 constexpr char kSignatureAngleType[] = "radio:angle-type";
 constexpr char kRoleAngleUnit[] = "angle-unit";
@@ -233,7 +234,16 @@ constexpr quint32 angleProperty(SnowCanvasAngleStyleProperty property) {
     return static_cast<quint32>(property);
 }
 
+constexpr quint32 bracketProperty(SnowCanvasBracketStyleProperty property) {
+    return static_cast<quint32>(property);
+}
+
 [[maybe_unused]] constexpr const char* kAngleTranslationSources[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bracket annotation"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bracket stroke color"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bracket stroke color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current bracket stroke width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bracket stroke width %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle annotation"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle stroke color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle stroke color %1"),
@@ -277,6 +287,8 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::Angle:
         return {kRoleAngleColor, kRoleOutlineWidth, kRoleAngleType, kRoleAngleUnit,
                 kRoleAngleDecimals};
+    case Tool::Bracket:
+        return {kRoleBracketColor, kRoleOutlineWidth};
     case Tool::Arrow:
         return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",   kRoleArrowRatio,
                 "start-arrowhead",  kRoleArrowShaft,   "end-arrowhead"};
@@ -949,7 +961,9 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_magnifierWidthEditor);
     append(m_magnifierLeaderEditor);
     append(m_angleColorEditor);
+    append(m_bracketColorEditor);
     append(m_angleWidthEditor);
+    append(m_bracketWidthEditor);
     append(m_arrowStrokeWidthEditor);
     append(m_arrowStrokeEditor);
     append(m_arrowOutlineEditor);
@@ -1009,6 +1023,10 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
     case Tool::Angle:
         park(kRoleAngleColor, kSignatureForegroundColor, m_angleColorEditor);
         park(kRoleOutlineWidth, kSignatureStrokeWidth, m_angleWidthEditor);
+        break;
+    case Tool::Bracket:
+        park(kRoleBracketColor, kSignatureForegroundColor, m_bracketColorEditor);
+        park(kRoleOutlineWidth, kSignatureStrokeWidth, m_bracketWidthEditor);
         break;
     case Tool::Arrow:
         park(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
@@ -1099,6 +1117,10 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
     case Tool::Angle:
         restore(kRoleAngleColor, m_angleColorEditor);
         restore(kRoleOutlineWidth, m_angleWidthEditor);
+        break;
+    case Tool::Bracket:
+        restore(kRoleBracketColor, m_bracketColorEditor);
+        restore(kRoleOutlineWidth, m_bracketWidthEditor);
         break;
     case Tool::Arrow:
         restore(kRoleOutlineStroke, m_arrowStrokeEditor);
@@ -1244,6 +1266,8 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
     if (shared(kRoleOutlineWidth)) {
         if (source == ScreenshotToolPalette::Tool::Distance) {
             stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_distanceWidthEditor);
+        } else if (source == ScreenshotToolPalette::Tool::Bracket) {
+            stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_bracketWidthEditor);
         } else if (source == ScreenshotToolPalette::Tool::Angle) {
             stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_angleWidthEditor);
         } else if (source == ScreenshotToolPalette::Tool::Arrow) {
@@ -1432,6 +1456,10 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleAngleType);
         stageWidget(kRoleAngleUnit);
         stageWidget(kRoleAngleDecimals);
+        break;
+    case Tool::Bracket:
+        stageComponent(kRoleBracketColor, kSignatureForegroundColor, m_bracketColorEditor);
+        stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_bracketWidthEditor);
         break;
     case Tool::Arrow:
         stageComponent(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
@@ -2596,6 +2624,84 @@ bool ScreenshotToolPaletteStyleControls::handleMagnifierWheel(const QPoint& glob
         return true;
     }
     return false;
+}
+
+QWidget* ScreenshotToolPaletteStyleControls::buildBracketFamily(
+    QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (panel == nullptr)
+        return nullptr;
+    QWidget* controls =
+        createRowWidget(panel, QStringLiteral("screenshotBracketStyleControls"), host);
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    ScreenshotToolPaletteColorEditorConfig colorConfig;
+    colorConfig.accessibleName = QStringLiteral("Bracket stroke color");
+    colorConfig.pickerObjectName = QStringLiteral("screenshotBracketColorPicker");
+    colorConfig.presetValues = style_presets::strokeColors();
+    colorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
+    colorConfig.presetTooltip = [](const QColor& color) {
+        return ScreenshotToolPaletteTranslationText("Bracket stroke color %1").arg(color.name());
+    };
+    const auto setColor = [this](const QColor& color) {
+        if (!color.isValid())
+            return;
+        commitBracketProperty(bracketProperty(SnowCanvasBracketStyleProperty::Stroke),
+                              [color](SnowCanvasBracketStyle& style) { style.stroke = color; });
+    };
+    if (auto reused =
+            takeReusableEditor(kRoleBracketColor, kSignatureForegroundColor, layout, controls)) {
+        m_bracketColorEditor.reset(
+            static_cast<ScreenshotToolPaletteColorEditor*>(reused.release()));
+        m_bracketColorEditor->rebind(colorConfig, setColor, {});
+    } else {
+        m_bracketColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
+        m_bracketColorEditor->build(layout, controls, controls, colorConfig,
+                                    m_state.bracketStyle.stroke, setColor, {}, editorServices(),
+                                    metrics);
+    }
+    tagEditor(m_bracketColorEditor.get(), kRoleBracketColor, kSignatureForegroundColor);
+    registerEditor(m_bracketColorEditor.get());
+
+    if (host.addGroupSeparator)
+        host.addGroupSeparator(layout);
+    ScreenshotToolPaletteNumericPresetEditorConfig widthConfig;
+    widthConfig.summaryTooltip = QStringLiteral("Current bracket stroke width");
+    widthConfig.values = style_presets::strokePresetWidths();
+    widthConfig.strokePreview = true;
+    widthConfig.presetTooltip = [](int, double value) {
+        return ScreenshotToolPaletteTranslationText("Bracket stroke width %1")
+            .arg(value, 0, 'g', 2);
+    };
+    const auto cycleWidth = [this]() {
+        const auto values = style_presets::strokePresetWidths();
+        for (double value : values) {
+            if (value > m_state.bracketStyle.strokeWidth) {
+                setBracketStrokeWidth(value);
+                return;
+            }
+        }
+        if (!values.isEmpty())
+            setBracketStrokeWidth(values.first());
+    };
+    const auto setWidth = [this](double width) { setBracketStrokeWidth(width); };
+    if (auto reused =
+            takeReusableEditor(kRoleOutlineWidth, kSignatureStrokeWidth, layout, controls)) {
+        m_bracketWidthEditor.reset(
+            static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
+        m_bracketWidthEditor->rebind(widthConfig, cycleWidth, setWidth);
+    } else {
+        m_bracketWidthEditor = std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
+        m_bracketWidthEditor->build(layout, controls, controls, widthConfig,
+                                    m_state.bracketStyle.strokeWidth, cycleWidth, setWidth,
+                                    metrics);
+    }
+    tagEditor(m_bracketWidthEditor.get(), kRoleOutlineWidth, kSignatureStrokeWidth);
+    registerEditor(m_bracketWidthEditor.get());
+
+    registerBracketEntries();
+    updateBracketStyleControls();
+    return controls;
 }
 
 QWidget* ScreenshotToolPaletteStyleControls::buildAngleFamily(
@@ -4636,6 +4742,27 @@ void ScreenshotToolPaletteStyleControls::updateDistanceStyleControls() {
     applyEditorEntries(m_distanceEntries, kAllRefreshGroups);
 }
 
+void ScreenshotToolPaletteStyleControls::registerBracketEntries() {
+    const auto mixed = [this](SnowCanvasBracketStyleProperty property) {
+        return m_state.showingSelectedBracket &&
+               (m_state.bracketStyleMixed & bracketProperty(property)) != 0;
+    };
+    m_bracketEntries = {
+        {bracketProperty(SnowCanvasBracketStyleProperty::Stroke),
+         [this, mixed]() {
+             if (m_bracketColorEditor != nullptr)
+                 m_bracketColorEditor->update(m_state.bracketStyle.stroke,
+                                              mixed(SnowCanvasBracketStyleProperty::Stroke));
+         }},
+        {bracketProperty(SnowCanvasBracketStyleProperty::StrokeWidth),
+         [this, mixed]() {
+             if (m_bracketWidthEditor != nullptr)
+                 m_bracketWidthEditor->update(m_state.bracketStyle.strokeWidth,
+                                              mixed(SnowCanvasBracketStyleProperty::StrokeWidth));
+         }},
+    };
+}
+
 void ScreenshotToolPaletteStyleControls::registerAngleEntries() {
     const auto mixed = [this](SnowCanvasAngleStyleProperty property) {
         return m_state.showingSelectedAngle &&
@@ -4689,6 +4816,11 @@ void ScreenshotToolPaletteStyleControls::registerAngleEntries() {
 void ScreenshotToolPaletteStyleControls::updateAngleStyleControls(quint32 properties) {
     refreshEditorEntries(m_angleEntries, properties,
                          angleProperty(SnowCanvasAngleStyleProperty::All));
+}
+
+void ScreenshotToolPaletteStyleControls::updateBracketStyleControls(quint32 properties) {
+    refreshEditorEntries(m_bracketEntries, properties,
+                         bracketProperty(SnowCanvasBracketStyleProperty::All));
 }
 
 void ScreenshotToolPaletteStyleControls::registerArrowEntries() {
@@ -5066,6 +5198,7 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateArrowStyleControls();
     updateDistanceStyleControls();
     updateAngleStyleControls();
+    updateBracketStyleControls();
     updateTextStyleControls();
     updateWatermarkControls();
     updateSerialNumberStyleControls();
@@ -5080,6 +5213,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_state.m_arrowControlsActive = false;
     m_state.distanceControlsActive = false;
     m_state.angleControlsActive = false;
+    m_state.bracketControlsActive = false;
     m_state.m_lineControlsActive = false;
     m_state.m_speechBubbleControlsActive = false;
     m_state.m_freeDrawControlsActive = false;
@@ -5120,7 +5254,9 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_magnifierConnectionGroup = nullptr;
     m_magnifierSourceOutlineToggle = nullptr;
     m_angleColorEditor.reset();
+    m_bracketColorEditor.reset();
     m_angleWidthEditor.reset();
+    m_bracketWidthEditor.reset();
     m_angleTypeGroup = nullptr;
     m_angleUnitGroup = nullptr;
     m_angleDecimalsEditor = {};
@@ -5170,6 +5306,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_arrowEntries.clear();
     m_distanceEntries.clear();
     m_angleEntries.clear();
+    m_bracketEntries.clear();
     m_textEntries.clear();
     m_serialNumberEntries.clear();
     m_watermarkEntries.clear();
@@ -5186,6 +5323,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     const bool keepArrow = destination == Tool::Arrow;
     const bool keepDistance = destination == Tool::Distance;
     const bool keepAngle = destination == Tool::Angle;
+    const bool keepBracket = destination == Tool::Bracket;
     const bool keepMagnifier = destination == Tool::Magnifier;
     const bool keepRectangleHighlight = destination == Tool::RectangleHighlight;
     const bool keepPenHighlight = destination == Tool::PenHighlight;
@@ -5226,7 +5364,9 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_magnifierSourceOutlineToggle = nullptr;
     }
     resetUnless(keepAngle, m_angleColorEditor);
+    resetUnless(keepBracket, m_bracketColorEditor);
     resetUnless(keepAngle, m_angleWidthEditor);
+    resetUnless(keepBracket, m_bracketWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeEditor);
     resetUnless(keepArrow, m_arrowOutlineEditor);
@@ -5351,6 +5491,7 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     updateArrowStyleControls();
     updateDistanceStyleControls();
     updateAngleStyleControls();
+    updateBracketStyleControls();
     updateHighlightStyleControls();
     updatePenHighlightStyleControls();
     updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
@@ -5364,6 +5505,10 @@ void ScreenshotToolPaletteStyleControls::setDistanceControlsActive(bool active) 
 
 void ScreenshotToolPaletteStyleControls::setAngleControlsActive(bool active) {
     m_state.angleControlsActive = active;
+}
+
+void ScreenshotToolPaletteStyleControls::setBracketControlsActive(bool active) {
+    m_state.bracketControlsActive = active;
 }
 
 bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globalPosition,
@@ -5498,6 +5643,12 @@ void ScreenshotToolPaletteStyleControls::clearTextStylePopupInteractions() {
 }
 
 bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
+    if (m_state.bracketControlsActive) {
+        if (direction == 0)
+            return false;
+        setBracketStrokeWidth(m_state.bracketStyle.strokeWidth + (direction > 0 ? 1.0 : -1.0));
+        return true;
+    }
     if (m_state.angleControlsActive)
         return false;
     if (m_state.m_penHighlightControlsActive) {
@@ -5752,6 +5903,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.arrow.arrowOutlineWidth = m_state.m_creationArrowStyle.arrowOutlineWidth;
     defaults.distance = m_state.creationDistanceStyle;
     defaults.angle = m_state.creationAngleStyle;
+    defaults.bracket = m_state.creationBracketStyle;
     defaults.magnifier = m_state.creationMagnifierStyle;
     defaults.text = m_state.m_creationTextStyle.textStyle();
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
@@ -5785,6 +5937,7 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.m_creationArrowStyle = remembered.m_creationArrowStyle;
     m_state.creationDistanceStyle = remembered.creationDistanceStyle;
     m_state.creationAngleStyle = remembered.creationAngleStyle;
+    m_state.creationBracketStyle = remembered.creationBracketStyle;
     m_state.creationMagnifierStyle = remembered.creationMagnifierStyle;
     m_state.m_creationTextStyle = remembered.m_creationTextStyle;
     m_state.m_creationSerialNumberStyle = remembered.m_creationSerialNumberStyle;
@@ -6035,12 +6188,34 @@ void ScreenshotToolPaletteStyleControls::commitAngleProperty(quint32 property, A
         m_callbacks.angleStyleChanged(m_state.angleStyle, property);
 }
 
+template <typename Apply>
+void ScreenshotToolPaletteStyleControls::commitBracketProperty(quint32 property, Apply apply) {
+    const auto previous = m_state.bracketStyle;
+    apply(m_state.bracketStyle);
+    const bool wasMixed =
+        m_state.showingSelectedBracket && (m_state.bracketStyleMixed & property) != 0;
+    if (previous == m_state.bracketStyle && !wasMixed)
+        return;
+    m_state.bracketStyleMixed &= ~property;
+    updateBracketStyleControls(property);
+    if (m_callbacks.bracketStyleChanged)
+        m_callbacks.bracketStyleChanged(m_state.bracketStyle, property);
+}
+
 void ScreenshotToolPaletteStyleControls::setAngleStrokeWidth(double width) {
     if (!std::isfinite(width))
         return;
     width = std::clamp(width, 1.0, 72.0);
     commitAngleProperty(angleProperty(SnowCanvasAngleStyleProperty::StrokeWidth),
                         [width](SnowCanvasAngleStyle& style) { style.strokeWidth = width; });
+}
+
+void ScreenshotToolPaletteStyleControls::setBracketStrokeWidth(double width) {
+    if (!std::isfinite(width))
+        return;
+    width = std::clamp(width, 1.0, 72.0);
+    commitBracketProperty(bracketProperty(SnowCanvasBracketStyleProperty::StrokeWidth),
+                          [width](SnowCanvasBracketStyle& style) { style.strokeWidth = width; });
 }
 
 void ScreenshotToolPaletteStyleControls::setDistanceValue(double value) {
@@ -7090,6 +7265,37 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         if (!selected)
             m_state.creationMagnifierStyle = displayed;
         updateMagnifierStyleControls();
+        return;
+    }
+    if (state.source == SnowCanvasStyleToolbarSource::DefaultBracket ||
+        state.source == SnowCanvasStyleToolbarSource::SelectedBracket) {
+        const bool selected = state.source == SnowCanvasStyleToolbarSource::SelectedBracket;
+        auto displayed = state.bracketStyle;
+        if (editorInteracting(m_bracketColorEditor))
+            displayed.stroke = m_state.bracketStyle.stroke;
+        const quint32 mixed = selected ? state.bracketStyleMixed : 0;
+        if (m_state.m_styleSource == state.source && m_state.bracketStyle == displayed &&
+            m_state.bracketStyleMixed == mixed) {
+#if defined(SNOW_SHOT_TEST_HOOKS)
+            ++m_styleStateNoopCount;
+#endif
+            SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.state.noop");
+            return;
+        }
+        quint32 changed = m_state.bracketStyleMixed ^ mixed;
+        if (m_state.m_styleSource != state.source)
+            changed = bracketProperty(SnowCanvasBracketStyleProperty::All);
+        if (m_state.bracketStyle.stroke != displayed.stroke)
+            changed |= bracketProperty(SnowCanvasBracketStyleProperty::Stroke);
+        if (m_state.bracketStyle.strokeWidth != displayed.strokeWidth)
+            changed |= bracketProperty(SnowCanvasBracketStyleProperty::StrokeWidth);
+        m_state.m_styleSource = state.source;
+        m_state.showingSelectedBracket = selected;
+        m_state.bracketStyle = displayed;
+        m_state.bracketStyleMixed = mixed;
+        if (!selected)
+            m_state.creationBracketStyle = displayed;
+        updateBracketStyleControls(changed);
         return;
     }
     if (state.source == SnowCanvasStyleToolbarSource::DefaultAngle ||

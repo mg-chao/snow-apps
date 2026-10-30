@@ -43,6 +43,9 @@ class PinnedWindowSelectionController final : public QObject {
     void toggleSelection(ScreenshotPinnedWindow* window);
     void deselectWindow(ScreenshotPinnedWindow* window);
     void clearSelection();
+    void selectAll(const QList<QPointer<ScreenshotPinnedWindow>>& targets);
+    void destroyWindows(ScreenshotPinnedWindow* owner,
+                        const QList<QPointer<ScreenshotPinnedWindow>>& targets);
     // Returns true when selection routing owns this context menu event.
     bool showContextMenu(ScreenshotPinnedWindow* window, const QPoint& globalPosition);
 
@@ -74,7 +77,8 @@ class PinnedWindowSelectionController final : public QObject {
     void buildContextMenu(ScreenshotPinnedWindow* owner);
     void showFailure(QWidget* owner, const QString& text);
     void confirmDestroy(ScreenshotPinnedWindow* owner,
-                        const QList<QPointer<ScreenshotPinnedWindow>>& targets);
+                        const QList<QPointer<ScreenshotPinnedWindow>>& targets,
+                        bool displayed = false);
     void retranslateUi();
 
     QList<QPointer<ScreenshotPinnedWindow>> m_windows;

@@ -161,6 +161,7 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     options.showLineTool = true;
     options.showDistanceTool = true;
     options.showAngleTool = true;
+    options.showBracketTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
@@ -310,6 +311,12 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
         });
     }
 
+    bool eligible() const {
+        const auto session = toolbar.palette()->recordingSession();
+        return enabled && session.state() == ScreenshotToolPalette::RecordingState::Recording &&
+               !session.busy();
+    }
+
     void reconcile(bool retryPending = false) {
         if (evaluating || toolbar.m_placing)
             return;
@@ -319,10 +326,14 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
             if (alive)
                 alive->evaluating = false;
         });
-        if (!presented || toolbar.m_regionInteractionActive || !enabled) {
+        if (!presented || toolbar.m_regionInteractionActive || !eligible()) {
+            pendingCollapse = false;
             reveal.stop();
             retreat.stop();
             watch.stop();
+            if (collapsed)
+                revealToolbar();
+            transfer = {};
             return;
         }
         if (dragging) {
@@ -345,7 +356,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
             if (retryPending && showGuard) {
                 const auto guard = showGuard;
                 const bool allowed = guard(control.get());
-                if (!alive || !presented || !enabled || !collapsed)
+                if (!alive || !presented || !eligible() || !collapsed)
                     return;
                 if (!allowed) {
                     revealToolbar();
@@ -381,7 +392,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
     }
 
     void collapseToolbar(bool newRequest) {
-        if (!enabled || !presented || collapsed || toolbar.m_regionInteractionActive ||
+        if (!eligible() || !presented || collapsed || toolbar.m_regionInteractionActive ||
             toolbar.m_placing || !updateDock() || protectedInteraction()) {
             pendingCollapse = false;
             return;
@@ -407,7 +418,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
         if (!alive)
             return;
         // A synchronous guard/request handler may dismiss or reconfigure us.
-        if (!presented || !enabled || !pendingCollapse || protectedInteraction())
+        if (!presented || !eligible() || !pendingCollapse || protectedInteraction())
             return;
         const bool wasChangingVisibility = changingVisibility;
         changingVisibility = true;
@@ -420,7 +431,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
             return;
         if (guard && control->winId() != preparedIdentity) {
             const bool allowed = guard(surface);
-            if (!alive || !presented || !enabled || !pendingCollapse)
+            if (!alive || !presented || !eligible() || !pendingCollapse)
                 return;
             if (!allowed) {
                 control->hide();
@@ -535,7 +546,7 @@ class ScreenRecordingToolbarWindow::AutoHide final : public QObject {
             // Retire it immediately; the next collapse must pass the guard again.
             revealToolbar();
         }
-        if (enabled && presented) {
+        if (eligible() && presented) {
             switch (event->type()) {
             case QEvent::Enter:
             case QEvent::Leave:
@@ -601,6 +612,8 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     snow_shot::platform::configureScreenRecordingToolbarWindow(this);
 #endif
     m_autoHide = std::make_unique<AutoHide>(*this);
+    connect(palette(), &ScreenshotToolPalette::recordingSessionChanged, this,
+            [this] { m_autoHide->queueReconcile(); });
     // Secondary rows can grow without changing the fixed native frame or the
     // main-row anchor. Observe the committed host content, including those cases.
     connect(paletteHost(), &ScreenshotToolPaletteHost::visibleContentChanged, this, [this]() {

@@ -3,6 +3,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotcanvastoolmapping.h"
 #include <QDebug>
 #include <QPointer>
 #include <numbers>
@@ -79,16 +80,10 @@ bool stepScreenshotStyle(ScreenshotToolPalette& palette, SnowCanvasWidget& canva
         canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedAngle) {
         return canvas.adjustAngleValue(direction * (fine ? 0.1 : 1.0) * std::numbers::pi / 180.0);
     }
-    switch (canvas.canvasTool()) {
-    case SnowCanvasTool::SpeechBubble:
-    case SnowCanvasTool::Shape:
-    case SnowCanvasTool::Distance:
-    case SnowCanvasTool::Arrow:
-    case SnowCanvasTool::Line:
-    case SnowCanvasTool::FreeDraw:
-    case SnowCanvasTool::RectangleHighlight:
-    case SnowCanvasTool::PenHighlight:
+    const auto activeTool = activeToolForCanvasTool(canvas.canvasTool());
+    if (activeTool && strokeWidthWheelTarget(*activeTool))
         return palette.stepStrokeWidth(direction);
+    switch (canvas.canvasTool()) {
     case SnowCanvasTool::Select:
         return palette.stepSelectionOpacity(direction);
     case SnowCanvasTool::Magnifier:

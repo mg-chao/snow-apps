@@ -34,6 +34,7 @@ class ScreenshotToolCommandWorkflow final {
     void setLineTool();
     void setDistanceTool();
     void setAngleTool();
+    void setBracketTool();
     void setFreeDrawTool();
     void setHighlightTool();
     void setPenHighlightTool();

@@ -116,6 +116,8 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool) {
         return SnowCanvasTool::Distance;
     case SNOW_ACTIVE_TOOL_ANGLE:
         return SnowCanvasTool::Angle;
+    case SNOW_ACTIVE_TOOL_BRACKET:
+        return SnowCanvasTool::Bracket;
     case SNOW_ACTIVE_TOOL_MAGNIFIER:
         return SnowCanvasTool::Magnifier;
     case SNOW_ACTIVE_TOOL_SPEECH_BUBBLE:
@@ -164,6 +166,8 @@ SnowActiveTool toEngineTool(SnowCanvasTool tool) {
         return SNOW_ACTIVE_TOOL_DISTANCE;
     case SnowCanvasTool::Angle:
         return SNOW_ACTIVE_TOOL_ANGLE;
+    case SnowCanvasTool::Bracket:
+        return SNOW_ACTIVE_TOOL_BRACKET;
     case SnowCanvasTool::Magnifier:
         return SNOW_ACTIVE_TOOL_MAGNIFIER;
     case SnowCanvasTool::SpeechBubble:
@@ -232,8 +236,12 @@ SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource s
         return SnowCanvasStyleToolbarSource::SelectedDistance;
     case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_ANGLE:
         return SnowCanvasStyleToolbarSource::DefaultAngle;
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRACKET:
+        return SnowCanvasStyleToolbarSource::DefaultBracket;
     case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE:
         return SnowCanvasStyleToolbarSource::SelectedAngle;
+    case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_BRACKET:
+        return SnowCanvasStyleToolbarSource::SelectedBracket;
     case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_MAGNIFIER:
         return SnowCanvasStyleToolbarSource::DefaultMagnifier;
     case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_MAGNIFIER:
@@ -566,6 +574,17 @@ SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style) {
     return engineStyle;
 }
 
+bool validBracketStyle(const SnowCanvasBracketStyle& style) {
+    return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 1.0 &&
+           style.strokeWidth <= 72.0;
+}
+SnowCanvasBracketStyle toCanvasBracketStyle(const SnowBracketStyle& style) {
+    return {toQColor(style.stroke), style.stroke_width};
+}
+SnowBracketStyle toEngineBracketStyle(const SnowCanvasBracketStyle& style) {
+    return {toEngineColor(style.stroke), style.strokeWidth};
+}
+
 bool validAngleStyle(const SnowCanvasAngleStyle& style) {
     return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 1.0 &&
            style.strokeWidth <= 72.0 &&
@@ -767,7 +786,9 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
         toCanvasDistanceStyle(state.distance_style),
         state.distance_style_mixed,
         toCanvasAngleStyle(state.angle_style),
+        toCanvasBracketStyle(state.bracket_style),
         state.angle_style_mixed,
+        state.bracket_style_mixed,
         state.distance_measured_length,
         toCanvasMagnifierStyle(state.magnifier_style),
         state.magnifier_style_mixed,
@@ -965,7 +986,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     }
 
     if (!validDistanceStyle(defaults.distance) || !validAngleStyle(defaults.angle) ||
-        !validMagnifierStyle(defaults.magnifier))
+        !validBracketStyle(defaults.bracket) || !validMagnifierStyle(defaults.magnifier))
         return false;
     engineDefaults = SnowStyleDefaults{};
     engineDefaults.rectangle = toEngineShapeStyle(defaults.rectangle);
@@ -996,6 +1017,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.spotlight_corner_radii = toEngineCornerRadii(defaults.spotlightCornerRadii);
     engineDefaults.distance = toEngineDistanceStyle(defaults.distance);
     engineDefaults.angle = toEngineAngleStyle(defaults.angle);
+    engineDefaults.bracket = toEngineBracketStyle(defaults.bracket);
     engineDefaults.magnifier = toEngineMagnifierStyle(defaults.magnifier);
     return true;
 }

@@ -74,6 +74,7 @@ namespace storage = snow_shot::storage;
 namespace layout = snow_shot::presentation::toolbar_layout;
 namespace auto_hide = snow_shot::presentation::recording::toolbar_auto_hide;
 using Side = auto_hide::Side;
+using Session = ScreenshotToolPalette::RecordingSessionStatus;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -222,7 +223,7 @@ struct ToolbarFixture {
     QRect bounds;
     QRect recordingRegion;
 
-    ToolbarFixture() {
+    explicit ToolbarFixture(Session status = Session::recording()) {
         require(screen != nullptr, "toolbar auto-hide requires a screen");
         bounds = screen->geometry();
         const QRect logicalRegion(bounds.left() + 100, bounds.top() + 80, 320, 240);
@@ -232,6 +233,7 @@ struct ToolbarFixture {
         recordingRegion = ScreenshotGeometryMapper::nativeRectForLogicalRect(
             logicalRegion, bounds, ScreenshotGeometryMapper::physicalRectForScreen(*screen));
 #endif
+        toolbar.palette()->setRecordingSession(status);
         toolbar.placeForRecordingRegion(recordingRegion);
         toolbar.showWithoutActivating();
         pump();
@@ -303,6 +305,55 @@ struct ToolbarFixture {
                 "hover dwell must restore the toolbar and retire the edge control");
     }
 };
+
+void onlyActiveRecordingAutoHides() {
+    require(storage::RecordingSettings().setAutoHideToolbar(true),
+            "enable recording state fixture");
+    ToolbarFixture fixture(Session::idle());
+    const auto requireExpanded = [&] {
+        require(fixture.toolbar.isVisible() && fixture.toolbar.recordingUiPresented() &&
+                    !fixture.control()->isVisible() && !fixture.retreat()->isActive() &&
+                    !fixture.reveal()->isActive(),
+                "only active recording may collapse the toolbar or schedule auto-hide timers");
+    };
+    requireExpanded();
+    for (const auto status : {Session::idle(), Session::starting(), Session::countingDown(),
+                              Session::paused(), Session::stopping(), Session::pausedStopping(),
+                              Session::copying(), Session::pausedCopying()}) {
+        fixture.toolbar.palette()->setRecordingSession(Session::recording());
+        pump();
+        require(fixture.retreat()->isActive(), "starting or resuming must enable auto-hide");
+        fixture.toolbar.palette()->setRecordingSession(status);
+        pump();
+        requireExpanded();
+        require(QMetaObject::invokeMethod(fixture.retreat(), "timeout", Qt::DirectConnection),
+                "dispatch a stale retreat after leaving active recording");
+        pump();
+        requireExpanded();
+
+        fixture.toolbar.palette()->setRecordingSession(Session::recording());
+        pump();
+        fixture.collapse();
+        const QPoint content = fixture.toolbar.contentPosition();
+        fixture.cursor(fixture.control()->geometry().center());
+        require(fixture.reveal()->isActive(), "collapsed recording schedules hover reveal");
+        fixture.toolbar.palette()->setRecordingSession(status);
+        pump();
+        requireExpanded();
+        require(fixture.toolbar.contentPosition() == content,
+                "leaving active recording must restore the expanded toolbar position");
+        fixture.outside();
+    }
+
+    fixture.toolbar.palette()->setRecordingSession(Session::recording());
+    pump();
+    fixture.toolbar.setAutoHideControlShowGuard([&](QWidget*) {
+        fixture.toolbar.palette()->setRecordingSession(Session::paused());
+        return true;
+    });
+    expire(fixture.retreat());
+    requireExpanded();
+}
 
 void appearanceMatchesToolbar() {
     namespace styles = snow_shot::presentation::styles;
@@ -554,6 +605,7 @@ void hoverAndInteractionProtection() {
     require(fixture.retreat()->isActive(),
             "destroying a blocker owner must release its protection");
 
+    fixture.toolbar.palette()->setRecordingMicrophoneEnabled(true);
     auto* gain = fixture.toolbar.palette()->recordingAudioGainPopover(true);
     require(gain != nullptr, "compact recording fixture must retain the real microphone popover");
     gain->openAndFocus();
@@ -707,6 +759,7 @@ void synchronousGuardCallbacksRetirePresentation() {
 
     for (const bool alreadyCollapsed : {false, true}) {
         auto ownedToolbar = std::make_unique<ScreenRecordingToolbarWindow>();
+        ownedToolbar->palette()->setRecordingSession(Session::recording());
         const QPointer<ScreenRecordingToolbarWindow> lifetime(ownedToolbar.get());
         QScreen* screen = QGuiApplication::primaryScreen();
         require(screen != nullptr, "synchronous capture-guard lifetime fixture requires a screen");
@@ -773,6 +826,7 @@ void runScreenRecordingToolbarAutoHideTests() {
                                                              {QStringLiteral("microphone")}})),
             "prepare a compact recording toolbar for deterministic offscreen edge tests");
     geometryCases();
+    onlyActiveRecordingAutoHides();
     appearanceMatchesToolbar();
     partiallyOffscreenRows();
     defaultOffAndLifecycle();

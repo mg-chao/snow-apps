@@ -503,6 +503,10 @@
             <translation>箭头</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>括号标注</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>距离标注</translation>
         </message>
@@ -1500,6 +1504,14 @@
             <translation>条码识别</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>批量操作：保存为文件</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>批量操作：全选</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>模糊</translation>
         </message>
@@ -1522,6 +1534,10 @@
         <message>
             <source>Bottom right</source>
             <translation>右下角</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>括号标注</translation>
         </message>
         <message>
             <source>Browse</source>

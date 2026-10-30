@@ -36,6 +36,7 @@ pub enum ActiveTool {
     Angle,
     Magnifier,
     SpeechBubble,
+    Bracket,
 }
 
 impl ActiveTool {
@@ -75,7 +76,8 @@ impl ActiveTool {
             | Self::Distance
             | Self::Angle
             | Self::Magnifier
-            | Self::SpeechBubble => false,
+            | Self::SpeechBubble
+            | Self::Bracket => false,
         }
     }
 }
@@ -189,6 +191,8 @@ pub enum StyleToolbarSource {
     SelectedMagnifier,
     DefaultSpeechBubble,
     SelectedSpeechBubble,
+    DefaultBracket,
+    SelectedBracket,
 }
 
 impl StyleToolbarSource {
@@ -407,7 +411,9 @@ pub struct StyleToolbarState {
     pub distance_style: crate::DistanceStyle,
     pub distance_style_mixed: u32,
     pub angle_style: crate::AngleStyle,
+    pub bracket_style: crate::BracketStyle,
     pub angle_style_mixed: u32,
+    pub bracket_style_mixed: u32,
     pub magnifier_style: crate::MagnifierStyle,
     pub magnifier_style_mixed: u32,
     pub distance_measured_length: f64,
@@ -535,7 +541,7 @@ pub fn selection_box_visible_for_members(
     selected_item_count != 1
         || !matches!(
             selection_arrows,
-            [arrow] if arrow.arrow.points.len() == 2
+            [arrow] if arrow.arrow.points.len() == 2 || arrow.arrow.is_bracket()
         )
 }
 

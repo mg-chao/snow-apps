@@ -48,7 +48,11 @@ impl Editor {
         }
         if matches!(
             self.state.active_tool,
-            ActiveTool::Arrow | ActiveTool::Line | ActiveTool::Distance | ActiveTool::Angle
+            ActiveTool::Arrow
+                | ActiveTool::Line
+                | ActiveTool::Distance
+                | ActiveTool::Angle
+                | ActiveTool::Bracket
         ) {
             return match hit {
                 CanvasHit::SelectionHandle(target) => {
@@ -60,9 +64,10 @@ impl Editor {
                 CanvasHit::EligibleElement(id, ElementKind::Arrow) => {
                     PrimaryPointerIntent::BeginArrowElementInteraction { id }
                 }
-                CanvasHit::EligibleElement(id, ElementKind::Distance | ElementKind::Angle) => {
-                    PrimaryPointerIntent::BeginArrowElementInteraction { id }
-                }
+                CanvasHit::EligibleElement(
+                    id,
+                    ElementKind::Distance | ElementKind::Angle | ElementKind::Bracket,
+                ) => PrimaryPointerIntent::BeginArrowElementInteraction { id },
                 CanvasHit::EligibleElement(id, ElementKind::Line) => {
                     PrimaryPointerIntent::BeginArrowElementInteraction { id }
                 }
@@ -107,6 +112,7 @@ impl Editor {
                         | ElementKind::Line
                         | ElementKind::Distance
                         | ElementKind::Angle
+                        | ElementKind::Bracket
                 ) {
                     return PrimaryPointerIntent::BeginArrowElementInteraction { id };
                 }

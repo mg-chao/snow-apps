@@ -1428,6 +1428,28 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("save_as_file"),
                                     m_shortcutManager->addBinding(this, std::move(save)));
 
+    for (const auto& id :
+         {QStringLiteral("batch_select_all"), QStringLiteral("batch_save_as_file")}) {
+        ShortcutManager::Binding batch;
+        batch.id = QStringLiteral("pinned.") + id;
+        batch.priority = ShortcutManager::StandardPriority::WindowCommand;
+        batch.canActivate = [this, id, localCommandsAllowed](const auto& context) {
+            return localCommandsAllowed(context) && m_firstContentFramePublished &&
+                   QApplication::activeModalWidget() == nullptr &&
+                   (context.event == nullptr || !context.event->isAutoRepeat()) &&
+                   (id == QStringLiteral("batch_select_all") ? bool(m_selectionController)
+                                                             : !batchSavePending());
+        };
+        batch.activate = [this, id](const auto&) {
+            if (id == QStringLiteral("batch_select_all"))
+                selectAllDisplayedPinnedWindows();
+            else
+                saveDisplayedPinnedWindows();
+            return true;
+        };
+        m_pinnedShortcutBindings.insert(id, m_shortcutManager->addBinding(this, std::move(batch)));
+    }
+
     ShortcutManager::Binding recognition;
     recognition.id = QStringLiteral("pinned.show_recognition");
     recognition.priority = ShortcutManager::StandardPriority::WindowCommand;
@@ -1715,6 +1737,8 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"copy_to_clipboard", "screenshotPinnedCopyAction"},
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
+        {"batch_select_all", "screenshotPinnedBatchSelectAllAction"},
+        {"batch_save_as_file", "screenshotPinnedBatchSaveAsFileAction"},
         {"upload_to_cloud", nullptr},
         {"print", nullptr},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
@@ -3985,13 +4009,11 @@ void ScreenshotPinnedWindow::createContextMenu() {
             connect(m_showShadowAction, &QAction::triggered, this,
                     &ScreenshotPinnedWindow::toggleShowShadow);
             windowManagementMenu->addSeparator();
-            QAction* hideAllWindowsToTop = windowManagementMenu->addItem(
-                tr("Hide All Windows to Top"), outlined_icons::ArrowUp());
-            setActionTranslationSource(hideAllWindowsToTop, "Hide All Windows to Top");
-            hideAllWindowsToTop->setObjectName(
-                QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
-            connect(hideAllWindowsToTop, &QAction::triggered, this,
-                    &ScreenshotPinnedWindow::hideAllPinnedWindowsToTop);
+            auto* batch = windowManagementMenu->addLazySubMenu(
+                tr("Batch Actions"), [this](auto* menu) { createBatchActionsMenu(menu); },
+                outlined_icons::Appstore());
+            setActionTranslationSource(batch, "Batch Actions");
+            batch->setObjectName(QStringLiteral("screenshotPinnedBatchActionsAction"));
             m_loadContentAction = windowManagementMenu->addLazySubMenu(
                 tr("Load new content"),
                 [this](auto* loadMenu) {
@@ -4108,6 +4130,7 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
 void ScreenshotPinnedWindow::refreshContextMenu() {
     if (m_contextMenu == nullptr || m_contextMenu->isRetiring())
         return;
+    refreshBatchActionsMenu();
     if (m_animationToggleAction)
         setActionDisplayText(m_animationToggleAction,
                              m_thumbnailMode || !m_animationPlaying ? tr("Play") : tr("Pause"));
@@ -9047,14 +9070,114 @@ bool ScreenshotPinnedWindow::restoreCommittedNativeGeometry(bool closeOnFailure)
     return false;
 }
 
-void ScreenshotPinnedWindow::hideAllPinnedWindowsToTop() {
-    const auto windows = livePinnedWindows();
-    for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window->m_presented && !window->m_closing &&
-            (window->m_groupManager == nullptr ||
-             window->groupId() == window->m_groupManager->activeGroupId()) &&
-            !window->hideToTopActive()) {
-            window->toggleHideToTop();
+QList<QPointer<ScreenshotPinnedWindow>> ScreenshotPinnedWindow::displayedPinnedWindows() const {
+    QList<QPointer<ScreenshotPinnedWindow>> result;
+    for (const auto& window : livePinnedWindows()) {
+        if (!window || !window->m_presented || !window->m_firstContentFramePublished ||
+            window->m_closing || window->isMinimized() ||
+            (window->m_groupManager &&
+             window->groupId() != window->m_groupManager->activeGroupId()))
+            continue;
+        const auto* handle = window->m_hideToTop->handleWidget();
+        if (window->isVisible() || (window->hideToTopActive() && handle && handle->isVisible()))
+            result.append(window);
+    }
+    return result;
+}
+
+void ScreenshotPinnedWindow::selectAllDisplayedPinnedWindows() {
+    if (m_selectionController)
+        m_selectionController->selectAll(displayedPinnedWindows());
+}
+
+void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu* menu) {
+    m_batchActionsMenu = menu;
+    menu->setObjectName(QStringLiteral("screenshotPinnedBatchActionsMenu"));
+    const auto add = [this, menu](const QString& text, const char* source, const char* name,
+                                  auto callback) {
+        auto* action = menu->addItem(text);
+        setActionTranslationSource(action, source);
+        action->setObjectName(QString::fromLatin1(name));
+        connect(action, &QAction::triggered, this, std::move(callback));
+        return action;
+    };
+    add(tr("Select All"), "Select All", "screenshotPinnedBatchSelectAllAction",
+        [this] { selectAllDisplayedPinnedWindows(); });
+    add(tr("Save as File"), "Save as File", "screenshotPinnedBatchSaveAsFileAction",
+        [this] { saveDisplayedPinnedWindows(); });
+    menu->addSeparator();
+    const auto apply = [this](auto operation) {
+        const auto targets = displayedPinnedWindows();
+        for (const auto& window : targets)
+            if (window && !window->m_closing)
+                operation(*window);
+    };
+    add(tr("Enable Thumbnail Mode"), "Enable Thumbnail Mode",
+        "screenshotPinnedBatchEnableThumbnailAction", [apply] {
+            apply([](auto& window) {
+                if (!window.m_thumbnailMode)
+                    window.setThumbnailMode(true);
+            });
+        });
+    add(tr("Disable Thumbnail Mode"), "Disable Thumbnail Mode",
+        "screenshotPinnedBatchDisableThumbnailAction",
+        [apply] { apply([](auto& window) { window.setThumbnailMode(false); }); });
+    add(tr("Enable Hide to Top"), "Enable Hide to Top",
+        "screenshotPinnedBatchEnableHideToTopAction", [apply] {
+            apply([](auto& window) {
+                if (!window.hideToTopActive())
+                    window.toggleHideToTop();
+            });
+        });
+    add(tr("Disable Hide to Top"), "Disable Hide to Top",
+        "screenshotPinnedBatchDisableHideToTopAction", [apply] {
+            apply([](auto& window) {
+                if (window.hideToTopActive())
+                    window.toggleHideToTop();
+            });
+        });
+    add(tr("Enable Lock Mode"), "Enable Lock Mode", "screenshotPinnedBatchEnableLockAction",
+        [apply] { apply([](auto& window) { window.setLockedMode(true); }); });
+    add(tr("Disable Lock Mode"), "Disable Lock Mode", "screenshotPinnedBatchDisableLockAction",
+        [apply] { apply([](auto& window) { window.setLockedMode(false); }); });
+    menu->addSeparator();
+    add(tr("Close"), "Close", "screenshotPinnedBatchCloseAction",
+        [apply] { apply([](auto& window) { window.requestUserClose(); }); });
+    auto* destroy = add(tr("Destroy"), "Destroy", "screenshotPinnedBatchDestroyAction", [this] {
+        if (m_selectionController)
+            m_selectionController->destroyWindows(this, displayedPinnedWindows());
+    });
+    menu->setActionDanger(destroy);
+    menu->addSeparator();
+    auto* count = menu->addItem(QString());
+    count->setObjectName(QStringLiteral("screenshotPinnedBatchDisplayedCount"));
+    count->setEnabled(false);
+    connect(menu, &QMenu::aboutToShow, this, &ScreenshotPinnedWindow::refreshBatchActionsMenu);
+    refreshMenuShortcutDisplays();
+    refreshBatchActionsMenu();
+}
+
+void ScreenshotPinnedWindow::refreshBatchActionsMenu() {
+    if (!m_batchActionsMenu || m_batchActionsMenu->isRetiring())
+        return;
+    const auto targets = displayedPinnedWindows();
+    for (auto* action : m_batchActionsMenu->actions()) {
+        const auto name = action->objectName();
+        if (name == QStringLiteral("screenshotPinnedBatchDisplayedCount")) {
+            action->setText(tr("%n window(s) displayed", nullptr, int(targets.size())));
+            action->setEnabled(false);
+        } else if (!action->isSeparator()) {
+            bool enabled = !targets.isEmpty();
+            if (name == QStringLiteral("screenshotPinnedBatchSelectAllAction"))
+                enabled = m_selectionController &&
+                          std::any_of(targets.cbegin(), targets.cend(), [this](const auto& pin) {
+                              return m_selectionController->isSelectable(pin);
+                          });
+            if (name == QStringLiteral("screenshotPinnedBatchDestroyAction"))
+                enabled = enabled && m_selectionController;
+            if (name == QStringLiteral("screenshotPinnedBatchSaveAsFileAction"))
+                enabled = enabled && !batchSavePending();
+            action->setEnabled(enabled);
         }
     }
 }

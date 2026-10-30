@@ -1819,7 +1819,11 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 drawingShortcuts->items.at(2).payload)
                     .scope == settings::SettingsLocalShortcutScope::Drawing &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 36 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 38 &&
+            pinToScreenShortcuts->items.at(36).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/batch_select_all") &&
+            pinToScreenShortcuts->items.at(37).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/batch_save_as_file") &&
             playbackShortcutContractsMatch &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
@@ -3867,7 +3871,26 @@ int main(int argc, char** argv) {
         pinnedShakeSettingIsDiscoverable();
         return 0;
     }
-    pinnedShakeSettingIsDiscoverable();
+    if (application.arguments().contains(QStringLiteral("--pinned-batch-shortcuts-only"))) {
+        const auto& catalog = settings::builtInSettingsRegistry().catalog();
+        require(catalog.validationErrors().isEmpty(), "batch shortcuts preserve catalog validity");
+        const auto* section = catalog.section(QStringLiteral("shortcuts-mouse"),
+                                              QStringLiteral("pin-to-screen-shortcuts"));
+        require(section && section->items.size() == 38,
+                "pinned shortcuts expose the two batch additions");
+        for (const auto& id :
+             {QStringLiteral("batch_select_all"), QStringLiteral("batch_save_as_file")}) {
+            const auto* item = catalog.item({QStringLiteral("shortcuts-mouse"),
+                                             QStringLiteral("pin-to-screen-shortcuts"),
+                                             QStringLiteral("pin-to-screen-shortcut.") + id});
+            require(item &&
+                        item->configurationKey == QStringLiteral("pin_to_screen_shortcuts/") + id &&
+                        std::get<settings::SettingsLocalShortcutDefinition>(item->payload).scope ==
+                            settings::SettingsLocalShortcutScope::PinToScreen,
+                    "batch shortcut fields use the existing configurable pinned shortcut scope");
+        }
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--tray-icons-only"))) {
         trayDarkIconSettingsHaveIndependentContracts();
         return 0;
@@ -3931,6 +3954,7 @@ int main(int argc, char** argv) {
 #endif
         return 0;
     }
+    pinnedShakeSettingIsDiscoverable();
     ocrHighlightingCatalog();
     memoryOptimizationPolicyCatalog();
     const auto adminCatalog = settings::buildBuiltInSettingsCatalog();

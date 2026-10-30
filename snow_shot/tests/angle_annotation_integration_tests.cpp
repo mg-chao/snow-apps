@@ -62,8 +62,9 @@ void persistedAngleDefaultsAreIndependent() {
 void toolConfigurationUpgradesDefaultsAndPreservesCustomLayouts() {
     using namespace snow_shot;
     const auto positions = presentation::toolbar_layout::defaultPositions();
-    const QStringList stack{QStringLiteral("angle"), QStringLiteral("distance"),
-                            QStringLiteral("line"), QStringLiteral("arrow")};
+    const QStringList stack{QStringLiteral("bracket"), QStringLiteral("angle"),
+                            QStringLiteral("distance"), QStringLiteral("line"),
+                            QStringLiteral("arrow")};
     require(positions.contains(stack), "angle joins the existing stack with the arrow trigger");
     const auto shortcuts = storage::DrawingShortcutSettings().allShortcuts();
     require(shortcuts.contains(QStringLiteral("angle")) &&

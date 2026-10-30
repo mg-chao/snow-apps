@@ -503,6 +503,10 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>Distance annotation</translation>
         </message>
@@ -1500,6 +1504,14 @@
             <translation>Barcode recognition</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>Batch Actions: Save as File</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>Batch Actions: Select All</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>Blur</translation>
         </message>
@@ -1522,6 +1534,10 @@
         <message>
             <source>Bottom right</source>
             <translation>Bottom right</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
         </message>
         <message>
             <source>Browse</source>

@@ -80,6 +80,8 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasDistanceStyle& style, quint32 properties)>
         distanceStyleChanged;
     std::function<void(const SnowCanvasAngleStyle& style, quint32 properties)> angleStyleChanged;
+    std::function<void(const SnowCanvasBracketStyle& style, quint32 properties)>
+        bracketStyleChanged;
     std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> textStyleChanged;
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
@@ -227,6 +229,9 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* buildAngleFamily(QWidget* panel,
                                             const ScreenshotToolPaletteStyleFamilyHost& host,
                                             const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] QWidget* buildBracketFamily(QWidget* panel,
+                                              const ScreenshotToolPaletteStyleFamilyHost& host,
+                                              const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] ScreenshotToolPaletteHighlightFamilyResult
     buildHighlightFamily(int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
                          const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -268,6 +273,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setArrowControlsActive(bool active);
     void setDistanceControlsActive(bool active);
     void setAngleControlsActive(bool active);
+    void setBracketControlsActive(bool active);
     [[nodiscard]] bool handleDistanceWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleMagnifierWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool stepMagnifierFactor(int direction);
@@ -379,7 +385,9 @@ class ScreenshotToolPaletteStyleControls final {
     void setMagnifierStrokeWidth(double width);
     void setMagnifierCornerRadius(int radius);
     void registerAngleEntries();
+    void registerBracketEntries();
     void updateAngleStyleControls(quint32 properties = 0xffffffffu);
+    void updateBracketStyleControls(quint32 properties = 0xffffffffu);
     void registerTextEntries();
     void registerSerialNumberEntries();
     void registerWatermarkEntries();
@@ -390,7 +398,9 @@ class ScreenshotToolPaletteStyleControls final {
     template <typename Apply> void commitArrowProperty(quint32 property, Apply apply);
     template <typename Apply> void commitDistanceProperty(quint32 property, Apply apply);
     template <typename Apply> void commitAngleProperty(quint32 property, Apply apply);
+    template <typename Apply> void commitBracketProperty(quint32 property, Apply apply);
     void setAngleStrokeWidth(double width);
+    void setBracketStrokeWidth(double width);
     void setDistanceValue(double value);
     void setDistanceStrokeWidth(double width);
     void setDistanceEndpointScale(double scale);
@@ -566,7 +576,9 @@ class ScreenshotToolPaletteStyleControls final {
     QPointer<adqt::widgets::AdRadioButtonGroup> m_magnifierConnectionGroup;
     QPointer<adqt::widgets::AdButton> m_magnifierSourceOutlineToggle;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_angleColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_bracketColorEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_angleWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_bracketWidthEditor;
     QPointer<adqt::widgets::AdRadioButtonGroup> m_angleTypeGroup;
     QPointer<adqt::widgets::AdRadioButtonGroup> m_angleUnitGroup;
     ScreenshotToolPaletteSelectEditor m_angleDecimalsEditor;
@@ -628,6 +640,7 @@ class ScreenshotToolPaletteStyleControls final {
     QVector<StyleEditorEntry> m_arrowEntries;
     QVector<StyleEditorEntry> m_distanceEntries;
     QVector<StyleEditorEntry> m_angleEntries;
+    QVector<StyleEditorEntry> m_bracketEntries;
     QVector<StyleEditorEntry> m_textEntries;
     QVector<StyleEditorEntry> m_serialNumberEntries;
     QVector<StyleEditorEntry> m_watermarkEntries;

@@ -300,6 +300,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   private:
     friend class ScreenshotPinnedEditController;
     friend class ScreenshotPinnedWindowTestAccess;
+    friend class ScreenshotPinnedBatchSaveSession;
     friend class PinnedWindowWindowsEvents;
     bool m_destroying = false;
     friend class snow_shot::presentation::PinnedWindowSelectionController;
@@ -436,6 +437,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void airDropContent();
     void requestVisibleContentSnapshot(std::function<void(ScreenshotExportImageResult)> ready);
     void saveAsFile();
+    void saveDisplayedPinnedWindows();
+    void saveDisplayedPinnedWindowsToDirectory(const QString& directory);
+    [[nodiscard]] static bool batchSavePending();
     void uploadToCloud();
     void cancelCloudUpload();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
@@ -514,7 +518,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool finishNativeGeometryInteraction();
     bool reconcilePassiveNativeGeometry();
     bool restoreCommittedNativeGeometry(bool closeOnFailure = true);
-    void hideAllPinnedWindowsToTop();
+    [[nodiscard]] QList<QPointer<ScreenshotPinnedWindow>> displayedPinnedWindows() const;
+    void selectAllDisplayedPinnedWindows();
+    void createBatchActionsMenu(adqt::widgets::AdContextMenu* menu);
+    void refreshBatchActionsMenu();
     void showAllPinnedWindows();
     void hideOtherPinnedWindows();
     void closeOtherPinnedWindows();
@@ -651,6 +658,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<adqt::widgets::AdModal> m_destroyConfirmation;
     QPointer<adqt::widgets::AdModal> m_closeConfirmation;
     QPointer<adqt::widgets::AdContextMenu> m_groupMenu;
+    QPointer<adqt::widgets::AdContextMenu> m_batchActionsMenu;
     QPointer<QAction> m_groupMenuAction;
     QPointer<QAction> m_ocrAction;
     QPointer<QAction> m_textTypeAction;

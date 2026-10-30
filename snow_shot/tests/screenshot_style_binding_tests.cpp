@@ -11,6 +11,7 @@
 #include "widgets/input_line_edit.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
+#include "widgets/slider.h"
 
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -1678,4 +1679,103 @@ void runAngleStyleBindingTests() {
     palettePixelWheel();
     require(runtime.serializeDocumentHistory() != secondSelection,
             "changing selected angle resets the palette's fractional wheel remainder");
+}
+
+void runBracketStyleBindingTests() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(400, 300);
+    canvas.setWheelZoomEnabled(false);
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.bracket.strokeWidth = 5;
+    auto settings = options();
+    settings.styleDefaults = defaults;
+    ScreenshotToolPalette palette(settings);
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&]() { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    QObject::connect(&palette, &ScreenshotToolPalette::selectionOpacityChanged, &canvas,
+                     [&](qreal opacity) {
+                         require(canvas.setSelectedOpacity(opacity), "apply bracket opacity");
+                     });
+    int saves = 0;
+    ScreenshotStyleBinding binding(palette, canvas, &palette, {}, [&](const SnowCanvasStyleEdit&) {
+        ++saves;
+        return true;
+    });
+    applyScreenshotCanvasToolStyles(canvas, defaults);
+    require(canvas.setCanvasTool(SnowCanvasTool::Bracket), "activate shared bracket style binding");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Bracket);
+    auto changed = defaults.bracket;
+    changed.strokeWidth = 7;
+    require(canvas.commitStyleEdit(SnowCanvasBracketStyleEdit{changed, 2}) && saves == 1 &&
+                palette.creationStyleDefaults().bracket == changed &&
+                canvas.canvasBracketStyle() == changed,
+            "shared host binding applies and persists bracket style patches once");
+    require(palette.creationStyleDefaults() != defaults,
+            "style default equality detects independent bracket appearance changes");
+
+    WheelStepAccumulator accumulator;
+    const auto hostWheel = [&](int pixels, int angle,
+                               Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+        QWheelEvent event({200, 150}, {200, 150}, {0, pixels}, {0, angle}, Qt::NoButton, modifiers,
+                          Qt::ScrollUpdate, false);
+        return handleScreenshotStyleWheel(palette, canvas, event, accumulator);
+    };
+    const auto camera = canvas.canvasToViewTransform();
+    const auto beforeWidth = canvas.canvasStyleToolbarState();
+    require(hostWheel(0, 120) && canvas.canvasBracketStyle().strokeWidth == 8 && saves == 2,
+            "canvas wheel routes bracket width through the shared style binding once");
+    require(canvas.canvasStyleToolbarState() != beforeWidth,
+            "toolbar state equality detects bracket appearance changes");
+    auto mixedWidth = beforeWidth;
+    mixedWidth.bracketStyleMixed =
+        static_cast<quint32>(SnowCanvasBracketStyleProperty::StrokeWidth);
+    require(mixedWidth != beforeWidth, "toolbar state equality detects mixed bracket properties");
+    require(hostWheel(-1, 120) && canvas.canvasBracketStyle().strokeWidth == 7 && saves == 3,
+            "precise bracket wheel direction takes precedence over angle delta");
+    for (const auto modifiers : {Qt::ControlModifier, Qt::ShiftModifier, Qt::AltModifier})
+        require(!hostWheel(0, 120, modifiers) && canvas.canvasBracketStyle().strokeWidth == 7 &&
+                    saves == 3,
+                "modified host wheels leave bracket style unchanged");
+    require(canvas.canvasToViewTransform() == camera,
+            "bracket style wheels leave the camera unchanged");
+
+    require(runtime.setAutomaticallySelectNewlyCreatedElements(true), "select new bracket");
+    mouse(canvas, QEvent::MouseButtonPress, {100, 50});
+    mouse(canvas, QEvent::MouseMove, {180, 250});
+    require(hostWheel(0, 120), "bracket width wheel updates the active creation preview");
+    mouse(canvas, QEvent::MouseButtonRelease, {180, 250});
+    require(canvas.canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedBracket &&
+                canvas.canvasBracketStyle().strokeWidth == 8,
+            "bracket commits with the preview's updated width");
+    require(hostWheel(0, -120) && canvas.canvasBracketStyle().strokeWidth == 7,
+            "shared host wheel edits the selected bracket");
+    require(canvas.undo() && canvas.canvasBracketStyle().strokeWidth == 8 && canvas.redo() &&
+                canvas.canvasBracketStyle().strokeWidth == 7,
+            "selected bracket wheel styling undoes and redoes atomically");
+    for (const double limit : {1.0, 72.0}) {
+        auto style = canvas.canvasBracketStyle();
+        style.strokeWidth = limit;
+        require(canvas.commitStyleEdit(
+                    SnowCanvasBracketStyleEdit{style, 2, SnowCanvasStyleEditTarget::Selection}),
+                "prepare selected bracket width boundary");
+        const int before = saves;
+        require(hostWheel(0, limit == 1 ? -120 : 120) && saves == before &&
+                    canvas.canvasBracketStyle().strokeWidth == limit,
+                "bracket boundary wheel is consumed without duplicate edits or saves");
+    }
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select bracket opacity");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    require(canvas.setSelectedOpacity(0.25), "change bracket opacity independently of stroke");
+    auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotSelectionOpacitySlider"));
+    require(opacity != nullptr && opacity->value() == 25,
+            "selected bracket opacity is published to the selection toolbar");
+    require(hostWheel(0, -120) && opacity->value() == 20 &&
+                canvas.canvasStyleToolbarState().shapeStyle.opacity == 0.2,
+            "Select-tool wheels adjust bracket opacity rather than stroke width");
+    require(canvas.undo() && opacity->value() == 25 && canvas.redo() && opacity->value() == 20,
+            "bracket opacity undo and redo update the selection toolbar");
 }

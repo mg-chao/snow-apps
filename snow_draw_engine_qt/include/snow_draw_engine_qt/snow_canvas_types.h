@@ -45,6 +45,7 @@ enum class SnowCanvasTool {
     Angle,
     Magnifier,
     SpeechBubble,
+    Bracket,
 };
 
 enum class SnowCanvasCursorLayer {
@@ -89,6 +90,8 @@ enum class SnowCanvasStyleToolbarSource {
     SelectedMagnifier,
     DefaultSpeechBubble,
     SelectedSpeechBubble,
+    DefaultBracket,
+    SelectedBracket,
 };
 
 enum SnowCanvasTextStyleMixedFlag : quint32 {
@@ -374,6 +377,17 @@ inline bool operator!=(const SnowCanvasCornerRadii& lhs, const SnowCanvasCornerR
     return !(lhs == rhs);
 }
 
+enum class SnowCanvasBracketStyleProperty : quint32 { Stroke = 1, StrokeWidth = 2, All = 3 };
+struct SnowCanvasBracketStyle {
+    QColor stroke = QColor(0xf5, 0x22, 0x2d);
+    double strokeWidth = 2.0;
+};
+inline bool operator==(const SnowCanvasBracketStyle& lhs, const SnowCanvasBracketStyle& rhs) {
+    return lhs.stroke == rhs.stroke && snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth);
+}
+inline bool operator!=(const SnowCanvasBracketStyle& lhs, const SnowCanvasBracketStyle& rhs) {
+    return !(lhs == rhs);
+}
 enum class SnowCanvasAngleUnit { Degrees, Radians };
 enum class SnowCanvasAngleType { Directed, Interior };
 
@@ -705,6 +719,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasCornerRadii spotlightCornerRadii;
     SnowCanvasDistanceStyle distance;
     SnowCanvasAngleStyle angle;
+    SnowCanvasBracketStyle bracket;
     SnowCanvasMagnifierStyle magnifier;
     SnowCanvasShapeStyle speechBubble = [] {
         SnowCanvasShapeStyle style;
@@ -725,7 +740,7 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser &&
            lhs.spotlightShape == rhs.spotlightShape &&
            lhs.spotlightCornerRadii == rhs.spotlightCornerRadii && lhs.distance == rhs.distance &&
-           lhs.angle == rhs.angle && lhs.magnifier == rhs.magnifier &&
+           lhs.angle == rhs.angle && lhs.bracket == rhs.bracket && lhs.magnifier == rhs.magnifier &&
            lhs.speechBubble == rhs.speechBubble;
 }
 
@@ -758,7 +773,9 @@ struct SnowCanvasStyleToolbarState {
     SnowCanvasDistanceStyle distanceStyle;
     quint32 distanceStyleMixed = 0;
     SnowCanvasAngleStyle angleStyle;
+    SnowCanvasBracketStyle bracketStyle;
     quint32 angleStyleMixed = 0;
+    quint32 bracketStyleMixed = 0;
     // Calibrated length before applying the factor; zero without a single valid distance.
     double distanceMeasuredLength = 0.0;
     SnowCanvasMagnifierStyle magnifierStyle;
@@ -777,7 +794,8 @@ inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
            lhs.filterStyleMixed == rhs.filterStyleMixed &&
            lhs.brushEraserStyle == rhs.brushEraserStyle && lhs.distanceStyle == rhs.distanceStyle &&
            lhs.distanceStyleMixed == rhs.distanceStyleMixed && lhs.angleStyle == rhs.angleStyle &&
-           lhs.angleStyleMixed == rhs.angleStyleMixed &&
+           lhs.angleStyleMixed == rhs.angleStyleMixed && lhs.bracketStyle == rhs.bracketStyle &&
+           lhs.bracketStyleMixed == rhs.bracketStyleMixed &&
            lhs.distanceMeasuredLength == rhs.distanceMeasuredLength &&
            lhs.magnifierStyle == rhs.magnifierStyle &&
            lhs.magnifierStyleMixed == rhs.magnifierStyleMixed;

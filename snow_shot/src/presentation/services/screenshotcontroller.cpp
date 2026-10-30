@@ -417,6 +417,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setLineTool() override;
     void setDistanceTool() override;
     void setAngleTool() override;
+    void setBracketTool() override;
     void setFreeDrawTool() override;
     void setHighlightTool() override;
     void setPenHighlightTool() override;
@@ -2605,6 +2606,9 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     case ScreenshotActiveTool::Angle:
         setAngleTool();
         break;
+    case ScreenshotActiveTool::Bracket:
+        setBracketTool();
+        break;
     case ScreenshotActiveTool::FreeDraw:
         setFreeDrawTool();
         break;
@@ -2733,6 +2737,13 @@ void ScreenshotController::Impl::setAngleTool() {
     deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setAngleTool();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+}
+
+void ScreenshotController::Impl::setBracketTool() {
+    deactivateRecognition();
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    m_toolCommandWorkflow->setBracketTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
@@ -4561,7 +4572,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -6893,6 +6904,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"arrow", ScreenshotActiveTool::Arrow},
     {"distance", ScreenshotActiveTool::Distance},
     {"angle", ScreenshotActiveTool::Angle},
+    {"bracket", ScreenshotActiveTool::Bracket},
     {"line", ScreenshotActiveTool::Line},
     {"freehand", ScreenshotActiveTool::FreeDraw},
     {"rectangle_highlight", ScreenshotActiveTool::RectangleHighlight},

@@ -85,6 +85,10 @@ void nonDrawingToolsDisableCanvasInteraction() {
                 selectedCanvasTool == SnowCanvasTool::SpeechBubble &&
                 interaction.activeTool() == ScreenshotActiveTool::SpeechBubble,
             "activating Speech Bubble forwards its drawing tool and editing state");
+    workflow.setBracketTool();
+    require(canvasInteractionEnabled && selectedCanvasTool == SnowCanvasTool::Bracket &&
+                interaction.activeTool() == ScreenshotActiveTool::Bracket,
+            "activating Bracket forwards the tool through the shared canvas workflow");
 }
 void serialNumberStylePatchesPreservePropertyMask() {
     ScreenshotCaptureState captureState;
