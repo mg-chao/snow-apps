@@ -382,8 +382,5 @@ namespace live_window_detail {
 std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<MacLiveWindow>(target);
 }
-std::unique_ptr<NativeWindowPresentation> createNativeWindowPresentation(const LiveWindowTarget&) {
-    return {};
-}
 } // namespace live_window_detail
 } // namespace snow_shot::presentation

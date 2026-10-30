@@ -3260,6 +3260,10 @@
             <translation>Pin Selected Files to Screen</translation>
         </message>
         <message>
+            <source>Pin Window to Screen</source>
+            <translation>Pin Window to Screen</translation>
+        </message>
+        <message>
             <source>Pin clipboard</source>
             <translation>Pin clipboard</translation>
         </message>

@@ -4686,6 +4686,7 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
         QStringLiteral("scrolling_screenshot"),
         QStringLiteral("save_as_file"),
         QStringLiteral("pin_to_screen"),
+        QStringLiteral("pin_window_to_screen"),
         QStringLiteral("cancel_screenshot"),
         QStringLiteral("copy_to_clipboard"),
         QStringLiteral("undo"),
@@ -5017,6 +5018,65 @@ void cursorMovementShortcutsAreIndependentOfActiveTool() {
     }
 }
 
+void pinWindowShortcutUsesConfiguredBindings() {
+    const storage::ScreenshotShortcutSettings settings;
+    const QString id = QStringLiteral("pin_window_to_screen");
+    const auto original = settings.shortcuts(id);
+    const auto restore = qScopeGuard(
+        [&] { require(settings.setShortcuts(id, original), "restore window pin shortcut"); });
+    require(original == snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Alt+W")},
+            "window pin must default to Alt+W");
+    ScreenshotCaptureState capture;
+    capture.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(10, 20, 80, 60));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    interaction.confirmSelection();
+    bool inputAllowed = true;
+    int activations = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.mainToolbarVisible = [] { return true; };
+    actions.localShortcutInputAllowed = [&] { return inputAllowed; };
+    actions.activateScreenshotShortcut = [&](const QString& action) {
+        require(action == id, "window pin shortcut must dispatch the window pin action");
+        ++activations;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    QWidget receiver;
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&receiver);
+    ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                  actions);
+    const auto trigger = [&](Qt::Key key) {
+        const bool handled = dispatchShortcut(receiver, key, Qt::AltModifier);
+        static_cast<void>(dispatchShortcutRelease(receiver, key, Qt::AltModifier));
+        return handled;
+    };
+    require(trigger(Qt::Key_W) && activations == 1,
+            "Alt+W must activate window pin exactly once for a confirmed selection");
+    inputAllowed = false;
+    require(!trigger(Qt::Key_W) && activations == 1,
+            "text input must suppress the window pin shortcut");
+    inputAllowed = true;
+    const auto suspension = manager.suspendInput();
+    require(!trigger(Qt::Key_W) && activations == 1,
+            "modal input suspension must suppress the window pin shortcut");
+    manager.resumeInput(suspension);
+    require(settings.setShortcuts(id, {QStringLiteral("Alt+J"), QStringLiteral("Alt+K")}),
+            "configure two window pin shortcuts");
+    require(!trigger(Qt::Key_W) && trigger(Qt::Key_J) && trigger(Qt::Key_K) && activations == 3,
+            "rebinding must immediately replace Alt+W with both configured shortcuts");
+    require(settings.setShortcuts(id, {}) && !trigger(Qt::Key_W) && !trigger(Qt::Key_J) &&
+                !trigger(Qt::Key_K) && activations == 3,
+            "clearing window pin shortcuts must disable every configured binding");
+}
+
 void selectionStagesActivateEveryToolbarShortcut() {
     const storage::ScreenshotShortcutSettings screenshotSettings;
     const storage::DrawingShortcutSettings drawingSettings;
@@ -5040,6 +5100,7 @@ void selectionStagesActivateEveryToolbarShortcut() {
         QStringLiteral("quick_save"),
         QStringLiteral("save_as_file"),
         QStringLiteral("pin_to_screen"),
+        QStringLiteral("pin_window_to_screen"),
         QStringLiteral("copy_to_clipboard"),
         QStringLiteral("undo"),
         QStringLiteral("redo"),
@@ -7797,6 +7858,7 @@ int main(int argc, char** argv) {
         cursorMovementShortcutsAreIndependentOfActiveTool();
         screenshotTextEditingTakesPriorityOverCancelShortcut();
         configuredScreenshotShortcutsControlMoveAndCursorNavigation();
+        pinWindowShortcutUsesConfiguredBindings();
         selectionStagesActivateEveryToolbarShortcut();
         toolbarSelectionPreparationRejectsIncompleteRegions();
         explicitToolbarCommandFinishesCanvasResize();
@@ -7866,6 +7928,7 @@ int main(int argc, char** argv) {
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
     shortcutExitConfirmationGatesCancellation();
     scrollingCaptureRoutesEveryToolbarShortcut();
+    pinWindowShortcutUsesConfiguredBindings();
     selectionStagesActivateEveryToolbarShortcut();
     toolbarSelectionPreparationRejectsIncompleteRegions();
     explicitToolbarCommandFinishesCanvasResize();

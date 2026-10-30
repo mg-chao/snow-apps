@@ -457,6 +457,9 @@ QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("pin-to-screen")) {
         return QStringLiteral("pin_to_screen");
     }
+    if (itemId == QStringLiteral("pin-window-to-screen")) {
+        return QStringLiteral("pin_window_to_screen");
+    }
     if (itemId == QStringLiteral("text-recognition")) {
         return QStringLiteral("text_recognition");
     }
@@ -6570,6 +6573,9 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         if (snow_shot::app::editionActionToolAvailable(QStringLiteral("pin-window-to-screen"))) {
             m_pinWindowButton =
                 addActionButton("Pin Window to Screen", custom_outlined_icons::PinWindowToScreen());
+            applyScreenshotShortcutTooltip(m_pinWindowButton,
+                                           QStringLiteral("Pin Window to Screen"),
+                                           QStringLiteral("pin_window_to_screen"));
             m_pinWindowButton->setObjectName(QStringLiteral("screenshotPinWindowToScreenButton"));
             addButton(m_pinWindowButton);
             connect(m_pinWindowButton, &adqt::widgets::AdButton::clicked, this,
@@ -6766,6 +6772,7 @@ QString screenshotShortcutActionItem(const QString& actionId) {
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
         {QStringLiteral("upload_to_cloud"), QStringLiteral("upload-to-cloud")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
+        {QStringLiteral("pin_window_to_screen"), QStringLiteral("pin-window-to-screen")},
         {QStringLiteral("cancel_screenshot"), QStringLiteral("cancel")},
         {QStringLiteral("copy_to_clipboard"), QStringLiteral("copy")},
     };

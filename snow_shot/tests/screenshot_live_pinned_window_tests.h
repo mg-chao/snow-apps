@@ -1495,6 +1495,41 @@ void nativePresentationPreservesShell() {
         requireColorNear(raster.pixelColor(margin, raster.height() / 2),
                          border->property("borderColor").value<QColor>(), 0,
                          "native live content retains the shell's visible border");
+        if (!native)
+            continue;
+        const QRect geometry = window.geometry();
+        const auto render = [&] {
+            raster.fill(Qt::transparent);
+            window.render(&raster);
+        };
+        const auto pixel = [&](QPoint point) {
+            return raster.pixelColor((QPointF(point) * window.devicePixelRatioF()).toPoint());
+        };
+        ScreenshotPinnedWindowTestAccess::observePointerOffscreen(window, true);
+        auto* close = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedCloseButton"));
+        require(close && close->isVisible(), "native live pins show their hover controls");
+        render();
+        require(pixel(close->mapTo(&window, close->rect().center())).alpha() > 0,
+                "native live pins paint controls above their transparent content hole");
+        const QRect content = Access::contentView(window);
+        const QPoint start = content.topLeft() + QPoint(30, 50);
+        const QPoint end = content.center();
+        const QPoint sample = (start + end) / 2;
+        require(pixel(sample).alpha() == 0, "native content starts with a transparent Qt shell");
+        QMouseEvent press(QEvent::MouseButtonPress, start, window.mapToGlobal(start),
+                          Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(&window, &press);
+        QMouseEvent move(QEvent::MouseMove, end, window.mapToGlobal(end), Qt::NoButton,
+                         Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(&window, &move);
+        render();
+        require(pixel(sample).alpha() == 0x33 && window.geometry() == geometry,
+                "native live pins paint the crop preview without moving their shell");
+        QKeyEvent cancel(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QApplication::sendEvent(&window, &cancel);
+        render();
+        require(pixel(sample).alpha() == 0,
+                "cancelling a native live crop restores the transparent content hole");
     }
     window.closeLiveWindow();
 }
