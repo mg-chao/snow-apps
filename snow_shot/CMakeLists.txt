@@ -5479,6 +5479,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-pinned-menu-language-tests
         COMMAND snow-shot-pinned-window-tests --menu-language-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-menu-lifetime-tests
+        COMMAND snow-shot-pinned-window-tests --menu-lifetime-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-menu-lifetime-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-pinned-menu-language-tests PROPERTIES
         LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

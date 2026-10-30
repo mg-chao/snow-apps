@@ -391,6 +391,9 @@ class ScreenshotPinnedWindowTestAccess {
     static bool cropAllowed(const ScreenshotPinnedWindow& window) {
         return window.cropSelectionAllowed();
     }
+    static QAction* applyCropAction(const ScreenshotPinnedWindow& window) {
+        return window.m_applyCropAction;
+    }
     static bool beginCrop(ScreenshotPinnedWindow& window, const QPointF& point) {
         return window.beginCropSelection(point);
     }
@@ -27104,6 +27107,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_text_type_tests.h"
 #include "pinned_shake_window_tests.h"
 #include "screenshot_pinned_crop_tests.h"
+#include "screenshot_pinned_menu_lifetime_tests.h"
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_pinned_crop_performance_benchmark.h"
 #endif
@@ -27954,6 +27958,10 @@ int main(int argc, char* argv[]) {
             pinnedLazyMenuHeadersRetranslate();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--menu-lifetime-only"))) {
+            pinnedMenuActionLifetime();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--text-type-only"))) {
             pinnedThumbnailExitsTextDisplay();
             pinnedTextTypeMenuActivatesSelectedResults();
@@ -28205,6 +28213,7 @@ int main(int argc, char* argv[]) {
             pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
             return 0;
         }
+        pinnedMenuActionLifetime();
         pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
         pinnedPhysicalPixelsFillClientArea(sourceRuntime);
         pinnedBorderUsesCeiledWindowDpiPhysicalPixels(sourceRuntime);

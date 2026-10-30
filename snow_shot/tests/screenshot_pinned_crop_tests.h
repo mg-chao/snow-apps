@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Included after the pinned-window fixtures.
 #include "../src/presentation/pinned/screenshotpinnedcropgeometry.h"
+#include "../src/presentation/pinned/screenshotpinnedgeometrymapping.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 
 namespace pinned_crop_tests {
@@ -72,6 +73,121 @@ void geometry() {
         require(mapping.inverted().mapRect(mapping.mapRect(crop)) == crop,
                 "rotation, reflection and backing-scale crop mappings round-trip");
     }
+}
+
+void cornerOutlines() {
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config());
+    window.show();
+    require(Access::crop(window, {110, 210, 80, 60}), "corner outline crop fixture");
+    auto* border = Access::decoration(window);
+    const QColor base(210, 220, 230);
+    const QColor active(30, 120, 240);
+    border->setProperty("borderColor", base);
+    border->setProperty("cropMarkerColor", active);
+    const qreal dpr = border->devicePixelRatioF();
+    const auto render = [&] {
+        QImage image(qRound(border->width() * dpr), qRound(border->height() * dpr),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            border->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+        }
+        image.setDevicePixelRatio(1);
+        return image;
+    };
+    const auto contentPixels = [&] {
+        QTransform toDevice;
+        toDevice.scale(dpr, dpr);
+        return ScreenshotPinnedGeometryMapping::roundedDeviceRect(
+            toDevice.mapRect(Access::contentViewport(window)));
+    };
+    const auto mirroredPoint = [](const QRect& rect, int x, int y, bool right, bool bottom) {
+        return QPoint(right ? rect.right() - x : rect.left() + x,
+                      bottom ? rect.bottom() - y : rect.top() + y);
+    };
+    const int extent = qCeil(30 * dpr);
+    const int width = qCeil(dpr);
+    QRect content = contentPixels();
+    const QImage square = render();
+    for (bool right : {false, true}) {
+        for (bool bottom : {false, true}) {
+            for (int distance = 0; distance < extent; ++distance) {
+                requireColorNear(
+                    square.pixelColor(mirroredPoint(content, distance, 0, right, bottom)), active,
+                    0, "every crop corner follows the horizontal rim for thirty logical pixels");
+                requireColorNear(
+                    square.pixelColor(mirroredPoint(content, 0, distance, right, bottom)), active,
+                    0, "every crop corner follows the vertical rim for thirty logical pixels");
+            }
+            requireColorNear(
+                square.pixelColor(mirroredPoint(content, extent, 0, right, bottom)), base, 0,
+                "corner highlights stop after their minimum extent on a large square pin");
+            require(square.pixelColor(
+                        mirroredPoint(content, width + 1, width + 1, right, bottom)) != active,
+                    "crop corners leave image pixels inside the rim unobscured");
+        }
+    }
+    border->setProperty("cropMarkerColor", QColor());
+    requireColorNear(render().pixelColor(content.topLeft()), QColor(128, 128, 128), 0,
+                     "inactive crop corners keep their neutral outline color");
+    border->setProperty("cropMarkerColor", active);
+
+    // Exercise the decoration's rounded-outline contract independently of the rectangular
+    // crop viewport. An elliptical radius also covers transformed, nonuniformly scaled rims.
+    const QRectF logicalOutline = Access::contentViewport(window);
+    border->setProperty("borderOutline", logicalOutline);
+    for (const QSizeF radii : {QSizeF(12, 12), QSizeF(40, 20)}) {
+        border->setProperty("cornerRadii", radii);
+        border->setProperty("cropped", false);
+        const QImage plain = render();
+        border->setProperty("cropped", true);
+        const QImage rounded = render();
+        for (bool right : {false, true}) {
+            for (bool bottom : {false, true}) {
+                const QPoint corner = mirroredPoint(content, 0, 0, right, bottom);
+                require(rounded.pixelColor(corner) == plain.pixelColor(corner),
+                        "rounded crop corners leave the bounding-box corner clear");
+                requireColorNear(rounded.pixelColor(mirroredPoint(
+                                     content, qCeil(radii.width() * dpr), 0, right, bottom)),
+                                 active, 1,
+                                 "crop outlines cover the complete rounded horizontal corner");
+                requireColorNear(rounded.pixelColor(mirroredPoint(
+                                     content, 0, qCeil(radii.height() * dpr), right, bottom)),
+                                 active, 1,
+                                 "crop outlines cover the complete rounded vertical corner");
+                bool curvedHighlight = false;
+                for (int y = width; y < qFloor(radii.height() * dpr); ++y)
+                    for (int x = width; x < qFloor(radii.width() * dpr); ++x) {
+                        const QPoint point = mirroredPoint(content, x, y, right, bottom);
+                        const QColor highlighted = rounded.pixelColor(point);
+                        curvedHighlight |= highlighted != plain.pixelColor(point) &&
+                                           highlighted.blue() - highlighted.red() > 80;
+                    }
+                require(curvedHighlight, "crop highlights follow the arc between straight edges");
+            }
+        }
+    }
+
+    LiveAccess::scale(window, 10);
+    border->setProperty("borderColor", base);
+    const QColor translucent(30, 120, 240, 128);
+    border->setProperty("cropMarkerColor", translucent);
+    content = contentPixels();
+    const QImage tiny = render();
+    QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied);
+    expected.fill(base);
+    {
+        QPainter painter(&expected);
+        painter.fillRect(expected.rect(), translucent);
+    }
+    for (const QPoint point :
+         {content.topLeft(), content.topRight(), content.bottomLeft(), content.bottomRight()})
+        requireColorNear(tiny.pixelColor(point), expected.pixelColor(0, 0), 0,
+                         "tiny crop outlines fit the rim and composite each corner only once");
+    window.hide();
 }
 
 void staticWindow() {
@@ -647,6 +763,7 @@ void nativeInput() {
 
 void pinnedCropTests() {
     pinned_crop_tests::geometry();
+    pinned_crop_tests::cornerOutlines();
     pinned_crop_tests::staticWindow();
     pinned_crop_tests::restorationAndTransforms();
     pinned_crop_tests::gesturesAndAlignment();

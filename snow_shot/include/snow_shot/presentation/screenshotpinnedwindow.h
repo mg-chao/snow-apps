@@ -399,7 +399,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::optional<QRectF> m_interactionCropRect;
     QRectF m_interactionCropCanvas;
     QRectF m_liveAppliedCrop;
-    QAction* m_applyCropAction = nullptr;
 
     void createUi();
     void registerWindowShortcuts();
@@ -742,6 +741,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<QAction> m_ocrAction;
     QPointer<QAction> m_textTypeAction;
     QPointer<QActionGroup> m_textTypeActions;
+    QPointer<QAction> m_applyCropAction;
     QPointer<QAction> m_drawingAction;
     QPointer<QAction> m_animationToggleAction;
     QPointer<QAction> m_animationSpeedAction;

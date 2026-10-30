@@ -848,51 +848,39 @@ class PinnedBorderFrame final : public QFrame {
         }
         if (!geometry.showBorder)
             return;
-        if (borderOutline.isValid()) {
-            const QRectF outer = outline;
-            const qreal rx = std::min(outlineRadii.width(), outer.width() / 2.0);
-            const qreal ry = std::min(outlineRadii.height(), outer.height() / 2.0);
-            QPainterPath ring;
-            ring.setFillRule(Qt::OddEvenFill);
-            ring.addRoundedRect(outer, rx, ry);
-            const QRectF inner = outer.adjusted(borderDevicePixels, borderDevicePixels,
-                                                -borderDevicePixels, -borderDevicePixels);
-            if (inner.isValid()) {
-                ring.addRoundedRect(inner, std::max(0.0, rx - borderDevicePixels),
-                                    std::max(0.0, ry - borderDevicePixels));
-            }
-            painter.setClipRect(contentRect);
-            painter.setRenderHint(QPainter::Antialiasing, rx > 0 && ry > 0);
-            painter.fillPath(ring, color);
-            return;
+        const QRectF outer = outline;
+        const qreal rx = std::min(outlineRadii.width(), outer.width() / 2.0);
+        const qreal ry = std::min(outlineRadii.height(), outer.height() / 2.0);
+        QPainterPath ring;
+        ring.setFillRule(Qt::OddEvenFill);
+        ring.addRoundedRect(outer, rx, ry);
+        const QRectF inner = outer.adjusted(borderDevicePixels, borderDevicePixels,
+                                            -borderDevicePixels, -borderDevicePixels);
+        if (inner.isValid()) {
+            ring.addRoundedRect(inner, std::max(0.0, rx - borderDevicePixels),
+                                std::max(0.0, ry - borderDevicePixels));
         }
-        const int left = contentRect.left();
-        const int top = contentRect.top();
-        const int right = contentRect.right();
-        const int bottom = contentRect.bottom();
-        const int sideHeight = std::max(0, bottom - top + 1 - 2 * borderDevicePixels);
-        painter.fillRect(QRect(left, top, right - left + 1, borderDevicePixels), color);
-        painter.fillRect(
-            QRect(left, bottom - borderDevicePixels + 1, right - left + 1, borderDevicePixels),
-            color);
-        painter.fillRect(QRect(left, top + borderDevicePixels, borderDevicePixels, sideHeight),
-                         color);
-        painter.fillRect(QRect(right - borderDevicePixels + 1, top + borderDevicePixels,
-                               borderDevicePixels, sideHeight),
-                         color);
+        painter.setClipRect(contentRect);
+        painter.setRenderHint(QPainter::Antialiasing, rx > 0 && ry > 0);
+        painter.fillPath(ring, color);
         if (property("cropped").toBool()) {
-            const int extent =
-                std::max(1, std::min({qRound(6 * devicePixelRatioF()), contentRect.width() / 2,
-                                      contentRect.height() / 2}));
-            const QColor marker = property("cropMarkerColor").value<QColor>();
-            painter.setPen(QPen(QColor(128, 128, 128), 1));
-            painter.setBrush(marker.isValid() ? QBrush(marker) : Qt::NoBrush);
+            // Follow the same rim through rounded corners. Grow past large radii, and let
+            // opposite corners meet on small pins without painting translucent colors twice.
+            const qreal minimumExtent = 30 * devicePixelRatioF();
+            const int extentX = std::min(qCeil(std::max(minimumExtent, rx + borderDevicePixels)),
+                                         (outline.width() + 1) / 2);
+            const int extentY = std::min(qCeil(std::max(minimumExtent, ry + borderDevicePixels)),
+                                         (outline.height() + 1) / 2);
+            QRegion corners;
             for (const auto& point :
-                 {contentRect.topLeft(),
-                  QPoint(contentRect.right() - extent + 1, contentRect.top()),
-                  QPoint(contentRect.left(), contentRect.bottom() - extent + 1),
-                  QPoint(contentRect.right() - extent + 1, contentRect.bottom() - extent + 1)})
-                painter.drawRect(QRectF(point, QSizeF(extent, extent)).adjusted(.5, .5, -.5, -.5));
+                 {outline.topLeft(), QPoint(outline.x() + outline.width() - extentX, outline.y()),
+                  QPoint(outline.x(), outline.y() + outline.height() - extentY),
+                  QPoint(outline.x() + outline.width() - extentX,
+                         outline.y() + outline.height() - extentY)})
+                corners += QRect(point, QSize(extentX, extentY));
+            const QColor marker = property("cropMarkerColor").value<QColor>();
+            painter.setClipRegion(corners, Qt::IntersectClip);
+            painter.fillPath(ring, marker.isValid() ? marker : QColor(128, 128, 128));
         }
     }
 
@@ -4303,10 +4291,10 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
 }
 
 void ScreenshotPinnedWindow::refreshContextMenu() {
-    if (m_applyCropAction)
-        m_applyCropAction->setEnabled(cropApplyAllowed());
     if (m_contextMenu == nullptr || m_contextMenu->isRetiring())
         return;
+    if (m_applyCropAction)
+        m_applyCropAction->setEnabled(cropApplyAllowed());
     if (isLiveWindow()) {
         for (auto* action : m_contextMenu->findChildren<QAction*>()) {
             const QString command = action->property("liveCommand").toString();
