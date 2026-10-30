@@ -109,37 +109,48 @@ void ScreenshotPinnedWindow::updateCropSelection(const QPointF& position) {
     if (!m_cropSelectionOrigin)
         return;
     const QRectF bounds(m_cropSelectionBounds);
-    m_cropSelectionEnd = {std::clamp(position.x(), bounds.left(), bounds.right()),
-                          std::clamp(position.y(), bounds.top(), bounds.bottom())};
-    if (m_canvas)
-        m_canvas->update();
+    const QPointF end{std::clamp(position.x(), bounds.left(), bounds.right()),
+                      std::clamp(position.y(), bounds.top(), bounds.bottom())};
+    if (end == m_cropSelectionEnd)
+        return;
+    QWidget* target = m_liveNativePresentation ? static_cast<QWidget*>(this) : m_canvas;
+    const QRectF previous = cropSelectionViewRect(target);
+    m_cropSelectionEnd = end;
+    if (target)
+        target->update(crop_geometry::selectionRepaintRegion(
+            previous, cropSelectionViewRect(target), target->rect()));
 }
 
-void ScreenshotPinnedWindow::paintCropSelection(QPainter& painter) const {
-    if (!m_cropSelectionOrigin || !m_canvas)
-        return;
+QRectF ScreenshotPinnedWindow::cropSelectionViewRect(const QWidget* target) const {
+    if (!m_cropSelectionOrigin || !target)
+        return {};
     const auto native = QRectF(*m_cropSelectionOrigin, m_cropSelectionEnd).normalized();
     const QRectF content = contentViewRect();
     const qreal sx = content.width() / m_cropSelectionGeometry.width();
     const qreal sy = content.height() / m_cropSelectionGeometry.height();
     const QPointF topLeft(content.x() + (native.x() - m_cropSelectionGeometry.x()) * sx,
                           content.y() + (native.y() - m_cropSelectionGeometry.y()) * sy);
-    snowCanvasPaintSelectionMarquee(painter,
-                                    QRectF(m_canvas->mapFrom(this, topLeft),
-                                           QSizeF(native.width() * sx, native.height() * sy)));
+    return QRectF(target->mapFrom(this, topLeft),
+                  QSizeF(native.width() * sx, native.height() * sy));
+}
+
+void ScreenshotPinnedWindow::paintCropSelection(QPainter& painter, const QWidget* target) const {
+    snowCanvasPaintSelectionMarquee(painter, cropSelectionViewRect(target));
 }
 
 void ScreenshotPinnedWindow::endCropSelection(bool cancel, const QPoint& menuPosition) {
     if (!m_cropSelectionOrigin)
         return;
     const QRectF selection = QRectF(*m_cropSelectionOrigin, m_cropSelectionEnd).normalized();
+    QWidget* target = m_liveNativePresentation ? static_cast<QWidget*>(this) : m_canvas;
+    const QRectF previous = cropSelectionViewRect(target);
     m_cropSelectionOrigin.reset();
     m_cropContextSuppressed = true;
     qApp->removeEventFilter(this);
     if (QWidget::mouseGrabber() == this)
         releaseMouse();
-    if (m_canvas)
-        m_canvas->update();
+    if (target)
+        target->update(crop_geometry::selectionRepaintRegion(previous, {}, target->rect()));
     if (cancel || !cropSelectionAllowed())
         return;
     if (selection.width() < 10 || selection.height() < 10) {

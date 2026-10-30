@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
+#include "../src/presentation/pinned/screenshotpinnedcropgeometry.h"
 
 #include <QGuiApplication>
 #include <QImage>
@@ -78,6 +79,55 @@ void emptySelection() {
         }
     }
 }
+
+void partialRepaintsMatchFullFrames() {
+    using screenshot_pinned_crop_geometry::selectionRepaintRegion;
+    const QRect viewport(0, 0, 120, 100);
+    for (qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+        QRectF previous;
+        QImage frame = render(previous, dpr);
+        for (const QRectF& current :
+             {QRectF(10.25, 12.75, 61.5, 43.25), QRectF(10.25, 12.75, 62.5, 44.25),
+              QRectF(10.25, 12.75, 62.5, 44.25), QRectF(20.75, 30.25, 15.5, 21.25),
+              QRectF(10.75, 12.25, 1.25, 43.5), QRectF(-2.25, -3.75, 40.5, 30.25),
+              QRectF(100, 80, 35.25, 30.75), QRectF()}) {
+            const QRegion damage = selectionRepaintRegion(previous, current, viewport);
+            {
+                QPainter painter(&frame);
+                painter.setClipRegion(damage);
+                painter.setCompositionMode(QPainter::CompositionMode_Source);
+                painter.fillRect(viewport, Qt::transparent);
+                painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                snowCanvasPaintSelectionMarquee(painter, current);
+            }
+            require(frame == render(current, dpr),
+                    "local crop repaint preserves every pixel during growth, shrink, and cancel");
+            previous = current;
+        }
+    }
+}
+
+void repaintScope() {
+    using screenshot_pinned_crop_geometry::selectionRepaintRegion;
+    const QRect viewport(0, 0, 3840, 2160);
+    const QRectF previous(1000.25, 600.5, 300, 200);
+    const QRectF current(1000.25, 600.5, 301, 202);
+    const QRegion damage = selectionRepaintRegion(previous, current, viewport);
+    qint64 pixels = 0;
+    for (const QRect& rect : damage)
+        pixels += qint64(rect.width()) * rect.height();
+    require(pixels > 0 && pixels < qint64(viewport.width()) * viewport.height() / 100,
+            "moving a small crop on a 4K canvas repaints less than one percent of the viewport");
+    require(selectionRepaintRegion(previous, previous, viewport).isEmpty(),
+            "an unchanged crop requests no repaint");
+    require(!selectionRepaintRegion({}, current, viewport).contains(QPoint(0, 0)),
+            "the first crop move does not dirty the canvas origin");
+    require(selectionRepaintRegion(previous, {}, viewport) ==
+                selectionRepaintRegion({}, previous, viewport),
+            "cancel clears only the previously painted crop bounds");
+    require(selectionRepaintRegion({}, QRectF(4000, 3000, 20, 30), viewport).isEmpty(),
+            "offscreen crop bounds do not request a repaint");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -85,6 +135,8 @@ int main(int argc, char** argv) {
     try {
         outlineCoverage();
         emptySelection();
+        partialRepaintsMatchFullFrames();
+        repaintScope();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

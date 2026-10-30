@@ -3,6 +3,7 @@
 
 #include "screenshotpinnedresizegeometry.h"
 #include <QImage>
+#include <QRegion>
 #include <QTransform>
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,19 @@ namespace screenshot_pinned_crop_geometry {
 inline bool valid(const QRectF& rect) {
     return rect.width() > 0 && rect.height() > 0 && std::isfinite(rect.x()) &&
            std::isfinite(rect.y()) && std::isfinite(rect.right()) && std::isfinite(rect.bottom());
+}
+
+inline QRegion selectionRepaintRegion(const QRectF& previous, const QRectF& current,
+                                      const QRect& viewport) {
+    if (previous == current)
+        return {};
+    QRegion damage;
+    for (const QRectF& rect : {previous, current}) {
+        // Include the centered stroke and its antialiasing fringe in logical view pixels.
+        if (valid(rect))
+            damage += rect.adjusted(-2, -2, 2, 2).toAlignedRect();
+    }
+    return damage.intersected(viewport);
 }
 
 inline QTransform sourceToCanvas(const QSize& pixels, const QTransform& orientation,

@@ -382,7 +382,8 @@ class ScreenshotPinnedWindow final : public QWidget {
                             std::shared_ptr<const ScreenshotAnimationSource> animation,
                             bool bakedStyle);
     bool m_cropApplying = false;
-    void paintCropSelection(QPainter& painter) const;
+    [[nodiscard]] QRectF cropSelectionViewRect(const QWidget* target) const;
+    void paintCropSelection(QPainter& painter, const QWidget* target) const;
     void updateCropPresentation();
     QSizeF m_exactInitialWindowSize;
     std::optional<QRectF> m_cropRect;

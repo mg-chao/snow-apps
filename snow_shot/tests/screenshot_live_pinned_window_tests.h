@@ -1475,6 +1475,7 @@ void nativePresentationPreservesShell() {
     value.initialBorderVisible = true;
     value.initialShadowVisible = true;
     present(window, value);
+    PaintEventCounter paints(window);
     auto* border = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedBorder"));
     require(border, "live pin has its ordinary decoration layer");
     for (const bool native : {false, true, false, true}) {
@@ -1516,19 +1517,50 @@ void nativePresentationPreservesShell() {
         const QPoint end = content.center();
         const QPoint sample = (start + end) / 2;
         require(pixel(sample).alpha() == 0, "native content starts with a transparent Qt shell");
+        const int requests = source->requests;
+        const int paintsBeforeDrag = paints.count();
         QMouseEvent press(QEvent::MouseButtonPress, start, window.mapToGlobal(start),
                           Qt::RightButton, Qt::RightButton, Qt::NoModifier);
         QApplication::sendEvent(&window, &press);
         QMouseEvent move(QEvent::MouseMove, end, window.mapToGlobal(end), Qt::NoButton,
                          Qt::RightButton, Qt::NoModifier);
         QApplication::sendEvent(&window, &move);
+        QCoreApplication::processEvents();
+        require(paints.count() > paintsBeforeDrag,
+                "dragging a native crop schedules a repaint of the visible shell");
         render();
         require(pixel(sample).alpha() == 0x33 && window.geometry() == geometry,
                 "native live pins paint the crop preview without moving their shell");
-        QKeyEvent cancel(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-        QApplication::sendEvent(&window, &cancel);
+        const QPoint smallerEnd = start + (end - start) / 3;
+        const QPoint smallerSample = (start + smallerEnd) / 2;
+        QMouseEvent shrink(QEvent::MouseMove, smallerEnd, window.mapToGlobal(smallerEnd),
+                           Qt::NoButton, Qt::RightButton, Qt::NoModifier);
+        const int paintsBeforeShrink = paints.count();
+        QApplication::sendEvent(&window, &shrink);
+        QCoreApplication::processEvents();
+        require(paints.count() > paintsBeforeShrink,
+                "shrinking a native crop schedules a repaint of its old and new selection");
         render();
-        require(pixel(sample).alpha() == 0,
+        require(pixel(sample).alpha() == 0 && pixel(smallerSample).alpha() == 0x33,
+                "shrinking a native crop clears its old preview and paints its new bounds");
+        source->setNativePresentation(false);
+        QCoreApplication::processEvents();
+        render();
+        require(pixel(smallerSample).alpha() == 255 && pixel(smallerSample).blue() > 0,
+                "an active crop preview follows a switch to raster presentation");
+        source->setNativePresentation(true);
+        QCoreApplication::processEvents();
+        render();
+        require(pixel(sample).alpha() == 0 && pixel(smallerSample).alpha() == 0x33,
+                "an active crop preview returns to the native shell without duplicate painting");
+        QKeyEvent cancel(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        const int paintsBeforeCancel = paints.count();
+        QApplication::sendEvent(&window, &cancel);
+        QCoreApplication::processEvents();
+        require(paints.count() > paintsBeforeCancel,
+                "cancelling a native crop schedules a repaint to erase its preview");
+        render();
+        require(pixel(smallerSample).alpha() == 0 && source->requests == requests,
                 "cancelling a native live crop restores the transparent content hole");
     }
     window.closeLiveWindow();

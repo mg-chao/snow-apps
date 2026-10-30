@@ -191,9 +191,48 @@ void cornerOutlines() {
     window.hide();
 }
 
+void cropSelectionProjectsNativeBounds() {
+    ScreenshotPinnedWindow window;
+    auto setup = config();
+    setup.nativeGeometry = QRect(-537, -293, 201, 163);
+    Access::prepareReplacement(window, setup);
+    window.show();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "native crop projection has a canvas");
+    const QPointF nativeOrigin = Access::authority(window).topLeft();
+    const QPointF contentOrigin = LiveAccess::contentGeometry(window).topLeft();
+    const qreal scale = snow_shot::presentation::pinnedGeometryScale(window.devicePixelRatioF());
+    for (const QRectF& rect : {QRectF(10, 12, 61, 43), QRectF(10.25, 12.75, 61.5, 43.25),
+                               QRectF(10.75, 12.25, 1.25, 43.5)}) {
+        for (bool reverse : {false, true}) {
+            const QPointF start = contentOrigin + (reverse ? rect.bottomRight() : rect.topLeft());
+            const QPointF end = contentOrigin + (reverse ? rect.topLeft() : rect.bottomRight());
+            require(Access::beginCrop(window, start), "begin native crop projection fixture");
+            Access::moveCrop(window, end);
+            for (QWidget* target : std::array<QWidget*, 2>{&window, canvas}) {
+                const QRectF expected(target->mapFrom(&window, QPointF()) +
+                                          (contentOrigin + rect.topLeft() - nativeOrigin) / scale,
+                                      rect.size() / scale);
+                const QRectF actual = Access::cropSelectionView(window, target);
+                require(qAbs(actual.left() - expected.left()) < 1e-10 &&
+                            qAbs(actual.top() - expected.top()) < 1e-10 &&
+                            qAbs(actual.right() - expected.right()) < 1e-10 &&
+                            qAbs(actual.bottom() - expected.bottom()) < 1e-10,
+                        "crop projection preserves native bounds independently of widget rounding");
+            }
+            Access::endCrop(window, end, true);
+            require(Access::cropSelectionView(window, canvas).isEmpty(),
+                    "cancelling a crop clears its projected bounds");
+        }
+    }
+    window.hide();
+}
+
 void cropSelectionMatchesCanvas() {
     ScreenshotPinnedWindow window;
-    Access::prepareReplacement(window, config());
+    auto setup = config();
+    setup.nativeGeometry.setSize(QSize(300, 240));
+    Access::prepareReplacement(window, setup);
     window.show();
     auto* pinnedCanvas = window.findChild<SnowCanvasWidget*>();
     require(pinnedCanvas != nullptr, "crop selection paints on the pinned canvas");
@@ -219,14 +258,28 @@ void cropSelectionMatchesCanvas() {
         QMouseEvent event(type, point, widget.mapToGlobal(point), button, buttons, Qt::NoModifier);
         QCoreApplication::sendEvent(&widget, &event);
     };
-    const QPointF offset =
-        pinnedCanvas->mapFrom(&window, Access::contentViewport(window).topLeft());
+    // Compare the same logical selection bounds. The native crop input must use the
+    // paint scale, rather than the rounded QWidget extent used by hit testing.
+    const QPointF nativeOrigin = Access::authority(window).topLeft();
+    const QPointF contentOrigin = LiveAccess::contentGeometry(window).topLeft();
+    const QPointF canvasOrigin = pinnedCanvas->mapFrom(&window, QPointF());
+    const qreal geometryScale =
+        snow_shot::presentation::pinnedGeometryScale(window.devicePixelRatioF());
+    const QPointF contentInset = (contentOrigin - nativeOrigin) / geometryScale;
+    // Keep the reference bounds exactly representable through the canvas camera;
+    // otherwise a round-trip can straddle a rasterizer subpixel boundary.
+    const QPointF offset = canvasOrigin + QPointF(qCeil(contentInset.x()), qCeil(contentInset.y()));
+    const auto nativePoint = [&](const QPointF& view) {
+        return Access::cropNativePoint(window, pinnedCanvas->mapTo(&window, view));
+    };
     const std::array<qreal, 6> scales{1.0, 1.25, 1.5, 1.75, 2.0, 3.0};
     for (const QRectF& rect : {QRectF(10, 12, 61, 43), QRectF(10.25, 12.75, 61.5, 43.25),
                                QRectF(10.75, 12.25, 1.25, 43.5)}) {
         for (bool reverse : {false, true}) {
             const QPointF start = offset + (reverse ? rect.bottomRight() : rect.topLeft());
             const QPointF end = offset + (reverse ? rect.topLeft() : rect.bottomRight());
+            const QPointF nativeStart = nativePoint(start);
+            const QPointF nativeEnd = nativePoint(end);
             pointer(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
             pointer(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
             // Canvas moves publish on the next event-loop frame.
@@ -240,16 +293,19 @@ void cropSelectionMatchesCanvas() {
                 QPainter painter(&expected[i]);
                 canvas.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
             }
-            const QPointF nativeStart =
-                Access::cropNativePoint(window, pinnedCanvas->mapTo(&window, start));
-            const QPointF nativeEnd =
-                Access::cropNativePoint(window, pinnedCanvas->mapTo(&window, end));
             require(Access::beginCrop(window, nativeStart), "begin canvas crop rendering fixture");
             Access::moveCrop(window, nativeEnd);
             require(pinnedCanvas->renderContentToImage(pinnedCanvas->size()) == snapshot,
                     "crop preview is excluded from canvas content snapshots");
             for (std::size_t i = 0; i < scales.size(); ++i) {
-                require(render(*pinnedCanvas, scales[i]) == expected[i],
+                const QImage actual = render(*pinnedCanvas, scales[i]);
+                if (actual != expected[i]) {
+                    std::cerr << "Display scale " << geometryScale << ", render scale " << scales[i]
+                              << ", logical rect " << rect.x() << ',' << rect.y() << ','
+                              << rect.width() << ',' << rect.height() << ", reverse " << reverse
+                              << '\n';
+                }
+                require(actual == expected[i],
                         "crop selection matches the canvas select tool at every pixel and DPI");
             }
             Access::endCrop(window, nativeEnd, true);
@@ -1101,6 +1157,7 @@ void livePinnedCropTests() {
 void pinnedCropTests() {
     pinned_crop_tests::geometry();
     pinned_crop_tests::cornerOutlines();
+    pinned_crop_tests::cropSelectionProjectsNativeBounds();
     pinned_crop_tests::cropSelectionMatchesCanvas();
     pinned_crop_tests::staticWindow();
     pinned_crop_tests::restorationAndTransforms();

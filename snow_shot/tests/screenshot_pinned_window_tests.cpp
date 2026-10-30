@@ -358,9 +358,16 @@ class ScreenshotPinnedWindowTestAccess {
         return window.nativeEvent(QByteArrayLiteral("windows_generic_MSG"), &message, &result);
     }
 #endif
+    static QPointF cropNativePoint(const ScreenshotPinnedWindow& window, const QPointF& local) {
+        // A painted landmark uses the native pixel scale, independently of the
+        // rounded widget extent used to interpret synthetic Qt pointer events.
+        return QPointF(window.currentNativeGeometry().topLeft()) +
+               local * snow_shot::presentation::pinnedGeometryScale(window.devicePixelRatioF());
+    }
     static QPointF cropScreenPoint(const ScreenshotPinnedWindow& window, const QPointF& canvas) {
-        return window.nativePositionForWindowPosition(
-            window.m_canvas->canvasToViewTransform().map(canvas));
+        return cropNativePoint(
+            window,
+            window.m_canvas->mapTo(&window, window.m_canvas->canvasToViewTransform().map(canvas)));
     }
     static bool cropSelecting(const ScreenshotPinnedWindow& window) {
         return window.m_cropSelectionOrigin.has_value();
@@ -404,18 +411,25 @@ class ScreenshotPinnedWindowTestAccess {
     static void moveCrop(ScreenshotPinnedWindow& window, const QPointF& point) {
         window.updateCropSelection(point);
     }
-    static QPointF cropNativePoint(const ScreenshotPinnedWindow& window, const QPointF& local) {
-        return window.nativePositionForWindowPosition(local);
+    static QRectF cropSelectionView(const ScreenshotPinnedWindow& window, const QWidget* target) {
+        return window.cropSelectionViewRect(target);
     }
     static void endCrop(ScreenshotPinnedWindow& window, const QPointF& point, bool cancel = false) {
         window.updateCropSelection(point);
         window.endCropSelection(cancel, point.toPoint());
     }
+    static QPointF cropDesktopPoint(const ScreenshotPinnedWindow& window, const QPointF& native) {
+        const auto* screen = window.screen();
+        const qreal scale =
+            snow_shot::presentation::pinnedGeometryScale(screen->devicePixelRatio());
+        return QPointF(screen->geometry().topLeft()) +
+               (native - snow_shot::presentation::pinnedScreenGeometry(*screen).topLeft()) / scale;
+    }
     static bool beginCropResize(ScreenshotPinnedWindow& window, const QPointF& point, int handle) {
-        return window.beginControlledInteraction(point, handle);
+        return window.beginControlledInteraction(cropDesktopPoint(window, point), handle);
     }
     static void moveCropResize(ScreenshotPinnedWindow& window, const QPointF& point) {
-        window.updateControlledInteraction(point);
+        window.updateControlledInteraction(cropDesktopPoint(window, point));
     }
     static void endCropResize(ScreenshotPinnedWindow& window, bool cancel = false) {
         window.endControlledInteraction(cancel);
@@ -27214,6 +27228,15 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--crop-preview-only"))) {
+            pinned_crop_tests::cropSelectionProjectsNativeBounds();
+            pinned_crop_tests::cropSelectionMatchesCanvas();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--live-window-crop-preview-only"))) {
+            live_pinned_tests::nativePresentationPreservesShell();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--live-window-crop-only"))) {
             livePinnedCropTests();
             return 0;

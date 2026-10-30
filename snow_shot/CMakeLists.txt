@@ -13527,6 +13527,17 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-crop-preview-tests
+        COMMAND snow-shot-pinned-window-tests --crop-preview-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-crop-preview-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    foreach(scale IN ITEMS 1.25 1.5 1.75 2 3)
+        add_test(NAME snow-shot-pinned-crop-preview-dpi-${scale}-tests
+            COMMAND snow-shot-pinned-window-tests --crop-preview-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-crop-preview-dpi-${scale}-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=${scale}")
+    endforeach()
     add_test(NAME snow-shot-pinned-crop-tests
         COMMAND snow-shot-pinned-window-tests --crop-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-crop-tests PROPERTIES
@@ -13534,6 +13545,10 @@ if(TARGET snow-shot-pinned-window-tests)
     add_test(NAME snow-shot-live-window-crop-tests
         COMMAND snow-shot-pinned-window-tests --live-window-crop-only -platform offscreen)
     set_tests_properties(snow-shot-live-window-crop-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME snow-shot-live-window-crop-preview-tests
+        COMMAND snow-shot-pinned-window-tests --live-window-crop-preview-only -platform offscreen)
+    set_tests_properties(snow-shot-live-window-crop-preview-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     foreach(scale IN ITEMS 1.25 2)
         add_test(NAME snow-shot-pinned-crop-dpi-${scale}-tests
@@ -13544,6 +13559,11 @@ if(TARGET snow-shot-pinned-window-tests)
         add_test(NAME snow-shot-live-window-crop-dpi-${scale}-tests
             COMMAND snow-shot-pinned-window-tests --live-window-crop-only -platform offscreen)
         set_tests_properties(snow-shot-live-window-crop-dpi-${scale}-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=${scale}")
+        add_test(NAME snow-shot-live-window-crop-preview-dpi-${scale}-tests
+            COMMAND snow-shot-pinned-window-tests --live-window-crop-preview-only -platform offscreen)
+        set_tests_properties(snow-shot-live-window-crop-preview-dpi-${scale}-tests PROPERTIES
             LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=${scale}")
     endforeach()
