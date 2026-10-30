@@ -210,21 +210,24 @@ struct LiveWindowPresentationSurface::Impl {
         return true;
     }
 
-    bool pointerOverSurface() const {
+    bool suppressPointerLeave(UINT message) const {
         POINT point{};
         if (!GetCursorPos(&point))
             return false;
         const HWND hit = WindowFromPoint(point);
-        return hit == shell || hit == host;
+        return (hit == shell || hit == host) && live_window_detail::suppressInternalPointerLeave(
+                                                    shell, message, MAKELPARAM(point.x, point.y));
     }
 
     static LRESULT CALLBACK shellProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                                       UINT_PTR, DWORD_PTR data) {
         auto* self = reinterpret_cast<Impl*>(data);
         // Qt tracks the shell after forwarded content input. USER32 then reports a
-        // shell leave because the transparent pixel belongs to the host. It is an
-        // internal surface transition, not a pointer exit from the pin.
-        if ((message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE) && self->pointerOverSurface())
+        // shell leave because the transparent pixel belongs to the host. Preserve
+        // client tracking inside the pair, but let Qt clear child hover when the
+        // pointer enters non-client content. The shell tracks that presence itself.
+        if ((message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE) &&
+            self->suppressPointerLeave(message))
             return 0;
         if (message == WM_NCDESTROY) {
             self->stop();
@@ -264,8 +267,8 @@ struct LiveWindowPresentationSurface::Impl {
             return 0;
         }
         if (self && self->shell && (message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE)) {
-            if (!self->pointerOverSurface())
-                SendMessageW(self->shell, message, 0, 0);
+            // Apply the same client/non-client transition policy to both HWNDs.
+            SendMessageW(self->shell, message, 0, 0);
             return 0;
         }
         if (self && (message == WM_MOUSEMOVE || message == WM_NCMOUSEMOVE)) {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Included after screenshot_live_pinned_window_tests.h and the shared native helpers.
+#include "widgets/tooltip.h"
 #ifdef Q_OS_WIN
 namespace live_pinned_native_tests {
 using Access = ScreenshotLivePinnedWindowTestAccess;
@@ -220,6 +221,154 @@ void resizeHitRegions(ScreenshotPinnedWindow& window) {
     require(Access::clickThrough(window, false), "restore native live content input");
 }
 
+void resizeWithNativePointer(ScreenshotPinnedWindow& window) {
+    const HWND shellHwnd = shell(window);
+    const HWND host = owner(shellHwnd);
+    POINT originalCursor{};
+    require(GetCursorPos(&originalCursor), "preserve the native resize pointer");
+    const auto restoreCursor =
+        qScopeGuard([&] { SetCursorPos(originalCursor.x, originalCursor.y); });
+    const auto waitForPointer = [](const auto& condition) {
+        QElapsedTimer timer;
+        timer.start();
+        do {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (condition())
+                return true;
+            QThread::msleep(1);
+        } while (timer.elapsed() < 2000);
+        return condition();
+    };
+    const QPoint directions[] = {{-1, -1}, {0, -1}, {1, -1}, {1, 0},
+                                 {1, 1},   {0, 1},  {-1, 1}, {-1, 0}};
+    for (int index = 0; index < 8; ++index) {
+        const QRect before = window.currentNativeGeometry();
+        const QRect content = Access::contentGeometry(window);
+        const int inset = qRound(4 * window.devicePixelRatioF());
+        const QPoint direction = directions[index];
+        const QPoint start(direction.x() < 0   ? content.left() + inset
+                           : direction.x() > 0 ? content.right() - inset
+                                               : content.center().x(),
+                           direction.y() < 0   ? content.top() + inset
+                           : direction.y() > 0 ? content.bottom() - inset
+                                               : content.center().y());
+        setPinnedWindowHovered(window, false);
+        require(SetCursorPos(start.x(), start.y()) && waitForPointer([&] {
+                    return WindowFromPoint(POINT{start.x(), start.y()}) == host;
+                }),
+                "the native content host receives the real resize press beyond the border");
+        INPUT button{};
+        button.type = INPUT_MOUSE;
+        button.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        require(SendInput(1, &button, sizeof(button)) == 1,
+                "press the native live resize band through Windows input");
+        const bool started = waitForPointer([&] {
+            return ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                   GetCapture() == shellHwnd && GetActiveWindow() == shellHwnd;
+        });
+        const QPoint end = start + QPoint(direction.x() * 32, direction.y() * 24);
+        const bool moved = SetCursorPos(end.x(), end.y()) != FALSE;
+        const bool resized = waitForPointer([&] {
+            return window.currentNativeGeometry().size() != before.size() &&
+                   ScreenshotPinnedWindowTestAccess::nativeController(window)
+                           .targetGeometry()
+                           .size() != before.size() &&
+                   GetCapture() == shellHwnd;
+        });
+        // Mouse-up settles pending Qt backing-store adjustments to the requested
+        // physical rectangle, which must survive the end of pointer capture.
+        const QRect target =
+            ScreenshotPinnedWindowTestAccess::nativeController(window).targetGeometry();
+        button.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        const bool released = SendInput(1, &button, sizeof(button)) == 1;
+        const bool finished = waitForPointer([&] {
+            return !ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                   GetCapture() != shellHwnd &&
+                   ScreenshotPinnedWindowTestAccess::geometrySettled(window);
+        });
+        const bool committed = window.currentNativeGeometry() == target &&
+                               nativeGeometry(host) == Access::contentGeometry(window);
+        if (!started || !moved || !resized || !released || !finished || !committed) {
+            SetCursorPos(originalCursor.x, originalCursor.y);
+            qWarning() << "native resize geometry before/target/final/host/content" << before
+                       << target << window.currentNativeGeometry() << nativeGeometry(host)
+                       << Access::contentGeometry(window);
+            std::cerr << "Native live resize handle=" << index << " started=" << started
+                      << " moved=" << moved << " resized=" << resized << " released=" << released
+                      << " finished=" << finished << " committed=" << committed << '\n';
+        }
+        require(
+            started && moved && resized && released && finished && committed,
+            "each real edge/corner drag must retain shell capture, resize, and commit on release");
+    }
+}
+
+void controlsHover(ScreenshotPinnedWindow& window) {
+    const CursorPositionRestorer restoreCursor;
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    Access::scale(window, 500);
+    QCoreApplication::processEvents();
+    require(ScreenshotPinnedWindowTestAccess::activateNativeInput(window),
+            "activate the native live hover fixture");
+    live_pinned_tests::wait([&] { return GetForegroundWindow() == shell(window); },
+                            "the native live hover fixture owns foreground input");
+    auto* panel = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* close =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedCloseButton"));
+    require(panel && close, "native live hover fixture has controls");
+    const bool locked = qApp->arguments().contains(QStringLiteral("--hover-locked"));
+    const bool throughTooltip = qApp->arguments().contains(QStringLiteral("--hover-tooltip"));
+    Access::lock(window, locked);
+    const QPoint center = Access::contentGeometry(window).center();
+    require(SetCursorPos(center.x(), center.y()), "enter native live content");
+    live_pinned_tests::wait([&] { return panel->isVisible(); }, "reveal native live controls");
+    const QPoint destination = center;
+    const QPoint button = ScreenshotPinnedWindowTestAccess::nativePoint(
+        window, close->mapTo(&window, close->rect().center()));
+    require(SetCursorPos(button.x(), button.y()), "enter native live close button");
+    live_pinned_tests::wait([&] { return close->underMouse(); }, "close button gains hover");
+    if (throughTooltip) {
+        adqt::widgets::AdTooltip::showText(close, close->toolTip());
+        QPointer<QWidget> tooltip;
+        live_pinned_tests::wait(
+            [&] {
+                for (QWidget* candidate : QApplication::topLevelWidgets()) {
+                    if (candidate->objectName() == QStringLiteral("adtooltip-surface") &&
+                        candidate->isVisible()) {
+                        tooltip = candidate;
+                        return true;
+                    }
+                }
+                return false;
+            },
+            "the close button shows the application's real tooltip");
+        QCoreApplication::processEvents();
+        const QPoint tip = nativeGeometry(reinterpret_cast<HWND>(tooltip->winId())).center();
+        require(Access::contentGeometry(window).contains(tip),
+                "the tooltip overlays native live content");
+        require(SetCursorPos(tip.x(), tip.y()), "cross the close button tooltip");
+        waitForUi(50);
+    }
+    require(SetCursorPos(destination.x(), destination.y()),
+            "move from close button to DWM content");
+    live_pinned_tests::wait(
+        [&] { return !close->underMouse(); },
+        throughTooltip
+            ? (locked ? "locked tooltip exit clears hover" : "tooltip exit clears hover")
+            : (locked ? "locked content entry clears hover" : "content entry clears hover"));
+    auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
+    require(WindowFromPoint(POINT{destination.x(), destination.y()}) == owner(shell(window)) &&
+                !timer.isActive() && panel->isVisible(),
+            "DWM content retains controls without retaining button hover");
+    require(QMetaObject::invokeMethod(&timer, "timeout") && panel->isVisible(),
+            "stationary DWM content retains controls after the hide deadline");
+    Access::lock(window, false);
+    const QPoint outside = window.currentNativeGeometry().bottomRight() + QPoint(40, 40);
+    require(SetCursorPos(outside.x(), outside.y()), "leave native live hover fixture");
+    live_pinned_tests::wait([&] { return !panel->isVisible(); }, "leaving the pin hides controls");
+    Access::scale(window, 100);
+}
+
 void run() {
     require(QGuiApplication::platformName() == QStringLiteral("windows"),
             "native live pin shell integration requires the Windows platform");
@@ -273,6 +422,17 @@ void run() {
     const QRect originalGeometry = window.currentNativeGeometry();
     require(Access::contentGeometry(window) == selection,
             "native live presentation keeps content at the original screenshot selection");
+    if (qApp->arguments().contains(QStringLiteral("--live-window-hover-native-only"))) {
+        controlsHover(window);
+        window.closeLiveWindow();
+        return;
+    }
+    if (qApp->arguments().contains(QStringLiteral("--live-window-resize-native-only"))) {
+        resizeHitRegions(window);
+        resizeWithNativePointer(window);
+        window.closeLiveWindow();
+        return;
+    }
     ScreenshotPinnedWindowTestAccess::shadowState(window, true, true);
     QCoreApplication::processEvents();
     DwmFlush();

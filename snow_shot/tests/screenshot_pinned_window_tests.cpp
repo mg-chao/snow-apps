@@ -27155,7 +27155,9 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #ifdef Q_OS_WIN
-        if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only"))) {
+        if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only")) ||
+            app.arguments().contains(QStringLiteral("--live-window-hover-native-only")) ||
+            app.arguments().contains(QStringLiteral("--live-window-resize-native-only"))) {
             live_pinned_native_tests::run();
             return 0;
         }

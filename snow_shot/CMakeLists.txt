@@ -13328,11 +13328,38 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-live-window-pin-tests PROPERTIES LABELS unit TIMEOUT 120
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RESOURCE_LOCK snow-shot-system-clipboard)
         if(WIN32)
+            add_test(NAME snow-shot-live-window-pin-hover-native-tests
+                COMMAND snow-shot-pinned-window-tests --live-window-hover-native-only
+                    -platform windows)
+            set_tests_properties(snow-shot-live-window-pin-hover-native-tests PROPERTIES
+                LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+                ENVIRONMENT "QT_QPA_PLATFORM=windows")
+            foreach(_hover_variant IN ITEMS tooltip locked locked-tooltip)
+                set(_hover_arguments)
+                if(_hover_variant MATCHES "locked")
+                    list(APPEND _hover_arguments --hover-locked)
+                endif()
+                if(_hover_variant MATCHES "tooltip")
+                    list(APPEND _hover_arguments --hover-tooltip)
+                endif()
+                add_test(NAME snow-shot-live-window-pin-hover-${_hover_variant}-native-tests
+                    COMMAND snow-shot-pinned-window-tests --live-window-hover-native-only
+                        ${_hover_arguments} -platform windows)
+                set_tests_properties(snow-shot-live-window-pin-hover-${_hover_variant}-native-tests
+                    PROPERTIES LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+                    ENVIRONMENT "QT_QPA_PLATFORM=windows")
+            endforeach()
             add_test(NAME snow-shot-live-window-pin-native-tests
                 COMMAND snow-shot-pinned-window-tests --live-window-native-shell-only
                     -platform windows)
             set_tests_properties(snow-shot-live-window-pin-native-tests PROPERTIES
                 LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 120
+                ENVIRONMENT "QT_QPA_PLATFORM=windows" RESOURCE_LOCK snow-shot-system-clipboard)
+            add_test(NAME snow-shot-live-window-pin-resize-native-tests
+                COMMAND snow-shot-pinned-window-tests --live-window-resize-native-only
+                    -platform windows)
+            set_tests_properties(snow-shot-live-window-pin-resize-native-tests PROPERTIES
+                LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
                 ENVIRONMENT "QT_QPA_PLATFORM=windows" RESOURCE_LOCK snow-shot-system-clipboard)
         endif()
     endif()

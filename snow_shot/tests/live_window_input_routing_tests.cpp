@@ -4,9 +4,11 @@
 #include <array>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 using snow_shot::presentation::live_window_detail::forwardPointerMessage;
+using snow_shot::presentation::live_window_detail::suppressInternalPointerLeave;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -21,6 +23,7 @@ struct PointerProbe {
     LPARAM lParam = 0;
     LRESULT hit = HTCLIENT;
     int deliveries = 0;
+    std::vector<UINT> messages;
 };
 
 LRESULT CALLBACK probeProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -30,6 +33,7 @@ LRESULT CALLBACK probeProc(HWND window, UINT message, WPARAM wParam, LPARAM lPar
         probe->wParam = wParam;
         probe->lParam = lParam;
         ++probe->deliveries;
+        probe->messages.push_back(message);
         return message == WM_NCHITTEST ? probe->hit : 1;
     }
     return DefWindowProcW(window, message, wParam, lParam);
@@ -60,6 +64,28 @@ int main() {
     PointerProbe probe;
     SetWindowLongPtrW(shell, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&probe));
 
+    const LPARAM contentPosition = MAKELPARAM(-280, -180);
+    for (LRESULT hit : {HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTBOTTOM, HTTOPLEFT, HTTOPRIGHT,
+                        HTBOTTOMLEFT, HTBOTTOMRIGHT}) {
+        probe.hit = hit;
+        require(!suppressInternalPointerLeave(shell, WM_MOUSELEAVE, contentPosition) &&
+                    probe.message == WM_NCHITTEST && probe.lParam == contentPosition,
+                "Leaving a Qt control for native caption/resize content must clear widget hover.");
+        require(suppressInternalPointerLeave(shell, WM_NCMOUSELEAVE, contentPosition),
+                "Internal non-client transitions must retain the composite surface presence.");
+    }
+    probe.hit = HTCLIENT;
+    require(suppressInternalPointerLeave(shell, WM_MOUSELEAVE, contentPosition) &&
+                suppressInternalPointerLeave(shell, WM_NCMOUSELEAVE, contentPosition),
+            "Client content and controls must retain tracking across internal native leaves.");
+    probe.deliveries = 0;
+
+    const auto activationResult =
+        forwardPointerMessage(host, shell, WM_MOUSEACTIVATE, reinterpret_cast<WPARAM>(host),
+                              MAKELPARAM(HTLEFT, WM_LBUTTONDOWN));
+    require(activationResult && *activationResult == MA_NOACTIVATE && probe.deliveries == 0,
+            "The content host must deliver presses without taking activation from the shell.");
+
     for (LRESULT hit : {HTTOPLEFT, HTTOP, HTTOPRIGHT, HTRIGHT, HTBOTTOMRIGHT, HTBOTTOM,
                         HTBOTTOMLEFT, HTLEFT, HTCAPTION, HTCLIENT, HTTRANSPARENT}) {
         probe.hit = hit;
@@ -71,11 +97,18 @@ int main() {
                 probe.lParam == screenPoint,
             "The content host must use the shell's resize, move, lock, and click-through hits.");
     }
-    const std::array nonClientMessages{WM_NCMOUSEMOVE,     WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
-                                       WM_NCLBUTTONDBLCLK, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP,
-                                       WM_NCRBUTTONDBLCLK, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP,
-                                       WM_NCMBUTTONDBLCLK, WM_NCXBUTTONDOWN, WM_NCXBUTTONUP,
-                                       WM_NCXBUTTONDBLCLK};
+    probe.messages.clear();
+    const auto nonClientMove =
+        forwardPointerMessage(host, shell, WM_NCMOUSEMOVE, HTCAPTION, contentPosition);
+    require(nonClientMove && *nonClientMove == 1 &&
+                probe.messages == std::vector<UINT>{WM_NCMOUSEMOVE, WM_MOUSELEAVE},
+            "Native content must establish presence and clear client hover even without a "
+            "tracked shell leave after a tooltip transition.");
+
+    const std::array nonClientMessages{WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCLBUTTONDBLCLK,
+                                       WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_NCRBUTTONDBLCLK,
+                                       WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCMBUTTONDBLCLK,
+                                       WM_NCXBUTTONDOWN, WM_NCXBUTTONUP, WM_NCXBUTTONDBLCLK};
     for (const UINT message : nonClientMessages)
         requireForwarded(host, shell, probe, message, HTLEFT, MAKELPARAM(-280, -180),
                          MAKELPARAM(-280, -180));
