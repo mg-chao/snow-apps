@@ -67,6 +67,8 @@
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "../src/presentation/pinned/screenshotpinneddragexport.h"
+#include "../src/presentation/pinned/screenshotpinnedshakegesture.h"
+#include "widgets/message.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
@@ -113,6 +115,7 @@
 #include <QListView>
 
 #include <QAbstractButton>
+#include <QAbstractNativeEventFilter>
 #include <QActionGroup>
 #include <QApplication>
 #include <QLayout>
@@ -339,6 +342,65 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static bool beginShakeDrag(ScreenshotPinnedWindow& window, const QPointF& pointer = {}) {
+        // QWindow routing updates Qt's global held-button state, as real input does.
+        const QPointF local = window.windowHandle()->mapFromGlobal(pointer);
+        QMouseEvent press(QEvent::MouseButtonPress, local, local, pointer, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &press);
+        return window.m_interactionPlacement || window.beginControlledInteraction(pointer, {});
+    }
+    static void sampleShake(ScreenshotPinnedWindow& window, const QPointF& pointer, qint64 timeMs) {
+        window.updateWindowShake(pointer, timeMs);
+    }
+    static void finishShakeDrag(ScreenshotPinnedWindow& window, bool cancel = false) {
+        window.finishWindowMove(cancel);
+        const QPointF pointer;
+        const QPointF local = window.windowHandle()->mapFromGlobal(pointer);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, local, pointer, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &release);
+    }
+    static void moveShakeDrag(ScreenshotPinnedWindow& window, const QPointF& pointer) {
+        window.updateControlledInteraction(pointer);
+    }
+    static bool shakeDragActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive && window.m_interactionPlacement.has_value();
+    }
+    static bool shakeArmed(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeGesture && window.m_shakeGesture->active;
+    }
+    static bool shakeContentReady(const ScreenshotPinnedWindow& window) {
+        return window.m_firstContentFramePublished;
+    }
+    static QString shakeDiagnostics(const ScreenshotPinnedWindow& window) {
+        if (!window.m_shakeGesture)
+            return QStringLiteral("no gesture");
+        const auto& gesture = *window.m_shakeGesture;
+        return QStringLiteral("drag=%1 active=%2 pending=%3 triggered=%4 elapsed=%5 point=%6,%7")
+            .arg(window.m_windowDragActive)
+            .arg(gesture.active)
+            .arg(gesture.pending)
+            .arg(gesture.detector.triggered())
+            .arg(gesture.clock.elapsed())
+            .arg(gesture.logicalPosition.x())
+            .arg(gesture.logicalPosition.y());
+    }
+    static bool shakePending(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeGesture && window.m_shakeGesture->pending;
+    }
+    static adqt::widgets::AdMessageHandle* shakeMessage(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeMessage;
+    }
+    static qint64 shakeMessageRemaining(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeMessageDeadline.remainingTime();
+    }
+    static void changeShakeScale(ScreenshotPinnedWindow& window) {
+        window.m_shakeGesture->scale = 2;
+    }
+    static void sampleShakeRuntime(ScreenshotPinnedWindow& window, const QPointF& pointer) {
+        window.sampleWindowShake(pointer);
+    }
     static ScreenshotAnimationPlayback& playback(ScreenshotPinnedWindow& window) {
         return *window.m_animationPlayback;
     }
@@ -732,6 +794,9 @@ class ScreenshotPinnedWindowTestAccess {
         static_cast<void>(window.handleMiddleClick(window.rect().center()));
     }
 #ifdef Q_OS_WIN
+    static bool startNativeShakeDrag(ScreenshotPinnedWindow& window) {
+        return window.startWindowMove();
+    }
     static bool beginPreviewNativeMove(ScreenshotPinnedWindow& window) {
         if (!window.m_nativeGeometryController->beginMove(QPoint())) {
             return false;
@@ -26947,6 +27012,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 
 #include "pinned_color_swatch_window_tests.h"
 #include "pinned_text_type_tests.h"
+#include "pinned_shake_window_tests.h"
 
 int main(int argc, char* argv[]) {
 
@@ -26968,6 +27034,20 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--shake-sampling-performance-only"))) {
+            pinnedShakeSamplingBenchmark();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shake-hide-only"))) {
+            pinnedShakeWindowTests();
+            return 0;
+        }
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--shake-hide-native-only"))) {
+            pinnedShakeNativeTests();
+            return 0;
+        }
+#endif
 #ifdef Q_OS_WIN
         if (app.arguments().contains(QStringLiteral("--native-capture-release-only"))) {
             pinnedNativeCaptureReleaseEndsGeometry();
@@ -27966,6 +28046,9 @@ int main(int argc, char* argv[]) {
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--system-move-loop-only"))) {
+            if (app.arguments().contains(QStringLiteral("--shake-disabled")))
+                require(snow_shot::storage::PinToScreenSettings().setShakeWindowToHideOthers(false),
+                        "disable shaking for the native keyboard comparison");
             pinnedSystemMoveLoopAcceptsMovementShortcuts();
             return 0;
         }

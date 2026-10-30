@@ -1751,6 +1751,14 @@ Files:
             <translation>不透明度</translation>
         </message>
         <message>
+            <source>Other windows could not be hidden.</source>
+            <translation>無法隱藏其他視窗。</translation>
+        </message>
+        <message>
+            <source>Other windows hidden.</source>
+            <translation>其他視窗已隱藏。</translation>
+        </message>
+        <message>
             <source>Pause</source>
             <translation>暫停</translation>
         </message>

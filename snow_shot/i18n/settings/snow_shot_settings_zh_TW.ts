@@ -3428,6 +3428,10 @@
             <translation>快速選取</translation>
         </message>
         <message>
+            <source>Rapidly drag a pinned window back and forth to hide other pinned windows in the current group.</source>
+            <translation>快速來回拖曳固定到螢幕的視窗，以隱藏目前群組中的其他固定到螢幕的視窗。</translation>
+        </message>
+        <message>
             <source>Real-time</source>
             <translation>即時</translation>
         </message>
@@ -4022,6 +4026,10 @@
         <message>
             <source>Shake Window</source>
             <translation>晃動視窗</translation>
+        </message>
+        <message>
+            <source>Shake a window to hide other windows</source>
+            <translation>搖動視窗以隱藏其他視窗</translation>
         </message>
         <message>
             <source>Shape tool</source>

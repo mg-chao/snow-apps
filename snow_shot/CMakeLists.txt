@@ -5030,6 +5030,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-geometry-mapping-tests PROPERTIES
         LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE)
 
+    add_executable(snow-shot-pinned-shake-detector-tests
+        tests/screenshot_pinned_shake_detector_tests.cpp)
+    target_include_directories(snow-shot-pinned-shake-detector-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned")
+    target_link_libraries(snow-shot-pinned-shake-detector-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-pinned-shake-detector-tests COMMAND snow-shot-pinned-shake-detector-tests)
+    set_tests_properties(snow-shot-pinned-shake-detector-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE)
+
     add_executable(snow-shot-pinned-resize-geometry-tests
         tests/screenshot_pinned_resize_geometry_tests.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
@@ -13140,6 +13149,49 @@ if(SNOW_APPS_BUILD_BENCHMARKS)
     set_tests_properties(snow-shot-image-content-detection-performance-benchmark PROPERTIES
         LABELS benchmark TIMEOUT 120
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
+if(SNOW_APPS_BUILD_BENCHMARKS)
+    add_executable(snow-shot-pinned-shake-performance-benchmark
+        tests/screenshot_pinned_shake_performance_benchmark.cpp)
+    target_include_directories(snow-shot-pinned-shake-performance-benchmark PRIVATE
+        src/presentation/pinned)
+    target_link_libraries(snow-shot-pinned-shake-performance-benchmark PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-pinned-shake-performance-benchmark
+        COMMAND snow-shot-pinned-shake-performance-benchmark)
+    set_tests_properties(snow-shot-pinned-shake-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 60)
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-pinned-shake-drag-performance-benchmark
+            COMMAND snow-shot-pinned-window-tests --shake-sampling-performance-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-shake-drag-performance-benchmark PROPERTIES
+            LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+endif()
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-shake-window-tests
+        COMMAND snow-shot-pinned-window-tests --shake-hide-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shake-window-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 90
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-shake-native-tests
+            COMMAND snow-shot-pinned-window-tests --shake-hide-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-shake-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+endif()
+if(TARGET snow-shot-settings-catalog-tests)
+    add_test(NAME snow-shot-pinned-shake-settings-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --pinned-shake-only)
+    set_tests_properties(snow-shot-pinned-shake-settings-catalog-tests PROPERTIES LABELS "unit")
+endif()
+if(TARGET snow-shot-settings-page-loading-tests)
+    add_test(NAME snow-shot-pinned-shake-settings-tests
+        COMMAND snow-shot-settings-page-loading-tests --pinned-shake-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shake-settings-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)

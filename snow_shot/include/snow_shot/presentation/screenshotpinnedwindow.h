@@ -23,6 +23,7 @@
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
 
 #include <QColor>
+#include <QDeadlineTimer>
 #include <QImage>
 #include <QMap>
 #include <QMetaObject>
@@ -45,6 +46,7 @@ class AdButton;
 class AdContextMenu;
 class AdModal;
 class AdSlider;
+class AdMessageHandle;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
 struct ImageEditingSource;
@@ -65,6 +67,7 @@ class CanvasStatusReadout;
 class QCloseEvent;
 class QContextMenuEvent;
 class QEvent;
+class QHideEvent;
 class QDragEnterEvent;
 class QDragMoveEvent;
 class QDragLeaveEvent;
@@ -98,6 +101,7 @@ class ScreenshotPinnedDragExport;
 class ScreenshotAnimationPlayback;
 class ScreenshotPinnedHideToTopController;
 class ScreenshotPinnedControlsPresence;
+struct ScreenshotPinnedShakeGesture;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 class QAbstractButton;
@@ -135,6 +139,11 @@ class ScreenshotPinnedWindow final : public QWidget {
         return m_createdUtc;
     }
     void shakeForAttention();
+    struct HideOtherWindowsResult {
+        bool success = false;
+        // Includes hiding a live pin or canceling a peer's pending presentation/restore.
+        bool changed = false;
+    };
     struct Config {
         snow_shot::storage::PinnedSourceIdentity sourceIdentity;
         QDateTime sourceCreatedUtc;
@@ -208,6 +217,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> persistenceHider;
         std::function<void()> showAllWindowsRequested;
         std::function<void(const QString&)> hideOtherWindowsRequested;
+        std::function<HideOtherWindowsResult(const QString&)> shakeHideOtherWindowsRequested;
         snow_shot::storage::PinnedWindowCreationSource creationSource =
             snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
@@ -317,6 +327,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateSelectionIndicator();
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
@@ -514,7 +525,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool cursorMovementEnabled() const;
     bool moveCursorOnePixel(const QPoint& direction);
     bool startWindowMove();
-    void finishWindowMove();
+    void finishWindowMove(bool cancel = false);
+    void beginWindowShake(const QPointF& pointer, bool physical);
+    void sampleWindowShake(const QPointF& pointer);
+    void updateWindowShake(const QPointF& pointer, qint64 timeMs);
+    void endWindowShake(bool cancel);
+    [[nodiscard]] HideOtherWindowsResult hideOtherWindowsForShake();
+    void showShakeMessage(bool restart = true);
     bool windowDragEnabled() const;
     bool windowDragEligible() const;
     bool windowDragEligibleAt(const QPoint& position,
@@ -734,6 +751,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceHider;
     std::function<void()> m_showAllWindowsRequested;
     std::function<void(const QString&)> m_hideOtherWindowsRequested;
+    std::function<HideOtherWindowsResult(const QString&)> m_shakeHideOtherWindowsRequested;
+    std::unique_ptr<ScreenshotPinnedShakeGesture> m_shakeGesture;
+    QPointer<adqt::widgets::AdMessageHandle> m_shakeMessage;
+    QDeadlineTimer m_shakeMessageDeadline{0};
     snow_shot::storage::PinnedWindowCreationSource m_creationSource =
         snow_shot::storage::PinnedWindowCreationSource::Other;
     QDateTime m_createdUtc;

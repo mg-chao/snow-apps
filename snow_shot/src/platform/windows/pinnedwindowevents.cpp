@@ -6,6 +6,7 @@
 #include "../../presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "../../presentation/pinned/screenshotpinnedgeometrymapping.h"
 #include "../../presentation/pinned/screenshotpinnedhidetotopcontroller.h"
+#include "../../presentation/pinned/screenshotpinnedshakegesture.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include <QWindow>
@@ -164,6 +165,11 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         if (pinnedHwnd == nullptr) {
             return false;
         }
+
+        // The system move keyboard hook forwards this before USER32 consumes Escape.
+        if ((nativeMessage->message == WM_KEYDOWN || nativeMessage->message == WM_SYSKEYDOWN) &&
+            nativeMessage->wParam == VK_ESCAPE)
+            window.endWindowShake(true);
 
         if (nativeMessage->message == WM_GETDPISCALEDSIZE &&
             window.m_nativeGeometryController != nullptr) {
@@ -348,7 +354,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             static_cast<void>(window.finishNativeGeometryInteraction());
             window.m_systemSizingActive = false;
             if (window.m_windowDragActive) {
-                window.finishWindowMove();
+                window.finishWindowMove(!automaticButtonRelease);
             }
             if (window.m_editController != nullptr) {
                 window.m_editController->endTemporaryResizeWindowTool();
@@ -408,6 +414,15 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             const unsigned int dpi = LOWORD(nativeMessage->wParam);
             if (dpi > 0)
                 window.m_windowsNativeDpi = dpi;
+            // Discard partial legs immediately, before Qt updates the window's QScreen.
+            // A recognized shake remains latched across the display transition.
+            if (window.m_shakeGesture && window.m_shakeGesture->active &&
+                !window.m_shakeGesture->detector.triggered()) {
+                if (const auto cursor = window.physicalCursorPosition())
+                    window.beginWindowShake(QPointF(*cursor), true);
+                else
+                    window.endWindowShake(true);
+            }
             auto* suggestedRect = pointerFromLParam<RECT>(nativeMessage->lParam);
             if (window.m_platform->isMinimized()) {
                 // An iconic suggestion must not become content geometry. Qt still
@@ -677,19 +692,28 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                     window.m_systemSizingActive = true;
                 }
             }
+            // startSystemMove posts a request; USER32 can enter its move loop much later.
+            // Measure gesture legs from actual drag ownership, retaining the press-time opt-in.
+            if (window.m_shakeGesture && window.m_shakeGesture->active) {
+                if (const auto cursor = window.physicalCursorPosition())
+                    window.beginWindowShake(QPointF(*cursor), true);
+                else
+                    window.endWindowShake(true);
+            }
         }
 
         if (nativeMessage->message == WM_MOVING && window.m_nativeGeometryController != nullptr) {
             auto* proposedNativeRect = pointerFromLParam<RECT>(nativeMessage->lParam);
-            POINT cursor{};
-            if (proposedNativeRect != nullptr && GetCursorPos(&cursor) != FALSE) {
+            const auto cursor = window.physicalCursorPosition();
+            if (proposedNativeRect != nullptr && cursor) {
                 const QRect target = window.m_nativeGeometryController->updateMove(
-                    qRectFromNativeRect(*proposedNativeRect), QPoint(cursor.x, cursor.y));
+                    qRectFromNativeRect(*proposedNativeRect), *cursor);
                 if (target.isValid() && !target.isEmpty()) {
                     if (target != window.m_nativeGeometryController->committedGeometry()) {
                         window.exitHideToTop();
                     }
                     writeNativeRect(target, proposedNativeRect);
+                    window.sampleWindowShake(QPointF(*cursor));
                     if (result != nullptr) {
                         *result = TRUE;
                     }

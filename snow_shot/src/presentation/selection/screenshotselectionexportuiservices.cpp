@@ -1147,6 +1147,10 @@ void ScreenshotSelectionExportUiServices::configureVisibility(
         if (!lifetime.isNull())
             static_cast<void>(hideOtherWindows(id));
     };
+    config->shakeHideOtherWindowsRequested = [this, lifetime](const QString& id) {
+        return lifetime.isNull() ? ScreenshotPinnedWindow::HideOtherWindowsResult{}
+                                 : hideOtherWindowsWithResult(id);
+    };
 }
 
 ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::liveWindow(const QString& id) const {
@@ -1243,20 +1247,38 @@ void ScreenshotSelectionExportUiServices::showAllWindows() {
 }
 
 bool ScreenshotSelectionExportUiServices::hideOtherWindows(const QString& exceptId) {
+    return hideOtherWindowsWithResult(exceptId).success;
+}
+
+ScreenshotPinnedWindow::HideOtherWindowsResult
+ScreenshotSelectionExportUiServices::hideOtherWindowsWithResult(const QString& exceptId) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
-        return false;
+        return {};
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
     const auto records = storage.pinnedWindows().summariesIncludingPending();
     QVector<QString> ids;
-    for (const auto& record : records)
-        if (!record.ignored && record.groupId == group && record.id != exceptId)
+    bool changed = false;
+    QSet<QString> seen;
+    ids.reserve(records.size() + m_restoringIds.size());
+    seen.reserve(records.size());
+    for (const auto& record : records) {
+        if (!record.ignored && record.groupId == group && record.id != exceptId) {
             ids.append(record.id);
-    for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it)
-        if (it->groupId == group && it.key() != exceptId && !ids.contains(it.key()))
+            seen.insert(record.id);
+            changed |= !record.hidden;
+        }
+    }
+    for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it) {
+        if (it->groupId == group && it.key() != exceptId) {
+            changed = true;
+            if (seen.contains(it.key()))
+                continue;
             ids.append(it.key());
-    return hideRecords(ids);
+        }
+    }
+    return {hideRecords(ids), changed};
 }
 
 bool ScreenshotSelectionExportUiServices::toggleAllWindowsVisibility() {

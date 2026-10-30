@@ -1549,6 +1549,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("hide_to_top"), QStringLiteral("show_text_recognition_results"),
       QStringLiteral("close"), QStringLiteral("destroy")}},
     {QStringLiteral("pin_to_screen/show_window_buttons"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("pin_to_screen/shake_window_to_hide_others"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/exit_annotation_mode_before_closing"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/confirm_before_closing_window"), false,

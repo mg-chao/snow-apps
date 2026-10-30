@@ -158,6 +158,7 @@ enum class SettingsSwitchBinding {
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
     PinShowWindowButtons,
+    PinShakeWindowToHideOthers,
     PinShowBorderByDefault,
     PinShowShadowByDefault,
     PinExitAnnotationModeBeforeClosing,

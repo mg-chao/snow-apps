@@ -950,6 +950,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().autoResizeWindow();
     case SettingsSwitchBinding::PinShowWindowButtons:
         return storage::PinToScreenSettings().showWindowButtons();
+    case SettingsSwitchBinding::PinShakeWindowToHideOthers:
+        return storage::PinToScreenSettings().shakeWindowToHideOthers();
     case SettingsSwitchBinding::PinShowBorderByDefault:
         return storage::PinToScreenSettings().showBorderByDefault();
     case SettingsSwitchBinding::PinShowShadowByDefault:
@@ -1279,6 +1281,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinShowWindowButtons) {
         return storage::PinToScreenSettings().setShowWindowButtons(value);
     }
+    if (binding == SettingsSwitchBinding::PinShakeWindowToHideOthers) {
+        return storage::PinToScreenSettings().setShakeWindowToHideOthers(value);
+    }
     if (binding == SettingsSwitchBinding::PinShowBorderByDefault) {
         return storage::PinToScreenSettings().setShowBorderByDefault(value);
     }
@@ -1430,6 +1435,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::PinShowWindowButtons:
+    case SettingsSwitchBinding::PinShakeWindowToHideOthers:
     case SettingsSwitchBinding::PinShowBorderByDefault:
     case SettingsSwitchBinding::PinShowShadowByDefault:
     case SettingsSwitchBinding::PinExitAnnotationModeBeforeClosing:
@@ -2852,6 +2858,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/shake_window_to_hide_others"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/shake_window_to_hide_others"))},
             {QStringLiteral("pin_to_screen/mouse_wheel_opacity_step"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/mouse_wheel_opacity_step"))},
