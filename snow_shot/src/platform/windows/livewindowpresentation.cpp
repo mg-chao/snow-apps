@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "livewindowpresentation.h"
+#include "livewindowinputrouting.h"
 #include "../../presentation/pinned/livewindownative_p.h"
 
 #include <QScopedValueRollback>
@@ -262,32 +263,22 @@ struct LiveWindowPresentationSurface::Impl {
             EndPaint(window, &paint);
             return 0;
         }
-        if (self && self->shell && message == WM_MOUSELEAVE) {
+        if (self && self->shell && (message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE)) {
             if (!self->pointerOverSurface())
-                SendMessageW(self->shell, WM_MOUSELEAVE, 0, 0);
+                SendMessageW(self->shell, message, 0, 0);
             return 0;
         }
-        if (self && message == WM_MOUSEMOVE) {
+        if (self && (message == WM_MOUSEMOVE || message == WM_NCMOUSEMOVE)) {
             // The content HWND owns leave tracking while the pointer is over the
             // shell's transparent interior, including when the pointer stops moving.
-            TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window, 0};
+            const DWORD flags = TME_LEAVE | (message == WM_NCMOUSEMOVE ? TME_NONCLIENT : 0);
+            TRACKMOUSEEVENT tracking{sizeof(tracking), flags, window, 0};
             TrackMouseEvent(&tracking);
         }
-        if (self && self->shell &&
-            (message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
-             message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ||
-             message == WM_RBUTTONDBLCLK || message == WM_MBUTTONDOWN || message == WM_MBUTTONUP ||
-             message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDOWN || message == WM_XBUTTONUP ||
-             message == WM_XBUTTONDBLCLK || message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL ||
-             message == WM_CONTEXTMENU)) {
-            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            if (message != WM_MOUSEWHEEL && message != WM_MOUSEHWHEEL &&
-                message != WM_CONTEXTMENU) {
-                ClientToScreen(window, &point);
-                ScreenToClient(self->shell, &point);
-                lParam = MAKELPARAM(point.x, point.y);
-            }
-            return SendMessageW(self->shell, message, wParam, lParam);
+        if (self) {
+            if (const auto result = live_window_detail::forwardPointerMessage(
+                    window, self->shell, message, wParam, lParam))
+                return *result;
         }
         if (message == WM_ERASEBKGND)
             return 1;

@@ -13245,6 +13245,7 @@ target_link_libraries(snow_shot_live_window PUBLIC Qt6::Widgets PRIVATE Qt6::Con
 if(WIN32)
     target_sources(snow_shot_live_window PRIVATE
         src/platform/windows/livewindownative.cpp
+        src/platform/windows/livewindowinputrouting.h
         src/platform/windows/livewindowpresentation.cpp
         src/platform/windows/livewindowpresentation.h)
     target_link_libraries(snow_shot_live_window PRIVATE dwmapi user32 gdi32 uxtheme comctl32)
@@ -13275,6 +13276,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-live-window-source-tests PROPERTIES
         LABELS "unit" TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     if(WIN32)
+        add_executable(snow-shot-live-window-input-routing-tests
+            tests/live_window_input_routing_tests.cpp)
+        target_include_directories(snow-shot-live-window-input-routing-tests PRIVATE src)
+        target_link_libraries(snow-shot-live-window-input-routing-tests PRIVATE Qt6::Core user32)
+        add_test(NAME snow-shot-live-window-input-routing-tests
+            COMMAND snow-shot-live-window-input-routing-tests)
+        set_tests_properties(snow-shot-live-window-input-routing-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30)
         add_executable(snow-shot-live-window-native-tests tests/live_window_native_tests.cpp)
         target_link_libraries(snow-shot-live-window-native-tests PRIVATE snow_shot_live_window)
         add_test(NAME snow-shot-live-window-native-tests COMMAND snow-shot-live-window-native-tests)

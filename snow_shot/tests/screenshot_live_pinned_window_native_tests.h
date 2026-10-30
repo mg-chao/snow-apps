@@ -180,6 +180,46 @@ void present(ScreenshotPinnedWindow& window, const std::shared_ptr<Source>& sour
         "actual ScreenshotPinnedWindow establishes its DWM host");
 }
 
+void resizeHitRegions(ScreenshotPinnedWindow& window) {
+    const HWND shellHwnd = shell(window);
+    const HWND host = owner(shellHwnd);
+    const QRect original = window.currentNativeGeometry();
+    const QRect content = Access::contentGeometry(window);
+    // Probe well inside the six-DIP resize band, beyond the painted one-DIP border.
+    const int inset = qRound(4 * window.devicePixelRatioF());
+    const QRect inner = content.adjusted(inset, inset, -inset, -inset);
+    const QPoint points[] = {inner.topLeft(),     QPoint(inner.center().x(), inner.top()),
+                             inner.topRight(),    QPoint(inner.right(), inner.center().y()),
+                             inner.bottomRight(), QPoint(inner.center().x(), inner.bottom()),
+                             inner.bottomLeft(),  QPoint(inner.left(), inner.center().y())};
+    const LRESULT hits[] = {HTTOPLEFT,     HTTOP,    HTTOPRIGHT,   HTRIGHT,
+                            HTBOTTOMRIGHT, HTBOTTOM, HTBOTTOMLEFT, HTLEFT};
+    setPinnedWindowHovered(window, false);
+    for (int index = 0; index < 8; ++index) {
+        const QPoint point = points[index];
+        const LPARAM position = MAKELPARAM(point.x(), point.y());
+        require(SendMessageW(shellHwnd, WM_NCHITTEST, 0, position) == hits[index] &&
+                    SendMessageW(host, WM_NCHITTEST, 0, position) == hits[index],
+                "native live content exposes every resize handle beyond the painted border");
+        SendMessageW(host, WM_NCLBUTTONDOWN, hits[index], position);
+        require(ScreenshotPinnedWindowTestAccess::interactionActive(window),
+                "pressing a native content resize band starts the shell's interaction");
+        ScreenshotPinnedWindowTestAccess::endControlled(window, true);
+        require(window.currentNativeGeometry() == original && nativeGeometry(host) == content,
+                "cancelling a native content resize preserves both surfaces' geometry");
+        setPinnedWindowHovered(window, false);
+    }
+    const LPARAM edge = MAKELPARAM(points[7].x(), points[7].y());
+    Access::lock(window, true);
+    require(SendMessageW(host, WM_NCHITTEST, 0, edge) == HTCLIENT,
+            "locked live content must not expose resize handles");
+    Access::lock(window, false);
+    require(Access::clickThrough(window, true) &&
+                SendMessageW(host, WM_NCHITTEST, 0, edge) == HTTRANSPARENT,
+            "click-through live content retains the shell's transparent hit policy");
+    require(Access::clickThrough(window, false), "restore native live content input");
+}
+
 void run() {
     require(QGuiApplication::platformName() == QStringLiteral("windows"),
             "native live pin shell integration requires the Windows platform");
@@ -248,6 +288,8 @@ void run() {
     requirePinnedPixels(shellPixels.copy(interior), initialFrame.copy(interior), 0,
                         "live native content alignment");
     ScreenshotPinnedWindowTestAccess::shadowState(window, false, false);
+    QCoreApplication::processEvents();
+    resizeHitRegions(window);
     fixture.marker = false;
 
     // Cross the two HWNDs and then stop moving. A synthetic shell leave reproduces
@@ -381,12 +423,12 @@ void run() {
         "the rotated actual pin continuously receives and transforms WGC source updates");
     const QTransform rotated = Access::transform(window);
     Access::command(window, QStringLiteral("flip_horizontal"));
-    require(Access::transform(window) != rotated,
-            "the actual horizontal flip changes the live transformation");
+    live_pinned_tests::wait([&] { return Access::transform(window) != rotated; },
+                            "the actual horizontal flip changes the live transformation");
     const QTransform horizontallyFlipped = Access::transform(window);
     Access::command(window, QStringLiteral("flip_vertical"));
-    require(Access::transform(window) != horizontallyFlipped,
-            "the actual vertical flip changes the live transformation");
+    live_pinned_tests::wait([&] { return Access::transform(window) != horizontallyFlipped; },
+                            "the actual vertical flip changes the live transformation");
     fixture.paintColor(QColor(144, 48, 176));
     live_pinned_tests::wait(
         [&] {
