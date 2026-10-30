@@ -169,6 +169,14 @@ struct ImageSplitLayout final {
     [[nodiscard]] QRect regionAt(qint64 index) const;
 };
 
+// Immutable handoff: retain one source and compact guide axes until all pieces are imported.
+struct ImageSplitSnapshot final {
+    QImage image;
+    ImageSplitLayout layout;
+    QString imageName;
+    std::shared_ptr<void> resourceOwner;
+};
+
 [[nodiscard]] ImageSplitLayout calculateImageSplitLayout(QSize size,
                                                          const ImageSplitSettings& settings);
 [[nodiscard]] std::optional<int> imageSplitPercentagePixels(int dimension,
@@ -182,7 +190,7 @@ class ImageSplitDocument final : public QObject {
     ~ImageSplitDocument() override;
     [[nodiscard]] const QImage& image() const;
     [[nodiscard]] const QImage& preview() const;
-    void setImage(QImage image, QImage preview = {});
+    void setImage(QImage image, QImage preview = {}, ImageSplitSettings initialSettings = {});
     [[nodiscard]] ImageSplitSettings settings() const;
     [[nodiscard]] ImageSplitState state() const;
     [[nodiscard]] ImageSplitLayout layout() const;

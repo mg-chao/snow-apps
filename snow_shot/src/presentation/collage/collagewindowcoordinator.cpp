@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/collagewindowcoordinator.h"
+#include "snow_shot/presentation/imagesplitdocument.h"
 
 #include <utility>
 
@@ -47,6 +48,12 @@ void CollageWindowCoordinator::shutdown() {
     m_shutdown = true;
     if (m_window)
         m_window->shutdown();
+}
+
+bool CollageWindowCoordinator::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
+    if (auto* window = ensureWindow())
+        return window->presentSplitImagesAsPdf(std::move(snapshot));
+    return false;
 }
 
 void CollageWindowCoordinator::presentSelectedFiles(

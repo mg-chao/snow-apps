@@ -1568,7 +1568,9 @@ bool ScreenshotController::Impl::ensureExportFeature() {
         [controller = QPointer<ScreenshotController>(&owner)](
             const ScreenshotPinnedImageSnapshot& snapshot) {
             if (controller)
-                emit controller->imageSplittingRequested(snapshot);
+                emit controller->imageSplittingRequested(
+                    {snapshot.source, snapshot.originalFileName, snapshot.createdUtc,
+                     snapshot.error, snapshot.outputSize});
         },
         [controller = QPointer<ScreenshotController>(&owner)](const QString& id) {
             if (controller)
@@ -3228,8 +3230,12 @@ void ScreenshotController::Impl::openScrollingScreenshotImage(bool editing) {
     }
     const QPointer<ScreenshotController> receiver(&owner);
     const QDateTime createdUtc = QDateTime::currentDateTimeUtc();
+    const auto initialDirection = m_scrollingCaptureController->recognitionMode() ==
+                                          ScreenshotScrollingRecognitionMode::Vertical
+                                      ? snow_shot::presentation::ImageSplitDirection::Horizontal
+                                      : snow_shot::presentation::ImageSplitDirection::Vertical;
     const bool scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-        [receiver, sourceSize, createdUtc, editing,
+        [receiver, sourceSize, createdUtc, editing, initialDirection,
          generation = *exportGeneration](ScreenshotScrollingSnapshot snapshot) {
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->imageExportCurrent(generation)) {
@@ -3254,7 +3260,7 @@ void ScreenshotController::Impl::openScrollingScreenshotImage(bool editing) {
                 return;
             }
             emit receiver->imageSplittingRequested(
-                {std::move(source), sourceSize, {}, {}, {}, createdUtc});
+                {std::move(source), {}, createdUtc, {}, sourceSize, initialDirection});
         });
     if (!scheduled) {
         static_cast<void>(finishImageExport(*exportGeneration));
@@ -4685,7 +4691,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,

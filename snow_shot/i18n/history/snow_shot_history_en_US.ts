@@ -1099,6 +1099,10 @@ Files:
             <translation>Image Splitting</translation>
         </message>
         <message>
+            <source>Image Stitching is busy. Try again when it finishes.</source>
+            <translation>Image Stitching is busy. Try again when it finishes.</translation>
+        </message>
+        <message>
             <source>Image loading could not be started. Try again.</source>
             <translation>Image loading could not be started. Try again.</translation>
         </message>
@@ -1145,6 +1149,10 @@ Files:
         <message>
             <source>Select Image</source>
             <translation>Select Image</translation>
+        </message>
+        <message>
+            <source>Stitch to PDF</source>
+            <translation>Stitch to PDF</translation>
         </message>
         <message>
             <source>The file manager is unavailable. Open it and try again.</source>

@@ -437,6 +437,10 @@ void detachedScrollingResultLoadsIntoImageSplitter(ScreenshotScrollingRecognitio
     ImageSplitWindow splitWindow;
     bool delivered = false;
     const auto createdUtc = QDateTime::currentDateTimeUtc();
+    const auto initialDirection =
+        capture.recognitionMode() == ScreenshotScrollingRecognitionMode::Vertical
+            ? ImageSplitDirection::Horizontal
+            : ImageSplitDirection::Vertical;
     require(capture.requestTrimmedSnapshot([&](ScreenshotScrollingSnapshot result) {
         require(!capture.active() && !capture.state().value(QStringLiteral("auto_scroll")).toBool(),
                 "capture and auto-scroll must end before the result is imported");
@@ -445,7 +449,8 @@ void detachedScrollingResultLoadsIntoImageSplitter(ScreenshotScrollingRecognitio
                                    {},
                                    createdUtc,
                                    {},
-                                   expected.size()});
+                                   expected.size(),
+                                   initialDirection});
         delivered = true;
     }),
             "request the current scrolling image for splitting");
@@ -460,6 +465,13 @@ void detachedScrollingResultLoadsIntoImageSplitter(ScreenshotScrollingRecognitio
     require(splitWindow.modal()->isOpen() && splitWindow.lastError().isEmpty() &&
                 splitWindow.document()->image() == expected,
             "the splitting window must import the current stitched pixels and trim range");
+    require(
+        splitWindow.document()->settings().direction ==
+                (horizontal ? ImageSplitDirection::Vertical : ImageSplitDirection::Horizontal) &&
+            splitWindow.document()->layout().regionAt(0).size() ==
+                (horizontal ? QSize(213, 400) : QSize(400, 213)) &&
+            !splitWindow.document()->canUndo(),
+        "scrolling results initialize perpendicular split guides without an undo entry");
     splitWindow.shutdown();
     until([] { return liveSources == 0 && excludedWindows.isEmpty(); },
           "image splitting must release capture sources and window exclusions");

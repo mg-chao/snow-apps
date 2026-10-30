@@ -1574,10 +1574,8 @@ class ApplicationController::Impl {
                              });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::imageSplittingRequested, &q,
-                             [this](const ScreenshotPinnedImageSnapshot& snapshot) {
-                                 ensureImageSplitWindowCoordinator().presentSource(
-                                     {snapshot.source, snapshot.originalFileName,
-                                      snapshot.createdUtc, snapshot.error, snapshot.outputSize});
+                             [this](const presentation::ImageSplitSource& source) {
+                                 ensureImageSplitWindowCoordinator().presentSource(source);
                              });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::scrollingImageEditingRequested, &q,
@@ -2050,8 +2048,14 @@ class ApplicationController::Impl {
 
     presentation::ImageSplitWindowCoordinator& ensureImageSplitWindowCoordinator() {
         if (!imageSplitWindowCoordinator) {
+            presentation::ImageSplitWindowServices services;
+            services.stitchToPdf = [this](presentation::ImageSplitSnapshot snapshot) {
+                return ensureCollageWindowCoordinator().presentSplitImagesAsPdf(
+                    std::move(snapshot));
+            };
             imageSplitWindowCoordinator =
-                std::make_unique<presentation::ImageSplitWindowCoordinator>(&q);
+                std::make_unique<presentation::ImageSplitWindowCoordinator>(&q,
+                                                                            std::move(services));
             QObject::connect(&app, &QCoreApplication::aboutToQuit,
                              imageSplitWindowCoordinator.get(),
                              &presentation::ImageSplitWindowCoordinator::shutdown);

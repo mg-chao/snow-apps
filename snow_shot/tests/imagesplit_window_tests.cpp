@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitwindow.h"
+#include "snow_shot/image/imageimportlimits.h"
 #include "snow_shot/presentation/components/imagespliteditorwidget.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
@@ -836,7 +837,8 @@ void admissionAndLateCallbacks() {
     };
     snow_shot::storage::CaptureHistoryRecord record;
     record.result.emplace();
-    record.result->imageSize = QSize(64'000'001, 1);
+    record.result->imageSize =
+        QSize(65536, static_cast<int>(snow_shot::image::maximumImageImportPixels / 65536 + 1));
     ImageSplitWindow tooLarge(nullptr, admission);
     tooLarge.presentHistory(record);
     waitUntil([&] { return !tooLarge.loading(); }, "oversized history source is rejected");

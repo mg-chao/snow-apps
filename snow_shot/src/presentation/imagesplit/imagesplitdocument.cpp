@@ -870,12 +870,14 @@ const QImage& ImageSplitDocument::image() const {
 const QImage& ImageSplitDocument::preview() const {
     return m_impl->preview;
 }
-void ImageSplitDocument::setImage(QImage image, QImage preview) {
+void ImageSplitDocument::setImage(QImage image, QImage preview,
+                                  ImageSplitSettings initialSettings) {
     auto& d = *m_impl;
     d.beforeDrag.reset();
     d.image = std::move(image);
     d.preview = preview.isNull() ? d.image : std::move(preview);
     d.state = {};
+    d.state.settings = std::move(initialSettings);
     d.layout = calculateImageSplitLayout(d.image.size(), d.state.settings);
     d.state.verticalLines = d.layout.verticalLines;
     d.state.horizontalLines = d.layout.horizontalLines;

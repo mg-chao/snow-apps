@@ -29,6 +29,7 @@ struct ImageSplitSource final {
     QDateTime createdUtc;
     QString error;
     QSize outputSize;
+    std::optional<ImageSplitDirection> initialDirection = std::nullopt;
 };
 
 // UI choices are asynchronous; readers and the batch writer run on an export worker.
@@ -45,6 +46,7 @@ struct ImageSplitWindowServices final {
                                          std::function<void(qint64, qint64)>)>
         exportBatch;
     std::function<void(const QString&)> openDirectory;
+    std::function<bool(ImageSplitSnapshot)> stitchToPdf;
 };
 
 class ImageSplitWindow final : public QObject {
@@ -61,6 +63,7 @@ class ImageSplitWindow final : public QObject {
     void dropFiles(const QStringList& paths);
     void paste();
     void saveAll();
+    void stitchToPdf();
     void requestClose();
     void shutdown();
     [[nodiscard]] bool busy() const;

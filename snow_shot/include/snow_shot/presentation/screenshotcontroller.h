@@ -9,6 +9,7 @@
 #include <QString>
 #include "snow_shot/presentation/globalmousetypes.h"
 #include "snow_shot/presentation/screenshotpinnedimagesnapshot.h"
+#include "snow_shot/presentation/imagesplitwindow.h"
 
 #include <memory>
 #include <functional>
@@ -141,7 +142,7 @@ class ScreenshotController : public QObject {
 
   signals:
     void imageStitchingRequested(const QVector<ScreenshotPinnedImageSnapshot>& snapshots);
-    void imageSplittingRequested(const ScreenshotPinnedImageSnapshot& snapshot);
+    void imageSplittingRequested(const snow_shot::presentation::ImageSplitSource& source);
     void scrollingImageEditingRequested(const ScreenshotExportSource& source);
     void pinnedImageEditingRequested(const QString& recordId);
     void recordingExportNotificationRequested(const QString& path);

@@ -1269,7 +1269,8 @@ add_library(snow_shot_collage STATIC
     src/presentation/collage/collagepdfsettingswidget.cpp
     src/presentation/collage/collagepdfexport.cpp)
 target_include_directories(snow_shot_collage PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
-target_link_libraries(snow_shot_collage PUBLIC snow_shot_collage_core snow_shot_settings)
+target_link_libraries(snow_shot_collage PUBLIC snow_shot_collage_core snow_shot_settings
+    snow_shot_image_split_core)
 
 add_library(snow_shot_image_split_core STATIC
     include/snow_shot/presentation/imagesplitdocument.h
@@ -1603,6 +1604,21 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_add_translations(snow-shot-image-paste-tests)
     add_test(NAME snow-shot-image-paste-tests COMMAND snow-shot-image-paste-tests -platform offscreen)
     set_tests_properties(snow-shot-image-paste-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_IMAGE_SPLIT_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-image-split-pdf-handoff-tests tests/imagesplit_pdf_handoff_tests.cpp
+        ${SNOW_SHOT_COLLAGE_EXPORT_TEST_SOURCES})
+    target_include_directories(snow-shot-image-split-pdf-handoff-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/services")
+    target_link_libraries(snow-shot-image-split-pdf-handoff-tests PRIVATE
+        snow_shot_image_split snow_shot_collage snow_shot_diagnostics)
+    snow_shot_import_offscreen_platform(snow-shot-image-split-pdf-handoff-tests)
+    snow_shot_add_translations(snow-shot-image-split-pdf-handoff-tests)
+    add_test(NAME snow-shot-image-split-pdf-handoff-tests
+        COMMAND snow-shot-image-split-pdf-handoff-tests -platform offscreen)
+    set_tests_properties(snow-shot-image-split-pdf-handoff-tests PROPERTIES LABELS unit
         ENVIRONMENT "${_SNOW_SHOT_IMAGE_SPLIT_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 

@@ -22,6 +22,8 @@ class CollageEditorWidget;
 }
 namespace snow_shot::presentation {
 
+struct ImageSplitSnapshot;
+
 // Narrow asynchronous ports make terminal publication/writer behavior deterministic in tests.
 struct CollageWindowServices final {
     using Completion = std::function<void(bool, QString)>;
@@ -47,6 +49,7 @@ class CollageWindow final : public QObject {
     void present(const QVector<storage::CaptureHistoryRecord>& records = {});
     void presentPinnedRecords(const QStringList& recordIds);
     void presentPinnedWindows(const QVector<ScreenshotPinnedImageSnapshot>& snapshots);
+    [[nodiscard]] bool presentSplitImagesAsPdf(ImageSplitSnapshot snapshot);
     void addFiles(const QStringList& paths);
     void paste();
     void addSelectedFiles(std::shared_ptr<platform::SelectedFileBackend> backend,

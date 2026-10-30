@@ -1099,6 +1099,10 @@ Files:
             <translation>圖片分割</translation>
         </message>
         <message>
+            <source>Image Stitching is busy. Try again when it finishes.</source>
+            <translation>圖片拼接忙碌中。請等待完成後重試。</translation>
+        </message>
+        <message>
             <source>Image loading could not be started. Try again.</source>
             <translation>無法開始載入圖像，請再試一次。</translation>
         </message>
@@ -1145,6 +1149,10 @@ Files:
         <message>
             <source>Select Image</source>
             <translation>選擇圖像</translation>
+        </message>
+        <message>
+            <source>Stitch to PDF</source>
+            <translation>拼接為 PDF</translation>
         </message>
         <message>
             <source>The file manager is unavailable. Open it and try again.</source>

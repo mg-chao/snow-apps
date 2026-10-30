@@ -23,6 +23,26 @@ QImage fixture(QSize size) {
     return image;
 }
 
+void initialSettingsEstablishUndoBaseline() {
+    ImageSplitDocument document;
+    ImageSplitSettings initial;
+    initial.direction = ImageSplitDirection::Horizontal;
+    document.setImage(fixture({80, 120}), {}, initial);
+    require(document.settings() == initial && !document.canUndo() && !document.canRedo() &&
+                document.layout().regionAt(0) == QRect(0, 0, 80, 60),
+            "initial settings establish the horizontal layout without a synthetic undo entry");
+    auto changed = initial;
+    changed.direction = ImageSplitDirection::Vertical;
+    require(document.setSettings(changed), "initial direction remains editable");
+    document.undo();
+    require(document.settings() == initial && !document.canUndo() && document.canRedo(),
+            "undo returns to the requested initial direction");
+    document.setImage(fixture({80, 120}));
+    require(document.settings() == ImageSplitSettings{} && !document.canUndo() &&
+                !document.canRedo(),
+            "ordinary image initialization retains default settings and resets history");
+}
+
 void requireCoverage(const ImageSplitLayout& layout) {
     require(layout.isValid(), "coverage fixture is valid");
     std::vector<int> visits(size_t(layout.size.width()) * size_t(layout.size.height()), 0);
@@ -616,6 +636,7 @@ void lineDragsCrossOtherLines() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        initialSettingsEstablishUndoBaseline();
         equalAndGrid();
         compactAxes();
         persistentRunSequences();

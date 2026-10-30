@@ -47,6 +47,8 @@ QString splitText(const char* source) {
 [[maybe_unused]] constexpr const char* labels[] = {
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Save All"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Stitch to PDF"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Stitching is busy. Try again when it finishes."),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Cancel"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Images"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Select Image"),
@@ -105,6 +107,7 @@ struct LoadedImage final {
     const char* errorSource = nullptr;
     QString originalFileName;
     QDateTime createdUtc;
+    std::optional<ImageSplitDirection> initialDirection;
 };
 
 struct ExportProgress final {
@@ -174,13 +177,23 @@ ScreenshotExportTaskResult prepareImage(QImage image, const std::shared_ptr<Load
 } // namespace
 
 struct ImageSplitWindow::Impl final {
-    enum class Status { None, Loading, Saving, Saved, LoadError, ExportError, DropError };
+    enum class Status {
+        None,
+        Loading,
+        Saving,
+        Saved,
+        LoadError,
+        ExportError,
+        DropError,
+        StitchError
+    };
     ImageSplitWindow& q;
     ImageSplitWindowServices services;
     ImageSplitDocument* document;
     components::ImageSplitEditorWidget* editor;
     AdModal* modal;
     AdButton* save;
+    AdButton* stitch;
     AdButton* cancel;
     QPointer<AdModal> confirmation;
     QPointer<QFileDialog> fileDialog;
@@ -211,7 +224,8 @@ struct ImageSplitWindow::Impl final {
     Impl(ImageSplitWindow& owner, ImageSplitWindowServices ports)
         : q(owner), services(std::move(ports)), document(new ImageSplitDocument(&q)),
           editor(new components::ImageSplitEditorWidget(document)), modal(new AdModal(&q)),
-          save(new AdButton), cancel(new AdButton), progressTimer(new QTimer(&q)) {
+          save(new AdButton), stitch(new AdButton), cancel(new AdButton),
+          progressTimer(new QTimer(&q)) {
         progressTimer->setInterval(100);
         QObject::connect(progressTimer, &QTimer::timeout, &q, [this] {
             if (!exporting || !progress)
@@ -248,14 +262,16 @@ struct ImageSplitWindow::Impl final {
         editor->outputDescriptionWidget()->show();
         cancel->setObjectName(QStringLiteral("imageSplitCancel"));
         save->setObjectName(QStringLiteral("imageSplitSaveAll"));
+        stitch->setObjectName(QStringLiteral("imageSplitStitchToPdf"));
         save->setButtonStyle(AdButton::ButtonStyle::Solid);
         save->setAccentRole(AdButton::AccentRole::Primary);
-        for (auto* button : {cancel, save}) {
+        for (auto* button : {cancel, stitch, save}) {
             button->setFocusPolicy(Qt::StrongFocus);
             layout->addWidget(button);
         }
         modal->setFooterWidget(footer);
         QObject::connect(save, &AdButton::clicked, &q, &ImageSplitWindow::saveAll);
+        QObject::connect(stitch, &AdButton::clicked, &q, &ImageSplitWindow::stitchToPdf);
         QObject::connect(cancel, &AdButton::clicked, &q, &ImageSplitWindow::requestClose);
         QObject::connect(modal, &AdModal::closeRequested, &q,
                          [this](AdModal::CloseReason) { q.requestClose(); });
@@ -303,20 +319,25 @@ struct ImageSplitWindow::Impl final {
         // Busy blocks activation while retaining the primary button's loading appearance.
         save->setEnabled(exporting || (!unavailable() && editor->configurationValid()));
         save->setBusy(exporting);
+        stitch->setEnabled(!unavailable() && services.stitchToPdf && editor->configurationValid());
         editor->setLoading(importing || choosing || confirming);
         editor->setExportBusy(exporting);
     }
     void retranslate() {
         modal->setWindowTitle(splitText("Image Splitting"));
         save->setText(splitText("Save All"));
+        stitch->setText(splitText("Stitch to PDF"));
         cancel->setText(splitText("Cancel"));
         save->setAccessibleName(save->text());
+        stitch->setAccessibleName(stitch->text());
         cancel->setAccessibleName(cancel->text());
         editor->retranslateUi();
         if (confirmation)
             translateConfirmation();
         if (status == Status::LoadError && loadingErrorSource)
             error = splitText(loadingErrorSource);
+        if (status == Status::StitchError)
+            error = splitText("Image Stitching is busy. Try again when it finishes.");
         if (status == Status::ExportError) {
             exportResult.error = windowExportErrorSource ? splitText(windowExportErrorSource)
                                                          : exportResult.errorMessage();
@@ -339,6 +360,7 @@ struct ImageSplitWindow::Impl final {
                           .arg(exportResult.directory);
             break;
         case Status::LoadError:
+        case Status::StitchError:
             content = error;
             break;
         case Status::ExportError:
@@ -512,7 +534,10 @@ struct ImageSplitWindow::Impl final {
                                                 .toLocalTime()
                                                 .toString(QStringLiteral("yyyyMMdd-HHmmss")))
                                  : stem;
-                document->setImage(loaded->image, loaded->preview);
+                ImageSplitSettings initialSettings;
+                if (loaded->initialDirection)
+                    initialSettings.direction = *loaded->initialDirection;
+                document->setImage(loaded->image, loaded->preview, initialSettings);
                 imageReservation = loaded->reservation;
                 editor->canvas()->fitToCanvas();
             }
@@ -743,6 +768,7 @@ void ImageSplitWindow::presentSource(ImageSplitSource source) {
     d.beginLoading();
     const auto token = d.generation;
     auto loaded = std::make_shared<LoadedImage>();
+    loaded->initialDirection = source.initialDirection;
     if (!source.error.isEmpty() || !source.source.isValid()) {
         if (source.error == imageMemoryError())
             loaded->errorSource =
@@ -909,6 +935,21 @@ void ImageSplitWindow::paste() {
 void ImageSplitWindow::saveAll() {
     if (!m_impl->unavailable() && m_impl->editor->commitPendingSettings())
         m_impl->choose(true);
+}
+void ImageSplitWindow::stitchToPdf() {
+    auto& d = *m_impl;
+    if (d.unavailable() || !d.services.stitchToPdf || !d.editor->commitPendingSettings())
+        return;
+    ImageSplitSnapshot snapshot{d.document->image(), d.document->layout(), d.sourceName,
+                                d.imageReservation};
+    if (d.services.stitchToPdf(std::move(snapshot))) {
+        d.error.clear();
+        d.status = Impl::Status::None;
+    } else {
+        d.error = splitText("Image Stitching is busy. Try again when it finishes.");
+        d.status = Impl::Status::StitchError;
+    }
+    d.showStatus();
 }
 void ImageSplitWindow::requestClose() {
     if (m_impl->closing || m_impl->confirming)

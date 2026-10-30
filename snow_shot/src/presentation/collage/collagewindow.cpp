@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/collagewindow.h"
+#include "snow_shot/presentation/imagesplitdocument.h"
 #include "snow_shot/presentation/collagesettingsstore.h"
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -145,6 +146,8 @@ struct ImportItem {
     std::optional<ScreenshotClipboardLocalImage> file = std::nullopt;
     std::optional<ScreenshotClipboardContentSnapshot> clipboard = std::nullopt;
     std::shared_ptr<CollageImportReservation> reservation = {};
+    std::shared_ptr<const ImageSplitSnapshot> split = {};
+    qint64 splitIndex = 0;
 };
 
 struct ImportedImage {
@@ -194,6 +197,8 @@ struct CollageWindow::Impl {
     QStringList failures;
     QList<platform::SelectedFileError> selectionFailures;
     qsizetype importIndex = 0;
+    qint64 importStarted = 0;
+    qint64 importTotal = 0;
     quint64 generation = 0;
     bool importing = false;
     bool exporting = false;
@@ -363,7 +368,7 @@ struct CollageWindow::Impl {
         QString message;
         switch (next) {
         case Status::Loading:
-            message = collageText("Loading images: %1 of %2").arg(importIndex).arg(imports.size());
+            message = collageText("Loading images: %1 of %2").arg(importStarted).arg(importTotal);
             break;
         case Status::ReadingSelection:
             message = collageText("Reading selected image files…");
@@ -605,7 +610,11 @@ struct CollageWindow::Impl {
     void beginImport(QVector<ImportItem> requested) {
         if (closing || exporting || requested.isEmpty())
             return;
+        qint64 requestedCount = 0;
+        for (const auto& item : requested)
+            requestedCount += item.split ? item.split->layout.outputCount() : 1;
         if (importing) {
+            importTotal += requestedCount;
             imports.append(std::move(requested));
             showStatus(status == Status::ReadingSelection ? Status::ReadingSelection
                                                           : Status::Loading);
@@ -615,6 +624,8 @@ struct CollageWindow::Impl {
         failures.clear();
         selectionFailures.clear();
         importIndex = 0;
+        importStarted = 0;
+        importTotal = requestedCount;
         importing = true;
         ++generation;
         updateActions();
@@ -626,6 +637,7 @@ struct CollageWindow::Impl {
         if (closing || token != generation)
             return;
         importArtifact.reset();
+        bool failed = !result.succeeded();
         if (!result.succeeded()) {
             failures.append(collageText("%1: %2").arg(request.label, result.error));
         } else {
@@ -637,9 +649,21 @@ struct CollageWindow::Impl {
                                        std::move(decoded->preview)) != 0;
             if (!accepted)
                 failures.append(collageText("%1: %2").arg(request.label, document->lastError()));
+            failed = !accepted;
         }
+        if (failed)
+            discardRemainingSplit(request);
         decoded->reservation.reset();
         nextImport();
+    }
+
+    void discardRemainingSplit(const ImportItem& request) {
+        // A failed crop or admission must not enqueue millions of identical failures.
+        if (request.split && importIndex < imports.size() &&
+            imports.at(importIndex).split == request.split) {
+            importTotal -= request.split->layout.outputCount() - imports.at(importIndex).splitIndex;
+            imports[importIndex++] = {};
+        }
     }
 
     void importLive(const ImportItem& request, const std::shared_ptr<ImportedImage>& decoded,
@@ -748,11 +772,14 @@ struct CollageWindow::Impl {
                 if (closing || token != generation)
                     return;
                 imports.removeAt(--importIndex);
+                --importStarted;
+                --importTotal;
                 if (!result.succeeded()) {
                     selectionFailures.append(platform::SelectedFileError::QueryFailed);
                 } else if (selection->error != platform::SelectedFileError::None) {
                     selectionFailures.append(selection->error);
                 } else {
+                    importTotal += files->size();
                     for (qsizetype index = 0; index < files->size(); ++index) {
                         const auto& file = files->at(index);
                         ImportItem item{{}, {}, file.absolutePath, file.absolutePath, 0};
@@ -788,7 +815,18 @@ struct CollageWindow::Impl {
         // caches while subsequent imports are pending. The worker/completion owns this request.
         // Moving a small std::function may retain its callable in the source. Explicitly
         // empty the consumed slot so completed image producers retire before the batch ends.
-        const ImportItem request = std::exchange(imports[importIndex++], ImportItem{});
+        ImportItem request;
+        auto& queued = imports[importIndex];
+        if (queued.split) {
+            request = queued;
+            request.label =
+                QStringLiteral("%1 (%2)").arg(request.split->imageName).arg(request.splitIndex + 1);
+            if (++queued.splitIndex == queued.split->layout.outputCount())
+                imports[importIndex++] = {};
+        } else {
+            request = std::exchange(imports[importIndex++], ImportItem{});
+        }
+        ++importStarted;
         showStatus(request.selection ? Status::ReadingSelection : Status::Loading);
         const quint64 token = generation;
         if (request.selection) {
@@ -815,7 +853,19 @@ struct CollageWindow::Impl {
                     return cancellation.isCancellationRequested();
                 };
                 QImage image;
-                if (request.clipboard) {
+                if (request.split) {
+                    const QRect region = request.split->layout.regionAt(request.splitIndex);
+                    const qint64 bytes = collageImageImportBytes(region.size(), &error);
+                    const qint64 nativeBytes =
+                        ((qint64(region.width()) * request.split->image.depth() + 31) / 32) * 4 *
+                        region.height();
+                    if (bytes == 0 ||
+                        !decoded->reservation->resize(std::max(bytes, nativeBytes * 2), &error))
+                        return ScreenshotExportTaskResult::failure(
+                            ScreenshotExportFailureStage::Source, error);
+                    if (!cancelled())
+                        image = request.split->image.copy(region);
+                } else if (request.clipboard) {
                     image = readImageImportClipboard(
                         *request.clipboard, cancelled, [decoded, &error](qint64 bytes) {
                             return decoded->reservation->resize(bytes, &error);
@@ -876,6 +926,7 @@ struct CollageWindow::Impl {
         if (!job.isValid()) {
             failures.append(collageText("%1: %2").arg(
                 request.label, collageText("Image loading could not be started. Try again.")));
+            discardRemainingSplit(request);
             QTimer::singleShot(0, &q, [this, token] {
                 if (token == generation)
                     nextImport();
@@ -1259,6 +1310,19 @@ void CollageWindow::presentPinnedWindows(const QVector<ScreenshotPinnedImageSnap
         requested.append(std::move(item));
     }
     m_impl->beginImport(std::move(requested));
+}
+
+bool CollageWindow::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
+    if (m_impl->closing || m_impl->exporting || m_impl->confirmationPending ||
+        snapshot.image.isNull() || snapshot.layout.size != snapshot.image.size() ||
+        !snapshot.layout.isValid() || snapshot.layout.outputCount() <= 0)
+        return false;
+    ImportItem request;
+    request.split = std::make_shared<const ImageSplitSnapshot>(std::move(snapshot));
+    m_impl->document->setOutputType(CollageOutputType::PdfDocument);
+    present();
+    m_impl->beginImport({std::move(request)});
+    return true;
 }
 
 void CollageWindow::addFiles(const QStringList& paths) {
