@@ -133,8 +133,6 @@ void requireStationaryOverlays(ScreenshotPinnedWindow& pin, NSWindow* host) {
     QMouseEvent move(QEvent::MouseMove, end, pin.mapToGlobal(end), Qt::NoButton, Qt::RightButton,
                      Qt::NoModifier);
     QApplication::sendEvent(&pin, &move);
-    auto* crop = pin.findChild<QWidget*>(QStringLiteral("screenshotPinnedCropSelection"));
-    require(crop && crop->isVisible(), "Right-button selection reveals the crop preview.");
     const QPoint cropPoint = (start + end) / 2;
     waitFor([&] { return presentedPixel(pin, cropPoint).alpha() == 0x33; },
             "The stationary Qt shell publishes the translucent crop preview.");
@@ -144,7 +142,7 @@ void requireStationaryOverlays(ScreenshotPinnedWindow& pin, NSWindow* host) {
     QKeyEvent cancel(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(&pin, &cancel);
     waitFor([&] { return presentedPixel(pin, cropPoint).alpha() == 0; },
-            "Cancelling the crop clears its published overlay without dragging.");
+            "Cancelling the crop clears its published preview without dragging.");
 }
 } // namespace
 

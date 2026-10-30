@@ -401,6 +401,12 @@ class ScreenshotPinnedWindowTestAccess {
     static bool beginCrop(ScreenshotPinnedWindow& window, const QPointF& point) {
         return window.beginCropSelection(point);
     }
+    static void moveCrop(ScreenshotPinnedWindow& window, const QPointF& point) {
+        window.updateCropSelection(point);
+    }
+    static QPointF cropNativePoint(const ScreenshotPinnedWindow& window, const QPointF& local) {
+        return window.nativePositionForWindowPosition(local);
+    }
     static void endCrop(ScreenshotPinnedWindow& window, const QPointF& point, bool cancel = false) {
         window.updateCropSelection(point);
         window.endCropSelection(cancel, point.toPoint());

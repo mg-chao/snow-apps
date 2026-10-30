@@ -191,6 +191,77 @@ void cornerOutlines() {
     window.hide();
 }
 
+void cropSelectionMatchesCanvas() {
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config());
+    window.show();
+    auto* pinnedCanvas = window.findChild<SnowCanvasWidget*>();
+    require(pinnedCanvas != nullptr, "crop selection paints on the pinned canvas");
+
+    SnowCanvasWidget canvas;
+    canvas.resize(pinnedCanvas->size());
+    canvas.setClearBackgroundEnabled(false);
+    canvas.setAttribute(Qt::WA_ShowWithoutActivating);
+    canvas.show();
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate reference canvas selection");
+
+    const auto render = [](QWidget& widget, qreal dpr) {
+        QImage image(qCeil(widget.width() * dpr), qCeil(widget.height() * dpr),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        widget.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+        return image;
+    };
+    const auto pointer = [](QWidget& widget, QEvent::Type type, const QPointF& point,
+                            Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, widget.mapToGlobal(point), button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(&widget, &event);
+    };
+    const QPointF offset =
+        pinnedCanvas->mapFrom(&window, Access::contentViewport(window).topLeft());
+    const std::array<qreal, 6> scales{1.0, 1.25, 1.5, 1.75, 2.0, 3.0};
+    for (const QRectF& rect : {QRectF(10, 12, 61, 43), QRectF(10.25, 12.75, 61.5, 43.25),
+                               QRectF(10.75, 12.25, 1.25, 43.5)}) {
+        for (bool reverse : {false, true}) {
+            const QPointF start = offset + (reverse ? rect.bottomRight() : rect.topLeft());
+            const QPointF end = offset + (reverse ? rect.topLeft() : rect.bottomRight());
+            pointer(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+            pointer(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+            // Canvas moves publish on the next event-loop frame.
+            QCoreApplication::processEvents();
+            std::array<QImage, 6> background;
+            std::array<QImage, 6> expected;
+            const QImage snapshot = pinnedCanvas->renderContentToImage(pinnedCanvas->size());
+            for (std::size_t i = 0; i < scales.size(); ++i) {
+                background[i] = render(*pinnedCanvas, scales[i]);
+                expected[i] = background[i];
+                QPainter painter(&expected[i]);
+                canvas.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+            }
+            const QPointF nativeStart =
+                Access::cropNativePoint(window, pinnedCanvas->mapTo(&window, start));
+            const QPointF nativeEnd =
+                Access::cropNativePoint(window, pinnedCanvas->mapTo(&window, end));
+            require(Access::beginCrop(window, nativeStart), "begin canvas crop rendering fixture");
+            Access::moveCrop(window, nativeEnd);
+            require(pinnedCanvas->renderContentToImage(pinnedCanvas->size()) == snapshot,
+                    "crop preview is excluded from canvas content snapshots");
+            for (std::size_t i = 0; i < scales.size(); ++i) {
+                require(render(*pinnedCanvas, scales[i]) == expected[i],
+                        "crop selection matches the canvas select tool at every pixel and DPI");
+            }
+            Access::endCrop(window, nativeEnd, true);
+            for (std::size_t i = 0; i < scales.size(); ++i)
+                require(render(*pinnedCanvas, scales[i]) == background[i],
+                        "cancelling crop removes its canvas preview without changing content");
+            pointer(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+        }
+    }
+    window.hide();
+}
+
 void staticWindow() {
     ScreenshotPinnedWindow window;
     const auto setup = config();
@@ -1030,6 +1101,7 @@ void livePinnedCropTests() {
 void pinnedCropTests() {
     pinned_crop_tests::geometry();
     pinned_crop_tests::cornerOutlines();
+    pinned_crop_tests::cropSelectionMatchesCanvas();
     pinned_crop_tests::staticWindow();
     pinned_crop_tests::restorationAndTransforms();
     pinned_crop_tests::gesturesAndAlignment();

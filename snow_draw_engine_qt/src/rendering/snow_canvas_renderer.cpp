@@ -1318,6 +1318,16 @@ void drawOverlayRectItem(QPainter& painter, const OverlayDisplayInfo& displayInf
     const double height = item.height * zoom;
     const double strokeWidth = item.stroke_width * zoom;
 
+    if (item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_MARQUEE && std::abs(item.rotation) <= 1e-12 &&
+        item.corner_radii.top_left <= 0.0 && item.corner_radii.top_right <= 0.0 &&
+        item.corner_radii.bottom_right <= 0.0 && item.corner_radii.bottom_left <= 0.0 &&
+        item.fill_style == SNOW_FILL_STYLE_SOLID) {
+        snowCanvasPaintSelectionMarquee(
+            painter, QRectF(center.x() - width / 2.0, center.y() - height / 2.0, width, height),
+            toQColor(item.stroke), toQColor(item.fill), strokeWidth);
+        return;
+    }
+
     if (item.rect_kind == SNOW_OVERLAY_RECT_SPEECH_BUBBLE_ADD_TAIL_HANDLE ||
         item.rect_kind == SNOW_OVERLAY_RECT_SHAPE_TEXT_HANDLE) {
         painter.save();
@@ -1442,6 +1452,11 @@ void drawOverlayRectItem(QPainter& painter, const OverlayDisplayInfo& displayInf
         const QRectF viewRect(center.x() - item.width * zoom / 2.0,
                               center.y() - item.height * zoom / 2.0, item.width * zoom,
                               item.height * zoom);
+        if (item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_MARQUEE) {
+            snowCanvasPaintSelectionMarquee(painter, viewRect, toQColor(item.stroke),
+                                            toQColor(item.fill), item.stroke_width * zoom);
+            return;
+        }
         painter.save();
         if (!hasStroke) {
             painter.fillRect(viewRect, toQColor(item.fill));

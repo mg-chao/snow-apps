@@ -3426,6 +3426,10 @@ void ScreenshotPinnedWindow::createUi() {
     m_canvas = new ScreenshotPinnedCanvasWidget(
         m_runtime, this,
         [this]() {
+            if (m_cropSelectionOrigin) {
+                QPainter painter(m_canvas);
+                paintCropSelection(painter);
+            }
             acknowledgeAnimationPaint();
             handleFirstContentFramePainted();
         },

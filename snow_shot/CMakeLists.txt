@@ -13514,6 +13514,18 @@ endif()
 # capabilities before the deferred Mini audit inspects the completed link graphs.
 snow_shot_resolve_source_dependencies()
 
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-pinned-crop-render-tests tests/screenshot_pinned_crop_render_tests.cpp)
+    target_include_directories(snow-shot-pinned-crop-render-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../snow_draw_engine_qt/include")
+    target_link_libraries(snow-shot-pinned-crop-render-tests PRIVATE Qt6::Gui)
+    snow_shot_import_offscreen_platform(snow-shot-pinned-crop-render-tests)
+    add_test(NAME snow-shot-pinned-crop-render-tests
+        COMMAND snow-shot-pinned-crop-render-tests -platform offscreen)
+    set_tests_properties(snow-shot-pinned-crop-render-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 if(TARGET snow-shot-pinned-window-tests)
     add_test(NAME snow-shot-pinned-crop-tests
         COMMAND snow-shot-pinned-window-tests --crop-only -platform offscreen)

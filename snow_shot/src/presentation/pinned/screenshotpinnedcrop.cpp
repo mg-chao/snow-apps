@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "screenshotpinnedcropgeometry.h"
+#include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "pinnedwindowplatform.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
@@ -26,22 +27,6 @@
 #include "widgets/message.h"
 
 namespace crop_geometry = screenshot_pinned_crop_geometry;
-namespace {
-class CropOverlay final : public QWidget {
-  public:
-    explicit CropOverlay(QWidget* parent) : QWidget(parent) {
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-        setObjectName(QStringLiteral("screenshotPinnedCropSelection"));
-    }
-    QRectF selection;
-    void paintEvent(QPaintEvent*) override {
-        QPainter painter(this);
-        painter.setPen(QPen(QColor(0x40, 0x96, 0xff), 1, Qt::SolidLine));
-        painter.setBrush(QColor(0x40, 0x96, 0xff, 0x33));
-        painter.drawRect(selection.adjusted(.5, .5, -.5, -.5));
-    }
-};
-} // namespace
 
 QRectF ScreenshotPinnedWindow::visibleCanvasRect() const {
     if (!m_cropRect || m_originalPixelSize.isEmpty())
@@ -126,29 +111,22 @@ void ScreenshotPinnedWindow::updateCropSelection(const QPointF& position) {
     const QRectF bounds(m_cropSelectionBounds);
     m_cropSelectionEnd = {std::clamp(position.x(), bounds.left(), bounds.right()),
                           std::clamp(position.y(), bounds.top(), bounds.bottom())};
-    updateCropOverlay();
+    if (m_canvas)
+        m_canvas->update();
 }
 
-void ScreenshotPinnedWindow::updateCropOverlay() {
-    if (!m_cropSelectionOrigin) {
-        if (m_cropOverlay)
-            m_cropOverlay->hide();
+void ScreenshotPinnedWindow::paintCropSelection(QPainter& painter) const {
+    if (!m_cropSelectionOrigin || !m_canvas)
         return;
-    }
-    if (!m_cropOverlay)
-        m_cropOverlay = new CropOverlay(this);
     const auto native = QRectF(*m_cropSelectionOrigin, m_cropSelectionEnd).normalized();
     const QRectF content = contentViewRect();
     const qreal sx = content.width() / m_cropSelectionGeometry.width();
     const qreal sy = content.height() / m_cropSelectionGeometry.height();
-    auto* overlay = static_cast<CropOverlay*>(m_cropOverlay.data());
-    overlay->selection = QRectF(content.x() + (native.x() - m_cropSelectionGeometry.x()) * sx,
-                                content.y() + (native.y() - m_cropSelectionGeometry.y()) * sy,
-                                native.width() * sx, native.height() * sy);
-    overlay->setGeometry(rect());
-    overlay->show();
-    overlay->raise();
-    overlay->update();
+    const QPointF topLeft(content.x() + (native.x() - m_cropSelectionGeometry.x()) * sx,
+                          content.y() + (native.y() - m_cropSelectionGeometry.y()) * sy);
+    snowCanvasPaintSelectionMarquee(painter,
+                                    QRectF(m_canvas->mapFrom(this, topLeft),
+                                           QSizeF(native.width() * sx, native.height() * sy)));
 }
 
 void ScreenshotPinnedWindow::endCropSelection(bool cancel, const QPoint& menuPosition) {
@@ -160,7 +138,8 @@ void ScreenshotPinnedWindow::endCropSelection(bool cancel, const QPoint& menuPos
     qApp->removeEventFilter(this);
     if (QWidget::mouseGrabber() == this)
         releaseMouse();
-    updateCropOverlay();
+    if (m_canvas)
+        m_canvas->update();
     if (cancel || !cropSelectionAllowed())
         return;
     if (selection.width() < 10 || selection.height() < 10) {
