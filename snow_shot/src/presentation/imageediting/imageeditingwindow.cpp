@@ -94,7 +94,7 @@ ScreenshotToolPalette::Options editorOptions() {
     auto options = screenshotDrawingToolbarOptions();
     options.moveToolPresentation = ScreenshotToolPalette::MoveToolPresentation::Pan;
     options.showCropTools = true;
-    options.actions = ScreenshotToolPalette::CopyAction;
+    options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::PinAction;
     options.copyButtonWithNeutralIcon = false;
     options.separatorBeforeConfirm = false;
     options.showDrawingModeShortcutOnConfirm = false;
@@ -160,7 +160,7 @@ struct ImageEditingWindow::Impl {
           shortcuts(&q), autoFilter(new ScreenshotAutoFilterController(
                              [this] { return document.bounds(); },
                              [this](auto done) { done(document.image()); }, &q)),
-          exporter(services.printing, &q) {
+          exporter(services.printing, &q, services.pin) {
         surface->setObjectName(QStringLiteral("imageEditingPreview"));
         surface->installEventFilter(&q);
         canvas->installEventFilter(&q);
@@ -330,6 +330,8 @@ struct ImageEditingWindow::Impl {
         bindRecognition();
         QObject::connect(palette, &ScreenshotToolPalette::copyRequested, &q,
                          [this] { exportContent(ExportOperation::Copy); });
+        QObject::connect(palette, &ScreenshotToolPalette::pinRequested, &q,
+                         [this] { exportContent(ExportOperation::Pin); });
         QObject::connect(palette, &ScreenshotToolPalette::saveRequested, &q,
                          [this] { exportContent(ExportOperation::Save); });
         QObject::connect(palette, &ScreenshotToolPalette::quickSaveRequested, &q,
@@ -368,7 +370,8 @@ struct ImageEditingWindow::Impl {
                         QStringLiteral("text_recognition"), QStringLiteral("text_translation"),
                         QStringLiteral("copy_to_clipboard"), QStringLiteral("save_as_file"),
                         QStringLiteral("quick_save"), QStringLiteral("print"),
-                        QStringLiteral("upload_to_cloud"), QStringLiteral("move_tool")}
+                        QStringLiteral("upload_to_cloud"), QStringLiteral("move_tool"),
+                        QStringLiteral("pin_to_screen")}
                          .contains(it.key()))
                     continue;
                 WindowShortcutManager::Binding binding;
@@ -1005,7 +1008,8 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
         return;
     if (!q.preparePendingEdits())
         return;
-    const QPointer<Session> recognition = session && session->active() ? session : nullptr;
+    const QPointer<Session> recognition =
+        operation != ExportOperation::Pin && session && session->active() ? session : nullptr;
     const QByteArray checkpoint =
         recognition ? recognitionCheckpoint(recognition) : document.checkpoint();
     const QString contentKey = recognition ? recognition->activeContentKey() : QString{};

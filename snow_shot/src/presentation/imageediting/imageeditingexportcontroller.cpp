@@ -94,6 +94,7 @@ ScreenshotExportTaskResult saveText(const QByteArray& bytes, const QString& path
 struct ImageEditingExportController::Impl {
     ImageEditingExportController& q;
     ScreenshotPrintService* printing;
+    Pin pin;
     QPointer<Request> active;
 
     void finish(QPointer<Request> request, bool success, QString error = {}) {
@@ -275,6 +276,38 @@ struct ImageEditingExportController::Impl {
             finish(request, result.succeeded(), result.error);
         };
         switch (operation) {
+        case Operation::Pin: {
+            const QPointer<ImageEditingExportController> lifetime(&q);
+            if (!artifact->requestImage(request, [lifetime, request](auto result) {
+                    if (!lifetime || !request || lifetime->m_impl->active != request)
+                        return;
+                    [[maybe_unused]] const auto rendering = request->artifact;
+                    if (!result.succeeded()) {
+                        lifetime->m_impl->finish(request, false, result.error);
+                        return;
+                    }
+                    const auto finish = [lifetime, request](bool success) {
+                        if (lifetime && request)
+                            lifetime->m_impl->finish(
+                                request, success,
+                                success ? QString{}
+                                        : QCoreApplication::translate(
+                                              "snow_shot::presentation::ImageEditingWindow",
+                                              "Export could not be started."));
+                    };
+                    // Keep the callback alive if a synchronous completion destroys the editor.
+                    const auto handler = lifetime->m_impl->pin;
+                    if (!handler || !handler(std::move(result.image), finish))
+                        finish(false);
+                })) {
+                if (lifetime)
+                    lifetime->m_impl->finish(
+                        request, false,
+                        QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
+                                                    "Export could not be started."));
+            }
+            break;
+        }
         case Operation::Copy:
             if (!artifact->requestClipboard(request, [this, request](auto result) {
                     if (!request || active != request)
@@ -376,8 +409,8 @@ struct ImageEditingExportController::Impl {
 };
 
 ImageEditingExportController::ImageEditingExportController(ScreenshotPrintService* printing,
-                                                           QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this, printing)) {}
+                                                           QObject* parent, Pin pin)
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, printing, std::move(pin))) {}
 ImageEditingExportController::~ImageEditingExportController() {
     cancel();
 }

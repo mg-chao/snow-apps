@@ -192,7 +192,8 @@ int main(int argc, char* argv[]) {
         return runScreenshotControllerLifetimeTests(argc, argv);
     }
     if (argc == 2 && (QString::fromLocal8Bit(argv[1]) == u"--clipboard-pin-tests" ||
-                      QString::fromLocal8Bit(argv[1]) == u"--automatic-selection-tests")) {
+                      QString::fromLocal8Bit(argv[1]) == u"--automatic-selection-tests" ||
+                      QString::fromLocal8Bit(argv[1]) == u"--image-editor-pin-tests")) {
         return runScreenshotControllerClipboardTests(argc, argv);
     }
 #endif

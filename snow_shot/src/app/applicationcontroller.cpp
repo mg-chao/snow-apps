@@ -2020,6 +2020,12 @@ class ApplicationController::Impl {
         if (!imageEditingWindowCoordinator) {
             presentation::ImageEditingServices services;
             services.pins = &groupManager;
+            services.pin = [this](QImage image, auto completion) {
+                ScreenshotClipboardContent content;
+                content.image = std::move(image);
+                return ensureScreenshotController()->mcpPinContent(std::move(content),
+                                                                   std::move(completion));
+            };
             services.providers = [this] {
                 return ScreenshotPinnedRecognitionProviders{
                     ocrRecognition.get(), ensureScreenshotController()->mcpQrRecognition(),

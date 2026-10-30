@@ -9,6 +9,9 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/collagewindow.h"
 #include "snow_shot/presentation/imagesplitwindow.h"
+#include "snow_shot/presentation/imageeditingwindow.h"
+#include "snow_shot/presentation/screenshottoolpalette.h"
+#include "widgets/modal.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -359,6 +362,47 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+    if (application.arguments().contains(QStringLiteral("--image-editor-pin-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        ScreenshotController controller;
+        snow_shot::presentation::ImageEditingServices services;
+        services.pin = [&controller](QImage image, auto completion) {
+            ScreenshotClipboardContent content;
+            content.image = std::move(image);
+            return controller.mcpPinContent(std::move(content), std::move(completion));
+        };
+        snow_shot::presentation::ImageEditingWindow editor(std::move(services));
+        snow_shot::presentation::ImageEditingSource source;
+        source.image = fixture();
+        source.canvasRect = QRectF(QPointF(), QSizeF(source.image.size()));
+        editor.present(source);
+        require(editor.document()->crop(
+                    snow_shot::presentation::ImageEditingDocument::CropAxis::Rows, 4, 12),
+                "editor controller fixture contains a cropped image");
+        const auto expected = editor.document()->image();
+        int exports = 0;
+        QObject::connect(&editor, &snow_shot::presentation::ImageEditingWindow::exportFinished,
+                         &editor, [&](bool success) {
+                             require(success, "editor image pins through the controller");
+                             ++exports;
+                         });
+        editor.palette()->pinRequested();
+        waitUntil([&] { return exports == 1 && visiblePins().size() == 1; },
+                  "edited image creates its own pinned window");
+        const auto first = visiblePins().first()->persistenceSnapshot();
+        require(first.image == expected && editor.modal()->isOpen() && !editor.dirty() &&
+                    source.image == fixture(),
+                "controller pins edited pixels without closing the editor or changing its source");
+        editor.palette()->pinRequested();
+        waitUntil([&] { return exports == 2 && visiblePins().size() == 2; },
+                  "a second editor activation creates a separate pin");
+        require(visiblePins()[0]->persistenceSnapshot().id !=
+                    visiblePins()[1]->persistenceSnapshot().id,
+                "successive editor pins have independent persistent identities");
+        editor.shutdown();
+        closePins();
+        return EXIT_SUCCESS;
+    }
     if (application.arguments().contains(QStringLiteral("--automatic-selection-tests"))) {
         canvas_automatic_selection_test::exercise([](auto verify) {
             ScreenshotController controller;

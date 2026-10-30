@@ -5108,6 +5108,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/imageediting_source_tests.cpp
         tests/imageediting_smart_erase_tests.cpp
         tests/imageediting_save_tests.cpp
+        tests/imageediting_pin_tests.cpp
         src/presentation/capture/screenshotscrollingpipeline.cpp
         src/presentation/services/screenshotexportscrollingsource.cpp
         src/presentation/services/screenshotmanualsave.cpp
@@ -5272,7 +5273,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     foreach(_snow_editor_regression IN ITEMS
-        close source smart-erase save canvas document translation branch history conversion-availability
+        close source smart-erase save pin canvas document translation branch history conversion-availability
         automatic-selection)
         set(_snow_editor_regression_test
             "snow-shot-image-editing-${_snow_editor_regression}-tests")
@@ -11356,6 +11357,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-controller-clipboard-tests
         COMMAND snow_shot --clipboard-pin-tests)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-image-editing-pin-controller-tests
+        COMMAND snow_shot --image-editor-pin-tests)
+    set_tests_properties(snow-shot-image-editing-pin-controller-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-copy-after-pinning-tests

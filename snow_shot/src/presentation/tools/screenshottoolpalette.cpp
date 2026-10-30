@@ -5186,7 +5186,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         toolbar_settings::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     const bool alreadyActive =
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
-        : requestedButton != nullptr ? m_activeToolButton == requestedButton
+        : requestedButton != nullptr             ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
     activateDrawingTool(requestedTool);
@@ -6079,7 +6079,19 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     };
     bool hasActionPositions = false;
     bool actionSeparatorPending = false;
-    for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
+    auto actionPositions = m_actionToolsLayout.positions;
+    if (m_pinButton && m_options.actionToolsLayoutKind ==
+                           snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
+        // Image Editing shares the pinned layout, but adds its own fixed pin action.
+        const auto recognition = std::find_if(
+            actionPositions.cbegin(), actionPositions.cend(), [](const auto& position) {
+                return position.contains(QStringLiteral("text-recognition"));
+            });
+        actionPositions.insert(recognition == actionPositions.cend() ? actionPositions.cbegin()
+                                                                     : recognition,
+                               QStringList{QStringLiteral("pin-to-screen")});
+    }
+    for (const QStringList& position : std::as_const(actionPositions)) {
         if (std::any_of(position.cbegin(), position.cend(), toolbar_layout::isSeparator)) {
             actionSeparatorPending = true;
             continue;
