@@ -95,6 +95,7 @@ ArrowheadTriangleStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef AutoScroll(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef AutoScrollInterval(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Blur(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef BracketAnnotation(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef
 BrushPressureSensitive(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef BrushRegular(const adqt::icons::IconColors& colors = {});
@@ -243,6 +244,7 @@ SequenceNumberSolidSquare(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SourceRegionOutline(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef TableRecognition(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef TextRecognition(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef TextType(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolArrow(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolEraser(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ToolFilter(const adqt::icons::IconColors& colors = {});

@@ -28,22 +28,6 @@ namespace {
 constexpr qreal kSelectionEdgeTolerance = 8.0;
 constexpr qreal kEqualWidthHeightAspectRatio = 1.0;
 
-bool wheelAdjustsStrokeWidth(ScreenshotActiveTool tool) {
-    switch (tool) {
-    case ScreenshotActiveTool::SpeechBubble:
-    case ScreenshotActiveTool::Shape:
-    case ScreenshotActiveTool::Distance:
-    case ScreenshotActiveTool::Arrow:
-    case ScreenshotActiveTool::Line:
-    case ScreenshotActiveTool::FreeDraw:
-    case ScreenshotActiveTool::RectangleHighlight:
-    case ScreenshotActiveTool::PenHighlight:
-        return true;
-    default:
-        return false;
-    }
-}
-
 bool recognitionTool(ScreenshotActiveTool tool) {
     return isScreenshotRecognitionTool(tool);
 }
@@ -937,7 +921,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
         return canvas->adjustMagnifierFromWheel(event);
     const int deltaY =
         !event.pixelDelta().isNull() ? event.pixelDelta().y() : event.angleDelta().y();
-    if (deltaY != 0 && wheelAdjustsStrokeWidth(m_context.interaction.activeTool())) {
+    if (deltaY != 0 &&
+        snow_shot::presentation::strokeWidthWheelTarget(m_context.interaction.activeTool())) {
         return m_context.actions.stepStrokeWidth(deltaY > 0 ? 1 : -1);
     }
     if (m_context.interaction.activeTool() == ScreenshotActiveTool::Select && deltaY != 0) {

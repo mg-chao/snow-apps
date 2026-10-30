@@ -1752,6 +1752,8 @@ QVector<SettingsOptionDefinition> drawingSelectableToolOptions() {
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Distance annotation"))},
         {QStringLiteral("angle"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Angle annotation"))},
+        {QStringLiteral("bracket"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Bracket annotation"))},
         {QStringLiteral("free-draw"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pen"))},
         {QStringLiteral("rectangle-highlight"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Rectangle highlight"))},
@@ -1972,6 +1974,17 @@ SettingsItemDefinition pinShowWindowButtonsItem() {
             "Show the annotation and close buttons in the upper-right corner of pinned windows"),
         QStringLiteral("pin_to_screen/show_window_buttons"),
         SettingsSwitchBinding::PinShowWindowButtons);
+}
+
+SettingsItemDefinition pinShakeWindowToHideOthersItem() {
+    return switchItem(
+        QStringLiteral("pin-to-screen.shake-window-to-hide-others"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Shake a window to hide other windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Rapidly drag a pinned window back and forth to hide other pinned "
+                          "windows in the current group."),
+        QStringLiteral("pin_to_screen/shake_window_to_hide_others"),
+        SettingsSwitchBinding::PinShakeWindowToHideOthers);
 }
 
 SettingsItemDefinition pinExitAnnotationModeBeforeClosingItem() {
@@ -2664,6 +2677,9 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("distance"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Distance annotation"),
                           []() { return custom_outlined_icons::DistanceAnnotation(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("bracket"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Bracket annotation"),
+                          []() { return custom_outlined_icons::BracketAnnotation(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("angle"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Angle annotation"),
                           []() { return custom_outlined_icons::AngleAnnotation(); }),
@@ -2865,6 +2881,14 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
                           QStringLiteral("reset_transform"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Reset transform"),
                           []() { return outlined_icons::Reload(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_select_all"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Select All"),
+                          []() { return outlined_icons::Appstore(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_save_as_file"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Save as File"),
+                          []() { return custom_outlined_icons::Save(); }),
     };
 }
 
@@ -3433,6 +3457,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                      screenshotDoubleClickActionItem(),
                      screenshotMiddleClickActionItem(),
                      quickSelectionModificationItem(),
+                     switchItem(
+                         QStringLiteral("screenshot.copy-after-pinning-to-screen"),
+                         QT_TRANSLATE_NOOP("SettingsCatalog", "Copy after pinning to screen"),
+                         QT_TRANSLATE_NOOP(
+                             "SettingsCatalog",
+                             "Also copy the screenshot to the clipboard when pinning it to screen"),
+                         QStringLiteral("screenshot/copy_after_pinning_to_screen"),
+                         SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen),
                      screenshotShutterSoundNotificationItem(),
                      screenshotSoundNotificationItem(),
                      screenshotConfirmBeforeExitingViaShortcutItem(),
@@ -3576,9 +3608,10 @@ QVector<SettingsPageDefinition> builtInPages() {
                  SettingsSectionReset::PinToScreenBehavior,
                  {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
                   pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem(),
-                  pinDuplicateContentItem(), pinWheelOpacityStepItem(), pinWheelZoomStepItem(),
-                  pinShowWindowButtonsItem(), pinExitAnnotationModeBeforeClosingItem(),
-                  pinConfirmBeforeClosingWindowItem(), pinConfirmBeforeDestroyingWindowItem()},
+                  pinDuplicateContentItem(), pinShakeWindowToHideOthersItem(),
+                  pinWheelOpacityStepItem(), pinWheelZoomStepItem(), pinShowWindowButtonsItem(),
+                  pinExitAnnotationModeBeforeClosingItem(), pinConfirmBeforeClosingWindowItem(),
+                  pinConfirmBeforeDestroyingWindowItem()},
              },
              {
                  QStringLiteral("pin-to-screen"),
@@ -5241,6 +5274,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
                         expectedKey = QStringLiteral("screenshot/copy_image_file_to_clipboard");
                         break;
+                    case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
+                        expectedKey = QStringLiteral("screenshot/copy_after_pinning_to_screen");
+                        break;
                     case SettingsSwitchBinding::ScreenshotShowSaveResult:
                         expectedKey = QStringLiteral("screenshot/show_save_result");
                         break;
@@ -5263,6 +5299,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinShowWindowButtons:
                         expectedKey = QStringLiteral("pin_to_screen/show_window_buttons");
+                        break;
+                    case SettingsSwitchBinding::PinShakeWindowToHideOthers:
+                        expectedKey = QStringLiteral("pin_to_screen/shake_window_to_hide_others");
                         break;
                     case SettingsSwitchBinding::PinShowBorderByDefault:
                         expectedKey = QStringLiteral("pin_to_screen/show_border_by_default");

@@ -47,8 +47,11 @@ bool validMagnifierStyle(const SnowCanvasMagnifierStyle& style);
 SnowCanvasMagnifierStyle toCanvasMagnifierStyle(const SnowMagnifierStyle& style);
 SnowMagnifierStyle toEngineMagnifierStyle(const SnowCanvasMagnifierStyle& style);
 bool validAngleStyle(const SnowCanvasAngleStyle& style);
+bool validBracketStyle(const SnowCanvasBracketStyle& style);
 SnowCanvasAngleStyle toCanvasAngleStyle(const SnowAngleStyle& style);
+SnowCanvasBracketStyle toCanvasBracketStyle(const SnowBracketStyle& style);
 SnowAngleStyle toEngineAngleStyle(const SnowCanvasAngleStyle& style);
+SnowBracketStyle toEngineBracketStyle(const SnowCanvasBracketStyle& style);
 SnowCanvasDistanceStyle toCanvasDistanceStyle(const SnowDistanceStyle& style);
 SnowDistanceStyle toEngineDistanceStyle(const SnowCanvasDistanceStyle& style);
 

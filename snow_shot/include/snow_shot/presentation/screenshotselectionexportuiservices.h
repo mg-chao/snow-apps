@@ -152,6 +152,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void configureVisibility(ScreenshotPinnedWindow::Config* config);
     bool persistHiddenWindow(const snow_shot::storage::PinnedWindowRecord& record);
     bool hideRecords(const QVector<QString>& ids);
+    [[nodiscard]] ScreenshotPinnedWindow::HideOtherWindowsResult
+    hideOtherWindowsWithResult(const QString& exceptId);
     void cancelRestore(const QString& id);
     [[nodiscard]] ScreenshotPinnedWindow* liveWindow(const QString& id) const;
     [[nodiscard]] QString

@@ -418,7 +418,8 @@ fn line_bounds(a: Point<f64>, b: Point<f64>) -> DrawRect {
     DrawRect::new(a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y))
 }
 
-fn cubic_bounds(p0: Point<f64>, p1: Point<f64>, p2: Point<f64>, p3: Point<f64>) -> DrawRect {
+/// Tight axis-aligned bounds, including all interior derivative extrema.
+pub fn cubic_bounds(p0: Point<f64>, p1: Point<f64>, p2: Point<f64>, p3: Point<f64>) -> DrawRect {
     let mut min_x = p0.x.min(p3.x);
     let mut min_y = p0.y.min(p3.y);
     let mut max_x = p0.x.max(p3.x);
@@ -436,26 +437,22 @@ fn cubic_bounds(p0: Point<f64>, p1: Point<f64>, p2: Point<f64>, p3: Point<f64>) 
     DrawRect::new(min_x, min_y, max_x, max_y)
 }
 
-fn cubic_extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> Vec<f64> {
+fn cubic_extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     let a = -p0 + 3.0 * p1 - 3.0 * p2 + p3;
     let b = 2.0 * (p0 - 2.0 * p1 + p2);
     let c = p1 - p0;
-    if a.abs() <= 1e-12 {
-        if b.abs() <= 1e-12 {
-            return Vec::new();
+    let roots = if a.abs() <= 1e-12 {
+        [if b.abs() <= 1e-12 { None } else { Some(-c / b) }, None]
+    } else {
+        let discriminant = b * b - 4.0 * a * c;
+        if discriminant < 0.0 {
+            [None, None]
+        } else {
+            let root = discriminant.sqrt();
+            [Some((-b + root) / (2.0 * a)), Some((-b - root) / (2.0 * a))]
         }
-        let t = -c / b;
-        return (t > 0.0 && t < 1.0).then_some(t).into_iter().collect();
-    }
-    let discriminant = b * b - 4.0 * a * c;
-    if discriminant < 0.0 {
-        return Vec::new();
-    }
-    let root = discriminant.sqrt();
-    [(-b + root) / (2.0 * a), (-b - root) / (2.0 * a)]
-        .into_iter()
-        .filter(|t| *t > 0.0 && *t < 1.0)
-        .collect()
+    };
+    roots.into_iter().flatten().filter(|t| *t > 0.0 && *t < 1.0)
 }
 
 fn cubic_value(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {

@@ -503,6 +503,10 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>Distance annotation</translation>
         </message>
@@ -1276,6 +1280,10 @@
             <translation>Allow resizing the selection from its borders while non-move tools are active</translation>
         </message>
         <message>
+            <source>Also copy the screenshot to the clipboard when pinning it to screen</source>
+            <translation>Also copy the screenshot to the clipboard when pinning it to screen</translation>
+        </message>
+        <message>
             <source>Always</source>
             <translation>Always</translation>
         </message>
@@ -1500,6 +1508,14 @@
             <translation>Barcode recognition</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>Batch Actions: Save as File</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>Batch Actions: Select All</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>Blur</translation>
         </message>
@@ -1522,6 +1538,10 @@
         <message>
             <source>Bottom right</source>
             <translation>Bottom right</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
         </message>
         <message>
             <source>Browse</source>
@@ -1942,6 +1962,10 @@
         <message>
             <source>Copy Translation Results as an Image</source>
             <translation>Copy Translation Results as an Image</translation>
+        </message>
+        <message>
+            <source>Copy after pinning to screen</source>
+            <translation>Copy after pinning to screen</translation>
         </message>
         <message>
             <source>Copy after text recognition</source>
@@ -3424,6 +3448,10 @@
             <translation>Quick selection</translation>
         </message>
         <message>
+            <source>Rapidly drag a pinned window back and forth to hide other pinned windows in the current group.</source>
+            <translation>Rapidly drag a pinned window back and forth to hide other pinned windows in the current group.</translation>
+        </message>
+        <message>
             <source>Real-time</source>
             <translation>Real-time</translation>
         </message>
@@ -4018,6 +4046,10 @@
         <message>
             <source>Shake Window</source>
             <translation>Shake Window</translation>
+        </message>
+        <message>
+            <source>Shake a window to hide other windows</source>
+            <translation>Shake a window to hide other windows</translation>
         </message>
         <message>
             <source>Shape tool</source>

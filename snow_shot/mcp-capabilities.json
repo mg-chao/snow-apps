@@ -226,7 +226,9 @@
         "DefaultMagnifier",
         "SelectedMagnifier",
         "DefaultSpeechBubble",
-        "SelectedSpeechBubble"
+        "SelectedSpeechBubble",
+        "DefaultBracket",
+        "SelectedBracket"
       ]
     },
     "canvas_tools": {
@@ -236,6 +238,7 @@
         "Shape": "Rectangle",
         "Arrow": "Arrow",
         "Angle": "Angle",
+        "Bracket": "Bracket",
         "Distance": "Distance",
         "Line": "Line",
         "FreeDraw": "Freehand",

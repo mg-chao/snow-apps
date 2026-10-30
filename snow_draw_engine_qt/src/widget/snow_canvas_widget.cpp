@@ -85,6 +85,7 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     case SnowCanvasTool::SpeechBubble:
     case SnowCanvasTool::Arrow:
     case SnowCanvasTool::Distance:
+    case SnowCanvasTool::Bracket:
     case SnowCanvasTool::Angle:
     case SnowCanvasTool::Magnifier:
     case SnowCanvasTool::Line:
@@ -435,6 +436,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style, quint32 properties);
     bool setCanvasAngleStyle(const SnowCanvasAngleStyle& style, quint32 properties);
+    bool setCanvasBracketStyle(const SnowCanvasBracketStyle& style, quint32 properties);
     bool setCanvasMagnifierStyle(const SnowCanvasMagnifierStyle& style, quint32 properties,
                                  bool creationDefaults);
     bool adjustAngleValue(double deltaRadians);
@@ -748,10 +750,12 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
     }
     const auto tool = canvasTool();
     const bool geometryTool = tool == SnowCanvasTool::Select || tool == SnowCanvasTool::Arrow ||
-                              tool == SnowCanvasTool::Distance || tool == SnowCanvasTool::Angle ||
-                              tool == SnowCanvasTool::Shape || tool == SnowCanvasTool::SpeechBubble;
+                              tool == SnowCanvasTool::Distance || tool == SnowCanvasTool::Bracket ||
+                              tool == SnowCanvasTool::Angle || tool == SnowCanvasTool::Shape ||
+                              tool == SnowCanvasTool::SpeechBubble;
     if (!state.active &&
-        (!geometryTool || (tool != SnowCanvasTool::Distance && tool != SnowCanvasTool::Angle &&
+        (!geometryTool || (tool != SnowCanvasTool::Distance && tool != SnowCanvasTool::Bracket &&
+                           tool != SnowCanvasTool::Angle &&
                            snow_runtime_arrow_text_count(runtimeBinding.engine()) == 0 &&
                            snow_runtime_speech_bubble_text_count(runtimeBinding.engine()) == 0))) {
         return true;
@@ -1137,13 +1141,27 @@ SnowCanvasAngleStyle SnowCanvasWidget::canvasAngleStyle() const {
     return canvasStyleToolbarState().angleStyle;
 }
 
+SnowCanvasBracketStyle SnowCanvasWidget::canvasBracketStyle() const {
+    return canvasStyleToolbarState().bracketStyle;
+}
+
 bool SnowCanvasWidget::setCanvasAngleStyle(const SnowCanvasAngleStyle& style, quint32 properties) {
     return m_impl->setCanvasAngleStyle(style, properties);
+}
+
+bool SnowCanvasWidget::setCanvasBracketStyle(const SnowCanvasBracketStyle& style,
+                                             quint32 properties) {
+    return m_impl->setCanvasBracketStyle(style, properties);
 }
 
 bool SnowCanvasWidget::setCanvasAngleStylePatch(const SnowCanvasAngleStyle& style,
                                                 quint32 properties) {
     return setCanvasAngleStyle(style, properties);
+}
+
+bool SnowCanvasWidget::setCanvasBracketStylePatch(const SnowCanvasBracketStyle& style,
+                                                  quint32 properties) {
+    return setCanvasBracketStyle(style, properties);
 }
 
 bool SnowCanvasWidget::Impl::setCanvasAngleStyle(const SnowCanvasAngleStyle& style,
@@ -1154,6 +1172,17 @@ bool SnowCanvasWidget::Impl::setCanvasAngleStyle(const SnowCanvasAngleStyle& sty
         return snow_canvas_commands::setAngleStylePatch(
             runtimeBinding.engine(), runtimeBinding.viewportHandle(),
             snow_canvas_types::toEngineAngleStyle(style), properties);
+    });
+}
+
+bool SnowCanvasWidget::Impl::setCanvasBracketStyle(const SnowCanvasBracketStyle& style,
+                                                   quint32 properties) {
+    if (!snow_canvas_types::validBracketStyle(style))
+        return false;
+    return applyMutation([&]() {
+        return snow_canvas_commands::setBracketStylePatch(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+            snow_canvas_types::toEngineBracketStyle(style), properties);
     });
 }
 
@@ -4086,6 +4115,13 @@ bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
                 if ((patch.target == SnowCanvasStyleEditTarget::Selection) != editsSelection)
                     return false;
                 return widget.setCanvasAngleStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasBracketStyleEdit>) {
+                const bool editsSelection = canvasStyleToolbarState().source ==
+                                            SnowCanvasStyleToolbarSource::SelectedBracket;
+                // A delayed editor patch must still target the same kind of style.
+                if ((patch.target == SnowCanvasStyleEditTarget::Selection) != editsSelection)
+                    return false;
+                return widget.setCanvasBracketStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasMagnifierEdit>) {
                 if (patch.target == SnowCanvasStyleEditTarget::Selection &&
                     canvasStyleToolbarState().source !=

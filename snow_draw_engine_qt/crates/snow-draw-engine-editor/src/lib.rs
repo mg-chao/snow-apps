@@ -13,6 +13,8 @@ pub use shape_text::ShapeBoundTextPreview;
 mod magnifier;
 pub use magnifier::*;
 mod angle;
+mod bracket;
+pub use bracket::*;
 mod defaults;
 pub use angle::*;
 mod distance;

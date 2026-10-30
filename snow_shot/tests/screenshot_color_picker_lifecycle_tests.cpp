@@ -10,6 +10,7 @@
 #endif
 #include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
+#include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotoverlayuihost.h"
@@ -30,6 +31,7 @@
 #include "widgets/tooltip.h"
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
+#include "widgets/modal.h"
 #include "widgets/popup_interaction_host.h"
 #include "widgets/detail/overlay_popup_surface.h"
 
@@ -53,6 +55,7 @@
 #include <QWindow>
 #include <QTimerEvent>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -2100,6 +2103,78 @@ void canvasSamplerFollowsSessionOwner() {
     }
 }
 
+void exitConfirmationStacksAbovePicker() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary exit confirmation storage available");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "initialize isolated exit confirmation storage");
+    {
+        QWidget owner(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint);
+        owner.setGeometry(50, 50, 640, 480);
+        owner.show();
+        ScreenshotColorPickerWindow picker;
+        picker.setOwnerWindow(&owner);
+        QImage image(owner.size(), QImage::Format_RGB32);
+        image.fill(Qt::red);
+        picker.setCaptureImage(image, image.rect());
+
+        snow_shot::presentation::WindowShortcutManager shortcuts;
+        shortcuts.addScopeWindow(&owner);
+        int exits = 0;
+        int restores = 0;
+        snow_shot::presentation::ScreenshotShortcutExitConfirmation confirmation(
+            shortcuts, [&] { ++exits; },
+            [&](QWidget* restoredOwner) {
+                require(restoredOwner == &owner, "cancel must restore the screenshot owner");
+                ++restores;
+            });
+        for (int cycle = 0; cycle != 3; ++cycle) {
+            picker.updatePicker(QPoint(240, 160), QPointF(240, 160), true);
+            require(picker.isVisible(), "the magnifier must be visible before confirmation");
+            require(confirmation.request(true, &owner), "open exit confirmation over magnifier");
+            auto* modal = owner.findChild<adqt::widgets::AdModal*>(
+                QStringLiteral("screenshotShortcutExitConfirmation"));
+            require(modal && modal->isOpen(), "exit confirmation must open");
+            QWidget* surface = modal->acceptButton()->window();
+            require(surface != &owner && surface->isWindow() && surface->isVisible() &&
+                        surface->windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                        surface->windowHandle()->transientParent() == owner.windowHandle(),
+                    "confirmation must join the screenshot owner's topmost native window stack");
+            require(modal->windowModality() == Qt::WindowModal,
+                    "confirmation must block the screenshot owner while open");
+            picker.updatePicker(QPoint(241, 161), QPointF(241, 161), true);
+            QCoreApplication::processEvents();
+#ifdef Q_OS_WIN
+            if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+                const HWND dialog = reinterpret_cast<HWND>(surface->internalWinId());
+                const HWND magnifier = reinterpret_cast<HWND>(picker.internalWinId());
+                bool dialogAboveMagnifier = false;
+                for (HWND window = GetTopWindow(nullptr); window;
+                     window = GetWindow(window, GW_HWNDNEXT)) {
+                    if (window == dialog) {
+                        dialogAboveMagnifier = true;
+                        break;
+                    }
+                    if (window == magnifier)
+                        break;
+                }
+                require(dialogAboveMagnifier,
+                        "exit confirmation must remain above the visible magnifier after updates");
+            }
+#endif
+            if (cycle == 2)
+                modal->acceptButton()->click();
+            else
+                modal->rejectButton()->click();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(exits == (cycle == 2 ? 1 : 0) && restores == std::min(cycle + 1, 2),
+                    "reopening confirmation must preserve cancel and exit behavior");
+        }
+    }
+    storage.shutdown();
+}
+
 void auxiliaryWindowsPreserveOwnerStacking() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary stacking-test storage available");
@@ -2317,6 +2392,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--exit-confirmation-stacking-only"))) {
+        exitConfirmationStacksAbovePicker();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--hidden-picker-only"))) {
         hiddenPickerSamplesWithoutPreparingPresentation();
         return 0;

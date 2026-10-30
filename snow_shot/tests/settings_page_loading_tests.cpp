@@ -24,6 +24,7 @@
 #include "widgets/checkbox.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
 
@@ -1881,6 +1882,31 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--pinned-shake-only"))) {
+        using Binding = settings::SettingsSwitchBinding;
+        using Reset = settings::SettingsSectionReset;
+        const snow_shot::storage::PinToScreenSettings preferences;
+        require(preferences.shakeWindowToHideOthers() &&
+                    backend.switchValue(Binding::PinShakeWindowToHideOthers),
+                "shake-to-hide must default on in the typed adapter and backend");
+        require(backend.applySwitchValue(Binding::PinShakeWindowToHideOthers, false) &&
+                    !preferences.shakeWindowToHideOthers() &&
+                    !backend.switchValue(Binding::PinShakeWindowToHideOthers),
+                "shake switch must update the stored preference immediately");
+        require(storage.flushNow().success, "persist disabled shake preference");
+        const snow_shot::storage::ConfigurationStore reloaded(
+            QDir(storage.configurationDirectory()).filePath(QStringLiteral("config.json")), true,
+            false);
+        require(!reloaded.value(QStringLiteral("pin_to_screen/shake_window_to_hide_others"))
+                     .toBool(true),
+                "disabled shake preference must survive a configuration reload");
+        require(backend.resetSection(Reset::PinToScreen) && !preferences.shakeWindowToHideOthers(),
+                "appearance reset must preserve the shake preference");
+        require(session.reset(Reset::PinToScreenBehavior) && preferences.shakeWindowToHideOthers(),
+                "interaction reset must enable shaking again");
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--variable-help-only"))) {
         variableDescriptionLinks(registry, session);
         storage.shutdown();

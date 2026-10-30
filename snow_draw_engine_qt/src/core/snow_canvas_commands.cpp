@@ -356,6 +356,17 @@ MutationResult setAngleStylePatch(SnowRuntime runtime, SnowViewport viewport,
     return result;
 }
 
+MutationResult setBracketStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                    const SnowBracketStyle& style, std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_bracket_style_patch_ex(runtime, viewport, &style, properties,
+                                                 result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult adjustAngleValue(SnowRuntime runtime, SnowViewport viewport, double deltaRadians) {
     MutationResult result;
     if (!hasViewport(runtime, viewport) || !std::isfinite(deltaRadians))

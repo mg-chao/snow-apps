@@ -8770,6 +8770,44 @@ void overlayMagnifierWheelPreservesCreationStyle() {
             "selected overlay wheel edits must update the future magnifier factor");
 }
 
+void overlayBracketWheel() {
+    ScreenshotCaptureState capture;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotDisplaySession displays;
+    interaction.enterOverlayVisible(true);
+    selection.setSelectionRect(QRectF(0, 0, 400, 300));
+    interaction.confirmSelection();
+    interaction.setCanvasTool(ScreenshotActiveTool::Bracket);
+    QList<int> widthSteps;
+    ScreenshotOverlayInputActions actions;
+    actions.stepStrokeWidth = [&](int direction) {
+        widthSteps.append(direction);
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    const auto wheel = [&](QPoint pixels, QPoint angle) {
+        QWheelEvent event({200, 150}, {200, 150}, pixels, angle, Qt::NoButton, Qt::NoModifier,
+                          Qt::ScrollUpdate, false);
+        return handler.handleWheel(nullptr, event);
+    };
+    require(wheel({}, {0, 120}) && widthSteps == QList<int>{1},
+            "screenshot overlay routes bracket wheel to stroke width");
+    require(wheel({0, -1}, {0, 120}) && widthSteps == QList<int>{1, -1},
+            "screenshot bracket wheel uses the precise delta direction");
+    require(!wheel({}, {}) && widthSteps.size() == 2,
+            "zero bracket wheel input does not dispatch a style change");
+    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+    require(wheel({}, {0, 120}) && widthSteps == QList<int>{1, -1, 1},
+            "shared stroke-width routing preserves existing drawing tools");
+    interaction.setCanvasTool(ScreenshotActiveTool::Text);
+    require(!wheel({}, {0, 120}) && widthSteps.size() == 3,
+            "font wheels remain owned by the canvas text handler");
+}
+
 void overlayAngleWheel() {
     ScreenshotCaptureState capture;
     ScreenshotInteractionState interaction;
@@ -10208,6 +10246,10 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
         overlayAngleWheel();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--bracket-wheel-only"))) {
+        overlayBracketWheel();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--region-input-only"))) {

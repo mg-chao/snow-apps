@@ -503,6 +503,10 @@
             <translation>箭头</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>括号标注</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>距离标注</translation>
         </message>
@@ -1225,7 +1229,7 @@
         </message>
         <message>
             <source>Add Edit with Snow Shot to the Windows context menu to pin a supported image or document file to the screen.</source>
-            <translation>将“使用 Snow Shot 编辑”添加到 Windows 右键菜单，以将支持的图像或文档文件贴到屏幕。</translation>
+            <translation>将“使用 Snow Shot 编辑”添加到 Windows 右键菜单，以将支持的图像或文档文件固定到屏幕。</translation>
         </message>
         <message>
             <source>Add a mask to highlight text recognition results</source>
@@ -1274,6 +1278,10 @@
         <message>
             <source>Allow resizing the selection from its borders while non-move tools are active</source>
             <translation>启用非移动工具时，允许从选区边缘调整选区大小</translation>
+        </message>
+        <message>
+            <source>Also copy the screenshot to the clipboard when pinning it to screen</source>
+            <translation>将截图固定到屏幕时，同时将截图复制到剪贴板</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1500,6 +1508,14 @@
             <translation>条码识别</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>批量操作：保存为文件</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>批量操作：全选</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>模糊</translation>
         </message>
@@ -1522,6 +1538,10 @@
         <message>
             <source>Bottom right</source>
             <translation>右下角</translation>
+        </message>
+        <message>
+            <source>Bracket annotation</source>
+            <translation>括号标注</translation>
         </message>
         <message>
             <source>Browse</source>
@@ -1697,11 +1717,11 @@
         </message>
         <message>
             <source>Choose the default font for newly pinned text</source>
-            <translation>选择新贴图文本的默认字体</translation>
+            <translation>为新固定到屏幕的文本选择默认字体</translation>
         </message>
         <message>
             <source>Choose the default font size for newly pinned text</source>
-            <translation>选择新贴图文本的默认字号</translation>
+            <translation>为新固定到屏幕的文本选择默认字号</translation>
         </message>
         <message>
             <source>Choose the dialog used for manual image saves</source>
@@ -1944,6 +1964,10 @@
             <translation>将翻译结果复制为图片</translation>
         </message>
         <message>
+            <source>Copy after pinning to screen</source>
+            <translation>固定到屏幕后复制</translation>
+        </message>
+        <message>
             <source>Copy after text recognition</source>
             <translation>文字识别后复制</translation>
         </message>
@@ -2157,7 +2181,7 @@
         </message>
         <message>
             <source>Defaults for newly pinned text; source formatting is preserved</source>
-            <translation>设置新贴图文本的默认样式，并保留源格式</translation>
+            <translation>为新固定到屏幕的文本设置默认样式，并保留源格式</translation>
         </message>
         <message>
             <source>Delay %1s to execute</source>
@@ -2393,7 +2417,7 @@
         </message>
         <message>
             <source>Exit annotation mode and keep the pinned window open when closing.</source>
-            <translation>关闭时退出标注模式，并保持贴图窗口打开。</translation>
+            <translation>关闭时退出标注模式，并保持固定到屏幕窗口打开。</translation>
         </message>
         <message>
             <source>Exit annotation mode before closing</source>
@@ -2853,7 +2877,7 @@
         </message>
         <message>
             <source>Limit the width of pinned text, including padding</source>
-            <translation>限制贴图文本的宽度，包括内边距</translation>
+            <translation>限制固定到屏幕的文本宽度，包括内边距</translation>
         </message>
         <message>
             <source>Line</source>
@@ -3245,7 +3269,7 @@
         </message>
         <message>
             <source>Pin images, supported files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>将剪贴板中的图像、支持的文件、格式化文本或 HTML 贴到屏幕</translation>
+            <translation>将剪贴板中的图像、支持的文件、格式化文本或 HTML 固定到屏幕</translation>
         </message>
         <message>
             <source>Pin screenshot to screen</source>
@@ -3253,11 +3277,11 @@
         </message>
         <message>
             <source>Pin selected image or document files from File Explorer or the desktop to the screen</source>
-            <translation>将文件资源管理器或桌面中选中的图像或文档文件贴到屏幕</translation>
+            <translation>将文件资源管理器或桌面中选中的图像或文档文件固定到屏幕</translation>
         </message>
         <message>
             <source>Pin selected image or document files from Finder or the desktop to the screen</source>
-            <translation>将访达或桌面中选中的图像或文档文件贴到屏幕</translation>
+            <translation>将访达或桌面中选中的图像或文档文件固定到屏幕</translation>
         </message>
         <message>
             <source>Pin selection</source>
@@ -3422,6 +3446,10 @@
         <message>
             <source>Quick selection</source>
             <translation>快速选择</translation>
+        </message>
+        <message>
+            <source>Rapidly drag a pinned window back and forth to hide other pinned windows in the current group.</source>
+            <translation>快速来回拖动固定到屏幕的窗口，以隐藏当前分组中的其他固定到屏幕的窗口。</translation>
         </message>
         <message>
             <source>Real-time</source>
@@ -4018,6 +4046,10 @@
         <message>
             <source>Shake Window</source>
             <translation>晃动窗口</translation>
+        </message>
+        <message>
+            <source>Shake a window to hide other windows</source>
+            <translation>摇动窗口以隐藏其他窗口</translation>
         </message>
         <message>
             <source>Shape tool</source>

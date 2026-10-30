@@ -351,6 +351,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
@@ -3568,6 +3569,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     screenshotOptions.showArrowTool = false;
     screenshotOptions.showDistanceTool = false;
     screenshotOptions.showAngleTool = false;
+    screenshotOptions.showBracketTool = false;
     screenshotOptions.enableStyleToolbar = false;
     ScreenshotToolPalette screenshotPalette(screenshotOptions);
     const QList<adqt::widgets::AdButton*> screenshotButtons = mainToolbarButtons(screenshotPalette);
@@ -3589,6 +3591,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     pinnedOptions.showArrowTool = false;
     pinnedOptions.showDistanceTool = false;
     pinnedOptions.showAngleTool = false;
+    pinnedOptions.showBracketTool = false;
     pinnedOptions.enableStyleToolbar = false;
     ScreenshotToolPalette pinnedPalette(pinnedOptions);
     const QList<adqt::widgets::AdButton*> pinnedButtons = mainToolbarButtons(pinnedPalette);
@@ -3882,6 +3885,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     options.showArrowTool = true;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
@@ -4037,6 +4041,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     options.showArrowTool = true;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showLineTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
@@ -4357,6 +4362,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
     actionOptions.showArrowTool = false;
     actionOptions.showDistanceTool = false;
     actionOptions.showAngleTool = false;
+    actionOptions.showBracketTool = false;
     actionOptions.showTableTool = true;
     actionOptions.showQrTool = true;
     actionOptions.enableStyleToolbar = false;
@@ -4616,6 +4622,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
@@ -5450,6 +5457,7 @@ void screenshotResultActionsFollowCustomLayout() {
         options.showDistanceTool = false;
     options.showSpeechBubbleTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showScreenRecordButton = true;
     options.enableStyleToolbar = false;
     options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
@@ -6296,6 +6304,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     arrowOptions.showArrowTool = true;
     arrowOptions.showDistanceTool = false;
     arrowOptions.showAngleTool = false;
+    arrowOptions.showBracketTool = false;
     arrowOptions.enableStyleToolbar = false;
     ScreenshotToolPalette arrowPalette(arrowOptions);
     const QList<adqt::widgets::AdButton*> arrowButtons = mainToolbarButtons(arrowPalette);
@@ -6311,6 +6320,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     lineOptions.showArrowTool = false;
     lineOptions.showDistanceTool = false;
     lineOptions.showAngleTool = false;
+    lineOptions.showBracketTool = false;
     lineOptions.showLineTool = true;
     lineOptions.enableStyleToolbar = false;
     ScreenshotToolPalette linePalette(lineOptions);
@@ -8812,6 +8822,7 @@ void lineToolIsDiscoverableSelectableAndUsesLinearStyleControls() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showLineTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -9032,6 +9043,7 @@ void freeDrawToolIsDistinctAndUsesIndependentPathStyleControls() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     ScreenshotToolPalette palette(options);
@@ -9078,6 +9090,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
@@ -9667,6 +9680,7 @@ void filterToolExposesTypeAndIntensityControls() {
     options.showArrowTool = false;
     options.showDistanceTool = false;
     options.showAngleTool = false;
+    options.showBracketTool = false;
     options.showFilterTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -12889,6 +12903,117 @@ void magnifierControlsRetranslateAndRenderPreviews() {
     }
 }
 
+void bracketSettingsAndIcons() {
+    using namespace snow_shot::presentation;
+    auto& theme = styles::ThemeManager::instance();
+    const auto originalTheme = theme.themeMode();
+    const auto restore = qScopeGuard([&] { theme.setThemeMode(originalTheme); });
+    ScreenshotToolPalette::Options bracketOptions;
+    bracketOptions.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{};
+    bracketOptions.toolbarLayout->positions = {{QStringLiteral("angle")},
+                                               {QStringLiteral("bracket")}};
+    for (const auto& descriptor : toolbar_layout::drawingEditorDescriptors()) {
+        const QString id = QLatin1String(descriptor.id);
+        if (id != QStringLiteral("angle") && id != QStringLiteral("bracket"))
+            bracketOptions.toolbarLayout->hidden.append(id);
+    }
+    ScreenshotToolPalette palette(bracketOptions);
+    palette.show();
+    int activations = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::bracketToolRequested,
+                     [&] { ++activations; });
+    require(palette.activateDrawingShortcut(QStringLiteral("bracket")) && activations == 1 &&
+                palette.activeTool() == ScreenshotToolPalette::Tool::Bracket,
+            "assignable bracket shortcut activates the toolbar tool");
+    QCoreApplication::processEvents();
+    require(palette.findChild<QWidget*>(QStringLiteral("screenshotBracketStyleControls")) &&
+                !palette.findChild<QWidget*>(QStringLiteral("screenshotBracketUnitButtonGroup")),
+            "bracket exposes only stroke color and width controls");
+    require(palette.creationStyleDefaults().bracket.stroke == QColor("#f5222d") &&
+                palette.creationStyleDefaults().bracket.strokeWidth == 2,
+            "bracket starts with independent red two-unit strokes");
+    SnowCanvasBracketStyle emitted;
+    quint32 mask = 0;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        const auto* bracket = std::get_if<SnowCanvasBracketStyleEdit>(&edit);
+        require(bracket != nullptr, "bracket controls emit bracket property patches");
+        emitted = bracket->style;
+        mask = bracket->properties;
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    clickStyleControl(palette, "Bracket stroke width 4");
+    require(emitted.strokeWidth == 4 && mask == 2, "width preset only changes width");
+    clickStyleControl(palette, "Bracket stroke color #1677ff");
+    require(emitted.stroke == QColor("#1677ff") && mask == 1, "color preset only changes color");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Bracket);
+    require(palette.creationStyleDefaults().bracket == emitted,
+            "reused controls retain independent bracket defaults");
+    auto* bracket =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotBracketButton"));
+    auto* angle =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotAngleButton"));
+    require(bracket && angle && bracket->iconSize() == angle->iconSize() &&
+                bracket->iconRef().colors().isEmpty() &&
+                adqt::icons::describeIcon(bracket->iconRef()).colorModel ==
+                    adqt::icons::IconColorModel::Monochrome,
+            "bracket icon matches Angle metrics and inherits theme colors");
+    const auto svg = bracket->iconRef().descriptor()->svg;
+    require(svg.find("1024 1024") != std::string_view::npos &&
+                svg.find("stroke-width=\"72\"") != std::string_view::npos &&
+                svg.find("stroke-linecap=\"round\"") != std::string_view::npos,
+            "bracket follows the Ant icon grid, stroke, and rounded detail rules");
+    QImage sheet(400, 280, QImage::Format_ARGB32_Premultiplied);
+    sheet.fill(Qt::white);
+    QPainter painter(&sheet);
+    for (const bool dark : {false, true}) {
+        theme.setThemeMode(dark ? styles::ThemeMode::Dark : styles::ThemeMode::Light);
+        adqt::theme::ThemeManager::instance().applyTo(*qApp);
+        for (int state = 0; state < 4; ++state) {
+            palette.setActiveTool(state == 2 ? ScreenshotToolPalette::Tool::Bracket
+                                             : ScreenshotToolPalette::Tool::Select);
+            bracket->setEnabled(state != 3);
+            angle->setEnabled(state != 3);
+            if (state == 1) {
+                for (auto* button : {bracket, angle}) {
+                    button->setAttribute(Qt::WA_UnderMouse, true);
+                    const QPoint local = button->rect().center();
+                    QEnterEvent enter(local, button->mapTo(button->window(), local),
+                                      button->mapToGlobal(local));
+                    QApplication::sendEvent(button, &enter);
+                }
+            }
+            QCoreApplication::processEvents();
+            const int x = dark ? 200 : 0, y = state * 70;
+            painter.fillRect(x, y, 200, 70, dark ? QColor("#141414") : QColor("#ffffff"));
+            painter.setPen(dark ? Qt::white : Qt::black);
+            painter.drawText(x + 8, y + 15,
+                             QStringList{"Normal", "Hover", "Selected", "Disabled"}.at(state));
+            painter.drawPixmap(x + 20, y + 25, angle->grab());
+            painter.drawPixmap(x + 90, y + 25, bracket->grab());
+            bracket->setAttribute(Qt::WA_UnderMouse, false);
+            angle->setAttribute(Qt::WA_UnderMouse, false);
+            QEvent leave(QEvent::Leave);
+            QApplication::sendEvent(bracket, &leave);
+            QApplication::sendEvent(angle, &leave);
+        }
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_BRACKET_ICON_PREVIEW"); !path.isEmpty())
+        require(sheet.save(path), "save actual toolbar icons in both themes and four states");
+    auto& language = LanguageManager::instance();
+    for (const auto& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(language.setLanguage(locale), "load bracket translations");
+        QCoreApplication::processEvents();
+        require(bracket->accessibleName() ==
+                    QCoreApplication::translate("ScreenshotToolPalette", "Bracket annotation"),
+                "bracket accessible name retranslates with the toolbar");
+    }
+    require(language.setLanguage(QStringLiteral("en_US")), "restore test language");
+}
+
 void angleSettingsAndWheelPreserveIndependentProperties() {
     ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
     int activations = 0;
@@ -13444,6 +13569,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     hiddenOptions.showSpeechBubbleTool = false;
     hiddenOptions.showArrowTool = false;
     hiddenOptions.showAngleTool = false;
+    hiddenOptions.showBracketTool = false;
     hiddenOptions.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("shape")}}, {QStringLiteral("distance")}};
     ScreenshotToolPalette hiddenPalette(hiddenOptions);
@@ -19786,6 +19912,7 @@ void regionSwitcherRetranslatesAndRenders() {
 void runScreenshotStyleBindingTests();
 void runScreenshotTextAlignmentTests();
 void runAngleStyleBindingTests();
+void runBracketStyleBindingTests();
 void runScreenshotSerialNumberRestartTests();
 void runScreenshotStylePersistenceFailureTest();
 void runWatermarkPersistenceTests();
@@ -20265,6 +20392,11 @@ int main(int argc, char** argv) {
         magnifierStyleWheelsPersistCompletedSteps();
         disabledSelectionOpacityRejectsWheelSteps();
         magnifierControlsRetranslateAndRenderPreviews();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--bracket-only"))) {
+        bracketSettingsAndIcons();
+        runBracketStyleBindingTests();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--angle-only"))) {

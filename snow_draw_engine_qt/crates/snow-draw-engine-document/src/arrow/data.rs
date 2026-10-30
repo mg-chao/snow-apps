@@ -20,6 +20,7 @@ pub enum LinearElementKind {
     PenHighlight,
     Distance,
     Angle,
+    Bracket,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -232,11 +233,16 @@ impl ArrowData {
             LinearElementKind::PenHighlight => ElementKind::PenHighlight,
             LinearElementKind::Distance => ElementKind::Distance,
             LinearElementKind::Angle => ElementKind::Angle,
+            LinearElementKind::Bracket => ElementKind::Bracket,
         }
     }
 
     pub fn is_distance(&self) -> bool {
         self.linear_kind == LinearElementKind::Distance
+    }
+
+    pub fn is_bracket(&self) -> bool {
+        self.linear_kind == LinearElementKind::Bracket
     }
 
     pub fn is_angle(&self) -> bool {
@@ -245,6 +251,11 @@ impl ArrowData {
 
     pub fn is_generated_annotation(&self) -> bool {
         self.is_distance() || self.is_angle()
+    }
+
+    /// Linear annotations share selection appearance, including brackets without labels.
+    pub fn is_linear_annotation(&self) -> bool {
+        self.is_generated_annotation() || self.is_bracket()
     }
 
     pub fn is_regular_arrow(&self) -> bool {
@@ -321,6 +332,9 @@ impl ArrowData {
     }
 
     pub fn path_commands(&self) -> Vec<ArrowPathCommand> {
+        if self.is_bracket() {
+            return crate::bracket_path_commands(self);
+        }
         if self.is_angle() {
             return crate::angle::angle_path_commands(self);
         }
@@ -456,6 +470,9 @@ fn arrow_global_points(arrow: &ArrowData) -> Vec<Point<f64>> {
 }
 
 pub fn arrow_is_degenerate(arrow: &ArrowData) -> bool {
+    if arrow.is_bracket() {
+        return crate::bracket_segments(arrow).is_none();
+    }
     if arrow.is_angle() {
         return crate::angle_geometry(arrow).is_none();
     }
@@ -627,6 +644,9 @@ pub fn arrow_text_max_width(arrow: &ArrowData, font_size: f64) -> f64 {
 }
 
 pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
+    if arrow.is_bracket() {
+        return Vec::new();
+    }
     if arrow.is_angle() {
         return Vec::new();
     }
@@ -664,6 +684,29 @@ pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
 }
 
 pub fn validate_arrow(arrow: &ArrowData) -> Result<(), ErrorCode> {
+    if arrow.is_bracket()
+        && (crate::bracket_segments(arrow).is_none()
+            || arrow.arrow_type != ArrowType::Straight
+            || arrow.start_arrowhead.is_some()
+            || arrow.end_arrowhead.is_some()
+            || arrow.start_binding.is_some()
+            || arrow.end_binding.is_some()
+            || arrow.distance.is_some()
+            || arrow.angle.is_some()
+            || arrow.text_element_id.is_some()
+            || arrow.text_path_fraction.is_some()
+            || arrow.fixed_segments.is_some()
+            || arrow.start_is_special.is_some()
+            || arrow.end_is_special.is_some()
+            || arrow.arrow_shaft_type != snow_draw_engine_core::arrow::ArrowShaftType::Plain
+            || arrow.stroke_style != StrokeStyle::Solid
+            || arrow.fill.a != 0
+            || arrow.fill_style != FillStyle::Solid
+            || !arrow.stroke_width.is_finite()
+            || !(1.0..=72.0).contains(&arrow.stroke_width))
+    {
+        return Err(ErrorCode::InvalidArgument);
+    }
     if arrow.is_angle() {
         crate::validate_angle_annotation(arrow.angle.ok_or(ErrorCode::InvalidArgument)?)?;
         if arrow.points.len() != 3
@@ -782,6 +825,9 @@ fn arrow_stroke_rendering_outset(arrow: &ArrowData) -> f64 {
 }
 
 pub fn arrow_bounds(arrow: &ArrowData) -> DrawRect {
+    if arrow.is_bracket() {
+        return crate::bracket_bounds(arrow);
+    }
     let mut global_points = arrow_visual_points(arrow);
     if let Some(shaft) = crate::tapered_arrow_geometry(arrow) {
         global_points.extend(
@@ -816,6 +862,9 @@ pub fn arrow_bounds(arrow: &ArrowData) -> DrawRect {
 }
 
 pub fn arrow_hit_test(arrow: &ArrowData, point: Point<f64>, hit_tolerance: f64) -> bool {
+    if arrow.is_bracket() {
+        return crate::bracket_hit_test(arrow, point, hit_tolerance);
+    }
     let hit_tolerance =
         hit_tolerance.max(0.0) + arrow_stroke_rendering_outset(arrow) + arrow_outline_outset(arrow);
     if arrow_is_degenerate(arrow) {
@@ -1213,6 +1262,16 @@ fn curve_path_commands(
 }
 
 fn arrow_visual_points(arrow: &ArrowData) -> Vec<Point<f64>> {
+    if let Some(segments) = crate::bracket_segments(arrow) {
+        let mut points = Vec::with_capacity(65);
+        points.push(segments[0][0]);
+        for [a, b, c, d] in segments {
+            for step in 1..=16 {
+                points.push(point_at_bezier(a, b, c, d, f64::from(step) / 16.0));
+            }
+        }
+        return points;
+    }
     if !arrow.is_curve() {
         return arrow_global_points(arrow);
     }

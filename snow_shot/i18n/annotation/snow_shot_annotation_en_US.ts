@@ -204,6 +204,22 @@
             <translation>Bold</translation>
         </message>
         <message>
+            <source>Bracket annotation</source>
+            <translation>Bracket annotation</translation>
+        </message>
+        <message>
+            <source>Bracket stroke color</source>
+            <translation>Bracket stroke color</translation>
+        </message>
+        <message>
+            <source>Bracket stroke color %1</source>
+            <translation>Bracket stroke color %1</translation>
+        </message>
+        <message>
+            <source>Bracket stroke width %1</source>
+            <translation>Bracket stroke width %1</translation>
+        </message>
+        <message>
             <source>Brightness</source>
             <translation>Brightness</translation>
         </message>
@@ -330,6 +346,10 @@
         <message>
             <source>Current arrow width</source>
             <translation>Current arrow width</translation>
+        </message>
+        <message>
+            <source>Current bracket stroke width</source>
+            <translation>Current bracket stroke width</translation>
         </message>
         <message>
             <source>Current brush eraser width</source>

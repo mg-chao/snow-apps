@@ -275,6 +275,8 @@ class ScreenshotSettings final {
     [[nodiscard]] bool autoSaveAfterExecution(const QString& action) const;
     [[nodiscard]] bool copyImageFileToClipboard() const;
     bool setCopyImageFileToClipboard(bool enabled) const;
+    [[nodiscard]] bool copyAfterPinningToScreen() const;
+    bool setCopyAfterPinningToScreen(bool enabled) const;
     [[nodiscard]] QString imageSaveDirectory() const;
     bool setImageSaveDirectory(const QString& directory) const;
     [[nodiscard]] QString lastManualSaveDirectory() const;
@@ -665,6 +667,8 @@ class PinToScreenSettings final {
     bool setShowShadowByDefault(bool enabled) const;
     [[nodiscard]] bool showWindowButtons() const;
     bool setShowWindowButtons(bool enabled) const;
+    [[nodiscard]] bool shakeWindowToHideOthers() const;
+    bool setShakeWindowToHideOthers(bool enabled) const;
     [[nodiscard]] bool exitAnnotationModeBeforeClosing() const;
     bool setExitAnnotationModeBeforeClosing(bool enabled) const;
     [[nodiscard]] bool confirmBeforeClosingWindow() const;

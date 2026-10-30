@@ -36,6 +36,7 @@
 #include <QGraphicsView>
 #include <QImage>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QMimeData>
@@ -2318,6 +2319,90 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
     window.hideTextEditor();
 }
 
+void verifyTextEditorHistoryShortcutsRespectReadOnlyState(
+    ScreenshotRecognitionWindow::PresentationMode mode) {
+    QWidget host;
+    host.resize(400, 240);
+    host.show();
+    QTextDocument document;
+    document.setUndoRedoEnabled(false);
+    document.setPlainText(QStringLiteral("Edited translation"));
+    int undoCalls = 0;
+    int redoCalls = 0;
+    ScreenshotRecognitionWindowActions actions;
+    actions.handleUndoTextEdit = [&] {
+        ++undoCalls;
+        document.setPlainText(QStringLiteral("Translation"));
+    };
+    actions.handleRedoTextEdit = [&] {
+        ++redoCalls;
+        document.setPlainText(QStringLiteral("Edited translation"));
+    };
+    ScreenshotRecognitionWindow window(std::move(actions), &host, mode);
+    window.resize(320, 180);
+    window.showTextEditor(&document);
+    window.show();
+    window.activateWindow();
+    QApplication::processEvents();
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor != nullptr, "history shortcuts require a text editor");
+    editor->setFocus();
+    QApplication::processEvents();
+    require(editor->hasFocus(), "history shortcuts target the focused text editor");
+
+    const auto shortcut = [&](QKeySequence::StandardKey command) {
+        const auto bindings = QKeySequence::keyBindings(command);
+        require(!bindings.isEmpty() && bindings.constFirst().count() == 1,
+                "the platform provides a single-key history shortcut");
+        const auto combination = bindings.constFirst()[0];
+        for (const auto type : {QEvent::ShortcutOverride, QEvent::KeyPress, QEvent::KeyRelease}) {
+            PhysicalKeyEvent event(type, combination.key(), combination.keyboardModifiers());
+            QApplication::sendEvent(editor, &event);
+        }
+    };
+    const auto requireHistoryBlocked = [&] {
+        require(editor->isReadOnly() && editor->hasFocus(),
+                "the read-only editor retains keyboard focus");
+        const QString before = document.toPlainText();
+        const int priorUndoCalls = undoCalls;
+        const int priorRedoCalls = redoCalls;
+        shortcut(QKeySequence::Undo);
+        shortcut(QKeySequence::Redo);
+        require(undoCalls == priorUndoCalls && redoCalls == priorRedoCalls &&
+                    document.toPlainText() == before,
+                "read-only editors must block Undo and Redo callbacks and preserve the document");
+    };
+
+    window.setTextEditorEditingEnabled(false);
+    requireHistoryBlocked();
+    window.setTextEditorEditingEnabled(true);
+    shortcut(QKeySequence::Undo);
+    require(undoCalls == 1 && document.toPlainText() == QStringLiteral("Translation"),
+            "reenabling editing restores the Undo callback");
+    window.setTextEditorEditingEnabled(false);
+    requireHistoryBlocked();
+    window.setTextEditorEditingEnabled(true);
+    shortcut(QKeySequence::Redo);
+    require(redoCalls == 1 && document.toPlainText() == QStringLiteral("Edited translation"),
+            "reenabling editing restores the Redo callback");
+    window.setTextEditorStreaming(true);
+    requireHistoryBlocked();
+    window.setTextEditorEditingEnabled(false);
+    window.setTextEditorStreaming(false);
+    requireHistoryBlocked();
+    window.setTextEditorEditingEnabled(true);
+    shortcut(QKeySequence::Undo);
+    require(undoCalls == 2 && document.toPlainText() == QStringLiteral("Translation"),
+            "ending streaming and reenabling editing restores history shortcuts");
+}
+
+void textEditorHistoryShortcutsRespectReadOnlyState() {
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        verifyTextEditorHistoryShortcutsRespectReadOnlyState(mode);
+    }
+}
+
 void textRecognitionEditorsCollapseMarginsInSmallAreas() {
     auto& themes = adqt::theme::ThemeManager::instance();
     const auto originalTheme = themes.theme();
@@ -4012,6 +4097,10 @@ int main(int argc, char** argv) {
                 .success,
             "recognition test storage must initialize");
     const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--text-editor-history-only"))) {
+        textEditorHistoryShortcutsRespectReadOnlyState();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--native-surface-only"))) {
         recognitionWindowUsesOrdinaryQtWindowBehavior(true);
         recognitionWindowCanExtendBeyondItsDpiScreen();
@@ -4109,6 +4198,7 @@ int main(int argc, char** argv) {
     shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
     textRecognitionEditorsCollapseMarginsInSmallAreas();
     formattedClipboardTextUsesASelectableQtDocument();
+    textEditorHistoryShortcutsRespectReadOnlyState();
     selectionOnlyFormattedTextPaintsOnlyHighlights();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
     emptyOcrResultCopiesEmptyText();

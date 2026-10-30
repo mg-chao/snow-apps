@@ -55,6 +55,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showLineTool = true;
     options.showDistanceTool = true;
     options.showAngleTool = true;
+    options.showBracketTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;

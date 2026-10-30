@@ -455,6 +455,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "BracketAnnotation",
+      "name": "bracket-annotation",
+      "source": "../src/presentation/components/icons/resources/bracket-annotation.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "BrushPressureSensitive",
       "name": "brush-pressure-sensitive",
       "source": "../src/presentation/components/icons/resources/brush-pressure-sensitive.svg",
@@ -1442,6 +1450,14 @@
       "symbol": "TextRecognition",
       "name": "text-recognition",
       "source": "../src/presentation/components/icons/resources/text-recognition.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "TextType",
+      "name": "text-type",
+      "source": "../src/presentation/components/icons/resources/text-type.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

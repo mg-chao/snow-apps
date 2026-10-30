@@ -171,6 +171,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
     target_link_libraries(snow-canvas-distance-benchmark PRIVATE snow_draw_engine_qt_canvas)
     snow_shot_import_offscreen_platform(snow-canvas-distance-benchmark)
 
+    add_executable(snow-canvas-bracket-benchmark tests/snow_canvas_bracket_benchmark.cpp)
+    target_include_directories(snow-canvas-bracket-benchmark PRIVATE
+        src/rendering crates/snow-draw-engine-c/include)
+    target_link_libraries(snow-canvas-bracket-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-bracket-benchmark)
+
     add_executable(snow-canvas-angle-benchmark tests/snow_canvas_angle_benchmark.cpp)
     target_link_libraries(snow-canvas-angle-benchmark PRIVATE snow_draw_engine_qt_canvas)
     snow_shot_import_offscreen_platform(snow-canvas-angle-benchmark)
@@ -564,6 +570,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     qt_import_plugins(snow-canvas-angle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     add_test(NAME snow-canvas-angle-tests COMMAND snow-canvas-angle-tests)
     set_tests_properties(snow-canvas-angle-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
+    add_executable(snow-canvas-bracket-tests tests/snow_canvas_bracket_tests.cpp)
+    target_include_directories(snow-canvas-bracket-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-bracket-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-bracket-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-bracket-tests COMMAND snow-canvas-bracket-tests)
+    set_tests_properties(snow-canvas-bracket-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         LABELS "unit"
     )

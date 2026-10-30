@@ -67,8 +67,8 @@ const QStringList& drawingShortcutToolIds() {
         QStringLiteral("eraser"),        QStringLiteral("watermark"),
         QStringLiteral("line"),          QStringLiteral("spotlight"),
         QStringLiteral("distance"),      QStringLiteral("angle"),
-        QStringLiteral("magnifier"),     QStringLiteral("reset_canvas"),
-        QStringLiteral("speech_bubble"),
+        QStringLiteral("bracket"),       QStringLiteral("magnifier"),
+        QStringLiteral("reset_canvas"),  QStringLiteral("speech_bubble"),
     };
     return ids;
 }
@@ -160,6 +160,8 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("flip_horizontal"),
         QStringLiteral("flip_vertical"),
         QStringLiteral("reset_transform"),
+        QStringLiteral("batch_select_all"),
+        QStringLiteral("batch_save_as_file"),
     };
     return ids;
 }
@@ -1092,6 +1094,14 @@ bool ScreenshotSettings::copyImageFileToClipboard() const {
 
 bool ScreenshotSettings::setCopyImageFileToClipboard(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/copy_image_file_to_clipboard"), enabled);
+}
+
+bool ScreenshotSettings::copyAfterPinningToScreen() const {
+    return cache().value(QStringLiteral("screenshot/copy_after_pinning_to_screen")).toBool();
+}
+
+bool ScreenshotSettings::setCopyAfterPinningToScreen(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/copy_after_pinning_to_screen"), enabled);
 }
 
 QString ScreenshotSettings::imageSaveDirectory() const {
@@ -2534,6 +2544,14 @@ bool PinToScreenSettings::showWindowButtons() const {
 
 bool PinToScreenSettings::setShowWindowButtons(bool enabled) const {
     return cache().setValue(QStringLiteral("pin_to_screen/show_window_buttons"), enabled);
+}
+
+bool PinToScreenSettings::shakeWindowToHideOthers() const {
+    return cache().value(QStringLiteral("pin_to_screen/shake_window_to_hide_others")).toBool();
+}
+
+bool PinToScreenSettings::setShakeWindowToHideOthers(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/shake_window_to_hide_others"), enabled);
 }
 
 bool PinToScreenSettings::exitAnnotationModeBeforeClosing() const {

@@ -267,7 +267,7 @@ pub(crate) fn arrow_target_position(
 ) -> Option<Point<f64>> {
     let points = arrow.global_points();
     match target {
-        ArrowHitTarget::Move | ArrowHitTarget::AngleArc => None,
+        ArrowHitTarget::Move | ArrowHitTarget::AngleArc | ArrowHitTarget::BracketGuide => None,
         ArrowHitTarget::Label => Some(snow_draw_engine_document::arrow_text_anchor(arrow)),
         ArrowHitTarget::Endpoint(edge) => points
             .get(arrow_endpoint_index(points.len(), edge))
@@ -774,5 +774,53 @@ mod tests {
         let inserted =
             insert_linear_arrow_segment_point(&updated, 1, Point::new(20.0, 15.0)).unwrap();
         assert!(snow_draw_engine_document::validate_arrow(&inserted).is_ok());
+    }
+    #[test]
+    fn bracket_group_transforms_keep_kind_points_and_independent_styles() {
+        let mut bracket = ArrowData::from_global_points(
+            &[
+                Point::new(0.0, 0.0),
+                Point::new(80.0, 100.0),
+                Point::new(0.0, 200.0),
+            ],
+            ColorRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 128,
+            },
+            7.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        bracket.linear_kind = snow_draw_engine_document::LinearElementKind::Bracket;
+        let bounds = selection_bounds_from_selection(
+            &[],
+            &[SelectionArrowState {
+                id: ElementId::default(),
+                arrow: bracket.clone(),
+            }],
+        )
+        .unwrap();
+        let resized =
+            resized_arrow_for_selection(&bracket, &bounds, Point::new(0.0, 0.0), 2.0, 0.5).unwrap();
+        let rotated = rotated_arrow_for_selection(
+            &resized,
+            Point::new(0.0, 0.0),
+            std::f64::consts::FRAC_PI_2,
+        )
+        .unwrap();
+        snow_draw_engine_document::validate_arrow(&rotated).unwrap();
+        assert!(
+            rotated.is_bracket() && rotated.points.len() == 3 && rotated.text_element_id.is_none()
+        );
+        assert_eq!(rotated.stroke, bracket.stroke);
+        assert_eq!(rotated.stroke_width, 7.0);
+        for (a, b) in resized.global_points().iter().zip(rotated.global_points()) {
+            assert!((a.x - b.y).abs() < 1e-8 && (a.y + b.x).abs() < 1e-8);
+        }
     }
 }

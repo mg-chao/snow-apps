@@ -44,6 +44,7 @@
 #include "snow_shot/presentation/screenshotanimationplayback.h"
 #include "../src/image/snowimageqtcodec.h"
 #include "pinned_animation_fixtures.h"
+#include "translation_test_support.h"
 #include "pinned_animation_native_fixtures.h"
 #include "pinned_animation_persistence_tests.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
@@ -66,6 +67,8 @@
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "../src/presentation/pinned/screenshotpinneddragexport.h"
+#include "../src/presentation/pinned/screenshotpinnedshakegesture.h"
+#include "widgets/message.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
@@ -112,6 +115,7 @@
 #include <QListView>
 
 #include <QAbstractButton>
+#include <QAbstractNativeEventFilter>
 #include <QActionGroup>
 #include <QApplication>
 #include <QLayout>
@@ -338,6 +342,65 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static bool beginShakeDrag(ScreenshotPinnedWindow& window, const QPointF& pointer = {}) {
+        // QWindow routing updates Qt's global held-button state, as real input does.
+        const QPointF local = window.windowHandle()->mapFromGlobal(pointer);
+        QMouseEvent press(QEvent::MouseButtonPress, local, local, pointer, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &press);
+        return window.m_interactionPlacement || window.beginControlledInteraction(pointer, {});
+    }
+    static void sampleShake(ScreenshotPinnedWindow& window, const QPointF& pointer, qint64 timeMs) {
+        window.updateWindowShake(pointer, timeMs);
+    }
+    static void finishShakeDrag(ScreenshotPinnedWindow& window, bool cancel = false) {
+        window.finishWindowMove(cancel);
+        const QPointF pointer;
+        const QPointF local = window.windowHandle()->mapFromGlobal(pointer);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, local, pointer, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &release);
+    }
+    static void moveShakeDrag(ScreenshotPinnedWindow& window, const QPointF& pointer) {
+        window.updateControlledInteraction(pointer);
+    }
+    static bool shakeDragActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive && window.m_interactionPlacement.has_value();
+    }
+    static bool shakeArmed(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeGesture && window.m_shakeGesture->active;
+    }
+    static bool shakeContentReady(const ScreenshotPinnedWindow& window) {
+        return window.m_firstContentFramePublished;
+    }
+    static QString shakeDiagnostics(const ScreenshotPinnedWindow& window) {
+        if (!window.m_shakeGesture)
+            return QStringLiteral("no gesture");
+        const auto& gesture = *window.m_shakeGesture;
+        return QStringLiteral("drag=%1 active=%2 pending=%3 triggered=%4 elapsed=%5 point=%6,%7")
+            .arg(window.m_windowDragActive)
+            .arg(gesture.active)
+            .arg(gesture.pending)
+            .arg(gesture.detector.triggered())
+            .arg(gesture.clock.elapsed())
+            .arg(gesture.logicalPosition.x())
+            .arg(gesture.logicalPosition.y());
+    }
+    static bool shakePending(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeGesture && window.m_shakeGesture->pending;
+    }
+    static adqt::widgets::AdMessageHandle* shakeMessage(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeMessage;
+    }
+    static qint64 shakeMessageRemaining(const ScreenshotPinnedWindow& window) {
+        return window.m_shakeMessageDeadline.remainingTime();
+    }
+    static void changeShakeScale(ScreenshotPinnedWindow& window) {
+        window.m_shakeGesture->scale = 2;
+    }
+    static void sampleShakeRuntime(ScreenshotPinnedWindow& window, const QPointF& pointer) {
+        window.sampleWindowShake(pointer);
+    }
     static ScreenshotAnimationPlayback& playback(ScreenshotPinnedWindow& window) {
         return *window.m_animationPlayback;
     }
@@ -731,6 +794,9 @@ class ScreenshotPinnedWindowTestAccess {
         static_cast<void>(window.handleMiddleClick(window.rect().center()));
     }
 #ifdef Q_OS_WIN
+    static bool startNativeShakeDrag(ScreenshotPinnedWindow& window) {
+        return window.startWindowMove();
+    }
     static bool beginPreviewNativeMove(ScreenshotPinnedWindow& window) {
         if (!window.m_nativeGeometryController->beginMove(QPoint())) {
             return false;
@@ -861,6 +927,8 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_mouseWheelZoomMode = config.mouseWheelZoomMode;
         window.m_originalImage = config.imageSource.materializedImage;
         window.m_originalPixelSize = window.m_originalImage.size();
+        window.m_ocrSupported = screenshotOcrImageWithinPixelLimit(window.m_originalPixelSize);
+        window.initializeTextType(config);
         window.m_transformedImage = window.m_originalImage;
         window.m_persistenceId = config.persistenceId;
         window.m_persistenceWriter = config.persistenceWriter;
@@ -914,7 +982,11 @@ class ScreenshotPinnedWindowTestAccess {
         restoreOffscreen(window, config);
         window.m_recognitionTargetReady = false;
         window.m_recognition = config.recognition;
-        window.m_recognitionResults = config.recognitionResults;
+        window.m_tableRecognition = config.tableRecognition;
+        window.m_recognitionResults = config.persistedRecognitionResults.isEmpty()
+                                          ? config.recognitionResults
+                                          : ScreenshotPinnedWindow::decodeRecognitionSnapshot(
+                                                config.persistedRecognitionResults);
         window.m_automaticTextRecognition = false;
         window.m_ocrMode = false;
         window.m_hiddenTextSelection = false;
@@ -929,6 +1001,17 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static bool hiddenSelection(const ScreenshotPinnedWindow& window) {
         return window.m_hiddenTextSelection;
+    }
+    static void toggleTextResults(ScreenshotPinnedWindow& window) {
+        window.toggleTextRecognitionResults();
+    }
+    static void toggleTranslation(ScreenshotPinnedWindow& window) {
+        window.handleTextTranslationRequested();
+    }
+    static void finishInitialTextDisplay(ScreenshotPinnedWindow& window, bool visible) {
+        window.m_initialRecognitionVisible = visible;
+        window.m_firstContentFramePublished = true;
+        window.finishDeferredPresentationSetup(window.m_presentationGeneration);
     }
     static void selectHiddenText(ScreenshotPinnedWindow& window) {
         window.m_displayOcrPresentation->selectAll();
@@ -954,6 +1037,18 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_selectionController = &selection;
         window.m_firstContentFramePublished = true;
         selection.registerWindow(&window);
+    }
+    static QList<QPointer<ScreenshotPinnedWindow>> batchTargets(ScreenshotPinnedWindow& window) {
+        return window.displayedPinnedWindows();
+    }
+    static void batchSave(ScreenshotPinnedWindow& window, const QString& directory) {
+        window.saveDisplayedPinnedWindowsToDirectory(directory);
+    }
+    static bool batchSaving() {
+        return ScreenshotPinnedWindow::batchSavePending();
+    }
+    static void changeBatchIdentity(ScreenshotPinnedWindow& window) {
+        ++window.m_presentationGeneration;
     }
     static void detachSelection(ScreenshotPinnedWindow& window) {
         if (window.m_selectionController) {
@@ -6595,8 +6690,8 @@ void pinnedLazyMenuHeadersRetranslate() {
     ScreenshotPinnedWindow window;
     materializePinnedMenuTree(window);
     auto* hideAll =
-        window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
-    require(hideAll && hideAll->text() == QStringLiteral("Hide All Windows to Top"),
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
+    require(hideAll && hideAll->text() == QStringLiteral("Enable Hide to Top"),
             "the bulk Hide to Top action must use its English source label");
     const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
                                 QStringLiteral("screenshotPinnedScaleMenu"),
@@ -6616,7 +6711,7 @@ void pinnedLazyMenuHeadersRetranslate() {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
                 (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
                  QByteArray(source) == "Load new content" ||
-                 QByteArray(source) == "Hide All Windows to Top")) {
+                 QByteArray(source) == "Enable Hide to Top")) {
                 return QStringLiteral("Translated ") + QString::fromUtf8(source);
             }
             return {};
@@ -6626,7 +6721,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Translated Hide All Windows to Top"),
+    require(hideAll->text() == QStringLiteral("Translated Enable Hide to Top"),
             "an existing bulk Hide to Top action must follow LanguageChange");
     const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
                                        QStringLiteral("Translated Scale"),
@@ -6638,7 +6733,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     QCoreApplication::removeTranslator(&translator);
     removeTranslator.dismiss();
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Hide All Windows to Top"),
+    require(hideAll->text() == QStringLiteral("Enable Hide to Top"),
             "the bulk Hide to Top action must restore its original language");
     for (int index = 0; index < headers.size(); ++index) {
         require(headers.at(index)->text() == originalLabels.at(index),
@@ -11176,7 +11271,7 @@ void closedPinnedWindowIgnoresThemeUpdates() {
     }
 }
 
-void pinnedHideAllWindowsToTop() {
+void pinnedBatchHideToTop() {
     IsolatedPinnedStorage isolated;
     using Access = ScreenshotPinnedWindowTestAccess;
     auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
@@ -11207,6 +11302,7 @@ void pinnedHideAllWindowsToTop() {
     for (auto* pin :
          {&window, &thumbnail, &locked, &clickThrough, &alreadyHidden, &closing, &inactive}) {
         Access::restoreOffscreen(*pin, config);
+        Access::automationReady(*pin, {});
         pin->show();
     }
     Access::registerLockGroup(window, groups);
@@ -11232,17 +11328,18 @@ void pinnedHideAllWindowsToTop() {
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedWindowManagementMenu"));
     auto* hideAll =
-        window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"));
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
     auto* shadow = window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowShadowAction"));
     auto* load = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadContentAction"));
     require(menu && hideAll && shadow && load && !hideAll->isCheckable(),
             "Window Management must expose the non-checkable bulk Hide to Top action");
+    auto* batch = window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchActionsAction"));
     const auto actions = menu->actions();
     const auto shadowIndex = actions.indexOf(shadow);
-    require(shadowIndex >= 0 && actions.indexOf(hideAll) == shadowIndex + 2 &&
+    require(batch && shadowIndex >= 0 && actions.indexOf(batch) == shadowIndex + 2 &&
                 actions.at(shadowIndex + 1)->isSeparator() &&
-                actions.indexOf(load) == actions.indexOf(hideAll) + 1,
-            "Show shadow must be followed by a separator, bulk Hide to Top, then Load content");
+                actions.indexOf(load) == actions.indexOf(batch) + 1,
+            "Show shadow is followed by a separator, Batch Actions, then Load content");
 
     hideAll->trigger();
     for (auto* pin : {&window, &thumbnail, &locked, &clickThrough}) {
@@ -14294,6 +14391,113 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
     closeButton->click();
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after the Spotlight wheel test");
+}
+
+void pinnedRecognitionHistoryUsesActiveResult() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const snow_shot::storage::ScreenshotTranslationSettings translationSettings;
+    const bool originalImage = translationSettings.originalImageTranslationEnabled();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(translationSettings.setOriginalImageTranslationEnabled(originalImage));
+    });
+    require(translationSettings.setOriginalImageTranslationEnabled(false),
+            "recognition history uses editable translation results");
+    for (const bool translation : {false, true}) {
+#if !SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        if (translation)
+            continue;
+#endif
+        ScreenshotPinnedWindow window;
+        auto* session = Access::hiddenSelectionOffscreen(window, cachedOcrPinConfig(nullptr));
+        Access::editSelectionOffscreen(window, true);
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+        require(canvas && controller && controller->toolbarWindow(),
+                "recognition history exposes the canvas and toolbar");
+        auto watermark = canvas->canvasWatermarkConfig();
+        watermark.text = QStringLiteral("Retained canvas edit");
+        require(canvas->setCanvasWatermarkConfig(watermark), "seed independent canvas history");
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+        if (translation) {
+            session->beginTextTranslation();
+            session->setTextDraft(QStringLiteral("Translation"));
+        } else {
+            session->beginTextEditing();
+        }
+        auto* text = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+        require(text && text->isVisible() && !text->isReadOnly() && session->editing(),
+                "recognition history targets an editable result");
+        const QString baseline = session->textDraft();
+        auto cursor = text->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(QStringLiteral(" edited"));
+        const QString edited = baseline + QStringLiteral(" edited");
+        require(session->textDraft() == edited, "typing updates the result history");
+        auto* palette = controller->toolbarWindow()->palette();
+        auto* undo =
+            palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
+        auto* redo =
+            palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
+        require(undo && redo && undo->isEnabled(), "typing enables result Undo");
+        undo->click();
+        require(session->textDraft() == baseline &&
+                    canvas->canvasWatermarkConfig().text == watermark.text,
+                "pinned Undo restores the active result and preserves canvas history");
+        require(redo->isEnabled(), "undoing a result enables Redo");
+        redo->click();
+        require(session->textDraft() == edited, "pinned Redo restores the edited result");
+
+        // Finish initial toolbar/preview presentation before simulating activation of the pin.
+        QApplication::processEvents();
+        window.activateWindow();
+        text->setFocus();
+        QApplication::processEvents();
+        require(text->hasFocus(), "recognition history receives keyboard focus");
+        const auto shortcut = [&](QKeySequence::StandardKey command) {
+            const auto combination = QKeySequence::keyBindings(command).first()[0];
+            for (const auto type :
+                 {QEvent::ShortcutOverride, QEvent::KeyPress, QEvent::KeyRelease}) {
+                PhysicalKeyEvent event(type, combination.key(), combination.keyboardModifiers());
+                QApplication::sendEvent(text, &event);
+            }
+        };
+        shortcut(QKeySequence::Undo);
+        require(session->textDraft() == baseline, "keyboard Undo restores the pinned result");
+        shortcut(QKeySequence::Redo);
+        require(session->textDraft() == edited &&
+                    canvas->canvasWatermarkConfig().text == watermark.text,
+                "keyboard Redo restores the pinned result without touching canvas history");
+        window.close();
+    }
+}
+
+void pinnedTableHistoryUsesActiveResult() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    using Access = ScreenshotPinnedWindowTestAccess;
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults.table = SnowShotTableResult{
+        QStringLiteral("<table><tr><td>Original cell</td></tr></table>"), {}, {}, 0};
+    ScreenshotPinnedWindow window;
+    auto* session = Access::hiddenSelectionOffscreen(window, config);
+    Access::editSelectionOffscreen(window, true);
+    session->activate(ScreenshotRecognitionSessionController::Mode::Table);
+    auto* table = window.findChild<ScreenshotTableEditor*>();
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(table && table->isVisible() && controller && controller->toolbarWindow(),
+            "table history exposes the result editor and toolbar");
+    const auto cell = table->model()->index(0, 0);
+    require(table->model()->setData(cell, QStringLiteral("Edited cell"), Qt::EditRole) &&
+                table->commitActiveEdit(),
+            "edit a recognized table cell");
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette->activateScreenshotShortcut(QStringLiteral("undo")) &&
+                table->model()->data(cell).toString() == QStringLiteral("Original cell"),
+            "pinned Undo restores the active table result");
+    require(palette->activateScreenshotShortcut(QStringLiteral("redo")) &&
+                table->model()->data(cell).toString() == QStringLiteral("Edited cell"),
+            "pinned Redo restores the edited table result");
+    window.close();
+#endif
 }
 
 void pinnedHistoryShortcutsFollowSettings() {
@@ -22460,6 +22664,8 @@ class PinnedSelectionFixture final {
     }
 };
 
+#include "pinned_batch_actions_tests.h"
+
 void pinnedRightQuickSelectionPreservesWindowSelection() {
     using canvas_quick_selection_test::mouse;
     for (const bool selectDrawingWindow : {false, true}) {
@@ -26480,7 +26686,8 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
                                     QStringLiteral("screenshotPinnedPlaybackSpeedAction")},
                 "playback commands appear in exact order immediately above Process image");
         require(!menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction")) &&
-                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedOcrAction")),
+                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedOcrAction")) &&
+                    !menu->findChild<QAction*>(QStringLiteral("screenshotPinnedTextTypeAction")),
                 "animation menu omits annotation and recognition entries");
         auto* toggle =
             menu->findChild<QAction*>(QStringLiteral("screenshotPinnedTogglePlaybackAction"));
@@ -26825,6 +27032,8 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_live_window_performance_benchmark.h"
 #endif
+#include "pinned_text_type_tests.h"
+#include "pinned_shake_window_tests.h"
 
 int main(int argc, char* argv[]) {
 
@@ -26856,6 +27065,20 @@ int main(int argc, char* argv[]) {
             pinnedLiveWindowTests();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--shake-sampling-performance-only"))) {
+            pinnedShakeSamplingBenchmark();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shake-hide-only"))) {
+            pinnedShakeWindowTests();
+            return 0;
+        }
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--shake-hide-native-only"))) {
+            pinnedShakeNativeTests();
+            return 0;
+        }
+#endif
 #ifdef Q_OS_WIN
         if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only"))) {
             live_pinned_native_tests::run();
@@ -26986,6 +27209,10 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--stitching-snapshot-only"))) {
             pinnedImageStitchingSnapshots();
             pinnedImageStitchingTextAndDeferredContent();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--batch-actions-only"))) {
+            pinnedBatchActionsTests();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--multi-selection-only"))) {
@@ -27479,7 +27706,7 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--hide-to-top-only"))) {
             runPinnedHideToTopControllerTests();
             closedPinnedWindowIgnoresThemeUpdates();
-            pinnedHideAllWindowsToTop();
+            pinnedBatchHideToTop();
             pinnedHideToTopIntegration(false);
             return 0;
         }
@@ -27638,6 +27865,13 @@ int main(int argc, char* argv[]) {
             pinnedLazyMenuHeadersRetranslate();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--text-type-only"))) {
+            pinnedThumbnailExitsTextDisplay();
+            pinnedTextTypeMenuActivatesSelectedResults();
+            pinnedTranslatedTextKeepsWindowCommandsWithoutToolbar();
+            pinnedTextTypeStartsTranslationAfterRecognition();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
             pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
             return 0;
@@ -27652,6 +27886,11 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
             pinnedHistoryShortcutsFollowSettings();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-history-only"))) {
+            pinnedRecognitionHistoryUsesActiveResult();
+            pinnedTableHistoryUsesActiveResult();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--drawing-shortcut-toggle-only"))) {
@@ -27846,6 +28085,9 @@ int main(int argc, char* argv[]) {
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--system-move-loop-only"))) {
+            if (app.arguments().contains(QStringLiteral("--shake-disabled")))
+                require(snow_shot::storage::PinToScreenSettings().setShakeWindowToHideOthers(false),
+                        "disable shaking for the native keyboard comparison");
             pinnedSystemMoveLoopAcceptsMovementShortcuts();
             return 0;
         }

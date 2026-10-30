@@ -23,6 +23,8 @@ mod auto_filter_tests;
 #[cfg(test)]
 mod automatic_selection_tests;
 #[cfg(test)]
+mod bracket_tests;
+#[cfg(test)]
 mod distance_tests;
 mod document_commands;
 #[cfg(test)]
@@ -361,7 +363,9 @@ impl Engine {
             distance_style: self.editor.distance_style(&self.model),
             distance_style_mixed: self.editor.distance_style_mixed(&self.model),
             angle_style: self.editor.angle_style(&self.model),
+            bracket_style: self.editor.bracket_style(&self.model),
             angle_style_mixed: self.editor.angle_style_mixed(&self.model),
+            bracket_style_mixed: self.editor.bracket_style_mixed(&self.model),
             magnifier_style: self.editor.magnifier_style(&self.model),
             magnifier_style_mixed: self.editor.magnifier_style_mixed(&self.model),
             distance_measured_length: self.editor.distance_measured_length(&self.model),
@@ -418,6 +422,24 @@ impl Engine {
         if let Some(command) = self
             .editor
             .set_angle_style_patch(&self.model, style, properties)?
+        {
+            self.apply_editor_command(id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
+    pub fn set_viewport_bracket_style_patch(
+        &mut self,
+        id: ViewportId,
+        style: snow_draw_engine_editor::BracketStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        if let Some(command) =
+            self.editor
+                .set_bracket_style_patch(&self.model, style, properties)?
         {
             self.apply_editor_command(id, command)
         } else {

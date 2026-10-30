@@ -1625,6 +1625,16 @@ Files:
             <source>%1%</source>
             <translation>%1%</translation>
         </message>
+        <message numerus="yes">
+            <source>%n window(s) displayed</source>
+            <translation>
+            <numerusform>已显示 %n 个窗口</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>A pinned window is no longer available to save.</source>
+            <translation>一个贴图窗口已无法保存。</translation>
+        </message>
         <message>
             <source>AirDrop</source>
             <translation>隔空投送</translation>
@@ -1636,6 +1646,10 @@ Files:
         <message>
             <source>Annotation mode</source>
             <translation>标注模式</translation>
+        </message>
+        <message>
+            <source>Batch Actions</source>
+            <translation>批量操作</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -1722,8 +1736,28 @@ Files:
             <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销。</translation>
         </message>
         <message>
-            <source>Display text recognition results</source>
-            <translation>显示文本识别结果</translation>
+            <source>Disable Hide to Top</source>
+            <translation>禁用顶部隐藏</translation>
+        </message>
+        <message>
+            <source>Disable Lock Mode</source>
+            <translation>禁用锁定模式</translation>
+        </message>
+        <message>
+            <source>Disable Thumbnail Mode</source>
+            <translation>禁用缩略图模式</translation>
+        </message>
+        <message>
+            <source>Enable Hide to Top</source>
+            <translation>启用顶部隐藏</translation>
+        </message>
+        <message>
+            <source>Enable Lock Mode</source>
+            <translation>启用锁定模式</translation>
+        </message>
+        <message>
+            <source>Enable Thumbnail Mode</source>
+            <translation>启用缩略图模式</translation>
         </message>
         <message>
             <source>Enable annotation mode</source>
@@ -1748,10 +1782,6 @@ Files:
         <message>
             <source>Group: Default</source>
             <translation>分组：默认</translation>
-        </message>
-        <message>
-            <source>Hide All Windows to Top</source>
-            <translation>所有窗口顶部隐藏</translation>
         </message>
         <message>
             <source>Hide other windows</source>
@@ -1806,8 +1836,20 @@ Files:
             <translation>下一帧</translation>
         </message>
         <message>
+            <source>No available output filename was found</source>
+            <translation>找不到可用的输出文件名</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
+        </message>
+        <message>
+            <source>Other windows could not be hidden.</source>
+            <translation>无法隐藏其他窗口。</translation>
+        </message>
+        <message>
+            <source>Other windows hidden.</source>
+            <translation>其他窗口已隐藏。</translation>
         </message>
         <message>
             <source>Pause</source>
@@ -1834,6 +1876,10 @@ Files:
             <translation>处理图像</translation>
         </message>
         <message>
+            <source>Recognition results</source>
+            <translation>识别结果</translation>
+        </message>
+        <message>
             <source>Recognizing text</source>
             <translation>正在识别文本</translation>
         </message>
@@ -1854,12 +1900,34 @@ Files:
             <translation>逆时针旋转</translation>
         </message>
         <message>
+            <source>Save as File</source>
+            <translation>保存为文件</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>保存为文件</translation>
         </message>
         <message>
+            <source>Save displayed windows</source>
+            <translation>保存已显示的窗口</translation>
+        </message>
+        <message numerus="yes">
+            <source>Saved %n window(s).</source>
+            <translation>
+            <numerusform>已保存 %n 个窗口。</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Saved: %1; failed: %2.</source>
+            <translation>已保存：%1；失败：%2。</translation>
+        </message>
+        <message>
             <source>Scale</source>
             <translation>缩放</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>全选</translation>
         </message>
         <message>
             <source>Show all windows</source>
@@ -1878,8 +1946,16 @@ Files:
             <translation>显示阴影</translation>
         </message>
         <message>
+            <source>Show text</source>
+            <translation>显示文本</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>支持的文件 (%1)</translation>
+        </message>
+        <message>
+            <source>Text type: %1</source>
+            <translation>文本类型：%1</translation>
         </message>
         <message>
             <source>The animation could not be played</source>
@@ -1900,6 +1976,10 @@ Files:
         <message>
             <source>The new content could not be loaded</source>
             <translation>无法加载新内容</translation>
+        </message>
+        <message>
+            <source>The output directory could not be created</source>
+            <translation>无法创建输出目录</translation>
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
@@ -1932,6 +2012,10 @@ Files:
         <message>
             <source>Thumbnail mode</source>
             <translation>缩略图模式</translation>
+        </message>
+        <message>
+            <source>Translation results</source>
+            <translation>翻译结果</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>
@@ -2176,10 +2260,20 @@ Files:
             <translation>销毁</translation>
         </message>
         <message numerus="yes">
+            <source>Destroy %n displayed window(s)? This action cannot be undone.</source>
+            <translation>
+            <numerusform>要销毁已显示的 %n 个窗口吗？此操作无法撤销。</numerusform>
+        </translation>
+        </message>
+        <message numerus="yes">
             <source>Destroy %n selected window(s)? This action cannot be undone.</source>
             <translation>
             <numerusform>销毁所选的 %n 个窗口？此操作无法撤销。</numerusform>
         </translation>
+        </message>
+        <message>
+            <source>Destroy displayed windows</source>
+            <translation>销毁已显示的窗口</translation>
         </message>
         <message>
             <source>Destroy selected windows</source>
@@ -2208,6 +2302,10 @@ Files:
         <message>
             <source>New Group</source>
             <translation>新建分组</translation>
+        </message>
+        <message>
+            <source>The displayed windows could not be destroyed.</source>
+            <translation>无法销毁已显示的窗口。</translation>
         </message>
         <message>
             <source>The selected windows could not be destroyed.</source>

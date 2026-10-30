@@ -59,6 +59,7 @@ const QString kArrowKey = QStringLiteral("drawing/arrow_style");
 const QString kLineKey = QStringLiteral("drawing/line_style");
 const QString kDistanceKey = QStringLiteral("drawing/distance_style");
 const QString kAngleKey = QStringLiteral("drawing/angle_style");
+const QString kBracketKey = QStringLiteral("drawing/bracket_style");
 const QString kMagnifierKey = QStringLiteral("drawing/magnifier_style");
 const QString kFreeDrawKey = QStringLiteral("drawing/free_draw_style");
 const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlight_style");
@@ -268,6 +269,21 @@ void readDistanceValue(const QJsonObject& object, SnowCanvasDistanceStyle* style
     style->endpointScale = bounded(style->endpointScale, 0.5, 3.0);
 }
 
+QJsonObject bracketValue(const SnowCanvasBracketStyle& style) {
+    QJsonObject value;
+    value.insert(QStringLiteral("stroke"), colorValue(style.stroke));
+    putDouble(&value, QStringLiteral("stroke_width"), style.strokeWidth);
+    return value;
+}
+void readBracketValue(const QJsonObject& object, SnowCanvasBracketStyle* style) {
+    if (style == nullptr)
+        return;
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
+    readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
+    style->strokeWidth = bounded(style->strokeWidth, 1.0, 72.0);
+}
 QJsonObject angleValue(const SnowCanvasAngleStyle& style) {
     QJsonObject value;
     putEnum(&value, QStringLiteral("angle_type"), style.angleType);
@@ -537,6 +553,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
     readDistanceValue(configuration.value(kDistanceKey).toObject(), &defaults.distance);
     readAngleValue(configuration.value(kAngleKey).toObject(), &defaults.angle);
+    readBracketValue(configuration.value(kBracketKey).toObject(), &defaults.bracket);
     readMagnifierValue(configuration.value(kMagnifierKey).toObject(), &defaults.magnifier);
     readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
     readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
@@ -647,6 +664,7 @@ bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
         {kArrowKey, shapeValue(defaults.arrow)},
         {kDistanceKey, distanceValue(defaults.distance)},
         {kAngleKey, angleValue(defaults.angle)},
+        {kBracketKey, bracketValue(defaults.bracket)},
         {kMagnifierKey, magnifierValue(defaults.magnifier)},
         {kLineKey, lineValue(defaults.line)},
         {kFreeDrawKey, freeDrawValue(defaults.freeDraw)},
@@ -717,6 +735,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.arrow, kArrowShapeProperties, SnowCanvasShapeKind::Arrow);
     static_cast<void>(canvas.setCanvasDistanceStyle(defaults.distance));
     static_cast<void>(canvas.setCanvasAngleStyle(defaults.angle));
+    static_cast<void>(canvas.setCanvasBracketStyle(defaults.bracket));
     static_cast<void>(canvas.applyStyleEdit(
         SnowCanvasMagnifierEdit{defaults.magnifier, SnowCanvasMagnifierStyleAllProperties,
                                 SnowCanvasStyleEditTarget::Creation}));

@@ -639,6 +639,7 @@ void statusAndCapabilityGates() {
                                 QStringLiteral("screenshotPinnedCopyOriginalAction"),
                                 QStringLiteral("screenshotPinnedGroupAction"),
                                 QStringLiteral("screenshotPinnedLoadContentAction"),
+                                QStringLiteral("screenshotPinnedBatchActionsAction"),
                                 QStringLiteral("screenshotPinnedHideAllWindowsToTopAction"),
                                 QStringLiteral("screenshotPinnedCloseAllWindowsAction")})
         require(!menu->findChild<QAction*>(name), "nonwhitelisted features have no menu entry");
@@ -748,7 +749,9 @@ void contextMenuMatchesOrdinaryContent() {
                 after.children.first(3) == managementRows,
             "common management controls share the ordinary menu presentation");
     require(menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction")) &&
-                menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction")),
+                menu->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction")) &&
+                menu->findChild<QAction*>(QStringLiteral("screenshotPinnedBatchActionsAction")) &&
+                ScreenshotPinnedWindowTestAccess::batchTargets(window).contains(&window),
             "conversion restores ordinary image capabilities in the shared menu");
     window.close();
 }
@@ -1189,6 +1192,61 @@ void nativePresentationPreservesShell() {
     }
     window.closeLiveWindow();
 }
+void batchAndShakeRespectLiveCapabilities() {
+    IsolatedPinnedStorage isolated;
+    using PinAccess = ScreenshotPinnedWindowTestAccess;
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool previousShake = settings.shakeWindowToHideOthers();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setShakeWindowToHideOthers(previousShake)); });
+    require(settings.setShakeWindowToHideOthers(true), "enable the mixed live-pin shake fixture");
+
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow live;
+    present(live, config(source));
+    ScreenshotPinnedWindow ordinary;
+    ScreenshotPinnedWindow peer;
+    auto ordinaryConfig = config(source);
+    ordinaryConfig.liveSource.reset();
+    ordinaryConfig.enableEditing = false;
+    ordinaryConfig.automaticTextRecognition = false;
+    for (auto* window : {&ordinary, &peer}) {
+        window->setAttribute(Qt::WA_DeleteOnClose, false);
+        require(window->present(ordinaryConfig), "present an ordinary pin beside the live pin");
+        wait([&] { return PinAccess::shakeContentReady(*window); },
+             "ordinary pins publish their first content frame");
+    }
+    const auto targets = PinAccess::batchTargets(ordinary);
+    require(targets.size() == 2 && targets.contains(&ordinary) && targets.contains(&peer) &&
+                !targets.contains(&live),
+            "ordinary batch actions exclude restricted live pins");
+    materializePinnedMenuTree(ordinary);
+    auto* menu = PinAccess::contextMenu(ordinary);
+    auto* lock = menu->findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableLockAction"));
+    auto* unlock =
+        menu->findChild<QAction*>(QStringLiteral("screenshotPinnedBatchDisableLockAction"));
+    require(lock && unlock, "ordinary pins retain the batch mode actions");
+    lock->trigger();
+    require(ordinary.automationState().value(QStringLiteral("locked")).toBool() &&
+                peer.automationState().value(QStringLiteral("locked")).toBool() &&
+                !live.automationState().value(QStringLiteral("locked")).toBool(),
+            "batch mode changes preserve live-pin state");
+    unlock->trigger();
+
+    require(PinAccess::beginShakeDrag(live), "live pins retain ordinary window dragging");
+    require(!PinAccess::shakeArmed(live),
+            "restricted live pins do not initiate group hide gestures");
+    PinAccess::finishShakeDrag(live);
+    require(PinAccess::beginShakeDrag(ordinary), "begin a shake with a live peer present");
+    for (int leg = 1; leg <= 6; ++leg)
+        PinAccess::sampleShake(ordinary, QPointF((leg % 2) ? 64 : 0, 0), leg * 80);
+    PinAccess::finishShakeDrag(ordinary);
+    wait([&] { return !peer.isVisible(); }, "shaking an ordinary pin hides ordinary peers");
+    require(PinAccess::shakeMessage(ordinary) && live.isVisible() && source->shutdowns == 0,
+            "a live peer neither fails the hide gesture nor loses its capture session");
+    live.closeLiveWindow();
+    ordinary.close();
+}
 } // namespace live_pinned_tests
 
 void pinnedLiveWindowTests() {
@@ -1207,6 +1265,7 @@ void pinnedLiveWindowTests() {
     live_pinned_tests::configuredShortcutsRespectCapabilities();
     live_pinned_tests::conversionRejectsObsoleteFrames();
     live_pinned_tests::groupLifecycle();
+    live_pinned_tests::batchAndShakeRespectLiveCapabilities();
     live_pinned_tests::productionCreationUsesPlainBackdrop();
     live_pinned_tests::liveBackdropFollowsThemeChanges();
 }

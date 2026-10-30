@@ -5,16 +5,16 @@ pub(crate) use patch_payloads::*;
 use snow_draw_engine::{
     ActiveTool, AngleStyle, AngleType, AngleUnit, ArrowPathCommand, ArrowType, Arrowhead,
     ArrowheadDisplayDashMode, ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive,
-    ArrowheadDisplayPrimitiveKind, CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand,
-    CursorStyle, DisplayFillStyle, DisplayTextHorizontalAlign, DisplayTextVerticalAlign,
-    DistanceStyle, DistanceUnit, ElementId, EngineConfig, FillStyle, FilterStyle, GridConfig,
-    HistoryState, InputEvent, InteractionOutput, KeyCode, KeyEvent, KeyEventType, Modifiers, Point,
-    PointerButton, PointerButtons, PointerCaptureCommand, PointerDevice, PointerEvent,
-    PointerEventType, RectangleShapeStyle, RuntimeConfig, SerialNumberStyle, SerialNumberType,
-    ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig, StrokeStyle, StyleDefaults,
-    StyleToolbarSource, TextElementInfo, TextHorizontalAlign, TextLayoutOverride, TextLayoutSize,
-    TextStyle, TextVerticalAlign, Vector2, WatermarkConfig, WatermarkTemplateApplicationTime,
-    WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
+    ArrowheadDisplayPrimitiveKind, BracketStyle, CanvasFilterType, ColorRgba8, CornerRadii,
+    CursorCommand, CursorStyle, DisplayFillStyle, DisplayTextHorizontalAlign,
+    DisplayTextVerticalAlign, DistanceStyle, DistanceUnit, ElementId, EngineConfig, FillStyle,
+    FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput, KeyCode, KeyEvent,
+    KeyEventType, Modifiers, Point, PointerButton, PointerButtons, PointerCaptureCommand,
+    PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle, RuntimeConfig,
+    SerialNumberStyle, SerialNumberType, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig,
+    StrokeStyle, StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign,
+    TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig,
+    WatermarkTemplateApplicationTime, WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
 };
 
 use crate::abi::text::{
@@ -664,6 +664,27 @@ impl From<CornerRadii> for SnowCornerRadii {
     }
 }
 
+impl From<SnowBracketStyle> for BracketStyle {
+    fn from(value: SnowBracketStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+        }
+    }
+}
+impl From<BracketStyle> for SnowBracketStyle {
+    fn from(value: BracketStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+        }
+    }
+}
+impl Default for SnowBracketStyle {
+    fn default() -> Self {
+        BracketStyle::default().into()
+    }
+}
 impl From<SnowAngleStyle> for AngleStyle {
     fn from(value: SnowAngleStyle) -> Self {
         Self {
@@ -1237,6 +1258,7 @@ pub(crate) fn runtime_config_from_c(
                 brush_eraser: defaults.brush_eraser.into(),
                 distance: defaults.distance.into(),
                 angle: defaults.angle.into(),
+                bracket: defaults.bracket.into(),
                 magnifier: defaults.magnifier.into(),
                 speech_bubble: ShapeStyle::from(defaults.speech_bubble).rectangle_shape_style(),
                 text: TextStyle {
@@ -1429,6 +1451,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             brush_eraser: value.editor.brush_eraser.into(),
             distance: value.editor.distance.into(),
             angle: value.editor.angle.into(),
+            bracket: value.editor.bracket.into(),
             magnifier: value.editor.magnifier.into(),
             speech_bubble: snow_draw_engine::ShapeStyle::from_rectangle_shape_style(
                 value.editor.speech_bubble,
@@ -1464,7 +1487,9 @@ impl Default for SnowStyleToolbarState {
             distance_style: SnowDistanceStyle::default(),
             distance_style_mixed: 0,
             angle_style: SnowAngleStyle::default(),
+            bracket_style: SnowBracketStyle::default(),
             angle_style_mixed: 0,
+            bracket_style_mixed: 0,
             distance_measured_length: 0.0,
             magnifier_style: SnowMagnifierStyle::default(),
             magnifier_style_mixed: 0,
@@ -1517,6 +1542,7 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
         SnowActiveTool::Distance => ActiveTool::Distance,
         SnowActiveTool::Angle => ActiveTool::Angle,
+        SnowActiveTool::Bracket => ActiveTool::Bracket,
         SnowActiveTool::Magnifier => ActiveTool::Magnifier,
         SnowActiveTool::SpeechBubble => ActiveTool::SpeechBubble,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
@@ -1543,6 +1569,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
         ActiveTool::Distance => SnowActiveTool::Distance,
         ActiveTool::Angle => SnowActiveTool::Angle,
+        ActiveTool::Bracket => SnowActiveTool::Bracket,
         ActiveTool::Magnifier => SnowActiveTool::Magnifier,
         ActiveTool::SpeechBubble => SnowActiveTool::SpeechBubble,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
@@ -1552,7 +1579,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 21] = [
+    const TOOLS: [SnowActiveTool; 22] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1572,6 +1599,7 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::BrushEraser,
         SnowActiveTool::Distance,
         SnowActiveTool::Angle,
+        SnowActiveTool::Bracket,
         SnowActiveTool::Magnifier,
         SnowActiveTool::SpeechBubble,
     ];
@@ -1613,7 +1641,9 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
         StyleToolbarSource::DefaultDistance => SnowStyleToolbarSource::DefaultDistance,
         StyleToolbarSource::SelectedDistance => SnowStyleToolbarSource::SelectedDistance,
         StyleToolbarSource::DefaultAngle => SnowStyleToolbarSource::DefaultAngle,
+        StyleToolbarSource::DefaultBracket => SnowStyleToolbarSource::DefaultBracket,
         StyleToolbarSource::SelectedAngle => SnowStyleToolbarSource::SelectedAngle,
+        StyleToolbarSource::SelectedBracket => SnowStyleToolbarSource::SelectedBracket,
         StyleToolbarSource::DefaultMagnifier => SnowStyleToolbarSource::DefaultMagnifier,
         StyleToolbarSource::SelectedMagnifier => SnowStyleToolbarSource::SelectedMagnifier,
         StyleToolbarSource::DefaultSpeechBubble => SnowStyleToolbarSource::DefaultSpeechBubble,
