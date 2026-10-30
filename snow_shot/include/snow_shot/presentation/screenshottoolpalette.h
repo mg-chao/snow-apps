@@ -516,6 +516,7 @@ class ScreenshotToolPalette final : public QWidget,
     void selectionDisplayUnitChanged(ScreenshotSelectionDisplayUnit unit);
     void selectionToolbarHiddenChanged(bool hidden);
     void selectRequested();
+    void recordingSessionChanged();
     void recordingExportSettingsVisibleChanged(bool visible);
     void shapeRequested();
     void speechBubbleRequested();

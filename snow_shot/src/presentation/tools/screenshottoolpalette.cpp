@@ -2276,6 +2276,7 @@ void ScreenshotToolPalette::setRecordingSession(RecordingSessionStatus status) {
     }
     m_recordingSession = status;
     updateRecordingControls();
+    emit recordingSessionChanged();
 }
 
 ScreenshotToolPalette::RecordingSessionStatus ScreenshotToolPalette::recordingSession() const {
