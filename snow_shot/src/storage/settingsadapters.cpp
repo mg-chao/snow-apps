@@ -160,6 +160,8 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("flip_horizontal"),
         QStringLiteral("flip_vertical"),
         QStringLiteral("reset_transform"),
+        QStringLiteral("batch_select_all"),
+        QStringLiteral("batch_save_as_file"),
     };
     return ids;
 }

@@ -1504,6 +1504,14 @@
             <translation>条码识别</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>批量操作：保存为文件</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>批量操作：全选</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>模糊</translation>
         </message>

@@ -2870,6 +2870,14 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
                           QStringLiteral("reset_transform"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Reset transform"),
                           []() { return outlined_icons::Reload(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_select_all"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Select All"),
+                          []() { return outlined_icons::Appstore(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("batch_save_as_file"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Batch Actions: Save as File"),
+                          []() { return custom_outlined_icons::Save(); }),
     };
 }
 

@@ -1578,6 +1578,16 @@ Files:
             <source>%1%</source>
             <translation>%1%</translation>
         </message>
+        <message numerus="yes">
+            <source>%n window(s) displayed</source>
+            <translation>
+            <numerusform>已顯示 %n 個視窗</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>A pinned window is no longer available to save.</source>
+            <translation>一個貼圖視窗已無法儲存。</translation>
+        </message>
         <message>
             <source>AirDrop</source>
             <translation>AirDrop</translation>
@@ -1589,6 +1599,10 @@ Files:
         <message>
             <source>Annotation mode</source>
             <translation>標註模式</translation>
+        </message>
+        <message>
+            <source>Batch Actions</source>
+            <translation>批次操作</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -1671,6 +1685,30 @@ Files:
             <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原。</translation>
         </message>
         <message>
+            <source>Disable Hide to Top</source>
+            <translation>停用頂部隱藏</translation>
+        </message>
+        <message>
+            <source>Disable Lock Mode</source>
+            <translation>停用鎖定模式</translation>
+        </message>
+        <message>
+            <source>Disable Thumbnail Mode</source>
+            <translation>停用縮圖模式</translation>
+        </message>
+        <message>
+            <source>Enable Hide to Top</source>
+            <translation>啟用頂部隱藏</translation>
+        </message>
+        <message>
+            <source>Enable Lock Mode</source>
+            <translation>啟用鎖定模式</translation>
+        </message>
+        <message>
+            <source>Enable Thumbnail Mode</source>
+            <translation>啟用縮圖模式</translation>
+        </message>
+        <message>
             <source>Enable annotation mode</source>
             <translation>啟用標註模式</translation>
         </message>
@@ -1693,10 +1731,6 @@ Files:
         <message>
             <source>Group: Default</source>
             <translation>群組：預設</translation>
-        </message>
-        <message>
-            <source>Hide All Windows to Top</source>
-            <translation>所有視窗頂部隱藏</translation>
         </message>
         <message>
             <source>Hide other windows</source>
@@ -1745,6 +1779,10 @@ Files:
         <message>
             <source>Next frame</source>
             <translation>下一影格</translation>
+        </message>
+        <message>
+            <source>No available output filename was found</source>
+            <translation>找不到可用的輸出檔案名稱</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -1799,12 +1837,34 @@ Files:
             <translation>逆時針旋轉</translation>
         </message>
         <message>
+            <source>Save as File</source>
+            <translation>儲存為檔案</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>另存為檔案</translation>
         </message>
         <message>
+            <source>Save displayed windows</source>
+            <translation>儲存已顯示的視窗</translation>
+        </message>
+        <message numerus="yes">
+            <source>Saved %n window(s).</source>
+            <translation>
+            <numerusform>已儲存 %n 個視窗。</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Saved: %1; failed: %2.</source>
+            <translation>已儲存：%1；失敗：%2。</translation>
+        </message>
+        <message>
             <source>Scale</source>
             <translation>縮放</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>全選</translation>
         </message>
         <message>
             <source>Show all windows</source>
@@ -1845,6 +1905,10 @@ Files:
         <message>
             <source>The new content could not be loaded</source>
             <translation>無法載入新內容</translation>
+        </message>
+        <message>
+            <source>The output directory could not be created</source>
+            <translation>無法建立輸出目錄</translation>
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
@@ -2113,10 +2177,20 @@ Files:
             <translation>銷毀</translation>
         </message>
         <message numerus="yes">
+            <source>Destroy %n displayed window(s)? This action cannot be undone.</source>
+            <translation>
+            <numerusform>要銷毀已顯示的 %n 個視窗嗎？此操作無法復原。</numerusform>
+        </translation>
+        </message>
+        <message numerus="yes">
             <source>Destroy %n selected window(s)? This action cannot be undone.</source>
             <translation>
             <numerusform>銷毀所選的 %n 個視窗？此操作無法復原。</numerusform>
         </translation>
+        </message>
+        <message>
+            <source>Destroy displayed windows</source>
+            <translation>銷毀已顯示的視窗</translation>
         </message>
         <message>
             <source>Destroy selected windows</source>
@@ -2145,6 +2219,10 @@ Files:
         <message>
             <source>New Group</source>
             <translation>新增群組</translation>
+        </message>
+        <message>
+            <source>The displayed windows could not be destroyed.</source>
+            <translation>無法銷毀已顯示的視窗。</translation>
         </message>
         <message>
             <source>The selected windows could not be destroyed.</source>

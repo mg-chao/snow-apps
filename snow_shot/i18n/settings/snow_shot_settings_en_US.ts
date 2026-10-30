@@ -1504,6 +1504,14 @@
             <translation>Barcode recognition</translation>
         </message>
         <message>
+            <source>Batch Actions: Save as File</source>
+            <translation>Batch Actions: Save as File</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Select All</source>
+            <translation>Batch Actions: Select All</translation>
+        </message>
+        <message>
             <source>Blur</source>
             <translation>Blur</translation>
         </message>

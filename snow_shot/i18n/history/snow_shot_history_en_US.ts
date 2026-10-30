@@ -1584,6 +1584,17 @@ Files:
             <source>%1%</source>
             <translation>%1%</translation>
         </message>
+        <message numerus="yes">
+            <source>%n window(s) displayed</source>
+            <translation>
+            <numerusform>%n window displayed</numerusform>
+            <numerusform>%n windows displayed</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>A pinned window is no longer available to save.</source>
+            <translation>A pinned window is no longer available to save.</translation>
+        </message>
         <message>
             <source>AirDrop</source>
             <translation>AirDrop</translation>
@@ -1595,6 +1606,10 @@ Files:
         <message>
             <source>Annotation mode</source>
             <translation>Annotation mode</translation>
+        </message>
+        <message>
+            <source>Batch Actions</source>
+            <translation>Batch Actions</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -1677,6 +1692,30 @@ Files:
             <translation>Destroy this pinned window? This action cannot be undone.</translation>
         </message>
         <message>
+            <source>Disable Hide to Top</source>
+            <translation>Disable Hide to Top</translation>
+        </message>
+        <message>
+            <source>Disable Lock Mode</source>
+            <translation>Disable Lock Mode</translation>
+        </message>
+        <message>
+            <source>Disable Thumbnail Mode</source>
+            <translation>Disable Thumbnail Mode</translation>
+        </message>
+        <message>
+            <source>Enable Hide to Top</source>
+            <translation>Enable Hide to Top</translation>
+        </message>
+        <message>
+            <source>Enable Lock Mode</source>
+            <translation>Enable Lock Mode</translation>
+        </message>
+        <message>
+            <source>Enable Thumbnail Mode</source>
+            <translation>Enable Thumbnail Mode</translation>
+        </message>
+        <message>
             <source>Enable annotation mode</source>
             <translation>Enable annotation mode</translation>
         </message>
@@ -1699,10 +1738,6 @@ Files:
         <message>
             <source>Group: Default</source>
             <translation>Group: Default</translation>
-        </message>
-        <message>
-            <source>Hide All Windows to Top</source>
-            <translation>Hide All Windows to Top</translation>
         </message>
         <message>
             <source>Hide other windows</source>
@@ -1751,6 +1786,10 @@ Files:
         <message>
             <source>Next frame</source>
             <translation>Next frame</translation>
+        </message>
+        <message>
+            <source>No available output filename was found</source>
+            <translation>No available output filename was found</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -1805,12 +1844,35 @@ Files:
             <translation>Rotate counterclockwise</translation>
         </message>
         <message>
+            <source>Save as File</source>
+            <translation>Save as File</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
         </message>
         <message>
+            <source>Save displayed windows</source>
+            <translation>Save displayed windows</translation>
+        </message>
+        <message numerus="yes">
+            <source>Saved %n window(s).</source>
+            <translation>
+            <numerusform>Saved %n window.</numerusform>
+            <numerusform>Saved %n windows.</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Saved: %1; failed: %2.</source>
+            <translation>Saved: %1; failed: %2.</translation>
+        </message>
+        <message>
             <source>Scale</source>
             <translation>Scale</translation>
+        </message>
+        <message>
+            <source>Select All</source>
+            <translation>Select All</translation>
         </message>
         <message>
             <source>Show all windows</source>
@@ -1851,6 +1913,10 @@ Files:
         <message>
             <source>The new content could not be loaded</source>
             <translation>The new content could not be loaded</translation>
+        </message>
+        <message>
+            <source>The output directory could not be created</source>
+            <translation>The output directory could not be created</translation>
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
@@ -2120,11 +2186,22 @@ Files:
             <translation>Destroy</translation>
         </message>
         <message numerus="yes">
+            <source>Destroy %n displayed window(s)? This action cannot be undone.</source>
+            <translation>
+            <numerusform>Destroy %n displayed window? This action cannot be undone.</numerusform>
+            <numerusform>Destroy %n displayed windows? This action cannot be undone.</numerusform>
+        </translation>
+        </message>
+        <message numerus="yes">
             <source>Destroy %n selected window(s)? This action cannot be undone.</source>
             <translation>
             <numerusform>Destroy %n selected window? This action cannot be undone.</numerusform>
             <numerusform>Destroy %n selected windows? This action cannot be undone.</numerusform>
         </translation>
+        </message>
+        <message>
+            <source>Destroy displayed windows</source>
+            <translation>Destroy displayed windows</translation>
         </message>
         <message>
             <source>Destroy selected windows</source>
@@ -2153,6 +2230,10 @@ Files:
         <message>
             <source>New Group</source>
             <translation>New Group</translation>
+        </message>
+        <message>
+            <source>The displayed windows could not be destroyed.</source>
+            <translation>The displayed windows could not be destroyed.</translation>
         </message>
         <message>
             <source>The selected windows could not be destroyed.</source>

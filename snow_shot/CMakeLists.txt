@@ -2000,6 +2000,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
     src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
+    src/presentation/pinned/screenshotpinnedbatchsave.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
     src/presentation/services/screenshotpresentationframescheduler.cpp
@@ -3120,6 +3121,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-settings-catalog-tests --storage-directory-only)
     set_tests_properties(snow-shot-storage-directory-catalog-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-batch-shortcut-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --pinned-batch-shortcuts-only)
+    set_tests_properties(snow-shot-pinned-batch-shortcut-catalog-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
     add_test(NAME snow-shot-tray-icon-settings-catalog-tests
@@ -5174,6 +5178,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h
@@ -5394,6 +5399,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         RUN_SERIAL TRUE TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-management-lifecycle-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-batch-actions-tests
+        COMMAND snow-shot-pinned-window-tests --batch-actions-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-batch-actions-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
     add_test(NAME snow-shot-pinned-hide-to-top-tests
         COMMAND snow-shot-pinned-window-tests --hide-to-top-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-hide-to-top-tests PROPERTIES LABELS "unit"
@@ -10186,6 +10195,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedhidetotopcontroller.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h
