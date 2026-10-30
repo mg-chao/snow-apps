@@ -95,6 +95,10 @@ distributed as part of Snow Shot. Its resolved normal and build dependency
 graph—including Tokio, Reqwest with native platform TLS, Serde, RSA/SHA-256,
 SemVer, ZIP/Deflate, and Microsoft windows-rs—is collected into the same
 versioned notice bundle from its independently locked Cargo package.
+ZIP processing uses `zip` (MIT), `flate2` (MIT OR Apache-2.0), and the pure Rust
+`zlib-rs` backend (Zlib). Archive path handling uses `typed-path` (MIT OR
+Apache-2.0); Unix filesystem support also uses `nix` (MIT). Their resolved
+license texts are included in the same generated dependency bundle.
 
 The three PP-OCRv6 model bundles and dictionaries retain their existing
 PaddleOCR Apache-2.0 licensing. Snow Shot uses the unchanged Tiny, Small, and
