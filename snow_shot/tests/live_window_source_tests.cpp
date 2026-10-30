@@ -36,6 +36,11 @@ std::atomic<int> sourceWidth{100};
 std::atomic<int> sourceHeight{80};
 int activeMonitors = 0;
 int createdMonitors = 0;
+bool nativeFramesEnabled = false;
+bool nativePresentationFails = false;
+std::atomic<int> nativeReadbacks{0};
+std::atomic<bool> nativeReadbackFails{false};
+int nativePresentations = 0;
 std::function<void()> notifyNativeState;
 
 void require(bool condition, const char* message) {
@@ -188,6 +193,63 @@ void snow_capture_stream_frame_release(SnowCaptureStreamFrame* frame) {
 }
 
 namespace snow_shot::presentation::live_window_detail {
+class FakeNativeFrame final : public NativeWindowFrame {
+  public:
+    explicit FakeNativeFrame(SnowCaptureStreamFrame* frame) : m_frame(frame) {}
+    ~FakeNativeFrame() override {
+        snow_capture_stream_frame_release(m_frame);
+    }
+    QSize size() const override {
+        return QSize(m_frame->width, m_frame->height);
+    }
+    QImage image() const override {
+        ++nativeReadbacks;
+        if (nativeReadbackFails)
+            return {};
+        return QImage(m_frame->bytes.data(), m_frame->width, m_frame->height,
+                      QImage::Format_RGBA8888)
+            .copy();
+    }
+    const void* pixelBuffer() const override {
+        return this;
+    }
+
+  private:
+    SnowCaptureStreamFrame* m_frame;
+};
+class FakeNativeCapture final : public NativeWindowCapture {
+  public:
+    FakeNativeCapture() {
+        SnowCaptureWindowStreamConfig config{};
+        config.window_id = 42;
+        config.target_fps = 30;
+        config.buffer_depth = 1;
+        m_stream = snow_capture_stream_create_window(&config);
+    }
+    ~FakeNativeCapture() override {
+        snow_capture_stream_destroy(m_stream);
+    }
+    void cancel() override {
+        snow_capture_stream_stop(m_stream);
+    }
+    bool receive(NativeCaptureFrame* output) override {
+        SnowCaptureStreamEvent event{};
+        if (!snow_capture_stream_receive(m_stream, 50, &event) ||
+            event.kind != SNOW_CAPTURE_STREAM_EVENT_FRAME)
+            return false;
+        output->pixels = std::make_shared<FakeNativeFrame>(event.frame);
+        output->desktopBounds = QRectF(100, 200, event.frame->width, event.frame->height);
+        return true;
+    }
+
+  private:
+    SnowCaptureStream* m_stream;
+};
+std::unique_ptr<NativeWindowCapture> createNativeWindowCapture(const LiveWindowTarget&) {
+    if (nativeFramesEnabled)
+        return std::make_unique<FakeNativeCapture>();
+    return {};
+}
 class FakeNativeMonitor final : public NativeWindowMonitor {
   public:
     FakeNativeMonitor() {
@@ -216,6 +278,17 @@ class FakeNativeMonitor final : public NativeWindowMonitor {
 };
 class FakeNativePresentation final : public NativeWindowPresentation {
   public:
+    bool consumesFrames() const override {
+        return nativeFramesEnabled;
+    }
+    bool supportsTransform(const QTransform& transform) const override {
+        return nativeFramesEnabled || transform.isIdentity();
+    }
+    bool presentFrame(std::shared_ptr<const NativeWindowFrame> frame, const QRectF&) override {
+        require(bool(frame), "Texture presentation retains a native frame.");
+        ++nativePresentations;
+        return !nativePresentationFails;
+    }
     bool present(const LiveWindowPresentation& value, const QRectF&, const QRect&,
                  QString*) override {
         m_presenting = value.visible;
@@ -240,6 +313,81 @@ std::unique_ptr<NativeWindowPresentation> createNativeWindowPresentation(const L
 } // namespace snow_shot::presentation::live_window_detail
 
 namespace {
+void shutdownDoesNotWaitForNativeCleanup();
+void nativePresentationAvoidsContinuousReadback() {
+    using namespace snow_shot::presentation;
+    nativeFramesEnabled = true;
+    sourceState = LiveWindowState::Live;
+    const LiveWindowTarget target{42, 7, QRect(100, 200, 100, 80), QPoint(150, 240)};
+    auto first = createLiveWindowSource(target, QRect(120, 220, 60, 40));
+    auto second = createLiveWindowSource(target, QRect(130, 230, 20, 20));
+    int initialized = 0;
+    for (auto source : {first, second})
+        source->initialize([&](bool ok, const QString&) {
+            require(ok, "Native pixel leases support initial raster publication.");
+            ++initialized;
+        });
+    require(waitFor([&] { return initialized == 2; }), "Native consumers initialize.");
+    QWidget owner;
+    LiveWindowPresentation presentation;
+    presentation.owner = &owner;
+    presentation.imageTransform.rotate(90).scale(-1, 1);
+    require(first->setPresentation(presentation) && second->setPresentation(presentation),
+            "Native presentation supports rotations and reflections.");
+    const int reads = nativeReadbacks;
+    const int presented = nativePresentations;
+    require(waitFor([&] { return nativePresentations >= presented + 12; }),
+            "Both pins continue presenting GPU frames.");
+    require(nativeReadbacks == reads && activeStreams == 1,
+            "GPU presentation shares one stream without continuous CPU readback.");
+    QImage snapshot;
+    first->requestFrame([&](const QImage& image, const QString&) { snapshot = image; });
+    require(waitFor([&] { return !snapshot.isNull(); }), "Image actions receive CPU snapshots.");
+    require(snapshot.size() == QSize(60, 40) && snapshot.pixelColor(0, 0) == QColor(40, 120, 200) &&
+                nativeReadbacks == reads + 1,
+            "Only the requested snapshot reads pixels and preserves its untransformed crop.");
+    presentation.sourceViewport = QRectF(0.25, 0.25, 0.5, 0.5);
+    require(first->setPresentation(presentation),
+            "Display cropping preserves native presentation.");
+    require(nativeReadbacks == reads + 1, "Changing the display crop does not read CPU pixels.");
+    presentation.visible = false;
+    require(first->setPresentation(presentation) && second->setPresentation(presentation),
+            "Hidden native consumers suspend presentation.");
+    require(waitFor([&] { return activeStreams == 0; }),
+            "Hiding every native consumer releases the shared capture stream.");
+    presentation.visible = true;
+    const int beforeShow = nativePresentations;
+    require(first->setPresentation(presentation) && second->setPresentation(presentation),
+            "Showing native consumers resumes presentation.");
+    require(waitFor([&] { return nativePresentations > beforeShow + 4 && activeStreams == 1; }),
+            "Shown native consumers resume one shared stream.");
+    require(nativeReadbacks == reads + 1, "Showing GPU content does not require CPU readback.");
+    nativeReadbackFails = true;
+    bool readbackRejected = false;
+    first->requestFrame([&](const QImage& image, const QString& error) {
+        readbackRejected = image.isNull() && !error.isEmpty();
+    });
+    require(waitFor([&] { return readbackRejected; }),
+            "A failed CPU readback completes the image action with an error.");
+    nativeReadbackFails = false;
+    require(waitFor([&] { return first->state() == LiveWindowState::Live; }),
+            "Readback failure recovers through the normal capture retry policy.");
+    nativePresentationFails = true;
+    QImage fallback;
+    QObject::connect(first.get(), &LiveWindowSource::frameChanged,
+                     [&](const QImage& image) { fallback = image; });
+    require(waitFor([&] { return !first->usesNativePresentation() && !fallback.isNull(); }),
+            "A presenter failure falls back to fresh CPU frames without losing the source.");
+    require(first->state() == LiveWindowState::Live, "GPU fallback keeps image actions available.");
+    first->shutdown();
+    second->shutdown();
+    require(waitFor([&] { return activeStreams == 0; }),
+            "Native capture retires after final close.");
+    nativePresentationFails = false;
+    shutdownDoesNotWaitForNativeCleanup();
+    nativeFramesEnabled = false;
+}
+
 void shutdownDoesNotWaitForNativeCleanup() {
     using namespace snow_shot::presentation;
     const LiveWindowTarget target{42, 7, QRect(100, 200, 100, 80), QPoint(150, 240)};
@@ -538,5 +686,6 @@ int main(int argc, char** argv) {
     callbacksMayShutdownTheirSource();
     shutdownDoesNotWaitForNativeCleanup();
     failedInitializationCanRestart();
+    nativePresentationAvoidsContinuousReadback();
     return EXIT_SUCCESS;
 }

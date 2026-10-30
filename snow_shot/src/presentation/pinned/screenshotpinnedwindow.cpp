@@ -4071,7 +4071,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
         },
         outlined_icons::Picture());
     setActionTranslationSource(processAction, "Process image");
-    m_applyCropAction = m_contextMenu->addItem(tr("Apply Crop"));
+    m_applyCropAction =
+        m_contextMenu->addItem(tr("Apply Crop"), custom_outlined_icons::ApplyCrop());
     setActionTranslationSource(m_applyCropAction, "Apply Crop");
     m_applyCropAction->setObjectName(QStringLiteral("screenshotPinnedApplyCropAction"));
     m_applyCropAction->setProperty("liveCommand", QStringLiteral("apply_crop"));

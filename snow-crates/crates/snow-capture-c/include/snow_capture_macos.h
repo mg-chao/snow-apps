@@ -113,6 +113,11 @@ uint8_t snow_capture_macos_permission_request(void);
 uint8_t snow_capture_macos_hdr_supported(void);
 SnowMacStatus snow_capture_macos_snapshot(const SnowMacCaptureConfig*, SnowMacFrame**);
 SnowMacStatus snow_capture_macos_stream_create(const SnowMacCaptureConfig*, SnowMacStream**);
+/* Native-sized, independent window stream for live pins. Requires target_kind=2,
+ * hidden cursor, SDR, no output override, and fps 1..30. Retains offscreen windows
+ * and updates backing dimensions on resize. Other capture profiles are unchanged. */
+SnowMacStatus snow_capture_macos_live_window_stream_create(const SnowMacCaptureConfig*,
+                                                          SnowMacStream**);
 SnowMacStatus snow_capture_macos_stream_next(SnowMacStream*, uint32_t timeout_ms,
                                              SnowMacCaptureEvent*);
 void snow_capture_macos_stream_destroy(SnowMacStream*);

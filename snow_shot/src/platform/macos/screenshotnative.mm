@@ -341,6 +341,8 @@ void synchronizeScreenshotLayers() {
     // Keep native descendants in the same capture family above its tools and Qt modals.
     // Leave AppKit classes intact; lifecycle notifications reapply the policy.
     for (NSWindow* window in NSApp.windows) {
+        if ([window conformsToProtocol:@protocol(SnowCaptureContentWindow)])
+            continue;
         auto* state = nativePolicyState(window);
         if (state && !state->nativePanel)
             continue;

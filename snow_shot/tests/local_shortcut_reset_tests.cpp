@@ -168,6 +168,52 @@ void selectionTypeShortcutsPersistValidateAndReset(settings::SettingsRuntimeSess
     }
 }
 
+void pinWindowShortcutPersistsValidatesAndResets(settings::SettingsRuntimeSession& session,
+                                                 const QString& configurationPath) {
+    constexpr auto scope = settings::SettingsLocalShortcutScope::Screenshot;
+    const QString id = QStringLiteral("pin_window_to_screen");
+    const QString fieldId = QStringLiteral("screenshot-shortcut.") + id;
+    const shortcuts::ShortcutBindingList defaults{QStringLiteral("Alt+W")};
+    const shortcuts::ShortcutBindingList custom{QStringLiteral("Ctrl+Alt+F11"),
+                                                QStringLiteral("Ctrl+Alt+F12")};
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const auto before = configuration.snapshot();
+    const auto* field = settings::builtInSettingsRegistry().field(fieldId);
+    require(field && field->configurationKey == QStringLiteral("screenshot_shortcuts/") + id &&
+                field->definition->title.translated() == QStringLiteral("Pin Window to Screen") &&
+                field->reset == settings::SettingsSectionReset::ScreenshotEditorShortcuts,
+            "window pin must have a labeled, resettable setting in the screenshot shortcuts");
+    require(session.localShortcuts(scope, id) == defaults &&
+                storage::ScreenshotShortcutSettings().allShortcuts().contains(id),
+            "Pin Window to Screen must expose Alt+W as its default screenshot shortcut");
+    require(
+        !session.validateLocalShortcut(scope, QStringLiteral("pin_to_screen"),
+                                       defaults.constFirst())
+                .supported &&
+            !session.applyLocalShortcuts(scope, id, {QStringLiteral("Ctrl+F")}) &&
+            session.state(fieldId).phase == settings::SettingsWritePhase::Rejected &&
+            storage::ScreenshotShortcutSettings().shortcuts(id) == defaults,
+        "the two pin actions must reject conflicting shortcuts without changing stored bindings");
+    require(session.discard(fieldId) && session.localShortcuts(scope, id) == defaults,
+            "discarding a rejected window pin shortcut must restore its accepted binding");
+    require(session.applyLocalShortcuts(scope, id, custom) &&
+                session.localShortcuts(scope, id) == custom && configuration.flushNow().success,
+            "Pin Window to Screen must support two persistent custom shortcuts");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(shortcuts::shortcutBindingsFromJson(
+                reloaded.value(QStringLiteral("screenshot_shortcuts/") + id), false) == custom,
+            "custom window pin shortcuts must survive configuration reload");
+    for (const auto& value : {custom, shortcuts::ShortcutBindingList{}}) {
+        require(session.applyLocalShortcuts(scope, id, value) &&
+                    session.localShortcuts(scope, id) == value,
+                "Pin Window to Screen must support customization and disabling");
+        require(session.reset(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
+                    session.localShortcuts(scope, id) == defaults &&
+                    configuration.snapshot() == before,
+                "reset must restore customized and disabled window pin shortcuts to Alt+W");
+    }
+}
+
 void allLocalShortcutSectionsReset(settings::SettingsRuntimeSession& session) {
     const auto& registry = settings::builtInSettingsRegistry();
     auto& configuration = storage::ApplicationStorage::instance().configuration();
@@ -305,6 +351,9 @@ int main(int argc, char** argv) {
             session, backend,
             QDir(applicationStorage.configurationDirectory())
                 .filePath(QStringLiteral("config.json")));
+        pinWindowShortcutPersistsValidatesAndResets(
+            session, QDir(applicationStorage.configurationDirectory())
+                         .filePath(QStringLiteral("config.json")));
         allLocalShortcutSectionsReset(session);
         conflictingResetRemainsAtomic(session);
         annotationResetPreservesPrintShortcut(session);

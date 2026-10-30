@@ -13282,9 +13282,11 @@ if(WIN32)
         src/platform/windows/livewindowpresentation.h)
     target_link_libraries(snow_shot_live_window PRIVATE dwmapi user32 gdi32 uxtheme comctl32)
 elseif(APPLE)
-    target_sources(snow_shot_live_window PRIVATE src/platform/macos/livewindownative.mm)
+    target_sources(snow_shot_live_window PRIVATE src/platform/macos/livewindownative.mm
+        src/platform/macos/livewindowcapture.cpp src/platform/macos/livewindowpresentation.mm)
     target_link_libraries(snow_shot_live_window PRIVATE "-framework AppKit"
-        "-framework ApplicationServices")
+        "-framework ApplicationServices" "-framework QuartzCore" "-framework CoreVideo"
+        "-framework IOSurface")
 endif()
 snow_shot_register_source_capability(live_window
     FULL_TARGET snow_shot_live_window MINI_TARGET snow_shot_live_window)
@@ -13323,6 +13325,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT "QT_QPA_PLATFORM=windows")
     elseif(APPLE)
+        add_executable(snow-shot-macos-live-window-capture-tests
+            tests/macos_live_window_capture_tests.cpp src/platform/macos/livewindowcapture.cpp)
+        target_include_directories(snow-shot-macos-live-window-capture-tests PRIVATE include
+            ../snow-crates/crates/snow-capture-c/include)
+        target_link_libraries(snow-shot-macos-live-window-capture-tests PRIVATE Qt6::Gui)
+        add_test(NAME snow-shot-macos-live-window-capture-tests
+            COMMAND snow-shot-macos-live-window-capture-tests)
+        set_tests_properties(snow-shot-macos-live-window-capture-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
         add_executable(snow-shot-macos-live-window-native-tests
             tests/macos_live_window_native_tests.mm)
         set_target_properties(snow-shot-macos-live-window-native-tests PROPERTIES
@@ -13342,6 +13353,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-macos-live-window-native-tests PROPERTIES
             LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 180
             ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+        if(SNOW_APPS_BUILD_BENCHMARKS)
+            target_compile_definitions(snow-shot-macos-live-window-native-tests PRIVATE
+                SNOW_SHOT_MACOS_LIVE_WINDOW_BENCHMARK=1)
+            add_test(NAME snow-shot-macos-live-window-performance-benchmark
+                COMMAND snow-shot-macos-live-window-native-tests --performance -platform cocoa)
+            set_tests_properties(snow-shot-macos-live-window-performance-benchmark PROPERTIES
+                LABELS "benchmark;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 180
+                ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+        endif()
     endif()
     add_executable(snow-shot-live-window-geometry-tests tests/live_window_geometry_tests.cpp)
     target_include_directories(snow-shot-live-window-geometry-tests PRIVATE include)
@@ -13374,6 +13394,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-pinned-window-tests --live-window-status-only -platform offscreen)
         set_tests_properties(snow-shot-live-window-status-fractional-dpi-tests PROPERTIES
             LABELS unit TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1.5")
+        if(APPLE)
+            target_sources(snow-shot-pinned-window-tests PRIVATE
+                tests/macos_live_pinned_window_tests.mm)
+            add_test(NAME snow-shot-macos-live-window-pin-native-tests
+                COMMAND snow-shot-pinned-window-tests --live-window-native-shell-only -platform cocoa)
+            set_tests_properties(snow-shot-macos-live-window-pin-native-tests PROPERTIES
+                LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 90 SKIP_RETURN_CODE 77)
+        endif()
         if(WIN32)
             set_property(TEST snow-shot-live-window-pin-tests snow-shot-live-window-status-tests
                 snow-shot-live-window-status-fractional-dpi-tests APPEND PROPERTY

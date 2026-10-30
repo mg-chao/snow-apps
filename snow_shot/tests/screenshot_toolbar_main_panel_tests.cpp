@@ -3,11 +3,13 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotdrawingtoolbaroptions.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
+#include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
 #include "snow_shot/presentation/mainwindowskinwidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "../src/image/snowimageqtcodec.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 
@@ -2201,6 +2203,10 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
         require(pinOption && liveOption &&
                     content->layout()->indexOf(pinOption) < content->layout()->indexOf(liveOption),
                 "Pin primary leads the live pin option in the standard popup");
+        const auto liveShortcut =
+            snow_shot::presentation::formatShortcutListDisplayText({QStringLiteral("Alt+W")});
+        require(liveOption->toolTip().contains(liveShortcut),
+                "the live pin popup option must display its default Alt+W shortcut");
         liveOption->click();
         require(pins == 1 && lives == 1 && trigger->property("screenshotToolbarItemId") == live,
                 "live popup action dispatches once and becomes the group primary");
@@ -2236,6 +2242,25 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
         require(palette.activateScreenshotShortcut(QStringLiteral("pin_to_screen")) && pins == 2 &&
                     lives == 2 && trigger->property("screenshotToolbarItemId") == pin,
                 "the existing Pin shortcut selects and executes its standard primary");
+        require(palette.activateScreenshotShortcut(QStringLiteral("pin_window_to_screen")) &&
+                    pins == 2 && lives == 3 &&
+                    trigger->property("screenshotToolbarItemId") == live &&
+                    trigger->toolTip().contains(liveShortcut),
+                "the window pin shortcut must execute once, select its primary, and show its hint");
+        const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
+        const QString shortcutId = QStringLiteral("pin_window_to_screen");
+        const auto defaults = shortcutSettings.shortcuts(shortcutId);
+        require(
+            shortcutSettings.setShortcuts(shortcutId, {QStringLiteral("Alt+J")}) &&
+                trigger->toolTip().contains(snow_shot::presentation::formatShortcutListDisplayText(
+                    {QStringLiteral("Alt+J")})) &&
+                !trigger->toolTip().contains(liveShortcut),
+            "the selected window pin tooltip must refresh immediately after rebinding");
+        require(shortcutSettings.setShortcuts(shortcutId, {}) &&
+                    trigger->toolTip() == QStringLiteral("Pin Window to Screen"),
+                "disabling the shortcut must remove its hint from the window pin tooltip");
+        require(shortcutSettings.setShortcuts(shortcutId, defaults),
+                "restore the window pin shortcut after tooltip checks");
     }
     for (const Layout& custom : {Layout{{{pin, live}}, {}}, Layout{{{pin}, {live}}, {}}}) {
         auto options = screenshotOptions();

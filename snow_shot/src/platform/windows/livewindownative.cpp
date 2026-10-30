@@ -175,6 +175,9 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
     return std::nullopt;
 }
 namespace live_window_detail {
+std::unique_ptr<NativeWindowCapture> createNativeWindowCapture(const LiveWindowTarget&) {
+    return {};
+}
 std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<WindowsLiveWindow>(target);
 }

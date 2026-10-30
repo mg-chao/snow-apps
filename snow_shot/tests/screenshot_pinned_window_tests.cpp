@@ -32,6 +32,7 @@
 #include <QTabletEvent>
 #ifdef Q_OS_MACOS
 #include <CoreGraphics/CoreGraphics.h>
+int macLivePinnedWindowTests();
 #endif
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
@@ -27243,6 +27244,12 @@ int main(int argc, char* argv[]) {
             pinnedLiveWindowTests();
             return 0;
         }
+#ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only"))) {
+            IsolatedPinnedStorage storage;
+            return macLivePinnedWindowTests();
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--shake-sampling-performance-only"))) {
             pinnedShakeSamplingBenchmark();
             return 0;

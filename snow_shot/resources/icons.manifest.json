@@ -159,6 +159,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ApplyCrop",
+      "name": "apply-crop",
+      "source": "../src/presentation/components/icons/resources/apply-crop.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowRatio",
       "name": "arrow-ratio",
       "source": "../src/presentation/components/icons/resources/arrow-ratio.svg",
