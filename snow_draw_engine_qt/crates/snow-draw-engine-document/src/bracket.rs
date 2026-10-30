@@ -4,20 +4,23 @@ use snow_draw_engine_core::{DrawRect, Point, arrow::ArrowPathCommand};
 
 type Cubic = [Point<f64>; 4];
 
-/// Four cubics, with continuous shoulder tangents and a rounded cusp at the apex.
-/// Fixed-size geometry keeps pointer updates independent of document population.
-pub fn bracket_segments(arrow: &ArrowData) -> Option<[Cubic; 4]> {
+/// The two endpoints and middle tip in canvas coordinates, without stroke overflow.
+pub fn bracket_snap_points(arrow: &ArrowData) -> Option<[Point<f64>; 3]> {
     if !arrow.is_bracket() || arrow.points.len() != 3 {
         return None;
     }
-    let [a, c, b] =
+    let points =
         [0, 1, 2].map(|i| Point::new(arrow.x + arrow.points[i][0], arrow.y + arrow.points[i][1]));
-    if [a, b, c]
+    points
         .iter()
-        .any(|p| !p.x.is_finite() || !p.y.is_finite())
-    {
-        return None;
-    }
+        .all(|p| p.x.is_finite() && p.y.is_finite())
+        .then_some(points)
+}
+
+/// Four cubics, with continuous shoulder tangents and a rounded cusp at the apex.
+/// Fixed-size geometry keeps pointer updates independent of document population.
+pub fn bracket_segments(arrow: &ArrowData) -> Option<[Cubic; 4]> {
+    let [a, c, b] = bracket_snap_points(arrow)?;
     let length = (b.x - a.x).hypot(b.y - a.y);
     if !length.is_finite() || length <= 1e-6 {
         return None;

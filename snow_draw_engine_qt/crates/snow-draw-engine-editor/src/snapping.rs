@@ -1,5 +1,10 @@
 use super::*;
 use snow_draw_engine_core::arrow::{BindMode, EngineContext};
+use snow_draw_engine_document::{ElementData, bracket_snap_points};
+
+#[cfg(test)]
+#[path = "snapping/bracket_snap_tests.rs"]
+mod bracket_snap_tests;
 
 /// Actual binding-target geometry, independent of compound selection/layout bounds.
 pub(crate) struct BindableElementOverride {
@@ -557,12 +562,14 @@ impl Editor {
         {
             return None;
         }
+        let (references, reference_points) = if element_snapping {
+            Self::visible_snap_references(document, excluded_ids)
+        } else {
+            (Vec::new(), Vec::new())
+        };
         Some(ObjectSnapPlan {
-            references: if element_snapping {
-                Self::visible_reference_rects(document, excluded_ids)
-            } else {
-                Vec::new()
-            },
+            references,
+            reference_points,
             snap_distance: self.zoom_adjusted_snap_distance(),
             enable_point_snaps: element_snapping && self.config.snap.enable_point_snaps,
             enable_gap_snaps: element_snapping && self.config.snap.enable_gap_snaps,
@@ -571,11 +578,12 @@ impl Editor {
         })
     }
 
-    fn visible_reference_rects(
+    fn visible_snap_references(
         document: &DocumentModel,
         excluded_ids: &[ElementId],
-    ) -> Vec<DrawRect> {
-        let mut result = Vec::new();
+    ) -> (Vec<DrawRect>, Vec<Point<f64>>) {
+        let mut rectangles = Vec::new();
+        let mut points = Vec::new();
         for id in document.paint_order() {
             if excluded_ids.contains(id) {
                 continue;
@@ -589,11 +597,16 @@ impl Editor {
             if element.data.is_filter() {
                 continue;
             }
+            if let ElementData::Arrow(arrow) = &element.data
+                && let Some(targets) = bracket_snap_points(arrow)
+            {
+                points.extend(targets);
+            }
             if let Some(rect) = document.element_rect_proxy(*id) {
-                result.push(rotated_rectangle_aabb(&rect));
+                rectangles.push(rotated_rectangle_aabb(&rect));
             }
         }
-        result
+        (rectangles, points)
     }
 }
 
@@ -728,6 +741,7 @@ impl<'a> ObjectSnapActor<'a> {
 
 pub(crate) struct ObjectSnapPlan {
     pub(crate) references: Vec<DrawRect>,
+    reference_points: Vec<Point<f64>>,
     pub(crate) snap_distance: f64,
     pub(crate) enable_point_snaps: bool,
     enable_gap_snaps: bool,
@@ -737,7 +751,8 @@ pub(crate) struct ObjectSnapPlan {
 
 impl ObjectSnapPlan {
     pub(crate) fn snap_rect(&self, request: ObjectSnapRectRequest<'_>) -> ObjectSnapResult {
-        let mut result = OBJECT_SNAP_SERVICE.snap_rect(request);
+        let mut result =
+            OBJECT_SNAP_SERVICE.snap_rect_with_reference_points(request, &self.reference_points);
         for (axis, lines, anchors) in [
             (
                 SnapGuideAxis::Vertical,
@@ -1059,6 +1074,7 @@ mod external_guide_tests {
     fn plan(references: Vec<DrawRect>, element_snapping: bool) -> ObjectSnapPlan {
         ObjectSnapPlan {
             references,
+            reference_points: Vec::new(),
             snap_distance: 8.0,
             enable_point_snaps: element_snapping,
             enable_gap_snaps: false,

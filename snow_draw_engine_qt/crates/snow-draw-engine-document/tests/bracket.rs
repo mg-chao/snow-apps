@@ -27,6 +27,27 @@ fn point(x: f64, y: f64) -> Point<f64> {
     Point::new(x, y)
 }
 #[test]
+fn bracket_snap_points_preserve_exact_canvas_controls_without_stroke_or_bounds() {
+    for mirror in [-1.0, 1.0] {
+        let points = [
+            point(120. * mirror, 20.),
+            point(40. * mirror, 90.),
+            point(100. * mirror, 200.),
+        ];
+        let mut arrow = brace(points);
+        arrow.stroke_width = 72.;
+        assert_eq!(bracket_snap_points(&arrow), Some(points));
+        arrow.linear_kind = LinearElementKind::Line;
+        assert!(bracket_snap_points(&arrow).is_none());
+        arrow.linear_kind = LinearElementKind::Bracket;
+        arrow.points.pop();
+        assert!(bracket_snap_points(&arrow).is_none());
+    }
+    let mut arrow = brace([point(0., 0.), point(80., 100.), point(0., 200.)]);
+    arrow.x = f64::INFINITY;
+    assert!(bracket_snap_points(&arrow).is_none());
+}
+#[test]
 fn bracket_path_has_four_cubics_exact_controls_and_tight_bounds() {
     let a = brace([point(0., 0.), point(80., 100.), point(0., 200.)]);
     validate_arrow(&a).unwrap();

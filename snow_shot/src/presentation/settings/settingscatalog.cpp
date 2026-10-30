@@ -1234,7 +1234,7 @@ SettingsItemDefinition toggleWindowUnderCursorAlwaysOnTopItem() {
                           "Toggle whether the window under the cursor stays above other windows"),
         {}, GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
         QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"),
-        []() { return outlined_icons::ToTop(); });
+        []() { return custom_outlined_icons::WindowUnderCursorAlwaysOnTop(); });
 }
 #endif
 
@@ -4827,7 +4827,7 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog",
                                   "Toggle Always on Top for the Window Under the Cursor"),
                 GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
-                []() { return outlined_icons::ToTop(); }),
+                []() { return custom_outlined_icons::WindowUnderCursorAlwaysOnTop(); }),
 #endif
           quick(
               QStringLiteral("quick.toggle-global-hotkeys"),

@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use snow_draw_engine_core::{
     DrawRect, Point, SnapGuide, SnapGuideAxis, SnapGuideKind, SnapQuery, SnapResult,
 };
 use snow_draw_engine_document::{
-    Document, DocumentDelta, ElementData, ElementId, RectangleData, rect_bounds,
+    Document, DocumentDelta, ElementData, ElementId, RectangleData, bracket_snap_points,
+    rect_bounds,
 };
 
 use super::SpatialIndex;
@@ -10,14 +13,25 @@ use super::SpatialIndex;
 #[derive(Clone, Debug, Default)]
 pub struct SnapIndex {
     rects: Vec<Option<DrawRect>>,
+    brackets: BTreeMap<ElementId, BracketSnapReference>,
+}
+
+#[derive(Clone, Debug)]
+struct BracketSnapReference {
+    points: [Point<f64>; 3],
+    proxy: RectangleData,
 }
 
 impl SnapIndex {
     pub fn rebuild(&mut self, document: &Document) {
         self.rects.clear();
+        self.brackets.clear();
         for state in document.element_states() {
             if !state.visible {
                 continue;
+            }
+            if let Some(reference) = bracket_reference(state.data) {
+                self.brackets.insert(state.id, reference);
             }
             let Some(rect) = snap_rectangle(state.data) else {
                 continue;
@@ -36,6 +50,7 @@ impl SnapIndex {
         }
 
         for id in ids {
+            self.brackets.remove(&id);
             self.ensure_capacity(id.index as usize);
             self.rects[id.index as usize] = None;
             let Ok(element) = document.element(id) else {
@@ -43,6 +58,9 @@ impl SnapIndex {
             };
             if !element.meta.visible {
                 continue;
+            }
+            if let Some(reference) = bracket_reference(&element.data) {
+                self.brackets.insert(id, reference);
             }
             let Some(rect) = snap_rectangle(&element.data) else {
                 continue;
@@ -117,33 +135,72 @@ impl SnapIndex {
             }
         });
 
-        let mut point = query.point;
+        // Axis alignment is independent of proximity on the perpendicular axis.
+        // Keep these sparse targets outside the local spatial candidate query.
+        let mut reference_x = None;
+        let mut reference_y = None;
+        for (id, reference) in &self.brackets {
+            if !include_candidate(*id, &reference.proxy) {
+                continue;
+            }
+            for candidate in reference.points {
+                let distance_x = (candidate.x - query.point.x).abs();
+                if distance_x <= query.threshold
+                    && (distance_x < best_x_distance
+                        || (distance_x == best_x_distance
+                            && snap_x.is_none_or(|value| candidate.x < value)))
+                {
+                    snap_x = Some(candidate.x);
+                    best_x_distance = distance_x;
+                    reference_x = Some(candidate);
+                }
+                let distance_y = (candidate.y - query.point.y).abs();
+                if distance_y <= query.threshold
+                    && (distance_y < best_y_distance
+                        || (distance_y == best_y_distance
+                            && snap_y.is_none_or(|value| candidate.y < value)))
+                {
+                    snap_y = Some(candidate.y);
+                    best_y_distance = distance_y;
+                    reference_y = Some(candidate);
+                }
+            }
+        }
+
+        snap_x = snap_x.filter(|value| (*value - query.point.x).abs() <= query.threshold);
+        snap_y = snap_y.filter(|value| (*value - query.point.y).abs() <= query.threshold);
+        let point = Point::new(
+            snap_x.unwrap_or(query.point.x),
+            snap_y.unwrap_or(query.point.y),
+        );
         let mut guides = Vec::new();
 
-        if let Some(value) =
-            snap_x.filter(|value| (*value - query.point.x).abs() <= query.threshold)
-        {
-            point.x = value;
-            guides.push(SnapGuide {
-                kind: SnapGuideKind::Point,
-                axis: SnapGuideAxis::Vertical,
-                start: Point::new(value, query.point.y),
-                end: Point::new(value, query.point.y),
-                markers: vec![Point::new(value, query.point.y)],
-                label: None,
+        if let Some(value) = snap_x {
+            guides.push(if let Some(reference) = reference_x {
+                bracket_point_guide(SnapGuideAxis::Vertical, point, reference)
+            } else {
+                SnapGuide {
+                    kind: SnapGuideKind::Point,
+                    axis: SnapGuideAxis::Vertical,
+                    start: Point::new(value, query.point.y),
+                    end: Point::new(value, query.point.y),
+                    markers: vec![Point::new(value, query.point.y)],
+                    label: None,
+                }
             });
         }
-        if let Some(value) =
-            snap_y.filter(|value| (*value - query.point.y).abs() <= query.threshold)
-        {
-            point.y = value;
-            guides.push(SnapGuide {
-                kind: SnapGuideKind::Point,
-                axis: SnapGuideAxis::Horizontal,
-                start: Point::new(query.point.x, value),
-                end: Point::new(query.point.x, value),
-                markers: vec![Point::new(query.point.x, value)],
-                label: None,
+        if let Some(value) = snap_y {
+            guides.push(if let Some(reference) = reference_y {
+                bracket_point_guide(SnapGuideAxis::Horizontal, point, reference)
+            } else {
+                SnapGuide {
+                    kind: SnapGuideKind::Point,
+                    axis: SnapGuideAxis::Horizontal,
+                    start: Point::new(query.point.x, value),
+                    end: Point::new(query.point.x, value),
+                    markers: vec![Point::new(query.point.x, value)],
+                    label: None,
+                }
             });
         }
 
@@ -154,6 +211,68 @@ impl SnapIndex {
         if self.rects.len() <= index {
             self.rects.resize(index + 1, None);
         }
+    }
+}
+
+fn bracket_reference(data: &ElementData) -> Option<BracketSnapReference> {
+    let ElementData::Arrow(arrow) = data else {
+        return None;
+    };
+    let points = bracket_snap_points(arrow)?;
+    let bounds = DrawRect::new(
+        points.iter().map(|p| p.x).fold(f64::INFINITY, f64::min),
+        points.iter().map(|p| p.y).fold(f64::INFINITY, f64::min),
+        points.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max),
+        points.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max),
+    );
+    Some(BracketSnapReference {
+        points,
+        // Only the eligibility callback sees this proxy. Its edges and center
+        // must never become alignment targets.
+        proxy: RectangleData {
+            text_element_id: None,
+            rectangle_kind: Default::default(),
+            highlight_shape: Default::default(),
+            center: bounds.center(),
+            width: bounds.width(),
+            height: bounds.height(),
+            rotation: 0.0,
+            fill: arrow.fill,
+            fill_style: arrow.fill_style,
+            stroke: arrow.stroke,
+            stroke_width: arrow.stroke_width,
+            stroke_style: arrow.stroke_style,
+            stroke_rendering_style: Default::default(),
+            stroke_rendering_seed: 0,
+            corner_radii: Default::default(),
+            opacity: arrow.opacity,
+        },
+    })
+}
+
+fn bracket_point_guide(axis: SnapGuideAxis, point: Point<f64>, reference: Point<f64>) -> SnapGuide {
+    let (start, end) = if axis == SnapGuideAxis::Vertical {
+        (
+            Point::new(point.x, point.y.min(reference.y)),
+            Point::new(point.x, point.y.max(reference.y)),
+        )
+    } else {
+        (
+            Point::new(point.x.min(reference.x), point.y),
+            Point::new(point.x.max(reference.x), point.y),
+        )
+    };
+    SnapGuide {
+        kind: SnapGuideKind::Point,
+        axis,
+        start,
+        end,
+        markers: if point == reference {
+            vec![point]
+        } else {
+            vec![point, reference]
+        },
+        label: None,
     }
 }
 
@@ -173,3 +292,7 @@ fn nearest_grid_value(value: f64, include_grid: bool, grid_size: f64) -> Option<
     }
     Some((value / grid_size).round() * grid_size)
 }
+
+#[cfg(test)]
+#[path = "bracket_snap_tests.rs"]
+mod bracket_snap_tests;

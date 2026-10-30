@@ -671,6 +671,7 @@ impl Editor {
                     .original_elements
                     .iter()
                     .map(|element| element.id)
+                    .chain(context.original_arrows.iter().map(|arrow| arrow.id))
                     .collect::<Vec<_>>();
                 if let Some(plan) = self.object_snap_plan(
                     document,

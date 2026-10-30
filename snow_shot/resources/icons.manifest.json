@@ -1662,6 +1662,14 @@
       "fit": "contain"
     },
     {
+      "variant": "outlined",
+      "symbol": "WindowUnderCursorAlwaysOnTop",
+      "name": "window-under-cursor-always-on-top",
+      "source": "../src/presentation/components/icons/resources/window-under-cursor-always-on-top.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
       "variant": "twotone",
       "symbol": "ScreenshotFeature",
       "name": "screenshot-feature",

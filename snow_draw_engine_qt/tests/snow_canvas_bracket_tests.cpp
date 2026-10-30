@@ -103,9 +103,54 @@ void controlsAndExport() {
     require(canvas.undo() && canvas.undo() && canvas.undo() && !runtime.hasDocumentContent(),
             "one history operation per creation or edit");
 }
+
+void otherElementsSnapToBracketControls() {
+    SnowCanvasRuntime runtime;
+    const auto result = QJsonDocument::fromJson(runtime.applyAnnotationTransaction(
+        R"({"version":1,"operations":[{"type":"bracket","points":[[-100,-100],[0,0],[-80,100]]}]})"));
+    require(result.object().value("created_element_ids").toArray().size() == 1,
+            "insert skewed bracket snap reference");
+    const auto bracket = owner(runtime);
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0, 0, 1) && canvas.setCanvasTool(SnowCanvasTool::Shape),
+            "activate shape for bracket snapping");
+    auto snap = canvas.canvasSnapConfig();
+    snap.enabled = true;
+    require(canvas.setCanvasSnapConfig(snap), "enable bracket control snapping");
+    drag(canvas, {400, 40}, {303, 183});
+    const auto session = runtime.serializeDocumentSession();
+    const auto checkpoint = runtime.documentCheckpoint();
+    const auto elementSlots = QJsonDocument::fromJson(session)
+                                  .object()
+                                  .value("document")
+                                  .toObject()
+                                  .value("slots")
+                                  .toArray();
+    int rectangles = 0;
+    for (const auto& slot : elementSlots) {
+        const auto data = slot.toObject().value("data").toObject();
+        if (!data.contains("Rectangle"))
+            continue;
+        ++rectangles;
+        const auto rect = data.value("Rectangle").toObject();
+        const auto center = rect.value("center").toObject();
+        require(center.value("x").toDouble() == 50 && center.value("y").toDouble() == -70 &&
+                    rect.value("width").toDouble() == 100 && rect.value("height").toDouble() == 140,
+                "rectangle edges snap independently to the bracket tip coordinates");
+    }
+    require(rectangles == 1 && owner(runtime) == bracket,
+            "snapping creates one rectangle and preserves the bracket");
+    require(canvas.undo() && owner(runtime) == bracket, "snapped creation undoes atomically");
+    require(canvas.redo() && runtime.documentCheckpoint() == checkpoint,
+            "redo restores snapped geometry");
+}
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     controlsAndExport();
+    otherElementsSnapToBracketControls();
     return 0;
 }

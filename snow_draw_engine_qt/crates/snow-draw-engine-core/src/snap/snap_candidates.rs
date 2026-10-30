@@ -38,7 +38,7 @@ impl ObjectSnapService {
         candidates
     }
 
-    fn build_point_candidates(
+    pub(super) fn build_point_candidates(
         axis: SnapAxis,
         target_rect: DrawRect,
         reference_rects: &[DrawRect],

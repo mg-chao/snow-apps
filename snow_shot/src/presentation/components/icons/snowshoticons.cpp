@@ -2429,14 +2429,28 @@ SOFTWARE.
      std::string_view("ab735a412b318d0e70db3d889088294517cea452e9945e276f4220746ca22ab3"),
      IconColorModel::Monochrome, IconFit::Contain,
      IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
+    {std::string_view("snow-shot"), std::string_view("outlined"),
+     std::string_view("window-under-cursor-always-on-top"),
+     std::string_view(
+         R"ADQT_SVG_207(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="__ADQT_SLOT_PRIMARY__">
+  <path d="M184 240h352v72H184v504h656V568h72v248a72 72 0 0 1-72 72H184a72 72 0 0 1-72-72V312a72 72 0 0 1 72-72Z"/>
+  <path d="M148 384h388v72H148Z"/>
+  <path d="M644 144h224v72h-32v112l48 48v56H628v-56l48-48V216h-32Z" fill="none" stroke="__ADQT_SLOT_PRIMARY__" stroke-width="72" stroke-linejoin="round"/>
+  <path d="M720 432h72v112a8 8 0 0 1-8 8h-56a8 8 0 0 1-8-8Z"/>
+  <path d="M304 520a8 8 0 0 1 13-6l224 176a8 8 0 0 1-4 14l-96 9-52 82a8 8 0 0 1-15-2l-70-271Z"/>
+</svg>
+)ADQT_SVG_207"),
+     std::string_view("93dffa197d0a856580d7eba56185bd5aeedbc02d307d853f5272c3699603e3bc"),
+     IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view(""), std::string_view("")}, false},
     {std::string_view("snow-shot"), std::string_view("twotone"),
      std::string_view("screenshot-feature"),
      std::string_view(
-         R"ADQT_SVG_207(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="__ADQT_SLOT_PRIMARY__">
+         R"ADQT_SVG_208(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="__ADQT_SLOT_PRIMARY__">
   <path d="M189.44 28.16h62.72a8.96 8.96 0 0 1 8.96 8.96v725.76h725.76a8.96 8.96 0 0 1 8.96 8.96v62.72a8.96 8.96 0 0 1-8.96 8.96H843.52v143.36a8.96 8.96 0 0 1-8.96 8.96h-62.72a8.96 8.96 0 0 1-8.96-8.96V843.52H216.32a35.84 35.84 0 0 1-35.84-35.84V261.12H37.12a8.96 8.96 0 0 1-8.96-8.96v-62.72a8.96 8.96 0 0 1 8.96-8.96h143.36V37.12a8.96 8.96 0 0 1 8.96-8.96Z"/>
   <path d="M350.72 180.48h456.96a35.84 35.84 0 0 1 35.84 35.84v456.96a8.96 8.96 0 0 1-8.96 8.96h-62.72a8.96 8.96 0 0 1-8.96-8.96V261.12H350.72a8.96 8.96 0 0 1-8.96-8.96v-62.72a8.96 8.96 0 0 1 8.96-8.96Z" fill="__ADQT_SLOT_SECONDARY__"/>
 </svg>
-)ADQT_SVG_207"),
+)ADQT_SVG_208"),
      std::string_view("20916d90e3d38348535e406f1a6c310411444110cd204710d55e49f43587c5ab"),
      IconColorModel::TwoTone, IconFit::Contain,
      IconStaticColors{std::string_view(""), std::string_view("#9254DE"), std::string_view("")},
@@ -2445,7 +2459,7 @@ SOFTWARE.
 
 constexpr IconPack kStaticPack{
     std::string_view("snow-shot"), std::string_view("Snow Shot project-owned static SVG assets"),
-    std::string_view("12d9668bd90957e7b462eedd08109caaa1202417d54a59c50cc5a14b7a24de25"), kEntries,
+    std::string_view("7785460547a4bfc1659f6d95ba212ff3b1761ac7606187cdf79d719b9fc8fc9a"), kEntries,
     sizeof(kEntries) / sizeof(kEntries[0])};
 
 } // namespace
@@ -3305,12 +3319,16 @@ adqt::icons::IconRef WindowGroupSwitch(const adqt::icons::IconColors& colors) {
     return pack().icon(206, colors);
 }
 
+adqt::icons::IconRef WindowUnderCursorAlwaysOnTop(const adqt::icons::IconColors& colors) {
+    return pack().icon(207, colors);
+}
+
 } // namespace outlined
 
 namespace twotone {
 
 adqt::icons::IconRef ScreenshotFeature(const adqt::icons::IconColors& colors) {
-    return pack().icon(207, colors);
+    return pack().icon(208, colors);
 }
 
 } // namespace twotone

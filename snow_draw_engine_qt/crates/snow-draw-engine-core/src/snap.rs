@@ -9,6 +9,10 @@ mod snap_guides;
 #[path = "snap/snap_scoring.rs"]
 mod snap_scoring;
 
+#[cfg(test)]
+#[path = "snap/bracket_snap_tests.rs"]
+mod bracket_snap_tests;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SnappingMode {
     #[default]
@@ -370,7 +374,16 @@ impl ObjectSnapService {
     }
 
     pub fn snap_rect(&self, request: ObjectSnapRectRequest<'_>) -> ObjectSnapResult {
-        self.snap_rect_with_move_constraints(request, None)
+        self.snap_rect_with_reference_points(request, &[])
+    }
+
+    /// Point references supply axis alignments and markers, but never spacing geometry.
+    pub fn snap_rect_with_reference_points(
+        &self,
+        request: ObjectSnapRectRequest<'_>,
+        reference_points: &[Point<f64>],
+    ) -> ObjectSnapResult {
+        self.snap_rect_impl(request, reference_points, None)
     }
 
     /// Keep the unconstrained editor path unchanged. Movement clients may restrict
@@ -379,6 +392,15 @@ impl ObjectSnapService {
     pub fn snap_rect_with_move_constraints(
         &self,
         request: ObjectSnapRectRequest<'_>,
+        constraints: Option<ObjectSnapMoveConstraints>,
+    ) -> ObjectSnapResult {
+        self.snap_rect_impl(request, &[], constraints)
+    }
+
+    fn snap_rect_impl(
+        &self,
+        request: ObjectSnapRectRequest<'_>,
+        reference_points: &[Point<f64>],
         constraints: Option<ObjectSnapMoveConstraints>,
     ) -> ObjectSnapResult {
         let ObjectSnapRectRequest {
@@ -392,7 +414,7 @@ impl ObjectSnapService {
         } = request;
 
         if snap_distance <= 0.0
-            || reference_rects.is_empty()
+            || (reference_rects.is_empty() && reference_points.is_empty())
             || (!enable_point_snaps && !enable_gap_snaps)
             || (target_anchors_x.is_empty() && target_anchors_y.is_empty())
         {
@@ -425,6 +447,28 @@ impl ObjectSnapService {
             enable_point_snaps,
             enable_gap_snaps,
         );
+
+        if enable_point_snaps {
+            let point_rects: Vec<_> = reference_points
+                .iter()
+                .filter(|point| point.x.is_finite() && point.y.is_finite())
+                .map(|point| DrawRect::new(point.x, point.y, point.x, point.y))
+                .collect();
+            candidates_x.extend(Self::build_point_candidates(
+                SnapAxis::X,
+                target_rect,
+                &point_rects,
+                &effective_target_anchors_x,
+                snap_distance,
+            ));
+            candidates_y.extend(Self::build_point_candidates(
+                SnapAxis::Y,
+                target_rect,
+                &point_rects,
+                &effective_target_anchors_y,
+                snap_distance,
+            ));
+        }
 
         if let Some(limits) = constraints {
             candidates_x.retain(|candidate| {
