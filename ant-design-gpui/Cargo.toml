@@ -20,6 +20,7 @@ num-bigint = "0.4"
 num-traits = "0.2"
 image = { version = "0.25.10", default-features = false }
 data-url = "0.3.2"
+chrono = "0.4.45"
 
 [dev-dependencies]
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions", "test-support"] }
@@ -143,4 +144,13 @@ required-features = ["test-support"]
 
 [[example]]
 name = "color_picker_accessibility"
+required-features = ["test-support"]
+
+[[bench]]
+name = "date_time_picker"
+harness = false
+required-features = ["test-support"]
+
+[[example]]
+name = "date_time_picker_accessibility"
 required-features = ["test-support"]

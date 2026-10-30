@@ -1,5 +1,11 @@
 # Ant Design GPUI
 
+DatePicker and TimePicker provide native date, time, date-time, range and multiple
+selection, period panels, chrono formatting and retained editable inputs.
+Open `--component date-picker` or `--component time-picker` in the gallery;
+see the [picker guide](docs/date-time-picker.md) and
+[verification status](docs/date-time-picker-verification.md).
+
 ColorPicker provides native solid-color and gradient editing with HEX/RGB/HSB
 inputs, alpha, presets and custom panels. Open `--component color-picker` in the
 gallery; see the [ColorPicker guide](docs/color-picker.md).
@@ -38,6 +44,8 @@ cargo run --locked --offline --example gallery
 # Open Input directly: -- --component input
 # Open InputNumber directly: -- --component input-number
 # Open ColorPicker directly: -- --component color-picker
+# Open DatePicker directly: -- --component date-picker
+# Open TimePicker directly: -- --component time-picker
 # Open Select directly: -- --component select
 # Open Slider directly: -- --component slider
 # Open Pagination directly: -- --component pagination

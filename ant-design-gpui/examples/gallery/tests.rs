@@ -32,6 +32,7 @@ struct Fixture {
 mod carousel;
 mod color_picker;
 mod context_scroll;
+mod date_time_picker;
 mod descriptions;
 mod image;
 mod input;

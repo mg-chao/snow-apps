@@ -22,6 +22,7 @@ use super::{
     checkbox::{self, CheckboxPage},
     color_picker::{self, ColorPickerPage},
     context_menu::{self, ContextMenuPage},
+    date_time_picker::{self, PickerPage},
     descriptions::{self, DescriptionsPage},
     divider::{self, DividerPage},
     image::{self, ImagePage},
@@ -85,6 +86,8 @@ pub(super) struct Gallery {
     pub button: Entity<ButtonPage>,
     pub checkbox: Entity<CheckboxPage>,
     pub color_picker: Entity<ColorPickerPage>,
+    pub date_picker: Entity<PickerPage>,
+    pub time_picker: Entity<PickerPage>,
     pub divider: Entity<DividerPage>,
     pub input: Entity<InputPage>,
     pub input_number: Entity<InputNumberPage>,
@@ -116,6 +119,8 @@ pub(super) struct Gallery {
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
     color_picker_anchors: Vec<ScrollAnchor>,
+    date_picker_anchors: Vec<ScrollAnchor>,
+    time_picker_anchors: Vec<ScrollAnchor>,
     divider_anchors: Vec<ScrollAnchor>,
     input_anchors: Vec<ScrollAnchor>,
     input_number_anchors: Vec<ScrollAnchor>,
@@ -158,6 +163,14 @@ impl Gallery {
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
         let color_picker_anchors: Vec<_> = color_picker::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
+        let date_picker_anchors: Vec<_> = date_time_picker::DATE_DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
+        let time_picker_anchors: Vec<_> = date_time_picker::TIME_DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
@@ -302,6 +315,18 @@ impl Gallery {
             color_picker: cx.new(|cx| {
                 ColorPickerPage::new(scope.clone(), color_picker_anchors.clone(), window, cx)
             }),
+            date_picker: cx.new(|cx| {
+                PickerPage::new(
+                    false,
+                    scope.clone(),
+                    date_picker_anchors.clone(),
+                    window,
+                    cx,
+                )
+            }),
+            time_picker: cx.new(|cx| {
+                PickerPage::new(true, scope.clone(), time_picker_anchors.clone(), window, cx)
+            }),
             divider: cx.new(|cx| DividerPage::new(scope.clone(), divider_anchors.clone(), cx)),
             input: cx.new(|cx| {
                 InputPage::new(
@@ -349,6 +374,8 @@ impl Gallery {
             anchors,
             checkbox_anchors,
             color_picker_anchors,
+            date_picker_anchors,
+            time_picker_anchors,
             divider_anchors,
             input_anchors,
             input_number_anchors,
@@ -504,6 +531,8 @@ impl Gallery {
                         ComponentId::Divider => "Layout / Divider",
                         ComponentId::Checkbox => "Data Entry / Checkbox",
                         ComponentId::ColorPicker => "Data Entry / ColorPicker",
+                        ComponentId::DatePicker => "Data Entry / DatePicker",
+                        ComponentId::TimePicker => "Data Entry / TimePicker",
                         ComponentId::Radio => "Data Entry / Radio",
                         ComponentId::Segmented => "Data Entry / Segmented",
                         ComponentId::Switch => "Data Entry / Switch",
@@ -632,6 +661,8 @@ impl Gallery {
                                 ComponentId::Select => IconName::DownSquareOutlined,
                                 ComponentId::Slider => IconName::SlidersOutlined,
                                 ComponentId::ColorPicker => IconName::BgColorsOutlined,
+                                ComponentId::DatePicker => IconName::CalendarOutlined,
+                                ComponentId::TimePicker => IconName::ClockCircleOutlined,
                                 ComponentId::Tag => IconName::TagsOutlined,
                                 ComponentId::ContextMenu => IconName::MenuOutlined,
                                 ComponentId::Menu => IconName::MenuFoldOutlined,
@@ -760,6 +791,20 @@ impl Gallery {
                         .iter()
                         .zip(&self.color_picker_anchors)
                         .filter(|_| self.selected == ComponentId::ColorPicker)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
+                    date_time_picker::DATE_DEMOS
+                        .iter()
+                        .zip(&self.date_picker_anchors)
+                        .filter(|_| self.selected == ComponentId::DatePicker)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
+                    date_time_picker::TIME_DEMOS
+                        .iter()
+                        .zip(&self.time_picker_anchors)
+                        .filter(|_| self.selected == ComponentId::TimePicker)
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
@@ -1058,6 +1103,8 @@ impl Gallery {
                                 ComponentId::Select => "Open Ant Design Select reference",
                                 ComponentId::Slider => "Open Ant Design Slider reference",
                                 ComponentId::ColorPicker => "Open Ant Design ColorPicker reference",
+                                ComponentId::DatePicker => "Open Ant Design DatePicker reference",
+                                ComponentId::TimePicker => "Open Ant Design TimePicker reference",
                                 ComponentId::Tag => "Open Ant Design Tag reference",
                                 ComponentId::Tooltip => "Open Ant Design Tooltip reference",
                                 ComponentId::Popover => "Open Ant Design Popover reference",
@@ -1097,6 +1144,12 @@ impl Gallery {
                                 ComponentId::Slider => "https://ant.design/components/slider",
                                 ComponentId::ColorPicker => {
                                     "https://ant.design/components/color-picker"
+                                }
+                                ComponentId::DatePicker => {
+                                    "https://ant.design/components/date-picker"
+                                }
+                                ComponentId::TimePicker => {
+                                    "https://ant.design/components/time-picker"
                                 }
                                 ComponentId::ContextMenu => {
                                     "https://ant.design/components/dropdown"
@@ -1158,6 +1211,8 @@ impl Render for Gallery {
                 .count(),
             ComponentId::Checkbox => checkbox::DEMOS.len(),
             ComponentId::ColorPicker => color_picker::DEMOS.len(),
+            ComponentId::DatePicker => date_time_picker::DATE_DEMOS.len(),
+            ComponentId::TimePicker => date_time_picker::TIME_DEMOS.len(),
             ComponentId::Divider => divider::DEMOS.len(),
             ComponentId::Radio => radio::DEMOS.len(),
             ComponentId::Segmented => segmented::DEMOS.len(),
@@ -1192,6 +1247,8 @@ impl Render for Gallery {
             ComponentId::Select => input_examples::summary(select::DEMOS),
             ComponentId::Slider => input_examples::summary(slider::DEMOS),
             ComponentId::ColorPicker => input_examples::summary(color_picker::DEMOS),
+            ComponentId::DatePicker => input_examples::summary(date_time_picker::DATE_DEMOS),
+            ComponentId::TimePicker => input_examples::summary(date_time_picker::TIME_DEMOS),
             ComponentId::Menu => input_examples::summary(menu::DEMOS),
             ComponentId::Pagination => input_examples::summary(pagination::DEMOS),
             ComponentId::Tabs => input_examples::summary(tabs::DEMOS),
@@ -1295,6 +1352,8 @@ impl Render for Gallery {
                                         ComponentId::Select => self.select.clone().into_any_element(),
                                         ComponentId::Slider => self.slider.clone().into_any_element(),
                                         ComponentId::ColorPicker => self.color_picker.clone().into_any_element(),
+                                        ComponentId::DatePicker => self.date_picker.clone().into_any_element(),
+                                        ComponentId::TimePicker => self.time_picker.clone().into_any_element(),
                                         ComponentId::Tag => {
                                             self.tag.clone().into_any_element()
                                         }
@@ -1345,6 +1404,8 @@ impl Render for Gallery {
                                                 ComponentId::Modal => "Tab stays in the active dialog · Escape closes the top dialog or popup",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::ColorPicker => "Choose color or edit channels · Arrow keys adjust values · Escape closes the panel",
+                                                ComponentId::DatePicker => "Enter a date or open the calendar · Arrow keys move between dates · Enter selects · Escape cancels",
+                                                ComponentId::TimePicker => "Enter a time or choose the hour, minute and second · Enter confirms · Escape cancels",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",
                                                 ComponentId::Button => {
                                                     "Tab to navigate · Enter or Space to activate"

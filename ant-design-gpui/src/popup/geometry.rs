@@ -175,13 +175,24 @@ impl AxisAlignment {
         low: Pixels,
         high: Pixels,
     ) -> Option<Pixels> {
+        let tolerance = roundoff_tolerance([
+            origin,
+            anchor_start,
+            anchor_extent,
+            extent,
+            self.offset,
+            low,
+            high,
+        ]);
         match self.popup {
-            AlignPoint::Start if origin + extent > high => Some(if self.popup == self.target {
-                origin - extent + anchor_extent
-            } else {
-                anchor_start - extent - self.offset
-            }),
-            AlignPoint::End if origin < low => Some(if self.popup == self.target {
+            AlignPoint::Start if origin + extent - high > tolerance => {
+                Some(if self.popup == self.target {
+                    origin - extent + anchor_extent
+                } else {
+                    anchor_start - extent - self.offset
+                })
+            }
+            AlignPoint::End if low - origin > tolerance => Some(if self.popup == self.target {
                 origin + extent - anchor_extent
             } else {
                 anchor_start + anchor_extent - self.offset
@@ -202,23 +213,52 @@ impl AxisAlignment {
         let Some(buffer) = self.shift else {
             return origin;
         };
+        let tolerance = roundoff_tolerance([
+            origin,
+            anchor_start,
+            anchor_extent,
+            extent,
+            self.offset,
+            low,
+            high,
+        ]);
         let mut shifted = origin;
         // Retain the offset along the main axis and stop following a trigger
         // once it leaves the visible region. Oversized bodies consider both edges.
-        if origin < low {
+        if low - origin > tolerance {
             shifted += low - origin + self.offset;
-            if anchor_start + anchor_extent < low + buffer {
+            if low + buffer - (anchor_start + anchor_extent) > tolerance {
                 shifted += anchor_start + anchor_extent - low - buffer;
             }
         }
-        if origin + extent > high {
+        if origin + extent - high > tolerance {
             shifted -= origin + extent - high - self.offset;
-            if anchor_start > high - buffer {
+            if anchor_start - (high - buffer) > tolerance {
                 shifted += anchor_start - high + buffer;
             }
         }
         shifted
     }
+}
+
+fn roundoff_tolerance(values: [Pixels; 7]) -> Pixels {
+    let magnitude = values
+        .into_iter()
+        .map(f32::from)
+        .filter(|value| value.is_finite())
+        .map(f32::abs)
+        .fold(1., f32::max);
+    let spacing = magnitude.next_up() - magnitude;
+    // An aligned edge uses up to four additions/subtractions. Budget their
+    // representational error at the largest axis operand, rather than treating
+    // cancellation around a viewport edge as real overflow. Positions themselves
+    // remain unchanged; native layout still owns their eventual pixel snapping.
+    px(4.
+        * if spacing.is_finite() {
+            spacing
+        } else {
+            magnitude * f32::EPSILON
+        })
 }
 
 impl PopupGeometry {
@@ -542,6 +582,69 @@ mod tests {
         let result = geometry.resolve();
         assert_eq!(result.placement, PopupPlacement::TopRight);
         assert_eq!(result.bounds.right(), geometry.anchor.right());
+    }
+
+    #[test]
+    fn fractional_zero_edge_alignment_does_not_flip_from_f32_cancellation() {
+        // A compact 150% native TimePicker: both widths are exact f32 values
+        // measured in logical pixels. Their mathematically aligned zero edge
+        // acquires one subtraction ulp below zero.
+        let mut geometry = input(PopupPlacement::BottomRight);
+        geometry.arrow.visible = false;
+        geometry.anchor.origin.x = px(48. / 1.5);
+        geometry.anchor.size.width = px(172. / 1.5);
+        geometry.popup_size.width = px(220. / 1.5);
+        let origin =
+            geometry.anchor.left() + geometry.anchor.size.width - geometry.popup_size.width;
+        assert_eq!(f32::from(origin), -0.000_015_258_789);
+        let result = geometry.resolve();
+        assert_eq!(result.placement, PopupPlacement::BottomRight);
+        assert_eq!(
+            result.bounds.left(),
+            origin,
+            "the solver does not nudge coordinates"
+        );
+
+        let mut vertical = input(PopupPlacement::TopLeft);
+        vertical.arrow.visible = false;
+        vertical.gap = px(0.);
+        vertical.anchor.origin.y = geometry.anchor.right();
+        vertical.popup_size.height = geometry.popup_size.width;
+        let origin = vertical.anchor.top() - vertical.popup_size.height;
+        assert!(origin < px(0.));
+        let result = vertical.resolve();
+        assert_eq!(result.placement, PopupPlacement::TopLeft);
+        assert_eq!(result.bounds.top(), origin);
+    }
+
+    #[test]
+    fn centered_zero_edge_roundoff_does_not_trigger_a_shift() {
+        let mut geometry = input(PopupPlacement::Bottom);
+        geometry.arrow.visible = false;
+        geometry.anchor.origin.x = px(32.);
+        geometry.anchor.size.width = px(172. / 1.5);
+        geometry.popup_size.width = px(268. / 1.5);
+        let origin = geometry.anchor.left() + geometry.anchor.size.width / 2.
+            - geometry.popup_size.width / 2.;
+        assert!(origin < px(0.));
+        let result = geometry.resolve();
+        assert_eq!(result.placement, PopupPlacement::Bottom);
+        assert_eq!(result.bounds.left(), origin);
+    }
+
+    #[test]
+    fn fractional_roundoff_budget_still_flips_real_low_and_high_edge_overflow() {
+        let mut low = input(PopupPlacement::BottomRight);
+        low.arrow.visible = false;
+        low.anchor.origin.x = px(31.75);
+        low.anchor.size.width = px(172. / 1.5);
+        low.popup_size.width = px(220. / 1.5);
+        assert_eq!(low.resolve().placement, PopupPlacement::BottomLeft);
+
+        let mut high = input(PopupPlacement::BottomLeft);
+        high.arrow.visible = false;
+        high.anchor.origin.x = high.viewport.right() - high.popup_size.width + px(0.25);
+        assert_eq!(high.resolve().placement, PopupPlacement::BottomRight);
     }
 
     #[test]

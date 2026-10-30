@@ -442,6 +442,12 @@ impl Element for PopupSurface {
                 window.viewport_size().height,
             );
         }
+        if layout.arrow.is_some()
+            && let Some(attachment) = &options.arrow_attachment
+        {
+            layout.arrow = attachment(&layout, cx)
+                .filter(|point| f32::from(point.x).is_finite() && f32::from(point.y).is_finite());
+        }
         let host = state.host.clone();
         let id = state.id;
         if let Some(entry) = host.borrow_mut().entries.get_mut(&id) {

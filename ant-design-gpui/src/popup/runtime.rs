@@ -30,6 +30,7 @@ use crate::{
 pub(super) type Content = Rc<dyn Fn(&PopupHandle, &mut Window, &mut App) -> AnyElement>;
 pub(super) type ChangeHandler = Rc<dyn Fn(&PopupOpenChange, &mut Window, &mut App)>;
 pub(super) type SurfaceClickHandler = Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+pub(super) type ArrowAttachment = Rc<dyn Fn(&PopupLayout, &App) -> Option<Point<Pixels>>>;
 
 /// A weak connection to a mounted popup. Keeping a handle never keeps an
 /// unmounted popup, native window, pending hover timer or content tree alive.
@@ -143,6 +144,7 @@ pub(super) struct Options {
     pub placement: PopupPlacement,
     pub triggers: PopupTriggers,
     pub arrow: PopupArrow,
+    pub arrow_attachment: Option<ArrowAttachment>,
     pub auto_adjust_overflow: bool,
     pub gap: Option<Pixels>,
     pub flipped_gap: Option<Pixels>,
@@ -183,6 +185,7 @@ impl Default for Options {
             placement: PopupPlacement::Top,
             triggers: PopupTriggers::CLICK,
             arrow: PopupArrow::default(),
+            arrow_attachment: None,
             auto_adjust_overflow: true,
             gap: None,
             flipped_gap: None,
@@ -379,6 +382,15 @@ impl Popup {
     }
     pub fn arrow_size(mut self, size: Pixels) -> Self {
         self.options.arrow_size = Some(size);
+        self
+    }
+    /// Attach composite controls to a measured sub-anchor while keeping the
+    /// arrow outside the popup body's native content scroll mask.
+    pub(crate) fn arrow_attachment(
+        mut self,
+        attachment: impl Fn(&PopupLayout, &App) -> Option<Point<Pixels>> + 'static,
+    ) -> Self {
+        self.options.arrow_attachment = Some(Rc::new(attachment));
         self
     }
     pub fn arrow_rounding(mut self, tip: Pixels, outer: Pixels) -> Self {

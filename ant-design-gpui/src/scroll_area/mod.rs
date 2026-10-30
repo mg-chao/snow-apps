@@ -6,11 +6,13 @@
 //! The retained state owns a single [`gpui::ScrollHandle`]. Content, scrollbar
 //! dragging, keyboard navigation, anchors and application updates all use it.
 
+mod external;
 mod geometry;
 mod state;
 mod style;
 mod view;
 
+pub(crate) use external::{ExternalScrollbar, ExternalScrollbarGeometry};
 pub use state::{ScrollAreaEvent, ScrollAreaState};
 pub use style::{ScrollAreaTheme, ScrollAreaTokenPatch, ScrollAreaTokens};
 pub use view::ScrollArea;

@@ -129,6 +129,9 @@ pub struct ConfigPatch {
     pub notification: crate::notification::NotificationConfigPatch,
     pub carousel: crate::carousel::CarouselConfigPatch,
     pub color_picker: crate::color_picker::ColorPickerConfigPatch,
+    pub date_picker: crate::date_picker::PickerConfigPatch,
+    pub range_picker: crate::date_picker::PickerConfigPatch,
+    pub time_picker: crate::date_picker::PickerConfigPatch,
 }
 
 /// A read-only snapshot. Cloning it shares all expensive theme/catalog data.
@@ -159,6 +162,9 @@ pub struct ResolvedConfig {
     pub notification: crate::notification::NotificationConfig,
     pub carousel: crate::carousel::CarouselConfig,
     pub color_picker: crate::color_picker::ColorPickerConfig,
+    pub date_picker: crate::date_picker::PickerConfig,
+    pub range_picker: crate::date_picker::PickerConfig,
+    pub time_picker: crate::date_picker::PickerConfig,
     configured_size: Option<Size>,
     theme_config: Arc<ThemeConfig>,
 }
@@ -190,6 +196,9 @@ impl PartialEq for ResolvedConfig {
             && self.notification == other.notification
             && self.carousel == other.carousel
             && self.color_picker == other.color_picker
+            && self.date_picker == other.date_picker
+            && self.range_picker == other.range_picker
+            && self.time_picker == other.time_picker
             && shared_eq(&self.locale, &other.locale)
             && shared_eq(&self.theme_config, &other.theme_config)
             && shared_eq(&self.theme, &other.theme)
@@ -232,6 +241,12 @@ impl Default for ResolvedConfig {
             notification: Default::default(),
             carousel: Default::default(),
             color_picker: Default::default(),
+            date_picker: Default::default(),
+            range_picker: crate::date_picker::PickerConfig {
+                arrow: true.into(),
+                ..Default::default()
+            },
+            time_picker: Default::default(),
         }
     }
 }
@@ -339,6 +354,9 @@ impl ResolvedConfig {
             notification: patch.notification.resolve(&parent.notification),
             carousel: patch.carousel.resolve(&parent.carousel),
             color_picker: patch.color_picker.resolve(&parent.color_picker),
+            date_picker: patch.date_picker.resolve(&parent.date_picker),
+            range_picker: patch.range_picker.resolve(&parent.range_picker),
+            time_picker: patch.time_picker.resolve(&parent.time_picker),
         })
     }
 }
@@ -556,6 +574,55 @@ mod tests {
         // threads. A by-value patch made opening a nested Modal exhaust it as
         // GPUI moved ConfigState through entity-creation closures.
         assert!(std::mem::size_of::<ConfigState>() <= 256);
+    }
+
+    #[gpui::test]
+    fn picker_scopes_inherit_independent_defaults_and_live_locale(cx: &mut TestAppContext) {
+        let (parent, child) = cx.update(|cx| {
+            let parent = ConfigScope::new_window(cx);
+            parent
+                .update_patch(cx, |patch| {
+                    patch.date_picker.allow_clear = Some(false);
+                    patch.range_picker.need_confirm = Some(true);
+                    patch.time_picker.preview_value = Some(false);
+                })
+                .unwrap();
+            let child = parent
+                .child(
+                    ConfigPatch {
+                        range_picker: crate::date_picker::PickerConfigPatch {
+                            need_confirm: Some(false),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    cx,
+                )
+                .unwrap();
+            (parent, child)
+        });
+        cx.update(|cx| {
+            let snapshot = child.snapshot(cx);
+            assert!(!snapshot.date_picker.allow_clear);
+            assert!(!snapshot.date_picker.arrow.visible);
+            assert!(snapshot.range_picker.arrow.visible);
+            assert!(!snapshot.time_picker.arrow.visible);
+            assert_eq!(snapshot.range_picker.need_confirm, Some(false));
+            assert!(!snapshot.time_picker.preview_value);
+            assert!(snapshot.time_picker.allow_clear);
+            parent
+                .update_patch(cx, |patch| {
+                    patch.locale.locale = Some(Locale::zh_cn());
+                    patch.date_picker.allow_clear = Some(true);
+                })
+                .unwrap();
+        });
+        cx.update(|cx| {
+            let next = child.snapshot(cx);
+            assert!(next.date_picker.allow_clear);
+            assert_eq!(next.range_picker.need_confirm, Some(false));
+            assert_eq!(next.locale.picker.select_date.as_ref(), "请选择日期");
+        });
     }
 
     #[gpui::test]

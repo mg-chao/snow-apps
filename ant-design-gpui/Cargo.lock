@@ -168,6 +168,7 @@ dependencies = [
 name = "ant-design-gpui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "data-url",
  "gpui",
  "gpui_platform",

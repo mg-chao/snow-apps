@@ -237,6 +237,318 @@ color_picker_messages! {
     preset_color, preset_empty, transparent, expand_presets, collapse_presets,
 }
 
+/// Locale-specific ordinal display used by the default week format.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PickerWeekOrdinal {
+    English,
+    Suffix(SharedString),
+}
+
+macro_rules! picker_locale {
+    ($($field:ident),+ $(,)?) => {
+        /// Complete calendar, time, and accessibility copy; weekday arrays are Monday-first.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct PickerLocale {
+            pub first_weekday: u32,
+            pub min_week_days: u32,
+            pub months: [SharedString; 12],
+            pub short_months: [SharedString; 12],
+            pub weekdays: [SharedString; 7],
+            pub short_weekdays: [SharedString; 7],
+            pub month_before_year: bool,
+            pub week_ordinal: PickerWeekOrdinal,
+            $(pub $field: SharedString,)+
+        }
+        #[derive(Clone, Debug, Default, PartialEq, Eq)]
+        pub struct PickerLocalePatch {
+            pub first_weekday: Option<u32>,
+            pub min_week_days: Option<u32>,
+            pub months: Option<[SharedString; 12]>,
+            pub short_months: Option<[SharedString; 12]>,
+            pub weekdays: Option<[SharedString; 7]>,
+            pub short_weekdays: Option<[SharedString; 7]>,
+            pub month_before_year: Option<bool>,
+            pub week_ordinal: Option<PickerWeekOrdinal>,
+            $(pub $field: Option<SharedString>,)+
+        }
+        impl PickerLocale {
+            pub fn patched(&self, patch: &PickerLocalePatch) -> Self {
+                Self {
+                    first_weekday: patch.first_weekday.filter(|day| *day < 7).unwrap_or(self.first_weekday),
+                    min_week_days: patch.min_week_days.filter(|days| (1..=7).contains(days)).unwrap_or(self.min_week_days),
+                    months: patch.months.clone().unwrap_or_else(|| self.months.clone()),
+                    short_months: patch.short_months.clone().unwrap_or_else(|| self.short_months.clone()),
+                    weekdays: patch.weekdays.clone().unwrap_or_else(|| self.weekdays.clone()),
+                    short_weekdays: patch.short_weekdays.clone().unwrap_or_else(|| self.short_weekdays.clone()),
+                    month_before_year: patch.month_before_year.unwrap_or(self.month_before_year),
+                    week_ordinal: patch.week_ordinal.clone().unwrap_or_else(|| self.week_ordinal.clone()),
+                    $($field: patch.$field.clone().unwrap_or_else(|| self.$field.clone()),)+
+                }
+            }
+        }
+        impl PickerLocalePatch {
+            pub fn is_empty(&self) -> bool {
+                self.first_weekday.is_none() && self.min_week_days.is_none() && self.months.is_none()
+                    && self.short_months.is_none() && self.weekdays.is_none() && self.short_weekdays.is_none()
+                    && self.month_before_year.is_none() && self.week_ordinal.is_none()
+                    $(&& self.$field.is_none())+
+            }
+        }
+    };
+}
+picker_locale! {
+    today, now, ok, clear, panel_label,
+    select_date, select_time, select_week, select_month, select_quarter, select_year,
+    range_start, range_end, range_start_time, range_end_time, range_start_week, range_end_week,
+    range_start_month, range_end_month, range_start_quarter, range_end_quarter,
+    range_start_year, range_end_year,
+    prev_month, next_month, prev_year, next_year, prev_decade, next_decade,
+    prev_century, next_century, choose_month, choose_year, choose_decade,
+    hour, minute, second, millisecond, meridiem, am, pm, week, year_suffix,
+}
+
+impl PickerLocale {
+    pub fn en_us() -> Self {
+        Self {
+            first_weekday: 6,
+            min_week_days: 1,
+            months: [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ]
+            .map(Into::into),
+            short_months: [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ]
+            .map(Into::into),
+            weekdays: [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            .map(Into::into),
+            short_weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(Into::into),
+            month_before_year: true,
+            week_ordinal: PickerWeekOrdinal::English,
+            today: "Today".into(),
+            now: "Now".into(),
+            ok: "OK".into(),
+            clear: "Clear".into(),
+            panel_label: "Date and time picker".into(),
+            select_date: "Select date".into(),
+            select_time: "Select time".into(),
+            select_week: "Select week".into(),
+            select_month: "Select month".into(),
+            select_quarter: "Select quarter".into(),
+            select_year: "Select year".into(),
+            range_start: "Start date".into(),
+            range_end: "End date".into(),
+            range_start_time: "Start time".into(),
+            range_end_time: "End time".into(),
+            range_start_week: "Start week".into(),
+            range_end_week: "End week".into(),
+            range_start_month: "Start month".into(),
+            range_end_month: "End month".into(),
+            range_start_quarter: "Start quarter".into(),
+            range_end_quarter: "End quarter".into(),
+            range_start_year: "Start year".into(),
+            range_end_year: "End year".into(),
+            prev_month: "Previous month".into(),
+            next_month: "Next month".into(),
+            prev_year: "Last year".into(),
+            next_year: "Next year".into(),
+            prev_decade: "Last decade".into(),
+            next_decade: "Next decade".into(),
+            prev_century: "Last century".into(),
+            next_century: "Next century".into(),
+            choose_month: "Choose a month".into(),
+            choose_year: "Choose a year".into(),
+            choose_decade: "Choose a decade".into(),
+            hour: "Hour".into(),
+            minute: "Minute".into(),
+            second: "Second".into(),
+            millisecond: "Millisecond".into(),
+            meridiem: "AM/PM".into(),
+            am: "AM".into(),
+            pm: "PM".into(),
+            week: "Week".into(),
+            year_suffix: "".into(),
+        }
+    }
+
+    pub fn zh_cn() -> Self {
+        Self::en_us().patched(&PickerLocalePatch {
+            first_weekday: Some(0),
+            min_week_days: Some(4),
+            month_before_year: Some(false),
+            months: Some(
+                [
+                    "一月",
+                    "二月",
+                    "三月",
+                    "四月",
+                    "五月",
+                    "六月",
+                    "七月",
+                    "八月",
+                    "九月",
+                    "十月",
+                    "十一月",
+                    "十二月",
+                ]
+                .map(Into::into),
+            ),
+            short_months: Some(
+                [
+                    "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月",
+                    "12月",
+                ]
+                .map(Into::into),
+            ),
+            weekdays: Some(
+                [
+                    "星期一",
+                    "星期二",
+                    "星期三",
+                    "星期四",
+                    "星期五",
+                    "星期六",
+                    "星期日",
+                ]
+                .map(Into::into),
+            ),
+            short_weekdays: Some(["一", "二", "三", "四", "五", "六", "日"].map(Into::into)),
+            week_ordinal: Some(PickerWeekOrdinal::Suffix("周".into())),
+            today: Some("今天".into()),
+            now: Some("此刻".into()),
+            ok: Some("确定".into()),
+            clear: Some("清除".into()),
+            panel_label: Some("日期时间选择器".into()),
+            select_date: Some("请选择日期".into()),
+            select_time: Some("请选择时间".into()),
+            select_week: Some("请选择周".into()),
+            select_month: Some("请选择月份".into()),
+            select_quarter: Some("请选择季度".into()),
+            select_year: Some("请选择年份".into()),
+            range_start: Some("开始日期".into()),
+            range_end: Some("结束日期".into()),
+            range_start_time: Some("开始时间".into()),
+            range_end_time: Some("结束时间".into()),
+            range_start_week: Some("开始周".into()),
+            range_end_week: Some("结束周".into()),
+            range_start_month: Some("开始月份".into()),
+            range_end_month: Some("结束月份".into()),
+            range_start_quarter: Some("开始季度".into()),
+            range_end_quarter: Some("结束季度".into()),
+            range_start_year: Some("开始年份".into()),
+            range_end_year: Some("结束年份".into()),
+            prev_month: Some("上个月".into()),
+            next_month: Some("下个月".into()),
+            prev_year: Some("上一年".into()),
+            next_year: Some("下一年".into()),
+            prev_decade: Some("上一年代".into()),
+            next_decade: Some("下一年代".into()),
+            prev_century: Some("上一世纪".into()),
+            next_century: Some("下一世纪".into()),
+            choose_month: Some("选择月份".into()),
+            choose_year: Some("选择年份".into()),
+            choose_decade: Some("选择年代".into()),
+            hour: Some("小时".into()),
+            minute: Some("分钟".into()),
+            second: Some("秒".into()),
+            millisecond: Some("毫秒".into()),
+            meridiem: Some("上下午".into()),
+            am: Some("上午".into()),
+            pm: Some("下午".into()),
+            week: Some("周".into()),
+            year_suffix: Some("年".into()),
+        })
+    }
+
+    pub fn zh_tw() -> Self {
+        Self::zh_cn().patched(&PickerLocalePatch {
+            first_weekday: Some(6),
+            min_week_days: Some(1),
+            week_ordinal: Some(PickerWeekOrdinal::Suffix("週".into())),
+            ok: Some("確定".into()),
+            panel_label: Some("日期時間選擇器".into()),
+            select_date: Some("請選擇日期".into()),
+            select_time: Some("請選擇時間".into()),
+            select_week: Some("請選擇週".into()),
+            select_month: Some("請選擇月份".into()),
+            select_quarter: Some("請選擇季度".into()),
+            select_year: Some("請選擇年份".into()),
+            range_start: Some("開始日期".into()),
+            range_end: Some("結束日期".into()),
+            range_start_time: Some("開始時間".into()),
+            range_end_time: Some("結束時間".into()),
+            range_start_week: Some("開始週".into()),
+            range_end_week: Some("結束週".into()),
+            range_start_month: Some("開始月份".into()),
+            range_end_month: Some("結束月份".into()),
+            range_start_quarter: Some("開始季度".into()),
+            range_end_quarter: Some("結束季度".into()),
+            range_start_year: Some("開始年份".into()),
+            range_end_year: Some("結束年份".into()),
+            prev_month: Some("上個月".into()),
+            next_month: Some("下個月".into()),
+            prev_decade: Some("上一年代".into()),
+            next_decade: Some("下一年代".into()),
+            prev_century: Some("上一世紀".into()),
+            next_century: Some("下一世紀".into()),
+            choose_month: Some("選擇月份".into()),
+            choose_year: Some("選擇年份".into()),
+            choose_decade: Some("選擇年代".into()),
+            hour: Some("小時".into()),
+            minute: Some("分鐘".into()),
+            meridiem: Some("上下午".into()),
+            week: Some("週".into()),
+            ..Default::default()
+        })
+    }
+
+    /// The built-in week format follows locale week numbering, independently of custom formats.
+    pub fn week_label(&self, week_year: i32, week: u32) -> SharedString {
+        let ordinal = match &self.week_ordinal {
+            PickerWeekOrdinal::English => {
+                let suffix = if (11..=13).contains(&(week % 100)) {
+                    "th"
+                } else {
+                    match week % 10 {
+                        1 => "st",
+                        2 => "nd",
+                        3 => "rd",
+                        _ => "th",
+                    }
+                };
+                format!("{week}{suffix}")
+            }
+            PickerWeekOrdinal::Suffix(suffix) => format!("{week}{suffix}"),
+        };
+        format!("{week_year:04}-{ordinal}").into()
+    }
+}
+
+impl Default for PickerLocale {
+    fn default() -> Self {
+        Self::en_us()
+    }
+}
+
 /// Locale identity is metadata, never a translated display label.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LocaleId {
@@ -269,6 +581,7 @@ pub struct Locale {
     pub pagination: PaginationMessages,
     pub carousel: CarouselMessages,
     pub color_picker: ColorPickerMessages,
+    pub picker: PickerLocale,
 }
 
 impl Locale {
@@ -276,6 +589,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::EnUs,
+                picker: PickerLocale::en_us(),
                 color_picker: ColorPickerMessages {
                     root_label: "Choose color".into(),
                     panel_label: "Color picker".into(),
@@ -382,6 +696,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhCn,
+                picker: PickerLocale::zh_cn(),
                 color_picker: ColorPickerMessages {
                     root_label: "选择颜色".into(),
                     panel_label: "颜色选择器".into(),
@@ -488,6 +803,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhTw,
+                picker: PickerLocale::zh_tw(),
                 color_picker: ColorPickerMessages {
                     root_label: "選擇顏色".into(),
                     panel_label: "顏色選擇器".into(),
@@ -601,6 +917,7 @@ impl Locale {
             pagination: Self::en_us().pagination.clone(),
             carousel: Self::en_us().carousel.clone(),
             color_picker: Self::en_us().color_picker.clone(),
+            picker: Self::en_us().picker.clone(),
         })
     }
 
@@ -620,6 +937,7 @@ pub struct LocalePatch {
     pub pagination: PaginationMessagePatch,
     pub carousel: CarouselMessagePatch,
     pub color_picker: ColorPickerMessagePatch,
+    pub picker: PickerLocalePatch,
 }
 
 impl LocalePatch {
@@ -641,6 +959,7 @@ impl LocalePatch {
             && self.pagination.is_empty()
             && self.carousel == CarouselMessagePatch::default()
             && self.color_picker.is_empty()
+            && self.picker.is_empty()
         {
             return base.clone();
         }
@@ -651,6 +970,7 @@ impl LocalePatch {
         let pagination = base.pagination.patched(&self.pagination);
         let carousel = base.carousel.patched(&self.carousel);
         let color_picker = base.color_picker.patched(&self.color_picker);
+        let picker = base.picker.patched(&self.picker);
         if common == base.common
             && image == base.image
             && popconfirm == base.popconfirm
@@ -658,6 +978,7 @@ impl LocalePatch {
             && modal == base.modal
             && carousel == base.carousel
             && color_picker == base.color_picker
+            && picker == base.picker
         {
             return base.clone();
         }
@@ -670,6 +991,7 @@ impl LocalePatch {
                 && old.pagination == pagination
                 && old.carousel == carousel
                 && old.color_picker == color_picker
+                && old.picker == picker
         }) {
             return previous.clone();
         }
@@ -682,6 +1004,7 @@ impl LocalePatch {
             pagination,
             carousel,
             color_picker,
+            picker,
         })
     }
 }
@@ -689,6 +1012,77 @@ impl LocalePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picker_catalogs_preserve_week_rules_names_and_native_copy() {
+        let english = Locale::en_us();
+        let simplified = Locale::zh_cn();
+        let traditional = Locale::zh_tw();
+        assert_eq!(
+            (english.picker.first_weekday, english.picker.min_week_days),
+            (6, 1)
+        );
+        assert_eq!(
+            (
+                simplified.picker.first_weekday,
+                simplified.picker.min_week_days
+            ),
+            (0, 4)
+        );
+        assert_eq!(
+            (
+                traditional.picker.first_weekday,
+                traditional.picker.min_week_days
+            ),
+            (6, 1)
+        );
+        assert_eq!(english.picker.short_weekdays[0].as_ref(), "Mo");
+        assert_eq!(english.picker.months[11].as_ref(), "December");
+        assert_eq!(simplified.picker.select_date.as_ref(), "请选择日期");
+        assert_eq!(traditional.picker.select_time.as_ref(), "請選擇時間");
+        assert_eq!(english.picker.week_label(2024, 1).as_ref(), "2024-1st");
+        assert_eq!(english.picker.week_label(2024, 12).as_ref(), "2024-12th");
+        assert_eq!(english.picker.week_label(2024, 23).as_ref(), "2024-23rd");
+        assert_eq!(simplified.picker.week_label(2024, 1).as_ref(), "2024-1周");
+        assert_eq!(traditional.picker.week_label(2024, 1).as_ref(), "2024-1週");
+    }
+
+    #[test]
+    fn picker_locale_overrides_reuse_snapshots_and_inherit_complete_catalogs() {
+        let patch = LocalePatch {
+            picker: PickerLocalePatch {
+                select_date: Some("Choose delivery date".into()),
+                first_weekday: Some(3),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for base in [Locale::en_us(), Locale::zh_cn(), Locale::zh_tw()] {
+            let resolved = patch.resolve(&base);
+            assert_eq!(resolved.picker.select_date.as_ref(), "Choose delivery date");
+            assert_eq!(resolved.picker.first_weekday, 3);
+            assert_eq!(resolved.picker.months, base.picker.months);
+            assert_eq!(resolved.picker.now, base.picker.now);
+            assert!(Arc::ptr_eq(
+                &resolved,
+                &patch.resolve_with_previous(&base, Some(&resolved))
+            ));
+            let invalid = LocalePatch {
+                picker: PickerLocalePatch {
+                    first_weekday: Some(7),
+                    min_week_days: Some(0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .resolve(&base);
+            assert!(Arc::ptr_eq(&base, &invalid));
+        }
+        assert_eq!(
+            Locale::custom("custom", CommonMessagePatch::default()).picker,
+            Locale::en_us().picker
+        );
+    }
 
     #[test]
     fn color_picker_catalogs_preserve_reference_copy_and_inherit_overrides() {

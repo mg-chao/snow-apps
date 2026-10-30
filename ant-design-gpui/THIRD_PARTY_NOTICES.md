@@ -5,7 +5,7 @@ Adapted algorithms, translations and artwork retain the upstream MIT notices.
 
 ## Ant Design
 
-Theme derivation, token defaults, Alert, Button, Checkbox, ColorPicker, Radio, Descriptions, Divider, Tag, Input, Tooltip,
+Theme derivation, token defaults, Alert, Button, Checkbox, ColorPicker, DatePicker, TimePicker, Radio, Descriptions, Divider, Tag, Input, Tooltip,
 Popover, Popconfirm, Menu, Modal, Pagination, Select, Slider, Tabs, Carousel, Result, Message and Notification visual rules,
 Select's simple Empty illustration and Result's 403/404/500 illustrations,
 rounded popup arrows, gallery examples and descriptions,
@@ -76,6 +76,15 @@ Color conversion and named-color references use `@ant-design/fast-color` 3.0.1.
 Complete original loaded-package licenses and independently captured source
 provenance are preserved under `fixtures/color_picker/`. These JavaScript packages
 are developer references; the native component has no JavaScript runtime dependency.
+
+DatePicker and TimePicker visual rules, locales, gallery examples and observable
+selection behavior follow the same pinned Ant Design source and
+`@rc-component/picker` 1.12.2 (MIT). Complete original loaded-package notices,
+source hashes and independent browser measurements are preserved under
+`fixtures/date_time_picker/`. These packages run only in developer reference
+tools. Native Gregorian arithmetic and civil format parsing use chrono 0.4.45
+(MIT OR Apache-2.0), already present in the resolved Rust dependency graph;
+the distributable dependency license bundle includes its original notices.
 
 Tooltip, Popover and Popconfirm browser measurements and input provenance are
 under `fixtures/popup/`; their generator executes the original styles and rounded
