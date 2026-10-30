@@ -425,6 +425,67 @@ void discoverySharesRequestsAndCancellation(const QString& directory) {
             "explicit refresh and cancellation preserve a single catalog owner");
 }
 
+void additionalLanguagesPersistAndTranslate(const QString& directory) {
+    for (const auto& code : {QStringLiteral("hi"), QStringLiteral("th"), QStringLiteral("vi")}) {
+        Server server;
+        SnowShotApiClient client(server.url());
+        const QString path = directory + QStringLiteral("/language-%1.json").arg(code);
+        ConfigurationStore settings(path, true, true, 60000);
+        auto& service = TranslationService::forClient(client, settings, QLocale(code));
+        require(service.preferences().targetLanguage == code,
+                "additional native locales default to their own translation language");
+        auto preferences = service.preferences();
+        preferences.sourceLanguage = code;
+        preferences.targetLanguage = code;
+        preferences.secondaryTargetLanguage = code;
+        require(service.savePreferences(preferences) && settings.flushNow().success,
+                "additional languages can be saved in every preference role");
+        ConfigurationStore reopened(path, true, true, 60000);
+        for (const auto& key : {QStringLiteral("screenshot_translation/source_language"),
+                                QStringLiteral("screenshot_translation/target_language"),
+                                QStringLiteral("screenshot_translation/secondary_target_language")})
+            require(reopened.value(key) == code,
+                    "additional language preferences survive storage reload");
+        const QString text = QStringLiteral("Tiếng Việt + ภาษาไทย & हिन्दी\n%1");
+        QObject owner;
+        for (const auto& model : {QStringLiteral("general"), QStringLiteral("specialist")}) {
+            for (const auto& source : {code, QStringLiteral("auto")}) {
+                preferences.modelId = model;
+                preferences.sourceLanguage = source;
+                require(service.savePreferences(preferences), "save additional job languages");
+                auto* job = service.createJob({text}, &owner);
+                const int index = static_cast<int>(server.streams.size());
+                job->start();
+                waitUntil([&] { return server.streams.size() == index + 1; },
+                          "additional language reaches the selected AI provider");
+                const auto body = server.streams[index].body;
+                const auto messages = body.value(QStringLiteral("messages")).toArray();
+                require(messages.last().toObject().value(QStringLiteral("content")) == text,
+                        "AI translation preserves multilingual Unicode input");
+                if (model == QStringLiteral("specialist")) {
+                    const auto options =
+                        body.value(QStringLiteral("translation_options")).toObject();
+                    require(options.value(QStringLiteral("source_lang")) == source &&
+                                options.value(QStringLiteral("target_lang")) == code,
+                            "Qwen-MT accepts additional source and target language codes");
+                } else {
+                    const auto prompt =
+                        messages.first().toObject().value(QStringLiteral("content")).toString();
+                    require(prompt.contains(QStringLiteral("Source language: %1\n").arg(source)) &&
+                                prompt.contains(QStringLiteral("Target language: %1\n").arg(code)),
+                            "general AI receives additional application language codes");
+                }
+                server.delta(index, text);
+                server.finish(index);
+                waitUntil([&] { return job->state() == TranslationJob::State::Completed; },
+                          "additional language translation completes");
+                require(job->units().first().text == text,
+                        "additional language translation preserves Unicode output");
+            }
+        }
+    }
+}
+
 void secondaryTargetsPersistAndReachEveryUnit(const QString& directory) {
     Server server;
     SnowShotApiClient client(server.url());
@@ -1410,6 +1471,7 @@ int main(int argc, char** argv) {
     partialTranslationsDoNotReplayAndRetainTheFailureReason();
     aiModelSelectionMigratesOnlyAfterDiscovery(directory.path());
     discoverySharesRequestsAndCancellation(directory.path());
+    additionalLanguagesPersistAndTranslate(directory.path());
     secondaryTargetsPersistAndReachEveryUnit(directory.path());
     detectionIsDeferredUntilRoutingNeedsIt(directory.path());
     completeInputRoutingReachesEveryProviderAndRetries(directory.path());

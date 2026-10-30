@@ -75,6 +75,10 @@
             <translation>German</translation>
         </message>
         <message>
+            <source>Hindi</source>
+            <translation>Hindi</translation>
+        </message>
+        <message>
             <source>Italian</source>
             <translation>Italian</translation>
         </message>
@@ -103,12 +107,20 @@
             <translation>Spanish</translation>
         </message>
         <message>
+            <source>Thai</source>
+            <translation>Thai</translation>
+        </message>
+        <message>
             <source>Traditional Chinese</source>
             <translation>Traditional Chinese</translation>
         </message>
         <message>
             <source>Turkish</source>
             <translation>Turkish</translation>
+        </message>
+        <message>
+            <source>Vietnamese</source>
+            <translation>Vietnamese</translation>
         </message>
     </context>
     <context>

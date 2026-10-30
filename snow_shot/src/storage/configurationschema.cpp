@@ -357,9 +357,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("auto"), QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"),
-      QStringLiteral("es"), QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"),
-      QStringLiteral("ko"), QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"),
-      QStringLiteral("zh-Hans"), QStringLiteral("zh-Hant")}},
+      QStringLiteral("es"), QStringLiteral("fr"), QStringLiteral("hi"), QStringLiteral("it"),
+      QStringLiteral("ja"), QStringLiteral("ko"), QStringLiteral("pt"), QStringLiteral("ru"),
+      QStringLiteral("th"), QStringLiteral("tr"), QStringLiteral("vi"), QStringLiteral("zh-Hans"),
+      QStringLiteral("zh-Hant")}},
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/target_language"),
@@ -367,8 +368,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"), QStringLiteral("es"),
-      QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("ko"),
-      QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
+      QStringLiteral("fr"), QStringLiteral("hi"), QStringLiteral("it"), QStringLiteral("ja"),
+      QStringLiteral("ko"), QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("th"),
+      QStringLiteral("tr"), QStringLiteral("vi"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -377,8 +379,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"), QStringLiteral("es"),
-      QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("ko"),
-      QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
+      QStringLiteral("fr"), QStringLiteral("hi"), QStringLiteral("it"), QStringLiteral("ja"),
+      QStringLiteral("ko"), QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("th"),
+      QStringLiteral("tr"), QStringLiteral("vi"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
     {QStringLiteral("screenshot_translation/language_detection_confidence_threshold"), 60,
      ConfigurationValueKind::Integer, ConfigurationIntegerRange{30, 100}},

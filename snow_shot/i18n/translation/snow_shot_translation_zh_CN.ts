@@ -75,6 +75,10 @@
             <translation>德语</translation>
         </message>
         <message>
+            <source>Hindi</source>
+            <translation>印地语</translation>
+        </message>
+        <message>
             <source>Italian</source>
             <translation>意大利语</translation>
         </message>
@@ -103,12 +107,20 @@
             <translation>西班牙语</translation>
         </message>
         <message>
+            <source>Thai</source>
+            <translation>泰语</translation>
+        </message>
+        <message>
             <source>Traditional Chinese</source>
             <translation>繁体中文</translation>
         </message>
         <message>
             <source>Turkish</source>
             <translation>土耳其语</translation>
+        </message>
+        <message>
+            <source>Vietnamese</source>
+            <translation>越南语</translation>
         </message>
     </context>
     <context>

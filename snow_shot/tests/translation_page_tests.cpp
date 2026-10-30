@@ -50,6 +50,7 @@
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTranslator>
+#include <algorithm>
 #include <memory>
 
 #ifdef Q_OS_WIN
@@ -88,6 +89,79 @@ void key(QWidget* widget, int value, Qt::KeyboardModifiers modifiers = Qt::NoMod
     PhysicalKeyEvent release(QEvent::KeyRelease, value, modifiers);
     QApplication::sendEvent(widget, &release);
     flushEvents();
+}
+
+void additionalLanguageSelectors() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    Server server;
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    auto& service = snow_shot::translation::TranslationService::forClient(client, configuration,
+                                                                          QLocale::English);
+    const auto previous = service.preferences();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    backend.setTranslationService(&service);
+    settings::SettingsRuntimeSession runtime(settings::builtInSettingsRegistry(), backend);
+    auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
+                                                                                     &page, {});
+    const QList<AdSelect*> selectors{
+        child<AdSelect>(page, "translationSourceLanguage"),
+        child<AdSelect>(page, "translationTargetLanguage"),
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationSourceLanguage"),
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage"),
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationSecondaryTargetLanguage")};
+    struct Language {
+        QString code;
+        QStringList labels;
+    };
+    const QList<Language> languages{
+        {QStringLiteral("hi"),
+         {QStringLiteral("Hindi"), QStringLiteral("印地语"), QStringLiteral("印地語")}},
+        {QStringLiteral("th"),
+         {QStringLiteral("Thai"), QStringLiteral("泰语"), QStringLiteral("泰語")}},
+        {QStringLiteral("vi"),
+         {QStringLiteral("Vietnamese"), QStringLiteral("越南语"), QStringLiteral("越南語")}}};
+    const QStringList locales{QStringLiteral("en_US"), QStringLiteral("zh_CN"),
+                              QStringLiteral("zh_TW")};
+    for (const auto& language : languages) {
+        auto preferences = service.preferences();
+        preferences.sourceLanguage = language.code;
+        preferences.targetLanguage = language.code;
+        preferences.secondaryTargetLanguage = language.code;
+        require(service.savePreferences(preferences), "select additional languages in shared UI");
+        for (int index = 0; index < locales.size(); ++index) {
+            QTranslator translator;
+            require(translator.load(QStringLiteral("snow_shot_%1.qm").arg(locales[index]),
+                                    QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR)),
+                    "load localized additional language names");
+            QCoreApplication::installTranslator(&translator);
+            QEvent languageChange(QEvent::LanguageChange);
+            QApplication::sendEvent(&page, &languageChange);
+            QApplication::sendEvent(modal->contentWidget(), &languageChange);
+            flushEvents();
+            const auto checkOptions = [&](const auto& options) {
+                require(std::count_if(options.cbegin(), options.cend(),
+                                      [&](const auto& option) {
+                                          return option.value == language.code &&
+                                                 option.label == language.labels[index];
+                                      }) == 1,
+                        "all translation selectors expose localized additional language names");
+            };
+            for (auto* selector : selectors) {
+                checkOptions(selector->options());
+                require(selector->currentValue() == language.code,
+                        "language changes preserve additional language selections");
+            }
+            for (const auto& id : {QStringLiteral("translation.source-language"),
+                                   QStringLiteral("translation.primary-target-language"),
+                                   QStringLiteral("translation.secondary-target-language")})
+                checkOptions(runtime.options(id).values);
+            QCoreApplication::removeTranslator(&translator);
+            flushEvents();
+        }
+    }
+    require(service.savePreferences(previous), "restore shared translation preferences");
 }
 
 void sharedServiceSelectors() {
@@ -1371,6 +1445,7 @@ int main(int argc, char** argv) {
     if (app.arguments().contains(QStringLiteral("--screenshot-settings"))) {
         screenshotSettingsGeometry();
         sharedServiceSelectors();
+        additionalLanguageSelectors();
         screenshotSettingsProviderLifetime();
         storage.shutdown();
         return 0;
@@ -1388,6 +1463,7 @@ int main(int argc, char** argv) {
     {
         screenshotSettingsGeometry();
         sharedServiceSelectors();
+        additionalLanguageSelectors();
         screenshotSettingsProviderLifetime();
         selectedTextHandoff();
         selectedTextNavigation();

@@ -435,18 +435,21 @@ std::optional<QString> qwenMtLanguage(const QString& language) {
         QLatin1StringView applicationCode;
         QLatin1StringView providerCode;
     };
-    static constexpr std::array<Mapping, 13> mappings{{
+    static constexpr std::array<Mapping, 16> mappings{{
         Mapping{QLatin1StringView("auto"), QLatin1StringView("auto")},
         Mapping{QLatin1StringView("ar"), QLatin1StringView("ar")},
         Mapping{QLatin1StringView("de"), QLatin1StringView("de")},
         Mapping{QLatin1StringView("en"), QLatin1StringView("en")},
         Mapping{QLatin1StringView("es"), QLatin1StringView("es")},
         Mapping{QLatin1StringView("fr"), QLatin1StringView("fr")},
+        Mapping{QLatin1StringView("hi"), QLatin1StringView("hi")},
         Mapping{QLatin1StringView("it"), QLatin1StringView("it")},
         Mapping{QLatin1StringView("ja"), QLatin1StringView("ja")},
         Mapping{QLatin1StringView("pt"), QLatin1StringView("pt")},
         Mapping{QLatin1StringView("ru"), QLatin1StringView("ru")},
+        Mapping{QLatin1StringView("th"), QLatin1StringView("th")},
         Mapping{QLatin1StringView("tr"), QLatin1StringView("tr")},
+        Mapping{QLatin1StringView("vi"), QLatin1StringView("vi")},
         Mapping{QLatin1StringView("zh-Hans"), QLatin1StringView("zh")},
         Mapping{QLatin1StringView("zh-Hant"), QLatin1StringView("zh_tw")},
     }};

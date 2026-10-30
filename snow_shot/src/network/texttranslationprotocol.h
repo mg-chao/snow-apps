@@ -11,8 +11,9 @@ inline std::optional<QString> language(const QString& provider, const QString& c
     const QStringList codes{
         QStringLiteral("auto"),   QStringLiteral("ar"), QStringLiteral("de"),
         QStringLiteral("en"),     QStringLiteral("es"), QStringLiteral("fr"),
-        QStringLiteral("it"),     QStringLiteral("ja"), QStringLiteral("pt"),
-        QStringLiteral("ru"),     QStringLiteral("tr"), QStringLiteral("zh-Hans"),
+        QStringLiteral("hi"),     QStringLiteral("it"), QStringLiteral("ja"),
+        QStringLiteral("pt"),     QStringLiteral("ru"), QStringLiteral("th"),
+        QStringLiteral("tr"),     QStringLiteral("vi"), QStringLiteral("zh-Hans"),
         QStringLiteral("zh-Hant")};
     const auto index = codes.indexOf(code);
     if (index < 0 || (target && index == 0))
@@ -30,8 +31,9 @@ inline std::optional<QString> language(const QString& provider, const QString& c
         const QStringList mapped{
             QStringLiteral("auto"), QStringLiteral("ara"), QStringLiteral("de"),
             QStringLiteral("en"),   QStringLiteral("spa"), QStringLiteral("fra"),
-            QStringLiteral("it"),   QStringLiteral("jp"),  QStringLiteral("pt"),
-            QStringLiteral("ru"),   QStringLiteral("tr"),  QStringLiteral("zh"),
+            QStringLiteral("hi"),   QStringLiteral("it"),  QStringLiteral("jp"),
+            QStringLiteral("pt"),   QStringLiteral("ru"),  QStringLiteral("th"),
+            QStringLiteral("tr"),   QStringLiteral("vie"), QStringLiteral("zh"),
             QStringLiteral("cht")};
         return mapped[index];
     }

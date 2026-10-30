@@ -6,7 +6,9 @@
 
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <memory>
+#include <utility>
 
 using namespace translation_tests;
 using snow_shot::presentation::TranslationPageController;
@@ -15,7 +17,7 @@ using snow_shot::storage::ConfigurationStore;
 namespace {
 void sharedLanguageAndModelHelpers() {
     using namespace snow_shot::presentation;
-    require(translationLanguages().size() == 13 &&
+    require(translationLanguages().size() == 16 &&
                 defaultTranslationTargetLanguage(QLocale(QStringLiteral("zh_TW"))) ==
                     QStringLiteral("zh-Hant") &&
                 defaultTranslationTargetLanguage(QLocale(QStringLiteral("ja_JP"))) ==
@@ -26,6 +28,18 @@ void sharedLanguageAndModelHelpers() {
                     QStringLiteral("en") &&
                 translationLanguageName(QStringLiteral("ko")) == QStringLiteral("Korean"),
             "shared language metadata includes Korean and retains unsupported-locale fallback");
+    for (const auto& [code, name] :
+         {std::pair{"hi", "Hindi"}, std::pair{"th", "Thai"}, std::pair{"vi", "Vietnamese"}}) {
+        const QString language = QString::fromLatin1(code);
+        require(translationLanguageName(language) == QString::fromLatin1(name) &&
+                    defaultTranslationTargetLanguage(QLocale(language)) == language,
+                "additional translation languages have names and native locale defaults");
+        require(std::count_if(translationLanguages().cbegin(), translationLanguages().cend(),
+                              [&](const auto& entry) {
+                                  return language == QLatin1StringView(entry.code);
+                              }) == 1,
+                "each additional language appears exactly once in the shared catalog");
+    }
     const QVector<SnowShotChatModel> models{
         {QStringLiteral("vision"), QStringLiteral("Vision"), false, QStringLiteral("default"),
          true},

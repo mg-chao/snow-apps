@@ -256,6 +256,89 @@ void protocols() {
                         .toHex()),
             "Youdao long text signs Unicode code points");
 }
+void additionalProviderLanguages() {
+    struct Language {
+        QString code;
+        QString deepL;
+        QString baidu;
+    };
+    const QList<Language> languages{
+        {QStringLiteral("hi"), QStringLiteral("HI"), QStringLiteral("hi")},
+        {QStringLiteral("th"), QStringLiteral("TH"), QStringLiteral("th")},
+        {QStringLiteral("vi"), QStringLiteral("VI"), QStringLiteral("vie")}};
+    const QString text = QStringLiteral("Tiếng Việt + ภาษาไทย & हिन्दी\n%1");
+    for (const auto& provider : {QStringLiteral("deepl"), QStringLiteral("deeplx"),
+                                 QStringLiteral("baidu"), QStringLiteral("youdao")}) {
+        HttpServer server;
+        SnowShotApiClient client(QString{});
+        auto value = config(server.url(), provider);
+        client.setTextTranslationConfigurations({value});
+        QObject receiver;
+        for (const auto& language : languages) {
+            for (const bool automatic : {false, true}) {
+                const auto index = server.requests.size();
+                bool done = false;
+                QString translated;
+                require(
+                    client.streamTranslation(
+                        {value.selectionId(), automatic ? QStringLiteral("auto") : language.code,
+                         language.code, text},
+                        &receiver, [&](const auto& delta) { translated += delta; },
+                        [&](auto result) {
+                            require(result.succeeded(), "additional provider language succeeds");
+                            done = true;
+                        }) != 0,
+                    "additional provider languages prepare a request");
+                waitUntil([&] { return server.requests.size() == index + 1; },
+                          "provider receives additional language request");
+                const auto request = server.requests[index];
+                QJsonObject response;
+                if (provider == QStringLiteral("deepl") || provider == QStringLiteral("deeplx")) {
+                    const auto body = QJsonDocument::fromJson(request.body).object();
+                    require(body.value(QStringLiteral("target_lang")) == language.deepL,
+                            "DeepL and DeepLX uppercase additional target language codes");
+                    if (provider == QStringLiteral("deepl")) {
+                        require((automatic ? !body.contains(QStringLiteral("source_lang"))
+                                           : body.value(QStringLiteral("source_lang")) ==
+                                                 language.deepL) &&
+                                    body.value(QStringLiteral("text")).toArray().first() == text,
+                                "DeepL maps additional sources and preserves Unicode input");
+                        response = {{QStringLiteral("translations"),
+                                     QJsonArray{QJsonObject{{QStringLiteral("text"), text}}}}};
+                    } else {
+                        require(body.value(QStringLiteral("source_lang")) ==
+                                        (automatic ? QStringLiteral("AUTO") : language.deepL) &&
+                                    body.value(QStringLiteral("text")) == text,
+                                "DeepLX maps additional sources and preserves Unicode input");
+                        response = {{QStringLiteral("code"), 200}, {QStringLiteral("data"), text}};
+                    }
+                } else {
+                    const QUrlQuery form(QString::fromUtf8(request.body));
+                    const auto field = [&](const QString& name) {
+                        return form.queryItemValue(name, QUrl::FullyDecoded);
+                    };
+                    const auto mapped =
+                        provider == QStringLiteral("baidu") ? language.baidu : language.code;
+                    require(field(QStringLiteral("from")) ==
+                                    (automatic ? QStringLiteral("auto") : mapped) &&
+                                field(QStringLiteral("to")) == mapped &&
+                                field(QStringLiteral("q")) == text,
+                            "Baidu and Youdao map additional languages and preserve Unicode input");
+                    response =
+                        provider == QStringLiteral("baidu")
+                            ? QJsonObject{{QStringLiteral("trans_result"),
+                                           QJsonArray{QJsonObject{{QStringLiteral("dst"), text}}}}}
+                            : QJsonObject{{QStringLiteral("errorCode"), QStringLiteral("0")},
+                                          {QStringLiteral("translation"), QJsonArray{text}}};
+                }
+                server.respond(index, QJsonDocument(response).toJson(QJsonDocument::Compact));
+                waitUntil([&] { return done; }, "additional provider language completes");
+                require(translated == text, "providers preserve multilingual Unicode output");
+            }
+        }
+    }
+}
+
 void deepLXWithoutToken() {
     struct Languages {
         QString source;
@@ -648,6 +731,7 @@ int main(int argc, char** argv) {
         unavailableCatalog(provider);
     }
     protocols();
+    additionalProviderLanguages();
     deepLXWithoutToken();
     providerFailures();
     queueChangesAndLifetime();

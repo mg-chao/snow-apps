@@ -45,18 +45,21 @@ void targetSelectionUsesOnlyMatchingLanguageAndConfidence() {
 }
 
 void everySupportedTargetMapsToTheDetectedLanguage() {
-    static const std::array<std::pair<const char*, const char*>, 13> mappings{{
+    static const std::array<std::pair<const char*, const char*>, 16> mappings{{
         {"ar", "ara"},
         {"de", "deu"},
         {"en", "eng"},
         {"es", "spa"},
         {"fr", "fra"},
+        {"hi", "hin"},
         {"it", "ita"},
         {"ja", "jpn"},
         {"ko", "kor"},
         {"pt", "por"},
         {"ru", "rus"},
+        {"th", "tha"},
         {"tr", "tur"},
+        {"vi", "vie"},
         {"zh-Hans", "cmn"},
         {"zh-Hant", "cmn"},
     }};
@@ -69,6 +72,19 @@ void everySupportedTargetMapsToTheDetectedLanguage() {
                     preferences, DetectedTranslationLanguage{QString::fromLatin1(language), 1.0}) ==
                     preferences.secondaryTargetLanguage,
                 "every configured target matches its ISO 639-3 detection code");
+        for (const int threshold : {30, 60, 100}) {
+            preferences.languageDetectionConfidenceThreshold = threshold;
+            const double boundary = threshold / 100.0;
+            require(resolveTranslationTarget(
+                        preferences,
+                        DetectedTranslationLanguage{QString::fromLatin1(language), boundary}) ==
+                            preferences.secondaryTargetLanguage &&
+                        resolveTranslationTarget(
+                            preferences, DetectedTranslationLanguage{QString::fromLatin1(language),
+                                                                     boundary - 0.000001}) ==
+                            preferences.targetLanguage,
+                    "every language respects configured routing confidence boundaries");
+        }
     }
     TranslationPreferences preferences{
         QStringLiteral("auto"), QStringLiteral("zh-Hans"), {}, QStringLiteral("zh-Hant")};
@@ -90,6 +106,21 @@ void rustAdapterDetectsTheCompleteText() {
         const auto chinese = detectTranslationLanguage(text);
         require(chinese && chinese->languageCode == QStringLiteral("cmn"),
                 "both Chinese scripts are detected as Mandarin");
+    }
+    const std::array<std::pair<QString, QString>, 3> samples{{
+        {QStringLiteral("hin"), QStringLiteral("यह अनुप्रयोग पूरे पाठ का अनुवाद चुनी गई भाषा में करता है। "
+                                               "सभी अनुच्छेदों का एक साथ विश्लेषण किया जाता है।")},
+        {QStringLiteral("tha"), QStringLiteral("แอปพลิเคชันนี้แปลข้อความทั้งหมดเป็นภาษาที่เลือก "
+                                               "ทุกย่อหน้าจะได้รับการวิเคราะห์ร่วมกันเพื่อเลือกภาษาเป้าหมาย")},
+        {QStringLiteral("vie"),
+         QStringLiteral("Ứng dụng này dịch toàn bộ văn bản sang ngôn ngữ đã chọn. "
+                        "Tất cả các đoạn văn được phân tích cùng nhau để chọn ngôn ngữ đích.")},
+    }};
+    for (const auto& [language, text] : samples) {
+        const auto detection = detectTranslationLanguage(text);
+        require(detection && detection->languageCode == language && detection->confidence >= 0 &&
+                    detection->confidence <= 1,
+                "Rust adapter detects Hindi, Thai, and Vietnamese input");
     }
     require(!detectTranslationLanguage({}) &&
                 !detectTranslationLanguage(QStringLiteral("12345 \n !@#$%")),

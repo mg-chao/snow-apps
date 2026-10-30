@@ -42,7 +42,18 @@ template <typename Call>
 void translationRetries(Call&& call, translation::TranslationService& translation,
                         McpJobRegistry& jobs, translation_tests::Server& provider,
                         int& selectionCaptures) {
-    require(call(QStringLiteral("translation_catalog")).ok, "translation catalog available");
+    const auto catalog = call(QStringLiteral("translation_catalog"));
+    require(catalog.ok, "translation catalog available");
+    const auto languages = catalog.result.value(QStringLiteral("languages")).toArray();
+    for (const auto& code : {QStringLiteral("hi"), QStringLiteral("th"), QStringLiteral("vi")})
+        require(
+            std::count_if(languages.cbegin(), languages.cend(),
+                          [&](const auto& value) {
+                              const auto language = value.toObject();
+                              return language.value(QStringLiteral("code")) == code &&
+                                     !language.value(QStringLiteral("name")).toString().isEmpty();
+                          }) == 1,
+            "MCP exposes each additional translation language with its name");
     translation_tests::waitUntil([&] { return !translation.loadingModels(); },
                                  "deterministic provider catalog completes");
     auto capturedPreferences = translation.preferences();
