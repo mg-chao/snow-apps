@@ -108,6 +108,7 @@ const QStringList& screenshotShortcutActionIds() {
             QStringLiteral("save_as_file"),
             QStringLiteral("upload_to_cloud"),
             QStringLiteral("pin_to_screen"),
+            QStringLiteral("pin_window_to_screen"),
             QStringLiteral("cancel_screenshot"),
             QStringLiteral("copy_to_clipboard"),
             QStringLiteral("undo"),

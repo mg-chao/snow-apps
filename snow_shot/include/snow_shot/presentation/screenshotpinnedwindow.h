@@ -323,15 +323,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     friend class PinnedWindowWindowsEvents;
     bool m_destroying = false;
     std::shared_ptr<snow_shot::presentation::LiveWindowSource> m_liveSource;
-    QLabel* m_liveStatusLabel = nullptr;
-    QImage m_livePendingFrame;
-    QFutureWatcher<QImage>* m_liveFrameWatcher = nullptr;
-    QImage m_liveProcessingOriginal;
-    quint64 m_liveProcessingGeneration = 0;
-    std::optional<QTransform> m_requestedLiveTransform;
-    int m_requestedLiveQuarterTurns = 0;
+    QWidget* m_liveStatusView = nullptr;
     quint64 m_liveFrameGeneration = 0;
-    bool m_liveFrameProcessing = false;
     bool m_livePresentationUpdatePending = false;
     bool m_liveNativePresentation = false;
     bool m_liveSnapshotPending = false;
@@ -418,7 +411,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool synchronizeLivePresentation(QString* error = nullptr);
     void updateLiveState();
     void queueLiveFrame(QImage frame);
-    void installLiveFrame(QImage original, QImage transformed);
+    void installLiveFrame(QImage original);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
     liveViewportArtifact(bool applyWindowOpacity = true);
     [[nodiscard]] ScreenshotExportSource liveExportSource(bool applyWindowOpacity = true);

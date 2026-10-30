@@ -2,6 +2,7 @@
 // Included by screenshot_pinned_window_tests.cpp after its shared test helpers.
 #include "snow_shot/presentation/livewindowsource.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
+#include "widgets/result.h"
 #ifdef Q_OS_WIN
 #include <ole2.h>
 #endif
@@ -26,6 +27,9 @@ class ScreenshotLivePinnedWindowTestAccess {
     }
     static QRect contentGeometry(const ScreenshotPinnedWindow& window) {
         return window.authoritativeContentNativeGeometry();
+    }
+    static QRect contentView(const ScreenshotPinnedWindow& window) {
+        return window.contentViewRect().toAlignedRect();
     }
     static void opacity(ScreenshotPinnedWindow& window, int percent) {
         window.setOpacityPercent(percent);
@@ -54,11 +58,8 @@ class ScreenshotLivePinnedWindowTestAccess {
     static QTransform transform(const ScreenshotPinnedWindow& window) {
         return window.m_imageTransform;
     }
-    static bool frameProcessing(const ScreenshotPinnedWindow& window) {
-        return window.m_liveFrameProcessing || !window.m_livePendingFrame.isNull();
-    }
-    static const void* frameWatcher(const ScreenshotPinnedWindow& window) {
-        return window.m_liveFrameWatcher;
+    static QRectF contentRect(const ScreenshotPinnedWindow& window) {
+        return window.contentViewRect();
     }
     static bool snapshotPending(const ScreenshotPinnedWindow& window) {
         return window.m_liveSnapshotPending;
@@ -106,6 +107,7 @@ class FakeSource final : public Source {
     QImage frame;
     QRect region{40, 50, 160, 80};
     State currentState = State::Live;
+    QString title = QStringLiteral("Project notes — Editor");
     int requests = 0;
     int shutdowns = 0;
     int initialFrameReleases = 0;
@@ -134,6 +136,9 @@ class FakeSource final : public Source {
     }
     QString stateMessage() const override {
         return {};
+    }
+    QString windowTitle() const override {
+        return title;
     }
     void requestFrame(FrameCompletion completion) override {
         ++requests;
@@ -394,9 +399,8 @@ void frameSnapshotsAndTransforms() {
     auto frozen = Access::artifact(window);
     require(source->requests == 1, "export requests the current frame at action execution");
     source->publish(Qt::green);
-    require(!Access::frameProcessing(window) && !Access::frameWatcher(window) &&
-                Access::original(window).pixelColor(0, 0) == QColor(Qt::green),
-            "identity frames install directly without a worker allocation or queued completion");
+    require(Access::original(window).cacheKey() == source->frame.cacheKey(),
+            "identity frames install directly and share the captured pixels");
     const auto exported = image(frozen, &window);
     require(exported.size() == originalOutput &&
                 exported.pixelColor(exported.rect().center()) == QColor(Qt::red) &&
@@ -413,32 +417,25 @@ void frameSnapshotsAndTransforms() {
                 std::abs(scaled.pixelColor(scaled.rect().center()).alpha() - 128) <= 1,
             "exports apply current display scaling and the standard window opacity");
     Access::command(window, QStringLiteral("rotate_clockwise"));
-    require(Access::transform(window).isIdentity() && Access::frameProcessing(window),
-            "rotation prepares pixels asynchronously while retaining the committed transform");
-    wait([&] { return !Access::frameProcessing(window); }, "rotation must settle");
-    const auto* watcher = Access::frameWatcher(window);
+    require(!Access::transform(window).isIdentity() && Access::transformed(window).isNull(),
+            "rotation commits presentation geometry without materializing another image");
     require(window.isLiveWindow() && !Access::transform(window).isIdentity() &&
                 source->shutdowns == 0,
             "rotation retains its live source association");
     source->publish(Qt::blue);
     source->publish(Qt::yellow);
     source->publish(Qt::cyan);
-    wait(
-        [&] {
-            return !Access::frameProcessing(window) &&
-                   Access::original(window).pixelColor(0, 0) == QColor(Qt::cyan);
-        },
-        "coalesced live frame delivery must eventually display the newest frame");
-    require(Access::transformed(window).size() == QSize(40, 80),
-            "new live frames retain the rotation instead of returning to an image");
-    require(watcher && Access::frameWatcher(window) == watcher,
-            "continuous transforms reuse one worker completion watcher");
+    wait([&] { return Access::original(window).pixelColor(0, 0) == QColor(Qt::cyan); },
+         "coalesced live frame delivery must eventually display the newest frame");
+    require(Access::transformed(window).isNull() &&
+                Access::original(window).cacheKey() == source->frame.cacheKey() &&
+                image(Access::artifact(window), &window).size() == exportSize(window),
+            "rotated display shares capture pixels while snapshots retain displayed dimensions");
     Access::command(window, QStringLiteral("flip_horizontal"));
     Access::command(window, QStringLiteral("flip_vertical"));
     require(window.isLiveWindow() && source->shutdowns == 0,
             "both flip operations retain the live source");
     Access::command(window, QStringLiteral("reset_transform"));
-    wait([&] { return !Access::frameProcessing(window); }, "transform reset must settle");
     require(Access::transform(window).isIdentity() && window.isLiveWindow(),
             "resetting transformations preserves live mode");
     auto peerSource = std::make_shared<FakeSource>();
@@ -451,6 +448,72 @@ void frameSnapshotsAndTransforms() {
     peer.closeLiveWindow();
 }
 
+void liveFramesPaintTransforms() {
+    auto source = std::make_shared<FakeSource>();
+    source->frame.fill(Qt::red);
+    {
+        QPainter painter(&source->frame);
+        painter.fillRect(QRect(40, 0, 40, 20), Qt::green);
+        painter.fillRect(QRect(0, 20, 40, 20), Qt::blue);
+        painter.fillRect(QRect(40, 20, 40, 20), Qt::yellow);
+    }
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    for (int turn = 0; turn < 4; ++turn) {
+        if (turn)
+            Access::command(window, QStringLiteral("rotate_clockwise"));
+        for (int flip = 0; flip < 2; ++flip) {
+            if (flip)
+                Access::command(window, QStringLiteral("flip_horizontal"));
+            emit source->frameChanged(source->frame);
+            const auto& renderer = ScreenshotPinnedWindowTestAccess::renderer(window);
+            require(renderer.imageSourceSnapshot().materializedImage.cacheKey() ==
+                        source->frame.cacheKey(),
+                    "rotated live presentation retains original capture storage");
+            const auto oriented = source->frame.transformed(Access::transform(window));
+            QImage actual(window.size(), QImage::Format_ARGB32_Premultiplied);
+            actual.fill(Qt::transparent);
+            window.render(&actual);
+            const auto content = Access::contentRect(window);
+            for (const qreal x : {0.25, 0.75})
+                for (const qreal y : {0.25, 0.75}) {
+                    const QPoint displayed(qFloor(content.x() + x * content.width()),
+                                           qFloor(content.y() + y * content.height()));
+                    const QPoint pixel(qFloor(x * oriented.width()), qFloor(y * oriented.height()));
+                    requireColorNear(actual.pixelColor(displayed), oriented.pixelColor(pixel), 0,
+                                     "live canvas paints every rotation and reflection correctly");
+                }
+            if (flip)
+                Access::command(window, QStringLiteral("flip_horizontal"));
+        }
+    }
+    window.closeLiveWindow();
+}
+
+void rotatedLiveSaveOpensDialog() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    const QString previousDialog = settings.saveAsFileDialog();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setSaveAsFileDialog(previousDialog)); });
+    require(settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+            "use the offscreen save dialog for the rotated live pin");
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    Access::command(window, QStringLiteral("rotate_clockwise"));
+    require(Access::transformed(window).isNull(),
+            "rotated live display has no materialized rotation");
+    ScreenshotPinnedWindowTestAccess::saveAsFile(window);
+    auto* modal =
+        window.findChild<adqt::widgets::AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
+    require(modal && window.property("saveDialogOpen").toBool() && source->requests > 0,
+            "saving a rotated live pin requests an action-time frame and opens the dialog");
+    modal->reject();
+    wait([&] { return !window.property("saveDialogOpen").toBool(); },
+         "cancelling the save dialog retains the live pin");
+    window.closeLiveWindow();
+}
+
 void liveFramesReplacePixelsWithoutEditingSetup() {
     auto source = std::make_shared<FakeSource>();
     ScreenshotPinnedWindow window;
@@ -459,12 +522,8 @@ void liveFramesReplacePixelsWithoutEditingSetup() {
     auto& renderer = ScreenshotPinnedWindowTestAccess::renderer(window);
     for (const auto color : {QColor(Qt::blue), QColor(Qt::transparent), QColor(Qt::green)}) {
         source->publish(color);
-        wait(
-            [&] {
-                return !Access::frameProcessing(window) &&
-                       Access::original(window).pixelColor(0, 0) == color;
-            },
-            "live frames replace both opaque and transparent content");
+        wait([&] { return Access::original(window).pixelColor(0, 0) == color; },
+             "live frames replace both opaque and transparent content");
         const auto displayed = renderer.imageSourceSnapshot();
         require(displayed.opacityMetadata && displayed.opacityMetadata->entries.isEmpty(),
                 "live frame installation does not scan pixel opacity on the GUI thread");
@@ -558,6 +617,249 @@ void stoppedSourceClosesOnlyItsPin() {
     peer.closeLiveWindow();
 }
 
+void statusFitsConstrainedContent() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.config();
+    const auto restoreTheme = qScopeGuard([&] { themes.setConfig(originalTheme); });
+    themes.setColorScheme(adqt::theme::ThemeScheme::Light);
+    auto source = std::make_shared<FakeSource>();
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    const auto verifyStatus = [&](const QString& summary, bool requireText) {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QCoreApplication::processEvents();
+        const auto* host =
+            window.findChild<QWidget*>(QStringLiteral("screenshotPinnedLiveStatusView"));
+        const auto* result = window.findChild<adqt::widgets::AdResult*>(
+            QStringLiteral("screenshotPinnedLiveStatus"));
+        require(host && host->isVisible() && result, "unavailable content has a status view");
+        require(host->geometry() == Access::contentView(window),
+                "the status follows the pin without changing its content geometry");
+        require(host->accessibleName() == source->title &&
+                    host->accessibleDescription() == result->subTitle(),
+                "every presentation retains the full source title and state for accessibility");
+        bool visibleText = false;
+        for (const auto* label : host->findChildren<QLabel*>()) {
+            if (!label->isVisible() ||
+                (label->text() != result->subTitle() && label->text() != summary))
+                continue;
+            require(label->visibleRegion().contains(label->rect()),
+                    "the current state text is fully visible inside the pin");
+            require(label->heightForWidth(label->width()) <= label->height(),
+                    "the current state text has enough height for all wrapped lines");
+            visibleText = true;
+        }
+        if (requireText)
+            require(visibleText, "small pins prioritize readable state text over the title");
+        if (!visibleText) {
+            const auto* icon =
+                host->findChild<QLabel*>(QStringLiteral("screenshotPinnedLiveStatusCompactIcon"));
+            require(icon && icon->isVisible() && !icon->pixmap().isNull() &&
+                        icon->visibleRegion().contains(icon->rect()),
+                    "pins too small for text retain a fully visible state icon");
+        }
+        return visibleText;
+    };
+    for (const auto state : {State::Minimized, State::Closed, State::Unavailable}) {
+        const QString summary = state == State::Minimized ? QStringLiteral("Minimized")
+                                : state == State::Closed  ? QStringLiteral("Closed")
+                                                          : QStringLiteral("Unavailable");
+        source->setState(state);
+        for (const int percent : {100, 50, 10, 200, 500, 100}) {
+            Access::scale(window, percent);
+            const QRect content = Access::contentView(window);
+            verifyStatus(summary, content.width() >= 100 && content.height() >= 50);
+            if (percent == 500)
+                require(window.findChild<adqt::widgets::AdResult*>()->isVisible(),
+                        "growing the pin restores the complete Result");
+        }
+        Access::command(window, QStringLiteral("rotate_clockwise"));
+        verifyStatus(summary, Access::contentView(window).width() >= 100);
+        Access::command(window, QStringLiteral("reset_transform"));
+        source->title = QString(600, QChar(u'W'));
+        source->setState(state);
+        verifyStatus(summary, true);
+        source->title = QStringLiteral("Project notes — Editor");
+    }
+    source->setState(State::Minimized);
+    const QRect geometry = Access::contentGeometry(window);
+    themes.setColorScheme(adqt::theme::ThemeScheme::Dark);
+    verifyStatus(QStringLiteral("Minimized"), true);
+    auto largerFont = themes.config();
+    largerFont.fontSize = 28;
+    themes.setConfig(largerFont);
+    verifyStatus(QStringLiteral("Minimized"), false);
+    themes.setConfig(originalTheme);
+    verifyStatus(QStringLiteral("Minimized"), true);
+    require(Access::contentGeometry(window) == geometry,
+            "theme and font changes reflow the status without resizing the pin");
+
+    class ExpandedStatusTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* text, const char*, int) const override {
+            if (QByteArray(context) != "ScreenshotPinnedWindow")
+                return {};
+            if (QByteArray(text) == "Minimized")
+                return QStringLiteral("Translated state");
+            return QString(600, QChar(u'W'));
+        }
+    } expanded;
+    QCoreApplication::installTranslator(&expanded);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    verifyStatus(QStringLiteral("Translated state"), true);
+    QCoreApplication::removeTranslator(&expanded);
+    QCoreApplication::sendEvent(&window, &languageChange);
+
+    for (const auto* locale : {"zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(
+            translator.load(QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QLatin1String(locale))),
+            "load the complete application catalog for constrained status text");
+        QCoreApplication::installTranslator(&translator);
+        const auto removeTranslator =
+            qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
+        QCoreApplication::sendEvent(&window, &languageChange);
+        const QString summary = QCoreApplication::translate("ScreenshotPinnedWindow", "Minimized");
+        require(summary != QStringLiteral("Minimized"), "compact status captions are translated");
+        verifyStatus(summary, true);
+    }
+    QCoreApplication::sendEvent(&window, &languageChange);
+    verifyStatus(QStringLiteral("Minimized"), true);
+    source->setState(State::Live);
+    require(
+        !window.findChild<QWidget*>(QStringLiteral("screenshotPinnedLiveStatusView"))->isVisible(),
+        "source recovery hides compact status content as well as the Result");
+    window.closeLiveWindow();
+}
+
+void statusLayoutFollowsContent() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.config();
+    const auto restoreTheme = qScopeGuard([&] { themes.setConfig(originalTheme); });
+    themes.setColorScheme(adqt::theme::ThemeScheme::Light);
+    auto source = std::make_shared<FakeSource>();
+    source->region = QRect(80, 90, 480, 400);
+    source->title = QStringLiteral("Project notes <draft> — A long source window title in Editor");
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    const auto verifyLayout = [&] {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QCoreApplication::processEvents();
+        const auto* result = window.findChild<adqt::widgets::AdResult*>(
+            QStringLiteral("screenshotPinnedLiveStatus"));
+        require(result, "unavailable source retains its Result content");
+        const auto* host = result->parentWidget();
+        require(host->isVisible(), "unavailable source displays its status");
+        wait(
+            [&] {
+                return !result->isVisible() ||
+                       result->height() == result->heightForWidth(result->width());
+            },
+            "the Result settles after queued theme and nested layout updates");
+        const QWidget* content = nullptr;
+        for (const auto* child :
+             host->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+            if (child->isVisible()) {
+                require(!content, "exactly one status presentation is visible");
+                content = child;
+            }
+        require(content && host->rect().contains(content->geometry()),
+                "the visible status presentation fits entirely inside the content");
+        if (result->isVisible())
+            require(result->height() == result->heightForWidth(result->width()),
+                    "the Result settles at its wrapped height");
+        require(host->geometry() == Access::contentView(window),
+                "status host follows the current pinned content rectangle after resize");
+        const QPointF center = QRectF(content->geometry()).center();
+        const QPointF expected = QRectF(host->rect()).center();
+        require(qAbs(center.x() - expected.x()) <= 1 && qAbs(center.y() - expected.y()) <= 1,
+                "the wrapped Result remains centered horizontally and vertically");
+        require(host->testAttribute(Qt::WA_TransparentForMouseEvents),
+                "the status does not intercept pin dragging or resizing");
+        return result;
+    };
+    QImage minimizedIcon;
+    for (const auto state : {State::Minimized, State::Closed, State::Unavailable}) {
+        source->setState(state);
+        for (const int percent : {100, 60, 150, 80}) {
+            const QSize before = window.size();
+            Access::scale(window, percent);
+            const auto* result = verifyLayout();
+            require(result->title() == source->title, "the source title remains plain text");
+            if (percent != 100)
+                require(window.size() != before, "the fixture exercises a real pin resize");
+        }
+        auto& controller = ScreenshotPinnedWindowTestAccess::nativeController(window);
+        const QRect beforeResize = controller.committedGeometry();
+        require(controller.beginResize(screenshot_pinned_resize_geometry::DragHandle::Right),
+                "begin resizing the unavailable live pin");
+        require(controller
+                    .updateResize(beforeResize.adjusted(0, 0, 80, 0),
+                                  screenshot_pinned_resize_geometry::DragHandle::Right,
+                                  source->region.size(), 0.1, 5.0)
+                    .has_value(),
+                "accept an interactive resize while the source state stays unchanged");
+        require(ScreenshotPinnedWindowTestAccess::finishNativeInteraction(window) &&
+                    controller.committedGeometry().size() != beforeResize.size(),
+                "commit the interactive pin resize without a source-state notification");
+        const auto* result = verifyLayout();
+        const QImage icon = result->icon().pixmap(64, 64).toImage();
+        require(!icon.isNull(), "the custom status icon renders through the icon pack");
+        if (state == State::Minimized)
+            minimizedIcon = icon;
+        else if (state == State::Closed)
+            require(icon != minimizedIcon, "closed and minimized sources have distinct artwork");
+        themes.setColorScheme(adqt::theme::ThemeScheme::Dark);
+        verifyLayout();
+        require(result->icon().pixmap(64, 64).toImage() != icon,
+                "custom status icons follow the current theme");
+        themes.setColorScheme(adqt::theme::ThemeScheme::Light);
+
+        const QString previewDirectory = qEnvironmentVariable("SNOW_TEST_LIVE_STATUS_PREVIEW");
+        if (!previewDirectory.isEmpty()) {
+            Access::scale(window, 100);
+            verifyLayout();
+            require(QDir().mkpath(previewDirectory),
+                    "create the requested status preview directory");
+            require(
+                window.grab().save(
+                    QDir(previewDirectory)
+                        .filePath(QStringLiteral("status-%1.png").arg(static_cast<int>(state)))),
+                "save the requested status preview");
+        }
+    }
+    source->title.clear();
+    source->setState(State::Minimized);
+    require(verifyLayout()->title() == QStringLiteral("Untitled window"),
+            "untitled sources receive a readable heading");
+    class StatusTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* text, const char*, int) const override {
+            return QByteArray(context) == "ScreenshotPinnedWindow"
+                       ? QStringLiteral("Translated: ") + QString::fromUtf8(text)
+                       : QString();
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    const auto* translated = verifyLayout();
+    require(translated->title() == QStringLiteral("Translated: Untitled window") &&
+                translated->subTitle().startsWith(QStringLiteral("Translated: ")),
+            "visible Result headings and descriptions retranslate and recenter");
+    QCoreApplication::removeTranslator(&translator);
+    source->setState(State::Live);
+    require(!translated->isVisible(), "source recovery hides the entire Result");
+    window.closeLiveWindow();
+}
+
 void statusAndCapabilityGates() {
     auto source = std::make_shared<FakeSource>();
     ScreenshotPinnedWindow window;
@@ -587,17 +889,21 @@ void statusAndCapabilityGates() {
             require(action && !action->isEnabled(),
                     "all materialized menu frame operations track source status");
         }
-        const auto* label = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedLiveStatus"));
-        require(label && label->isVisible() && !label->text().isEmpty() && window.isVisible(),
+        const auto* result = window.findChild<adqt::widgets::AdResult*>(
+            QStringLiteral("screenshotPinnedLiveStatus"));
+        require(result && result->parentWidget()->isVisible() && !result->subTitle().isEmpty() &&
+                    window.isVisible(),
                 "source status remains visible within the retained pin");
+        require(result->title() == source->title && !result->icon().isNull(),
+                "the Result identifies the source window and uses a custom status icon");
         if (state == State::Minimized)
-            require(label->text() ==
+            require(result->subTitle() ==
                         QStringLiteral(
                             "The window is minimized. The latest content cannot be displayed."),
                     "minimized sources show the specified message");
         if (state == State::Closed)
             require(
-                label->text() ==
+                result->subTitle() ==
                     QStringLiteral("The window is closed. The latest content cannot be displayed."),
                 "closed sources show the specified message");
         const int requests = source->requests;
@@ -850,8 +1156,8 @@ void conversionAndPersistence() {
     Access::appearance(window);
     Access::scale(window, 125);
     Access::command(window, QStringLiteral("rotate_clockwise"));
-    wait([&] { return !Access::frameProcessing(window); },
-         "conversion fixture rotation must settle");
+    require(!Access::transform(window).isIdentity(),
+            "conversion fixture commits its rotation before requesting a snapshot");
     require(Access::clickThrough(window, true), "live pins support ordinary click-through");
     Access::lock(window, true);
     Access::persist(window);
@@ -1189,6 +1495,41 @@ void nativePresentationPreservesShell() {
         requireColorNear(raster.pixelColor(margin, raster.height() / 2),
                          border->property("borderColor").value<QColor>(), 0,
                          "native live content retains the shell's visible border");
+        if (!native)
+            continue;
+        const QRect geometry = window.geometry();
+        const auto render = [&] {
+            raster.fill(Qt::transparent);
+            window.render(&raster);
+        };
+        const auto pixel = [&](QPoint point) {
+            return raster.pixelColor((QPointF(point) * window.devicePixelRatioF()).toPoint());
+        };
+        ScreenshotPinnedWindowTestAccess::observePointerOffscreen(window, true);
+        auto* close = window.findChild<QWidget*>(QStringLiteral("screenshotPinnedCloseButton"));
+        require(close && close->isVisible(), "native live pins show their hover controls");
+        render();
+        require(pixel(close->mapTo(&window, close->rect().center())).alpha() > 0,
+                "native live pins paint controls above their transparent content hole");
+        const QRect content = Access::contentView(window);
+        const QPoint start = content.topLeft() + QPoint(30, 50);
+        const QPoint end = content.center();
+        const QPoint sample = (start + end) / 2;
+        require(pixel(sample).alpha() == 0, "native content starts with a transparent Qt shell");
+        QMouseEvent press(QEvent::MouseButtonPress, start, window.mapToGlobal(start),
+                          Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(&window, &press);
+        QMouseEvent move(QEvent::MouseMove, end, window.mapToGlobal(end), Qt::NoButton,
+                         Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(&window, &move);
+        render();
+        require(pixel(sample).alpha() == 0x33 && window.geometry() == geometry,
+                "native live pins paint the crop preview without moving their shell");
+        QKeyEvent cancel(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QApplication::sendEvent(&window, &cancel);
+        render();
+        require(pixel(sample).alpha() == 0,
+                "cancelling a native live crop restores the transparent content hole");
     }
     window.closeLiveWindow();
 }
@@ -1250,6 +1591,8 @@ void batchAndShakeRespectLiveCapabilities() {
 } // namespace live_pinned_tests
 
 void pinnedLiveWindowTests() {
+    live_pinned_tests::liveFramesPaintTransforms();
+    live_pinned_tests::rotatedLiveSaveOpensDialog();
     live_pinned_tests::liveFramesReplacePixelsWithoutEditingSetup();
     live_pinned_tests::nativePresentationPreservesShell();
     live_pinned_tests::contextMenuMatchesOrdinaryContent();
@@ -1259,6 +1602,8 @@ void pinnedLiveWindowTests() {
     live_pinned_tests::deferredCopyRetainsItsActionTimeFrame();
     live_pinned_tests::stoppedSourceClosesOnlyItsPin();
     live_pinned_tests::statusAndCapabilityGates();
+    live_pinned_tests::statusFitsConstrainedContent();
+    live_pinned_tests::statusLayoutFollowsContent();
     live_pinned_tests::splittingAndEditingRetainTheirLiveSource();
     live_pinned_tests::conversionAndPersistence();
     live_pinned_tests::conversionRestoresOrdinaryContentFeatures();

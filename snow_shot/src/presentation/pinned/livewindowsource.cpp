@@ -42,11 +42,15 @@ QString messageFor(LiveWindowState state, const QString& error = {}) {
 
 struct CapturedWindowFrame {
     QImage image;
+    std::shared_ptr<const live_window_detail::NativeWindowFrame> native;
     QRectF desktopBounds;
     quint64 requestGeneration = 0;
     bool duplicate = false;
     QRect initialDesktopRegion;
     QRectF crop;
+    QSize pixelSize() const {
+        return native ? native->size() : image.size();
+    }
 };
 
 CapturedWindowFrame readFrame(SnowCaptureStreamFrame* frame) {
@@ -84,10 +88,13 @@ CapturedWindowFrame readFrame(SnowCaptureStreamFrame* frame) {
 class SharedWindowCapture final {
   public:
     explicit SharedWindowCapture(const LiveWindowTarget& target)
-        : m_target(target), m_worker([this] { run(); }) {}
+        : m_target(target), m_native(live_window_detail::createNativeWindowCapture(target)),
+          m_worker([this] { run(); }) {}
     ~SharedWindowCapture() {
         m_stopping = true;
         m_changed.notify_all();
+        if (m_native)
+            m_native->cancel();
         {
             std::lock_guard lock(m_streamMutex);
             if (m_stream)
@@ -128,6 +135,29 @@ class SharedWindowCapture final {
         m_changed.notify_all();
     }
     void run() {
+        if (m_native) {
+            while (!m_stopping) {
+                live_window_detail::NativeCaptureFrame native;
+                if (!m_native->receive(&native)) {
+                    if (!m_stopping)
+                        fail();
+                    break;
+                }
+                if (!native.pixels)
+                    continue;
+                CapturedWindowFrame frame;
+                frame.native = std::move(native.pixels);
+                frame.desktopBounds = native.desktopBounds;
+                frame.duplicate = native.duplicate;
+                {
+                    std::lock_guard lock(m_mutex);
+                    m_latest = std::move(frame);
+                    ++m_sequence;
+                }
+                m_changed.notify_all();
+            }
+            return;
+        }
         SnowCaptureWindowStreamConfig config{};
         config.version = SNOW_CAPTURE_WINDOW_STREAM_CONFIG_VERSION;
         config.struct_size = sizeof(config);
@@ -187,6 +217,7 @@ class SharedWindowCapture final {
     std::atomic<bool> m_stopping{false};
     std::mutex m_streamMutex;
     SnowCaptureStream* m_stream = nullptr;
+    std::unique_ptr<live_window_detail::NativeWindowCapture> m_native;
     std::thread m_worker;
 };
 
@@ -316,9 +347,10 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
         m_workChanged.notify_all();
         return ++m_requestGeneration;
     }
-    void setContinuous(bool value) {
+    void setContinuous(bool value, bool materialize) {
         std::lock_guard lock(m_workMutex);
         m_continuous = value;
+        m_materialize = materialize;
         m_workChanged.notify_all();
     }
     void cancelRequest() {
@@ -351,6 +383,7 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
         auto requestDeadline = std::chrono::steady_clock::time_point::max();
         while (!m_stopped) {
             bool requested = false;
+            bool materialize = true;
             quint64 generation = 0;
             {
                 std::unique_lock lock(m_workMutex);
@@ -374,6 +407,7 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
                 if (!m_continuous && !m_captureRequested)
                     continue;
                 requested = m_captureRequested;
+                materialize = m_materialize || requested;
                 generation = m_requestGeneration;
             }
             if (!capture) {
@@ -404,7 +438,7 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
                 postFailure(error);
                 continue;
             }
-            if (frame.image.isNull() || (frame.duplicate && !requested && !crop.isEmpty()))
+            if (frame.pixelSize().isEmpty() || (frame.duplicate && !requested && !crop.isEmpty()))
                 continue;
             if (crop.isEmpty()) {
                 initialBounds = frame.desktopBounds;
@@ -423,11 +457,30 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
                 }
                 initialRegion = intersection.toAlignedRect();
                 crop = intersection.translated(-initialBounds.topLeft());
-                cropPixels = QSize(
-                    qMax(1, qRound(crop.width() * frame.image.width() / initialBounds.width())),
-                    qMax(1, qRound(crop.height() * frame.image.height() / initialBounds.height())));
+                cropPixels = QSize(qMax(1, qRound(crop.width() * frame.pixelSize().width() /
+                                                  initialBounds.width())),
+                                   qMax(1, qRound(crop.height() * frame.pixelSize().height() /
+                                                  initialBounds.height())));
             }
-            frame.image = cropper.crop(frame.image, frame.desktopBounds, crop, cropPixels);
+            if (materialize || !frame.native) {
+                if (frame.native)
+                    frame.image = frame.native->image();
+                frame.image = cropper.crop(frame.image, frame.desktopBounds, crop, cropPixels);
+                if (frame.image.isNull()) {
+                    {
+                        std::lock_guard lock(m_workMutex);
+                        m_captureRequested = false;
+                        m_continuous = false;
+                    }
+                    capture.reset();
+                    postFailure(liveText(QT_TRANSLATE_NOOP(
+                        "LiveWindowSource",
+                        "The window content is temporarily unavailable. Retrying…")));
+                    continue;
+                }
+            } else {
+                cropper.clear();
+            }
             frame.initialDesktopRegion = initialRegion;
             frame.crop = crop;
             frame.requestGeneration = generation;
@@ -478,6 +531,7 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
     std::mutex m_workMutex;
     std::condition_variable m_workChanged;
     bool m_continuous = false;
+    bool m_materialize = true;
     bool m_captureRequested = false;
     quint64 m_requestGeneration = 0;
     std::mutex m_frameMutex;
@@ -545,6 +599,9 @@ class CapturedLiveWindowSource final
     QString stateMessage() const override {
         return m_message;
     }
+    QString windowTitle() const override {
+        return m_target.title;
+    }
     void requestFrame(FrameCompletion completion) override {
         if (!m_initialized || m_state != LiveWindowState::Live || m_stopped) {
             completion({}, m_message.isEmpty()
@@ -562,13 +619,17 @@ class CapturedLiveWindowSource final
             return false;
         m_presentation = presentation;
         const bool before = usesNativePresentation();
-#ifdef Q_OS_WIN
-        const bool native =
-            presentation.imageTransform.isIdentity() && m_state == LiveWindowState::Live;
+        const bool native = m_native && !m_nativeDisabled &&
+                            m_native->supportsTransform(presentation.imageTransform) &&
+                            m_state == LiveWindowState::Live;
         if (native) {
             m_frameHandoffPending = false;
             if (!m_native->present(presentation, presentationCrop(),
                                    m_monitor->state().desktopBounds, error)) {
+                if (m_native->consumesFrames()) {
+                    disableNativePresentation();
+                    return !m_stopped;
+                }
                 setState(LiveWindowState::Unavailable, error ? *error : QString());
                 if (m_stopped)
                     return false;
@@ -580,6 +641,11 @@ class CapturedLiveWindowSource final
             }
             if (m_stopped)
                 return false;
+            if (m_native->consumesFrames() && m_nativeFrame && presentation.visible &&
+                !m_native->presentFrame(m_nativeFrame, m_nativeFrameBounds)) {
+                disableNativePresentation();
+                return !m_stopped;
+            }
             m_retryAttempt = 0;
         } else {
             if (before && presentation.visible && m_state == LiveWindowState::Live) {
@@ -593,11 +659,8 @@ class CapturedLiveWindowSource final
         }
         if (m_stopped)
             return false;
-        setContinuous(!native && presentation.visible && m_state == LiveWindowState::Live);
-#else
-        Q_UNUSED(error);
-        setContinuous(presentation.visible && m_state == LiveWindowState::Live);
-#endif
+        setContinuous((!native || m_native->consumesFrames()) && presentation.visible &&
+                      m_state == LiveWindowState::Live);
         if (before != usesNativePresentation())
             emit nativePresentationChanged(usesNativePresentation());
         return !m_stopped;
@@ -618,6 +681,7 @@ class CapturedLiveWindowSource final
         if (m_native)
             m_native->stopPresentation();
         m_native.reset();
+        m_nativeFrame.reset();
         m_monitor.reset();
         m_initialFrame = {};
         const auto pending = std::exchange(m_pendingFrames, {});
@@ -633,6 +697,13 @@ class CapturedLiveWindowSource final
     }
 
   private:
+    void disableNativePresentation() {
+        m_nativeDisabled = true;
+        stopNativePresentation();
+        setContinuous(m_presentation.visible && m_state == LiveWindowState::Live);
+        requestCapture();
+        emit nativePresentationChanged(false);
+    }
     void stopNativePresentation() {
         if (m_native)
             m_native->stopPresentation();
@@ -705,11 +776,15 @@ class CapturedLiveWindowSource final
             }
             return;
         }
-#ifdef Q_OS_WIN
-        if (m_presentation.owner && m_presentation.imageTransform.isIdentity()) {
+        if (m_native && !m_nativeDisabled && m_presentation.owner &&
+            m_native->supportsTransform(m_presentation.imageTransform)) {
             QString error;
             if (!m_native->present(m_presentation, presentationCrop(), current.desktopBounds,
                                    &error)) {
+                if (m_native->consumesFrames()) {
+                    disableNativePresentation();
+                    return;
+                }
                 setState(LiveWindowState::Unavailable, error);
                 if (m_stopped)
                     return;
@@ -717,14 +792,15 @@ class CapturedLiveWindowSource final
                 emit nativePresentationChanged(false);
             }
         }
-#endif
     }
     quint64 requestCapture() {
         return m_worker->requestCapture();
     }
     void setContinuous(bool continuous) {
         if (m_worker)
-            m_worker->setContinuous(continuous);
+            m_worker->setContinuous(
+                continuous, !m_native || m_nativeDisabled || !m_native->consumesFrames() ||
+                                !m_native->supportsTransform(m_presentation.imageTransform));
     }
     void acceptFrame(CapturedWindowFrame frame) {
         const auto keepAlive = shared_from_this();
@@ -747,6 +823,8 @@ class CapturedLiveWindowSource final
                 return;
             }
         }
+        m_nativeFrame = std::move(frame.native);
+        m_nativeFrameBounds = frame.desktopBounds;
         if (!m_initialized) {
             m_initialDesktopRegion = frame.initialDesktopRegion;
             m_crop = frame.crop;
@@ -769,7 +847,7 @@ class CapturedLiveWindowSource final
                 return;
         }
         QImage image = std::move(frame.image);
-        if (image.isNull()) {
+        if (image.isNull() && !m_nativeFrame) {
             failCapture(liveText(QT_TRANSLATE_NOOP(
                 "LiveWindowSource", "The window content is temporarily unavailable. Retrying…")));
             return;
@@ -778,10 +856,18 @@ class CapturedLiveWindowSource final
         setState(LiveWindowState::Live);
         if (m_stopped)
             return;
-        emit frameChanged(image);
+        if (m_nativeFrame && usesNativePresentation() &&
+            !m_native->presentFrame(m_nativeFrame, m_nativeFrameBounds)) {
+            disableNativePresentation();
+        }
         if (m_stopped)
             return;
-        if (m_frameHandoffPending && !m_presentation.imageTransform.isIdentity()) {
+        if (!image.isNull())
+            emit frameChanged(image);
+        if (m_stopped)
+            return;
+        if (m_frameHandoffPending && !image.isNull() &&
+            (!m_native || !m_native->supportsTransform(m_presentation.imageTransform))) {
             m_frameHandoffPending = false;
             stopNativePresentation();
             emit nativePresentationChanged(false);
@@ -793,7 +879,7 @@ class CapturedLiveWindowSource final
             if (m_stopped)
                 request.second({}, liveText(QT_TRANSLATE_NOOP("LiveWindowSource",
                                                               "The live window was closed.")));
-            else if (request.first <= frame.requestGeneration)
+            else if (!image.isNull() && request.first <= frame.requestGeneration)
                 request.second(image, {});
             else
                 m_pendingFrames.push_back(request);
@@ -851,6 +937,9 @@ class CapturedLiveWindowSource final
     LiveWindowTarget m_target;
     QRect m_selection;
     std::unique_ptr<live_window_detail::NativeWindowPresentation> m_native;
+    std::shared_ptr<const live_window_detail::NativeWindowFrame> m_nativeFrame;
+    QRectF m_nativeFrameBounds;
+    bool m_nativeDisabled = false;
     std::shared_ptr<SharedWindowMonitor> m_monitor;
     QTimer m_retryTimer;
     InitializationCompletion m_initializationCompletion;

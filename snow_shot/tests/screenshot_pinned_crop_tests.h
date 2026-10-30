@@ -569,14 +569,14 @@ void liveWindow() {
     require(!window.persistenceSnapshot().cropRect &&
                 LiveAccess::original(window).size() == QSize(30, 20) && window.isLiveWindow(),
             "applying live crop restricts the refreshed base without converting the source");
+    const auto requests = source->requests;
+    source->deferFrames = true;
     LiveAccess::command(window, QStringLiteral("rotate_clockwise"));
-    translation_tests::waitUntil(
-        [&] {
-            return LiveAccess::original(window).size() == QSize(30, 20) &&
-                   Access::renderer(window).imageSourceSnapshot().materializedImage.size() ==
-                       QSize(20, 30);
-        },
-        "applied live crop rotates without cropping twice");
+    require(LiveAccess::original(window).size() == QSize(30, 20) &&
+                Access::renderer(window).imageSourceSnapshot().materializedImage.cacheKey() ==
+                    LiveAccess::original(window).cacheKey() &&
+                LiveAccess::transformed(window).isNull() && source->requests == requests,
+            "applied live crop rotates immediately without cropping twice or recapturing");
     window.closeLiveWindow();
 }
 
@@ -586,6 +586,90 @@ std::shared_ptr<live_pinned_tests::FakeSource> patternedLiveSource() {
         for (int x = 0; x < source->frame.width(); ++x)
             source->frame.setPixelColor(x, y, QColor(x * 3, y * 5, 80));
     return source;
+}
+
+void liveCropPaintsTransforms() {
+    for (const int cropState : {0, 1, 2}) {
+        for (int turns = 0; turns < 4; ++turns) {
+            for (const bool reflected : {false, true}) {
+                auto source = patternedLiveSource();
+                ScreenshotPinnedWindow window;
+                live_pinned_tests::present(window, live_pinned_tests::config(source));
+                require(Access::crop(window, {20, 10, 60, 40}), "live rendering crop fixture");
+                if (cropState != 0)
+                    Access::applyCrop(window);
+                if (cropState == 2)
+                    require(Access::crop(window, {30, 20, 30, 20}),
+                            "live rendering crop inside an applied crop");
+                for (int turn = 0; turn < turns; ++turn)
+                    LiveAccess::command(window, QStringLiteral("rotate_clockwise"));
+                if (reflected)
+                    LiveAccess::command(window, QStringLiteral("flip_horizontal"));
+
+                const auto verify = [&] {
+                    const auto& original = Access::originalImage(window);
+                    require(Access::renderer(window)
+                                    .imageSourceSnapshot()
+                                    .materializedImage.cacheKey() == original.cacheKey(),
+                            "cropped live rendering samples the installed source pixels");
+                    require(LiveAccess::transform(window).isIdentity() ||
+                                LiveAccess::transformed(window).isNull(),
+                            "cropping preserves direct live transform rendering");
+                    const QImage expected =
+                        exportImage(window, LiveAccess::artifact(window, false));
+                    // Decorations use physical pixels. Capture at the widget's backing
+                    // scale so their native clip agrees with the sampled content rectangle.
+                    const qreal dpr = window.devicePixelRatioF();
+                    const QSize raster(qCeil(window.width() * dpr), qCeil(window.height() * dpr));
+                    QImage actual(raster, QImage::Format_ARGB32_Premultiplied);
+                    actual.setDevicePixelRatio(dpr);
+                    actual.fill(Qt::transparent);
+                    window.render(&actual);
+                    const auto content = LiveAccess::contentRect(window);
+                    QImage reference(actual.size(), actual.format());
+                    reference.setDevicePixelRatio(dpr);
+                    reference.fill(Qt::transparent);
+                    {
+                        QPainter painter(&reference);
+                        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+                        painter.drawImage(content, expected);
+                    }
+                    for (const qreal x : {.25, .75}) {
+                        for (const qreal y : {.25, .75}) {
+                            const QPoint sample(qFloor((content.x() + x * content.width()) * dpr),
+                                                qFloor((content.y() + y * content.height()) * dpr));
+                            const auto message =
+                                QStringLiteral(
+                                    "cropped live display matches the oriented viewport "
+                                    "export (crop=%1, turns=%2, reflected=%3, "
+                                    "source=%4x%5, sample=%6,%7, actual=%8, expected=%9)")
+                                    .arg(cropState)
+                                    .arg(turns)
+                                    .arg(reflected)
+                                    .arg(original.width())
+                                    .arg(original.height())
+                                    .arg(sample.x())
+                                    .arg(sample.y())
+                                    .arg(actual.pixelColor(sample).name(QColor::HexArgb))
+                                    .arg(reference.pixelColor(sample).name(QColor::HexArgb))
+                                    .toStdString();
+                            requireColorNear(actual.pixelColor(sample),
+                                             reference.pixelColor(sample), 6, message.c_str());
+                        }
+                    }
+                };
+                verify();
+                if (cropState != 1) {
+                    Access::applyCrop(window);
+                    verify();
+                }
+                source->frame = source->frame.scaled(source->frame.size() * 2);
+                emit source->frameChanged(source->frame);
+                verify();
+                window.closeLiveWindow();
+            }
+        }
+    }
 }
 
 void liveConversion() {
@@ -606,11 +690,7 @@ void liveConversion() {
                         "temporary crop inside a committed live crop");
             if (transformed) {
                 LiveAccess::command(window, QStringLiteral("rotate_clockwise"));
-                translation_tests::waitUntil([&] { return !LiveAccess::frameProcessing(window); },
-                                             "live conversion rotation settles");
                 LiveAccess::command(window, QStringLiteral("flip_horizontal"));
-                translation_tests::waitUntil([&] { return !LiveAccess::frameProcessing(window); },
-                                             "live conversion reflection settles");
             }
             LiveAccess::scale(window, 137);
             const QRect geometry = LiveAccess::contentGeometry(window);
@@ -942,6 +1022,11 @@ void nativeInput() {
 #endif
 } // namespace pinned_crop_tests
 
+void livePinnedCropTests() {
+    pinned_crop_tests::liveWindow();
+    pinned_crop_tests::liveCropPaintsTransforms();
+}
+
 void pinnedCropTests() {
     pinned_crop_tests::geometry();
     pinned_crop_tests::cornerOutlines();
@@ -953,7 +1038,7 @@ void pinnedCropTests() {
     pinned_crop_tests::staleApplyAndRestore();
     pinned_crop_tests::styledAndTransformedApply();
     pinned_crop_tests::animations();
-    pinned_crop_tests::liveWindow();
+    livePinnedCropTests();
     pinned_crop_tests::liveConversion();
     pinned_crop_tests::liveConversionRejectsChangedCrop();
     pinned_crop_tests::liveConversionEndsCropInteraction();

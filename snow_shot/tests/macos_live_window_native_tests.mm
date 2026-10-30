@@ -13,6 +13,13 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <vector>
+#ifdef SNOW_SHOT_MACOS_LIVE_WINDOW_BENCHMARK
+#include "../src/presentation/pinned/livewindowframerenderer_p.h"
+#include <QTimer>
+#include <sys/resource.h>
+#include <mach/mach.h>
+#endif
 
 namespace {
 QSize lastSampleSize;
@@ -34,6 +41,7 @@ template <typename Predicate> bool waitFor(Predicate predicate, int timeout = 10
 class SourceWindow final : public QWidget {
   public:
     QColor color{32, 96, 192};
+    bool patterned = false;
     SourceWindow() {
         setWindowTitle(QStringLiteral("Snow Shot live-window macOS native fixture"));
         setWindowFlag(Qt::WindowStaysOnTopHint);
@@ -42,6 +50,12 @@ class SourceWindow final : public QWidget {
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         painter.fillRect(rect(), color);
+        if (patterned) {
+            for (int y = 0; y < height(); y += 8)
+                for (int x = 0; x < width(); x += 8)
+                    painter.fillRect(QRect(x, y, 8, 8),
+                                     QColor((x * 7) % 256, (y * 11) % 256, (x + y) % 256));
+        }
     }
 };
 CGWindowID nativeId(QWidget& window) {
@@ -75,6 +89,9 @@ bool hasColor(const QImage& image, const QColor& expected) {
            qAbs(actual.green() - expected.green()) <= 3 &&
            qAbs(actual.blue() - expected.blue()) <= 3;
 }
+#ifdef SNOW_SHOT_MACOS_LIVE_WINDOW_BENCHMARK
+#include "macos_live_window_performance_benchmark.h"
+#endif
 int runFixture() {
     using namespace snow_shot::presentation;
     if (QGuiApplication::platformName() != QStringLiteral("cocoa")) {
@@ -158,6 +175,7 @@ int runFixture() {
 
     QWidget shell;
     shell.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    shell.setAttribute(Qt::WA_TranslucentBackground);
     shell.setGeometry(550, 120, 160, 120);
     shell.show();
     QImage latest;
@@ -166,25 +184,113 @@ int runFixture() {
     LiveWindowPresentation presentation;
     presentation.owner = &shell;
     QString error;
-    require(source->setPresentation(presentation, &error) && !source->usesNativePresentation(),
-            "macOS display must use continuous independent native window frames.");
+    require(source->setPresentation(presentation, &error) && source->usesNativePresentation(),
+            "macOS display must present native GPU frames.");
+    NSWindow* nativeShell = reinterpret_cast<NSView*>(shell.winId()).window;
+    require(nativeShell.childWindows.count == 1, "The GPU surface is a child below the Qt shell.");
+    NSWindow* host = nativeShell.childWindows.firstObject;
+    require(host.ignoresMouseEvents && !host.canBecomeKeyWindow,
+            "The native content surface never steals input from the shell.");
+    QRect hostBounds;
+    require(waitFor([&] {
+                hostBounds = desktopBounds(static_cast<CGWindowID>(host.windowNumber));
+                return !hostBounds.isEmpty();
+            }),
+            "WindowServer publishes the GPU surface before capture.");
+    const LiveWindowTarget displayTarget{static_cast<quintptr>(host.windowNumber),
+                                         NSProcessInfo.processInfo.processIdentifier, hostBounds,
+                                         hostBounds.center()};
+    auto displaySource = createLiveWindowSource(displayTarget, hostBounds);
+    require(bool(displaySource), "The displayed surface has a valid capture target.");
+    bool displayInitialized = false;
+    displaySource->initialize([&](bool ok, const QString& message) {
+        require(ok, qPrintable(message));
+        displayInitialized = true;
+    });
+    require(waitFor([&] { return displayInitialized; }),
+            "The displayed GPU surface can be sampled.");
+    const auto displaySample = [&] {
+        bool done = false;
+        QImage image;
+        displaySource->requestFrame([&](const QImage& frame, const QString&) {
+            image = frame;
+            done = true;
+        });
+        require(waitFor([&] { return done; }), "The displayed surface snapshot completes.");
+        return image;
+    };
+    latest = {};
     window->color = QColor(192, 64, 32);
     window->repaint();
-    require(waitFor([&] { return hasColor(latest, window->color); }),
-            "Live window frames must update after the source changes.");
+    require(waitFor([&] { return hasColor(displaySample(), window->color); }),
+            "GPU surface pixels must update after the source changes.");
+    require(latest.isNull(), "Continuous GPU display must not emit CPU image frames.");
     presentation.imageTransform.rotate(90);
     presentation.imageTransform.scale(-1, 1);
     require(source->setPresentation(presentation, &error),
             "Transforms must preserve the native source association.");
     window->color = QColor(48, 160, 96);
     window->repaint();
-    require(waitFor([&] { return hasColor(latest, window->color); }),
-            "Capture must continue while rotation and flipping are active.");
+    require(waitFor([&] { return hasColor(displaySample(), window->color); }),
+            "GPU presentation must continue while rotation and flipping are active.");
+    require(latest.isNull(), "Rotated GPU display must not read back CPU pixels.");
     require(hasColor(sample(), window->color),
             "Transformed display must preserve raw source snapshots for processing.");
+    window->patterned = true;
+    window->repaint();
+    QImage pattern;
+    require(waitFor([&] {
+                pattern = sample();
+                return !pattern.isNull() && !hasColor(pattern, window->color);
+            }),
+            "The asymmetric source pattern reaches capture.");
+    for (int angle : {0, 90, 180, 270}) {
+        for (bool flip : {false, true}) {
+            for (bool cropped : {false, true}) {
+                presentation.imageTransform = QTransform().rotate(angle).scale(flip ? -1 : 1, 1);
+                presentation.sourceViewport =
+                    cropped ? QRectF(0.25, 0.25, 0.5, 0.5) : QRectF(0, 0, 1, 1);
+                require(source->setPresentation(presentation), "GPU geometry changes succeed.");
+                const QImage selected =
+                    cropped ? pattern.copy(QRect(pattern.width() / 4, pattern.height() / 4,
+                                                 pattern.width() / 2, pattern.height() / 2))
+                            : pattern;
+                const QImage oriented = selected.transformed(presentation.imageTransform);
+                const bool matches = waitFor([&] {
+                    const QImage actual = displaySample();
+                    const QImage expected = oriented.scaled(actual.size(), Qt::IgnoreAspectRatio,
+                                                            Qt::SmoothTransformation);
+                    if (actual.isNull())
+                        return false;
+                    for (const QPointF point :
+                         {QPointF(0.17, 0.19), QPointF(0.73, 0.23), QPointF(0.29, 0.81)}) {
+                        const int x = qRound(point.x() * (actual.width() - 1));
+                        const int y = qRound(point.y() * (actual.height() - 1));
+                        const QColor a = actual.pixelColor(x, y), b = expected.pixelColor(x, y);
+                        if (qAbs(a.red() - b.red()) > 5 || qAbs(a.green() - b.green()) > 5 ||
+                            qAbs(a.blue() - b.blue()) > 5)
+                            return false;
+                    }
+                    return true;
+                });
+                if (!matches) {
+                    std::cerr << "GPU pattern mismatch: angle=" << angle << " flip=" << flip
+                              << " cropped=" << cropped << '\n';
+                }
+                require(
+                    matches,
+                    "Displayed GPU pixels preserve crop, rotation, reflection, and backing scale.");
+            }
+        }
+    }
+    window->patterned = false;
+    window->repaint();
     presentation.imageTransform.reset();
+    presentation.sourceViewport = QRectF(0, 0, 1, 1);
     require(source->setPresentation(presentation, &error),
             "Resetting transforms must retain the live macOS stream.");
+    displaySource->shutdown();
+    displaySource.reset();
 
     QWidget occluder;
     occluder.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
@@ -302,6 +408,10 @@ int runFixture() {
 int main(int argc, char** argv) {
     snow_shot::platform::macos::configureRasterColorSpace();
     QApplication application(argc, argv);
+#ifdef SNOW_SHOT_MACOS_LIVE_WINDOW_BENCHMARK
+    if (application.arguments().contains(QStringLiteral("--performance")))
+        return runPerformance();
+#endif
     if (application.arguments().contains(QStringLiteral("--request-permission"))) {
         if (CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess())
             return EXIT_SUCCESS;

@@ -314,6 +314,37 @@ pub unsafe extern "C" fn snow_capture_macos_stream_create(
     config: *const SnowMacCaptureConfig,
     output: *mut *mut SnowMacStream,
 ) -> SnowMacStatus {
+    unsafe { create_stream(config, output, false) }
+}
+
+fn live_window_config(mut config: DesktopConfig) -> Result<DesktopConfig, MacError> {
+    if !matches!(config.target, DesktopTarget::Window(_))
+        || config.output.is_some()
+        || config.fps > 30
+        || config.cursor != CursorMode::Hidden
+        || config.dynamic_range != DynamicRange::Sdr
+    {
+        return Err(MacError::InvalidConfig(
+            "invalid live window configuration".into(),
+        ));
+    }
+    config.persistent_window = true;
+    Ok(config)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_macos_live_window_stream_create(
+    config: *const SnowMacCaptureConfig,
+    output: *mut *mut SnowMacStream,
+) -> SnowMacStatus {
+    unsafe { create_stream(config, output, true) }
+}
+
+unsafe fn create_stream(
+    config: *const SnowMacCaptureConfig,
+    output: *mut *mut SnowMacStream,
+    live_window: bool,
+) -> SnowMacStatus {
     boundary(|| {
         require_output(output)?;
         unsafe {
@@ -327,7 +358,12 @@ pub unsafe extern "C" fn snow_capture_macos_stream_create(
             ));
         }
         let config = unsafe { &*config };
-        let stream = DesktopSession::new(config.parse()?)?;
+        let config = config.parse()?;
+        let stream = DesktopSession::new(if live_window {
+            live_window_config(config)?
+        } else {
+            config
+        })?;
         unsafe {
             output.write(Box::into_raw(Box::new(SnowMacStream { stream })));
         }
@@ -715,6 +751,29 @@ pub unsafe extern "C" fn snow_capture_macos_query_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_window_profile_is_explicit_and_preserves_native_pixels() {
+        let mut config = DesktopConfig::new(DesktopTarget::Window(WindowId(42)));
+        config.fps = 30;
+        config.cursor = CursorMode::Hidden;
+        assert!(!config.persistent_window);
+        assert!(
+            live_window_config(config.clone())
+                .unwrap()
+                .persistent_window
+        );
+        config.output = Some(PixelSize::new(640, 360).unwrap());
+        assert!(live_window_config(config.clone()).is_err());
+        config.output = None;
+        config.fps = 60;
+        assert!(live_window_config(config.clone()).is_err());
+        config.fps = 30;
+        config.cursor = CursorMode::Embedded;
+        assert!(live_window_config(config.clone()).is_err());
+        config.cursor = CursorMode::Hidden;
+        config.target = DesktopTarget::PrimaryDisplay;
+        assert!(live_window_config(config).is_err());
+    }
     #[test]
     fn concurrent_cpu_formats_share_one_native_readback() {
         use snow_media::{ColorDescription, PixelFormat, PlaneLayout};

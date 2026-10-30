@@ -67,8 +67,8 @@ void run() {
     const double oldInstallUs = measure([&] { renderer.setImageSource(nextSource()); });
     const double newInstallUs = measure([&] { renderer.setPinnedLiveFrame(nextSource()); });
     const double shellInstallUs = measure([&] { emit source->frameChanged(frames[next++ % 3]); });
-    require(!Access::frameWatcher(window) && !Access::frameProcessing(window),
-            "identity shell updates allocate no transform watcher or task");
+    require(Access::original(window).size() == pixels,
+            "shell updates retain capture-sized image storage");
     QImage raster(window.size(), QImage::Format_ARGB32_Premultiplied);
     const double oldPaintUs = measure([&] {
         renderer.setImageSource(nextSource());
@@ -85,6 +85,35 @@ void run() {
               << " optimized_install_us=" << newInstallUs << " shell_install_us=" << shellInstallUs
               << " legacy_install_paint_us=" << oldPaintUs
               << " optimized_install_paint_us=" << newPaintUs << '\n';
+    for (const int angle : {0, 90, 180, 270}) {
+        if (angle)
+            Access::command(window, QStringLiteral("rotate_clockwise"));
+        raster = QImage(window.size(), QImage::Format_ARGB32_Premultiplied);
+        const auto materializedUs = measure(
+            [&] {
+                const auto transformed =
+                    snowCanvasTransformImage(frames[next++ % frames.size()],
+                                             Access::transform(window), Qt::SmoothTransformation);
+                renderer.setPinnedLiveFrame(ScreenshotImageSource::fromImage(
+                    transformed, renderer.imageSourceSnapshot().materializedCanvasRect));
+                raster.fill(Qt::transparent);
+                window.render(&raster);
+            },
+            30);
+        const double frameUs = measure(
+            [&] {
+                emit source->frameChanged(frames[next++ % frames.size()]);
+                raster.fill(Qt::transparent);
+                window.render(&raster);
+            },
+            30);
+        require(raster.pixelColor(raster.rect().center()).blue() == 200,
+                "live presentation benchmark renders the captured frame");
+        std::cout << "live_presentation source=3840x2160 angle=" << angle
+                  << " viewport=" << raster.width() << 'x' << raster.height()
+                  << " materialize_install_paint_us=" << materializedUs
+                  << " install_paint_us=" << frameUs << '\n';
+    }
     window.close();
 }
 } // namespace live_pinned_benchmark

@@ -26,11 +26,45 @@ class NativeWindowMonitor {
 class NativeWindowPresentation {
   public:
     virtual ~NativeWindowPresentation() = default;
+    // Compositor thumbnails need no frames. Texture presenters consume immutable
+    // native leases; CPU pixels are materialized only for explicit image actions.
+    virtual bool consumesFrames() const {
+        return false;
+    }
+    virtual bool supportsTransform(const QTransform& transform) const {
+        return transform.isIdentity();
+    }
     virtual bool present(const LiveWindowPresentation& presentation, const QRectF& crop,
                          const QRect& sourceBounds, QString* error) = 0;
     virtual bool presenting() const = 0;
     virtual void stopPresentation() = 0;
+    virtual bool presentFrame(std::shared_ptr<const class NativeWindowFrame>, const QRectF&) {
+        return false;
+    }
 };
+
+class NativeWindowFrame {
+  public:
+    virtual ~NativeWindowFrame() = default;
+    virtual QSize size() const = 0;
+    // Called on capture workers, never the GUI thread.
+    virtual QImage image() const = 0;
+    virtual const void* pixelBuffer() const = 0;
+};
+struct NativeCaptureFrame {
+    std::shared_ptr<const NativeWindowFrame> pixels;
+    QRectF desktopBounds;
+    bool duplicate = false;
+};
+class NativeWindowCapture {
+  public:
+    virtual ~NativeWindowCapture() = default;
+    // A successful timeout/configuration event has no pixels. Worker-thread only.
+    virtual bool receive(NativeCaptureFrame* frame) = 0;
+    // Thread-safe; interrupts receive and startup without waiting for teardown.
+    virtual void cancel() = 0;
+};
+std::unique_ptr<NativeWindowCapture> createNativeWindowCapture(const LiveWindowTarget& target);
 
 std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target);
 std::unique_ptr<NativeWindowPresentation>

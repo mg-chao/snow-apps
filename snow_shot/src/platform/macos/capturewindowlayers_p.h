@@ -10,6 +10,11 @@
 class QWidget;
 #ifdef __OBJC__
 @class NSWindow;
+// Native content surfaces own their level and below-owner ordering as part of
+// their renderer. They are not auxiliary panels and must not inherit the
+// dialog policy that promotes native descendants above their capture owner.
+@protocol SnowCaptureContentWindow
+@end
 #endif
 
 namespace snow_shot::platform::detail {

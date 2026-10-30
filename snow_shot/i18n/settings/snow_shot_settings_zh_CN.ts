@@ -3260,6 +3260,10 @@
             <translation>将选中文件固定到屏幕</translation>
         </message>
         <message>
+            <source>Pin Window to Screen</source>
+            <translation>固定窗口到屏幕</translation>
+        </message>
+        <message>
             <source>Pin clipboard</source>
             <translation>将剪贴板内容固定到屏幕</translation>
         </message>

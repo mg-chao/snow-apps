@@ -159,6 +159,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ApplyCrop",
+      "name": "apply-crop",
+      "source": "../src/presentation/components/icons/resources/apply-crop.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowRatio",
       "name": "arrow-ratio",
       "source": "../src/presentation/components/icons/resources/arrow-ratio.svg",
@@ -1667,6 +1675,30 @@
       "name": "window-under-cursor-always-on-top",
       "source": "../src/presentation/components/icons/resources/window-under-cursor-always-on-top.svg",
       "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "twotone",
+      "symbol": "LiveWindowClosed",
+      "name": "live-window-closed",
+      "source": "../src/presentation/components/icons/resources/live-window-closed.svg",
+      "colorModel": "twoTone",
+      "fit": "contain"
+    },
+    {
+      "variant": "twotone",
+      "symbol": "LiveWindowMinimized",
+      "name": "live-window-minimized",
+      "source": "../src/presentation/components/icons/resources/live-window-minimized.svg",
+      "colorModel": "twoTone",
+      "fit": "contain"
+    },
+    {
+      "variant": "twotone",
+      "symbol": "LiveWindowUnavailable",
+      "name": "live-window-unavailable",
+      "source": "../src/presentation/components/icons/resources/live-window-unavailable.svg",
+      "colorModel": "twoTone",
       "fit": "contain"
     },
     {

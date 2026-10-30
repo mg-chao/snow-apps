@@ -166,11 +166,18 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
             continue;
         DWORD process = 0;
         GetWindowThreadProcessId(window, &process);
-        return LiveWindowTarget{reinterpret_cast<quintptr>(window), process, bounds, point};
+        QString title(GetWindowTextLengthW(window) + 1, Qt::Uninitialized);
+        const int length = GetWindowTextW(window, reinterpret_cast<wchar_t*>(title.data()),
+                                          static_cast<int>(title.size()));
+        title.truncate(length);
+        return LiveWindowTarget{reinterpret_cast<quintptr>(window), process, bounds, point, title};
     }
     return std::nullopt;
 }
 namespace live_window_detail {
+std::unique_ptr<NativeWindowCapture> createNativeWindowCapture(const LiveWindowTarget&) {
+    return {};
+}
 std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<WindowsLiveWindow>(target);
 }

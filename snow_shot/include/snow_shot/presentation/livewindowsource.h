@@ -26,6 +26,8 @@ struct LiveWindowTarget {
     qint64 processId = 0;
     QRect desktopBounds;
     QPoint hitPoint;
+    // Keep the selected title available after the native window has closed.
+    QString title = {};
 };
 
 struct LiveWindowPresentation {
@@ -58,6 +60,7 @@ class LiveWindowSource : public QObject {
     virtual QRect initialDesktopRegion() const = 0;
     virtual LiveWindowState state() const = 0;
     virtual QString stateMessage() const = 0;
+    virtual QString windowTitle() const = 0;
     virtual void requestFrame(FrameCompletion completion) = 0;
     virtual bool setPresentation(const LiveWindowPresentation& presentation,
                                  QString* error = nullptr) = 0;

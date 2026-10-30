@@ -1695,6 +1695,10 @@ Files:
             <translation>Close this pinned window?</translation>
         </message>
         <message>
+            <source>Closed</source>
+            <translation>Closed</translation>
+        </message>
+        <message>
             <source>Convert to Image</source>
             <translation>Convert to Image</translation>
         </message>
@@ -1833,6 +1837,10 @@ Files:
         <message>
             <source>Lock mode</source>
             <translation>Lock mode</translation>
+        </message>
+        <message>
+            <source>Minimized</source>
+            <translation>Minimized</translation>
         </message>
         <message>
             <source>Move window</source>
@@ -2028,6 +2036,14 @@ Files:
         <message>
             <source>Translation results</source>
             <translation>Translation results</translation>
+        </message>
+        <message>
+            <source>Unavailable</source>
+            <translation>Unavailable</translation>
+        </message>
+        <message>
+            <source>Untitled window</source>
+            <translation>Untitled window</translation>
         </message>
         <message>
             <source>Uploaded to cloud. Link copied to clipboard.</source>

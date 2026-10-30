@@ -98,8 +98,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 209,
-            "Snow Shot pack should contain all 209 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 213,
+            "Snow Shot pack should contain all 213 project-owned assets");
     require(adqt::icons::describeIcon(icons::outlined::PinWindowToScreen()).key.name ==
                 QStringLiteral("pin-window-to-screen"),
             "live window pinning should resolve to its project-owned icon");
@@ -109,6 +109,24 @@ void everySnowShotEntryRenders() {
     require(adqt::icons::describeIcon(icons::outlined::BracketAnnotation()).key.name ==
                 QStringLiteral("bracket-annotation"),
             "bracket annotation should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::outlined::ApplyCrop()).key.name ==
+                QStringLiteral("apply-crop"),
+            "applying a crop should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::outlined::WindowUnderCursorAlwaysOnTop()).key.name ==
+                QStringLiteral("window-under-cursor-always-on-top"),
+            "window always-on-top should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::twotone::LiveWindowClosed()).key.name ==
+                QStringLiteral("live-window-closed"),
+            "closed live window status should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::twotone::LiveWindowMinimized()).key.name ==
+                QStringLiteral("live-window-minimized"),
+            "minimized live window status should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::twotone::LiveWindowUnavailable()).key.name ==
+                QStringLiteral("live-window-unavailable"),
+            "unavailable live window status should resolve to its project-owned icon");
+    require(adqt::icons::describeIcon(icons::twotone::ScreenshotFeature()).key.name ==
+                QStringLiteral("screenshot-feature"),
+            "screenshot feature should retain its project-owned icon after new icons are added");
     require(adqt::icons::describeIcon(icons::outlined::TextType()).key.name ==
                 QStringLiteral("text-type"),
             "recognition and translation switching should resolve to its project-owned icon");
@@ -1095,11 +1113,42 @@ void distanceUnitIconsFollowThemeAtToolbarSizes() {
         require(preview.save(path), "save distance unit icon preview");
 }
 
+void liveWindowStatusIconsRetainWindowFrame() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto colors = adqt::icons::IconColors::twoTone(QColor("#595959"), QColor("#faad14"));
+    const adqt::icons::IconRef refs[] = {icons::twotone::LiveWindowClosed(colors),
+                                         icons::twotone::LiveWindowMinimized(colors),
+                                         icons::twotone::LiveWindowUnavailable(colors)};
+    QImage preview(576, 192, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    for (int index = 0; index < 3; ++index) {
+        const auto pixmap = render(refs[index], QSize(192, 192));
+        painter.drawPixmap(index * 192, 0, pixmap);
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_LIVE_WINDOW_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save live window status icon inspection sheet");
+    for (const auto& ref : refs) {
+        for (const qreal dpr : {1.0, 1.5, 2.0}) {
+            const auto image = render(ref, QSize(96, 96), dpr).toImage();
+            require(image.pixelColor(qRound(44 * dpr), qRound(14 * dpr)).alpha() > 100,
+                    "live window status artwork retains the top window border");
+            require(image.pixelColor(qRound(44 * dpr), qRound(32 * dpr)).alpha() > 100,
+                    "live window status artwork retains the title bar divider");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--live-window-status-only"))) {
+            liveWindowStatusIconsRetainWindowFrame();
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--distance-units-only"))) {
             distanceUnitIconsFollowThemeAtToolbarSizes();
             return 0;
@@ -1163,6 +1212,7 @@ int main(int argc, char** argv) {
             everySnowShotEntryRenders();
             return 0;
         }
+        liveWindowStatusIconsRetainWindowFrame();
         everySnowShotEntryRenders();
         distanceUnitIconsFollowThemeAtToolbarSizes();
         arrowheadIconsFaceTheirRespectiveEndpoints();

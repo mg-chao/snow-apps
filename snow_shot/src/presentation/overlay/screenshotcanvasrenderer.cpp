@@ -1,6 +1,7 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotimagerendering.h"
+#include "../pinned/livewindowframerenderer_p.h"
 
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
@@ -2686,7 +2687,8 @@ void ScreenshotCanvasRenderer::setPinnedAnimationFrame(const QImage& image,
     m_canvas.update(canvasImageDamageRegion(canvasRect));
 }
 
-void ScreenshotCanvasRenderer::setPinnedLiveFrame(ScreenshotImageSource source) {
+void ScreenshotCanvasRenderer::setPinnedLiveFrame(ScreenshotImageSource source,
+                                                  const QTransform& imageTransform) {
     const QRectF previous = m_imageSource.materializedCanvasRect;
     if (!m_pinnedLiveFrames) {
         m_pinnedLiveFrames = true;
@@ -2696,6 +2698,7 @@ void ScreenshotCanvasRenderer::setPinnedLiveFrame(ScreenshotImageSource source) 
         clearOcrFilteredImage();
     }
     m_imageSource = std::move(source);
+    m_pinnedLiveTransform = imageTransform;
     m_samplingImageSource = m_imageSource;
     refreshBaseImageSources();
     // Conservatively repaint the backdrop without scanning alpha on the GUI thread.
@@ -3237,6 +3240,10 @@ QList<SnowCanvasBaseImageSource> ScreenshotCanvasRenderer::baseImageSources() co
 
 void ScreenshotCanvasRenderer::refreshBaseImageSources() {
     m_baseImageSources.clear();
+    // Live pins disable annotation/sampling tools. An unrotated capture cannot
+    // describe a rotated sampling source using only an axis-aligned canvas rect.
+    if (m_pinnedLiveFrames && !m_pinnedLiveTransform.isIdentity())
+        return;
     if (m_renderMode == RenderMode::ScrollingCapture) {
         if (hasScrollingResultPreview())
             m_baseImageSources.append(
@@ -3707,27 +3714,44 @@ void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
             return;
         }
         painter.save();
-        painter.setRenderHint(QPainter::SmoothPixmapTransform,
-                              m_imageSource.materializedImage.size() !=
-                                  m_imageViewportPhysicalSize);
-        paintExposedScreenshotImage(painter, targetRect, m_imageSource.materializedImage,
-                                    QRectF(m_imageSource.materializedImage.rect()),
-                                    context.exposedRegion);
+        const auto& image = m_imageSource.materializedImage;
+        if (m_pinnedLiveFrames && !m_pinnedLiveTransform.isIdentity()) {
+            using namespace snow_shot::presentation::live_window_detail;
+            painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+            paintLiveWindowFrame(painter, targetRect, image, m_pinnedLiveTransform,
+                                 transformedFrameSize(image.size(), m_pinnedLiveTransform) !=
+                                     m_imageViewportPhysicalSize);
+        } else {
+            painter.setRenderHint(QPainter::SmoothPixmapTransform,
+                                  image.size() != m_imageViewportPhysicalSize);
+            paintExposedScreenshotImage(painter, targetRect, image, QRectF(image.rect()),
+                                        context.exposedRegion);
+        }
         painter.restore();
     } else if (m_imageSource.isMaterialized()) {
         const QRectF targetRect =
             context.canvasToViewTransform.mapRect(m_imageSource.materializedCanvasRect);
         if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
             painter.save();
+            const auto& image = m_imageSource.materializedImage;
+            const bool transformedLive = m_pinnedLiveFrames && !m_pinnedLiveTransform.isIdentity();
+            const auto displayedPixels =
+                transformedLive ? snow_shot::presentation::live_window_detail::transformedFrameSize(
+                                      image.size(), m_pinnedLiveTransform)
+                                : image.size();
+            const bool linear =
+                pinnedResultUsesLinearFiltering(context, targetRect, displayedPixels);
             if (m_renderMode == RenderMode::PinnedResult) {
-                painter.setRenderHint(
-                    QPainter::SmoothPixmapTransform,
-                    pinnedResultUsesLinearFiltering(context, targetRect,
-                                                    m_imageSource.materializedImage.size()));
+                painter.setRenderHint(QPainter::SmoothPixmapTransform, linear);
             }
-            paintExposedScreenshotImage(painter, targetRect, m_imageSource.materializedImage,
-                                        QRectF(m_imageSource.materializedImage.rect()),
-                                        context.exposedRegion);
+            if (transformedLive) {
+                painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+                snow_shot::presentation::live_window_detail::paintLiveWindowFrame(
+                    painter, targetRect, image, m_pinnedLiveTransform, linear);
+            } else {
+                paintExposedScreenshotImage(painter, targetRect, image, QRectF(image.rect()),
+                                            context.exposedRegion);
+            }
             painter.restore();
         }
     } else {

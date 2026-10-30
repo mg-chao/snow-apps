@@ -357,6 +357,17 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
         return std::nullopt;
     CFArrayRef windows = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, id);
     const auto target = platform::detail::recaptureWindowTarget(windows, id);
+    QString title;
+    if (windows) {
+        for (CFIndex index = 0; index < CFArrayGetCount(windows); ++index) {
+            const auto info = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windows, index));
+            const auto name = static_cast<CFStringRef>(CFDictionaryGetValue(info, kCGWindowName));
+            if (name && CFGetTypeID(name) == CFStringGetTypeID()) {
+                title = QString::fromCFString(name);
+                break;
+            }
+        }
+    }
     if (windows)
         CFRelease(windows);
     if (!target.id || target.pid <= 0)
@@ -365,14 +376,11 @@ std::optional<LiveWindowTarget> liveWindowTargetAtPoint(const QPoint& point,
                             QRect(qRound(target.bounds.origin.x), qRound(target.bounds.origin.y),
                                   qRound(target.bounds.size.width),
                                   qRound(target.bounds.size.height)),
-                            point};
+                            point, title};
 }
 namespace live_window_detail {
 std::unique_ptr<NativeWindowMonitor> createNativeWindowMonitor(const LiveWindowTarget& target) {
     return std::make_unique<MacLiveWindow>(target);
-}
-std::unique_ptr<NativeWindowPresentation> createNativeWindowPresentation(const LiveWindowTarget&) {
-    return {};
 }
 } // namespace live_window_detail
 } // namespace snow_shot::presentation

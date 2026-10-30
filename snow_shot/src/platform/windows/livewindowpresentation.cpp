@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "livewindowpresentation.h"
+#include "livewindowinputrouting.h"
 #include "../../presentation/pinned/livewindownative_p.h"
 
 #include <QScopedValueRollback>
@@ -209,21 +210,24 @@ struct LiveWindowPresentationSurface::Impl {
         return true;
     }
 
-    bool pointerOverSurface() const {
+    bool suppressPointerLeave(UINT message) const {
         POINT point{};
         if (!GetCursorPos(&point))
             return false;
         const HWND hit = WindowFromPoint(point);
-        return hit == shell || hit == host;
+        return (hit == shell || hit == host) && live_window_detail::suppressInternalPointerLeave(
+                                                    shell, message, MAKELPARAM(point.x, point.y));
     }
 
     static LRESULT CALLBACK shellProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                                       UINT_PTR, DWORD_PTR data) {
         auto* self = reinterpret_cast<Impl*>(data);
         // Qt tracks the shell after forwarded content input. USER32 then reports a
-        // shell leave because the transparent pixel belongs to the host. It is an
-        // internal surface transition, not a pointer exit from the pin.
-        if ((message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE) && self->pointerOverSurface())
+        // shell leave because the transparent pixel belongs to the host. Preserve
+        // client tracking inside the pair, but let Qt clear child hover when the
+        // pointer enters non-client content. The shell tracks that presence itself.
+        if ((message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE) &&
+            self->suppressPointerLeave(message))
             return 0;
         if (message == WM_NCDESTROY) {
             self->stop();
@@ -262,32 +266,22 @@ struct LiveWindowPresentationSurface::Impl {
             EndPaint(window, &paint);
             return 0;
         }
-        if (self && self->shell && message == WM_MOUSELEAVE) {
-            if (!self->pointerOverSurface())
-                SendMessageW(self->shell, WM_MOUSELEAVE, 0, 0);
+        if (self && self->shell && (message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE)) {
+            // Apply the same client/non-client transition policy to both HWNDs.
+            SendMessageW(self->shell, message, 0, 0);
             return 0;
         }
-        if (self && message == WM_MOUSEMOVE) {
+        if (self && (message == WM_MOUSEMOVE || message == WM_NCMOUSEMOVE)) {
             // The content HWND owns leave tracking while the pointer is over the
             // shell's transparent interior, including when the pointer stops moving.
-            TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window, 0};
+            const DWORD flags = TME_LEAVE | (message == WM_NCMOUSEMOVE ? TME_NONCLIENT : 0);
+            TRACKMOUSEEVENT tracking{sizeof(tracking), flags, window, 0};
             TrackMouseEvent(&tracking);
         }
-        if (self && self->shell &&
-            (message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
-             message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ||
-             message == WM_RBUTTONDBLCLK || message == WM_MBUTTONDOWN || message == WM_MBUTTONUP ||
-             message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDOWN || message == WM_XBUTTONUP ||
-             message == WM_XBUTTONDBLCLK || message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL ||
-             message == WM_CONTEXTMENU)) {
-            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            if (message != WM_MOUSEWHEEL && message != WM_MOUSEHWHEEL &&
-                message != WM_CONTEXTMENU) {
-                ClientToScreen(window, &point);
-                ScreenToClient(self->shell, &point);
-                lParam = MAKELPARAM(point.x, point.y);
-            }
-            return SendMessageW(self->shell, message, wParam, lParam);
+        if (self) {
+            if (const auto result = live_window_detail::forwardPointerMessage(
+                    window, self->shell, message, wParam, lParam))
+                return *result;
         }
         if (message == WM_ERASEBKGND)
             return 1;

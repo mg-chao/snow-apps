@@ -7,6 +7,9 @@ class QWidget;
 namespace adqt::widgets::detail {
 
 inline constexpr char kTooltipManagerProperty[] = "adqt.tooltip.manager";
+// Override Qt's tooltip wake-up delay for a widget subtree. Inheritance stops at
+// window boundaries so separately hosted popups retain their own timing.
+inline constexpr char kTooltipWakeUpDelayProperty[] = "adqt.tooltip.wakeUpDelayMs";
 // Opt in when a popup trigger also performs an action whose tooltip remains useful
 // while its popup is open above it. These tips only appear below the trigger when
 // they fit. Ordinary editor triggers keep suppressing their tooltip.

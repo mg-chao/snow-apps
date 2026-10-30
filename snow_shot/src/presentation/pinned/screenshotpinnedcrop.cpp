@@ -84,8 +84,7 @@ bool ScreenshotPinnedWindow::cropSelectionAllowed() const {
            !m_cropApplying && !m_contentReplacementJob.isValid() && !m_clickThroughActive &&
            !hideToTopActive() && !m_thumbnailMode && !m_ocrMode && !m_geometryAnimating &&
            !m_interactionPlacement && !m_selectionGeometryActive && !m_windowDragActive &&
-           !animationTransformPending() && !m_requestedLiveTransform &&
-           (!m_editController || !m_editController->editMode()) &&
+           !animationTransformPending() && (!m_editController || !m_editController->editMode()) &&
            (!isLiveWindow() || liveFrameAvailable());
 }
 
@@ -94,8 +93,7 @@ bool ScreenshotPinnedWindow::cropApplyAllowed() const {
            !m_closing && !m_cropApplying && !m_geometryAnimating && !m_cropSelectionOrigin &&
            !m_interactionPlacement && !m_selectionGeometryActive &&
            !m_contentReplacementJob.isValid() && !animationTransformPending() &&
-           !m_requestedLiveTransform && !m_animationTransformSnapshot &&
-           (!isLiveWindow() || liveFrameAvailable());
+           !m_animationTransformSnapshot && (!isLiveWindow() || liveFrameAvailable());
 }
 
 bool ScreenshotPinnedWindow::beginCropSelection(const QPointF& position) {
@@ -486,7 +484,7 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
     m_originalImage = original;
     m_originalPixelSize = original.size();
     m_ocrSupported = screenshotOcrImageWithinPixelLimit(m_originalPixelSize);
-    m_transformedImage = transformed;
+    m_transformedImage = isLiveWindow() && !transform.isIdentity() ? QImage() : transformed;
     m_imageTransform = transform;
     if (bakedStyle)
         m_quarterTurns = 0;
@@ -499,12 +497,16 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
     m_borderAppearance.reset();
     m_exactInitialWindowSize = baseline;
     m_initialWindowSize = baseline.toSize().expandedTo(QSize(1, 1));
-    m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, canvas);
+    m_imageSource = ScreenshotImageSource::fromImage(
+        isLiveWindow() ? m_originalImage : m_transformedImage, canvas);
     m_recognitionResults = std::move(results);
     m_recognitionTargetReady = false;
     refreshColorSwatch();
     m_animationSource = std::move(animation);
-    m_screenshotRenderer->setImageSource(m_imageSource);
+    if (isLiveWindow())
+        m_screenshotRenderer->setPinnedLiveFrame(m_imageSource, m_imageTransform);
+    else
+        m_screenshotRenderer->setImageSource(m_imageSource);
     m_screenshotRenderer->setPinnedResultSurface(canvas, canvas, m_resultStyle);
     if (m_animationPlayback) {
         static_cast<void>(m_animationPlayback->adoptCroppedSource(m_animationSource, original,

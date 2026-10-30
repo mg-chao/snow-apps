@@ -50,7 +50,7 @@ void pinnedShakeSettingIsDiscoverable() {
                     QStringLiteral("Shake a window to hide other windows"),
             "shake-to-hide must default on in the pinned interaction settings");
     const settings::SettingsSearchIndex search(registry);
-    for (const QString query : {QStringLiteral("shake"), QStringLiteral("back and forth")}) {
+    for (const QString& query : {QStringLiteral("shake"), QStringLiteral("back and forth")}) {
         const auto results = search.search(query);
         require(std::any_of(results.begin(), results.end(),
                             [&](const auto& result) {
@@ -1710,15 +1710,17 @@ void builtInCatalogIsCompleteAndValid() {
          "screenshot_shortcuts/toggle_coordinate_mode"},
         {20, "screenshot-shortcut.toggle_guides", "screenshot_shortcuts/toggle_guides"},
         {21, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
-        {22, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
-        {23, "screenshot-shortcut.scrolling_screenshot",
+        {22, "screenshot-shortcut.pin_window_to_screen",
+         "screenshot_shortcuts/pin_window_to_screen"},
+        {23, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
+        {24, "screenshot-shortcut.scrolling_screenshot",
          "screenshot_shortcuts/scrolling_screenshot"},
-        {24, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
-        {25, "screenshot-shortcut.print", "screenshot_shortcuts/print"},
-        {26, "screenshot-shortcut.upload_to_cloud", "screenshot_shortcuts/upload_to_cloud"},
-        {27, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {28, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {29, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {25, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
+        {26, "screenshot-shortcut.print", "screenshot_shortcuts/print"},
+        {27, "screenshot-shortcut.upload_to_cloud", "screenshot_shortcuts/upload_to_cloud"},
+        {28, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {29, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {30, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -1759,7 +1761,7 @@ void builtInCatalogIsCompleteAndValid() {
                 5 &&
 #endif
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 30 &&
+            screenshotShortcuts->items.size() == 31 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -1798,18 +1800,20 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotShortcuts->items.at(21).title.translated() ==
                 QStringLiteral("Pin to screen") &&
             screenshotShortcuts->items.at(22).title.translated() ==
-                QStringLiteral("Video recording") &&
+                QStringLiteral("Pin Window to Screen") &&
             screenshotShortcuts->items.at(23).title.translated() ==
+                QStringLiteral("Video recording") &&
+            screenshotShortcuts->items.at(24).title.translated() ==
                 QStringLiteral("Scrolling screenshot") &&
-            screenshotShortcuts->items.at(24).title.translated() == QStringLiteral("Quick save") &&
-            screenshotShortcuts->items.at(25).title.translated() == QStringLiteral("Print") &&
-            screenshotShortcuts->items.at(26).title.translated() ==
-                QStringLiteral("Upload to Cloud") &&
+            screenshotShortcuts->items.at(25).title.translated() == QStringLiteral("Quick save") &&
+            screenshotShortcuts->items.at(26).title.translated() == QStringLiteral("Print") &&
             screenshotShortcuts->items.at(27).title.translated() ==
-                QStringLiteral("Save as file") &&
+                QStringLiteral("Upload to Cloud") &&
             screenshotShortcuts->items.at(28).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Save as file") &&
             screenshotShortcuts->items.at(29).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(30).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(

@@ -1,5 +1,6 @@
 #include "../src/presentation/pinned/livewindownative_p.h"
 #include "../src/presentation/pinned/livewindowframecropper_p.h"
+#include "../src/presentation/pinned/livewindownativemapping_p.h"
 
 #include <QCoreApplication>
 #include <cstdlib>
@@ -71,6 +72,28 @@ void frameCropsPreservePixelsAndReuseReleasedStorage() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     frameCropsPreservePixelsAndReuseReleasedStorage();
+    using snow_shot::presentation::live_window_detail::nativeFramePlacement;
+    for (int turn = 0; turn < 4; ++turn) {
+        for (bool flip : {false, true}) {
+            const QRectF crop(13.5, 24.5, 60, 40);
+            const QTransform transform = QTransform().rotate(turn * 90).scale(flip ? -1 : 1, 1);
+            const QSizeF output = turn % 2 ? QSizeF(80, 120) : QSizeF(120, 80);
+            const auto placement = nativeFramePlacement(crop, transform, output);
+            require(placement && same(placement->mapRect(crop), QRectF(QPointF(), output)),
+                    "Native transforms map the fixed crop onto the entire destination.");
+            const auto reference = QImage::trueMatrix(transform, 60, 40);
+            for (const QPointF& point : {QPointF(0.5, 0.5), QPointF(59.5, 39.5)}) {
+                const QPointF actual = placement->map(point + crop.topLeft());
+                const QPointF expected = reference.map(point) * 2;
+                require(QLineF(actual, expected).length() < 0.00001,
+                        "Native crop orientation agrees with raster rotation and reflection.");
+            }
+        }
+    }
+    require(
+        !nativeFramePlacement({}, {}, QSizeF(100, 100)) &&
+            !nativeFramePlacement(QRectF(0, 0, 10, 10), QTransform().scale(0, 1), QSizeF(10, 10)),
+        "Empty or singular native mappings are rejected.");
     using snow_shot::presentation::live_window_detail::cropMapping;
     using snow_shot::presentation::live_window_detail::windowRelativeCrop;
     for (const QPoint& origin : {QPoint(118, 120), QPoint(-1800, -400)}) {

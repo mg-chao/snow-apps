@@ -17,7 +17,7 @@ struct ImageEditingServices {
     std::function<ScreenshotPinnedRecognitionProviders()> providers;
     PinnedWindowGroupManager* pins = nullptr;
     ScreenshotPrintService* printing = nullptr;
-    std::function<bool(QImage, std::function<void(bool)>)> pin;
+    std::function<bool(QImage, std::function<void(bool)>)> pin = {};
 };
 class ImageEditingWindow final : public QObject {
     Q_OBJECT
