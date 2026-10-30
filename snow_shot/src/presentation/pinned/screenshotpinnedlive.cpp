@@ -44,6 +44,8 @@ bool ScreenshotPinnedWindow::liveFrameAvailable() const {
 bool ScreenshotPinnedWindow::liveCommandAllowed(const QString& command) const {
     if (!isLiveWindow())
         return true;
+    if (command == u"apply_crop")
+        return cropApplyAllowed();
     if (command == u"copy_to_clipboard" || command == u"save_as_file" ||
         command == u"convert_to_image" || command == u"split_image" || command == u"image_editing")
         return liveFrameAvailable();
@@ -111,6 +113,16 @@ bool ScreenshotPinnedWindow::synchronizeLivePresentation(QString* error) {
     presentation.clickThrough = m_clickThroughActive;
     presentation.visible = isVisible() && !isMinimized();
     presentation.imageTransform = m_imageTransform;
+    presentation.sourceViewport =
+        m_liveAppliedCrop.isEmpty() ? QRectF(0, 0, 1, 1) : m_liveAppliedCrop;
+    if (m_cropRect && !m_originalPixelSize.isEmpty()) {
+        const auto base = presentation.sourceViewport;
+        presentation.sourceViewport =
+            QRectF(base.x() + base.width() * m_cropRect->x() / m_originalPixelSize.width(),
+                   base.y() + base.height() * m_cropRect->y() / m_originalPixelSize.height(),
+                   base.width() * m_cropRect->width() / m_originalPixelSize.width(),
+                   base.height() * m_cropRect->height() / m_originalPixelSize.height());
+    }
     presentation.backgroundColor =
         adqt::theme::ThemeManager::instance().resolveTheme(this).colorBgContainer;
     if (!presentation.backgroundColor.isValid())
@@ -175,6 +187,13 @@ void ScreenshotPinnedWindow::queueLiveFrame(QImage frame) {
     if (m_liveFrameProcessing)
         return;
     QImage original = std::exchange(m_livePendingFrame, {});
+    if (!m_liveAppliedCrop.isEmpty()) {
+        const QRectF pixels(m_liveAppliedCrop.x() * original.width(),
+                            m_liveAppliedCrop.y() * original.height(),
+                            m_liveAppliedCrop.width() * original.width(),
+                            m_liveAppliedCrop.height() * original.height());
+        original = original.copy(pixels.toAlignedRect().intersected(original.rect()));
+    }
     const QTransform transform = m_requestedLiveTransform.value_or(m_imageTransform);
     if (transform.isIdentity()) {
         installLiveFrame(original, original);
@@ -210,6 +229,17 @@ void ScreenshotPinnedWindow::installLiveFrame(QImage original, QImage transforme
     }
     const QRectF previousBackground = m_backgroundCanvasRect;
     const QRectF previousSurface = m_resultSurfaceCanvasRect;
+    const bool sourceResized =
+        !m_originalPixelSize.isEmpty() && m_originalPixelSize != original.size();
+    if (sourceResized) {
+        const auto mapping =
+            QTransform::fromScale(qreal(original.width()) / m_originalPixelSize.width(),
+                                  qreal(original.height()) / m_originalPixelSize.height());
+        if (m_cropRect)
+            m_cropRect = mapping.mapRect(*m_cropRect);
+        if (m_interactionCropRect)
+            m_interactionCropRect = mapping.mapRect(*m_interactionCropRect);
+    }
     m_originalImage = std::move(original);
     m_transformedImage = std::move(transformed);
     m_originalPixelSize = m_originalImage.size();
@@ -222,7 +252,7 @@ void ScreenshotPinnedWindow::installLiveFrame(QImage original, QImage transforme
     m_resultSurfaceCanvasRect = m_backgroundCanvasRect;
     m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
     m_screenshotRenderer->setPinnedLiveFrame(m_imageSource);
-    if (transformChanged || previousBackground != m_backgroundCanvasRect ||
+    if (transformChanged || sourceResized || previousBackground != m_backgroundCanvasRect ||
         previousSurface != m_resultSurfaceCanvasRect) {
         m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect,
                                                      m_resultSurfaceCanvasRect, m_resultStyle);
@@ -244,6 +274,14 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
     const QSize output(std::max(1, qRound(content.width() * backingScale)),
                        std::max(1, qRound(content.height() * backingScale)));
     const QTransform transform = m_imageTransform;
+    QRectF visible = m_liveAppliedCrop.isEmpty() ? QRectF(0, 0, 1, 1) : m_liveAppliedCrop;
+    if (m_cropRect && !m_originalPixelSize.isEmpty()) {
+        const auto base = visible;
+        visible = QRectF(base.x() + base.width() * m_cropRect->x() / m_originalPixelSize.width(),
+                         base.y() + base.height() * m_cropRect->y() / m_originalPixelSize.height(),
+                         base.width() * m_cropRect->width() / m_originalPixelSize.width(),
+                         base.height() * m_cropRect->height() / m_originalPixelSize.height());
+    }
     const qreal opacity = applyWindowOpacity ? m_opacityPercent / 100.0 : 1.0;
     const auto placement = screenshotClipboardSelectionPlacement(content, content.size(), screen());
     ScreenshotClipboardAppearance appearance;
@@ -257,15 +295,22 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
     m_liveSource->requestFrame(
         [promise](const QImage& frame, const QString&) { promise->set_value(frame); });
     return ScreenshotExportSource::fromProducer(
-        [future, output, transform, opacity](const ScreenshotExportCancellation& cancellation) {
+        [future, output, transform, opacity,
+         visible](const ScreenshotExportCancellation& cancellation) {
             while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
                 if (cancellation.isCancellationRequested())
                     return QImage{};
             if (cancellation.isCancellationRequested())
                 return QImage{};
-            const QImage frame = future.get();
+            QImage frame = future.get();
             if (frame.isNull())
                 return QImage{};
+            if (visible != QRectF(0, 0, 1, 1))
+                frame = frame.copy(QRectF(visible.x() * frame.width(), visible.y() * frame.height(),
+                                          visible.width() * frame.width(),
+                                          visible.height() * frame.height())
+                                       .toAlignedRect()
+                                       .intersected(frame.rect()));
             const QImage transformed =
                 snowCanvasTransformImage(frame, transform, Qt::SmoothTransformation);
             QImage result(output, QImage::Format_ARGB32_Premultiplied);

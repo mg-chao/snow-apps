@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "../pinned/screenshotpinnedcropgeometry.h"
 #include "snow_shot/presentation/imageeditingdocument.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -49,6 +50,38 @@ QImage renderImageEditingBaseImage(const ScreenshotImageSource& source, const QR
     auto image = SnowCanvasRuntime::renderImageSourcesToImage(canvasRect, pixelSize, sources);
     image.setColorSpace(QColorSpace::SRgb);
     return image;
+}
+
+void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visible) {
+    const QRectF full = source.canvasRect;
+    if (source.image.isNull())
+        source.image = renderImageEditingBaseImage(source.layeredImage, full, source.pixelSize);
+    if (source.image.isNull() || full.isEmpty() || visible.isEmpty())
+        return;
+    const auto colorSpace = source.image.colorSpace();
+    const qreal sx = source.image.width() / full.width();
+    const qreal sy = source.image.height() / full.height();
+    source.samplingSources.append({source.image, full});
+    QRectF rasterBounds = full;
+    if (source.resultStyle) {
+        const auto style = ScreenshotResultCompositor::scaledStyle(*source.resultStyle, sx);
+        const auto layout =
+            ScreenshotResultCompositor::layoutForContent(source.image.size(), style);
+        source.image = ScreenshotResultCompositor::compose(source.image, style);
+        rasterBounds =
+            QRectF(full.x() + layout.outputRect.x() / sx, full.y() + layout.outputRect.y() / sy,
+                   layout.outputRect.width() / sx, layout.outputRect.height() / sy);
+        source.resultStyle.reset();
+    }
+    source.image = SnowCanvasRuntime::renderImageSourcesToImage(
+        visible,
+        QSize(std::max(1, qRound(visible.width() * sx)),
+              std::max(1, qRound(visible.height() * sy))),
+        {{source.image, rasterBounds}});
+    source.image.setColorSpace(colorSpace);
+    source.canvasRect = visible;
+    source.pixelSize = source.image.size();
+    source.layeredImage = {};
 }
 
 ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& repository,
@@ -155,6 +188,15 @@ ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
     result.recognition =
         ScreenshotPinnedWindow::decodeRecognitionSnapshot(record.recognitionResults);
     result.originalFileName = record.originalFileName;
+    if (record.cropRect && !result.image.isNull() &&
+        screenshot_pinned_crop_geometry::valid(*record.cropRect) &&
+        QRectF(record.image.rect()).contains(*record.cropRect)) {
+        const auto full = result.canvasRect;
+        const auto visible = screenshot_pinned_crop_geometry::sourceToCanvas(
+                                 record.image.size(), record.imageTransform, full)
+                                 .mapRect(*record.cropRect);
+        restrictImageEditingSource(result, visible);
+    }
     if (result.image.isNull())
         result.error = loadError();
     return result;

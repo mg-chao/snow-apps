@@ -1648,6 +1648,10 @@ Files:
             <translation>標註模式</translation>
         </message>
         <message>
+            <source>Apply Crop</source>
+            <translation>套用裁剪</translation>
+        </message>
+        <message>
             <source>Batch Actions</source>
             <translation>批次操作</translation>
         </message>

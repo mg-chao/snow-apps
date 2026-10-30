@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QImage>
+#include <QRect>
 #include <QSize>
 #include <QString>
 #include <QVector>
@@ -15,6 +16,8 @@ struct ScreenshotAnimationSource final {
     QByteArray encoded;
     QString format;
     QSize canvasSize;
+    // Region of the decoded, EXIF-oriented canvas. Encoded bytes remain immutable.
+    QRect sourceCropRect;
     QVector<qint64> frameDurationsNs;
     // Total plays, rather than GIF's repeat count. Zero means infinite.
     quint64 totalPlayCount = 1;

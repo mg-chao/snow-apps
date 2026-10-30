@@ -1217,6 +1217,23 @@ void ScreenshotAnimationPlayback::setSource(std::shared_ptr<const ScreenshotAnim
         m_impl->requestFrame(0, true);
     m_impl->changed();
 }
+bool ScreenshotAnimationPlayback::adoptCroppedSource(
+    std::shared_ptr<const ScreenshotAnimationSource> source, QImage original, QImage transformed,
+    const QTransform& transform) {
+    if (!source || !m_impl->source || m_impl->transformHeld || original.isNull() ||
+        transformed.isNull() || source->frameDurationsNs != m_impl->source->frameDurationsNs)
+        return false;
+    m_impl->settleDisplayed();
+    m_impl->cancel();
+    m_impl->source = std::move(source);
+    m_impl->transform = transform;
+    m_impl->displayedTransform = transform;
+    m_impl->anchor = m_impl->now();
+    m_impl->publish(std::move(original), std::move(transformed), m_impl->displayedIndex);
+    m_impl->changed();
+    return true;
+}
+
 void ScreenshotAnimationPlayback::clear() {
     m_impl->cancel();
     m_impl->source.reset();

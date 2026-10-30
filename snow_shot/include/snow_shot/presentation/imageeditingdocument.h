@@ -34,6 +34,9 @@ ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& re
                                            const storage::CaptureHistoryRecord& record);
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedTextPreparation& preparation);
+// Restrict only the base raster; retain the annotation document and its canvas origin.
+void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visible);
+
 [[nodiscard]] QImage renderImageEditingBaseImage(const ScreenshotImageSource& source,
                                                  const QRectF& canvasRect, const QSize& pixelSize);
 [[nodiscard]] ScreenshotExportSource imageEditingCompositeSource(const ImageEditingSource& source);

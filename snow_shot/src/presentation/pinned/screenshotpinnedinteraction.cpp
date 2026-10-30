@@ -7,6 +7,7 @@
 #include "pinnedwindowplatform.h"
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "screenshotpinnedresizegeometry.h"
+#include "screenshotpinnedcropgeometry.h"
 #include "screenshotpinneddragexport.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedshakegesture.h"
@@ -302,7 +303,8 @@ bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPo
         return false;
     }
     stopAttentionShake();
-    if (m_interactionPlacement || m_closing || m_geometryAnimating || !screen())
+    if (m_interactionPlacement || m_cropApplying || m_contentReplacementJob.isValid() ||
+        m_cropSelectionOrigin || m_closing || m_geometryAnimating || !screen())
         return false;
     const auto placement = m_platform->placement();
     if (!placement)
@@ -320,6 +322,8 @@ bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPo
         m_recognitionContent->clearTextSelection();
     }
     resetPinnedGestures();
+    m_interactionCropRect = handle ? m_cropRect : std::nullopt;
+    m_interactionCropCanvas = visibleCanvasRect();
     m_interactionPlacement = placement;
     m_interactionResizeHandle = handle;
     m_interactionEffectiveResizeHandle = handle.value_or(0);
@@ -376,10 +380,30 @@ void ScreenshotPinnedWindow::updateControlledInteraction(const QPointF& desktopP
         }
         auto effective = resize_geometry::DragHandle(m_interactionEffectiveResizeHandle);
         QRect resized;
-        if (!resize_geometry::dragResizeRect(
-                origin, delta, orientedInitialWindowSize(),
-                resize_geometry::DragHandle(*m_interactionResizeHandle), .1, 5., &effective,
-                &resized, platform::pinnedShadowMargin()))
+        if (m_interactionCropRect) {
+            const QRect nativeContent = platform::pinnedContentRect(origin);
+            const qreal sx =
+                m_scalePercent / 100.0 * scaleReferenceSize().width() / visibleCanvasRect().width();
+            const qreal sy = sx;
+            const auto adjusted = screenshot_pinned_crop_geometry::adjust(
+                m_interactionCropCanvas, m_backgroundCanvasRect,
+                QPointF(delta.x() / sx, delta.y() / sy),
+                resize_geometry::DragHandle(*m_interactionResizeHandle), effective,
+                QSizeF(10 / sx, 10 / sy));
+            effective = adjusted.handle;
+            const auto mapping = screenshot_pinned_crop_geometry::sourceToCanvas(
+                m_originalPixelSize, m_imageTransform, m_backgroundCanvasRect);
+            m_cropRect = mapping.inverted().mapRect(adjusted.rect);
+            resized = platform::pinnedOuterRect(QRect(
+                qRound(nativeContent.x() + (adjusted.rect.x() - m_interactionCropCanvas.x()) * sx),
+                qRound(nativeContent.y() + (adjusted.rect.y() - m_interactionCropCanvas.y()) * sy),
+                std::max(1, qRound(adjusted.rect.width() * sx)),
+                std::max(1, qRound(adjusted.rect.height() * sy))));
+            m_preserveScaleForSettledGeometry = true;
+        } else if (!resize_geometry::dragResizeRect(
+                       origin, delta, orientedInitialWindowSize(),
+                       resize_geometry::DragHandle(*m_interactionResizeHandle), .1, 5., &effective,
+                       &resized, platform::pinnedShadowMargin()))
             return;
         m_interactionEffectiveResizeHandle = int(effective);
         setWindowDragCursor(resizeCursor(int(effective)));
@@ -425,12 +449,15 @@ void ScreenshotPinnedWindow::updateControlledInteraction(const QPointF& desktopP
     }
     static_cast<void>(m_nativeGeometryController->acceptInteractiveGeometry(
         platform::pinnedWindowRect(*m_platformPlacement, *target)));
-    if (m_systemSizingActive)
+    if (m_systemSizingActive && !m_interactionCropRect)
         setEffectiveScale(
             100. * (m_platformPlacement->windowSize.width() - 2 * platform::pinnedShadowMargin()) /
                 std::max(1, orientedInitialWindowSize().width()),
             true);
-    updateCanvasViewport();
+    if (m_interactionCropRect)
+        updateCropPresentation();
+    else
+        updateCanvasViewport();
     if (m_clickThroughActive)
         static_cast<void>(updateClickThroughExitButtonGeometry());
     if (!m_interactionResizeHandle)
@@ -451,6 +478,8 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
     if (grabber && QWidget::mouseGrabber() == grabber)
         grabber->releaseMouse();
     if (cancel) {
+        if (m_interactionCropRect)
+            m_cropRect = m_interactionCropRect;
         m_nativeGeometryController->cancelPendingInteraction();
         if (QScreen* target = platform::pinnedDisplay(original, screen())) {
             m_platformApplying = true;
@@ -464,6 +493,7 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
     } else {
         static_cast<void>(m_nativeGeometryController->commitTarget());
     }
+    m_interactionCropRect.reset();
     m_systemSizingActive = false;
     m_windowDragActive = false;
     clearWindowDragCursor();
@@ -505,7 +535,7 @@ bool ScreenshotPinnedWindow::handleLockedPointer(QObject* watched, QEvent* event
 }
 
 bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* event) {
-    if ((!m_platform->usesControlledInteraction() && !m_interactionPlacement &&
+    if ((!m_platform->usesControlledInteraction() && !m_cropRect && !m_interactionPlacement &&
          !m_controlledEscapeRelease) ||
         !event)
         return false;

@@ -87,6 +87,9 @@ class ScreenshotRecognitionWindow final : public QWidget {
     Q_OBJECT
 
   public:
+    void setEmbeddedPointerEventHandler(std::function<bool(QObject*, QEvent*)> handler) {
+        m_embeddedPointerEventHandler = std::move(handler);
+    }
     enum class PresentationMode {
         TopLevelWindow,
         EmbeddedChild,
@@ -332,6 +335,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     QRectF m_canvasSelection;
     qreal m_formattedTextDevicePixelRatio = 1.0;
     PresentationMode m_presentationMode = PresentationMode::TopLevelWindow;
+    std::function<bool(QObject*, QEvent*)> m_embeddedPointerEventHandler;
     bool m_selectionResizeActive = false;
     bool m_selectionOnly = false;
     std::optional<QPointF> m_lineBoxPressPosition;

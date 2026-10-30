@@ -2406,6 +2406,9 @@ bool ScreenshotRecognitionWindow::forwardFormattedTextPointerEvent(QObject* watc
 }
 
 bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (m_presentationMode == PresentationMode::EmbeddedChild && m_embeddedPointerEventHandler &&
+        m_embeddedPointerEventHandler(watched, event))
+        return true;
     if (event != nullptr &&
         (watched == this || watched == window() || watched == m_originalImagePreviewHost ||
          watched == m_originalImagePreviewHostHandle)) {
