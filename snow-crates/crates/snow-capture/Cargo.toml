@@ -90,6 +90,7 @@ windows = { workspace = true, features = [
     "Graphics_DirectX_Direct3D11",
     "Win32_Devices_Display",
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D11",

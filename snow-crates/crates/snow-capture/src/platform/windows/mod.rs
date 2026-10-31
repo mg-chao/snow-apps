@@ -143,14 +143,15 @@ impl AutomaticWindowsCapturer {
         }
     }
 
-    fn refresh_topology_state(&mut self) {
-        let generation = self.resolver.display_generation();
+    fn refresh_topology_state(&mut self) -> CaptureResult<()> {
+        let generation = self.resolver.checked_display_generation()?;
         if generation != self.topology_generation {
             self.discard_all_candidates();
             self.preferred = None;
             self.selected = None;
             self.topology_generation = generation;
         }
+        Ok(())
     }
 
     fn create_candidate(
@@ -262,7 +263,7 @@ impl AutomaticWindowsCapturer {
         reuse: Option<Frame>,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
-        self.refresh_topology_state();
+        self.refresh_topology_state()?;
         let started_at = Instant::now();
         let continuous = self.capture_mode == CaptureMode::Continuous;
         let mut valid_history = destination_has_history;
@@ -313,7 +314,7 @@ impl AutomaticWindowsCapturer {
         destination: &mut Frame,
         destination_has_history: bool,
     ) -> CaptureResult<Option<CaptureSampleMetadata>> {
-        self.refresh_topology_state();
+        self.refresh_topology_state()?;
         let started_at = Instant::now();
         let continuous = self.capture_mode == CaptureMode::Continuous;
         let mut valid_history = destination_has_history;
@@ -370,7 +371,7 @@ impl AutomaticWindowsCapturer {
         destination: &mut Frame,
         destination_has_history: bool,
     ) -> CaptureResult<Option<CaptureSampleMetadata>> {
-        self.refresh_topology_state();
+        self.refresh_topology_state()?;
         let started_at = Instant::now();
         let continuous = self.capture_mode == CaptureMode::Continuous;
         let mut valid_history = destination_has_history;
@@ -444,7 +445,7 @@ impl MonitorCapturer for AutomaticWindowsCapturer {
     }
 
     fn prewarm_environment(&mut self) -> CaptureResult<()> {
-        self.refresh_topology_state();
+        self.refresh_topology_state()?;
         let mut errors = Vec::new();
         for index in self.attempt_order() {
             let kind = self.candidates[index].kind;
@@ -762,6 +763,10 @@ impl CaptureBackend for WindowsBackend {
 
     fn display_generation(&self) -> Option<u64> {
         self.resolver.display_generation()
+    }
+
+    fn checked_display_generation(&self) -> CaptureResult<Option<u64>> {
+        self.resolver.checked_display_generation()
     }
 
     fn refresh_display_configuration(&self) -> CaptureResult<()> {

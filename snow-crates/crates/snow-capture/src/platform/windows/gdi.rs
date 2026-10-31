@@ -2605,14 +2605,13 @@ unsafe impl Send for WindowsMonitorCapturer {}
 impl WindowsMonitorCapturer {
     pub(crate) fn new(monitor: &MonitorId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
+        let last_display_generation = resolver.checked_display_generation()?;
         let geometry = resolve_geometry(&resolver, monitor)?;
         let (resources, monitor_source_dc_local) =
             match GdiResources::new_for_monitor(geometry.handle) {
                 Ok(resources) => (resources, true),
                 Err(_) => (GdiResources::new()?, false),
             };
-
-        let last_display_generation = resolver.display_generation();
 
         Ok(Self {
             monitor: monitor.clone(),
@@ -2630,7 +2629,7 @@ impl WindowsMonitorCapturer {
     }
 
     fn refresh_geometry(&mut self) -> CaptureResult<()> {
-        let current_gen = self.resolver.display_generation();
+        let current_gen = self.resolver.checked_display_generation()?;
 
         if let (Some(current), Some(last)) = (current_gen, self.last_display_generation)
             && current == last
@@ -2638,7 +2637,6 @@ impl WindowsMonitorCapturer {
             return Ok(());
         }
 
-        self.last_display_generation = current_gen;
         self.geometry = match geometry_from_handle(self.geometry.handle) {
             Ok(geometry) => geometry,
             Err(_) => resolve_geometry(&self.resolver, &self.monitor)?,
@@ -2656,6 +2654,7 @@ impl WindowsMonitorCapturer {
         self.resources.pending_screen_color_transform = pending;
         self.resources.output_pixel_format = self.output_pixel_format;
         self.monitor_source_dc_local = monitor_source_dc_local;
+        self.last_display_generation = current_gen;
         Ok(())
     }
 

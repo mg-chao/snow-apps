@@ -13,9 +13,10 @@ use windows::Win32::Devices::Display::{
     DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes,
     QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
 };
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
+    DXGI_MODE_ROTATION,
 };
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, IDXGIAdapter, IDXGIFactory1, IDXGIOutput,
@@ -33,7 +34,7 @@ use crate::region::{MonitorGeometry, MonitorLayout};
 
 use super::display_change::DisplayInfoCache;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct HdrMonitorMetadata {
     pub advanced_color_enabled: bool,
     pub hdr_enabled: bool,
@@ -47,6 +48,8 @@ pub(crate) struct ResolvedMonitor {
     pub key: MonitorKey,
     pub name: String,
     pub handle: HMONITOR,
+    pub desktop_coordinates: RECT,
+    pub rotation: DXGI_MODE_ROTATION,
     pub adapter: IDXGIAdapter,
     pub output: IDXGIOutput,
     pub hdr_metadata: HdrMonitorMetadata,
@@ -104,6 +107,13 @@ impl MonitorResolver {
     /// `WM_DISPLAYCHANGE` fires.
     pub(crate) fn display_generation(&self) -> Option<u64> {
         self.display_cache.as_ref().map(|dc| dc.generation())
+    }
+
+    pub(crate) fn checked_display_generation(&self) -> CaptureResult<Option<u64>> {
+        self.display_cache
+            .as_ref()
+            .map(|dc| dc.checked_generation())
+            .transpose()
     }
 
     pub(crate) fn refresh_display_configuration(&self) -> CaptureResult<()> {
@@ -516,6 +526,8 @@ pub(crate) fn enumerate_resolved() -> CaptureResult<Vec<ResolvedMonitor>> {
                     key: MonitorKey::from_device_name(adapter_luid, &name),
                     name,
                     handle: desc.Monitor,
+                    desktop_coordinates: desc.DesktopCoordinates,
+                    rotation: desc.Rotation,
                     adapter: adapter.clone(),
                     output,
                     hdr_metadata,

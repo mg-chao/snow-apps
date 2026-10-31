@@ -1,5 +1,30 @@
 use std::fmt;
 use std::sync::Arc;
+use std::time::Instant;
+
+/// One failed display enumeration and its automatic retry deadline.
+/// Cloned errors share this record so cached reads are not new failed attempts.
+/// A new display notification or explicit refresh may supersede the deadline.
+#[derive(Debug)]
+pub struct DisplayRefreshRetry {
+    cause: CaptureError,
+    retry_at: Instant,
+}
+
+impl DisplayRefreshRetry {
+    #[cfg(any(windows, test))]
+    pub(crate) fn new(cause: CaptureError, retry_at: Instant) -> Self {
+        Self { cause, retry_at }
+    }
+
+    pub fn cause(&self) -> &CaptureError {
+        &self.cause
+    }
+
+    pub fn retry_at(&self) -> Instant {
+        self.retry_at
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum CaptureError {
@@ -32,6 +57,10 @@ pub enum CaptureError {
     /// deliver a `CaptureEvent::ResolutionChanged` event.
     ResolutionChanged(u32, u32),
 
+    /// Display discovery is temporarily unavailable. Wait until the shared retry
+    /// deadline; switching backends or recreating capture workers cannot refresh it sooner.
+    DisplayRefreshPending(Arc<DisplayRefreshRetry>),
+
     Platform(Arc<anyhow::Error>),
 }
 
@@ -63,6 +92,7 @@ impl CaptureError {
             | Self::Timeout
             | Self::WorkerDead
             | Self::MonitorLost
+            | Self::DisplayRefreshPending(_)
             | Self::ResolutionChanged(_, _) => CaptureErrorClass::Transient,
             Self::Canceled | Self::PermissionDenied | Self::BufferOverflow | Self::Platform(_) => {
                 CaptureErrorClass::Fatal
@@ -121,6 +151,9 @@ impl fmt::Display for CaptureError {
             Self::ResolutionChanged(w, h) => {
                 write!(f, "capture source resolution changed to {w}x{h}")
             }
+            Self::DisplayRefreshPending(retry) => {
+                write!(f, "display configuration refresh pending: {}", retry.cause)
+            }
             Self::Platform(inner) => write!(f, "{inner:#}"),
         }
     }
@@ -129,6 +162,7 @@ impl fmt::Display for CaptureError {
 impl std::error::Error for CaptureError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::DisplayRefreshPending(retry) => Some(retry.cause()),
             Self::Platform(inner) => Some(inner.as_ref().as_ref()),
             _ => None,
         }
@@ -151,7 +185,27 @@ impl snow_core::error::Classify for CaptureError {
 
 #[cfg(test)]
 mod tests {
-    use super::CaptureError;
+    use super::{CaptureError, DisplayRefreshRetry};
+    use std::error::Error;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    #[test]
+    fn scheduled_display_retry_preserves_cause_without_resetting_capture_workers() {
+        let cause = CaptureError::platform(anyhow::anyhow!("native enumeration failure"));
+        let error = CaptureError::DisplayRefreshPending(Arc::new(DisplayRefreshRetry::new(
+            cause,
+            Instant::now(),
+        )));
+        assert!(error.is_retryable());
+        assert!(!error.requires_worker_reset());
+        assert!(!error.allows_backend_fallback());
+        assert_eq!(
+            error.source().unwrap().to_string(),
+            "native enumeration failure"
+        );
+        assert!(error.to_string().contains("native enumeration failure"));
+    }
 
     #[test]
     fn canceled_and_denied_sessions_do_not_retry() {

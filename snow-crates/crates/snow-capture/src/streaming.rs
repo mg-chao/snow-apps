@@ -18,7 +18,7 @@ use snow_core::stream_queue::StreamQueue;
 
 use crate::backend::CaptureWorkload;
 use crate::capture_session::CaptureSession;
-use crate::error::{CaptureError, CaptureResult};
+use crate::error::{CaptureError, CaptureResult, DisplayRefreshRetry};
 use crate::frame::{CaptureEvent, CapturedFrame, Frame, FrameRecycleSender};
 
 /// Configuration for a continuous capture stream.
@@ -32,8 +32,9 @@ pub struct CaptureStreamConfig {
     /// stream starts dropping the oldest frames. Higher values add
     /// latency but tolerate encoder stalls better.
     pub buffer_depth: usize,
-    /// Maximum number of consecutive transient errors before the
-    /// stream thread gives up and exits.
+    /// Maximum number of consecutive failed transient attempts before the
+    /// stream thread gives up and exits. Repeated reads of a cached display
+    /// refresh failure count as one attempt.
     pub max_consecutive_errors: usize,
     /// Enable adaptive frame rate reduction under sustained
     /// backpressure. When the receiver can't keep up, the capture
@@ -490,6 +491,40 @@ impl snow_core::streaming::StreamStats for CaptureStream {
     }
 }
 
+#[derive(Default)]
+struct StreamRetryState {
+    failures: usize,
+    last_display_refresh: Option<Arc<DisplayRefreshRetry>>,
+}
+
+impl StreamRetryState {
+    /// Return whether this is a new failed attempt, including when control
+    /// messages wake a stream before the display cache's retry deadline.
+    fn record(&mut self, error: &CaptureError) -> bool {
+        if let CaptureError::DisplayRefreshPending(retry) = error {
+            if self
+                .last_display_refresh
+                .as_ref()
+                .is_some_and(|last| Arc::ptr_eq(last, retry))
+            {
+                return false;
+            }
+            self.last_display_refresh = Some(Arc::clone(retry));
+        }
+        self.failures = self.failures.saturating_add(1);
+        true
+    }
+
+    fn delay(error: &CaptureError, now: Instant) -> Duration {
+        match error {
+            CaptureError::DisplayRefreshPending(retry) => {
+                retry.retry_at().saturating_duration_since(now)
+            }
+            _ => Duration::from_millis(16),
+        }
+    }
+}
+
 fn stream_loop(
     capture: &mut CaptureSession,
     config: &CaptureStreamConfig,
@@ -512,7 +547,7 @@ fn stream_loop(
 
     let mut reuse_frame: Option<Frame> = None;
     let mut cadence: Option<AlignedCaptureCadence> = None;
-    let mut consecutive_errors: usize = 0;
+    let mut retry_state = StreamRetryState::default();
     let mut last_width: u32 = 0;
     let mut last_height: u32 = 0;
 
@@ -624,7 +659,7 @@ fn stream_loop(
 
         match capture_result {
             Ok((mut frame, cursor_outcome)) => {
-                consecutive_errors = 0;
+                retry_state = StreamRetryState::default();
 
                 #[cfg(feature = "stage-timing")]
                 if let Some(cursor_outcome) = cursor_outcome {
@@ -736,13 +771,18 @@ fn stream_loop(
                 }
             }
             Err(ref e) if e.is_retryable() => {
-                consecutive_errors += 1;
-                stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
-                if consecutive_errors >= config.max_consecutive_errors {
+                if retry_state.record(e) {
+                    stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
+                }
+                if retry_state.failures >= config.max_consecutive_errors {
                     store_queue_fill(stats, queue.push(CaptureEvent::Error(e.clone())).data_len);
                     break;
                 }
-                wait_for_control(Duration::from_millis(16), cancellation, wake);
+                wait_for_control(
+                    StreamRetryState::delay(e, Instant::now()),
+                    cancellation,
+                    wake,
+                );
                 continue;
             }
             Err(e) => {
@@ -907,6 +947,55 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::time::Duration;
+
+    #[test]
+    fn retry_budget_counts_distinct_display_attempts_even_with_identical_deadlines() {
+        use crate::error::{CaptureError, DisplayRefreshRetry};
+        use std::time::Instant;
+
+        let now = Instant::now();
+        let retry_at = now + Duration::from_secs(1);
+        let error = CaptureError::DisplayRefreshPending(Arc::new(DisplayRefreshRetry::new(
+            CaptureError::AccessLost,
+            retry_at,
+        )));
+        let mut state = super::StreamRetryState::default();
+        assert!(state.record(&error));
+        for _ in 0..100 {
+            assert!(!state.record(&error.clone()));
+        }
+        assert_eq!(state.failures, 1);
+        assert_eq!(
+            super::StreamRetryState::delay(&error, now),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            super::StreamRetryState::delay(&error, retry_at),
+            Duration::ZERO
+        );
+        assert_eq!(
+            super::StreamRetryState::delay(&error, retry_at + Duration::from_secs(1)),
+            Duration::ZERO
+        );
+
+        let next = CaptureError::DisplayRefreshPending(Arc::new(DisplayRefreshRetry::new(
+            CaptureError::AccessLost,
+            retry_at,
+        )));
+        assert!(state.record(&next));
+        assert_eq!(state.failures, 2);
+        // Ordinary capture failures keep their original count and wait behavior.
+        assert!(state.record(&CaptureError::Timeout));
+        assert!(state.record(&CaptureError::Timeout));
+        assert_eq!(state.failures, 4);
+        assert_eq!(
+            super::StreamRetryState::delay(&CaptureError::Timeout, now),
+            Duration::from_millis(16)
+        );
+        state = super::StreamRetryState::default();
+        assert!(state.record(&next));
+        assert_eq!(state.failures, 1);
+    }
 
     #[test]
     fn target_fps_is_clamped_to_configured_ceiling_and_floor() {

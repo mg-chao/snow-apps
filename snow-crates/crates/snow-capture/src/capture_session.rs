@@ -722,7 +722,7 @@ impl RegionCaptureRuntime {
         backend: &Arc<dyn CaptureBackend>,
         region: &CaptureRegion,
     ) -> CaptureResult<(&PreparedRegionPlan, bool)> {
-        let current_generation = backend.display_generation();
+        let current_generation = backend.checked_display_generation()?;
         if self.layout.generation != current_generation {
             self.layout.layout = None;
             self.layout.generation = current_generation;
@@ -2821,6 +2821,74 @@ mod tests {
                 incremental: self.incremental,
             }))
         }
+    }
+
+    #[test]
+    fn region_plan_validates_display_freshness_before_reusing_cached_layout() -> CaptureResult<()> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct DisplayRefreshBackend {
+            base: MockBackend,
+            generation: Mutex<CaptureResult<u64>>,
+            layout_reads: AtomicUsize,
+        }
+        impl CaptureBackend for DisplayRefreshBackend {
+            fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
+                self.base.enumerate_monitors()
+            }
+            fn primary_monitor(&self) -> CaptureResult<MonitorId> {
+                self.base.primary_monitor()
+            }
+            fn create_monitor_capturer(
+                &self,
+                monitor: &MonitorId,
+            ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+                self.base.create_monitor_capturer(monitor)
+            }
+            fn checked_display_generation(&self) -> CaptureResult<Option<u64>> {
+                self.generation.lock().unwrap().clone().map(Some)
+            }
+            fn monitor_layout(&self) -> CaptureResult<MonitorLayout> {
+                self.layout_reads.fetch_add(1, Ordering::SeqCst);
+                let generation = self.generation.lock().unwrap().clone()?;
+                Ok(mock_layout(
+                    &self.base.monitor,
+                    if generation == 1 { 0 } else { 1 },
+                    0,
+                    4,
+                    4,
+                ))
+            }
+        }
+        let backend = Arc::new(DisplayRefreshBackend {
+            base: MockBackend::new(Arc::new(Mutex::new(Vec::new()))),
+            generation: Mutex::new(Ok(1)),
+            layout_reads: AtomicUsize::new(0),
+        });
+        let input: Arc<dyn CaptureBackend> = backend.clone();
+        let region = CaptureRegion {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        };
+        let mut runtime = RegionCaptureRuntime::default();
+        runtime.prepare_plan(&input, &region)?;
+        assert_eq!(runtime.layout.layout.as_ref().unwrap().virtual_left, 0);
+
+        *backend.generation.lock().unwrap() = Err(CaptureError::AccessLost);
+        assert!(matches!(
+            runtime.prepare_plan(&input, &region),
+            Err(CaptureError::AccessLost)
+        ));
+        assert_eq!(backend.layout_reads.load(Ordering::SeqCst), 1);
+
+        *backend.generation.lock().unwrap() = Ok(2);
+        runtime.prepare_plan(&input, &region)?;
+        assert_eq!(runtime.layout.layout.as_ref().unwrap().virtual_left, 1);
+        runtime.prepare_plan(&input, &region)?;
+        assert_eq!(backend.layout_reads.load(Ordering::SeqCst), 2);
+        Ok(())
     }
 
     fn mock_layout(monitor: &MonitorId, x: i32, y: i32, width: u32, height: u32) -> MonitorLayout {
