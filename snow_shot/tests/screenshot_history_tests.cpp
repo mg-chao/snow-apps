@@ -1017,6 +1017,7 @@ void navigationMatchesDisplaysAndRestoresLiveEndpoint(const QString& root) {
     ScreenshotInteractionState interaction;
     interaction.enterOverlayVisible(true);
     ScreenshotIntelligentSelectionModel intelligent;
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     require(intelligent.applyCanvasHitPath({QRectF(10, 10, 170, 60)}, QRectF(0, 0, 200, 80), 1.0),
             "failed to initialize intelligent selection");
 
@@ -2645,6 +2646,7 @@ void completionGesturesUseSharedEligibilityAcrossTools() {
         {QStringLiteral("pin"), QStringLiteral("pin_to_screen")},
         {QStringLiteral("ocr"), QStringLiteral("text_recognition")},
         {QStringLiteral("ocr_copy"), QStringLiteral("text_recognition_copy")},
+        {QStringLiteral("cancel"), QStringLiteral("cancel_screenshot")},
         {QStringLiteral("none"), QString()},
     };
     for (const auto& [setting, command] : commands) {
@@ -3017,7 +3019,7 @@ void selectAllShortcutSelectsCurrentScreenThenDesktop() {
                 ScreenshotRegionGeometry::fromPath(triangle, ScreenshotRegionType::Polyline));
         }
         ScreenshotIntelligentSelectionModel intelligent;
-        intelligent.beginCaptureSession(true);
+        intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
         ScreenshotInteractionState interaction;
         interaction.enterOverlayVisible(stage == 0);
         if (stage >= 2)
@@ -3223,7 +3225,8 @@ void previousSelectionShortcutUsesSharedConfirmation() {
                             "seed remembered aspect ratio before restoring selection");
                     selection.setSelectionRect(QRectF(10, 10, 50, 50));
                     ScreenshotIntelligentSelectionModel intelligent;
-                    intelligent.beginCaptureSession(true);
+                    intelligent.beginCaptureSession(
+                        snow_shot::SmartSelectionMode::WindowSubElement);
                     ScreenshotInteractionState interaction;
                     interaction.enterOverlayVisible(stage == 0);
                     if (stage == 2) {
@@ -3442,7 +3445,7 @@ void smartSelectionWheelAccumulatesMovement() {
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
     interaction.enterOverlayVisible(true);
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     QVector<QRectF> layers;
     for (int i = 0; i < 16; ++i)
         layers.append(QRectF(50 - i, 50 - i, 20 + i * 2, 20 + i * 2));
@@ -3575,7 +3578,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
     interaction.enterOverlayVisible(true);
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     require(intelligent.selectionTarget() ==
                     ScreenshotIntelligentSelectionTarget::WindowSubElement &&
                 intelligent.toggleSelectionTarget(),
@@ -3722,17 +3725,17 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     require(selectorHitTestRequests == 5,
             "switching back to window mode did not request a fresh hit test");
 
-    intelligent.beginCaptureSession(false);
-    require(intelligent.applyCanvasHitPath({nestedChildSelection, childSelection, windowSelection},
-                                           QRectF(0, 0, 100, 100), 1.0),
-            "failed to seed disabled intelligent-selection candidates");
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::Disabled);
+    require(!intelligent.applyCanvasHitPath({nestedChildSelection, childSelection, windowSelection},
+                                            QRectF(0, 0, 100, 100), 1.0),
+            "disabled intelligent selection must reject candidates");
     selection.setSelectionRect(intelligent.currentSelection());
     require(!dispatchShortcut(shortcutWindow, Qt::Key_Tab) &&
                 !intelligent.smartSelectionEnabled() &&
                 intelligent.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
-                intelligent.currentSelection() == windowSelection &&
-                selection.normalizedSelection() == windowSelection && selectorHitTestRequests == 5,
-            "disabled Smart selection must reject Tab and remain in window mode");
+                !intelligent.hasCurrentSelection() && selection.normalizedSelection().isEmpty() &&
+                selectorHitTestRequests == 5,
+            "disabled Smart selection must reject Tab and remain manual");
     require(persistedTargetChanges == 4,
             "disabled Smart selection must not persist a rejected Tab shortcut");
     if (targetSwitchOnly) {
@@ -3741,7 +3744,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
         return;
     }
 
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     intelligent.beginPress(QPointF(18, 18), windowSelection);
     previousSelectionAvailable = false;
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) && previousSelectionCalls == 1 &&
@@ -5849,7 +5852,7 @@ void rectangularRegionOperationsUseSmartSelection() {
     geometry.rebuild(displays);
     ScreenshotSelectionModel selection;
     ScreenshotIntelligentSelectionModel intelligent;
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     ScreenshotInteractionState interaction;
     ScreenshotSelectorWorkflow workflow({capture,
                                          selector,
@@ -6821,7 +6824,7 @@ void rememberedRatioNormalizesSmartPicksBeforePresentation() {
                 "remembered ratio must arm before smart selection");
         selection.setSelectionRect(detected);
         ScreenshotIntelligentSelectionModel intelligent;
-        intelligent.beginCaptureSession(true);
+        intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
         require(intelligent.applyCanvasHitPath({detected}, canvas, 1.0),
                 "smart selection fixture must accept its detected frame");
         ScreenshotInteractionState interaction;
@@ -7191,7 +7194,9 @@ void configuredSnapArmsBeforeManualSelection() {
                 geometry.rebuild(displays);
                 ScreenshotSelectionModel selection;
                 ScreenshotIntelligentSelectionModel intelligent;
-                intelligent.beginCaptureSession(smartSelection);
+                intelligent.beginCaptureSession(
+                    smartSelection ? snow_shot::SmartSelectionMode::WindowSubElement
+                                   : snow_shot::SmartSelectionMode::Disabled);
                 const QRectF detected(50, 50, 320, 240);
                 if (smartSelection) {
                     selection.setSelectionRect(detected);

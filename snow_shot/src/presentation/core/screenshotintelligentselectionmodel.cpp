@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+using snow_shot::SmartSelectionMode;
+
 namespace {
 QVector<QRectF> boundedPath(const QVector<QRectF>& canvasHitRects, const QRectF& selectableBounds,
                             qreal minimumSelectionSize) {
@@ -22,18 +24,14 @@ QVector<QRectF> boundedPath(const QVector<QRectF>& canvasHitRects, const QRectF&
 }
 } // namespace
 
-void ScreenshotIntelligentSelectionModel::beginCaptureSession(
-    bool smartSelectionEnabled, ScreenshotIntelligentSelectionTarget preferredTarget) {
+void ScreenshotIntelligentSelectionModel::beginCaptureSession(SmartSelectionMode mode) {
     clearTransientState();
-    m_smartSelectionEnabled = smartSelectionEnabled;
-    m_selectionTarget =
-        smartSelectionEnabled ? preferredTarget : ScreenshotIntelligentSelectionTarget::Window;
+    m_mode = mode;
 }
 
 void ScreenshotIntelligentSelectionModel::reset() {
     clearTransientState();
-    m_smartSelectionEnabled = false;
-    m_selectionTarget = ScreenshotIntelligentSelectionTarget::Window;
+    m_mode = SmartSelectionMode::Disabled;
 }
 
 void ScreenshotIntelligentSelectionModel::clearTransientState() {
@@ -53,16 +51,17 @@ void ScreenshotIntelligentSelectionModel::clearPress() {
     m_pressSelection = QRectF();
 }
 
-bool ScreenshotIntelligentSelectionModel::updateSmartSelectionEnabled(
-    bool enabled, ScreenshotIntelligentSelectionTarget preferredTarget) {
-    if (m_smartSelectionEnabled == enabled) {
+bool ScreenshotIntelligentSelectionModel::updateSmartSelectionMode(SmartSelectionMode mode) {
+    if (m_mode == mode)
         return false;
+    m_mode = mode;
+    if (!smartSelectionEnabled()) {
+        clearTransientState();
+        return true;
     }
-
-    m_smartSelectionEnabled = enabled;
-    m_selectionTarget = enabled ? preferredTarget : ScreenshotIntelligentSelectionTarget::Window;
+    resetTargetPreference();
     clearPress();
-    static_cast<void>(setIndex(m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+    static_cast<void>(setIndex(selectionTarget() == ScreenshotIntelligentSelectionTarget::Window
                                    ? static_cast<int>(m_hitRects.size() - 1)
                                    : 0));
     return true;
@@ -71,7 +70,7 @@ bool ScreenshotIntelligentSelectionModel::updateSmartSelectionEnabled(
 bool ScreenshotIntelligentSelectionModel::applyCanvasHitPath(const QVector<QRectF>& canvasHitRects,
                                                              const QRectF& selectableBounds,
                                                              qreal minimumSelectionSize) {
-    if (canvasHitRects.isEmpty()) {
+    if (!smartSelectionEnabled() || canvasHitRects.isEmpty()) {
         clearHitPath();
         return false;
     }
@@ -89,7 +88,7 @@ bool ScreenshotIntelligentSelectionModel::applyCanvasHitPath(const QVector<QRect
     }
 
     m_hitRects = boundedHitRects;
-    return setIndex(m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+    return setIndex(selectionTarget() == ScreenshotIntelligentSelectionTarget::Window
                         ? static_cast<int>(m_hitRects.size() - 1)
                         : 0);
 }
@@ -102,32 +101,32 @@ bool ScreenshotIntelligentSelectionModel::setIndex(int index) {
 
     // Selector hit paths run from the deepest element to the outermost window.
     const int maximumIndex = static_cast<int>(m_hitRects.size() - 1);
-    m_index = m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+    m_index = selectionTarget() == ScreenshotIntelligentSelectionTarget::Window
                   ? maximumIndex
                   : std::clamp(index, 0, maximumIndex);
     return true;
 }
 
 bool ScreenshotIntelligentSelectionModel::toggleSelectionTarget() {
-    if (!m_smartSelectionEnabled) {
+    if (!smartSelectionEnabled())
         return false;
-    }
-
-    m_selectionTarget = m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
-                            ? ScreenshotIntelligentSelectionTarget::WindowSubElement
-                            : ScreenshotIntelligentSelectionTarget::Window;
-    static_cast<void>(setIndex(m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
-                                   ? static_cast<int>(m_hitRects.size() - 1)
-                                   : 0));
-    return true;
+    return updateSmartSelectionMode(m_mode == SmartSelectionMode::Window
+                                        ? SmartSelectionMode::WindowSubElement
+                                        : SmartSelectionMode::Window);
 }
 
 bool ScreenshotIntelligentSelectionModel::smartSelectionEnabled() const {
-    return m_smartSelectionEnabled;
+    return m_mode != SmartSelectionMode::Disabled;
+}
+
+SmartSelectionMode ScreenshotIntelligentSelectionModel::smartSelectionMode() const {
+    return m_mode;
 }
 
 ScreenshotIntelligentSelectionTarget ScreenshotIntelligentSelectionModel::selectionTarget() const {
-    return m_selectionTarget;
+    return m_mode == SmartSelectionMode::WindowSubElement
+               ? ScreenshotIntelligentSelectionTarget::WindowSubElement
+               : ScreenshotIntelligentSelectionTarget::Window;
 }
 
 int ScreenshotIntelligentSelectionModel::index() const {
@@ -191,7 +190,7 @@ bool ScreenshotIntelligentSelectionModel::applyCanvasRefinementPath(
     const QVector<QRectF>& canvasHitRects, const QRectF& selectableBounds,
     qreal minimumSelectionSize) {
     if (m_pressActive ||
-        m_selectionTarget != ScreenshotIntelligentSelectionTarget::WindowSubElement ||
+        selectionTarget() != ScreenshotIntelligentSelectionTarget::WindowSubElement ||
         m_hitRects.isEmpty())
         return false;
     const QVector<QRectF> refined =

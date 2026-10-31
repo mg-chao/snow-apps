@@ -627,6 +627,41 @@ void mcpCredentialRedactionAndRevision(const QTemporaryDir& temporary) {
             "no-op writes preserve revision");
 }
 
+void smartSelectionArchivesMigrateAndRoundTrip(const QTemporaryDir& temporary) {
+    const QString key = QStringLiteral("screenshot_selection/smart_selection");
+    const QString targetKey = QStringLiteral("screenshot_selection/selection_target");
+    const QString archive = temporary.filePath(QStringLiteral("smart-selection.zip"));
+    for (const auto& value :
+         {QJsonValue(false), QJsonValue(true), QJsonValue(QStringLiteral("disabled")),
+          QJsonValue(QStringLiteral("window_sub_element"))}) {
+        const QString expected = value.isBool() ? QStringLiteral("window") : value.toString();
+        require(storage::ConfigurationArchive::write(
+                    archive, {{key, value}, {targetKey, QStringLiteral("window")}},
+                    storage::ConfigurationSchema::currentVersion())
+                    .isEmpty(),
+                "write smart-selection archive");
+        const auto exported = storage::ConfigurationArchive::read(archive);
+        require(exported.isValid() && exported.values.value(key) == expected &&
+                    !exported.values.contains(targetKey),
+                "exports must consolidate the smart-selection preference");
+        // Construct the old wire document directly so reader migration is exercised too.
+        writeZip(archive,
+                 {{QStringLiteral("manifest.json"),
+                   manifestBytes(storage::ConfigurationSchema::currentVersion())},
+                  {QStringLiteral("config.json"),
+                   configurationBytes({{key, value}, {targetKey, QStringLiteral("window")}})}});
+        const auto imported = storage::ConfigurationArchive::read(archive);
+        require(imported.isValid() && imported.values.value(key) == expected &&
+                    !imported.values.contains(targetKey),
+                "archives must migrate booleans and preserve new modes");
+        storage::ConfigurationStore store(
+            temporary.filePath(QStringLiteral("smart-selection.json")), true, true, 60000);
+        require(store.applySnapshot(imported.values, imported.schemaVersion) &&
+                    store.value(key) == expected,
+                "import must apply the migrated smart selection mode");
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
@@ -649,6 +684,7 @@ int main(int argc, char** argv) {
         recognitionModelPreferencesSurviveRestart(temporary);
         return 0;
     }
+    smartSelectionArchivesMigrateAndRoundTrip(temporary);
     roundTripPreservesValuesAndSchemaVersion(temporary);
     autoSaveAfterExecutionArchivesMigrateAndRoundTrip(temporary);
     readRejectsInvalidArchives(temporary);

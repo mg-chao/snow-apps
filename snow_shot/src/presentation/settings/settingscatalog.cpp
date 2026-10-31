@@ -1192,11 +1192,20 @@ SettingsItemDefinition smartSelectionItem() {
         QStringLiteral("screenshot.smart-selection"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Smart selection")),
         settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog", "Select child elements within a window while taking a screenshot")),
+            "SettingsCatalog",
+            "Choose automatic window or window sub-element selection, or select manually")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Child elements")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "MSAA"))},
         QStringLiteral("screenshot_selection/smart_selection"),
-        SettingsSwitchDefinition{SettingsSwitchBinding::SmartSelection},
+        SettingsSelectDefinition{
+            SettingsSelectBinding::SmartSelection,
+            SettingsSelectSource::Fixed,
+            {{QStringLiteral("window_sub_element"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Window sub-element"))},
+             {QStringLiteral("window"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Window"))},
+             {QStringLiteral("disabled"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disabled"))}}},
     };
 }
 
@@ -1614,6 +1623,8 @@ QVector<SettingsOptionDefinition> screenshotPointerActionOptions() {
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"))},
         {QStringLiteral("ocr_copy"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy after text recognition"))},
+        {QStringLiteral("cancel"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel screenshot"))},
         {QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
     };
 }
@@ -5090,6 +5101,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::ScreenRecordingApiMode:
                         expectedKey = QStringLiteral("screen_recording/api_mode");
                         break;
+                    case SettingsSelectBinding::SmartSelection:
+                        expectedKey = QStringLiteral("screenshot_selection/smart_selection");
+                        break;
                     case SettingsSelectBinding::WindowElementApi:
                         expectedKey = QStringLiteral("screenshot/window_element_api");
                         break;
@@ -5255,9 +5269,6 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinnedHistoryKeepPermanently:
                         expectedKey = QStringLiteral("pinned_history/keep_permanently");
-                        break;
-                    case SettingsSwitchBinding::SmartSelection:
-                        expectedKey = QStringLiteral("screenshot_selection/smart_selection");
                         break;
                     case SettingsSwitchBinding::OcrResidentProcess:
                         expectedKey = QStringLiteral("text_recognition/resident_process");

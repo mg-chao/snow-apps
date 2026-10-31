@@ -1656,6 +1656,10 @@
             <translation>Choose an image for the screenshot, pin-to-screen, full-screen canvas and screen recording toolbar rows. Clear the path to remove this skin.</translation>
         </message>
         <message>
+            <source>Choose automatic window or window sub-element selection, or select manually</source>
+            <translation>Choose automatic window or window sub-element selection, or select manually</translation>
+        </message>
+        <message>
             <source>Choose how much execution time the application receives</source>
             <translation>Choose how much execution time the application receives</translation>
         </message>
@@ -3876,10 +3880,6 @@
             <translation>Secondary Target Language</translation>
         </message>
         <message>
-            <source>Select child elements within a window while taking a screenshot</source>
-            <translation>Select child elements within a window while taking a screenshot</translation>
-        </message>
-        <message>
             <source>Select dark theme tray icon</source>
             <translation>Select dark theme tray icon</translation>
         </message>
@@ -4788,6 +4788,10 @@
             <translation>While editing text, press Delete to remove selected text or the character after the cursor.</translation>
         </message>
         <message>
+            <source>Window</source>
+            <translation>Window</translation>
+        </message>
+        <message>
             <source>Window Element API</source>
             <translation>Window Element API</translation>
         </message>
@@ -4802,6 +4806,10 @@
         <message>
             <source>Window interface</source>
             <translation>Window interface</translation>
+        </message>
+        <message>
+            <source>Window sub-element</source>
+            <translation>Window sub-element</translation>
         </message>
         <message>
             <source>Windows context menu</source>

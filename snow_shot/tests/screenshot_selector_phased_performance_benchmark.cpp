@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     }
     ScreenshotSelectorCoordinator coordinator;
     ScreenshotIntelligentSelectionModel model;
-    model.beginCaptureSession(true);
+    model.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     QElapsedTimer clock;
     clock.start();
     QString scenario;
@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
     beginRound = [&]() {
         scenario = QStringLiteral("cold");
         active = pending = false;
-        model.beginCaptureSession(true);
+        model.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
         if (!coordinator.startRefresh({}))
             app.exit(6);
     };

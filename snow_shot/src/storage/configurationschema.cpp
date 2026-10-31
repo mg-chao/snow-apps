@@ -1692,12 +1692,11 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("rectangle"), QStringLiteral("polyline"), QStringLiteral("curve"),
       QStringLiteral("freehand")}},
-    {QStringLiteral("screenshot_selection/smart_selection"), true, ConfigurationValueKind::Boolean},
-    {QStringLiteral("screenshot_selection/selection_target"),
+    {QStringLiteral("screenshot_selection/smart_selection"),
      QStringLiteral("window_sub_element"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("window"), QStringLiteral("window_sub_element")}},
+     {QStringLiteral("window_sub_element"), QStringLiteral("window"), QStringLiteral("disabled")}},
     {QStringLiteral("screenshot_selection/background_opacity_percent"), 0,
      ConfigurationValueKind::Integer, ConfigurationIntegerRange{0, 100, 1}},
     {QStringLiteral("screenshot_selection/layout_compaction_enabled"), false,
@@ -1760,14 +1759,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
       QStringLiteral("pin"), QStringLiteral("ocr"), QStringLiteral("ocr_copy"),
-      QStringLiteral("none")}},
+      QStringLiteral("cancel"), QStringLiteral("none")}},
     {QStringLiteral("screenshot/middle_mouse_button_action"),
      QStringLiteral("pin"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
       QStringLiteral("pin"), QStringLiteral("ocr"), QStringLiteral("ocr_copy"),
-      QStringLiteral("none")}},
+      QStringLiteral("cancel"), QStringLiteral("none")}},
     {QStringLiteral("screenshot/quick_selection_modification"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/selection_resize_mode"),
@@ -3097,6 +3096,17 @@ bool ConfigurationSchema::parseIntegerVersion(const QJsonValue& value, int* vers
 
 QMap<QString, QJsonValue>
 ConfigurationSchema::migrateLegacyValues(QMap<QString, QJsonValue> values) {
+    const QString smartSelectionKey = QStringLiteral("screenshot_selection/smart_selection");
+    const QJsonValue legacyTarget =
+        values.take(QStringLiteral("screenshot_selection/selection_target"));
+    const QJsonValue legacySmartSelection = values.value(smartSelectionKey);
+    if (legacySmartSelection.isBool() ||
+        (!values.contains(smartSelectionKey) && legacyTarget.isString())) {
+        values.insert(smartSelectionKey,
+                      !legacySmartSelection.toBool(true) || legacyTarget == QStringLiteral("window")
+                          ? QStringLiteral("window")
+                          : QStringLiteral("window_sub_element"));
+    }
     const QJsonValue fontPercentage =
         values.take(QStringLiteral("interface/app_font_size_percentage"));
     const QString fontSizeKey = QStringLiteral("interface/app_font_size");

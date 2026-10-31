@@ -248,8 +248,10 @@ void screenshotSoundPersistsAndResets(settings::BuiltInSettingsBackend& backend,
 
 void screenshotBehaviorReset(settings::BuiltInSettingsBackend& backend) {
     auto& configuration = storage::ApplicationStorage::instance().configuration();
-    for (const QString& key : {QStringLiteral("screenshot_selection/smart_selection"),
-                               QStringLiteral("screenshot/shutter_sound_notification"),
+    require(configuration.setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                   QStringLiteral("disabled")),
+            "customize smart selection mode");
+    for (const QString& key : {QStringLiteral("screenshot/shutter_sound_notification"),
                                QStringLiteral("screenshot/screenshot_sound_notification"),
                                QStringLiteral("screenshot/confirm_before_exiting_via_shortcut")}) {
         require(

@@ -263,13 +263,12 @@ ScreenshotCaptureResult successfulRecaptureResult(quint64 requestId,
     return result;
 }
 
-ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
-                                       ScreenshotDisplaySession& displaySession,
-                                       ScreenshotGeometryMapper& geometry,
-                                       ScreenshotInteractionState& interaction,
-                                       ScreenshotSelectionModel& selection,
-                                       ScreenshotIntelligentSelectionModel& intelligentSelection,
-                                       CaptureRuntime& runtime, bool smartSelectionEnabled = true) {
+ScreenshotCaptureWorkflow
+makeWorkflow(ScreenshotCaptureState& state, ScreenshotDisplaySession& displaySession,
+             ScreenshotGeometryMapper& geometry, ScreenshotInteractionState& interaction,
+             ScreenshotSelectionModel& selection,
+             ScreenshotIntelligentSelectionModel& intelligentSelection, CaptureRuntime& runtime,
+             snow_shot::SmartSelectionMode mode = snow_shot::SmartSelectionMode::WindowSubElement) {
     return ScreenshotCaptureWorkflow({
         state,
         runtime,
@@ -280,7 +279,7 @@ ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
         intelligentSelection,
         {},
         {},
-        [smartSelectionEnabled]() { return smartSelectionEnabled; },
+        [mode]() { return mode; },
     });
 }
 
@@ -1311,6 +1310,7 @@ void selectorRefreshOnlyBorrowsDisplayGeometry() {
     interaction.beginCapture();
     ScreenshotSelectionModel selection;
     ScreenshotIntelligentSelectionModel intelligent;
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     ScreenshotSelectorWorkflow workflow(
         {state, service, exclusions, displays, geometry, interaction, selection, intelligent, {}});
     workflow.startRefresh();
@@ -1365,7 +1365,7 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     interaction.enterOverlayVisible(true);
     ScreenshotSelectionModel selection;
     ScreenshotIntelligentSelectionModel intelligent;
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     int readyCount = 0, updates = 0;
     ScreenshotSelectorPresentationCallbacks callbacks;
     callbacks.updateOverlayState = [&]() { ++updates; };
@@ -1396,12 +1396,12 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     require(readyCount == 1 && updates == 1 && selection.normalizedSelection() == bounds,
             "identical and failed initial results must preserve selection without preparing "
             "another frame");
-    intelligent.beginCaptureSession(true, ScreenshotIntelligentSelectionTarget::Window);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::Window);
     workflow.handleInitialResult(true, {physical(child), physical(parent), physical(bounds)}, 1);
     require(updates == 1 && intelligent.toggleSelectionTarget() &&
                 intelligent.currentSelection() == child,
             "an unchanged window marquee must still retain the newly returned child hierarchy");
-    intelligent.beginCaptureSession(true);
+    intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     // The first result arrives while the image is still being acquired and the
     // pointer remains stationary. Image arrival must preserve that selection.
     display.image = QImage(200, 200, QImage::Format_RGBA8888);
@@ -1456,13 +1456,39 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     workflow.handleInitialResult(true, {}, 1);
     require(updates == updatesBeforeUnchangedSession + 1 && readyCount == 4,
             "repeated empty paths must not prepare another frame");
+
+    workflow.updateSmartSelectionMode(snow_shot::SmartSelectionMode::Disabled);
+    require(interaction.manualSelecting() && selection.normalizedSelection().isEmpty() &&
+                !intelligent.hasCurrentSelection() && readyCount == 5,
+            "disabling hover selection must clear candidates and resolve pending presentation");
+    workflow.handleRefreshFinished(true);
+    workflow.handleInitialResult(true, {physical(bounds)}, 1);
+    workflow.handleRefinement({physical(child), physical(bounds)}, 1, true);
+    require(interaction.manualSelecting() && selection.normalizedSelection().isEmpty() &&
+                readyCount == 5 && !workflow.returnToSelection(QPoint(10, 10)),
+            "Disabled must ignore late results and remain manual when returning from editing");
+    workflow.updateSmartSelectionMode(snow_shot::SmartSelectionMode::Window);
+    require(interaction.intelligentSelecting(),
+            "reenabling an empty manual selection must restore lookup");
+    workflow.handleInitialResult(true, {physical(child), physical(bounds)}, 1);
+    require(selection.normalizedSelection() == bounds, "Window must select the enclosing frame");
+    interaction.confirmSelection();
+    workflow.updateSmartSelectionMode(snow_shot::SmartSelectionMode::Disabled);
+    require(selection.normalizedSelection() == bounds && interaction.movingSelection(),
+            "live changes must preserve a confirmed selection");
+    interaction.returnToSelectionMode(false);
+    require(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee),
+            "start manual drag");
+    workflow.updateSmartSelectionMode(snow_shot::SmartSelectionMode::WindowSubElement);
+    require(interaction.dragging() && selection.normalizedSelection() == bounds,
+            "live changes must preserve an in-progress manual drag");
 }
 
 void phasedSelectionPreservesUserIntent() {
     ScreenshotIntelligentSelectionModel model;
     const QRectF bounds(0, 0, 100, 100), parent(0, 0, 80, 80), child(0, 0, 40, 40),
         leaf(0, 0, 20, 20);
-    model.beginCaptureSession(true);
+    model.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     require(model.applyCanvasHitPath({parent, bounds}, bounds, 1), "initial path failed");
     require(model.applyCanvasRefinementPath({child, parent, bounds}, bounds, 1) &&
                 model.currentSelection() == child,
@@ -1490,6 +1516,15 @@ void phasedSelectionPreservesUserIntent() {
         !model.applyCanvasRefinementPath(
             {QRectF(0, 0, 0.5, 0.5), QRectF(0, 0, 10, 10), leaf, child, parent, bounds}, bounds, 1),
         "minimum-size filtering must happen before extension comparison");
+    const QRectF deeper(0, 0, 5, 5);
+    require(model.selectIndex(2) &&
+                model.updateSmartSelectionMode(snow_shot::SmartSelectionMode::Window) &&
+                model.updateSmartSelectionMode(snow_shot::SmartSelectionMode::WindowSubElement) &&
+                model.applyCanvasRefinementPath(
+                    {deeper, QRectF(0, 0, 10, 10), leaf, child, parent, bounds}, bounds, 1) &&
+                model.currentSelection() == deeper,
+            "changing modes must restore automatic child refinement after explicit hierarchy "
+            "navigation");
 }
 
 void intelligentSelectionTargetsPreserveElementPathBehavior() {
@@ -1497,7 +1532,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
     {
         ScreenshotIntelligentSelectionModel model;
         const QRectF window(0, 0, 100, 100), pane(0, 0, 80, 80), text(10, 10, 20, 20);
-        model.beginCaptureSession(true);
+        model.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
         require(model.applyCanvasHitPath({text, window}, window, 1), "initial AX path failed");
         require(model.selectIndex(1), "explicit AX window selection failed");
         require(model.applyCanvasRefinementPath({text, pane, window}, window, 1) &&
@@ -1511,7 +1546,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
     const QRectF window(10, 10, 100, 80);
     const QRectF bounds(0, 0, 200, 160);
 
-    selection.beginCaptureSession(true);
+    selection.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     require(selection.smartSelectionEnabled() &&
                 selection.selectionTarget() ==
                     ScreenshotIntelligentSelectionTarget::WindowSubElement &&
@@ -1541,23 +1576,27 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
                 selection.index() == 0,
             "window mode must lock an element path to its outermost window");
 
-    selection.beginCaptureSession(true);
+    selection.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
     require(selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
             "capture without a supplied preference must retain the default child-element mode");
 
-    selection.beginCaptureSession(false);
+    selection.beginCaptureSession(snow_shot::SmartSelectionMode::Disabled);
     require(!selection.smartSelectionEnabled() &&
                 selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
                 !selection.toggleSelectionTarget() &&
-                selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
-                selection.index() == 2 && selection.currentSelection() == window,
-            "disabled Smart selection must remain locked to window capture");
+                !selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
+                !selection.hasCurrentSelection(),
+            "disabled Smart selection must reject automatic selection");
+    selection.beginCaptureSession(snow_shot::SmartSelectionMode::Window);
+    require(selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
+                selection.currentSelection() == window,
+            "window mode must select the enclosing window");
 
-    require(selection.updateSmartSelectionEnabled(true) &&
+    require(selection.updateSmartSelectionMode(snow_shot::SmartSelectionMode::WindowSubElement) &&
                 selection.selectionTarget() ==
                     ScreenshotIntelligentSelectionTarget::WindowSubElement &&
                 selection.index() == 0 && selection.currentSelection() == nestedElement &&
-                selection.updateSmartSelectionEnabled(false) &&
+                selection.updateSmartSelectionMode(snow_shot::SmartSelectionMode::Window) &&
                 selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
                 selection.index() == 2 && selection.currentSelection() == window,
             "a live Smart selection setting change must immediately enforce its target policy");
@@ -1574,7 +1613,8 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     CaptureRuntime enabledRuntime;
     auto enabledWorkflow =
         makeWorkflow(enabledState, enabledDisplays, enabledGeometry, enabledInteraction,
-                     enabledSelection, enabledIntelligentSelection, enabledRuntime, true);
+                     enabledSelection, enabledIntelligentSelection, enabledRuntime,
+                     snow_shot::SmartSelectionMode::WindowSubElement);
 
     enabledWorkflow.startCapture();
     require(enabledIntelligentSelection.selectionTarget() ==
@@ -1595,15 +1635,15 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     ScreenshotSelectionModel disabledSelection;
     ScreenshotIntelligentSelectionModel disabledIntelligentSelection;
     CaptureRuntime disabledRuntime;
-    auto disabledWorkflow =
-        makeWorkflow(disabledState, disabledDisplays, disabledGeometry, disabledInteraction,
-                     disabledSelection, disabledIntelligentSelection, disabledRuntime, false);
+    auto disabledWorkflow = makeWorkflow(
+        disabledState, disabledDisplays, disabledGeometry, disabledInteraction, disabledSelection,
+        disabledIntelligentSelection, disabledRuntime, snow_shot::SmartSelectionMode::Disabled);
 
     disabledWorkflow.startCapture();
     require(disabledIntelligentSelection.selectionTarget() ==
                     ScreenshotIntelligentSelectionTarget::Window &&
                 !disabledIntelligentSelection.toggleSelectionTarget(),
-            "a disabled capture session must stay in window mode");
+            "a disabled capture session must reject target switching");
 }
 } // namespace
 
@@ -1717,7 +1757,9 @@ void normalCaptureRestoresToolbarAfterSuppressedCapture() {
 
 void noToolbarCaptureWaitsForUserSelection() {
     for (const bool preparedDisplay : {false, true}) {
-        for (const bool smartSelectionEnabled : {false, true}) {
+        for (const auto mode :
+             {snow_shot::SmartSelectionMode::Disabled, snow_shot::SmartSelectionMode::Window,
+              snow_shot::SmartSelectionMode::WindowSubElement}) {
             ScreenshotCaptureState state;
             ScreenshotDisplaySession displays;
             ScreenshotGeometryMapper geometry;
@@ -1726,8 +1768,9 @@ void noToolbarCaptureWaitsForUserSelection() {
             ScreenshotIntelligentSelectionModel intelligent;
             CaptureRuntime runtime;
             runtime.seedActiveDisplayOnPrepare = preparedDisplay;
+            runtime.acceptSelectorHitTest = mode == snow_shot::SmartSelectionMode::Disabled;
             auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
-                                         intelligent, runtime, smartSelectionEnabled);
+                                         intelligent, runtime, mode);
             workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::Normal,
                                   ScreenshotCaptureWorkflow::ToolbarPreparation::OnDemand,
                                   ScreenshotCaptureWorkflow::ToolbarVisibility::Suppressed);
@@ -1744,10 +1787,14 @@ void noToolbarCaptureWaitsForUserSelection() {
                     "no-toolbar hotkey capture must present the selection overlay");
             require(!interaction.dragging() && !selection.hasPixelSelection(),
                     "no-toolbar hotkey capture must wait for a press before starting a drag");
-            require(intelligent.smartSelectionEnabled() == smartSelectionEnabled,
+            require(intelligent.smartSelectionMode() == mode,
                     "hiding the toolbar must preserve the configured smart-selection behavior");
-            require(runtime.startWorkflowRefreshCalls > 0,
-                    "no-toolbar hotkey capture must initialize cursor selection normally");
+            require(
+                mode != snow_shot::SmartSelectionMode::Disabled || interaction.manualSelecting(),
+                "Disabled must present manual selection without waiting for an accepted hit test");
+            require((runtime.startWorkflowRefreshCalls > 0) ==
+                        (mode != snow_shot::SmartSelectionMode::Disabled),
+                    "only enabled modes may initialize automatic selection");
             require(runtime.prewarmToolbarSurfaceCalls == 0,
                     "on-demand capture must not prepare the toolbar during presentation");
         }

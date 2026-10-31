@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTINTELLIGENTSELECTIONMODEL_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTINTELLIGENTSELECTIONMODEL_H
 
+#include "snow_shot/smartselectionmode.h"
+
 #include <QPointF>
 #include <QRectF>
 #include <QVector>
@@ -12,17 +14,12 @@ enum class ScreenshotIntelligentSelectionTarget {
 
 class ScreenshotIntelligentSelectionModel final {
   public:
-    void beginCaptureSession(bool smartSelectionEnabled,
-                             ScreenshotIntelligentSelectionTarget preferredTarget =
-                                 ScreenshotIntelligentSelectionTarget::WindowSubElement);
+    void beginCaptureSession(snow_shot::SmartSelectionMode mode);
     void reset();
     void clearTransientState();
     void clearHitPath();
     void clearPress();
-    [[nodiscard]] bool
-    updateSmartSelectionEnabled(bool enabled,
-                                ScreenshotIntelligentSelectionTarget preferredTarget =
-                                    ScreenshotIntelligentSelectionTarget::WindowSubElement);
+    [[nodiscard]] bool updateSmartSelectionMode(snow_shot::SmartSelectionMode mode);
 
     [[nodiscard]] bool applyCanvasHitPath(const QVector<QRectF>& canvasHitRects,
                                           const QRectF& selectableBounds,
@@ -35,6 +32,7 @@ class ScreenshotIntelligentSelectionModel final {
     [[nodiscard]] bool setIndex(int index);
     [[nodiscard]] bool toggleSelectionTarget();
     [[nodiscard]] bool smartSelectionEnabled() const;
+    [[nodiscard]] snow_shot::SmartSelectionMode smartSelectionMode() const;
     [[nodiscard]] ScreenshotIntelligentSelectionTarget selectionTarget() const;
     [[nodiscard]] int index() const;
     [[nodiscard]] bool hasCurrentSelection() const;
@@ -50,9 +48,7 @@ class ScreenshotIntelligentSelectionModel final {
   private:
     QVector<QRectF> m_hitRects;
     int m_index = -1;
-    ScreenshotIntelligentSelectionTarget m_selectionTarget =
-        ScreenshotIntelligentSelectionTarget::Window;
-    bool m_smartSelectionEnabled = false;
+    snow_shot::SmartSelectionMode m_mode = snow_shot::SmartSelectionMode::Disabled;
     bool m_explicitSelection = false;
     bool m_pressActive = false;
     QPointF m_pressPosition;

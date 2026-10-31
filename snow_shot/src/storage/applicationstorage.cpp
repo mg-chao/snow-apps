@@ -380,7 +380,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     connect(m_configuration.get(), &ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue& value) {
                 if (key == QStringLiteral("screenshot_selection/smart_selection")) {
-                    emit smartSelectionChanged(value.toBool());
+                    emit smartSelectionModeChanged(smartSelectionModeFromId(value.toString()));
                 }
             });
     if (QCoreApplication::instance() != nullptr) {
@@ -558,13 +558,13 @@ QString ApplicationStorage::configurationDirectory() const {
     return m_status.effectiveDirectory;
 }
 
-bool ApplicationStorage::smartSelectionEnabled() const {
-    return m_configuration != nullptr
-               ? m_configuration->value(QStringLiteral("screenshot_selection/smart_selection"))
-                     .toBool()
-               : ConfigurationSchema::defaultValue(
-                     QStringLiteral("screenshot_selection/smart_selection"))
-                     .toBool();
+SmartSelectionMode ApplicationStorage::smartSelectionMode() const {
+    return smartSelectionModeFromId(
+        (m_configuration != nullptr
+             ? m_configuration->value(QStringLiteral("screenshot_selection/smart_selection"))
+             : ConfigurationSchema::defaultValue(
+                   QStringLiteral("screenshot_selection/smart_selection")))
+            .toString());
 }
 
 bool ApplicationStorage::requestCaptureHistoryPolicy(const CaptureHistoryPolicy& policy) {
@@ -597,19 +597,20 @@ ApplicationStorage::requestCaptureHistoryPolicyAsync(const CaptureHistoryPolicy&
     return result;
 }
 
-bool ApplicationStorage::requestSmartSelection(bool enabled) {
-    const auto result = requestSmartSelectionAsync(enabled);
+bool ApplicationStorage::requestSmartSelectionMode(SmartSelectionMode mode) {
+    const auto result = requestSmartSelectionModeAsync(mode);
     return result.valid() && result.get().success;
 }
 
-std::shared_future<StorageResult> ApplicationStorage::requestSmartSelectionAsync(bool enabled) {
+std::shared_future<StorageResult>
+ApplicationStorage::requestSmartSelectionModeAsync(SmartSelectionMode mode) {
     if (m_status.directoryChanging || !m_initialized || m_configuration == nullptr ||
         !m_status.writeAvailable) {
         return readyFuture(
             StorageResult::failure(QStringLiteral("Configuration storage is not writable")));
     }
     if (!m_configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"),
-                                   enabled)) {
+                                   smartSelectionModeId(mode))) {
         updateConfigurationError(m_configuration->lastError());
         return readyFuture(StorageResult::failure(m_configuration->lastError()));
     }

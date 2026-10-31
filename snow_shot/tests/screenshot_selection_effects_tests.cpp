@@ -154,8 +154,11 @@ void selectionEffectsPersistAcrossRestarts() {
                 settings.borderColor() == QColor(Qt::yellow),
             "preferences and presets retain border settings");
     settings.setSelectionTarget(ScreenshotIntelligentSelectionTarget::Window);
-    require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window,
-            "selection target preference must be writable");
+    require(settings.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
+                storage.smartSelectionMode() == snow_shot::SmartSelectionMode::Window &&
+                storage.configuration().value(QStringLiteral(
+                    "screenshot_selection/smart_selection")) == QStringLiteral("window"),
+            "Tab target preference and smart-selection dropdown must share one stored mode");
 
     QObject parent;
     ScreenshotCaptureState state;

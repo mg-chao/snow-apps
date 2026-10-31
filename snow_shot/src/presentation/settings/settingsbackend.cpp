@@ -329,8 +329,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
             [this](const storage::StorageStatus&) { emit synchronized(); });
     connect(&applicationStorage, &storage::ApplicationStorage::captureHistoryClearFinished, this,
             [this](bool, const QString&) { emit synchronized(); });
-    connect(&applicationStorage, &storage::ApplicationStorage::smartSelectionChanged, this,
-            [this](bool) { emit synchronized(); });
+    connect(&applicationStorage, &storage::ApplicationStorage::smartSelectionModeChanged, this,
+            [this](snow_shot::SmartSelectionMode) { emit synchronized(); });
     connect(&applicationStorage.configuration(), &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue& value) {
                 if ((key == QStringLiteral("interface/skin_path") ||
@@ -561,6 +561,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::ScreenRecordingApiMode:
         return storage::RecordingSettings().apiMode();
+    case SettingsSelectBinding::SmartSelection:
+        return smartSelectionModeId(storage::ApplicationStorage::instance().smartSelectionMode());
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().windowElementApi();
     case SettingsSelectBinding::ScreenshotToolbarSize:
@@ -799,6 +801,13 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setApiMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingApiMode:
         return storage::RecordingSettings().setApiMode(value.toString());
+    case SettingsSelectBinding::SmartSelection: {
+        const auto normalized = storage::ConfigurationSchema::normalize(
+            QStringLiteral("screenshot_selection/smart_selection"), QJsonValue::fromVariant(value));
+        return normalized.valid &&
+               storage::ApplicationStorage::instance().requestSmartSelectionMode(
+                   smartSelectionModeFromId(normalized.value.toString()));
+    }
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().setWindowElementApi(value.toString());
     case SettingsSelectBinding::ScreenshotToolbarSize:
@@ -888,8 +897,6 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
     case SettingsSwitchBinding::PinnedHistoryKeepPermanently:
         return storage::ApplicationStorage::instance().pinnedWindowPolicy().keepPermanently;
-    case SettingsSwitchBinding::SmartSelection:
-        return storage::ApplicationStorage::instance().smartSelectionEnabled();
     case SettingsSwitchBinding::OcrResidentProcess:
         return storage::ApplicationStorage::instance()
             .configuration()
@@ -1230,9 +1237,6 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors) {
         return storage::ScreenshotSettings().setRestoreOriginalScreenColors(value);
     }
-    if (binding == SettingsSwitchBinding::SmartSelection) {
-        return storage::ApplicationStorage::instance().requestSmartSelection(value);
-    }
 
     if (binding == SettingsSwitchBinding::ScreenshotAreaTypeHint) {
         return storage::ScreenshotUiSettings().setScreenshotAreaTypeHintEnabled(value);
@@ -1412,8 +1416,6 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
         pinnedPolicy.keepPermanently = value;
         return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
     }
-    case SettingsSwitchBinding::SmartSelection:
-        return false;
     case SettingsSwitchBinding::OcrResidentProcess:
     case SettingsSwitchBinding::OcrModelHotStart:
     case SettingsSwitchBinding::OcrHardwareAcceleration:
@@ -2701,10 +2703,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    storage::ConfigurationSchema::defaultValue(
                        QStringLiteral("pinned_history/compression_level")));
     case SettingsSectionReset::ScreenshotSettings:
-        return storage::ApplicationStorage::instance().requestSmartSelection(
-                   storage::ConfigurationSchema::defaultValue(
-                       QStringLiteral("screenshot_selection/smart_selection"))
-                       .toBool()) &&
+        return storage::ApplicationStorage::instance().requestSmartSelectionMode(
+                   smartSelectionModeFromId(
+                       storage::ConfigurationSchema::defaultValue(
+                           QStringLiteral("screenshot_selection/smart_selection"))
+                           .toString())) &&
                resetAvailableConfigurationValues({
                    {QStringLiteral("screenshot/copy_after_pinning_to_screen"),
                     storage::ConfigurationSchema::defaultValue(

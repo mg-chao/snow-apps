@@ -9,6 +9,8 @@
 #include "snow_shot/storage/storageresult.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 
+#include "snow_shot/smartselectionmode.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -103,13 +105,14 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] StorageStatus status() const;
     [[nodiscard]] CaptureHistoryPolicy captureHistoryPolicy() const;
     [[nodiscard]] QString configurationDirectory() const;
-    [[nodiscard]] bool smartSelectionEnabled() const;
+    [[nodiscard]] SmartSelectionMode smartSelectionMode() const;
 
     bool requestCaptureHistoryPolicy(const CaptureHistoryPolicy& policy);
     [[nodiscard]] std::shared_future<StorageResult>
     requestCaptureHistoryPolicyAsync(const CaptureHistoryPolicy& policy);
-    bool requestSmartSelection(bool enabled);
-    [[nodiscard]] std::shared_future<StorageResult> requestSmartSelectionAsync(bool enabled);
+    bool requestSmartSelectionMode(SmartSelectionMode mode);
+    [[nodiscard]] std::shared_future<StorageResult>
+    requestSmartSelectionModeAsync(SmartSelectionMode mode);
     [[nodiscard]] PinnedWindowPolicy pinnedWindowPolicy() const;
     bool requestPinnedWindowPolicy(const PinnedWindowPolicy& policy);
     bool requestPinnedWindowClear();
@@ -145,7 +148,7 @@ class ApplicationStorage final : public QObject {
     void pinnedWindowsShowRequested(const QStringList& ids);
     void pinnedWindowDeleteRequested(const QVector<QString>& ids);
     void storageStatusChanged(const snow_shot::storage::StorageStatus& status);
-    void smartSelectionChanged(bool enabled);
+    void smartSelectionModeChanged(snow_shot::SmartSelectionMode mode);
     void captureHistoryClearFinished(bool success, const QString& error);
     void cacheClearFinished(snow_shot::storage::StorageCacheKind kind, bool success);
 

@@ -143,7 +143,7 @@ void ScreenshotSelectionSettingsStore::setAspectRatioLocked(bool locked) {
 }
 
 ScreenshotIntelligentSelectionTarget ScreenshotSelectionSettingsStore::selectionTarget() const {
-    return configuration().value(QStringLiteral("screenshot_selection/selection_target")) ==
+    return configuration().value(QStringLiteral("screenshot_selection/smart_selection")) ==
                    QStringLiteral("window")
                ? ScreenshotIntelligentSelectionTarget::Window
                : ScreenshotIntelligentSelectionTarget::WindowSubElement;
@@ -152,7 +152,7 @@ ScreenshotIntelligentSelectionTarget ScreenshotSelectionSettingsStore::selection
 void ScreenshotSelectionSettingsStore::setSelectionTarget(
     ScreenshotIntelligentSelectionTarget target) {
     static_cast<void>(
-        configuration().setValue(QStringLiteral("screenshot_selection/selection_target"),
+        configuration().setValue(QStringLiteral("screenshot_selection/smart_selection"),
                                  target == ScreenshotIntelligentSelectionTarget::Window
                                      ? QStringLiteral("window")
                                      : QStringLiteral("window_sub_element")));

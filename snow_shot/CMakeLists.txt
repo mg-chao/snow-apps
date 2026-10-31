@@ -2537,6 +2537,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-application-storage-tests
         COMMAND snow-shot-application-storage-tests)
+    add_test(NAME snow-shot-smart-selection-storage-tests
+        COMMAND snow-shot-application-storage-tests --smart-selection-only)
+    set_tests_properties(snow-shot-smart-selection-storage-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screenshot-mouse-action-storage-tests
         COMMAND snow-shot-application-storage-tests --screenshot-mouse-actions-only)
     set_tests_properties(snow-shot-screenshot-mouse-action-storage-tests PROPERTIES
@@ -3162,6 +3167,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-batch-shortcut-catalog-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
+    add_test(NAME snow-shot-screenshot-interaction-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --screenshot-interaction-only)
+    set_tests_properties(snow-shot-screenshot-interaction-catalog-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-tray-icon-settings-catalog-tests
         COMMAND snow-shot-settings-catalog-tests --tray-icons-only)
     set_tests_properties(snow-shot-tray-icon-settings-catalog-tests PROPERTIES
@@ -3635,6 +3645,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-window-element-api-tests
              COMMAND snow-shot-window-element-api-tests)
+    add_test(NAME snow-shot-smart-selection-settings-tests
+        COMMAND snow-shot-window-element-api-tests --smart-selection-only)
+    set_tests_properties(snow-shot-smart-selection-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_test(NAME snow-shot-selector-phased-tests
              COMMAND snow-shot-window-element-api-tests --selector-only)
     add_test(NAME snow-shot-selector-lifecycle-tests
@@ -3649,6 +3662,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
     set_tests_properties(
         snow-shot-window-element-api-tests
+        snow-shot-smart-selection-settings-tests
         snow-shot-selector-phased-tests
         snow-shot-selector-lifecycle-tests
         snow-shot-shortcut-exit-confirmation-settings-tests
@@ -4649,12 +4663,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-completion-gesture-tests
         COMMAND snow-shot-screenshot-history-tests --completion-gestures-only
     )
+    add_test(NAME snow-shot-smart-selection-shortcut-tests
+        COMMAND snow-shot-screenshot-history-tests --intelligent-selection-target-shortcut-only)
+    set_tests_properties(snow-shot-smart-selection-shortcut-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     set_tests_properties(
         snow-shot-direct-capture-history-tests
         snow-shot-history-metadata-lifecycle-tests
         snow-shot-selection-border-resize-tests
         snow-shot-selection-aspect-ratio-confirmation-tests
         snow-shot-screenshot-completion-gesture-tests
+        snow-shot-smart-selection-shortcut-tests
         PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

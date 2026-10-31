@@ -37,14 +37,13 @@ struct ScreenshotCaptureWorkflowContext {
     ScreenshotIntelligentSelectionModel& intelligentSelection;
     ScreenshotCapturePresentationCallbacks presentation;
     std::function<void()> captureTerminated = []() {};
-    std::function<bool()> smartSelectionEnabled = []() { return true; };
+    std::function<snow_shot::SmartSelectionMode()> smartSelectionMode = []() {
+        return snow_shot::SmartSelectionMode::WindowSubElement;
+    };
     std::function<void()> refreshCanvasCreationStyles = []() {};
     std::function<void()> restoreSelectionPreferences = []() {};
     std::function<bool()> restoreOriginalScreenColors = []() { return true; };
     std::function<bool()> showCursor = []() { return false; };
-    std::function<ScreenshotIntelligentSelectionTarget()> preferredSelectionTarget = []() {
-        return ScreenshotIntelligentSelectionTarget::WindowSubElement;
-    };
     std::function<void(bool, const QString&)> recaptureCompleted = [](bool, const QString&) {};
     std::function<QPoint()> cursorPosition = [] { return QCursor::pos(); };
     // Navigation's live desktop backup belongs to the ending capture, not its exports.

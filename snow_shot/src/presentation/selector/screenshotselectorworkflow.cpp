@@ -15,8 +15,34 @@
 ScreenshotSelectorWorkflow::ScreenshotSelectorWorkflow(ScreenshotSelectorWorkflowContext context)
     : m_context(std::move(context)) {}
 
+void ScreenshotSelectorWorkflow::updateSmartSelectionMode(snow_shot::SmartSelectionMode mode) {
+    if (!m_context.intelligentSelection.updateSmartSelectionMode(mode) ||
+        m_context.interaction.inactive())
+        return;
+    const bool hoverSelection =
+        m_context.interaction.intelligentSelecting() ||
+        (m_context.interaction.manualSelecting() && !m_context.interaction.dragging() &&
+         !m_context.selection.hasPixelSelection());
+    if (hoverSelection && m_context.selection.regionType() == ScreenshotRegionType::Rectangle) {
+        const bool enabled = m_context.intelligentSelection.smartSelectionEnabled();
+        m_context.interaction.returnToSelectionMode(enabled);
+        m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
+        if (enabled) {
+            if (!m_context.selectorService.ready() && !m_context.selectorService.refreshInFlight())
+                startRefresh();
+            static_cast<void>(updateSelectionAt(m_context.geometry.physicalPositionForLogicalPoint(
+                m_context.displaySession, m_context.displaySession.logicalCursorPosition())));
+        } else if (m_context.presentation.smartSelectionResultReady) {
+            m_context.presentation.smartSelectionResultReady(m_context.captureState.sessionId);
+        }
+    }
+    if (m_context.presentation.updateOverlayState)
+        m_context.presentation.updateOverlayState();
+}
+
 void ScreenshotSelectorWorkflow::startRefresh() {
-    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+    if (!m_context.intelligentSelection.smartSelectionEnabled() ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
         return;
     if (m_context.interaction.inactive() || !m_context.displaySession.hasActiveDisplays()) {
         return;
@@ -32,7 +58,8 @@ void ScreenshotSelectorWorkflow::startRefresh() {
 }
 
 void ScreenshotSelectorWorkflow::handleRefreshFinished(bool ok) {
-    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+    if (!m_context.intelligentSelection.smartSelectionEnabled() ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
         return;
     if (m_context.interaction.inactive()) {
         return;
@@ -77,7 +104,8 @@ bool ScreenshotSelectorWorkflow::updateSelectionAt(const QPoint& physicalPoint) 
 }
 
 bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint, quint32 displayId) {
-    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+    if (!m_context.intelligentSelection.smartSelectionEnabled() ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
         !m_context.interaction.intelligentSelecting() ||
         (!m_context.selectorService.ready() && !m_context.selectorService.refreshInFlight())) {
         return false;
@@ -108,7 +136,8 @@ void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRec
         return;
     }
 
-    if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+    if (m_context.intelligentSelection.smartSelectionEnabled() &&
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_context.interaction.intelligentSelecting()) {
         bool selectionChanged = false;
         if (ok) {
@@ -159,6 +188,7 @@ bool ScreenshotSelectorWorkflow::returnToSelection(const QPoint& physicalPoint) 
     m_context.selection.setSelectionRect({});
 
     const bool selectorReady =
+        m_context.intelligentSelection.smartSelectionEnabled() &&
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_context.selectorService.ready();
     m_context.interaction.returnToSelectionMode(selectorReady);
@@ -183,7 +213,8 @@ void ScreenshotSelectorWorkflow::handleTargetChanged() {
 
 void ScreenshotSelectorWorkflow::handleRefinement(const QVector<QRectF>& hitRects,
                                                   quint32 displayId, bool replacePath) {
-    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+    if (!m_context.intelligentSelection.smartSelectionEnabled() ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
         !m_context.interaction.intelligentSelecting() ||
         m_context.intelligentSelection.pressActive())
         return;

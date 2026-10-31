@@ -279,7 +279,8 @@ void liveSwitch(bool migrate) {
     auto* configuration = &app.configuration();
     auto* history = &app.captureHistory();
     auto* pins = &app.pinnedWindows();
-    require(configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"), false),
+    require(configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                    QStringLiteral("disabled")),
             "custom setting");
     const auto open = pin();
     const auto closed = pin();
@@ -332,7 +333,8 @@ void liveSwitch(bool migrate) {
         });
     require(app.requestDirectoryChange(target, migrate).success, "start asynchronous migration");
     require(!app.requestDirectoryChange(target, migrate).success, "duplicate migration rejected");
-    require(!configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"), true),
+    require(!configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                     QStringLiteral("window_sub_element")),
             "writes frozen during migration");
     QElapsedTimer timer;
     timer.start();
@@ -352,7 +354,8 @@ void liveSwitch(bool migrate) {
             "consumer references remain valid");
     require(app.configurationDirectory() == target && !app.directoryChanging(),
             "new directory immediately active");
-    require(!app.smartSelectionEnabled(), "settings preserved");
+    require(app.smartSelectionMode() == snow_shot::SmartSelectionMode::Disabled,
+            "settings preserved");
     require(diagnostics.status().directory == QDir(target).filePath(QStringLiteral("logs")) &&
                 diagnostics.flush(),
             "diagnostics follow new root");
@@ -372,7 +375,8 @@ void liveSwitch(bool migrate) {
             "closed pin migration follows switch");
     require(QFileInfo::exists(QDir(target).filePath(QStringLiteral("assets/ocr/test"))) == migrate,
             "OCR migration follows switch");
-    require(configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"), true) &&
+    require(configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"),
+                                    QStringLiteral("window_sub_element")) &&
                 app.flushNow().success,
             "new settings remain writable");
     require(pins->create(pin()).success && pins->flush().success, "new pinned records writable");
@@ -381,7 +385,8 @@ void liveSwitch(bool migrate) {
     diagnostics.shutdown();
     app.shutdown();
     require(app.initialize({dir.filePath(QStringLiteral("bin")), source, 60000}).success &&
-                app.configurationDirectory() == target && app.smartSelectionEnabled(),
+                app.configurationDirectory() == target &&
+                app.smartSelectionMode() == snow_shot::SmartSelectionMode::WindowSubElement,
             "restart uses committed data");
     app.shutdown();
 }

@@ -43,26 +43,20 @@ QByteArray configuredSelectorBackend() {
 
 #endif
 
-bool smartSelectionEnabled() {
-    const auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    return storage.isInitialized() ? storage.smartSelectionEnabled()
-                                   : snow_shot::storage::ConfigurationSchema::defaultValue(
-                                         QStringLiteral("screenshot_selection/smart_selection"))
-                                         .toBool();
-}
-
 SnowUiSelectorBackend selectorBackendForCurrentMode() {
 #ifdef Q_OS_MACOS
     return SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY;
 #else
-    return screenshotSelectorLookupPolicy(smartSelectionEnabled(), configuredSelectorBackend())
+    return screenshotSelectorLookupPolicy(snow_shot::SmartSelectionMode::WindowSubElement,
+                                          configuredSelectorBackend())
         .backend;
 #endif
 }
 
 SnowUiSelectorHitTestMode
 hitTestModeForRequestedTarget(ScreenshotSelectorHitTestMode requestedMode) {
-    return screenshotSelectorHitTestMode(smartSelectionEnabled(), requestedMode);
+    return screenshotSelectorHitTestMode(snow_shot::SmartSelectionMode::WindowSubElement,
+                                         requestedMode);
 }
 
 } // namespace

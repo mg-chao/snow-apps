@@ -1389,6 +1389,8 @@ void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QStr
         actionId = QStringLiteral("text_recognition");
     } else if (action == QStringLiteral("ocr_copy")) {
         actionId = QStringLiteral("text_recognition_copy");
+    } else if (action == QStringLiteral("cancel")) {
+        actionId = QStringLiteral("cancel_screenshot");
     } else {
         return;
     }

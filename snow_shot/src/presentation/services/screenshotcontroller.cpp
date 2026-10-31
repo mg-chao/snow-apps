@@ -289,7 +289,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void createToolbarCommands();
     void connectSelectorSignals();
     void reloadUiPreferences();
-    void updateSmartSelectionSettingForCurrentSession(bool enabled);
+    snow_shot::SmartSelectionMode smartSelectionModeForCurrentRequest() const;
+    void updateSmartSelectionSettingForCurrentSession(snow_shot::SmartSelectionMode mode);
     void applyUiPreferences(const ScreenshotUiPreferences& preferences);
     void resetGuideVisibilityForSession();
     [[nodiscard]] bool toggleGuidesForCurrentSession();
@@ -769,7 +770,8 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
             &storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged, &owner,
             [this](const QString& key, const QJsonValue& value) {
                 if (key == QStringLiteral("screenshot_selection/smart_selection")) {
-                    updateSmartSelectionSettingForCurrentSession(value.toBool());
+                    updateSmartSelectionSettingForCurrentSession(
+                        smartSelectionModeForCurrentRequest());
                 } else if (key == QStringLiteral("screenshot/auto_recognize_qr_code")) {
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
                     if (m_qrController)
@@ -820,27 +822,18 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
     connectSelectorSignals();
 }
 
-void ScreenshotController::Impl::updateSmartSelectionSettingForCurrentSession(bool enabled) {
-    if (m_interaction.inactive() || !m_intelligentSelection.updateSmartSelectionEnabled(
-                                        enabled, m_selectionSettings->selectionTarget())) {
-        return;
-    }
+snow_shot::SmartSelectionMode
+ScreenshotController::Impl::smartSelectionModeForCurrentRequest() const {
+    const auto configured = snow_shot::storage::ApplicationStorage::instance().smartSelectionMode();
+    const auto override = m_mcpOptions.value(QStringLiteral("smart_selection"));
+    return snow_shot::smartSelectionModeWithOverride(
+        configured, override.isBool() ? std::optional<bool>(override.toBool()) : std::nullopt);
+}
 
-    if (m_interaction.intelligentSelecting()) {
-        if (m_intelligentSelection.hasCurrentSelection()) {
-            m_selection.setSelectionRect(m_intelligentSelection.currentSelection());
-        } else {
-            m_selection.clearSelection();
-        }
-        if (m_selectorWorkflow != nullptr) {
-            static_cast<void>(
-                m_selectorWorkflow->updateSelectionAt(m_geometry.physicalPositionForLogicalPoint(
-                    m_displaySession, m_displaySession.logicalCursorPosition())));
-        }
-    }
-    if (m_presentationServices != nullptr) {
-        m_presentationServices->updateOverlayState();
-    }
+void ScreenshotController::Impl::updateSmartSelectionSettingForCurrentSession(
+    snow_shot::SmartSelectionMode mode) {
+    if (!m_interaction.inactive() && m_selectorWorkflow != nullptr)
+        m_selectorWorkflow->updateSmartSelectionMode(mode);
 }
 
 void ScreenshotController::Impl::reloadUiPreferences() {
@@ -1209,7 +1202,8 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
         *m_overlayCoordinator, m_geometry, m_displaySession, *m_physicalCursor);
     m_toolbarPresenter = std::make_unique<ScreenshotToolbarPresenter>(*m_overlayCoordinator,
                                                                       m_geometry, m_displaySession);
-    m_selectorCoordinator = new ScreenshotSelectorCoordinator(&owner);
+    m_selectorCoordinator = new ScreenshotSelectorCoordinator(
+        &owner, {}, [this] { return smartSelectionModeForCurrentRequest(); });
     m_selectionSettings = std::make_unique<ScreenshotSelectionSettingsStore>();
     m_presentationServices =
         std::make_unique<ScreenshotPresentationServices>(ScreenshotPresentationServicesContext{
@@ -1742,11 +1736,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                     m_ocrController->invalidateSession();
                 }
             },
-            [this]() {
-                return m_mcpOptions.value(QStringLiteral("smart_selection"))
-                    .toBool(
-                        snow_shot::storage::ApplicationStorage::instance().smartSelectionEnabled());
-            },
+            [this]() { return smartSelectionModeForCurrentRequest(); },
             [this]() {
                 if (m_overlayCoordinator != nullptr) {
                     m_overlayCoordinator->refreshCanvasCreationStyles(
@@ -1777,7 +1767,6 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 return m_mcpOptions.value(QStringLiteral("capture_cursor"))
                     .toBool(snow_shot::storage::ScreenshotSettings().showCursor());
             },
-            [this]() { return m_selectionSettings->selectionTarget(); },
             [this](bool succeeded, const QString& errorMessage) {
                 finishRecapture(succeeded, !succeeded && !errorMessage.isEmpty());
             },

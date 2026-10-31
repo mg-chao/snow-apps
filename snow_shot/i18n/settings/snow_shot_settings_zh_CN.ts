@@ -1656,6 +1656,10 @@
             <translation>为截图、固定到屏幕窗口、全屏画布和屏幕录制工具栏选择图像。清空路径可移除此皮肤。</translation>
         </message>
         <message>
+            <source>Choose automatic window or window sub-element selection, or select manually</source>
+            <translation>选择自动选取窗口或窗口子元素，或手动选择</translation>
+        </message>
+        <message>
             <source>Choose how much execution time the application receives</source>
             <translation>选择应用程序获得的执行时间</translation>
         </message>
@@ -3876,10 +3880,6 @@
             <translation>次要目标语言</translation>
         </message>
         <message>
-            <source>Select child elements within a window while taking a screenshot</source>
-            <translation>截图时选择窗口中的子元素</translation>
-        </message>
-        <message>
             <source>Select dark theme tray icon</source>
             <translation>选择深色主题托盘图标</translation>
         </message>
@@ -4788,6 +4788,10 @@
             <translation>编辑文字时，按 Delete 键删除选中的文字或光标后的字符。</translation>
         </message>
         <message>
+            <source>Window</source>
+            <translation>窗口</translation>
+        </message>
+        <message>
             <source>Window Element API</source>
             <translation>窗口元素 API</translation>
         </message>
@@ -4802,6 +4806,10 @@
         <message>
             <source>Window interface</source>
             <translation>窗口界面</translation>
+        </message>
+        <message>
+            <source>Window sub-element</source>
+            <translation>窗口子元素</translation>
         </message>
         <message>
             <source>Windows context menu</source>

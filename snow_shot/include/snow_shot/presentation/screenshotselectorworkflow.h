@@ -3,6 +3,8 @@
 
 #include "snow_shot/presentation/screenshotselectorworkflowports.h"
 
+#include "snow_shot/smartselectionmode.h"
+
 #include <QPoint>
 #include <QRect>
 #include <QRectF>
@@ -43,6 +45,7 @@ class ScreenshotSelectorWorkflow final {
   public:
     explicit ScreenshotSelectorWorkflow(ScreenshotSelectorWorkflowContext context);
 
+    void updateSmartSelectionMode(snow_shot::SmartSelectionMode mode);
     void startRefresh();
     void handleRefreshFinished(bool ok);
     [[nodiscard]] QVector<std::uintptr_t> excludedHwnds() const;

@@ -263,7 +263,7 @@ class Fixture final {
         coordinator.attachToolbarToOverlay(&overlay);
         coordinator.attachSelectionToolbarToOverlay(&overlay);
         interaction.enterOverlayVisible(true);
-        intelligentSelection.beginCaptureSession(true);
+        intelligentSelection.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
         captureState.sessionId = 1;
         captureState.sessionState = ScreenshotSessionState::OverlayVisible;
         ScreenshotPresentationServicesContext context{captureState,

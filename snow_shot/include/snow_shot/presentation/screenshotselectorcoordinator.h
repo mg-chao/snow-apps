@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORCOORDINATOR_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORCOORDINATOR_H
 
+#include "snow_shot/smartselectionmode.h"
+
 #include <QObject>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -21,8 +23,9 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     Q_OBJECT
 
   public:
-    explicit ScreenshotSelectorCoordinator(QObject* parent = nullptr,
-                                           std::function<qint64()> now = {});
+    explicit ScreenshotSelectorCoordinator(
+        QObject* parent = nullptr, std::function<qint64()> now = {},
+        std::function<snow_shot::SmartSelectionMode()> mode = {});
     ~ScreenshotSelectorCoordinator() override;
 
     [[nodiscard]] bool ready() const override;
@@ -62,6 +65,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     QTimer m_refinementTimer;
     QElapsedTimer m_clock;
     std::function<qint64()> m_now;
+    std::function<snow_shot::SmartSelectionMode()> m_mode;
     qint64 m_targetChangedAt = 0;
     ScreenshotSelectorResult m_initial;
     quint64 m_targetGeneration = 0;
