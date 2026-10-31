@@ -1,0 +1,728 @@
+[
+  {
+    "name": "default-light-ltr-vertical",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical"
+  },
+  {
+    "name": "default-light-ltr-vertical-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "open": true
+  },
+  {
+    "name": "default-light-ltr-vertical-deep-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "open": true,
+    "kind": "deep"
+  },
+  {
+    "name": "default-light-ltr-inline-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "default-light-ltr-inline-groups",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "kind": "groups"
+  },
+  {
+    "name": "default-light-ltr-collapsed",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "collapsed"
+  },
+  {
+    "name": "default-light-ltr-collapsed-no-icon",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "collapsed",
+    "kind": "no-icon"
+  },
+  {
+    "name": "default-light-ltr-horizontal",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "horizontal"
+  },
+  {
+    "name": "default-light-ltr-horizontal-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "open": true
+  },
+  {
+    "name": "default-light-ltr-horizontal-overflow",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "width": 280
+  },
+  {
+    "name": "default-light-ltr-inline-open-tokens",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true,
+    "tokens": true
+  },
+  {
+    "name": "default-light-ltr-vertical-extra",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "kind": "extra"
+  },
+  {
+    "name": "default-light-ltr-vertical-delete",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "selected": "delete"
+  },
+  {
+    "name": "default-light-ltr-inline-open-hover",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true,
+    "hover": true
+  },
+  {
+    "name": "default-light-ltr-vertical-focus",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "focus": true
+  },
+  {
+    "name": "default-light-ltr-vertical-custom-expand-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "kind": "custom-expand",
+    "open": true
+  },
+  {
+    "name": "default-light-ltr-horizontal-custom-overflow-overflow",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "kind": "custom-overflow",
+    "width": 280
+  },
+  {
+    "name": "default-light-rtl-vertical",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical"
+  },
+  {
+    "name": "default-light-rtl-vertical-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "open": true
+  },
+  {
+    "name": "default-light-rtl-vertical-deep-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "open": true,
+    "kind": "deep"
+  },
+  {
+    "name": "default-light-rtl-inline-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "default-light-rtl-inline-groups",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "kind": "groups"
+  },
+  {
+    "name": "default-light-rtl-collapsed",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "collapsed"
+  },
+  {
+    "name": "default-light-rtl-collapsed-no-icon",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "collapsed",
+    "kind": "no-icon"
+  },
+  {
+    "name": "default-light-rtl-horizontal",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "horizontal"
+  },
+  {
+    "name": "default-light-rtl-horizontal-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "open": true
+  },
+  {
+    "name": "default-light-rtl-horizontal-overflow",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "width": 280
+  },
+  {
+    "name": "default-light-rtl-inline-open-tokens",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true,
+    "tokens": true
+  },
+  {
+    "name": "default-light-rtl-vertical-extra",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "kind": "extra"
+  },
+  {
+    "name": "default-light-rtl-vertical-delete",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "selected": "delete"
+  },
+  {
+    "name": "default-light-rtl-inline-open-hover",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true,
+    "hover": true
+  },
+  {
+    "name": "default-light-rtl-vertical-focus",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "focus": true
+  },
+  {
+    "name": "default-light-rtl-vertical-custom-expand-open",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "vertical",
+    "kind": "custom-expand",
+    "open": true
+  },
+  {
+    "name": "default-light-rtl-horizontal-custom-overflow-overflow",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "kind": "custom-overflow",
+    "width": 280
+  },
+  {
+    "name": "default-dark-ltr-vertical",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical"
+  },
+  {
+    "name": "default-dark-ltr-vertical-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "open": true
+  },
+  {
+    "name": "default-dark-ltr-vertical-deep-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "open": true,
+    "kind": "deep"
+  },
+  {
+    "name": "default-dark-ltr-inline-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "default-dark-ltr-inline-groups",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "inline",
+    "kind": "groups"
+  },
+  {
+    "name": "default-dark-ltr-collapsed",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "collapsed"
+  },
+  {
+    "name": "default-dark-ltr-collapsed-no-icon",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "collapsed",
+    "kind": "no-icon"
+  },
+  {
+    "name": "default-dark-ltr-horizontal",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "horizontal"
+  },
+  {
+    "name": "default-dark-ltr-horizontal-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "open": true
+  },
+  {
+    "name": "default-dark-ltr-horizontal-overflow",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "width": 280
+  },
+  {
+    "name": "default-dark-ltr-inline-open-tokens",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true,
+    "tokens": true
+  },
+  {
+    "name": "default-dark-ltr-vertical-extra",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "kind": "extra"
+  },
+  {
+    "name": "default-dark-ltr-vertical-delete",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "selected": "delete"
+  },
+  {
+    "name": "default-dark-ltr-inline-open-hover",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true,
+    "hover": true
+  },
+  {
+    "name": "default-dark-ltr-vertical-focus",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "focus": true
+  },
+  {
+    "name": "default-dark-ltr-vertical-custom-expand-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "kind": "custom-expand",
+    "open": true
+  },
+  {
+    "name": "default-dark-ltr-horizontal-custom-overflow-overflow",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "horizontal",
+    "kind": "custom-overflow",
+    "width": 280
+  },
+  {
+    "name": "default-dark-rtl-vertical",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical"
+  },
+  {
+    "name": "default-dark-rtl-vertical-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "open": true
+  },
+  {
+    "name": "default-dark-rtl-vertical-deep-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "open": true,
+    "kind": "deep"
+  },
+  {
+    "name": "default-dark-rtl-inline-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "default-dark-rtl-inline-groups",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "inline",
+    "kind": "groups"
+  },
+  {
+    "name": "default-dark-rtl-collapsed",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "collapsed"
+  },
+  {
+    "name": "default-dark-rtl-collapsed-no-icon",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "collapsed",
+    "kind": "no-icon"
+  },
+  {
+    "name": "default-dark-rtl-horizontal",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "horizontal"
+  },
+  {
+    "name": "default-dark-rtl-horizontal-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "open": true
+  },
+  {
+    "name": "default-dark-rtl-horizontal-overflow",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "width": 280
+  },
+  {
+    "name": "default-dark-rtl-inline-open-tokens",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true,
+    "tokens": true
+  },
+  {
+    "name": "default-dark-rtl-vertical-extra",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "kind": "extra"
+  },
+  {
+    "name": "default-dark-rtl-vertical-delete",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "selected": "delete"
+  },
+  {
+    "name": "default-dark-rtl-inline-open-hover",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true,
+    "hover": true
+  },
+  {
+    "name": "default-dark-rtl-vertical-focus",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "focus": true
+  },
+  {
+    "name": "default-dark-rtl-vertical-custom-expand-open",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "kind": "custom-expand",
+    "open": true
+  },
+  {
+    "name": "default-dark-rtl-horizontal-custom-overflow-overflow",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "horizontal",
+    "kind": "custom-overflow",
+    "width": 280
+  },
+  {
+    "name": "dark-light-ltr-inline-open",
+    "theme": "dark",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "dark-light-rtl-inline-open",
+    "theme": "dark",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "compact-light-ltr-inline-open",
+    "theme": "compact",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "compact-light-rtl-inline-open",
+    "theme": "compact",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "dark-compact-light-ltr-inline-open",
+    "theme": "dark-compact",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "dark-compact-light-rtl-inline-open",
+    "theme": "dark-compact",
+    "color_theme": "light",
+    "direction": "rtl",
+    "mode": "inline",
+    "open": true
+  },
+  {
+    "name": "default-dark-ltr-submenu-theme",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "open": true,
+    "kind": "submenu-theme"
+  },
+  {
+    "name": "default-dark-rtl-submenu-theme",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "rtl",
+    "mode": "vertical",
+    "open": true,
+    "kind": "submenu-theme"
+  },
+  {
+    "name": "default-light-ltr-vertical-pressed-normal",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "normal",
+    "selected": "projects"
+  },
+  {
+    "name": "default-light-ltr-vertical-pressed-danger",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "danger",
+    "selected": "home"
+  },
+  {
+    "name": "default-light-ltr-vertical-pressed-selected",
+    "theme": "default",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "selected",
+    "selected": "home"
+  },
+  {
+    "name": "compact-light-ltr-vertical-pressed-normal",
+    "theme": "compact",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "normal",
+    "selected": "projects"
+  },
+  {
+    "name": "compact-light-ltr-vertical-pressed-danger",
+    "theme": "compact",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "danger",
+    "selected": "home"
+  },
+  {
+    "name": "compact-light-ltr-vertical-pressed-selected",
+    "theme": "compact",
+    "color_theme": "light",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "selected",
+    "selected": "home"
+  },
+  {
+    "name": "default-dark-ltr-vertical-pressed-normal",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "normal",
+    "selected": "projects"
+  },
+  {
+    "name": "default-dark-ltr-vertical-pressed-danger",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "danger",
+    "selected": "home"
+  },
+  {
+    "name": "default-dark-ltr-vertical-pressed-selected",
+    "theme": "default",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "selected",
+    "selected": "home"
+  },
+  {
+    "name": "compact-dark-ltr-vertical-pressed-normal",
+    "theme": "compact",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "normal",
+    "selected": "projects"
+  },
+  {
+    "name": "compact-dark-ltr-vertical-pressed-danger",
+    "theme": "compact",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "danger",
+    "selected": "home"
+  },
+  {
+    "name": "compact-dark-ltr-vertical-pressed-selected",
+    "theme": "compact",
+    "color_theme": "dark",
+    "direction": "ltr",
+    "mode": "vertical",
+    "pressed": "selected",
+    "selected": "home"
+  }
+]

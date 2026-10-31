@@ -1,0 +1,300 @@
+{
+  "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+  "version": "6.6.7",
+  "packages": [
+    {
+      "name": "@ant-design/colors",
+      "version": "8.0.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-colors-LICENSE",
+          "sha256": "5d367fb0a07340571542eb4ee8eb1add62d37b71bad6786a57c2e9a86bf76c70"
+        }
+      ]
+    },
+    {
+      "name": "@ant-design/cssinjs",
+      "version": "2.1.2",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-cssinjs-LICENSE.md",
+          "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+        }
+      ]
+    },
+    {
+      "name": "@ant-design/cssinjs-utils",
+      "version": "2.1.2",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-cssinjs-utils-LICENSE",
+          "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+        }
+      ]
+    },
+    {
+      "name": "@ant-design/fast-color",
+      "version": "3.0.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-fast-color-LICENSE",
+          "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+        }
+      ]
+    },
+    {
+      "name": "@ant-design/icons",
+      "version": "6.3.4",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-icons-LICENSE",
+          "sha256": "5d367fb0a07340571542eb4ee8eb1add62d37b71bad6786a57c2e9a86bf76c70"
+        }
+      ]
+    },
+    {
+      "name": "@ant-design/icons-svg",
+      "version": "4.6.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "ant-design-icons-svg-ant-design-icons-svg.txt",
+          "sha256": "392c90209d112ac5346ef2e2c58118b8d25fd7759875980d9003353b7f9eb5bc"
+        }
+      ]
+    },
+    {
+      "name": "@babel/runtime",
+      "version": "7.29.10",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "babel-runtime-LICENSE",
+          "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
+        }
+      ]
+    },
+    {
+      "name": "@emotion/hash",
+      "version": "0.8.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "emotion-hash-LICENSE",
+          "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+        }
+      ]
+    },
+    {
+      "name": "@emotion/unitless",
+      "version": "0.7.5",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "emotion-unitless-LICENSE",
+          "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/collapse",
+      "version": "1.2.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-collapse-LICENSE.md",
+          "sha256": "5d0427088e37071c4b942de990f6365d5c2d195f3e957ce925322d184784e2eb"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/color-picker",
+      "version": "3.1.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-color-picker-LICENSE.md",
+          "sha256": "8a894af015d320e0d534a14d6ae1895e07cb072678050d34b66be7e579c36a67"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/motion",
+      "version": "1.3.3",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-motion-LICENSE.md",
+          "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/notification",
+      "version": "2.1.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-notification-LICENSE",
+          "sha256": "53eb8e75d95517110e08f54e1c4007e2204f2de512cca6ca0ac2f9aeb4e6e0f8"
+        },
+        {
+          "name": "rc-component-notification-LICENSE.md",
+          "sha256": "5d0427088e37071c4b942de990f6365d5c2d195f3e957ce925322d184784e2eb"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/pagination",
+      "version": "1.4.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-pagination-LICENSE.md",
+          "sha256": "5d0427088e37071c4b942de990f6365d5c2d195f3e957ce925322d184784e2eb"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/picker",
+      "version": "1.12.2",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-picker-LICENSE",
+          "sha256": "53eb8e75d95517110e08f54e1c4007e2204f2de512cca6ca0ac2f9aeb4e6e0f8"
+        },
+        {
+          "name": "rc-component-picker-LICENSE.md",
+          "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/portal",
+      "version": "2.2.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-portal-LICENSE",
+          "sha256": "8781f0ca192057330d7fbab763f8bcd3c8e671032f98e9cf1f8c82d6748e5654"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/resize-observer",
+      "version": "1.1.2",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-resize-observer-LICENSE.md",
+          "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/trigger",
+      "version": "3.10.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-trigger-LICENSE",
+          "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+        }
+      ]
+    },
+    {
+      "name": "@rc-component/util",
+      "version": "1.14.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "rc-component-util-LICENSE",
+          "sha256": "f3ae1f96cf22ff7028a4a908b2bf099968391fe06785e4d830926b07e5125ea6"
+        }
+      ]
+    },
+    {
+      "name": "clsx",
+      "version": "2.1.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "clsx-license",
+          "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
+        }
+      ]
+    },
+    {
+      "name": "is-mobile",
+      "version": "5.0.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "is-mobile-is-mobile.txt",
+          "sha256": "7401d23f39cad911e1e83879987ad7848e9774640dd958e8632b8aac943ba44c"
+        }
+      ]
+    },
+    {
+      "name": "react",
+      "version": "19.2.4",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "react-LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.4",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "react-dom-LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "react-is",
+      "version": "19.3.1",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "react-is-LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "scheduler-LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "stylis",
+      "version": "4.4.0",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "stylis-LICENSE",
+          "sha256": "88c579c6ee44b41137a21321190d177982e5b17d4fa1b83a4a2e3ea325a8fc9a"
+        }
+      ]
+    }
+  ]
+}

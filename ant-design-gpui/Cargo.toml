@@ -1,0 +1,156 @@
+[package]
+name = "ant-design-gpui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+publish = false
+description = "Ant Design components for GPUI"
+
+[features]
+test-support = []
+
+[dependencies]
+# Keep the source, revision and features aligned with snow-draw-engine-gpui.
+gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions"] }
+unicode-segmentation = "1.13"
+unicode-bidi = "0.3"
+unicode-linebreak = "0.1.5"
+num-bigint = "0.4"
+num-traits = "0.2"
+image = { version = "0.25.10", default-features = false }
+data-url = "0.3.2"
+chrono = "0.4.45"
+
+[dev-dependencies]
+gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions", "test-support"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dev-dependencies]
+gpui_platform = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["font-kit", "x11", "wayland", "gpu-extensions", "test-support"] }
+
+[[bench]]
+name = "foundation"
+harness = false
+
+[[bench]]
+name = "image"
+harness = false
+
+[[bench]]
+name = "button"
+harness = false
+
+[[bench]]
+name = "checkbox"
+harness = false
+
+[[bench]]
+name = "divider"
+harness = false
+
+[[bench]]
+name = "segmented"
+harness = false
+
+[[bench]]
+name = "tag"
+harness = false
+
+[[bench]]
+name = "radio"
+harness = false
+
+[[bench]]
+name = "switch"
+harness = false
+
+[[bench]]
+name = "input"
+harness = false
+
+[[bench]]
+name = "popup"
+harness = false
+
+[[bench]]
+name = "select_slider"
+harness = false
+
+[[bench]]
+name = "context_scroll"
+harness = false
+
+[[bench]]
+name = "pagination"
+harness = false
+
+[[bench]]
+name = "menu"
+harness = false
+
+[[bench]]
+name = "tabs"
+harness = false
+
+[[bench]]
+name = "alert"
+harness = false
+
+[[bench]]
+name = "result"
+harness = false
+
+[[bench]]
+name = "spin"
+harness = false
+
+[[bench]]
+name = "progress"
+harness = false
+
+[[bench]]
+name = "message"
+harness = false
+
+[[bench]]
+name = "modal"
+harness = false
+
+[profile.dev]
+incremental = false
+
+[[bench]]
+name = "descriptions"
+harness = false
+
+[profile.test]
+incremental = false
+
+[[bench]]
+name = "notification"
+harness = false
+
+[[bench]]
+name = "carousel"
+harness = false
+required-features = ["test-support"]
+
+[[bench]]
+name = "color_picker"
+harness = false
+required-features = ["test-support"]
+
+[[example]]
+name = "color_picker_accessibility"
+required-features = ["test-support"]
+
+[[bench]]
+name = "date_time_picker"
+harness = false
+required-features = ["test-support"]
+
+[[example]]
+name = "date_time_picker_accessibility"
+required-features = ["test-support"]

@@ -12,6 +12,7 @@ that directory tree unless a file or nested directory states otherwise.
 | `snow_image/` | GPL-3.0-or-later |
 | `snow_image_viewer/` | GPL-3.0-or-later |
 | `ant_design_qt/` | Apache-2.0 |
+| `ant-design-gpui/` | Apache-2.0 |
 | `snow-crates/` | GPL-3.0-or-later |
 | `snow_draw_engine_qt/` | Apache-2.0 |
 | `snow_rust_ffi/` | GPL-3.0-or-later |

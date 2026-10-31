@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "platform": "windows",
+  "mode": "hidden-native-window",
+  "keyboard": "not-sent",
+  "activation": "WM_GETOBJECT UIA root through normal AccessKit registration",
+  "utc": "2026-10-28T14:43:29.8516788Z",
+  "reason": null,
+  "checks": [
+    "stage-0-native-role-label-description-range-read-only-nonfocusable",
+    "stage-1-native-role-label-description-range-read-only-nonfocusable",
+    "stage-2-native-role-label-description-range-read-only-nonfocusable",
+    "stage-3-native-role-label-description-range-read-only-nonfocusable",
+    "stage-4-native-role-label-description-range-read-only-nonfocusable",
+    "stage-5-native-role-label-description-range-read-only-nonfocusable",
+    "stage-6-native-role-label-description-range-read-only-nonfocusable",
+    "stage-7-native-role-label-description-range-read-only-nonfocusable",
+    "stage-8-native-role-label-description-range-read-only-nonfocusable",
+    "stage-9-native-role-label-description-range-read-only-nonfocusable",
+    "stage-10-native-role-label-description-range-read-only-nonfocusable",
+    "unmounted-node-removed"
+  ],
+  "scenarios": [
+    {
+      "stage": 0,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 25.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 1,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 75.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 2,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 100.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 3,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 60.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 4,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 50.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 5,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 42.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 6,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 60.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 7,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 0.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 8,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 100.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 9,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 0.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    },
+    {
+      "stage": 10,
+      "native_role": "ControlType.ProgressBar",
+      "label": "Download progress",
+      "description": "Retrieving application data",
+      "focusable": false,
+      "read_only": true,
+      "value": 70.0,
+      "minimum": 0.0,
+      "maximum": 100.0
+    }
+  ],
+  "binary_sha256": "17b39038e02c95b8810903ccb00f43c1c0e1f3ec6c1d7e470b1b2c5dd269a292",
+  "source_sha256": {
+    "examples/progress_accessibility.rs": "e10397865dadb5f27aec0224aae37574655bfa606e87b52ba1792abf961dc3cf",
+    "scripts/test-progress-accessibility.ps1": "31ffe909946ca62475ba51a6c0cae830c9c918d04ab8f8737acc4a4e555254f0",
+    "src/progress/config.rs": "fc82e30eaefef23237700eb0d3820dcb464aed957418a7b1e5b89349d8e15b0d",
+    "src/progress/element.rs": "c8bc09b657a7b1fe1ab0982691adde4204684c0b7f72c1b09734072edaa80fbc",
+    "src/progress/geometry.rs": "43bde11a00339ef18b2dd666c3deeed86becc42b4e1bded5086bb9445044ee95",
+    "src/progress/mod.rs": "6dad70bdbd1aa164a7ae28e78fd6ad676c1af53b1c31cbeb259a38b7e59d86b3",
+    "src/progress/paint.rs": "aa3acb24803ff324aa8364e1fa73355ef29c675ad8ff8d2b5c9b18c3c7dc9eb4",
+    "src/progress/state.rs": "7156531d64508ebc9578f8dc4f9d76d897a217df31991571edebcf6e914cb0e3",
+    "src/progress/style.rs": "cb42e79686c2069d14b5404d02d23882a17a9395a45f987d65576ee877acee54",
+    "src/progress/tests.rs": "91d313bc278581587f10218fda2dae9da040cdb7a8f1c21611d5e898dce8e113",
+    "src/progress/view.rs": "b8fe26071b8f5f5d01c7554b2f898c3374da8e9703e548ec975afa3e19499f59"
+  },
+  "limitations": [
+    "Native Windows UIA supplies the authoritative range, read-only flag, focusability, label, description and automation ID.",
+    "Screen reader speech and interactive keyboard focus are not exercised by this hidden fixture."
+  ]
+}

@@ -1,0 +1,1 @@
+[{"type":"change","args":[["lucy","jack","foo","bar"],[{"value":"lucy","label":"Lucy"},{"value":"jack","label":"Jack"},{},{}]]},{"type":"select","args":["lucy",{"value":"lucy","label":"Lucy"}]},{"type":"select","args":["jack",{"value":"jack","label":"Jack"}]},{"type":"select","args":["foo",{}]},{"type":"select","args":["bar",{}]}]

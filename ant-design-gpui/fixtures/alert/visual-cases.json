@@ -1,0 +1,31 @@
+{
+  "basic": [
+    {"type":"success","mode":"title","showIcon":true,"closable":true},
+    {"type":"info","mode":"title","showIcon":true,"closable":true},
+    {"type":"warning","mode":"title","showIcon":true,"closable":true},
+    {"type":"error","mode":"title","showIcon":true,"closable":true},
+    {"type":"success","mode":"description","showIcon":true,"closable":true},
+    {"type":"info","mode":"description","showIcon":true,"closable":true},
+    {"type":"warning","mode":"description","showIcon":true,"closable":true},
+    {"type":"error","mode":"description","showIcon":true,"closable":true},
+    {"mode":"title","banner":true},
+    {"mode":"title","variant":"filled","showIcon":true,"closable":true},
+    {"mode":"description-only","type":"info","showIcon":true,"closable":true},
+    {"mode":"wrap","type":"warning","showIcon":true,"closable":true}
+  ],
+  "advanced": [
+    {"mode":"title","showIcon":true,"closable":true,"customIcon":true},
+    {"mode":"title","showIcon":true,"closable":true,"closeDisabled":true},
+    {"mode":"title","showIcon":true,"closable":true,"closeText":true},
+    {"mode":"title","showIcon":true,"closable":true,"action":true},
+    {"mode":"description","showIcon":true,"closable":true,"action":true},
+    {"mode":"description","showIcon":true,"closable":true,"tokenCase":true},
+    {"mode":"wrap","showIcon":true,"closable":true,"firstLine":true},
+    {"mode":"rich","showIcon":true,"closable":true},
+    {"mode":"long-word","showIcon":true,"closable":true},
+    {"mode":"title","banner":true,"type":"error","showIcon":false,"closable":true},
+    {"mode":"title","variant":"filled","type":"success","showIcon":true,"closable":true},
+    {"mode":"title","variant":"filled","type":"warning","showIcon":true,"closable":true},
+    {"mode":"title","variant":"filled","type":"error","showIcon":true,"closable":true}
+  ]
+}

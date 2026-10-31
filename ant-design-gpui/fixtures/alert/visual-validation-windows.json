@@ -1,0 +1,1116 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e"
+  },
+  "browser": {
+    "name": "chrome.exe",
+    "version": "156.0.8078.48",
+    "viewport": [
+      740,
+      1000
+    ],
+    "scales": [
+      1.0,
+      1.5,
+      2.0
+    ]
+  },
+  "source_sha256": {
+    "examples/alert_visual.rs": "642387417cb0439e60d1a6f0cc561f758818a0adb11895ab4e33a108758a58e2",
+    "fixtures/alert/visual-cases.json": "a7f688845b7c81137fd0114be432b900efd5ed681e0563b57cca8b8aa45539cd",
+    "scripts/compare_alert_visual.py": "85c8cb6589f661cad03a1f8b3d16958bab3e7aa265ec94913086d7bf5aef111b",
+    "scripts/capture_alert_reference.ps1": "3951a549a2d5df16052ba85c7f09330fc539f7bf8a00b2e5c557611c52247b0d",
+    "src/alert/mod.rs": "a772b175f96e228d74570ada11f9f46f02210ddc3275960730e012560a02fa6d",
+    "src/alert/view.rs": "0ec8f535eb2d9b42d7403892d5a057087a1dde2860fef902dca0317ec9da6e51",
+    "src/alert/style.rs": "712927f296174f7338cf7fe1aafc8331a92c172d807a0cb03438f128d8203a9d",
+    "src/alert/state.rs": "8b8a47597b54d51abd65e203c9d7ded8c61094558c7bcac4c1518c1e20a7d4bc",
+    "src/alert/element.rs": "3e9c61887150343f794faf63bce096184ab191870206ea231cd40ffeb091dc42",
+    "src/alert/text.rs": "d40708295d3683178167dc27cebbc94903e870a225dae3acc494e7396c68fbbd",
+    "src/alert/config.rs": "b45b1c480a1fe67bb80b4c6824eceb9b2f7b907b5a2a4dc77616c4d3b53a1e60",
+    "src/behavior/paragraph.rs": "ac679b93f18842efd061583d7d76c3e2de810b04b7b642764a1b7fff21641479",
+    "src/icons/mod.rs": "cd27b0f6962fc5b915a2844784d459f58a76ec5375e6b981c58c84420390778b"
+  },
+  "reference_generator": {
+    "path": "scripts/generate_alert_reference.mjs",
+    "sha256": "47a3a7fb1fc144b391816c5e01f397b3c73f883ed34ec27e494ffed7fd10447b"
+  },
+  "comparisons": 56,
+  "compared_alert_rows": 696,
+  "all_image_dimensions_match": true,
+  "max_absolute_geometry_error_logical_px": 1.3125,
+  "max_absolute_control_size_error_logical_px": 0.328125,
+  "pixel_measurement": "Full unaligned, unmasked canvases; no resizing, interpolation, font masking, or origin alignment is applied to these reported pixel errors.",
+  "notes": [
+    "Source PNGs, complete child geometry, browser package/source provenance, and diagnostic origin-aligned crop errors are retained in the ignored comparison artifacts.",
+    "Reported full-page errors include actual vertical flow rounding, SVG rasterization, and browser versus GPUI font antialiasing differences.",
+    "The capture harness verifies the native platform DPI and exact physical surface size for every frame."
+  ],
+  "cases": [
+    {
+      "name": "basic-default-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.2557734234234232,
+      "changed_fraction_above_16": 0.014918918918918918,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "a9610f30c1a6b5b9d2e07b91e9e8bff19e476da9732e1c0f01aec58a637a04a9",
+      "native_png_sha256": "f543d1e86d35a8f0f8202f04260bdfa3f0896c5f2c5281186107551f828d3009"
+    },
+    {
+      "name": "basic-default-ltr-100-hover",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.2561536036036036,
+      "changed_fraction_above_16": 0.014937837837837838,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "7dc5590cc10387f5d5bae11b92be90e62e914767d5b554f01a1159f7bb29bc14",
+      "native_png_sha256": "f19b7575a1094c57a108535109e4fb982a03a2923520b5747f7a6651afa54cb7"
+    },
+    {
+      "name": "basic-default-ltr-100-focus",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.2570346846846847,
+      "changed_fraction_above_16": 0.01495135135135135,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "8e414ba8f343ee314be5cd13ecb9e3b36acb3d8b04223e7e0dea01c022a3a058",
+      "native_png_sha256": "c69b0340b1071011a625b7ba2778752f2dd4dfc3ac4dc9b8731823a4ef18c369"
+    },
+    {
+      "name": "basic-default-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.5147411411411411,
+      "changed_fraction_above_16": 0.020275675675675675,
+      "max_absolute_bounds_error_logical_px": 0.79168701171875,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "6696ab67c8b7c862f57974eeb3ad6caa2aa87895cc62c74898778411709028a6",
+      "native_png_sha256": "b46d72dcd10b362266a34ae0a95199d9688fee0164fab5ae4447e502cb18817e"
+    },
+    {
+      "name": "basic-default-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.6605704954954955,
+      "changed_fraction_above_16": 0.01024391891891892,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "5b8fb994762c70db17e679fbbb5c0059d7baa532e55b83de83da43f7bc54e0ce",
+      "native_png_sha256": "341ab6db741d8cde1138ded1e93f72628f5d1250f26dd9501b1669740de814be"
+    },
+    {
+      "name": "basic-default-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.261776126126126,
+      "changed_fraction_above_16": 0.015044594594594595,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "eda92163433bad3ba3c68e98faaa24bba79383cf107cc956927caac8756f4f26",
+      "native_png_sha256": "8c60bb607409bb7e3f4e907edcd9f73fc45a3b22f8906024982965ce7f6dfd08"
+    },
+    {
+      "name": "basic-default-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.5179653653653655,
+      "changed_fraction_above_16": 0.020353753753753753,
+      "max_absolute_bounds_error_logical_px": 0.79168701171875,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "4122fa49ee17f8845cca4c071c1500f01126f4fe548f32dcca1a278d90301ee4",
+      "native_png_sha256": "004df1faa6566b249193a7706a708a526ddfba1ccd60aea90427f958e1810f09"
+    },
+    {
+      "name": "basic-default-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.6675548423423422,
+      "changed_fraction_above_16": 0.010378040540540541,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "96f4e6ff35aa193b9943341856282c800177e89f8a0956bfe85eaa46b9f3d08b",
+      "native_png_sha256": "228ceb2506a98769f36ab144f092cd93d3553ab77e440eb5454a29090901a5d2"
+    },
+    {
+      "name": "basic-dark-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.1329554054054054,
+      "changed_fraction_above_16": 0.01503918918918919,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "19ff1f522d5889cbc8cf15d9693d6dad1973e8f5f68141d38bd3a489d3a9e60e",
+      "native_png_sha256": "8e723eb25d4530d83bb5af4883f0dd3b7ccb07c964d9209094a47cdbfc37b58b"
+    },
+    {
+      "name": "basic-dark-ltr-100-hover",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.1336824324324324,
+      "changed_fraction_above_16": 0.015062162162162163,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "f58ab4c90af54238eb2d1d1f71f552a36b74d4aef2c2032a1657b8ab34af6d24",
+      "native_png_sha256": "658db4dee42f11d439e8958c5d405d9fa9c752e2505b7bb72fbc05833c87e9ff"
+    },
+    {
+      "name": "basic-dark-ltr-100-focus",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.133513963963964,
+      "changed_fraction_above_16": 0.015044594594594595,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "f05f4734dc1d0e2f9230b0c61e4cce4c1ac65dd52f5c55cf41651699f726de6e",
+      "native_png_sha256": "153576b4f7041330645ca6fbc8765bb9710da36e231146300a47d250beac2236"
+    },
+    {
+      "name": "basic-dark-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.34892012012012,
+      "changed_fraction_above_16": 0.02022222222222222,
+      "max_absolute_bounds_error_logical_px": 0.79168701171875,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "8bde6b39916eb7db2b2b418f75e070ce572496faeb843a983e2fa3b1086989dc",
+      "native_png_sha256": "1e76e3f6c8933cc642e34103397a69e817786088bfb2953cf7b374ecf7207ed7"
+    },
+    {
+      "name": "basic-dark-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.5724191441441441,
+      "changed_fraction_above_16": 0.010594594594594595,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "ebc6d06ef0440b64fe75325c4d03b52ebf8d817bcc77f089b3d0b1e4f3bdccee",
+      "native_png_sha256": "52df1231a8575dd77ef643be38ccae461543246d5291de4f2bcc9a4e18f5852e"
+    },
+    {
+      "name": "basic-dark-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.139440990990991,
+      "changed_fraction_above_16": 0.015348648648648648,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "ecd54342a363d17144f7a07a818a523917c4800568fbab343aa6ebf70d0143b7",
+      "native_png_sha256": "693e9c43bf44f25b9063e932ae5d957863a70f7bea083820bbed046cfa4eed54"
+    },
+    {
+      "name": "basic-dark-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.3501461461461461,
+      "changed_fraction_above_16": 0.02022882882882883,
+      "max_absolute_bounds_error_logical_px": 0.79168701171875,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "8f2731d343ba6c40e7dd889246346c95c3fbc3a6cfa7e1f9091d444846595070",
+      "native_png_sha256": "10d477696fb47f94eefb288ff913eff2718eb6c04efc16db37f8bbea5e5060fd"
+    },
+    {
+      "name": "basic-dark-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.5782320945945947,
+      "changed_fraction_above_16": 0.010767905405405405,
+      "max_absolute_bounds_error_logical_px": 0.5625,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "0e3b2934f31a4196d7c75caf76a9e4b4f7230a418a7a93654842a24491c9c904",
+      "native_png_sha256": "1730db1c6661455334dcfaee44c8c2be4a69498102290682480198adc21cfd57"
+    },
+    {
+      "name": "basic-compact-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.8639959459459459,
+      "changed_fraction_above_16": 0.02519864864864865,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "910217d7361f50e33277c1427af3a9bbb12274cbd85a3c82bfd83ff9dc4717ff",
+      "native_png_sha256": "58802760eb86dfcbed9c70ca832483632f08e5838e34e9cc1ca1ed82cc182cfd"
+    },
+    {
+      "name": "basic-compact-ltr-100-hover",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.8642189189189189,
+      "changed_fraction_above_16": 0.025205405405405404,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "9080d6caccf08723fb65201bd61548caf4e882d237167dc2eae648894074b943",
+      "native_png_sha256": "40eba5f33afdebdb2f4c913eb23162707c4435820e59a6723bef34d2e3c1bdc0"
+    },
+    {
+      "name": "basic-compact-ltr-100-focus",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.8652572072072073,
+      "changed_fraction_above_16": 0.025231081081081082,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "3e8dd1af36b5805d07bb1302a492ab81cdf2ca51d44c44401a48e82384930493",
+      "native_png_sha256": "b3d93040a1b0078e2c32f0401dfd45008a8e6b8ed1c16c1f0f28d452b646c072"
+    },
+    {
+      "name": "basic-compact-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.07752672672672672,
+      "changed_fraction_above_16": 0.0002618618618618619,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "85befc5be7b37bd65c100f209cee82852f54fb6f56e0b8bf67fcfc53bec1a4ed",
+      "native_png_sha256": "badc032aa1a8780dc8c0c9e1ca7e33435d72b6ef95d4e7bf24904427a7f4ac51"
+    },
+    {
+      "name": "basic-compact-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.0409993243243243,
+      "changed_fraction_above_16": 0.014103378378378379,
+      "max_absolute_bounds_error_logical_px": 0.6875,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "982329fa0617856f20c8a3ba17a3ce727cef27fa601abc60232be08e59aa0d8c",
+      "native_png_sha256": "24d5428a0a1c4440ffba78bb0cec549078a0b69570990d5720eadc180455c183"
+    },
+    {
+      "name": "basic-compact-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.8611103603603603,
+      "changed_fraction_above_16": 0.025094594594594594,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "59eb845bb85d339ecf5f175580de60d1694f1b89d433da424e1292cfe97e0bdb",
+      "native_png_sha256": "9e7cb54391e5ecd00a4fe301a32de2c150e47cbfeac6d456951a9f1dc58630e3"
+    },
+    {
+      "name": "basic-compact-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.0939121121121121,
+      "changed_fraction_above_16": 0.0007255255255255255,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "173502fad9836d6e80caddd593d10f580ccfc92ac5fd11875e82b65ba201f703",
+      "native_png_sha256": "33a03381c1da0ec28797d7055b28737c42c1472fcbcd2038bbeb2be9777635ad"
+    },
+    {
+      "name": "basic-compact-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.039763626126126,
+      "changed_fraction_above_16": 0.014023648648648648,
+      "max_absolute_bounds_error_logical_px": 0.6875,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "4c852b9ddfe864429e1275cb070dd6ec559c9c7ef990a2995fe987c33f57438c",
+      "native_png_sha256": "65745ca9bf81d0b898e38a81c27370ae36c2f87473f5c5891d4e1760016d87a9"
+    },
+    {
+      "name": "basic-dark-compact-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.6570432432432431,
+      "changed_fraction_above_16": 0.025481081081081082,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "5736aac0382d121873cca8669b702df3dde85e905550603403f2e721f84f405c",
+      "native_png_sha256": "dc9a92011e22bce1e3b7e1a8db5a1d7a55f8e23b8c19dc38afb27ca8a9ae20fa"
+    },
+    {
+      "name": "basic-dark-compact-ltr-100-hover",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.657636936936937,
+      "changed_fraction_above_16": 0.025502702702702704,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "40929279552d2dd8953840bbae0ca1242dc188a72fd2f852e788abc3ebba8cd5",
+      "native_png_sha256": "dfce86036a7e1b84769b82ec9d318ef98201b84bceeaae41d582888b5ac1d99f"
+    },
+    {
+      "name": "basic-dark-compact-ltr-100-focus",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.6576018018018017,
+      "changed_fraction_above_16": 0.025486486486486486,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "c24475d3eaf543458ca32aeb03787d9980e175039cf4845accba40f9547032ca",
+      "native_png_sha256": "31307232ab9b63b194cb59d974b94ff33384905d3e14bb6693e0810fa250eb6a"
+    },
+    {
+      "name": "basic-dark-compact-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.08092212212212213,
+      "changed_fraction_above_16": 0.00026606606606606605,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "ec8b942c90a941e11a39dce097710060a3ec9f2a5c5f3c5bf364fc645daaa684",
+      "native_png_sha256": "1ea67d44593fa95e4fb789375002247aa8978195f35204d523cc33e06778fc07"
+    },
+    {
+      "name": "basic-dark-compact-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.9128590090090091,
+      "changed_fraction_above_16": 0.014010135135135136,
+      "max_absolute_bounds_error_logical_px": 0.6875,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "214f08c20277aad5ab9c94e818c4a0083939deea56fa3b00da8aef41055b53bb",
+      "native_png_sha256": "df7ab3fdbcff62c4dbe0e7129d3e8f0ffa3b12b0658bbfdeac75669959c846d0"
+    },
+    {
+      "name": "basic-dark-compact-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.6575603603603604,
+      "changed_fraction_above_16": 0.02530945945945946,
+      "max_absolute_bounds_error_logical_px": 1.3125,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "213f59be2959ff3b63e5d50dd5c2851c9779ec1ce4fc34f058303f9d2bee30a4",
+      "native_png_sha256": "281659501953cd89e215539f751882adb481e05c745743e8ea1060e48256752b"
+    },
+    {
+      "name": "basic-dark-compact-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.0940982982982983,
+      "changed_fraction_above_16": 0.000581981981981982,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "cf9ef2a8ad54957e8f2db3ee798de321ebb3b9f4c1707b3819247f5972a6cc6b",
+      "native_png_sha256": "723f3c983eba95895fe3f27c30220278e98f8c32811087b6faa345622bf10ebb"
+    },
+    {
+      "name": "basic-dark-compact-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.9121191441441442,
+      "changed_fraction_above_16": 0.013972297297297298,
+      "max_absolute_bounds_error_logical_px": 0.6875,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "24d4e83755aa69a2e4fb8149e7af1c52189b912edcb7fd5e7b050756107cf1b8",
+      "native_png_sha256": "487f87e0449be238a730a2be21887196cba5979c2313d5453913c6fa82f7fa4e"
+    },
+    {
+      "name": "advanced-default-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.800000900900901,
+      "changed_fraction_above_16": 0.015562162162162161,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "c1afd60ed69ea8f24af5da5ddf9a4411a27ce407bd618df796ad7b04f448c515",
+      "native_png_sha256": "91c7541e743cc59c6cba0f9709aabdb5f283bc2a3f8fcef96ee6836d1b3bf150"
+    },
+    {
+      "name": "advanced-default-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.076049049049049,
+      "changed_fraction_above_16": 0.011136936936936936,
+      "max_absolute_bounds_error_logical_px": 0.5,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "710f1c3bc6384a5aed1dd6732ad9e7babcefad6b657209ceabcdc53029a78277",
+      "native_png_sha256": "809e115218b7f7d1d3cd30ca300ec5c1d69a6485c50b579231691cf0e7560e89"
+    },
+    {
+      "name": "advanced-default-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.8208362612612613,
+      "changed_fraction_above_16": 0.009768918918918918,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "a592d06b8af2e5201a64472cff841dadf1f96503e9942666e02f5a142399f455",
+      "native_png_sha256": "a2153408937709fcd79acba067ab3a5eb4bd6514d4db7c130013b0d47c22863b"
+    },
+    {
+      "name": "advanced-default-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 2.1423594594594593,
+      "changed_fraction_above_16": 0.01743783783783784,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "4ba2f74cf06fdbb75a200fe35405f063803114105dfa1fb42ff891d73ea95719",
+      "native_png_sha256": "f6569b43d4ad733b82cfa8846676d4add7953433e8fbf02f275e215edc7b593f"
+    },
+    {
+      "name": "advanced-default-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.3731057057057054,
+      "changed_fraction_above_16": 0.012647447447447448,
+      "max_absolute_bounds_error_logical_px": 0.5,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "eb24f065fa9ac5b77c73e807275d002b8d03f74f916aec7d995c04cce2df3c84",
+      "native_png_sha256": "1fefe517b222b8b758ad6ce123b7ecf36e0c5b567a614518aa5c8a0d4ee612f6"
+    },
+    {
+      "name": "advanced-default-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.1748532657657658,
+      "changed_fraction_above_16": 0.011327364864864865,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "1fc880d6ba9c69afda2ae5e062956bee0c39ac229c2dcd8d50ae33136665f93f",
+      "native_png_sha256": "0aa2f74165787594a2d331fe6e697de135e27b68ddedd428537d1c85afd8a5b9"
+    },
+    {
+      "name": "advanced-dark-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.6657405405405405,
+      "changed_fraction_above_16": 0.015595945945945947,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "56d0b27c1e6575579e0448bf5f67f59e5a0d994594ff17f761a26fbd5f3b3c44",
+      "native_png_sha256": "ee72bfefffd50e0be331faa79c7d4d12aa6e5fc59e11d8ca1f7772d7a5e44c08"
+    },
+    {
+      "name": "advanced-dark-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.9381267267267267,
+      "changed_fraction_above_16": 0.010893093093093094,
+      "max_absolute_bounds_error_logical_px": 0.5,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "f9dc5b03d710cabdd2b31bea2c3545191589f602005ac08934a5b8b32227f0ed",
+      "native_png_sha256": "296598b438238280059caeb8f5d39c8f79d3b765b65b7c8961eae64bf8b33bac"
+    },
+    {
+      "name": "advanced-dark-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.6562800675675676,
+      "changed_fraction_above_16": 0.009677702702702703,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "63c5dacb4d8abe4fafc6324b7cba587499fabf45f2fbd9fe4154fa2604fd2266",
+      "native_png_sha256": "f73eb754d0a6a15f198832fbcc45cb7eda226ec69677bb55f927e9adb6a56782"
+    },
+    {
+      "name": "advanced-dark-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 2.0613175675675675,
+      "changed_fraction_above_16": 0.017858108108108107,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "c89113513d8ef109e53ea376e9a6a4387538d0f0a2f5d1aff5bd4bbe1d5455ce",
+      "native_png_sha256": "4585697239750917663976281e7f12adde4ca34a213853c23d1f0e0acffea348"
+    },
+    {
+      "name": "advanced-dark-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 1.2809041041041043,
+      "changed_fraction_above_16": 0.012528528528528529,
+      "max_absolute_bounds_error_logical_px": 0.5,
+      "max_absolute_control_size_error_logical_px": 0.19791412353515625,
+      "browser_png_sha256": "2bc19242e29f3922b5c6dcc8422cca29bc30eb53b407f3cbace333e7199020ac",
+      "native_png_sha256": "658d5f8202d2ca5294558019797e7ed50965564605db45efadc972ebc1c8311c"
+    },
+    {
+      "name": "advanced-dark-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.0322131756756756,
+      "changed_fraction_above_16": 0.011535135135135136,
+      "max_absolute_bounds_error_logical_px": 0.421875,
+      "max_absolute_control_size_error_logical_px": 0.140625,
+      "browser_png_sha256": "9c92ff9e60638de3ff2b90631b2572828181d80020f075e565007c305e9c84fa",
+      "native_png_sha256": "535e9d385ca2b7f98c8697c90eb489b516fd7ee203508ff54f42d9236e6d4059"
+    },
+    {
+      "name": "advanced-compact-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.808947297297297,
+      "changed_fraction_above_16": 0.020760810810810812,
+      "max_absolute_bounds_error_logical_px": 0.984375,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "74487f1e05309b88f33ff60bf23d886f39a88ac7a8995e19ae3fa668544c2136",
+      "native_png_sha256": "deea79bd93dd62086c88aecb83e53514c84bf40b36004d69c317c79f0274e9b2"
+    },
+    {
+      "name": "advanced-compact-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.20521081081081083,
+      "changed_fraction_above_16": 0.0017117117117117118,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "05c1b8622fa0d3a8f945711289344256da01753ac1f8e763e1038e73de14b684",
+      "native_png_sha256": "f5d4c88fbda4ad73becc9649e3a23c44a70d1e78eb6d7ca9c31fc98984757d53"
+    },
+    {
+      "name": "advanced-compact-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.0705411036036037,
+      "changed_fraction_above_16": 0.012330743243243243,
+      "max_absolute_bounds_error_logical_px": 0.515625,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "aed5cab8709397f86032300a46436f1b4ba92b807d89990cc8c621424ed56534",
+      "native_png_sha256": "d924d93edca87ea2f0fa8b102db8536d7125d504a2b7544c0f543b91660bafb9"
+    },
+    {
+      "name": "advanced-compact-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 2.060364414414414,
+      "changed_fraction_above_16": 0.022833783783783784,
+      "max_absolute_bounds_error_logical_px": 0.984375,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "5734902b2b6690ebd1b00c04d8e7a89af83a46f01dd26bb9a30cf4102b1a915d",
+      "native_png_sha256": "2487fcc80d612234b6e9b8488aac4bff5513410467b55bad796765d5d2f5c52b"
+    },
+    {
+      "name": "advanced-compact-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.6611735735735736,
+      "changed_fraction_above_16": 0.006206006006006006,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "c5d5fa106100db7377dc5d05380bd46ed2542c122588bdc38915e7576bcbd1ca",
+      "native_png_sha256": "e4d126d80a4951872cea651a728374d302ce54e614ab4c2a6cefda3e3ecefe44"
+    },
+    {
+      "name": "advanced-compact-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.3891129504504505,
+      "changed_fraction_above_16": 0.014511148648648648,
+      "max_absolute_bounds_error_logical_px": 0.515625,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "26d72d7c1751095a10080eaac68a3dd75e08661bc6632dd506c14307c56c9f80",
+      "native_png_sha256": "2c998b4061d9306eadea6194b8ef947afa6465337dc71f8bb26f68e318c2259f"
+    },
+    {
+      "name": "advanced-dark-compact-ltr-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.5538292792792792,
+      "changed_fraction_above_16": 0.02061891891891892,
+      "max_absolute_bounds_error_logical_px": 0.984375,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "67925d8da847db569640a71198805690080f1bf0ef0c5e9dccb4f01b8a00e9c1",
+      "native_png_sha256": "38c74eaf1d669b5fc7ef0b5becc48909b64abb2900e93c1b9f8742847d58dc11"
+    },
+    {
+      "name": "advanced-dark-compact-ltr-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.18468528528528527,
+      "changed_fraction_above_16": 0.0013405405405405406,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "f8cd03770e454794856c1a6599f29948f104d562baa43eb34296ce5d976980a5",
+      "native_png_sha256": "16a5fb9b0222440739c5f9b4ca194b773985d2d351eb310bac53b66ccd8184f7"
+    },
+    {
+      "name": "advanced-dark-compact-ltr-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 0.8998952702702704,
+      "changed_fraction_above_16": 0.011908445945945947,
+      "max_absolute_bounds_error_logical_px": 0.515625,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "2af6915878a868d1e0c1afc10fddbde762135b9c14284ffe6f50fe57ff8fd836",
+      "native_png_sha256": "5eb6b8859fa75bf2988edb005c51e2f2bc4bf05210269674358ead188ed06f38"
+    },
+    {
+      "name": "advanced-dark-compact-rtl-100",
+      "scale": 1.0,
+      "browser_size": [
+        740,
+        1000
+      ],
+      "native_size": [
+        740,
+        1000
+      ],
+      "native_scale": 1.0,
+      "mean_absolute_channel_error": 1.8468229729729728,
+      "changed_fraction_above_16": 0.022966216216216216,
+      "max_absolute_bounds_error_logical_px": 0.984375,
+      "max_absolute_control_size_error_logical_px": 0.328125,
+      "browser_png_sha256": "ea057fe92a3d208fe91e84c1f1fe232793562fbeb18720cc5aa67d138b5671c7",
+      "native_png_sha256": "7f76952b298e5c356f89c03488fdd3521e33af788fab36e94d4ba2764857c362"
+    },
+    {
+      "name": "advanced-dark-compact-rtl-150",
+      "scale": 1.5,
+      "browser_size": [
+        1110,
+        1500
+      ],
+      "native_size": [
+        1110,
+        1500
+      ],
+      "native_scale": 1.5,
+      "mean_absolute_channel_error": 0.6446236236236237,
+      "changed_fraction_above_16": 0.005966366366366367,
+      "max_absolute_bounds_error_logical_px": 6.103515625e-05,
+      "max_absolute_control_size_error_logical_px": 7.62939453125e-06,
+      "browser_png_sha256": "645995bb1e8b548b906f3f513787be7bbeb1efa03691e24ef10724f5dcdb497e",
+      "native_png_sha256": "a3da95ced2e92178a5fb4bc1fb78ca557ff272476f9bf0d19bdce4ff49ad8e68"
+    },
+    {
+      "name": "advanced-dark-compact-rtl-200",
+      "scale": 2.0,
+      "browser_size": [
+        1480,
+        2000
+      ],
+      "native_size": [
+        1480,
+        2000
+      ],
+      "native_scale": 2.0,
+      "mean_absolute_channel_error": 1.2271893018018019,
+      "changed_fraction_above_16": 0.014209797297297298,
+      "max_absolute_bounds_error_logical_px": 0.515625,
+      "max_absolute_control_size_error_logical_px": 0.171875,
+      "browser_png_sha256": "88f7fe343d27a50369b1deb4a5c00ae572b46737d8448a1ce34fdb0330cd198f",
+      "native_png_sha256": "478fa326c9783a52f1d4cd40fde842b090a263e6c02f157abcf11008376c4eef"
+    }
+  ]
+}

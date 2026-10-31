@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "utc": "2026-10-29T13:57:07.118229+00:00",
+  "source_root": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+  "requirements_proven": true,
+  "implementation": "documented Ant Design Carousel, retained native GPUI architecture",
+  "rust_tests_passed": 122,
+  "carousel_tests_passed": 48,
+  "gallery_tests_passed": 4,
+  "comparator_tests_passed": 17,
+  "visual_pairs": 600,
+  "visual_component_rows": 1776,
+  "ordinary_geometry_max_logical_px": 0.359375,
+  "known_visual_differences_retained_in_raw_results": true,
+  "native_uia_checks_passed": 9,
+  "native_uia_snapshots": 8,
+  "release_performance_assertions_passed": 7,
+  "release_performance_measurements": 41,
+  "strict_clippy": {
+    "status": "passed",
+    "command": "cargo clippy --locked --offline --features test-support --lib --tests --example gallery --example carousel_visual --example carousel_accessibility --bench carousel -- -D warnings",
+    "final_log_sha256": "3175d6633b3173039a2a872ad7adad66ac4b7b7f41137dcf6b2ebbe11c2b12cd"
+  },
+  "snapshot_integrity": [
+    {
+      "source_root": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-full-source-20261029-current",
+      "files_rehashed": 2556,
+      "manifest_sha256": "18c822da1568d12a3d361e2df0d142baa799d5a600a4f6248037ff2848d0766d",
+      "all_source_hashes_still_match": true
+    },
+    {
+      "source_root": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\carousel-full-source-20261029-uia2",
+      "files_rehashed": 2558,
+      "manifest_sha256": "d7a327905eaa2795aa6eae872f0ae76bc8b7870b79a46959e90ea736364aa472",
+      "all_source_hashes_still_match": true
+    }
+  ],
+  "all_current_non_image_rust_sources_match_S2": 273,
+  "cargo_and_toolchain_inputs_match_S2": true,
+  "scope": "Carousel and checked shared inputs; ongoing unrelated Image work is outside the completed component matrix.",
+  "unverified": [
+    "native macOS/Linux behavior",
+    "foreground host keyboard focus and screen-reader speech",
+    "GPU presentation latency and frame pacing"
+  ],
+  "evidence_sha256": {
+    "tests-windows.json": "9c496cdffad2bc7faed290ca94502dd8ad5600607e97f18895c4d8849b7b6a66",
+    "comparator-tests-windows.json": "75e2691f5eb344b79427b0f0a910a67a7e03947b8cc0ab423ed1b8ac8cd513af",
+    "visual-validation-windows.json": "8b7a78f240080db87da0dc3b3ce9327c2ad931d52a0431cf4ef0849670f73fb8",
+    "accessibility-validation-windows.json": "2525269ca961e2046b1c7658ba6e2232814b96750a1920f0403fef716f4a77ee",
+    "performance-windows.json": "c310dbcda7c0bc50c2ff96c9e3b55b76feca7228b308404e03d4454bbaa40394",
+    "source-snapshot-validation-windows.json": "a60602b5e90099dc7f52bc07bcddf877e1a86a7b6561b8fe5b43f33bd36891e6",
+    "accessibility-source-snapshot-validation-windows.json": "0cedbced350006d355968ecf172de4e815944b6802b4ee3052c8e3d3a585ed1d",
+    "gallery-validation-windows.json": "9e27c5c9953b8b4bbecf4cb4a60302fc2f1c96785d6fc2b823c2de5f56f9879f"
+  }
+}

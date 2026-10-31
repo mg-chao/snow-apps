@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "platform": "Windows x64",
+  "strict_visual_parity_passed": false,
+  "matrix": {
+    "scenes": 32,
+    "themes": [
+      "default",
+      "dark",
+      "compact",
+      "dark-compact"
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "device_scales": [
+      1,
+      1.5,
+      2
+    ],
+    "expected_cases": 768,
+    "captured_cases": 768,
+    "compared_cases": 768,
+    "components": 1608,
+    "representative_browser_cases": 39
+  },
+  "results": {
+    "both_geometry_and_paint_passed_components": 1282,
+    "geometry_passed_components": 1410,
+    "paint_passed_components": 1444,
+    "strict_failed_components": 326,
+    "strict_failed_cases": 206,
+    "gated_slot_checks": 22992,
+    "gated_presence_failures": 0,
+    "unobservable_zero_area_header_checks": 24
+  },
+  "gates": {
+    "geometry_logical_px": 1.01,
+    "flat_interior_channel_error": 1,
+    "report_nominal_geometry_logical_px": 1,
+    "painted_coverage_device_px": "ceil(device_scale)"
+  },
+  "raw_slot_max_absolute_residuals_logical_px": {
+    "x": {
+      "absolute": 2.640625,
+      "signed": 2.640625,
+      "case": "intrinsic-compact-ltr-100",
+      "component": "shrink",
+      "slot": "item.1.content"
+    },
+    "y": {
+      "absolute": 1.0,
+      "signed": -1.0,
+      "case": "sizes-bordered-default-ltr-150",
+      "component": "size-small",
+      "slot": "extra"
+    },
+    "width": {
+      "absolute": 3.34375,
+      "signed": -3.34375,
+      "case": "empty-compact-ltr-100",
+      "component": "empty",
+      "slot": "item.1.content"
+    },
+    "height": {
+      "absolute": 20.5,
+      "signed": -20.5,
+      "case": "long-text-compact-ltr-150",
+      "component": "long-bordered",
+      "slot": "item.2.label"
+    }
+  },
+  "root_max_absolute_residuals_logical_px": {
+    "x": 0,
+    "y": 0.666656494140625,
+    "width": 2.953125,
+    "height": 20.333328247070312
+  },
+  "maximum_other_root_height_residual_logical_px": 0.6666717529296875,
+  "known_compact_wrap_conditions": [
+    {
+      "case": "long-text-compact-ltr-150",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.333328247070312
+      }
+    },
+    {
+      "case": "long-text-compact-ltr-200",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.0
+      }
+    },
+    {
+      "case": "long-text-compact-rtl-150",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.333328247070312
+      }
+    },
+    {
+      "case": "long-text-compact-rtl-200",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.0
+      }
+    },
+    {
+      "case": "long-text-dark-compact-ltr-150",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.333328247070312
+      }
+    },
+    {
+      "case": "long-text-dark-compact-ltr-200",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.0
+      }
+    },
+    {
+      "case": "long-text-dark-compact-rtl-150",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.333328247070312
+      }
+    },
+    {
+      "case": "long-text-dark-compact-rtl-200",
+      "root_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.0,
+        "height": -20.0
+      }
+    }
+  ],
+  "compact_wrap_diagnostic": {
+    "candidate": "Xihu District, Hangzhou,",
+    "font": "Segoe UI 12px",
+    "source_dom_and_canvas_advance_px": 127.03125,
+    "source_usable_content_width_px": 126.875,
+    "native_shape_advance_px_approx": 127.0267,
+    "native_150_percent_usable_width_px_approx": 127.333,
+    "conclusion": "Fractional content-box quantization crosses the same-font line-fit threshold; the 8 recorded compact high-DPI conditions have one fewer native text line.",
+    "browser_probe_path": "../build/ant-design-gpui/descriptions-font-probe/capture/font-probes.json",
+    "browser_probe_sha256": "80150cc8822143c138fa0a17f1f5edbc12e0beb0429870c751d78e45d9f2bc79"
+  },
+  "sparse_empty_track_width_residuals": [
+    {
+      "case": "empty-compact-ltr-100",
+      "component": "empty",
+      "slot": "item.1.content",
+      "delta": {
+        "x": 1.984375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-compact-ltr-100",
+      "component": "empty",
+      "slot": "item.1.cell",
+      "delta": {
+        "x": 1.984375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-compact-rtl-100",
+      "component": "empty",
+      "slot": "item.1.content",
+      "delta": {
+        "x": 1.359375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-compact-rtl-100",
+      "component": "empty",
+      "slot": "item.1.cell",
+      "delta": {
+        "x": 1.359375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-dark-compact-ltr-100",
+      "component": "empty",
+      "slot": "item.1.content",
+      "delta": {
+        "x": 1.984375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-dark-compact-ltr-100",
+      "component": "empty",
+      "slot": "item.1.cell",
+      "delta": {
+        "x": 1.984375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-dark-compact-rtl-100",
+      "component": "empty",
+      "slot": "item.1.content",
+      "delta": {
+        "x": 1.359375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    },
+    {
+      "case": "empty-dark-compact-rtl-100",
+      "component": "empty",
+      "slot": "item.1.cell",
+      "delta": {
+        "x": 1.359375,
+        "y": 0.0,
+        "width": -3.34375,
+        "height": 0.0
+      }
+    }
+  ],
+  "reference": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "lock_sha256": "7237763f3ac20d1856fa23f0074073c808184cac9cd63b9f26ff2a65c45549de",
+    "cases_sha256": "956c16fe1cc9400d71fc502a3f04180f144bf110db47ba9cde2e462c0da03597",
+    "bundle_sha256": "0d557021e2545188e1617e298f2eee98231b4bd362153da06eeb87d201128621",
+    "source_provenance_path": "../build/ant-design-gpui/descriptions-reference/provenance.json",
+    "source_provenance_sha256": "104d5c15e135fd29eab52bd79d2816abd1d0ae9ae57d94c0b5cc6be59c6136a0",
+    "browser_metrics_sha256": "55bbd617a31985d2592d6abdc16153a7d93abdd251632ece5bdd597bcc63a55b",
+    "renderer": "Chrome/156.0.8078.48"
+  },
+  "native": {
+    "binary_sha256": "43be4064630ed6815ea438283eb16de7ffece0ab3a80e1f58c40768de140d94b",
+    "coherent_build_timestamp_utc": "2026-10-28T19:27:56.1008901Z",
+    "source_snapshot_unchanged_during_build": true,
+    "source_snapshot_sha256": "3f1742ae3a64579071375c005574051c749d70aced9ca79a20d509e5b30cc572",
+    "build_manifest_path": "../build/ant-design-gpui/descriptions-native-final/build-manifest.json",
+    "build_manifest_sha256": "3276153634f92afbafa24ec1cb99ac35c673b1b5dfae996f23590ffa0ec9b57b",
+    "native_metrics_sha256": "a8f126052989f35dbe10287a965fc61a732f6d2a37cacfe67605723663a62f0d",
+    "actual_viewport_recorded": true
+  },
+  "raw_report": {
+    "path": "../build/ant-design-gpui/descriptions-native-final/comparison.json",
+    "sha256": "f3186c2b75d48229f71f3f3c9d34e62e08a78ee0c98ecbd401894f5027a9dedb"
+  },
+  "limits": [
+    "Strict comparison failed; this evidence does not establish universal pixel parity or exact line fitting at all widths.",
+    "Native font and layout snapping cause position/dimension differences, including a maximum sparse empty-track width delta of 3.34375 px in 4 compact 100% cases.",
+    "8 compact/dark-compact long-bordered conditions at 150%/200% have a one-line root-height difference (20/20.333 px); raw cell-height residual reaches 20.5 px.",
+    "Glyph rasterization, reference text boxes, and edge antialiasing are excluded from flat-color gates; raw image error and every measured geometry delta remain in the full report.",
+    "24 zero-area header rectangles produce no GPU quad and are explicitly ungated; actual title/extra text bounds and root geometry are measured, with separate offscreen presence/height tests.",
+    "Nested root/view geometry is recorded by the browser but not independently gated natively; outer geometry, descendant text exclusion, paint comparison, and manual review cover the nested scenes.",
+    "RTL title truncation retained substring and ellipsis side were manually compared against the original source; the title glyph mask alone cannot prove this.",
+    "Dashed/dotted widths 1/2/3 px are in this matrix. Wider stroke endpoint behavior has focused unit coverage but no paired browser/native visual probe."
+  ]
+}

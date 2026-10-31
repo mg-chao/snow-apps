@@ -1,0 +1,41 @@
+{
+  "status": "passed",
+  "scope": "Progress only; no full test suite run",
+  "checks": [
+    {
+      "command": "cargo test --locked --offline --lib progress::",
+      "passed": 15
+    },
+    {
+      "command": "cargo test --locked --offline --example gallery progress_gallery",
+      "passed": 3
+    },
+    {
+      "command": "cargo clippy --locked --offline --lib --example progress_visual --example progress_accessibility --example gallery --bench progress -- -D warnings",
+      "status": "passed"
+    },
+    {
+      "command": "rustfmt --edition 2024 --config skip_children=true --check <changed Rust files>",
+      "status": "passed"
+    }
+  ],
+  "source_sha256": {
+    "src/lib.rs": "40f1c31d967c65933280ebd252435f82a2eb30c4754091034fafc10ef644e1ec",
+    "src/config.rs": "67e3ee9a84fc6157d74077ad8d5fa0749ec28c57d43e1ff2676335f1f606e2a3",
+    "examples/gallery/progress.rs": "d35efb950393fd8380f445c48d1d3195b10d7d81e0ea426c4c261c985bcf4749",
+    "examples/gallery/tests/progress.rs": "d4ae4692ba734a670c23f4c70e96253a2ba3626435faa585b28357c163908cd4",
+    "examples/progress_visual.rs": "11cf7faf883265892c4a34df466b66808428cce1651a8c0b063c4f3975e0a94a",
+    "examples/progress_accessibility.rs": "e10397865dadb5f27aec0224aae37574655bfa606e87b52ba1792abf961dc3cf",
+    "examples/progress_support/mod.rs": "a1ad61c00030e167c405aeb9ccf9b19ed2e4f400935169323bc879a74b9f6949",
+    "benches/progress.rs": "13953db85921a2c6388fe0f0f3cec28f26089dac628b38e96a11451a6d99aca0",
+    "src/progress/config.rs": "fc82e30eaefef23237700eb0d3820dcb464aed957418a7b1e5b89349d8e15b0d",
+    "src/progress/element.rs": "c8bc09b657a7b1fe1ab0982691adde4204684c0b7f72c1b09734072edaa80fbc",
+    "src/progress/geometry.rs": "43bde11a00339ef18b2dd666c3deeed86becc42b4e1bded5086bb9445044ee95",
+    "src/progress/mod.rs": "6dad70bdbd1aa164a7ae28e78fd6ad676c1af53b1c31cbeb259a38b7e59d86b3",
+    "src/progress/paint.rs": "aa3acb24803ff324aa8364e1fa73355ef29c675ad8ff8d2b5c9b18c3c7dc9eb4",
+    "src/progress/state.rs": "7156531d64508ebc9578f8dc4f9d76d897a217df31991571edebcf6e914cb0e3",
+    "src/progress/style.rs": "cb42e79686c2069d14b5404d02d23882a17a9395a45f987d65576ee877acee54",
+    "src/progress/tests.rs": "91d313bc278581587f10218fda2dae9da040cdb7a8f1c21611d5e898dce8e113",
+    "src/progress/view.rs": "b8fe26071b8f5f5d01c7554b2f898c3374da8e9703e548ec975afa3e19499f59"
+  }
+}

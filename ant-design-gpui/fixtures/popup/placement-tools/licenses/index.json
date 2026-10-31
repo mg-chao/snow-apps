@@ -1,0 +1,109 @@
+[
+  {
+    "package": "@rc-component/motion",
+    "version": "1.3.3",
+    "license": "MIT",
+    "file": "rc-component-motion--LICENSE.md",
+    "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+  },
+  {
+    "package": "@rc-component/portal",
+    "version": "2.2.1",
+    "license": "MIT",
+    "file": "rc-component-portal--LICENSE",
+    "sha256": "8781f0ca192057330d7fbab763f8bcd3c8e671032f98e9cf1f8c82d6748e5654"
+  },
+  {
+    "package": "@rc-component/resize-observer",
+    "version": "1.1.2",
+    "license": "MIT",
+    "file": "rc-component-resize-observer--LICENSE.md",
+    "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+  },
+  {
+    "package": "@rc-component/trigger",
+    "version": "3.10.1",
+    "license": "MIT",
+    "file": "rc-component-trigger--LICENSE",
+    "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+  },
+  {
+    "package": "@rc-component/util",
+    "version": "1.14.0",
+    "license": "MIT",
+    "file": "rc-component-util--LICENSE",
+    "sha256": "f3ae1f96cf22ff7028a4a908b2bf099968391fe06785e4d830926b07e5125ea6"
+  },
+  {
+    "package": "clsx",
+    "version": "2.1.1",
+    "license": "MIT",
+    "file": "clsx--license",
+    "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
+  },
+  {
+    "package": "esbuild",
+    "version": "0.27.3",
+    "license": "MIT",
+    "file": "esbuild--LICENSE.md",
+    "sha256": "b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681"
+  },
+  {
+    "package": "react",
+    "version": "19.2.5",
+    "license": "MIT",
+    "file": "react--LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+  },
+  {
+    "package": "react-dom",
+    "version": "19.2.5",
+    "license": "MIT",
+    "file": "react-dom--LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+  },
+  {
+    "package": "react-is",
+    "version": "19.3.1",
+    "license": "MIT",
+    "file": "react-is--LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+  },
+  {
+    "package": "scheduler",
+    "version": "0.27.0",
+    "license": "MIT",
+    "file": "scheduler--LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+  },
+  {
+    "package": "typescript",
+    "version": "5.9.3",
+    "license": "Apache-2.0",
+    "file": "typescript--LICENSE.txt",
+    "sha256": "a7d00bfd54525bc694b6e32f64c7ebcf5e6b7ae3657be5cc12767bce74654a47"
+  },
+  {
+    "package": "typescript",
+    "version": "5.9.3",
+    "license": "Apache-2.0",
+    "file": "typescript--ThirdPartyNoticeText.txt",
+    "sha256": "1af3c68039c57e539422da82a4faada506ce6d0ea6f90e0b699d02dbcdb7a90c"
+  },
+  {
+    "package": "is-mobile",
+    "version": "5.0.0",
+    "license": "MIT",
+    "file": "is-mobile--MIT.txt",
+    "sha256": "b05c56f1c665cd9e57dae61865c8881344d7cba85c7a8cb0d643a6ec03497f9d",
+    "source": "is-mobile/README.md License section"
+  },
+  {
+    "package": "@esbuild/win32-x64",
+    "version": "0.27.3",
+    "license": "MIT",
+    "file": "esbuild--LICENSE.md",
+    "sha256": "b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681",
+    "source": "esbuild distribution license"
+  }
+]

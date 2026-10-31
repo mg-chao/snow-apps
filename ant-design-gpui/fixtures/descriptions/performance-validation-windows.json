@@ -1,0 +1,2580 @@
+{
+  "schema_version": 1,
+  "status": "passed_structural_gates_stable_source",
+  "recorded_at_utc": "2026-10-28T19:32:24.8766827Z",
+  "client_date": "2026-10-29",
+  "component": "Descriptions",
+  "command": "./scripts/run-descriptions-perf.ps1",
+  "build": {
+    "preset": "windows-msvc-performance",
+    "cargo_profile": "bench (optimized Release)",
+    "target": "x86_64-pc-windows-msvc",
+    "debug_assertions": false,
+    "benchmarks_enabled": true,
+    "offline": true,
+    "locked": true,
+    "rustc": "1.98.1 (48a229cea 2026-09-01)",
+    "cargo": "1.98.1 (797e8a9bc 2026-08-05)",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661"
+  },
+  "machine": {
+    "os": "Microsoft Windows 11 Pro",
+    "os_version": "10.0.26300",
+    "architecture": "x64",
+    "processor": "AMD Ryzen 9 5950X 16-Core Processor",
+    "reported_physical_cores": 12,
+    "reported_logical_processors": 24
+  },
+  "provenance": {
+    "repository_base_revision": "b202e9c4b6e6ac2aaba26eea838c8f0b3be6e723",
+    "uncommitted_work": true,
+    "artifacts": [
+      {
+        "path": "../build/windows-msvc-performance/ant-design-gpui/release/deps/descriptions-7cecd63353a2c200.exe",
+        "filename": "descriptions-7cecd63353a2c200.exe",
+        "sha256": "cc97c7d8bed57b2568f1431024c8fd0fb682463a094016b9871c8e35cbfdb1a3",
+        "last_write_utc": "2026-10-28T19:29:04.0986121Z"
+      },
+      {
+        "path": "../build/windows-msvc-performance/ant-design-gpui/release/examples/descriptions_visual.exe",
+        "filename": "descriptions_visual.exe",
+        "sha256": "390a0a258fdfa630eb63a1c6cbafe88f7aec69d4162b44b9eabeb3038d4a35ef",
+        "last_write_utc": "2026-10-28T19:31:28.2300143Z"
+      },
+      {
+        "path": "../build/windows-msvc-performance/ant-design-gpui/descriptions-performance.json",
+        "filename": "descriptions-performance.json",
+        "sha256": "ed39eb5cdfd27178d6d26f0bb62822519938b395e03ef9ad4720ddbd8db5b26a",
+        "last_write_utc": "2026-10-28T19:30:34.7285327Z"
+      },
+      {
+        "path": "../build/windows-msvc-performance/ant-design-gpui/descriptions-native-performance-final/native-metrics.json",
+        "filename": "native-metrics.json",
+        "sha256": "ec22d9bad313e4ab4d7a411ecf9686b3ad273e2dd4b7e902fc66ad4600e47cc9",
+        "last_write_utc": "2026-10-28T19:32:16.2408607Z"
+      }
+    ],
+    "source_snapshot_before_build_utc": "2026-10-28T19:27:50.5402724Z",
+    "source_snapshot_after_measurement_utc": "2026-10-28T19:32:24.8766827Z",
+    "source_sha256_before_build": {
+      "benches/descriptions.rs": "c0720eb4204c19ca3344e6012c3d485aa9747ae3184bf745733b111a4304e9d0",
+      "Cargo.lock": "3863e01aea618961450389bef3877e6cccea54f00028bfc68646e0011fcda954",
+      "Cargo.toml": "44ae6b159afcc270e73eeece34e7615e03c552a77a3d833ba77e734992b01862",
+      "examples/descriptions_support/mod.rs": "5c5b68aee680e2508ef12c5d6e476cd79dcab74c57ce446655847f52681db9f7",
+      "examples/descriptions_visual.rs": "091c4f89bff694e1e546e2953f7b620cca665307ac5094cbbcec1f3c7d243719",
+      "fixtures/descriptions/visual-cases.json": "956c16fe1cc9400d71fc502a3f04180f144bf110db47ba9cde2e462c0da03597",
+      "scripts/run-descriptions-perf.ps1": "ce5a30f0d37ae1abe225c0b1f2cf8942a145ed5fb3009e3b4b3b083c003f24d8",
+      "src/behavior/paragraph.rs": "418fc18d5523befbf32551a97fde4c3bf2e128e7051e9bdc44c4af8d1e23636d",
+      "src/behavior/text.rs": "1b3979fc49a2542d94f3bdecb7f5b9d64ee9a7f03aa9dd8ffffec080bb9c622e",
+      "src/config.rs": "9dddca0a24fce3e3c1f5eeb4059fa6a94989c09ebb79c9e37605c530a1b74465",
+      "src/descriptions/api_tests.rs": "89e0e5814106759b542357a0bff0cacb57ef886e0bfc3677a1c3de43de465f00",
+      "src/descriptions/borders.rs": "29eb16c4fa630994cf50aeb478dc20f50b917367c6fc12658c7ce764f340a8fd",
+      "src/descriptions/config.rs": "38696711691eab868cc1297c262c96081c61f9a58a75b7f44f004ad7af045f52",
+      "src/descriptions/element.rs": "6cf2a3672b10964527697e3b1f4c0527cc367785008c18e217602ad682b98a24",
+      "src/descriptions/geometry.rs": "005a0ea7e7b16df4a71a2e843676a6ec05496f3c662652da42209e322abba41d",
+      "src/descriptions/inline_tests.rs": "5016c382e4aac9707a7efe8f052597a4ca46663b59d419d6b935edeb1bec536b",
+      "src/descriptions/interaction_tests.rs": "cc150824bc6dc713a5dfb6a1a3fcf3d66fbac78feda02181139f169beadb4863",
+      "src/descriptions/mod.rs": "e46f063f5ce3e7b5e2d61b82ef39b31848f8f26c5f8c5339152fba2ef00d2fc5",
+      "src/descriptions/model.rs": "9c4320a0dbafbccf2cb7832d1855b898ec46f0166f2b40858b36fa671d04f6f0",
+      "src/descriptions/paint.rs": "f2670fe457d4ea3467be6197097e18875c797c5adb06af5e04412a7088b9a3d3",
+      "src/descriptions/style.rs": "4688bc65b2db60b1d4cdd545c60d0d9c38f06c38d7ed3f6b4efdf6eb639c0457",
+      "src/descriptions/view.rs": "4a3a7e220f1d9cdb9777e11991a0352a4d04499b821295e0d66013a7e628a431",
+      "src/lib.rs": "e05946458684fa49f768b1027d94322cc1e948f1d48b5a21b76a9719ff920105",
+      "src/root.rs": "0ce4bd0dcf032ef0fbe19d639acf28eaf87a31df65a06b99b30ce76cfb4c2928",
+      "src/theme/algorithm.rs": "6add66bdebc14e3118515642e18a55a2f9e7091c322c1d052ad88567961e4c61",
+      "src/theme/component.rs": "b5d3ebd10aa06fd9207ac2f094ed53e87d9db64836f195c2831c1f1bd5c0f6a8",
+      "src/theme/mod.rs": "440b1972fcdb6704d0e2b8880433a2eec61e1fdccd71246271832da9adc4e62e",
+      "src/theme/palette.rs": "882faf5ea81d2429cde7d633c81b749c68c0f9dd053bda988c4fb701091bf59e",
+      "src/theme/tests.rs": "5371076f2fa97e8eec81bda99e4f7f8b95e38773b434b5ac4a50454fb4fb78f0",
+      "src/theme/tokens.rs": "2a0a2f47a2aeb8dd4afd3fe8ed62ec4dd7f023ece59eb9b7778ad608fa12f148",
+      "src/theme/values.rs": "6d23d651f3a0bea2b95153f6e5861676e5b26a0843815d145d7f6d1362b29c22"
+    },
+    "source_sha256_after_measurement": {
+      "benches/descriptions.rs": "c0720eb4204c19ca3344e6012c3d485aa9747ae3184bf745733b111a4304e9d0",
+      "Cargo.lock": "3863e01aea618961450389bef3877e6cccea54f00028bfc68646e0011fcda954",
+      "Cargo.toml": "44ae6b159afcc270e73eeece34e7615e03c552a77a3d833ba77e734992b01862",
+      "examples/descriptions_support/mod.rs": "5c5b68aee680e2508ef12c5d6e476cd79dcab74c57ce446655847f52681db9f7",
+      "examples/descriptions_visual.rs": "091c4f89bff694e1e546e2953f7b620cca665307ac5094cbbcec1f3c7d243719",
+      "fixtures/descriptions/visual-cases.json": "956c16fe1cc9400d71fc502a3f04180f144bf110db47ba9cde2e462c0da03597",
+      "scripts/run-descriptions-perf.ps1": "ce5a30f0d37ae1abe225c0b1f2cf8942a145ed5fb3009e3b4b3b083c003f24d8",
+      "src/behavior/paragraph.rs": "418fc18d5523befbf32551a97fde4c3bf2e128e7051e9bdc44c4af8d1e23636d",
+      "src/behavior/text.rs": "1b3979fc49a2542d94f3bdecb7f5b9d64ee9a7f03aa9dd8ffffec080bb9c622e",
+      "src/config.rs": "9dddca0a24fce3e3c1f5eeb4059fa6a94989c09ebb79c9e37605c530a1b74465",
+      "src/descriptions/api_tests.rs": "89e0e5814106759b542357a0bff0cacb57ef886e0bfc3677a1c3de43de465f00",
+      "src/descriptions/borders.rs": "29eb16c4fa630994cf50aeb478dc20f50b917367c6fc12658c7ce764f340a8fd",
+      "src/descriptions/config.rs": "38696711691eab868cc1297c262c96081c61f9a58a75b7f44f004ad7af045f52",
+      "src/descriptions/element.rs": "6cf2a3672b10964527697e3b1f4c0527cc367785008c18e217602ad682b98a24",
+      "src/descriptions/geometry.rs": "005a0ea7e7b16df4a71a2e843676a6ec05496f3c662652da42209e322abba41d",
+      "src/descriptions/inline_tests.rs": "5016c382e4aac9707a7efe8f052597a4ca46663b59d419d6b935edeb1bec536b",
+      "src/descriptions/interaction_tests.rs": "cc150824bc6dc713a5dfb6a1a3fcf3d66fbac78feda02181139f169beadb4863",
+      "src/descriptions/mod.rs": "e46f063f5ce3e7b5e2d61b82ef39b31848f8f26c5f8c5339152fba2ef00d2fc5",
+      "src/descriptions/model.rs": "9c4320a0dbafbccf2cb7832d1855b898ec46f0166f2b40858b36fa671d04f6f0",
+      "src/descriptions/paint.rs": "f2670fe457d4ea3467be6197097e18875c797c5adb06af5e04412a7088b9a3d3",
+      "src/descriptions/style.rs": "4688bc65b2db60b1d4cdd545c60d0d9c38f06c38d7ed3f6b4efdf6eb639c0457",
+      "src/descriptions/view.rs": "4a3a7e220f1d9cdb9777e11991a0352a4d04499b821295e0d66013a7e628a431",
+      "src/lib.rs": "e05946458684fa49f768b1027d94322cc1e948f1d48b5a21b76a9719ff920105",
+      "src/root.rs": "0ce4bd0dcf032ef0fbe19d639acf28eaf87a31df65a06b99b30ce76cfb4c2928",
+      "src/theme/algorithm.rs": "6add66bdebc14e3118515642e18a55a2f9e7091c322c1d052ad88567961e4c61",
+      "src/theme/component.rs": "b5d3ebd10aa06fd9207ac2f094ed53e87d9db64836f195c2831c1f1bd5c0f6a8",
+      "src/theme/mod.rs": "440b1972fcdb6704d0e2b8880433a2eec61e1fdccd71246271832da9adc4e62e",
+      "src/theme/palette.rs": "882faf5ea81d2429cde7d633c81b749c68c0f9dd053bda988c4fb701091bf59e",
+      "src/theme/tests.rs": "5371076f2fa97e8eec81bda99e4f7f8b95e38773b434b5ac4a50454fb4fb78f0",
+      "src/theme/tokens.rs": "2a0a2f47a2aeb8dd4afd3fe8ed62ec4dd7f023ece59eb9b7778ad608fa12f148",
+      "src/theme/values.rs": "6d23d651f3a0bea2b95153f6e5861676e5b26a0843815d145d7f6d1362b29c22"
+    },
+    "changed_source_paths": [],
+    "source_unchanged_during_build_and_measurement": true
+  },
+  "coverage": {
+    "components": [
+      1,
+      20,
+      100
+    ],
+    "items_per_component": 9,
+    "scales": [
+      1,
+      1.5,
+      2
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "layouts": [
+      "horizontal",
+      "bordered-horizontal",
+      "vertical",
+      "bordered-vertical-rich-action"
+    ],
+    "matrix_cases": 72,
+    "warm_redraw_samples_per_case": 40,
+    "idle_event_pump_samples_per_case": 40,
+    "large_table_items": [
+      30,
+      300,
+      3000
+    ],
+    "large_table_samples": 20,
+    "large_table_direction": "rtl",
+    "large_table_scale": 1,
+    "large_table_layout": "bordered-horizontal",
+    "motion_enabled": false
+  },
+  "structural_gates": {
+    "passed": true,
+    "idle_callbacks": 0,
+    "idle_renders": 0,
+    "max_settle_frames": 1,
+    "transient_host_callbacks": 0,
+    "timing_thresholds_enforced": false,
+    "memory_or_cache_bounds_measured": false
+  },
+  "caveats": [
+    "Offscreen CPU measurements do not measure native GPU frame latency.",
+    "The deterministic GPUI test text system does not measure production operating-system font shaping or glyph rasterization latency.",
+    "First-draw measures one observation after a layout/direction change, not a repeated cold-cache distribution.",
+    "Decorative motion is disabled to exclude rich-action hover animation under the deterministic test pointer. Descriptions has no component animation.",
+    "Measurements include UiRoot composition and complete forced native subtree redraws; offscreen rows are not virtualized.",
+    "The development machine was shared with concurrent build and visual work, so timing values are observations rather than fixed performance guarantees.",
+    "Resident memory, allocation counts and cache capacities were not instrumented; no measured bounded-memory or bounded-cache claim is made.",
+    "The offscreen matrix uses default solid borders; custom dashed/dotted paint costs are not benchmarked.",
+    "Native font observations use warmed scenes and caches, not a repeated cold-start distribution. CPU timings exclude GPU completion fences and screenshot readback.",
+    "Native/browser visual parity for dotted widths above 3 CSS pixels remains unverified; deterministic 4/5/8-pixel paint geometry tests cover complete round endpoints."
+  ],
+  "native_font_measurements": {
+    "build_command": "cargo build --release --locked --offline --example descriptions_visual --target-dir ../build/windows-msvc-performance/ant-design-gpui",
+    "capture_command_template": "../build/windows-msvc-performance/ant-design-gpui/release/examples/descriptions_visual.exe --output ../build/windows-msvc-performance/ant-design-gpui/descriptions-native-performance-final --scene <horizontal|long-text|bidi> --theme default --direction ltr --scale 1 --benchmark true",
+    "profile": "release",
+    "text_backend": "DirectWrite",
+    "theme": "default",
+    "direction": "ltr",
+    "scale": 1,
+    "motion_enabled": false,
+    "timing_thresholds_enforced": false,
+    "cases": [
+      {
+        "name": "horizontal-default-ltr-100",
+        "scene": "horizontal",
+        "viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "actual_viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "components": [
+          {
+            "id": "horizontal",
+            "items": 5
+          }
+        ],
+        "iterations": 30,
+        "unit": "microseconds",
+        "median": 444.65,
+        "p95": 640.5,
+        "samples": [
+          411.2000000000001,
+          413.7999999999999,
+          416.5,
+          416.6,
+          419.4,
+          419.5,
+          423.3,
+          424.7000000000001,
+          430.3,
+          431.9,
+          432,
+          432.1,
+          436,
+          441,
+          443.4,
+          445.9,
+          455.1,
+          456.9,
+          457.8,
+          461.3,
+          463,
+          465.1,
+          478.8,
+          489.7000000000001,
+          499.8,
+          515.1,
+          525.9000000000001,
+          619.8,
+          640.5,
+          1029.3
+        ],
+        "renderer": "production GPUI Window with native platform text system",
+        "text_backend": "DirectWrite",
+        "profile": "release",
+        "timing_scope": "CPU window.refresh + window.draw + frame clear; excludes screenshots, marker passes, and GPU completion fences"
+      },
+      {
+        "name": "long-text-default-ltr-100",
+        "scene": "long-text",
+        "viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "actual_viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "components": [
+          {
+            "id": "long-horizontal",
+            "items": 4
+          },
+          {
+            "id": "long-vertical",
+            "items": 4
+          },
+          {
+            "id": "long-bordered",
+            "items": 4
+          }
+        ],
+        "iterations": 30,
+        "unit": "microseconds",
+        "median": 1176.5,
+        "p95": 1267,
+        "samples": [
+          1142.1,
+          1146.3,
+          1148.3000000000002,
+          1153.5,
+          1155.1,
+          1156.1,
+          1157,
+          1158.5,
+          1159.2,
+          1161.9,
+          1162.4,
+          1163.7,
+          1163.8,
+          1167.6,
+          1171.1,
+          1181.9,
+          1183.6,
+          1183.9,
+          1186.9,
+          1188.2,
+          1190.4,
+          1193.8000000000002,
+          1194.2,
+          1203.3,
+          1222.8,
+          1227.6,
+          1233.3000000000002,
+          1262.7,
+          1267,
+          1675.9
+        ],
+        "renderer": "production GPUI Window with native platform text system",
+        "text_backend": "DirectWrite",
+        "profile": "release",
+        "timing_scope": "CPU window.refresh + window.draw + frame clear; excludes screenshots, marker passes, and GPU completion fences"
+      },
+      {
+        "name": "bidi-default-ltr-100",
+        "scene": "bidi",
+        "viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "actual_viewport": {
+          "width": 900,
+          "height": 1000
+        },
+        "components": [
+          {
+            "id": "bidi-horizontal-False",
+            "items": 5
+          },
+          {
+            "id": "bidi-horizontal-True",
+            "items": 5
+          },
+          {
+            "id": "bidi-vertical-False",
+            "items": 5
+          },
+          {
+            "id": "bidi-vertical-True",
+            "items": 5
+          }
+        ],
+        "iterations": 30,
+        "unit": "microseconds",
+        "median": 2188.3,
+        "p95": 3066.7,
+        "samples": [
+          2108,
+          2118.4,
+          2131.4,
+          2131.8,
+          2135.3,
+          2137.9,
+          2138.5,
+          2139.9,
+          2140.4,
+          2143.1000000000004,
+          2145.5,
+          2160.9,
+          2162.2,
+          2163.2000000000003,
+          2169.1000000000004,
+          2207.5,
+          2209.6,
+          2214.1,
+          2231.2,
+          2233.5,
+          2323.5,
+          2338.4,
+          2359.1,
+          2505,
+          2526.5,
+          2635.5,
+          2822.2999999999997,
+          3002,
+          3066.7,
+          3117.8999999999996
+        ],
+        "renderer": "production GPUI Window with native platform text system",
+        "text_backend": "DirectWrite",
+        "profile": "release",
+        "timing_scope": "CPU window.refresh + window.draw + frame clear; excludes screenshots, marker passes, and GPU completion fences"
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "name": "descriptions/builder/12-items",
+      "iterations": 10000,
+      "median_microseconds": 2.3,
+      "p95_microseconds": 2.4
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 731.3000000000001,
+      "p95_microseconds": 731.3000000000001
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 667.5,
+      "p95_microseconds": 854.7
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 440.79999999999995,
+      "p95_microseconds": 440.79999999999995
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 382.20000000000005,
+      "p95_microseconds": 421.90000000000003
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 560.4,
+      "p95_microseconds": 560.4
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 553.6999999999999,
+      "p95_microseconds": 665.6999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 631.8,
+      "p95_microseconds": 631.8
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 390.1,
+      "p95_microseconds": 424.2
+    },
+    {
+      "name": "descriptions/1/1x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 667.8,
+      "p95_microseconds": 667.8
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 639,
+      "p95_microseconds": 802.7
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 562.5,
+      "p95_microseconds": 562.5
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 488.40000000000003,
+      "p95_microseconds": 547.5
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 539.6,
+      "p95_microseconds": 539.6
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 523.3,
+      "p95_microseconds": 561.1
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 526.5,
+      "p95_microseconds": 526.5
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 488,
+      "p95_microseconds": 516.8
+    },
+    {
+      "name": "descriptions/1/1x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/one-table/30-items/warm-redraw",
+      "iterations": 20,
+      "median_microseconds": 1409.8999999999999,
+      "p95_microseconds": 1486.6000000000001
+    },
+    {
+      "name": "descriptions/one-table/300-items/warm-redraw",
+      "iterations": 20,
+      "median_microseconds": 13653.699999999999,
+      "p95_microseconds": 14891.7
+    },
+    {
+      "name": "descriptions/one-table/3000-items/warm-redraw",
+      "iterations": 20,
+      "median_microseconds": 176013.6,
+      "p95_microseconds": 194734.6
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 689,
+      "p95_microseconds": 689
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 643.6999999999999,
+      "p95_microseconds": 792
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 477.90000000000003,
+      "p95_microseconds": 477.90000000000003
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 392.6,
+      "p95_microseconds": 416.4
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 579,
+      "p95_microseconds": 579
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 544.1,
+      "p95_microseconds": 567.6
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 802.6,
+      "p95_microseconds": 802.6
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 412.8,
+      "p95_microseconds": 448.2
+    },
+    {
+      "name": "descriptions/1/1.5x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 712.4,
+      "p95_microseconds": 712.4
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 637.7,
+      "p95_microseconds": 840.1
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 528.5,
+      "p95_microseconds": 528.5
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 474,
+      "p95_microseconds": 516
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 532,
+      "p95_microseconds": 532
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 516.8,
+      "p95_microseconds": 549
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 521.1999999999999,
+      "p95_microseconds": 521.1999999999999
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 509,
+      "p95_microseconds": 1072.2
+    },
+    {
+      "name": "descriptions/1/1.5x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 620.8000000000001,
+      "p95_microseconds": 620.8000000000001
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 623.4,
+      "p95_microseconds": 672.4
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 400.20000000000005,
+      "p95_microseconds": 400.20000000000005
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 363.2,
+      "p95_microseconds": 435.5
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 549.2,
+      "p95_microseconds": 549.2
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 518.9,
+      "p95_microseconds": 564.5
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 580.5,
+      "p95_microseconds": 580.5
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 383.90000000000003,
+      "p95_microseconds": 402.40000000000003
+    },
+    {
+      "name": "descriptions/1/2x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 664,
+      "p95_microseconds": 664
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 635.8,
+      "p95_microseconds": 1113.8999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 537.4000000000001,
+      "p95_microseconds": 537.4000000000001
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 488,
+      "p95_microseconds": 595.3
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 566.8,
+      "p95_microseconds": 566.8
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 532.5,
+      "p95_microseconds": 585.2
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 583.4,
+      "p95_microseconds": 583.4
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 506.00000000000006,
+      "p95_microseconds": 533
+    },
+    {
+      "name": "descriptions/1/2x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11442.5,
+      "p95_microseconds": 11442.5
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 11455.099999999999,
+      "p95_microseconds": 12906
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 6564.2,
+      "p95_microseconds": 6564.2
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6057.200000000001,
+      "p95_microseconds": 6744.7
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 9616.599999999999,
+      "p95_microseconds": 9616.599999999999
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9575.5,
+      "p95_microseconds": 14735.6
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 10320.4,
+      "p95_microseconds": 10320.4
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6359.799999999999,
+      "p95_microseconds": 7416.8
+    },
+    {
+      "name": "descriptions/20/1x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11934.699999999999,
+      "p95_microseconds": 11934.699999999999
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 11748,
+      "p95_microseconds": 14013.3
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 9746.8,
+      "p95_microseconds": 9746.8
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 8420.1,
+      "p95_microseconds": 8949.6
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 9463.6,
+      "p95_microseconds": 9463.6
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9468.1,
+      "p95_microseconds": 10497
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 8668.6,
+      "p95_microseconds": 8668.6
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 8640.3,
+      "p95_microseconds": 12253.2
+    },
+    {
+      "name": "descriptions/20/1x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11450.6,
+      "p95_microseconds": 11450.6
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 11432.9,
+      "p95_microseconds": 11990.8
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 6400.7,
+      "p95_microseconds": 6400.7
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6169.1,
+      "p95_microseconds": 6562
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 12640.1,
+      "p95_microseconds": 12640.1
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9559.9,
+      "p95_microseconds": 12099.199999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11086.199999999999,
+      "p95_microseconds": 11086.199999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6477,
+      "p95_microseconds": 6998.9
+    },
+    {
+      "name": "descriptions/20/1.5x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 12326.1,
+      "p95_microseconds": 12326.1
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 11724.3,
+      "p95_microseconds": 14553.800000000001
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 8814.300000000001,
+      "p95_microseconds": 8814.300000000001
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 8498.6,
+      "p95_microseconds": 8985.4
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 9606.6,
+      "p95_microseconds": 9606.6
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9389.9,
+      "p95_microseconds": 9724.9
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 10010.6,
+      "p95_microseconds": 10010.6
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 8397.9,
+      "p95_microseconds": 10615.5
+    },
+    {
+      "name": "descriptions/20/1.5x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11739.4,
+      "p95_microseconds": 11739.4
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 11611.9,
+      "p95_microseconds": 13671.6
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 6829.5,
+      "p95_microseconds": 6829.5
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6087.8,
+      "p95_microseconds": 6798.4
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11304.800000000001,
+      "p95_microseconds": 11304.800000000001
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9656.8,
+      "p95_microseconds": 13395.300000000001
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11752.800000000001,
+      "p95_microseconds": 11752.800000000001
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 6580.2,
+      "p95_microseconds": 9912.5
+    },
+    {
+      "name": "descriptions/20/2x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 11911.2,
+      "p95_microseconds": 11911.2
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 12787.400000000001,
+      "p95_microseconds": 15982.6
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 9574.5,
+      "p95_microseconds": 9574.5
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 9091.800000000001,
+      "p95_microseconds": 10341.8
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 10384,
+      "p95_microseconds": 10384
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 10037.300000000001,
+      "p95_microseconds": 17943.2
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 8762.8,
+      "p95_microseconds": 8762.8
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 8859.4,
+      "p95_microseconds": 10505.4
+    },
+    {
+      "name": "descriptions/20/2x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 83637.8,
+      "p95_microseconds": 83637.8
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 81411.5,
+      "p95_microseconds": 108069.2
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 45873.1,
+      "p95_microseconds": 45873.1
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 47405.299999999996,
+      "p95_microseconds": 63945.799999999996
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 84522.1,
+      "p95_microseconds": 84522.1
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 71190.7,
+      "p95_microseconds": 92959.20000000001
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 73451.1,
+      "p95_microseconds": 73451.1
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 50567.3,
+      "p95_microseconds": 72044.2
+    },
+    {
+      "name": "descriptions/100/1x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 84719.4,
+      "p95_microseconds": 84719.4
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 83212.3,
+      "p95_microseconds": 103205.3
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 59410.1,
+      "p95_microseconds": 59410.1
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 58524.399999999994,
+      "p95_microseconds": 79771.59999999999
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 73670.70000000001,
+      "p95_microseconds": 73670.70000000001
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 73792.3,
+      "p95_microseconds": 90949.3
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 80191.29999999999,
+      "p95_microseconds": 80191.29999999999
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 64507.49999999999,
+      "p95_microseconds": 81828.2
+    },
+    {
+      "name": "descriptions/100/1x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 108091.5,
+      "p95_microseconds": 108091.5
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 80487.8,
+      "p95_microseconds": 118564.8
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 47265.3,
+      "p95_microseconds": 47265.3
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 48008.299999999996,
+      "p95_microseconds": 63673.1
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 70868.1,
+      "p95_microseconds": 70868.1
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 70824.6,
+      "p95_microseconds": 92708.9
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.3
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 75428.9,
+      "p95_microseconds": 75428.9
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 52269.200000000004,
+      "p95_microseconds": 70016.7
+    },
+    {
+      "name": "descriptions/100/1.5x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 87877.8,
+      "p95_microseconds": 87877.8
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 81763.1,
+      "p95_microseconds": 104699.8
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 57095,
+      "p95_microseconds": 57095
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 58976.3,
+      "p95_microseconds": 87138.90000000001
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 90197.4,
+      "p95_microseconds": 90197.4
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 75093.40000000001,
+      "p95_microseconds": 119552.90000000001
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 62942.700000000004,
+      "p95_microseconds": 62942.700000000004
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 60323,
+      "p95_microseconds": 80217.4
+    },
+    {
+      "name": "descriptions/100/1.5x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 77472.29999999999,
+      "p95_microseconds": 77472.29999999999
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 87296.79999999999,
+      "p95_microseconds": 121483
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 50896.299999999996,
+      "p95_microseconds": 50896.299999999996
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 46236.600000000006,
+      "p95_microseconds": 59685.9
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 91616.7,
+      "p95_microseconds": 91616.7
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 70463.4,
+      "p95_microseconds": 98970.5
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.19999999999999998
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 73271.1,
+      "p95_microseconds": 73271.1
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 50786.2,
+      "p95_microseconds": 71529.5
+    },
+    {
+      "name": "descriptions/100/2x/Ltr/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/horizontal/first-draw",
+      "iterations": 1,
+      "median_microseconds": 94259.6,
+      "p95_microseconds": 94259.6
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/horizontal/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 82982.9,
+      "p95_microseconds": 106037.40000000001
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/horizontal/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/bordered/first-draw",
+      "iterations": 1,
+      "median_microseconds": 58713.2,
+      "p95_microseconds": 58713.2
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/bordered/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 60733.299999999996,
+      "p95_microseconds": 77679.1
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/bordered/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical/first-draw",
+      "iterations": 1,
+      "median_microseconds": 77164.9,
+      "p95_microseconds": 77164.9
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 72350.8,
+      "p95_microseconds": 86297.6
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical-bordered-rich/first-draw",
+      "iterations": 1,
+      "median_microseconds": 59425,
+      "p95_microseconds": 59425
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical-bordered-rich/warm-redraw",
+      "iterations": 40,
+      "median_microseconds": 60633.2,
+      "p95_microseconds": 83052.20000000001
+    },
+    {
+      "name": "descriptions/100/2x/Rtl/vertical-bordered-rich/idle-event-pump",
+      "iterations": 40,
+      "median_microseconds": 0.09999999999999999,
+      "p95_microseconds": 0.09999999999999999
+    }
+  ],
+  "structural_cases": [
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 1,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 20,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 1.5,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Ltr",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "horizontal",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "bordered",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    },
+    {
+      "components": 100,
+      "items_per_component": 9,
+      "scale": 2,
+      "direction": "Rtl",
+      "layout": "vertical-bordered-rich",
+      "warm_render_calls": 40,
+      "idle_render_calls": 0,
+      "idle_callbacks": 0,
+      "transition_callbacks": 0,
+      "settle_frames": 1
+    }
+  ]
+}

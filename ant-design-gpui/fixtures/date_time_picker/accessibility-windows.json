@@ -1,0 +1,277 @@
+{
+  "status": "passed",
+  "profile": "read-only-background-inspection",
+  "utc": "2026-10-30T11:41:21.1820179Z",
+  "actuation": "not run: no Invoke/Select/SetFocus or global input; registered Click handlers and native SelectionItem patterns inspected read-only",
+  "adapter_limitation": "AccessKit consumer0.38.0 excludes ScrollBar from is_read_only_supported; native RangeValue IsReadOnly reports true despite registered setters. Numeric metadata and setters are inspected; UIA SetValue actuation is not claimed.",
+  "cases": [
+    {
+      "name": "date-en_US",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-navigation",
+        "navigation-invoke-available",
+        "calendar-selected",
+        "calendar-registered-click",
+        "calendar-disabled",
+        "calendar-current-date"
+      ],
+      "foreground_preserved": false,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 2231454,
+        "owner": 6628
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": "current=date",
+      "native_scrollbar_range_value_read_only": []
+    },
+    {
+      "name": "time-en_US",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-time-column-0-selection",
+        "time-column-0-registered-click",
+        "localized-time-column-1-selection",
+        "time-column-1-registered-click",
+        "localized-time-column-2-selection",
+        "time-column-2-registered-click",
+        "time-scrollbar-0-range-value",
+        "time-scrollbar-0-registered-setters",
+        "time-scrollbar-1-range-value",
+        "time-scrollbar-1-registered-setters",
+        "time-scrollbar-2-range-value",
+        "time-scrollbar-2-registered-setters"
+      ],
+      "foreground_preserved": true,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": null,
+      "native_scrollbar_range_value_read_only": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "name": "date-zh_CN",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-navigation",
+        "navigation-invoke-available",
+        "calendar-selected",
+        "calendar-registered-click",
+        "calendar-disabled",
+        "calendar-current-date"
+      ],
+      "foreground_preserved": true,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": "current=date",
+      "native_scrollbar_range_value_read_only": []
+    },
+    {
+      "name": "time-zh_CN",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-time-column-0-selection",
+        "time-column-0-registered-click",
+        "localized-time-column-1-selection",
+        "time-column-1-registered-click",
+        "localized-time-column-2-selection",
+        "time-column-2-registered-click",
+        "time-scrollbar-0-range-value",
+        "time-scrollbar-0-registered-setters",
+        "time-scrollbar-1-range-value",
+        "time-scrollbar-1-registered-setters",
+        "time-scrollbar-2-range-value",
+        "time-scrollbar-2-registered-setters"
+      ],
+      "foreground_preserved": true,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": null,
+      "native_scrollbar_range_value_read_only": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "name": "date-zh_TW",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-navigation",
+        "navigation-invoke-available",
+        "calendar-selected",
+        "calendar-registered-click",
+        "calendar-disabled",
+        "calendar-current-date"
+      ],
+      "foreground_preserved": true,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": "current=date",
+      "native_scrollbar_range_value_read_only": []
+    },
+    {
+      "name": "time-zh_TW",
+      "status": "passed",
+      "checks": [
+        "date-combobox",
+        "date-editable-value",
+        "date-expanded",
+        "time-combobox",
+        "time-editable-value",
+        "time-expanded",
+        "disabled",
+        "read-only",
+        "independent-range-start",
+        "independent-range-end",
+        "multiple-combobox",
+        "multiple-joined-read-only-value",
+        "localized-time-column-0-selection",
+        "time-column-0-registered-click",
+        "localized-time-column-1-selection",
+        "time-column-1-registered-click",
+        "localized-time-column-2-selection",
+        "time-column-2-registered-click",
+        "time-scrollbar-0-range-value",
+        "time-scrollbar-0-registered-setters",
+        "time-scrollbar-1-range-value",
+        "time-scrollbar-1-registered-setters",
+        "time-scrollbar-2-range-value",
+        "time-scrollbar-2-registered-setters"
+      ],
+      "foreground_preserved": true,
+      "fixture_never_foreground": true,
+      "foreground_before": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "foreground_after": {
+        "handle": 24314352,
+        "owner": 70304
+      },
+      "native_activation_seen": false,
+      "today_aria_properties": null,
+      "native_scrollbar_range_value_read_only": [
+        true,
+        true,
+        true
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "platform": "Windows x64",
+  "result_sha256": "a65390f5f0f6efaf30733dc2a7fd95cfa92e7e0b44c9d650f993b42950bfd9e5",
+  "source_map_sha256": "a42d34b678817ae5e94bf406fa59d1731ac8bbef50ddb03000bc564813f0ce40",
+  "source_files": 2001,
+  "executable_sha256": "9d30df77e3a93257c77cc68dc2cb9735b26bcef2ad564cf71614a9dae0fd88dc",
+  "toolchain": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "architecture": "X64",
+    "processor_count": 24,
+    "processor_model": "AMD Ryzen 9 5950X 16-Core Processor            "
+  },
+  "checks": 126,
+  "packer_sha256": "ed28886deecf6220abfcf03128af697499c76cc4315181641f8525fb57b78bf7"
+}

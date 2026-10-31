@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "verified_at_utc": "2026-10-28T05:25:44.751128+00:00",
+  "paths": "Source paths are relative to the ant-design-gpui crate; ignored evidence paths are relative to its parent repository.",
+  "environment": {
+    "os": {
+      "Caption": "Microsoft Windows 11 专业版",
+      "Version": "10.0.26300",
+      "BuildNumber": "26300"
+    },
+    "architecture": "AMD64",
+    "processor": "AMD Ryzen 9 5950X 16-Core Processor",
+    "available_cores": 12,
+    "available_logical_processors": 24,
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "reference": {
+      "version": "6.6.7",
+      "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e"
+    }
+  },
+  "source_sha256": {
+    "Cargo.lock": "5a67e919a8f1ee99a4f6f513288b8b09f849c78f28be40dd620ef3fc7f886181",
+    "Cargo.toml": "9036bd38aba1611be8abbd3b873765a9a4a12858e2ba87a73252c4abcf832ce3",
+    "benches/alert.rs": "ebb16be7145d5bbeb0184530c1c35dff11e72a43a5c66259b616c4418a0bed39",
+    "examples/gallery/alert.rs": "199b7cb8ff031eb9c6db2c653cf8dd4684ccddfde0fbeb42fc5a98701341f640",
+    "examples/gallery/catalog.rs": "96719a0eb33923283c81b70917dc4a13b9138d1371df70b633fac37f95ebe09b",
+    "examples/gallery/main.rs": "f14831de168c5e78bf2a3a9f41ac098cfd8754c528f4372cea1cc3f811c1583d",
+    "examples/gallery/shell.rs": "5ce74eefad13ae7fb717eada929f796fed6db83534dc778bc362f5e78169c1bc",
+    "examples/gallery/tests.rs": "0be7fa756084cf5218fe761a69f2f19d32e81392e92f95133a35493ccd2f70bc",
+    "scripts/run-alert-perf.ps1": "4fee7627b03369d0c23ddcdc5907e57cc1b7156a7c87cfd4f7968c5124547a1d",
+    "scripts/test-alert-accessibility.ps1": "596015e356a4141a428dac8f5a83933856e145cee9c029ca1c7b2b1e6f8b9d60",
+    "src/alert/config.rs": "b45b1c480a1fe67bb80b4c6824eceb9b2f7b907b5a2a4dc77616c4d3b53a1e60",
+    "src/alert/element.rs": "3e9c61887150343f794faf63bce096184ab191870206ea231cd40ffeb091dc42",
+    "src/alert/mod.rs": "a772b175f96e228d74570ada11f9f46f02210ddc3275960730e012560a02fa6d",
+    "src/alert/reference_tests.rs": "16d209d1b20734095a0e23d15f600ba56c5cc9081b877e647010a5f4ccd03943",
+    "src/alert/state.rs": "8b8a47597b54d51abd65e203c9d7ded8c61094558c7bcac4c1518c1e20a7d4bc",
+    "src/alert/style.rs": "712927f296174f7338cf7fe1aafc8331a92c172d807a0cb03438f128d8203a9d",
+    "src/alert/tests.rs": "36ce8e009990ea280084cb467b95b58f89664f9d77f74c8c2e811e5d220ce32c",
+    "src/alert/text.rs": "d40708295d3683178167dc27cebbc94903e870a225dae3acc494e7396c68fbbd",
+    "src/alert/view.rs": "0ec8f535eb2d9b42d7403892d5a057087a1dde2860fef902dca0317ec9da6e51",
+    "src/behavior/mod.rs": "c76334849205e4bb6021a6e7eccd1196124a6550b46ae8331e6af8715a82a2eb",
+    "src/behavior/paragraph.rs": "ac679b93f18842efd061583d7d76c3e2de810b04b7b642764a1b7fff21641479",
+    "src/config.rs": "9865d31bb47edbec815680236045d2d3af89fd4730c993a4e9212e391495b46f",
+    "src/icons/mod.rs": "cd27b0f6962fc5b915a2844784d459f58a76ec5375e6b981c58c84420390778b",
+    "src/lib.rs": "3fb27316d29d6230e94758fab9f5d90d885f2687e1a0e62ee855e773f6ef5dcc",
+    "src/pagination/bidi.rs": "aecd83fa72d96f82e70c5459b585f2f3040b54f1f6af1f26b007adabb0f4078c"
+  },
+  "tests": [
+    {
+      "name": "alert-core-and-reference",
+      "command": "cargo test --locked --offline --lib alert::",
+      "status": "passed",
+      "passed": 35,
+      "failed": 0,
+      "filtered_out": 756,
+      "log": {
+        "path": "build/ant-design-gpui/alert-final-core-tests.txt",
+        "sha256": "26066894f8c4a062fc1620a5e7add49c2a8649490e0d6fd66757977e76286736"
+      }
+    },
+    {
+      "name": "configuration-snapshots",
+      "command": "cargo test --locked --offline --lib config::tests::",
+      "status": "passed",
+      "passed": 16,
+      "failed": 0,
+      "filtered_out": 775,
+      "log": {
+        "path": "build/ant-design-gpui/alert-final-config-tests.txt",
+        "sha256": "6e86a56ac185b6af105ce94333b867509deccc51d37f31540b2ee7c20dcce827"
+      }
+    },
+    {
+      "name": "alert-gallery",
+      "command": "cargo test --locked --offline --example gallery alert_gallery",
+      "status": "passed",
+      "passed": 4,
+      "failed": 0,
+      "filtered_out": 71,
+      "log": {
+        "path": "build/ant-design-gpui/alert-final-gallery-tests.txt",
+        "sha256": "fc3152be1e8f5aa4afca04d0d7f1776e630c4b94dc7676d316854d4a986cf3ba"
+      }
+    },
+    {
+      "name": "gallery-cli-options",
+      "command": "cargo test --locked --offline --example gallery gallery_options_accept_presentation_flags",
+      "status": "passed",
+      "passed": 1,
+      "failed": 0,
+      "filtered_out": 74,
+      "log": {
+        "path": "build/ant-design-gpui/alert-final-gallery-options-tests.txt",
+        "sha256": "8304cf866a19ab85f846a927cb1591d0bcf9090cd14f1207484e7dc7178c9e7a"
+      }
+    },
+    {
+      "name": "gallery-capture-options",
+      "command": "cargo test --locked --offline --example gallery gallery_capture_options_keep_navigation_pages",
+      "status": "passed",
+      "passed": 1,
+      "failed": 0,
+      "filtered_out": 74,
+      "log": {
+        "path": "build/ant-design-gpui/alert-final-gallery-capture-tests.txt",
+        "sha256": "04743c3c093ef2a835f3e594ba72291e94ce593c7d65cbebdd2ebfe05dc17c95"
+      }
+    }
+  ],
+  "clippy": {
+    "status": "passed",
+    "command": "cargo clippy --locked --offline --lib --tests --example gallery --example alert_visual --example pagination_visual --bench alert -- -D warnings",
+    "log": {
+      "path": "build/ant-design-gpui/alert-final-clippy.txt",
+      "sha256": "9f3e6dafcb863b3acb529b59830ae526b16c236ec63f50278ef9731ea9a532c8"
+    }
+  },
+  "reference_validation": {
+    "browser_style_measurements": 2304,
+    "style_fixture": "fixtures/alert/reference.json",
+    "style_fixture_sha256": "f5a1721f256f32cf8497260a73f296ea72f5c884ab8be708ed42d1972269337a",
+    "mounted_browser_lifecycle": [
+      {
+        "fixture": "fixtures/alert/lifecycle.json",
+        "sha256": "a98f1272b267333400e60d040fed1d5e9af0365a19ec8652de9f9fdae72989ac",
+        "mode": "description",
+        "samples": 40,
+        "events": [
+          {
+            "kind": "onClose",
+            "time": 0.5999999940395355
+          },
+          {
+            "kind": "afterClose",
+            "time": 320.7999999821186
+          }
+        ]
+      },
+      {
+        "fixture": "fixtures/alert/lifecycle-title.json",
+        "sha256": "1cc1242c2996974e442163f8c7d0cda399070d2a869863817856c9d3227b5adb",
+        "mode": "title",
+        "samples": 40,
+        "events": [
+          {
+            "kind": "onClose",
+            "time": 0.699999988079071
+          },
+          {
+            "kind": "afterClose",
+            "time": 337.5
+          }
+        ]
+      },
+      {
+        "fixture": "fixtures/alert/lifecycle-styled.json",
+        "sha256": "d919814e87a7c7f3a187d22498b079eedac4fc2944a93ffc89c562bd5c07ff30",
+        "mode": "styled",
+        "samples": 40,
+        "events": [
+          {
+            "kind": "onClose",
+            "time": 0.800000011920929
+          },
+          {
+            "kind": "afterClose",
+            "time": 326.30000001192093
+          }
+        ]
+      }
+    ],
+    "image_comparison_summary": "fixtures/alert/visual-validation-windows.json",
+    "image_comparison_summary_sha256": "fd8779b6d9ea4d8fe57dfadee91407286a905fe2781beaf4bf7e264034e17072",
+    "comparisons": 56,
+    "compared_alert_rows": 696,
+    "browser": {
+      "name": "chrome.exe",
+      "version": "156.0.8078.48",
+      "viewport": [
+        740,
+        1000
+      ],
+      "scales": [
+        1.0,
+        1.5,
+        2.0
+      ]
+    },
+    "all_physical_image_dimensions_match": true,
+    "maximum_control_size_error_logical_px": 0.328125,
+    "maximum_full_page_bounds_error_logical_px": 1.3125,
+    "full_unaligned_unmasked_mean_channel_error": {
+      "range": [
+        0.07752672672672672,
+        2.1423594594594593
+      ],
+      "mean": 1.1730658540236665,
+      "channel_range": [
+        0,
+        255
+      ]
+    },
+    "notes": [
+      "Pixel measurements include text antialiasing, SVG rasterization and cumulative device-pixel line-height rounding; they use no image registration, resizing or font masking."
+    ]
+  },
+  "gallery": {
+    "reference_ordered_cards": 13,
+    "applicable_public_demos": 11,
+    "debug_demos": 2,
+    "captures": [
+      {
+        "name": "alert-gallery.png",
+        "logical_size": [
+          1280,
+          900
+        ],
+        "physical_size": [
+          1920,
+          1350
+        ],
+        "scale": 1.5,
+        "flags": [],
+        "manually_reviewed": true,
+        "capture": {
+          "path": "build/ant-design-gpui/alert-gallery.png",
+          "sha256": "b3314cdd080bea46552c0f25d5dbee77b800f39d836ab0dcb29ac80e2903ad30"
+        }
+      },
+      {
+        "name": "alert-gallery-narrow-dark-compact-rtl.png",
+        "logical_size": [
+          640,
+          720
+        ],
+        "physical_size": [
+          960,
+          1080
+        ],
+        "scale": 1.5,
+        "flags": [
+          "--dark",
+          "--compact",
+          "--rtl",
+          "--reduced-motion",
+          "--window-size",
+          "640x720"
+        ],
+        "manually_reviewed": true,
+        "capture": {
+          "path": "build/ant-design-gpui/alert-gallery-narrow-dark-compact-rtl.png",
+          "sha256": "43ee8a857d349ba899c4d17cfcd52ba2a7804ab791b1a76cbcf77f0b6cc30563"
+        }
+      }
+    ],
+    "native_executable_sha256": "ca1f659cacae03afb839f1c7b330e2754179338c8f0d88188a39c6d7b0fff823"
+  },
+  "native_accessibility": {
+    "status": "passed",
+    "command": "./scripts/test-alert-accessibility.ps1 -SkipBuild",
+    "aria_role": "alert",
+    "live_setting": 2,
+    "checks": [
+      "alert-role",
+      "assertive-live-region",
+      "static-not-focusable",
+      "close-role-and-name",
+      "native-focus",
+      "native-invoke",
+      "isolated-close",
+      "completion-unmount",
+      "switch-remount",
+      "action-isolation",
+      "theme-density-rtl-retention"
+    ],
+    "result": {
+      "path": "build/ant-design-gpui/alert-uia/result.json",
+      "sha256": "ecdf490d7fe037cbd0a5d51bd9d80036c0920f55f87bac08cfe330b03b642d23"
+    },
+    "executable_sha256": "ca1f659cacae03afb839f1c7b330e2754179338c8f0d88188a39c6d7b0fff823",
+    "script_sha256": "596015e356a4141a428dac8f5a83933856e145cee9c029ca1c7b2b1e6f8b9d60"
+  },
+  "performance": {
+    "status": "passed",
+    "command": "./scripts/run-alert-perf.ps1",
+    "preset": "windows-msvc-performance",
+    "profile": "Release",
+    "log": {
+      "path": "build/ant-design-gpui/alert-perf-final.txt",
+      "sha256": "e0015cf25bc32317b37b26d7b4ba644c4d51fb353e9e76b863a3618543def0f4"
+    },
+    "executable": {
+      "path": "build/windows-msvc-performance/ant-design-gpui/release/deps/alert-a9f90803e0d6464f.exe",
+      "sha256": "53a49575d34c9b2222957391cdd457ca8ad2c8185f0211ba1bf17757a3989a4b"
+    },
+    "scene_alert_counts": [
+      1,
+      20,
+      100
+    ],
+    "numeric_latency_target": null,
+    "target_reason": "No numeric latency target was agreed; report actual CPU median/p95 measurements and deterministic idle/completion invariants.",
+    "measurement": "Offscreen TestAppContext CPU layout/draw work; these measurements do not measure GPU presentation or end-to-end input latency.",
+    "background_activity": "Two unrelated snow_ocr_process rustc jobs were observed before this run, with a total host CPU utilization snapshot of 11%; the host was not isolated. All compiles/captures owned by this task had finished.",
+    "warm_draw_samples_per_case": 200,
+    "close_cycle_samples_per_count": 100,
+    "close_cycle": "Includes remount setup, a keyboard close activation, repeated draws, four 100ms virtual-clock advances, and idle/completion checks. This is total cycle CPU work, not wall-clock transition latency.",
+    "assertions": {
+      "idle_animation_callbacks": 0,
+      "close_completions_per_activation": 1
+    },
+    "cache_reuse_test": "alert::text::tests::alert_paragraph_cache_reuses_warm_widths_and_invalidates_content_style_and_scale",
+    "batch_measurements": [
+      {
+        "name": "alert/style/cached-tokens",
+        "mean_ns": 62.4,
+        "iterations": 200000
+      },
+      {
+        "name": "alert/style/theme-lookup",
+        "mean_ns": 75.0,
+        "iterations": 200000
+      },
+      {
+        "name": "alert/builder",
+        "mean_ns": 347.8,
+        "iterations": 200000
+      }
+    ],
+    "sampled_measurements": [
+      {
+        "name": "alert/1/title/warm-draw",
+        "median_us": 67.5,
+        "p95_us": 78.8,
+        "samples": 200
+      },
+      {
+        "name": "alert/1/description/warm-draw",
+        "median_us": 73.1,
+        "p95_us": 89.7,
+        "samples": 200
+      },
+      {
+        "name": "alert/1/description-action/warm-draw",
+        "median_us": 95.7,
+        "p95_us": 107.2,
+        "samples": 200
+      },
+      {
+        "name": "alert/1/close-and-layout",
+        "median_us": 991.0,
+        "p95_us": 1442.3,
+        "samples": 100
+      },
+      {
+        "name": "alert/20/title/warm-draw",
+        "median_us": 700.8,
+        "p95_us": 865.7,
+        "samples": 200
+      },
+      {
+        "name": "alert/20/description/warm-draw",
+        "median_us": 921.3,
+        "p95_us": 1031.3,
+        "samples": 200
+      },
+      {
+        "name": "alert/20/description-action/warm-draw",
+        "median_us": 1324.5,
+        "p95_us": 1438.4,
+        "samples": 200
+      },
+      {
+        "name": "alert/20/description/rtl-warm-draw",
+        "median_us": 885.5,
+        "p95_us": 975.3,
+        "samples": 200
+      },
+      {
+        "name": "alert/20/description-action/rtl-warm-draw",
+        "median_us": 1358.7,
+        "p95_us": 1529.4,
+        "samples": 200
+      },
+      {
+        "name": "alert/20/close-and-layout",
+        "median_us": 17937.9,
+        "p95_us": 21180.3,
+        "samples": 100
+      },
+      {
+        "name": "alert/100/title/warm-draw",
+        "median_us": 4599.6,
+        "p95_us": 7927.4,
+        "samples": 200
+      },
+      {
+        "name": "alert/100/description/warm-draw",
+        "median_us": 6140.2,
+        "p95_us": 10505.0,
+        "samples": 200
+      },
+      {
+        "name": "alert/100/description-action/warm-draw",
+        "median_us": 9978.5,
+        "p95_us": 14814.3,
+        "samples": 200
+      },
+      {
+        "name": "alert/100/description/rtl-warm-draw",
+        "median_us": 5692.1,
+        "p95_us": 10317.1,
+        "samples": 200
+      },
+      {
+        "name": "alert/100/description-action/rtl-warm-draw",
+        "median_us": 8038.1,
+        "p95_us": 13021.1,
+        "samples": 200
+      },
+      {
+        "name": "alert/100/close-and-layout",
+        "median_us": 136380.4,
+        "p95_us": 203740.9,
+        "samples": 100
+      }
+    ],
+    "limits": [
+      "The 100-alert scenes deliberately stress simultaneous native layout and painting; timings and high-percentile variation are specific to this machine and its background load."
+    ]
+  },
+  "limitations": [
+    "Native execution was verified on Windows x64; macOS and Linux were not executed in this validation."
+  ]
+}

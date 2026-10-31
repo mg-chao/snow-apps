@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "subject": "Developer-only unconstrained host-action text metrics",
+  "case": "success-default-ltr-150",
+  "scale": 1.5,
+  "browser": {
+    "name": "Chrome/156.0.8078.48",
+    "viewport": [
+      740,
+      760
+    ],
+    "scales": [
+      1,
+      1.5,
+      2
+    ]
+  },
+  "native": {
+    "platform": "windows",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "font": "Segoe UI",
+    "font_size_logical_px": 14
+  },
+  "measurements": [
+    {
+      "label": "Action",
+      "browser": {
+        "x": 296.25,
+        "y": 250,
+        "width": 71.765625,
+        "height": 32
+      },
+      "native": {
+        "x": 297.3333435058594,
+        "y": 250.0,
+        "width": 70.66666412353516,
+        "height": 32.0
+      },
+      "native_minus_browser": {
+        "x": 1.083343505859375,
+        "y": 0.0,
+        "width": -1.0989608764648438,
+        "height": 0.0
+      }
+    },
+    {
+      "label": "Again",
+      "browser": {
+        "x": 376.015625,
+        "y": 250,
+        "width": 67.71875,
+        "height": 32
+      },
+      "native": {
+        "x": 376.0,
+        "y": 250.0,
+        "width": 66.66666412353516,
+        "height": 32.0
+      },
+      "native_minus_browser": {
+        "x": -0.015625,
+        "y": 0.0,
+        "width": -1.0520858764648438,
+        "height": 0.0
+      }
+    }
+  ],
+  "reference_generator": {
+    "path": "scripts/generate_result_reference.mjs",
+    "sha256": "0b7adb4e2e87fea8c4a6ee38e56c00b69ca4abd19fcfb7e75b43a76e2f89a72b"
+  },
+  "notes": [
+    "These are raw developer-authored host actions with automatic intrinsic widths, not Ant Design Button measurements.",
+    "Windows GPUI font advance hinting at 150% scale produced a 1.09896px intrinsic-width discrepancy; the Result wrapper does not determine child text metrics.",
+    "The paired Result layout gate therefore uses equivalent explicit 72px/68px action widths in both upstream and native fixtures. It does not claim unconstrained host actions or Ant Design Button intrinsic widths meet the 1px bound.",
+    "The full original diagnostic report remains in build/ant-design-gpui/result-comparison-before-paint-fix.json."
+  ]
+}

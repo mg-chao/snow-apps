@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "platform": "windows",
+  "mode": "hidden-native-window",
+  "keyboard": "GPUI events targeted only to fixture Window; no global keyboard input",
+  "activation": "WM_GETOBJECT requests ordinary AccessKit UIA registration",
+  "utc": "2026-10-28T19:28:39.2820699Z",
+  "reason": null,
+  "checks": [
+    "stage-0-native-list-terms-definitions-order-rich-descendants",
+    "stage-1-native-list-terms-definitions-order-rich-descendants",
+    "stage-2-native-list-terms-definitions-order-rich-descendants",
+    "stage-3-native-list-terms-definitions-order-rich-descendants",
+    "native-valuepattern-and-invokepattern-rich-children",
+    "stage-4-native-list-terms-definitions-order-rich-descendants",
+    "stage-5-native-list-terms-definitions-order-rich-descendants",
+    "targeted-window-tab-space-enter-responsive-reorder-focus-value-identity",
+    "unmounted-native-list-removed"
+  ],
+  "binary_sha256": "c1fae3a922b3d87026508551322228707f6df3ce483b633705e4df8cdb5adb9d",
+  "source_sha256": {
+    "examples/descriptions_accessibility.rs": "ac4cb9a98a1117ccb037a4bc758231e30670137119c8b238fe4aaef7c41d5860",
+    "scripts/test-descriptions-accessibility.ps1": "5cd33288209115233adcac9e292419a2fbc28dd9e548df29f93bd1a4a389f3f4",
+    "src/behavior/text.rs": "1b3979fc49a2542d94f3bdecb7f5b9d64ee9a7f03aa9dd8ffffec080bb9c622e",
+    "src/behavior/accessibility.rs": "a90969e0e31374ab9b423a22a15a416813052fb1953750d30a43e80db3c8cf0a",
+    "src/config.rs": "9dddca0a24fce3e3c1f5eeb4059fa6a94989c09ebb79c9e37605c530a1b74465",
+    "src/lib.rs": "e05946458684fa49f768b1027d94322cc1e948f1d48b5a21b76a9719ff920105",
+    "Cargo.lock": "3863e01aea618961450389bef3877e6cccea54f00028bfc68646e0011fcda954",
+    "src/descriptions/api_tests.rs": "89e0e5814106759b542357a0bff0cacb57ef886e0bfc3677a1c3de43de465f00",
+    "src/descriptions/borders.rs": "29eb16c4fa630994cf50aeb478dc20f50b917367c6fc12658c7ce764f340a8fd",
+    "src/descriptions/config.rs": "38696711691eab868cc1297c262c96081c61f9a58a75b7f44f004ad7af045f52",
+    "src/descriptions/element.rs": "6cf2a3672b10964527697e3b1f4c0527cc367785008c18e217602ad682b98a24",
+    "src/descriptions/geometry.rs": "005a0ea7e7b16df4a71a2e843676a6ec05496f3c662652da42209e322abba41d",
+    "src/descriptions/inline_tests.rs": "5016c382e4aac9707a7efe8f052597a4ca46663b59d419d6b935edeb1bec536b",
+    "src/descriptions/interaction_tests.rs": "cc150824bc6dc713a5dfb6a1a3fcf3d66fbac78feda02181139f169beadb4863",
+    "src/descriptions/mod.rs": "e46f063f5ce3e7b5e2d61b82ef39b31848f8f26c5f8c5339152fba2ef00d2fc5",
+    "src/descriptions/model.rs": "9c4320a0dbafbccf2cb7832d1855b898ec46f0166f2b40858b36fa671d04f6f0",
+    "src/descriptions/paint.rs": "f2670fe457d4ea3467be6197097e18875c797c5adb06af5e04412a7088b9a3d3",
+    "src/descriptions/reference_tests.rs": "86de4d3af14e8197b05d7a26ea34847d3ae5a8fe28cd17fca54be36bc67f2315",
+    "src/descriptions/style.rs": "4688bc65b2db60b1d4cdd545c60d0d9c38f06c38d7ed3f6b4efdf6eb639c0457",
+    "src/descriptions/tests.rs": "7dc58b990d22f0d4322b6608f137f06668ed01f00693aad4ddc61e48bbcb09c6",
+    "src/descriptions/view.rs": "4a3a7e220f1d9cdb9777e11991a0352a4d04499b821295e0d66013a7e628a431"
+  },
+  "limitations": [
+    "Native UIA verifies List/ListItem and named Definition groups, rich Edit/ValuePattern and Button/InvokePattern. Activated native AccessKit tree verifies matching term/definition sequences and item label names, retaining visual-row order in vertical layout.",
+    "Tab/Space/Enter use targeted fixture-window GPUI dispatch; physical OS keyboard routing and screen reader speech are not exercised."
+  ]
+}

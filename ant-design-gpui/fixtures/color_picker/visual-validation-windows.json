@@ -1,0 +1,1865 @@
+{
+  "schema_version": 1,
+  "capture_status": "passed",
+  "strict_comparison_status": "failed",
+  "completed_utc": "2026-10-29T19:33:08.8887114Z",
+  "matrix": {
+    "configurations": 30,
+    "themes": [
+      "default",
+      "dark",
+      "compact",
+      "dark-compact"
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "dpi_scales": [
+      1,
+      1.5,
+      2
+    ],
+    "canvas_logical_px": [
+      640,
+      720
+    ]
+  },
+  "counts": {
+    "cases": 720,
+    "geometry_checks": 14112,
+    "failed_geometry_checks": 4,
+    "resolved_border_checks": 2136,
+    "failed_border_checks": 0,
+    "selected_mark_checks": 96,
+    "failed_selected_mark_checks": 0,
+    "resolved_content_checks": 576,
+    "failed_content_checks": 0,
+    "surface_samples": 30696,
+    "failed_surface_samples": 61,
+    "reference_helper_overlays": 24,
+    "cases_with_failed_strict_gates": 44
+  },
+  "budgets": {
+    "geometry_logical_px": 1,
+    "solid_rgb_bytes": 1,
+    "gradient_rgb_bytes": 4,
+    "content_primitive_rgba_bytes": 1
+  },
+  "comparison_gate_tests": {
+    "status": "passed",
+    "count": 20,
+    "command": "python scripts/test_color_picker_visual_comparator.py",
+    "log": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\comparator-tests.txt",
+      "sha256": "edb37ab1ac1f6763d18d8f3d1750aefe0b68362ba182d26107a5ba94ef1b74b3",
+      "bytes": 124
+    }
+  },
+  "capture_context": {
+    "process_id": 59688,
+    "foreground_checks": 5041,
+    "foreground_violations": 0,
+    "resize": "owned HWND SetWindowPos SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOMOVE",
+    "pointer_policy": "neutral synthetic local pointer after every bounds poll; deliberate hover only in hover scene; retained hover asserted per row before capture",
+    "cases": 720
+  },
+  "pointer_isolation": {
+    "status": "passed",
+    "logical_pointer_assertions": 720,
+    "neutral_pointer_cases": 696,
+    "intentional_hover_cases": 24,
+    "retained_trigger_hover_assertions": 840,
+    "method": "Synthetic local pointer restored after each platform bounds poll; two draws plus async notification settling; actual retained hover asserted before GPU readback",
+    "global_desktop_cursor_modified": false
+  },
+  "manual_format_label_review": {
+    "native_reference_pairs": 36,
+    "formats": [
+      "HEX",
+      "RGB",
+      "HSB"
+    ],
+    "themes": [
+      "default",
+      "dark",
+      "compact",
+      "dark-compact"
+    ],
+    "directions": [
+      "rtl"
+    ],
+    "scales": [
+      1,
+      1.5,
+      2
+    ],
+    "result": "All labels are complete; no clipped final glyphs observed"
+  },
+  "environment": {
+    "native": {
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+      "os": "Microsoft Windows NT 10.0.26300.0",
+      "architecture": "X64",
+      "processor_count": 24,
+      "processor_model": "AMD Ryzen 9 5950X 16-Core Processor            "
+    },
+    "native_profile": "dev",
+    "native_renderer": "Pinned GPUI native Windows renderer; selected GPU adapter not separately traced",
+    "browser": {
+      "Browser": "Chrome/156.0.8078.48",
+      "File-Path-Style": "windows",
+      "Protocol-Version": "1.3",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "V8-Version": "15.6.75.19",
+      "WebKit-Version": "537.36 (@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c)"
+    },
+    "comparator": {
+      "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+      "numpy": "2.2.6",
+      "pillow": "12.3.0"
+    },
+    "present_segoe_font_files": [
+      {
+        "path": "C:\\Windows\\Fonts\\segoeui.ttf",
+        "sha256": "704eada12961a27fd271f7d3b09e2066520e758390c1776744eff430fee30f6e",
+        "bytes": 960076
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\segoeuib.ttf",
+        "sha256": "b169e636719880976a97e94e3b1cb3dbe5f4a38eabc037bf9f2a9165154c3ad2",
+        "bytes": 947364
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\segoeuii.ttf",
+        "sha256": "f9feaeee8b20751c15700b4fb03571b335f52e91edece7fb7aa1ceaa6eeb0db7",
+        "bytes": 530916
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\segoeuil.ttf",
+        "sha256": "0dbddf9e20b2dc0facd568c877aa1155b3597c09a7ca41d00ca580af25d1cc51",
+        "bytes": 910408
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\segoeuisl.ttf",
+        "sha256": "288a8e3fcd0f6090881dcc469b557f55e0a85864abe1cc24330bb4f08105f69b",
+        "bytes": 848476
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\segoeuiz.ttf",
+        "sha256": "f2ecff1a943929f07a7b872c948b1de57fe688ac7d0bab6fc9f624c95a97dbfe",
+        "bytes": 542460
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\seguisb.ttf",
+        "sha256": "6c3fd894b19950b10c34bf64069ef821eaf2f58f959146306fee5b367472e501",
+        "bytes": 974760
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\seguisbi.ttf",
+        "sha256": "16847ed882097cd1c0d45c63b6d75c3021f2133c64db03796f57dac198d0b2ad",
+        "bytes": 456372
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\seguisli.ttf",
+        "sha256": "032eb41f836c3d6fd765dc4c287ea87f7f0c392a454ffc58d7e5fbe29d1fee86",
+        "bytes": 465904
+      },
+      {
+        "path": "C:\\Windows\\Fonts\\seguisym.ttf",
+        "sha256": "a4a35dcc62cd30e1a6c97b695ecef83e59d2b149e3af834f6a49f11851d56b37",
+        "bytes": 2514056
+      }
+    ]
+  },
+  "provenance": {
+    "git_head": "414ce2ac19d5b244924db6f782eab3407cc348ed",
+    "gpui_git_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "source_root": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui",
+    "source_file_count": 1983,
+    "source_map_sha256": "17fc1cf8bb31e04c357b8dfbf49d8f08f29c08a5b6d7f882479342e7e3914d4b",
+    "source_map_digest_encoding": "SHA256 of UTF-8 JSON with sorted keys and compact separators",
+    "same_frozen_source_as_release_performance": true,
+    "executable": {
+      "sha256": "21f1087641163637ab60f5bea0b427b87da3b8a9cc2c44b29f06d561d5eafa08",
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\debug\\examples\\color_picker_visual.exe"
+    },
+    "reference": {
+      "version": "6.6.7",
+      "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+      "rc_color_picker": "3.1.1",
+      "generator_sha256": "975ab96e0b03003311cf5419a2ab3a6cbc8250c7d391f5c2d53b8376147cf25f",
+      "lock_sha256": "7237763f3ac20d1856fa23f0074073c808184cac9cd63b9f26ff2a65c45549de",
+      "bundle_sha256": "208f08a22fc6d3dc5227f00eec2d974163e679c412333b9b25dd7e1fd7ccae26"
+    }
+  },
+  "dependency_source_check": {
+    "gpui_checkout": "C:\\Users\\Magic\\.cargo\\git\\checkouts\\gpui-42906c31eb311aaf\\2c0bf70",
+    "head": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "tracked_working_tree_clean": true,
+    "untracked_metadata": [
+      ".cargo-ok"
+    ],
+    "windows_gradient_shader": {
+      "path": "C:\\Users\\Magic\\.cargo\\git\\checkouts\\gpui-42906c31eb311aaf\\2c0bf70\\crates\\gpui_windows\\src\\shaders.hlsl",
+      "sha256": "16045fea900725fcd9cc349266207078c7fe774507d38ed0b5832a320c7c55c5",
+      "bytes": 46996
+    }
+  },
+  "artifacts": {
+    "full_comparison": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\comparison.json",
+      "sha256": "ea875fe66ea741efeafe9e13d566ce10e3d9368c2fc23c33f90d5ef7b2f9bd3c",
+      "bytes": 21205137
+    },
+    "native_provenance": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\native-provenance.json",
+      "sha256": "0f13da43b34670dd7c8c50b8dbab19278c74875765132c12b190a172b815ad9b",
+      "bytes": 239072
+    },
+    "native_metrics": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\native-metrics.json",
+      "sha256": "f1399f0176f30d0dc94c9f2e5661b50006941be1eb22c57048a508b3d12a09b7",
+      "bytes": 22426038
+    },
+    "browser_metrics": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-browser-final720\\browser-metrics.json",
+      "sha256": "f2ff3d8996f2fc9036d06f63807101d2910eb33e282ed6c495807a2a17cddcc1",
+      "bytes": 24806945
+    },
+    "image_manifests": {
+      "reference": {
+        "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-browser-final720\\image-manifest.json",
+        "sha256": "9773679a6be2759f4b72186cd50506c509e2933569693d5b1e3da8055f459dfe",
+        "bytes": 124740
+      },
+      "native": {
+        "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\image-manifest.json",
+        "sha256": "e69ebd3494eec59d4f618fb9193557682a9052a4135b88e18d6c18f86dc6c4d1",
+        "bytes": 125162
+      }
+    },
+    "comparator": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui\\scripts\\compare_color_picker_visual.py",
+      "sha256": "c3d891b51d9d494735e3109a37cb3448c97a0bc3ed3f37c1a5628c1da8c59b8e",
+      "bytes": 29404
+    },
+    "negative_controls": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\ant-design-gpui\\scripts\\test_color_picker_visual_comparator.py",
+      "sha256": "18bcfa9db546ffb055494e14acbd093973b12ee50a64897f1fa7a6fe8349568e",
+      "bytes": 9963
+    },
+    "display_only_unscaled_preview": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\preview.png",
+      "sha256": "1c315677a9114b52e55af8cc3c333f1ee5d7e0d76d62eb73beabbc8e72d15186",
+      "bytes": 60261
+    },
+    "display_only_contact_sheet": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\contact-sheet.png",
+      "sha256": "211ec04d67eec1c9661debe61a72b450a4522ab7e77e0a706c7899d90eb9f35b",
+      "bytes": 1548084
+    },
+    "display_only_rtl_format_contact_sheet": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\rtl-format-contact.png",
+      "sha256": "f9159b5acd025c14b4fff47957ed9dea433d564d57de13fa15d4ed1e3ebb1453",
+      "bytes": 72529
+    },
+    "summary_builder": {
+      "path": "E:\\snow-apps-workspace\\snow-apps\\build\\ant-design-gpui\\color-picker-native-final720-r3\\build-summary.py",
+      "sha256": "a4206191132601d93a5832f0dfee1d1524e81a6affe4896cbaa0c81fcf31d81e",
+      "bytes": 12625
+    }
+  },
+  "raw_raster_summary": {
+    "full_canvas": {
+      "physical_pixels": 801792000,
+      "mean_absolute_channel_error": {
+        "case_count": 720,
+        "mean_across_cases": 0.23880326345798683,
+        "weighted_mean": 0.2314597734408259,
+        "case_p95": 0.5196658307613166,
+        "maximum": 0.9438641332304527
+      },
+      "fraction_over_16": {
+        "case_count": 720,
+        "mean_across_cases": 0.002534760065693587,
+        "weighted_mean": 0.002411478288633461,
+        "case_p95": 0.007087866512345678,
+        "maximum": 0.015599922839506173
+      }
+    },
+    "unmasked_component_crop": {
+      "physical_pixels": 161555784,
+      "mean_absolute_channel_error": {
+        "case_count": 720,
+        "mean_across_cases": 1.3085358769335413,
+        "weighted_mean": 1.1204876061055584,
+        "case_p95": 4.182449305468523,
+        "maximum": 7.460609734195402
+      },
+      "fraction_over_16": {
+        "case_count": 720,
+        "mean_across_cases": 0.01467472797988144,
+        "weighted_mean": 0.011968027093353711,
+        "case_p95": 0.04849663554430497,
+        "maximum": 0.08002424568965517
+      }
+    },
+    "text_and_input_viewports": {
+      "case_count": 624,
+      "physical_pixels": 7234970,
+      "mean_absolute_channel_error": {
+        "case_count": 624,
+        "mean_across_cases": 11.29107232887047,
+        "weighted_mean": 10.895420989997195,
+        "case_p95": 31.929114991571,
+        "maximum": 42.86240992123345
+      },
+      "fraction_over_16": {
+        "case_count": 624,
+        "mean_across_cases": 0.14752619284897683,
+        "weighted_mean": 0.1431567788117988,
+        "case_p95": 0.31678440629876586,
+        "maximum": 0.39467068878833583
+      },
+      "max_channel_error": 228
+    },
+    "popup_shadow": {
+      "case_count": 552,
+      "physical_pixels": 36518248,
+      "mean_absolute_channel_error": {
+        "case_count": 552,
+        "mean_across_cases": 0.5604262435033983,
+        "weighted_mean": 0.5680016284826517,
+        "case_p95": 0.9948144882619073,
+        "maximum": 1.2863741339491916
+      },
+      "fraction_over_16": {
+        "case_count": 552,
+        "mean_across_cases": 0.0017355945208222335,
+        "weighted_mean": 0.0016994243535451098,
+        "case_p95": 0.004621069428427683,
+        "maximum": 0.015340130306614845
+      },
+      "max_channel_error": 71
+    },
+    "selected_preset_unmasked_cells": {
+      "case_count": 96,
+      "physical_pixels": 135504,
+      "mean_absolute_channel_error": {
+        "case_count": 96,
+        "mean_across_cases": 4.348128160789018,
+        "weighted_mean": 4.521308104065809,
+        "case_p95": 11.524853801169591,
+        "maximum": 11.811890838206628
+      },
+      "fraction_over_16": {
+        "case_count": 96,
+        "mean_across_cases": 0.08141936710101914,
+        "weighted_mean": 0.08044042980281024,
+        "case_p95": 0.15990990990990991,
+        "maximum": 0.17324561403508773
+      },
+      "max_channel_error": 234
+    },
+    "shadow_composited_bottom_border_max_channel_error": {
+      "case_count": 816,
+      "mean_across_cases": 0.6850490196078431,
+      "weighted_mean": null,
+      "case_p95": 2.0,
+      "maximum": 3.0
+    }
+  },
+  "all_failed_strict_gates_by_case": [
+    {
+      "case": "trigger-text-compact-ltr-100",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[1]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            183,
+            149,
+            230
+          ],
+          "native_rgb": [
+            184,
+            150,
+            232
+          ],
+          "max_channel_error": 2,
+          "budget": 1,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "trigger-text-compact-rtl-100",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[1]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            183,
+            149,
+            230
+          ],
+          "native_rgb": [
+            184,
+            150,
+            232
+          ],
+          "max_channel_error": 2,
+          "budget": 1,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "trigger-text-dark-compact-ltr-100",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[1]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            75,
+            41,
+            123
+          ],
+          "native_rgb": [
+            73,
+            39,
+            120
+          ],
+          "max_channel_error": 3,
+          "budget": 1,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "trigger-text-dark-compact-rtl-100",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[1]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            75,
+            41,
+            123
+          ],
+          "native_rgb": [
+            73,
+            39,
+            120
+          ],
+          "max_channel_error": 3,
+          "budget": 1,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "alpha-disabled-dark-ltr-100",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.63,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            58,
+            255
+          ],
+          "native_rgb": [
+            0,
+            55,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "alpha-disabled-dark-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            224
+          ],
+          "native_rgb": [
+            250,
+            0,
+            220
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "cleared-dark-compact-rtl-100",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            118
+          ],
+          "native_rgb": [
+            0,
+            250,
+            114
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "presets-dark-compact-rtl-100",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            118
+          ],
+          "native_rgb": [
+            0,
+            250,
+            114
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-dark-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            226,
+            255
+          ],
+          "native_rgb": [
+            0,
+            222,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            182,
+            66,
+            157
+          ],
+          "native_rgb": [
+            183,
+            65,
+            152
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            206,
+            53,
+            112
+          ],
+          "native_rgb": [
+            206,
+            51,
+            107
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "gradient gradient",
+          "fraction": [
+            0.19,
+            0.4
+          ],
+          "reference_rgb": [
+            68,
+            105,
+            242
+          ],
+          "native_rgb": [
+            71,
+            108,
+            247
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            182,
+            66,
+            157
+          ],
+          "native_rgb": [
+            183,
+            65,
+            152
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            206,
+            53,
+            112
+          ],
+          "native_rgb": [
+            206,
+            51,
+            107
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "gradient gradient",
+          "fraction": [
+            0.19,
+            0.4
+          ],
+          "reference_rgb": [
+            69,
+            105,
+            242
+          ],
+          "native_rgb": [
+            71,
+            108,
+            247
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-dark-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            183,
+            66,
+            158
+          ],
+          "native_rgb": [
+            184,
+            65,
+            153
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            208,
+            54,
+            113
+          ],
+          "native_rgb": [
+            207,
+            50,
+            106
+          ],
+          "max_channel_error": 7,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "gradient gradient",
+          "fraction": [
+            0.19,
+            0.4
+          ],
+          "reference_rgb": [
+            68,
+            105,
+            242
+          ],
+          "native_rgb": [
+            71,
+            108,
+            247
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-dark-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            183,
+            66,
+            158
+          ],
+          "native_rgb": [
+            184,
+            65,
+            153
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            208,
+            54,
+            113
+          ],
+          "native_rgb": [
+            207,
+            50,
+            106
+          ],
+          "max_channel_error": 7,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "gradient gradient",
+          "fraction": [
+            0.19,
+            0.4
+          ],
+          "reference_rgb": [
+            69,
+            105,
+            242
+          ],
+          "native_rgb": [
+            71,
+            108,
+            247
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-alpha-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-alpha-dark-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            226,
+            255
+          ],
+          "native_rgb": [
+            0,
+            222,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-alpha-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            203,
+            124,
+            88
+          ],
+          "native_rgb": [
+            204,
+            119,
+            86
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-alpha-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.6875,
+            0.4375
+          ],
+          "reference_rgb": [
+            203,
+            124,
+            88
+          ],
+          "native_rgb": [
+            204,
+            119,
+            86
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "custom-panel-dark-compact-rtl-100",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            118
+          ],
+          "native_rgb": [
+            0,
+            250,
+            114
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "bottom-right-no-arrow-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            52,
+            255,
+            1
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            223,
+            255
+          ],
+          "native_rgb": [
+            1,
+            228,
+            255
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.92,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            118
+          ],
+          "native_rgb": [
+            255,
+            1,
+            123
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            230,
+            238,
+            249
+          ],
+          "native_rgb": [
+            234,
+            243,
+            255
+          ],
+          "max_channel_error": 6,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "bottom-right-no-arrow-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.74,
+            0.4
+          ],
+          "reference_rgb": [
+            110,
+            0,
+            255
+          ],
+          "native_rgb": [
+            115,
+            1,
+            255
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            230,
+            238,
+            249
+          ],
+          "native_rgb": [
+            237,
+            244,
+            255
+          ],
+          "max_channel_error": 7,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "bottom-right-no-arrow-dark-compact-ltr-100",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            227
+          ],
+          "native_rgb": [
+            250,
+            0,
+            222
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "bottom-right-no-arrow-dark-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            52,
+            255,
+            1
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            223,
+            255
+          ],
+          "native_rgb": [
+            1,
+            228,
+            255
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.92,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            118
+          ],
+          "native_rgb": [
+            255,
+            1,
+            123
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            43,
+            51,
+            62
+          ],
+          "native_rgb": [
+            30,
+            39,
+            51
+          ],
+          "max_channel_error": 13,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            25,
+            108,
+            224
+          ],
+          "native_rgb": [
+            23,
+            104,
+            219
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "bottom-right-no-arrow-dark-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.74,
+            0.4
+          ],
+          "reference_rgb": [
+            110,
+            0,
+            255
+          ],
+          "native_rgb": [
+            115,
+            1,
+            255
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            43,
+            51,
+            62
+          ],
+          "native_rgb": [
+            30,
+            38,
+            48
+          ],
+          "max_channel_error": 14,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            25,
+            108,
+            224
+          ],
+          "native_rgb": [
+            23,
+            104,
+            219
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-only-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-only-dark-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            226,
+            255
+          ],
+          "native_rgb": [
+            0,
+            222,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-only-dark-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            203,
+            51,
+            85
+          ],
+          "native_rgb": [
+            202,
+            47,
+            80
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-only-dark-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "trigger swatch[0]",
+          "fraction": [
+            0.8125,
+            0.8125
+          ],
+          "reference_rgb": [
+            203,
+            51,
+            85
+          ],
+          "native_rgb": [
+            202,
+            47,
+            80
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-cleared-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            47,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-cleared-dark-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            226,
+            255
+          ],
+          "native_rgb": [
+            0,
+            222,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "standalone-dark-compact-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            46,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-default-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            118
+          ],
+          "native_rgb": [
+            1,
+            255,
+            123
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            118
+          ],
+          "native_rgb": [
+            1,
+            255,
+            123
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            227
+          ],
+          "native_rgb": [
+            253,
+            0,
+            222
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            230,
+            238,
+            249
+          ],
+          "native_rgb": [
+            237,
+            244,
+            255
+          ],
+          "max_channel_error": 7,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            119
+          ],
+          "native_rgb": [
+            1,
+            255,
+            124
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            230,
+            238,
+            249
+          ],
+          "native_rgb": [
+            236,
+            244,
+            255
+          ],
+          "max_channel_error": 6,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-dark-compact-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            43,
+            51,
+            62
+          ],
+          "native_rgb": [
+            30,
+            38,
+            49
+          ],
+          "max_channel_error": 13,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "split-panel-dark-compact-rtl-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.41,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            255,
+            119
+          ],
+          "native_rgb": [
+            1,
+            255,
+            124
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        },
+        {
+          "target": "alpha gradient",
+          "fraction": [
+            0.08,
+            0.4
+          ],
+          "reference_rgb": [
+            43,
+            51,
+            62
+          ],
+          "native_rgb": [
+            30,
+            38,
+            49
+          ],
+          "max_channel_error": 13,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-text-open-dark-ltr-150",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.3,
+            0.4
+          ],
+          "reference_rgb": [
+            46,
+            255,
+            0
+          ],
+          "native_rgb": [
+            44,
+            250,
+            0
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "gradient-text-open-dark-rtl-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.52,
+            0.4
+          ],
+          "reference_rgb": [
+            0,
+            226,
+            255
+          ],
+          "native_rgb": [
+            0,
+            222,
+            250
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "semantic-trigger-dark-compact-ltr-200",
+      "surface_pixels": [
+        {
+          "target": "hue gradient",
+          "fraction": [
+            0.85,
+            0.4
+          ],
+          "reference_rgb": [
+            255,
+            0,
+            225
+          ],
+          "native_rgb": [
+            250,
+            0,
+            220
+          ],
+          "max_channel_error": 5,
+          "budget": 4,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "case": "custom-text-compact-ltr-150",
+      "geometry": [
+        {
+          "target": "trigger[0]",
+          "passed": false,
+          "geometry_delta": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 1.3177032470703125,
+            "height": -0.3333320617675781
+          }
+        }
+      ]
+    },
+    {
+      "case": "custom-text-compact-rtl-150",
+      "geometry": [
+        {
+          "target": "trigger[0]",
+          "passed": false,
+          "geometry_delta": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 1.3177032470703125,
+            "height": -0.3333320617675781
+          }
+        }
+      ]
+    },
+    {
+      "case": "custom-text-dark-compact-ltr-150",
+      "geometry": [
+        {
+          "target": "trigger[0]",
+          "passed": false,
+          "geometry_delta": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 1.3177032470703125,
+            "height": -0.3333320617675781
+          }
+        }
+      ]
+    },
+    {
+      "case": "custom-text-dark-compact-rtl-150",
+      "geometry": [
+        {
+          "target": "trigger[0]",
+          "passed": false,
+          "geometry_delta": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 1.3177032470703125,
+            "height": -0.3333320617675781
+          }
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "Capture success verifies complete paired captures, frozen source/binary provenance and background foreground-PID guards; it does not mean every strict gate passed.",
+    "Every failed geometry, content, border, selected-mark or surface gate is retained above. No gradient or solid pixel budget was enlarged.",
+    "Some residual samples coincide with fractional physical-pixel placement or checker boundaries. The pinned Windows shader dithers RGB and alpha; these causes do not convert failed checks into passes.",
+    "Text/input viewports, popup shadows, selected-preset cells and complete component crops retain unmasked raster errors.",
+    "The checked-preset gate compares real stroke silhouettes within one logical pixel and actual covered ink within one RGB byte; flat-color samples avoid the foreground stroke.",
+    "Coincident aria-hidden source handle overlays are separately counted; every raw source pixel remains in raster comparisons.",
+    "This is Windows-only visual evidence. It makes no cross-platform rendering or physical input-latency claim."
+  ]
+}

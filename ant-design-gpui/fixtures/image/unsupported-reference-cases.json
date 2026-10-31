@@ -1,0 +1,3 @@
+{
+  "mask-blur":{"width":800,"height":600,"preview":{"src":"landscape","mask":{"blur":true}},"backdrop":true,"excludedFromNativeParity":"GPUI does not expose backdrop filtering; blur is the accepted exception."}
+}

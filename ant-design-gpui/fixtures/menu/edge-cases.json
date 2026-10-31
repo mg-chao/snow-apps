@@ -1,0 +1,11 @@
+[
+  { "name": "empty", "kind": "empty", "mode": "vertical" },
+  { "name": "empty-inline", "kind": "empty", "mode": "inline" },
+  { "name": "empty-horizontal", "kind": "empty", "mode": "horizontal" },
+  { "name": "empty-horizontal-dark", "kind": "empty", "mode": "horizontal", "color_theme": "dark" },
+  { "name": "empty-group", "kind": "empty-group", "mode": "vertical" },
+  { "name": "empty-group-inline", "kind": "empty-group", "mode": "inline" },
+  { "name": "sole-open-submenu", "kind": "only-submenu", "mode": "inline", "open": true },
+  { "name": "sole-closed-submenu", "kind": "only-submenu", "mode": "inline" },
+  { "name": "sole-divider", "kind": "only-divider", "mode": "vertical" }
+]
