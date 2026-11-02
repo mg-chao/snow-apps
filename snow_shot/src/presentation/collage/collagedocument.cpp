@@ -994,6 +994,16 @@ void CollageDocument::clear() {
     emit selectionChanged();
 }
 
+bool CollageDocument::reverseItems() {
+    if (m_impl->items.size() < 2)
+        return false;
+    std::reverse(m_impl->items.begin(), m_impl->items.end());
+    ++m_impl->contentRevision;
+    m_impl->layoutDirty = true;
+    emit changed();
+    return true;
+}
+
 bool CollageDocument::swapItems(quint64 first, quint64 second) {
     const int a = itemIndex(m_impl->items, first);
     const int b = itemIndex(m_impl->items, second);

@@ -97,6 +97,58 @@ void modeStateAndEditing() {
             "clearing keeps both layout settings and the selected output type");
 }
 
+void reversePageOrder() {
+    for (const int count : {0, 1, 2, 5}) {
+        CollageDocument document;
+        document.setOutputType(CollageOutputType::PdfDocument);
+        auto settings = document.settings();
+        settings.sizing = CollageSizing::Original;
+        document.setSettings(settings);
+        for (int index = 0; index < count; ++index)
+            document.append(fixture({10 + index, 20 + index}), QString::number(index));
+        if (count > 1) {
+            document.rotate(document.items().front().id, true);
+            document.flip(document.items().back().id, true);
+            document.moveItem(document.items().front().id, count - 1);
+            document.select(document.items().front().id);
+        }
+        const auto original = document.items();
+        const auto originalLayout = document.layout();
+        const auto revision = document.contentRevision();
+        const auto selected = document.selectedId();
+        int changes = 0;
+        int selectionChanges = 0;
+        QObject::connect(&document, &CollageDocument::changed, &document, [&] { ++changes; });
+        QObject::connect(&document, &CollageDocument::selectionChanged, &document,
+                         [&] { ++selectionChanges; });
+        const bool reversed = count > 1;
+        require(document.reverseItems() == reversed && changes == int(reversed) &&
+                    document.contentRevision() == revision + int(reversed),
+                "reversal publishes one content change only when at least two pages exist");
+        const auto layout = document.layout();
+        for (int index = 0; index < count; ++index) {
+            const auto& item = document.items()[index];
+            const auto& expected = original[count - index - 1];
+            require(item.id == expected.id && item.label == expected.label &&
+                        item.image.constBits() == expected.image.constBits() &&
+                        item.preview.constBits() == expected.preview.constBits() &&
+                        item.transform == expected.transform &&
+                        item.revision == expected.revision &&
+                        item.resourceOwner == expected.resourceOwner &&
+                        layout.rects[index].size() == transformedSize(expected),
+                    "reversal preserves each page and invalidates cached static layout geometry");
+        }
+        require(document.selectedId() == selected && selectionChanges == 0,
+                "reversal preserves the selected page without publishing a selection change");
+        require(document.reverseItems() == reversed && changes == 2 * int(reversed) &&
+                    document.layout().rects == originalLayout.rects,
+                "reversing twice restores the original layout");
+        for (int index = 0; index < count; ++index)
+            require(document.items()[index].id == original[index].id,
+                    "reversing twice restores the current order including prior manual moves");
+    }
+}
+
 void paperAndImageGeometry() {
     struct Paper final {
         CollagePdfPaperSize type;
@@ -501,6 +553,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
         modeStateAndEditing();
+        reversePageOrder();
         paperAndImageGeometry();
         imageSizeGeometry();
         contentGeneration();

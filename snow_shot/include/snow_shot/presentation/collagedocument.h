@@ -130,6 +130,7 @@ class CollageDocument final : public QObject {
     bool replace(quint64 id, QImage image, QString label, QImage preview = {});
     bool remove(quint64 id);
     void clear();
+    bool reverseItems();
     bool swapItems(quint64 first, quint64 second);
     // finalIndex names the desired position after moving, rather than an insertion boundary.
     bool moveItem(quint64 id, int finalIndex);
