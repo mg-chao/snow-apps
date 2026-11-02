@@ -1189,7 +1189,7 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
     if (!currentError.isEmpty()) {
         return currentError;
     }
-    return QStringLiteral("The setting could not be saved");
+    return QCoreApplication::translate("SettingsBackend", "The setting could not be saved.");
 }
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,

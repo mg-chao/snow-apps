@@ -760,14 +760,6 @@
             <translation>Snow Shot 需要有效的代码签名才能使用登录时启动功能。请重新安装已签名的应用。</translation>
         </message>
         <message>
-            <source>macOS could not find %1's login item. Reinstall the app in Applications.</source>
-            <translation>macOS 找不到 %1 的登录项。请将应用重新安装到 Applications。</translation>
-        </message>
-        <message>
-            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
-            <translation>macOS 找不到 Snow Shot 的登录项。请将应用重新安装到“应用程序”中。</translation>
-        </message>
-        <message>
             <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
             <translation>macOS 未应用登录时启动更改。请检查“系统设置”中的“登录项”。</translation>
         </message>
@@ -1111,6 +1103,10 @@
         <message>
             <source>The configuration could not be imported.</source>
             <translation>无法导入配置。</translation>
+        </message>
+        <message>
+            <source>The setting could not be saved.</source>
+            <translation>设置无法保存。</translation>
         </message>
         <message>
             <source>Translation service is unavailable</source>

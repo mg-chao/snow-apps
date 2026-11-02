@@ -760,14 +760,6 @@
             <translation>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</translation>
         </message>
         <message>
-            <source>macOS could not find %1's login item. Reinstall the app in Applications.</source>
-            <translation>macOS could not find %1's login item. Reinstall the app in Applications.</translation>
-        </message>
-        <message>
-            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
-            <translation>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</translation>
-        </message>
-        <message>
             <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
             <translation>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</translation>
         </message>
@@ -1111,6 +1103,10 @@
         <message>
             <source>The configuration could not be imported.</source>
             <translation>The configuration could not be imported.</translation>
+        </message>
+        <message>
+            <source>The setting could not be saved.</source>
+            <translation>The setting could not be saved.</translation>
         </message>
         <message>
             <source>Translation service is unavailable</source>
