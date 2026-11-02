@@ -1,6 +1,7 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include <QThread>
 #include "snow_shot/app/distribution.h"
 #include "snow_shot/app/edition.h"
 #include <QTimer>
@@ -444,6 +445,8 @@ StorageResult ApplicationStorage::flushNow() {
     if (m_status.directoryChanging || !m_initialized || m_configuration == nullptr) {
         return StorageResult::failure(QStringLiteral("Application storage is not initialized"));
     }
+    if (QThread::currentThread() == thread())
+        emit checkpointRequested();
     if (m_captureHistory != nullptr) {
         m_captureHistory->drain();
         updateHistoryError(m_captureHistory->lastError());

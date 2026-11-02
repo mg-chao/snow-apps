@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
+#include <QScopeGuard>
 #include "snow_shot/presentation/automationrevision.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -80,6 +82,7 @@ PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowReposito
             m_repository = &storage.pinnedWindows();
         }
     }
+    m_stacking = new PinnedWindowStackingCoordinator(m_repository, this);
     m_groups =
         m_repository != nullptr ? m_repository->groups() : QVector<storage::PinnedWindowGroup>{};
     if (m_groups.isEmpty()) {
@@ -276,9 +279,12 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
     if (!contains(groupId) || m_activeGroupId == groupId) {
         return contains(groupId);
     }
+    m_stacking->beginMutation();
+    auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !m_repository->setActiveGroup(groupId).success) {
         return false;
     }
+    m_stacking->cancelGroup(m_activeGroupId);
     m_activeGroupId = groupId;
     m_automationRevision = nextAutomationRevision();
     for (auto it = m_windows.begin(); it != m_windows.end();) {
@@ -297,6 +303,8 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
         }
         ++it;
     }
+    m_stacking->endMutation();
+    mutation.dismiss();
     emit activeGroupChanged(m_activeGroupId);
     restoreActiveGroupWindows();
     return true;
@@ -381,9 +389,12 @@ bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
     if (!contains(groupId)) {
         return false;
     }
+    m_stacking->beginMutation();
+    auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !m_repository->removeGroupAndRecords(groupId).success) {
         return false;
     }
+    m_stacking->cancelGroup(groupId);
 
     const bool removesGroup = groupId != QString::fromLatin1(kDefaultGroupId);
     const bool activeRemoved = removesGroup && m_activeGroupId == groupId;
@@ -406,6 +417,8 @@ bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
 
     emit groupDeletionRequested(groupId);
     scheduleGroupsChanged();
+    m_stacking->endMutation();
+    mutation.dismiss();
     if (activeRemoved) {
         emit activeGroupChanged(m_activeGroupId);
         restoreActiveGroupWindows();
@@ -489,6 +502,7 @@ bool PinnedWindowGroupManager::showWindow(const QString& id) {
 }
 
 void PinnedWindowGroupManager::markWindowClosing(ScreenshotPinnedWindow* window) {
+    m_stacking->retiring(window);
     const auto key = windowKey(window);
     m_inactiveClosing.insert(key);
     m_pendingGroups.remove(key);
@@ -546,6 +560,8 @@ bool PinnedWindowGroupManager::moveWindows(
     }
     if (targets.isEmpty())
         return false;
+    m_stacking->beginMutation();
+    const auto mutation = qScopeGuard([this] { m_stacking->endMutation(); });
     if (m_repository != nullptr && !persistenceIds.isEmpty() &&
         !m_repository->setRecordsGroup(persistenceIds, groupId).success)
         return false;
@@ -596,6 +612,8 @@ void PinnedWindowGroupManager::registerWindow(::ScreenshotPinnedWindow* window,
         return;
     }
     const QString key = windowKey(window);
+    if (!window->isLiveWindow())
+        m_stacking->track(window, window->persistenceId(), groupId);
     if (m_windows.value(key) == window) {
         return;
     }

@@ -293,6 +293,9 @@ void liveSwitch(bool migrate) {
     require(pins->create(open).success && pins->create(closed).success &&
                 pins->markClosed(closed.id).success && pins->create(filePin).success,
             "pin fixtures");
+    QStringList stacking{open.id, closed.id, filePin.id};
+    require(pins->updateStackingOrder(QStringLiteral("default"), stacking).success,
+            "non-timestamp stacking metadata before relocation");
     write(QDir(source).filePath(QStringLiteral("assets/ocr/test")), QByteArrayLiteral("ocr"));
     const auto publication = history->publish(screenshot()).get();
     if (!publication.storage.success)
@@ -373,6 +376,10 @@ void liveSwitch(bool migrate) {
             "private file-pin payload follows new root and external source stays untouched");
     require(pins->loadRecord(closed.id).has_value() == migrate,
             "closed pin migration follows switch");
+    if (!migrate)
+        stacking.removeAll(closed.id);
+    require(pins->stackingOrder(QStringLiteral("default")) == stacking,
+            "relocation retains relative order and prunes removed members");
     require(QFileInfo::exists(QDir(target).filePath(QStringLiteral("assets/ocr/test"))) == migrate,
             "OCR migration follows switch");
     require(configuration->setValue(QStringLiteral("screenshot_selection/smart_selection"),
@@ -393,6 +400,11 @@ void liveSwitch(bool migrate) {
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--stacking-only"))) {
+        liveSwitch(true);
+        liveSwitch(false);
+        return 0;
+    }
     validation();
     junctionsAreNeverTraversed();
     transactions();

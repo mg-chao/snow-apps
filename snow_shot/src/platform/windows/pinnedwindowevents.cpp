@@ -786,6 +786,12 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             window.endAuxiliaryWindowInteraction();
         }
 
+        if (nativeMessage->message == WM_WINDOWPOSCHANGED && window.m_platform &&
+            window.m_platform->stackingChanged) {
+            const auto* position = pointerFromLParam<WINDOWPOS>(nativeMessage->lParam);
+            if (position && !(position->flags & SWP_NOZORDER))
+                window.m_platform->stackingChanged();
+        }
         if (nativeMessage->message == WM_WINDOWPOSCHANGED &&
             window.m_nativeGeometryController != nullptr && window.m_presented) {
             window.handleNativeGeometryObservation();

@@ -13,6 +13,8 @@
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
+#include <QScopeGuard>
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -616,6 +618,11 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()),
       m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>(
           [this]() { restorePersistedWindows(); })) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!m_groupManager && storage.isInitialized())
+        m_ownedStacking =
+            std::make_unique<snow_shot::presentation::PinnedWindowStackingCoordinator>(
+                &storage.pinnedWindows());
     if (imageStitchingRequested)
         QObject::connect(
             m_selectionController.get(),
@@ -639,9 +646,12 @@ ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     m_selectionController.reset();
     m_restoreAlive->store(false);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    if (storage.isInitialized())
-        for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it)
-            storage.pinnedWindows().cancelRestore(it.key());
+    while (!m_restoringIds.isEmpty()) {
+        const QString id = m_restoringIds.cbegin().key();
+        cancelRestore(id);
+    }
+    if (m_ownedStacking && storage.isInitialized())
+        m_ownedStacking->shutdown();
     cancelClipboardPublication();
 }
 
@@ -1193,6 +1203,7 @@ bool ScreenshotSelectionExportUiServices::presentLiveWindow(
 
 void ScreenshotSelectionExportUiServices::configureVisibility(
     ScreenshotPinnedWindow::Config* config) {
+    config->stackingCoordinator = stackingCoordinator();
     const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
     config->persistenceHider = [this, lifetime](const auto& record) {
         return !lifetime.isNull() && persistHiddenWindow(record);
@@ -1224,15 +1235,27 @@ ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::liveWindow(const QS
 
 void ScreenshotSelectionExportUiServices::cancelRestore(const QString& id) {
     m_pendingAttention.remove(id);
-    if (!m_restoringIds.remove(id))
+    const auto found = m_restoringIds.find(id);
+    if (found == m_restoringIds.end())
         return;
+    const auto batch = found->stackingBatch;
+    m_restoringIds.erase(found);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized())
         storage.pinnedWindows().cancelRestore(id);
+    if (auto* stacking = stackingCoordinator())
+        stacking->settleRestore(batch, id);
+}
+
+snow_shot::presentation::PinnedWindowStackingCoordinator*
+ScreenshotSelectionExportUiServices::stackingCoordinator() const {
+    return m_groupManager ? m_groupManager->stackingCoordinator() : m_ownedStacking.get();
 }
 
 bool ScreenshotSelectionExportUiServices::persistHiddenWindow(
     const snow_shot::storage::PinnedWindowRecord& record) {
+    if (auto* stacking = stackingCoordinator())
+        stacking->checkpoint();
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized()) {
         if (m_visibilityFailure)
@@ -1255,6 +1278,13 @@ bool ScreenshotSelectionExportUiServices::persistHiddenWindow(
 }
 
 bool ScreenshotSelectionExportUiServices::hideRecords(const QVector<QString>& ids) {
+    auto* stacking = stackingCoordinator();
+    if (stacking)
+        stacking->beginMutation();
+    const auto mutation = qScopeGuard([stacking] {
+        if (stacking)
+            stacking->endMutation();
+    });
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return false;
@@ -1282,6 +1312,9 @@ bool ScreenshotSelectionExportUiServices::hideRecords(const QVector<QString>& id
 }
 
 void ScreenshotSelectionExportUiServices::showAllWindows() {
+    auto* stacking = stackingCoordinator();
+    if (stacking)
+        stacking->checkpoint();
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return;
@@ -1297,11 +1330,16 @@ void ScreenshotSelectionExportUiServices::showAllWindows() {
             m_restoreFailure();
         return;
     }
+    const auto batch = stacking ? stacking->beginRestore(group, ids) : 0;
     for (const auto& id : ids) {
-        if (auto* window = liveWindow(id))
-            window->showFromManagement();
+        if (m_restoringIds.contains(id)) {
+            if (stacking)
+                stacking->settleRestore(batch, id);
+        } else {
+            static_cast<void>(restoreRecordImpl(
+                id, false, ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus, batch));
+        }
     }
-    restorePersistedWindows();
 }
 
 bool ScreenshotSelectionExportUiServices::hideOtherWindows(const QString& exceptId) {
@@ -1371,13 +1409,20 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return;
+    QStringList ids;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : storage.pinnedWindows().activeGroupId();
     for (const auto& summary : storage.pinnedWindows().summaries()) {
-        if (summary.ignored || summary.hidden ||
-            (m_groupManager && summary.groupId != m_groupManager->activeGroupId()) ||
+        if (summary.ignored || summary.hidden || summary.groupId != group ||
             m_restoringIds.contains(summary.id) || liveWindow(summary.id))
             continue;
-        static_cast<void>(restoreRecord(summary.id, false));
+        ids.append(summary.id);
     }
+    auto* stacking = stackingCoordinator();
+    const auto batch = stacking ? stacking->beginRestore(group, ids) : 0;
+    for (const auto& id : ids)
+        static_cast<void>(restoreRecordImpl(
+            id, false, ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus, batch));
 }
 
 bool ScreenshotSelectionExportUiServices::restoreRecords(const QStringList& ids) {
@@ -1400,17 +1445,41 @@ bool ScreenshotSelectionExportUiServices::restoreRecords(const QStringList& ids)
     }
     if (m_groupManager && !m_groupManager->setActiveGroup(*groupId))
         return false;
+    selected.clear();
+    for (const auto& id : repository.stackingOrder(*groupId))
+        if (seen.contains(id))
+            selected.append(id);
+    for (auto it = selected.crbegin(); it != selected.crend(); ++it)
+        static_cast<void>(repository.promoteStackingWindow(*it));
+    auto* stacking = stackingCoordinator();
+    const auto batch = stacking ? stacking->beginRestore(*groupId, selected) : 0;
     bool success = true;
     for (const auto& id : selected) {
-        if (!m_restoringIds.contains(id) && !restoreRecord(id, false))
+        const auto policy = id == selected.first()
+                                ? ScreenshotPinnedWindow::PresentationPolicy::Activate
+                                : ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus;
+        if (!restoreRecordImpl(id, false, policy, batch))
             success = false;
     }
     return success;
 }
 
 bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool activateGroup) {
+    return restoreRecordImpl(id, activateGroup,
+                             ScreenshotPinnedWindow::PresentationPolicy::Activate);
+}
+
+bool ScreenshotSelectionExportUiServices::restoreRecordImpl(
+    const QString& id, bool activateGroup, ScreenshotPinnedWindow::PresentationPolicy policy,
+    quint64 batch) {
+    auto* stacking = stackingCoordinator();
+    bool queued = false;
+    const auto settlement = qScopeGuard([&] {
+        if (!queued && stacking)
+            stacking->settleRestore(batch, id);
+    });
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
-    if (!storage.isInitialized() || m_restoringIds.contains(id))
+    if (!storage.isInitialized())
         return false;
     auto& repository = storage.pinnedWindows();
     const auto found = repository.summary(id);
@@ -1419,27 +1488,44 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     if (m_groupManager && ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
                            found->groupId != m_groupManager->activeGroupId()))
         return false;
-    if (!repository.setRecordsHidden({id}, false).success)
-        return false;
-    if (auto* window = liveWindow(id)) {
-        window->showFromManagement();
+    if (auto pending = m_restoringIds.find(id); pending != m_restoringIds.end()) {
+        if (policy == ScreenshotPinnedWindow::PresentationPolicy::Activate) {
+            pending->presentationPolicy = policy;
+            static_cast<void>(repository.promoteStackingWindow(id));
+            if (pending->window)
+                pending->window->showFromManagement();
+        }
         return true;
     }
-    if (m_restoringIds.contains(id))
+    if (!repository.setRecordsHidden({id}, false).success)
+        return false;
+    if (policy == ScreenshotPinnedWindow::PresentationPolicy::Activate)
+        static_cast<void>(repository.promoteStackingWindow(id));
+    if (auto* window = liveWindow(id)) {
+        if (policy == ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus)
+            window->showPreservingStacking();
+        else
+            window->showFromManagement();
         return true;
+    }
     // The pending source coordinator replays this desired visibility after its first save.
     if (found->pending)
         return true;
     if (!repository.beginRestore(id).success)
         return false;
+    if (!batch && stacking)
+        batch = stacking->beginRestore(found->groupId, {id});
     const quint64 generation = ++m_nextRestoreGeneration;
     RestoringPin restoring;
     restoring.sourceIdentity = repository.sourceIdentity(id);
     restoring.groupId = found->groupId;
     restoring.createdUtc = found->createdUtc;
     restoring.generation = generation;
+    restoring.stackingBatch = batch;
+    restoring.presentationPolicy = policy;
     restoring.attentionPending = m_pendingAttention.remove(id);
     m_restoringIds.insert(id, std::move(restoring));
+    queued = true;
     auto* repositoryGuard = &repository;
     const auto alive = m_restoreAlive;
     storage.pinnedFullImagePool().start(
@@ -1475,7 +1561,7 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
                         auto& storage = snow_shot::storage::ApplicationStorage::instance();
                         if (!storage.isInitialized() ||
                             &storage.pinnedWindows() != repositoryGuard) {
-                            m_restoringIds.remove(id);
+                            cancelRestore(id);
                             return;
                         }
                         const auto found = storage.pinnedWindows().summary(id);
@@ -1492,8 +1578,12 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
                             return;
                         }
                         if (auto* window = liveWindow(id)) {
+                            const auto policy = m_restoringIds.value(id).presentationPolicy;
                             cancelRestore(id);
-                            window->showFromManagement();
+                            if (policy == ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus)
+                                window->showPreservingStacking();
+                            else
+                                window->showFromManagement();
                             return;
                         }
                         loaded->hidden = false;
@@ -1551,6 +1641,16 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
         config.checkerboardEnabled = screenshotSelectionNeedsCheckerboard(config.borderAppearance);
     }
     config.persistenceId = record.id;
+    config.presentationPolicy = m_restoringIds.value(record.id).presentationPolicy;
+    if (config.presentationPolicy == ScreenshotPinnedWindow::PresentationPolicy::Activate) {
+        const auto desired =
+            snow_shot::storage::ApplicationStorage::instance().pinnedWindows().stackingOrder(
+                record.groupId);
+        // The explicit request reserved foreground order when it was accepted. A later
+        // user activation or new pin takes precedence over this slow load's completion.
+        if (desired.isEmpty() || desired.first() != record.id)
+            config.presentationPolicy = ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus;
+    }
     config.creationSource = record.creationSource;
     config.sourceIdentity = record.sourceIdentity;
     config.sourceCreatedUtc = record.createdUtc;
@@ -1643,13 +1743,13 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
             if (lifetime.isNull())
                 return;
             if (!m_restoringIds.contains(id) || m_restoringIds.value(id).generation != generation) {
-                if (success && windowGuard)
-                    windowGuard->close();
+                // Cancellation owns retirement. A pooled widget may already belong to a
+                // replacement request, so an obsolete completion must not touch it.
                 return;
             }
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
             if (!storage.isInitialized() || &storage.pinnedWindows() != repositoryGuard) {
-                m_restoringIds.remove(id);
+                cancelRestore(id);
                 if (windowGuard)
                     windowGuard->close();
                 return;
@@ -1663,7 +1763,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
                 return;
             }
             const bool attention = m_restoringIds.value(id).attentionPending;
-            m_restoringIds.remove(id);
+            const auto stackingBatch = m_restoringIds.take(id).stackingBatch;
             if (success) {
                 if (!storage.pinnedWindows().markRestored(id).success && windowGuard)
                     windowGuard->close();
@@ -1674,6 +1774,8 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
                 if (m_restoreFailure)
                     m_restoreFailure();
             }
+            if (auto* stacking = stackingCoordinator())
+                stacking->settleRestore(stackingBatch, id);
         });
     return presented;
 }
@@ -1845,6 +1947,13 @@ void ScreenshotSelectionExportUiServices::destroyRecords(const QVector<QString>&
 
 snow_shot::storage::StorageResult
 ScreenshotSelectionExportUiServices::tryDestroyRecords(const QVector<QString>& ids) {
+    auto* stacking = stackingCoordinator();
+    if (stacking)
+        stacking->beginMutation();
+    const auto mutation = qScopeGuard([stacking] {
+        if (stacking)
+            stacking->endMutation();
+    });
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return snow_shot::storage::StorageResult::failure(

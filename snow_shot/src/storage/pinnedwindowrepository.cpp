@@ -1,6 +1,7 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
+#include "snow_shot/storage/pinnedwindowstackingorder.h"
 
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/storagelogging.h"
@@ -424,7 +425,9 @@ PinnedWindowSummary summarizeRecord(const PinnedWindowRecord& record) {
 }
 
 struct Snapshot final {
+    bool notifyCompletion = false;
     QVector<PinnedWindowGroup> groups;
+    QHash<QString, QStringList> stackingOrders;
     QString activeGroupId;
     int nextHideToTopAccent = 0;
     QVector<StoredRecord> records;
@@ -1307,7 +1310,8 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
 bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
                     QHash<QString, quint64>* committedPayloadRevisions,
                     QHash<QString, quint64>* writtenPayloadRevisions,
-                    QSet<QString>* changedPayloadIds) {
+                    QSet<QString>* changedPayloadIds,
+                    const std::function<void(PinnedWindowOperation)>& observed) {
     if (committedPayloadRevisions == nullptr || writtenPayloadRevisions == nullptr ||
         changedPayloadIds == nullptr ||
         !QDir().mkpath(QDir(root).filePath(QStringLiteral("pins")))) {
@@ -1338,6 +1342,9 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
         records.push_back(
             recordToJson(stored.record, payloadsDescriptor(stored), stored.previewSourceRevision));
     }
+    QJsonObject stackingOrders;
+    for (auto it = snapshot.stackingOrders.cbegin(); it != snapshot.stackingOrders.cend(); ++it)
+        stackingOrders.insert(it.key(), QJsonArray::fromStringList(it.value()));
     const QByteArray bytes = jsonBytes(QJsonObject{
         {QStringLiteral("format_version"), kFormatVersion},
         {QStringLiteral("active_group_id"), snapshot.activeGroupId},
@@ -1345,11 +1352,14 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
         {QStringLiteral("next_preview_source_revision"),
          QString::number(snapshot.nextPreviewSourceRevision)},
         {QStringLiteral("groups"), groups},
+        {QStringLiteral("stacking_order"), stackingOrders},
         {QStringLiteral("records"), records},
     });
     if (!writeBytes(QDir(root).filePath(QString::fromLatin1(kManifestName)), bytes)) {
         return false;
     }
+    if (observed)
+        observed(PinnedWindowOperation::ManifestWrite);
     for (const StoredRecord& stored : snapshot.records) {
         if (changedPayloadIds->contains(stored.record.id)) {
             pruneObsoletePayloadFiles(root, stored);
@@ -1467,6 +1477,9 @@ struct PinnedWindowRepository::Impl final {
     }
     QString error;
     QHash<QString, StoredRecord> records;
+    PinnedWindowStackingOrder stacking;
+    quint64 stackingRevisionBase = 0;
+    bool notifyWriteCompletion = false;
     QVector<PinnedWindowGroup> groups{defaultGroup()};
     QString activeGroupId = QString::fromLatin1(kDefaultGroupId);
     int nextHideToTopAccent = 0;
@@ -1491,6 +1504,7 @@ struct PinnedWindowRepository::Impl final {
     quint64 nextPreviewSourceRevision = 1;
 
     void insertRecordLocked(const QString& id, StoredRecord stored) {
+        stacking.add(id, stored.record.groupId);
         if (stored.record.animationSource)
             stored.animationOwner = stored.record.animationSource;
         const auto existing = records.constFind(id);
@@ -1504,11 +1518,13 @@ struct PinnedWindowRepository::Impl final {
 
     QHash<QString, StoredRecord>::iterator
     removeRecordLocked(QHash<QString, StoredRecord>::iterator record) {
+        stacking.remove(record.key());
         pendingPayloadBytes -= residentPayloadBytes(*record);
         return records.erase(record);
     }
 
     bool removeRecordLocked(const QString& id) {
+        stacking.remove(id);
         const auto record = records.find(id);
         if (record == records.end())
             return false;
@@ -1539,6 +1555,8 @@ struct PinnedWindowRepository::Impl final {
 
     Snapshot snapshotLocked() const {
         Snapshot snapshot;
+        snapshot.notifyCompletion = notifyWriteCompletion;
+        snapshot.stackingOrders = stacking.orders();
         snapshot.groups = groups;
         snapshot.activeGroupId = activeGroupId;
         snapshot.nextHideToTopAccent = nextHideToTopAccent;
@@ -1552,7 +1570,8 @@ struct PinnedWindowRepository::Impl final {
         return snapshot;
     }
 
-    void markDirtyLocked(bool membershipChanged = false) {
+    void markDirtyLocked(bool membershipChanged = false, bool notifyChanged = true) {
+        notifyWriteCompletion |= notifyChanged;
         ++revision;
         if (membershipChanged)
             ++membershipRevision;
@@ -1562,7 +1581,7 @@ struct PinnedWindowRepository::Impl final {
         }
         dirty = true;
         condition.notify_one();
-        if (changed)
+        if (changed && notifyChanged)
             changed();
     }
 };
@@ -1666,6 +1685,25 @@ PinnedWindowRepository::PinnedWindowRepository(
                     m_impl->committedPayloadRevisions.insert(id, 1);
                     m_impl->writtenPayloadRevisions.insert(id, 1);
                 }
+                // Old manifests restored oldest saves first and raised each window. Keep
+                // that deterministic fallback, independently of all future state saves.
+                QVector<PinnedWindowSummary> legacy;
+                legacy.reserve(m_impl->records.size());
+                for (const auto& stored : m_impl->records)
+                    legacy.append(summarizeRecord(stored.record));
+                std::sort(legacy.begin(), legacy.end(), [](const auto& a, const auto& b) {
+                    return a.updatedUtc == b.updatedUtc ? a.id > b.id : a.updatedUtc > b.updatedUtc;
+                });
+                const auto savedOrders = object.value(QStringLiteral("stacking_order")).toObject();
+                QHash<QString, QStringList> orders;
+                for (auto it = savedOrders.begin(); it != savedOrders.end(); ++it)
+                    for (const auto& value : it.value().toArray())
+                        if (value.isString())
+                            orders[it.key()].append(value.toString());
+                for (const auto& summary : legacy)
+                    orders[summary.groupId].append(summary.id);
+                for (auto it = orders.cbegin(); it != orders.cend(); ++it)
+                    static_cast<void>(m_impl->stacking.observe(it.key(), it.value()));
             }
         }
     }
@@ -1695,6 +1733,7 @@ PinnedWindowRepository::PinnedWindowRepository(
                     }
                 }
                 Snapshot snapshot = impl->snapshotLocked();
+                impl->notifyWriteCompletion = false;
                 impl->activeWrite = true;
                 lock.unlock();
                 std::sort(snapshot.records.begin(), snapshot.records.end(),
@@ -1704,9 +1743,9 @@ PinnedWindowRepository::PinnedWindowRepository(
                 std::unique_lock payloadLease(impl->payloadMutex);
                 impl->observe(PinnedWindowOperation::PayloadWrite);
                 QSet<QString> changedPayloadIds;
-                const bool success =
-                    snapshotToDisk(impl->root, snapshot, &impl->committedPayloadRevisions,
-                                   &impl->writtenPayloadRevisions, &changedPayloadIds);
+                const bool success = snapshotToDisk(
+                    impl->root, snapshot, &impl->committedPayloadRevisions,
+                    &impl->writtenPayloadRevisions, &changedPayloadIds, impl->operationObserved);
                 lock.lock();
                 for (const QString& id : std::as_const(changedPayloadIds))
                     impl->payloadSizeCache.remove(id);
@@ -1726,6 +1765,7 @@ PinnedWindowRepository::PinnedWindowRepository(
                 impl->activeWrite = false;
                 ++impl->attemptCount;
                 payloadLease.unlock();
+                const QString previousError = impl->error;
                 if (success) {
                     retryMilliseconds = 0;
                     impl->error.clear();
@@ -1753,7 +1793,7 @@ PinnedWindowRepository::PinnedWindowRepository(
                         lock, std::chrono::milliseconds(retryMilliseconds),
                         [impl]() { return impl->stopping || impl->flushRequested; });
                 }
-                if (impl->changed)
+                if (impl->changed && (snapshot.notifyCompletion || impl->error != previousError))
                     impl->changed();
                 impl->condition.notify_all();
             }
@@ -1990,6 +2030,45 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
     return summariesImpl(false);
 }
 
+quint64 PinnedWindowRepository::stackingRevision() const {
+    std::lock_guard access(m_accessMutex);
+    if (!m_impl)
+        return 0;
+    std::lock_guard lock(m_impl->mutex);
+    return m_impl->stackingRevisionBase + m_impl->stacking.revision();
+}
+
+QStringList PinnedWindowRepository::stackingOrder(const QString& groupId) const {
+    std::lock_guard access(m_accessMutex);
+    if (!m_impl)
+        return {};
+    std::lock_guard lock(m_impl->mutex);
+    return m_impl->stacking.order(groupId);
+}
+
+StorageResult PinnedWindowRepository::updateStackingOrder(const QString& groupId,
+                                                          const QStringList& frontToBack) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended || !m_impl || !m_impl->writeAvailable)
+        return StorageResult::failure(
+            QStringLiteral("Pinned-window stacking storage is unavailable"));
+    std::lock_guard lock(m_impl->mutex);
+    if (m_impl->stacking.observe(groupId, frontToBack))
+        m_impl->markDirtyLocked(false, false);
+    return StorageResult::ok();
+}
+
+StorageResult PinnedWindowRepository::promoteStackingWindow(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended || !m_impl || !m_impl->writeAvailable)
+        return StorageResult::failure(
+            QStringLiteral("Pinned-window stacking storage is unavailable"));
+    std::lock_guard lock(m_impl->mutex);
+    if (m_impl->stacking.promote(id))
+        m_impl->markDirtyLocked(false, false);
+    return StorageResult::ok();
+}
+
 QVector<PinnedWindowSummary> PinnedWindowRepository::summariesIncludingPending() const {
     return summariesImpl(true);
 }
@@ -2210,6 +2289,13 @@ StorageResult PinnedWindowRepository::setGroups(QVector<PinnedWindowGroup> group
             affectedGroups.insert(pending.groupId);
         }
     }
+    QSet<QString> reassigned;
+    for (const auto& group : std::as_const(affectedGroups))
+        if (group != QString::fromLatin1(kDefaultGroupId)) {
+            const auto ids = m_impl->stacking.order(group);
+            reassigned.unite(QSet<QString>(ids.cbegin(), ids.cend()));
+        }
+    m_impl->stacking.move(reassigned, QString::fromLatin1(kDefaultGroupId));
     static_cast<void>(m_impl->revealHiddenGroupsLocked(affectedGroups));
     m_impl->markDirtyLocked(true);
     return StorageResult::ok();
@@ -2234,6 +2320,7 @@ StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
     if (record->record.groupId != groupId) {
         const QSet<QString> affectedGroups{record->record.groupId, groupId};
         record->record.groupId = groupId;
+        m_impl->stacking.move({recordId}, groupId);
         static_cast<void>(m_impl->revealHiddenGroupsLocked(affectedGroups));
         m_impl->markDirtyLocked(true);
     }
@@ -2276,6 +2363,7 @@ StorageResult PinnedWindowRepository::setRecordsGroup(const QVector<QString>& re
     }
     if (changed) {
         affectedGroups.insert(groupId);
+        m_impl->stacking.move(QSet<QString>(recordIds.cbegin(), recordIds.cend()), groupId);
         static_cast<void>(m_impl->revealHiddenGroupsLocked(affectedGroups));
         m_impl->markDirtyLocked(true);
     }
@@ -2342,6 +2430,7 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
     for (auto it = m_impl->pendingCreations.begin(); it != m_impl->pendingCreations.end();) {
         if (it->groupId == groupId) {
             m_impl->pendingCloses.remove(it.key());
+            m_impl->stacking.remove(it.key());
             it = m_impl->pendingCreations.erase(it);
             changed = true;
         } else {
@@ -2822,6 +2911,7 @@ void PinnedWindowRepository::reserveCreation(const QString& id, QDateTime when,
                     [&groupId](const auto& group) { return group.id == groupId; })) {
         m_impl->pendingCreations.insert(id,
                                         {when.toUTC(), ++m_impl->nextActivitySequence, groupId});
+        m_impl->stacking.add(id, groupId);
         m_impl->markDirtyLocked(true);
     }
 }
@@ -2851,8 +2941,10 @@ void PinnedWindowRepository::cancelCreation(const QString& id) {
     std::lock_guard lock(m_impl->mutex);
     const bool changed = m_impl->pendingCreations.remove(id) != 0;
     m_impl->pendingCloses.remove(id);
-    if (changed)
+    if (changed) {
+        m_impl->stacking.remove(id);
         m_impl->markDirtyLocked(true);
+    }
 }
 
 StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime when) {
@@ -3167,6 +3259,7 @@ StorageResult PinnedWindowRepository::clearClosed() {
             changed = true;
         }
         m_impl->pendingCreations.remove(it.key());
+        m_impl->stacking.remove(it.key());
     }
     m_impl->pendingCloses.clear();
     if (changed) {
@@ -3232,6 +3325,8 @@ void PinnedWindowRepository::exchangeStorage(PinnedWindowRepository& prepared) {
     prepared.m_impl->revision = m_impl->revision + 1;
     prepared.m_impl->membershipRevision = m_impl->membershipRevision + 1;
     prepared.m_impl->visibilityRevision = m_impl->visibilityRevision + 1;
+    prepared.m_impl->stackingRevisionBase =
+        m_impl->stackingRevisionBase + m_impl->stacking.revision() + 1;
     std::swap(m_impl, prepared.m_impl);
 }
 

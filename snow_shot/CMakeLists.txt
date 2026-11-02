@@ -5,6 +5,7 @@ if(APPLE)
         src/presentation/recording/recordingregioninputrouter.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
         tests/global_canvas_tests.cpp
+        tests/pinned_window_stacking_tests.cpp
         tests/screen_recording_shortcut_tests.cpp PROPERTIES LANGUAGE OBJCXX)
 endif()
 
@@ -82,6 +83,14 @@ if(WIN32)
     list(APPEND SNOW_PINNED_PLATFORM_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindowevents.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindownative.cpp)
+endif()
+
+set(SNOW_PINNED_STACKING_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowstackingcoordinator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowstackingplatform.cpp)
+if(APPLE)
+    list(APPEND SNOW_PINNED_STACKING_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/pinnedwindowstackingplatform.mm)
 endif()
 
 option(SNOW_SHOT_ENABLE_STRICT_COMPILE "Enable strict compiler warnings and treat warnings as errors." ON)
@@ -2029,6 +2038,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/windowgroupswitchercontroller.cpp
     src/presentation/components/windowgroupswitcherpopup.cpp
     src/presentation/services/pinnedwindowgroupmanager.cpp
+    ${SNOW_PINNED_STACKING_SOURCES}
     src/presentation/services/screenshotsourceimagecomposer.cpp
     src/presentation/services/systemtraycontroller.cpp
     src/presentation/selection/screenshotselectioneditworkflow.cpp
@@ -2468,6 +2478,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_executable(snow-shot-storage-directory-change-tests tests/storage_directory_change_tests.cpp)
         target_link_libraries(snow-shot-storage-directory-change-tests PRIVATE snow_shot_storage Qt6::Core)
         add_test(NAME snow-shot-storage-directory-change-tests COMMAND snow-shot-storage-directory-change-tests)
+        add_test(NAME snow-shot-pinned-stacking-migration-tests
+            COMMAND snow-shot-storage-directory-change-tests --stacking-only)
+        set_tests_properties(snow-shot-pinned-stacking-migration-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 90
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
         set_tests_properties(snow-shot-storage-directory-change-tests PROPERTIES LABELS "unit;windows" TIMEOUT 90
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -3690,6 +3705,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/systemtraycontroller.h
         src/presentation/services/languagemanager.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
         src/presentation/services/systemtraycontroller.cpp
     )
     target_include_directories(snow-shot-system-tray-controller-tests PRIVATE
@@ -3819,6 +3835,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/windowgroupswitchercontroller.cpp
         src/presentation/components/windowgroupswitcherpopup.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
         src/presentation/services/languagemanager.cpp)
     target_include_directories(snow-shot-window-group-switcher-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include" "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include")
@@ -3852,6 +3869,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/pinnedwindowgroupmanager.h
         src/presentation/services/languagemanager.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
     )
     target_include_directories(snow-shot-pinned-window-group-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -5261,6 +5279,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
         src/presentation/pinned/screenshotpinnedcrop.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h
@@ -10320,6 +10339,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/pinned/screenshotpinnedbatchsave.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
         src/presentation/pinned/screenshotpinnedcrop.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
         include/snow_shot/presentation/pinnedwindowselectioncontroller.h
@@ -12269,6 +12289,7 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/services/languagemanager.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
+        ${SNOW_PINNED_STACKING_SOURCES}
         src/presentation/services/systemtraycontroller.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp)
@@ -13646,5 +13667,60 @@ if(TARGET snow-shot-pinned-window-tests)
             COMMAND snow-shot-pinned-window-tests --crop-performance-only -platform offscreen)
         set_tests_properties(snow-shot-pinned-crop-performance-benchmark PROPERTIES
             LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 120 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-pinned-window-stacking-tests
+        tests/pinned_window_stacking_tests.cpp
+        ${SNOW_PINNED_STACKING_SOURCES})
+    target_include_directories(snow-shot-pinned-window-stacking-tests PRIVATE include src)
+    target_link_libraries(snow-shot-pinned-window-stacking-tests PRIVATE snow_shot_storage Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-pinned-window-stacking-tests)
+    if(APPLE)
+        target_link_libraries(snow-shot-pinned-window-stacking-tests PRIVATE "-framework AppKit")
+    endif()
+    add_test(NAME snow-shot-pinned-window-stacking-tests
+        COMMAND snow-shot-pinned-window-stacking-tests -platform offscreen)
+    set_tests_properties(snow-shot-pinned-window-stacking-tests PROPERTIES
+        LABELS unit TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
+if(TARGET snow-shot-pinned-window-stacking-tests)
+    if(WIN32)
+        set(_snow_stacking_platform windows)
+    elseif(APPLE)
+        set(_snow_stacking_platform cocoa)
+    endif()
+    if(DEFINED _snow_stacking_platform)
+        add_test(NAME snow-shot-pinned-window-stacking-native-tests
+            COMMAND snow-shot-pinned-window-stacking-tests --native -platform ${_snow_stacking_platform})
+        set_tests_properties(snow-shot-pinned-window-stacking-native-tests PROPERTIES
+            LABELS "interactive" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endif()
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-stacking-restore-tests
+        COMMAND snow-shot-pinned-window-tests --stacking-restore-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-stacking-restore-tests PROPERTIES
+        LABELS unit RUN_SERIAL TRUE TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(DEFINED _snow_stacking_platform)
+        add_test(NAME snow-shot-pinned-stacking-restore-native-tests
+            COMMAND snow-shot-pinned-window-tests --stacking-restore-only -platform ${_snow_stacking_platform})
+        set_tests_properties(snow-shot-pinned-stacking-restore-native-tests PROPERTIES
+            LABELS "interactive" RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endif()
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-pinned-window-stacking-performance-benchmark
+        tests/pinned_window_stacking_tests.cpp ${SNOW_PINNED_STACKING_SOURCES})
+    target_include_directories(snow-shot-pinned-window-stacking-performance-benchmark PRIVATE include src)
+    target_link_libraries(snow-shot-pinned-window-stacking-performance-benchmark PRIVATE snow_shot_storage Qt6::Widgets)
+    if(APPLE)
+        target_link_libraries(snow-shot-pinned-window-stacking-performance-benchmark PRIVATE "-framework AppKit")
     endif()
 endif()

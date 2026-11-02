@@ -121,6 +121,31 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                 [m_observers addObject:token];
             }
             m_wakeNotifications = pinnedWakeNotifications();
+            for (NSNotificationName name in @[
+                     NSWindowDidBecomeKeyNotification, NSWindowDidChangeOcclusionStateNotification
+                 ]) {
+                id token = [NSNotificationCenter.defaultCenter
+                    addObserverForName:name
+                                object:window
+                                 queue:nil
+                            usingBlock:^(NSNotification* note) {
+                              if ([note.name isEqualToString:NSWindowDidBecomeKeyNotification] &&
+                                  stackingActivated)
+                                  stackingActivated();
+                              if (stackingChanged)
+                                  stackingChanged();
+                            }];
+                [m_observers addObject:token];
+            }
+            id activated = [NSNotificationCenter.defaultCenter
+                addObserverForName:NSApplicationDidBecomeActiveNotification
+                            object:NSApp
+                             queue:nil
+                        usingBlock:^(NSNotification*) {
+                          if (stackingChanged)
+                              stackingChanged();
+                        }];
+            [m_observers addObject:activated];
             m_wakeNotifications->add(this);
         }
         adqt::widgets::detail::NativeWindowConstraints constraints;
@@ -266,6 +291,8 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_staysOnTop = staysOnTop;
         if (!attach())
             return false;
+        if (stackingChanged)
+            stackingChanged();
         return m_native.level == (staysOnTop ? snow_shot::platform::detail::pinnedWindowLevel()
                                              : NSNormalWindowLevel);
     }
