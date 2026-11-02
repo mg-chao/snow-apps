@@ -921,6 +921,210 @@ void inputSuspensionBlocksDispatchAndClearsHeldState() {
     manager.resumeInput(suspension);
 }
 
+void modalWindowsIsolateShortcutScopes() {
+    for (const auto modality : {Qt::WindowModal, Qt::ApplicationModal}) {
+        QWidget owner;
+        QWidget independent;
+        QWidget unusedScope;
+        owner.show();
+        independent.show();
+        QApplication::processEvents();
+        QDialog modal(&owner);
+        QWidget content(&modal);
+        modal.setWindowModality(modality);
+
+        // Install the parent filter last: it must leave a modal's own commands
+        // available regardless of application event-filter ordering.
+        WindowShortcutManager modalManager;
+        modalManager.addScopeWindow(&modal);
+        WindowShortcutManager independentManager;
+        independentManager.addScopeWindow(&independent);
+        WindowShortcutManager ownerManager;
+        ownerManager.addScopeWindow(&owner);
+        ownerManager.addScopeWindow(&unusedScope);
+        int ownerActivations = 0;
+        int modalActivations = 0;
+        int independentActivations = 0;
+        require(ownerManager.addBinding(&owner, binding(QStringLiteral("owner-modal-boundary"),
+                                                        Qt::Key_K, 100,
+                                                        [&] {
+                                                            ++ownerActivations;
+                                                            return true;
+                                                        })) != 0,
+                "owner modal-boundary binding must register");
+        require(modalManager.addBinding(&modal,
+                                        binding(QStringLiteral("modal-own-scope"), Qt::Key_K, 100,
+                                                [&] {
+                                                    ++modalActivations;
+                                                    return true;
+                                                })) != 0,
+                "a modal's own binding must register");
+        require(independentManager.addBinding(
+                    &independent, binding(QStringLiteral("independent-modal-scope"), Qt::Key_K, 100,
+                                          [&] {
+                                              ++independentActivations;
+                                              return true;
+                                          })) != 0,
+                "independent modal-scope binding must register");
+        modal.show();
+        QApplication::processEvents();
+        require(ownerManager.inputSuspended() && !modalManager.inputSuspended(),
+                "a modal must suspend its owner while retaining its own command scope");
+        require(independentManager.inputSuspended() == (modality == Qt::ApplicationModal),
+                "only application modality may suspend an independent window");
+
+        sendKey(&owner, QEvent::ShortcutOverride, Qt::Key_K);
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_K);
+        require(ownerActivations == 0, "direct events must not bypass a blocked owner scope");
+        sendKey(&content, QEvent::ShortcutOverride, Qt::Key_K);
+        sendKey(&content, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&content, QEvent::KeyRelease, Qt::Key_K);
+        require(ownerActivations == 0 && modalActivations == 1,
+                "modal controls must use their own scope instead of inheriting owner shortcuts");
+
+        QWidget popup(&modal, Qt::Tool);
+        popup.show();
+        QApplication::processEvents();
+        sendKey(&popup, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&popup, QEvent::KeyRelease, Qt::Key_K);
+        require(ownerActivations == 0 && modalActivations == 2,
+                "owned modal popups must retain the modal's scope without reaching its owner");
+        popup.hide();
+        sendKey(&independent, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&independent, QEvent::KeyRelease, Qt::Key_K);
+        require(independentActivations == (modality == Qt::WindowModal ? 1 : 0),
+                "an independent window's shortcuts must follow the requested modal scope");
+
+        QDialog nested(&modal);
+        nested.setWindowModality(Qt::WindowModal);
+        nested.show();
+        QApplication::processEvents();
+        require(ownerManager.inputSuspended() && modalManager.inputSuspended(),
+                "nested modality must keep both blocked owners suspended");
+        sendKey(&content, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&content, QEvent::KeyRelease, Qt::Key_K);
+        require(modalActivations == 2, "a nested modal must block its parent's own commands");
+        nested.hide();
+        QApplication::processEvents();
+        require(ownerManager.inputSuspended() && !modalManager.inputSuspended(),
+                "closing a nested modal must restore only its immediate owner's input");
+        modal.hide();
+        QApplication::processEvents();
+        require(!ownerManager.inputSuspended(), "closing the last modal must restore its owner");
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_K);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_K);
+        require(ownerActivations == 1, "the owner's shortcuts must resume after its modal closes");
+    }
+}
+
+void aBlockedScopeCannotBorrowAnUnblockedScope() {
+    QWidget owner;
+    QWidget independent;
+    owner.show();
+    independent.show();
+    QApplication::processEvents();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&owner);
+    manager.addScopeWindow(&independent);
+    int activations = 0;
+    auto command = binding(QStringLiteral("multiple-modal-scopes"), Qt::Key_K, 100, [&] {
+        ++activations;
+        return true;
+    });
+    command.canActivateOutsideScope = [](const auto&) { return true; };
+    require(manager.addBinding(&owner, std::move(command)) != 0,
+            "a binding shared by multiple scopes must register");
+    QDialog modal(&owner);
+    QWidget content(&modal);
+    modal.setWindowModality(Qt::WindowModal);
+    modal.show();
+    QApplication::processEvents();
+    require(!manager.inputSuspended(), "an unblocked registered scope must remain available");
+    sendKey(&owner, QEvent::KeyPress, Qt::Key_K);
+    sendKey(&owner, QEvent::KeyRelease, Qt::Key_K);
+    sendKey(&content, QEvent::KeyPress, Qt::Key_K);
+    sendKey(&content, QEvent::KeyRelease, Qt::Key_K);
+    require(activations == 0,
+            "outside-scope opt-in must not bypass a blocked registered scope's modal boundary");
+    sendKey(&independent, QEvent::KeyPress, Qt::Key_K);
+    sendKey(&independent, QEvent::KeyRelease, Qt::Key_K);
+    require(activations == 1, "the same manager must still dispatch in its unblocked scope");
+}
+
+void modalOpeningCancelsHeldAndDeferredActions() {
+    for (const bool closeBeforeRelease : {false, true}) {
+        QWidget owner;
+        owner.show();
+        QApplication::processEvents();
+        WindowShortcutManager manager;
+        manager.addScopeWindow(&owner);
+        int presses = 0;
+        int releases = 0;
+        int cancellations = 0;
+        int deferredActivations = 0;
+        auto held = binding(QStringLiteral("modal-interrupted-hold"), Qt::Key_Space, 100, [&] {
+            ++presses;
+            return true;
+        });
+        held.release = [&](const auto&) {
+            ++releases;
+            return true;
+        };
+        held.cancel = [&] { ++cancellations; };
+        require(manager.addBinding(&owner, std::move(held)) != 0,
+                "modal-interrupted held binding must register");
+        for (const auto trigger : {WindowShortcutManager::Binding::ActivationTrigger::Release,
+                                   WindowShortcutManager::Binding::ActivationTrigger::Tap}) {
+            auto deferred = binding(
+                QStringLiteral("modal-interrupted-deferred"),
+                trigger == WindowShortcutManager::Binding::ActivationTrigger::Tap ? Qt::Key_T
+                                                                                  : Qt::Key_R,
+                100, [&] {
+                    ++deferredActivations;
+                    return true;
+                });
+            deferred.activationTrigger = trigger;
+            require(manager.addBinding(&owner, std::move(deferred)) != 0,
+                    "modal-interrupted deferred binding must register");
+        }
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_Space);
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_R);
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_T);
+        require(presses == 1 && cancellations == 0 && deferredActivations == 0,
+                "held and deferred actions must arm before modality begins");
+        QDialog modal(&owner);
+        modal.setWindowModality(Qt::WindowModal);
+        modal.show();
+        require(cancellations == 1,
+                "entering modality must cancel held input before another key event arrives");
+        if (closeBeforeRelease)
+            modal.hide();
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_Space);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_R);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_T);
+        require(releases == 0 && deferredActivations == 0,
+                "input interrupted by modality must not perform release or tap actions later");
+        modal.hide();
+        QApplication::processEvents();
+        const auto suspension = manager.suspendInput();
+        modal.show();
+        manager.resumeInput(suspension);
+        require(manager.inputSuspended(),
+                "resuming explicit suspension must not unblock an active modal");
+        modal.hide();
+        QApplication::processEvents();
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_Space);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_Space);
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_R);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_R);
+        sendKey(&owner, QEvent::KeyPress, Qt::Key_T);
+        sendKey(&owner, QEvent::KeyRelease, Qt::Key_T);
+        require(presses == 2 && releases == 1 && deferredActivations == 2,
+                "fresh held, release and tap gestures must resume normally after modality ends");
+    }
+}
+
 void childWindowOwnershipFallbackKeepsToolbarScope() {
     QWidget overlay;
     QWidget toolbar(&overlay);
@@ -1733,6 +1937,9 @@ int main(int argc, char** argv) {
     heldModifierParsingAndAdditionalModifiersAreScoped();
     macPhysicalBindingsSurviveLogicalLayoutChanges();
     inputSuspensionBlocksDispatchAndClearsHeldState();
+    modalWindowsIsolateShortcutScopes();
+    aBlockedScopeCannotBorrowAnUnblockedScope();
+    modalOpeningCancelsHeldAndDeferredActions();
     childWindowOwnershipFallbackKeepsToolbarScope();
     transientToolWindowOwnershipKeepsScope();
     lostKeyReleaseDoesNotSwallowTheNextPress();
