@@ -1259,12 +1259,23 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
     require(hotkeys.findChild<adqt::widgets::AdSwitch*>(QStringLiteral(
                 "settings-control-global-hotkeys-disable-on-focused-fullscreen-window")) != nullptr,
             "Global Hotkeys materializes the relocated full-screen switch");
+    auto* filter = hotkeys.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("settings-control-global-hotkeys-window-filter-type"));
+    require(filter && filter->isEnabled() &&
+                filter->currentValue() == QStringLiteral("game_windows") &&
+                session.selectValue(settings::SettingsSelectBinding::FullscreenWindowFilter) ==
+                    QStringLiteral("game_windows"),
+            "the game filter selector materializes and remains editable while suppression is off");
     const auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     const auto screenshotShortcut =
         configuration.value(QStringLiteral("global_shortcuts/screenshot"));
     require(session.applySwitchValue(
                 settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen, true) &&
+                session.applySelectValue(settings::SettingsSelectBinding::FullscreenWindowFilter,
+                                         QStringLiteral("all_windows")) &&
                 session.reset(settings::SettingsSectionReset::GlobalHotkeys) &&
+                configuration.value(QStringLiteral("global_shortcuts/fullscreen_window_filter")) ==
+                    QJsonValue(QStringLiteral("game_windows")) &&
                 configuration.value(
                     QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window")) ==
                     snow_shot::storage::ConfigurationSchema::defaultValue(
@@ -1272,6 +1283,31 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
                 configuration.value(QStringLiteral("global_shortcuts/screenshot")) ==
                     screenshotShortcut,
             "full-screen reset preserves global shortcut bindings");
+    drainEvents();
+    require(filter->currentValue() == QStringLiteral("game_windows") && filter->isEnabled(),
+            "reset refreshes the selected game filter while leaving it editable");
+    auto& filterLanguage = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(filterLanguage.setLanguage(locale), "switch fullscreen filter settings language");
+        drainEvents();
+        const auto options = filter->options();
+        const QString title = QCoreApplication::translate("SettingsCatalog", "Window filter type");
+        bool hasTitle = false;
+        for (const auto* label : hotkeys.findChildren<QLabel*>())
+            hasTitle = hasTitle || label->text() == title;
+        require(
+            hasTitle && options.size() == 2 &&
+                options.at(0).label ==
+                    QCoreApplication::translate("SettingsCatalog", "All windows") &&
+                options.at(1).label ==
+                    QCoreApplication::translate("SettingsCatalog", "Game windows") &&
+                filter->currentValue() == QStringLiteral("game_windows"),
+            "language changes retranslate filter titles and options without changing its value");
+    }
+    require(filterLanguage.setLanguage(QStringLiteral("en_US")),
+            "restore English fullscreen filter settings");
+    drainEvents();
 }
 
 void unchangedPresentation(const settings::SettingsRegistry& registry,

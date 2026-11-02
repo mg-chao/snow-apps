@@ -1268,6 +1268,10 @@
             <translation>所有截圖歷史都將被移除</translation>
         </message>
         <message>
+            <source>All windows</source>
+            <translation>所有視窗</translation>
+        </message>
+        <message>
             <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
             <translation>允許以目前系統使用者身分執行的 MCP 用戶端控制 Snow Shot。Snow Shot 必須保持執行。</translation>
         </message>
@@ -1826,6 +1830,10 @@
         <message>
             <source>Choose which actions also save an image in the selected image format and save directory</source>
             <translation>選擇執行哪些操作時，同時以所選影像格式儲存至指定目錄</translation>
+        </message>
+        <message>
+            <source>Choose which fullscreen windows automatically disable global hotkeys</source>
+            <translation>選擇哪些全螢幕視窗會自動停用全域快速鍵</translation>
         </message>
         <message>
             <source>Clear</source>
@@ -2576,6 +2584,10 @@
             <translation>GPU</translation>
         </message>
         <message>
+            <source>Game windows</source>
+            <translation>遊戲視窗</translation>
+        </message>
+        <message>
             <source>General</source>
             <translation>一般</translation>
         </message>
@@ -2672,8 +2684,8 @@
             <translation>圖示</translation>
         </message>
         <message>
-            <source>Ignore global hotkeys while the focused window occupies an entire monitor</source>
-            <translation>焦點視窗占滿整個螢幕時忽略全域快速鍵</translation>
+            <source>Ignore global hotkeys while a matching focused window occupies an entire monitor</source>
+            <translation>符合篩選條件的焦點視窗佔滿整個顯示器時忽略全域快速鍵</translation>
         </message>
         <message>
             <source>Image Recognition</source>
@@ -4794,6 +4806,10 @@
         <message>
             <source>Window capture</source>
             <translation>視窗截圖</translation>
+        </message>
+        <message>
+            <source>Window filter type</source>
+            <translation>視窗篩選類型</translation>
         </message>
         <message>
             <source>Window grouping</source>

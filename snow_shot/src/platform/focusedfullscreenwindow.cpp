@@ -48,6 +48,9 @@ bool focusedFullscreenWindowOnScreen(QScreen*) {
 bool focusedFullscreenWindowExists() {
     return false;
 }
+bool focusedFullscreenGameWindowExists() {
+    return false;
+}
 #endif
 
 } // namespace snow_shot::platform

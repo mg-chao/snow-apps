@@ -975,6 +975,14 @@ bool GlobalShortcutSettings::setDisableOnFocusedFullscreenWindow(bool disabled) 
                             disabled);
 }
 
+QString GlobalShortcutSettings::fullscreenWindowFilter() const {
+    return cache().value(QStringLiteral("global_shortcuts/fullscreen_window_filter")).toString();
+}
+
+bool GlobalShortcutSettings::setFullscreenWindowFilter(const QString& filter) const {
+    return cache().setValue(QStringLiteral("global_shortcuts/fullscreen_window_filter"), filter);
+}
+
 bool ScreenshotSettings::shutterSoundNotification() const {
     return cache().value(QStringLiteral("screenshot/shutter_sound_notification")).toBool();
 }

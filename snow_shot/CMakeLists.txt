@@ -980,6 +980,8 @@ if(WIN32)
         src/platform/windows/printscreenshortcutrecorder.cpp)
 endif()
 set(SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES
+    include/snow_shot/platform/gamewindowclassification.h
+    src/platform/gamewindowclassification.cpp
     include/snow_shot/platform/focusedfullscreenwindow.h
     include/snow_shot/presentation/globalshortcutmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
@@ -2363,6 +2365,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-shortcut-manager-tests --native-registration-smoke)
         set_tests_properties(snow-shot-global-shortcut-native-smoke-tests PROPERTIES
             LABELS "interactive;${_snow_shot_shortcut_platform_label}" TIMEOUT 60)
+        if(WIN32)
+            add_test(NAME snow-shot-fullscreen-game-native-smoke-tests
+                COMMAND snow-shot-global-shortcut-manager-tests --native-fullscreen-game-smoke)
+            set_tests_properties(snow-shot-fullscreen-game-native-smoke-tests PROPERTIES
+                LABELS "interactive;windows" TIMEOUT 30)
+        endif()
         if(APPLE)
             target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
                 "${SNOW_SHOT_CARBON_FRAMEWORK}"
@@ -2371,6 +2379,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         endif()
         unset(_snow_shot_shortcut_platform_label)
     endif()
+
+    add_executable(snow-shot-game-window-classification-tests
+        tests/game_window_classification_tests.cpp src/platform/gamewindowclassification.cpp)
+    target_include_directories(snow-shot-game-window-classification-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-game-window-classification-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-game-window-classification-tests
+        COMMAND snow-shot-game-window-classification-tests)
+    set_tests_properties(snow-shot-game-window-classification-tests PROPERTIES LABELS unit)
 
     add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
         ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES}
@@ -2385,6 +2402,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-global-mouse-tests COMMAND snow-shot-global-mouse-tests)
     add_test(NAME snow-shot-global-mouse-storage-tests
         COMMAND snow-shot-application-storage-tests --global-mouse-only)
+    add_test(NAME snow-shot-fullscreen-filter-storage-tests
+        COMMAND snow-shot-application-storage-tests --fullscreen-filter-only)
+    set_tests_properties(snow-shot-fullscreen-filter-storage-tests PROPERTIES LABELS unit)
     add_test(NAME snow-shot-global-mouse-settings-runtime-tests
         COMMAND snow-shot-settings-runtime-session-tests --global-mouse-only)
     set_tests_properties(snow-shot-global-mouse-storage-tests

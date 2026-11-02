@@ -11,7 +11,11 @@
 
 #include <cstdlib>
 #include <QScreen>
+#include <QScopeGuard>
+#include <QUuid>
+#include <vector>
 #include "snow_shot/platform/focusedfullscreenwindow.h"
+#include "snow_shot/platform/gamewindowclassification.h"
 
 namespace snow_shot::platform::windows {
 namespace {
@@ -20,12 +24,73 @@ bool coordinatesMatch(LONG lhs, LONG rhs) {
     constexpr LONG tolerance = 1;
     return std::abs(lhs - rhs) <= tolerance;
 }
+
+QStringList registryStrings(HKEY key, const wchar_t* valueName, DWORD type) {
+    DWORD bytes = 0;
+    constexpr DWORD maximumBytes = 128 * 1024;
+    if (RegGetValueW(key, nullptr, valueName, type, nullptr, nullptr, &bytes) != ERROR_SUCCESS ||
+        bytes == 0 || bytes > maximumBytes || bytes % sizeof(wchar_t) != 0)
+        return {};
+    std::vector<wchar_t> buffer(bytes / sizeof(wchar_t) + 2, L'\0');
+    if (RegGetValueW(key, nullptr, valueName, type, nullptr, buffer.data(), &bytes) !=
+        ERROR_SUCCESS)
+        return {};
+    return QString::fromWCharArray(buffer.data(), static_cast<qsizetype>(bytes / sizeof(wchar_t)))
+        .split(QChar(u'\0'), Qt::SkipEmptyParts);
+}
+
+QStringList registeredGamePaths(const QString& parentKey) {
+    // Undocumented, read-only best effort. Use the filename index rather than enumerate all games.
+    // Format reference: SpecialK/src/wgc/wgc_registrar.cpp (GetSha1Utf16Le/Parents/Children).
+    const QString parentPath = QStringLiteral("System\\GameConfigStore\\Parents\\") + parentKey;
+    HKEY parent = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, reinterpret_cast<const wchar_t*>(parentPath.utf16()), 0,
+                      KEY_QUERY_VALUE, &parent) != ERROR_SUCCESS)
+        return {};
+    const auto closeParent = qScopeGuard([parent] { RegCloseKey(parent); });
+    const auto children = registryStrings(parent, L"Children", RRF_RT_REG_MULTI_SZ);
+    QStringList paths;
+    for (const QString& child : children) {
+        if (QUuid(child).isNull())
+            continue;
+        const QString childPath = QStringLiteral("System\\GameConfigStore\\Children\\") + child;
+        HKEY record = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, reinterpret_cast<const wchar_t*>(childPath.utf16()), 0,
+                          KEY_QUERY_VALUE, &record) != ERROR_SUCCESS)
+            continue;
+        const auto closeRecord = qScopeGuard([record] { RegCloseKey(record); });
+        const auto gameIds = registryStrings(record, L"GameDVR_GameGUID", RRF_RT_REG_SZ);
+        if (gameIds.size() == 1 && !QUuid(gameIds.first()).isNull()) {
+            const auto matched = registryStrings(record, L"MatchedExeFullPath", RRF_RT_REG_SZ);
+            if (matched.size() == 1)
+                paths.append(matched.first());
+        }
+    }
+    return paths;
+}
+
+bool isGameWindow(HWND window, DWORD processId) {
+    const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (process == nullptr)
+        return false;
+    const auto closeProcess = qScopeGuard([process] { CloseHandle(process); });
+    std::vector<wchar_t> path(32768);
+    DWORD pathSize = static_cast<DWORD>(path.size());
+    if (!QueryFullProcessImageNameW(process, 0, path.data(), &pathSize))
+        return false;
+    wchar_t windowClass[256]{};
+    const int classSize = GetClassNameW(window, windowClass, 256);
+    return isWindowsGameWindow(QString::fromWCharArray(path.data(), pathSize),
+                               QString::fromWCharArray(windowClass, classSize),
+                               registeredGamePaths);
+}
 #endif
 } // namespace
 
-bool focusedFullscreenWindowMatches(const QScreen* screen) {
+bool focusedFullscreenWindowMatches(const QScreen* screen, bool gamesOnly = false) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    HWND window = GetForegroundWindow();
+    const HWND foreground = GetForegroundWindow();
+    HWND window = foreground;
     if (window == nullptr || IsWindow(window) == 0 || IsWindowVisible(window) == 0 ||
         IsIconic(window) != 0) {
         return false;
@@ -69,11 +134,17 @@ bool focusedFullscreenWindowMatches(const QScreen* screen) {
             return false;
     }
     const RECT& bounds = monitorInfo.rcMonitor;
-    return coordinatesMatch(frame.left, bounds.left) && coordinatesMatch(frame.top, bounds.top) &&
-           coordinatesMatch(frame.right, bounds.right) &&
-           coordinatesMatch(frame.bottom, bounds.bottom);
+    if (!coordinatesMatch(frame.left, bounds.left) || !coordinatesMatch(frame.top, bounds.top) ||
+        !coordinatesMatch(frame.right, bounds.right) ||
+        !coordinatesMatch(frame.bottom, bounds.bottom) ||
+        (gamesOnly && !isGameWindow(window, processId)))
+        return false;
+    DWORD finalProcessId = 0;
+    return GetForegroundWindow() == foreground &&
+           GetWindowThreadProcessId(window, &finalProcessId) != 0 && finalProcessId == processId;
 #else
     Q_UNUSED(screen);
+    Q_UNUSED(gamesOnly);
     return false;
 #endif
 }
@@ -91,6 +162,9 @@ bool focusedFullscreenWindowOnScreen(QScreen* screen) {
 }
 bool focusedFullscreenWindowExists() {
     return windows::focusedFullscreenWindowExists();
+}
+bool focusedFullscreenGameWindowExists() {
+    return windows::focusedFullscreenWindowMatches(nullptr, true);
 }
 } // namespace snow_shot::platform
 #endif

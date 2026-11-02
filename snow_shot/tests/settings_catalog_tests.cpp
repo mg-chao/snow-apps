@@ -3779,6 +3779,40 @@ void emptyRegistryBuilderIsExplicitlyInvalid() {
                 registry.pages().isEmpty() && registry.fields().isEmpty(),
             "building without providers must produce an invalid, empty registry");
 }
+void fullscreenWindowFilterHasStableContract() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto& catalog = registry.catalog();
+    const settings::SettingsSearchIndex search(registry);
+    require(registry.validationErrors().isEmpty(),
+            "fullscreen filter conforms to the settings registry");
+    const auto* fullscreen =
+        registry.fieldForSwitch(settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+    const auto* filter =
+        registry.fieldForSelect(settings::SettingsSelectBinding::FullscreenWindowFilter);
+    const auto* automatic =
+        catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("global-hotkeys"));
+    require(filter && automatic && automatic->items.size() == 2 &&
+                automatic->items.at(0).id == fullscreen->id &&
+                automatic->items.at(1).id == filter->id &&
+                filter->reset == settings::SettingsSectionReset::GlobalHotkeys &&
+                filter->configurationKey ==
+                    QStringLiteral("global_shortcuts/fullscreen_window_filter") &&
+                filter->defaultValue == QJsonValue(QStringLiteral("game_windows")),
+            "the default game filter immediately follows fullscreen suppression in the same reset "
+            "scope");
+    const auto& filterSelect =
+        std::get<settings::SettingsSelectDefinition>(filter->definition->payload);
+    require(filterSelect.options.size() == 2 &&
+                filterSelect.options.at(0).value == QStringLiteral("all_windows") &&
+                filterSelect.options.at(0).label.translated() == QStringLiteral("All windows") &&
+                filterSelect.options.at(1).value == QStringLiteral("game_windows") &&
+                filterSelect.options.at(1).label.translated() == QStringLiteral("Game windows"),
+            "the fullscreen filter exposes exactly the requested two options");
+    const auto filterHits = search.search(QStringLiteral("Window filter type"));
+    require(!filterHits.isEmpty() && filterHits.first().location.itemId == filter->id,
+            "search locates the fullscreen window filter");
+}
+
 void featureNavigationAndSearchAreConsistent() {
     const auto& registry = settings::builtInSettingsRegistry();
     const auto& catalog = registry.catalog();
@@ -3844,6 +3878,7 @@ void featureNavigationAndSearchAreConsistent() {
     require(!fullscreenHits.isEmpty() && fullscreenHits.first().location.itemId == fullscreen->id &&
                 fullscreenHits.first().location.pageId == QStringLiteral("global-hotkeys"),
             "search navigates to the relocated full-screen control");
+    fullscreenWindowFilterHasStableContract();
     for (const auto& node : catalog.navigation()) {
         const auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
         if (group == nullptr || group->id != QStringLiteral("nav.settings"))
@@ -4054,6 +4089,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--global-hotkeys-only"))) {
+        fullscreenWindowFilterHasStableContract();
         globalHotkeyShortcutsHaveStableContracts();
         compactTrayManifestMatchesRegistryCatalog();
         searchIndexIsGeneratedAndRanked();
