@@ -728,6 +728,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>没有可用的翻译服务</translation>
         </message>
         <message>
+            <source>Paid calls are paused because your account has an outstanding balance. Your free allowance remains available.</source>
+            <translation>账户存在欠款，付费调用已暂停。免费额度仍可使用。</translation>
+        </message>
+        <message>
             <source>Table recognition failed</source>
             <translation>表格识别失败</translation>
         </message>
@@ -810,6 +814,14 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Translation stream ended unexpectedly</source>
             <translation>翻译流意外结束</translation>
+        </message>
+        <message>
+            <source>Your available free allowance and credits cannot cover this request. Purchase credits from Account to continue.</source>
+            <translation>可用免费额度和账户余额不足以支付本次请求。请前往“账户”充值后继续。</translation>
+        </message>
+        <message>
+            <source>Your credits are reserved by other calls that are still running. Wait for them to finish and try again.</source>
+            <translation>余额已被其他进行中的调用预留，请等待这些调用结束后重试。</translation>
         </message>
     </context>
     <context>

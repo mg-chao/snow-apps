@@ -1238,6 +1238,7 @@ void customModelsUseIndependentOpenAiConnections() {
                                                 true};
     model.provider = QStringLiteral("qwen");
     SnowShotApiClient client(QStringLiteral("http://127.0.0.1:1"));
+    client.setAccountAccessToken("private-snow-shot-session");
     client.setCustomModels({model});
     require(client.cachedChatModels().size() == 1 &&
                 client.cachedChatModels().first().supportsVision &&
@@ -1288,6 +1289,8 @@ void customModelsUseIndependentOpenAiConnections() {
         }
         require(done && result.succeeded() && text == QStringLiteral("Hallo"),
                 "custom SSE streams successfully");
+        require(!request.contains("private-snow-shot-session"),
+                "account credentials never reach a custom model provider");
         require(request.startsWith("POST /v1/chat/completions HTTP/1.1"),
                 "custom endpoint appends only chat/completions");
         require(variant == 2 ? !request.contains("Authorization:")

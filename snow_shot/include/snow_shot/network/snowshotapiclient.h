@@ -146,6 +146,8 @@ class SnowShotApiClient final : public QObject {
 
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
+    // Applies only to official requests; custom provider credentials remain independent.
+    void setAccountAccessToken(const QByteArray& token, bool sameAccountRefresh = false);
     [[nodiscard]] const QVector<SnowShotChatModel>& cachedChatModels() const;
     [[nodiscard]] QString cachedChatModelsLocale() const {
         return m_cachedChatModelsLocale;
@@ -187,6 +189,7 @@ class SnowShotApiClient final : public QObject {
   signals:
     void baseUrlChanged();
     void chatModelsChanged();
+    void officialCallSettled();
     void customModelInvalidated(const QString& id, bool translation, bool vision);
 
   public:
@@ -252,6 +255,7 @@ class SnowShotApiClient final : public QObject {
     snow_shot::CustomAiModels m_customModels;
     QVector<SnowShotChatModel> m_availableModels;
 
+    QByteArray m_accountAccessToken;
     bool m_useSystemProxy = false;
     RequestToken m_nextToken = 0;
     QHash<RequestToken, Request*> m_requests;

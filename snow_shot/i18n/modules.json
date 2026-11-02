@@ -22,6 +22,9 @@
     "snow_shot::presentation::SystemTrayController"
   ],
   "settings": [
+    "AccountPageWidget",
+    "AccountSessionService",
+    "snow_shot::app::AccountSessionService",
     "AdministratorLaunch",
     "AutoStartRegistration",
     "AppPermissions",
