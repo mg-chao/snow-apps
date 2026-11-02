@@ -50,6 +50,24 @@ void writeZip(const QString& path, const QMap<QString, QByteArray>& entries) {
     mz_zip_writer_delete(&writer);
 }
 
+QJsonObject readZipConfiguration(const QString& path) {
+    void* reader = mz_zip_reader_create();
+    require(reader != nullptr, "test zip reader could not be created");
+    require(mz_zip_reader_open_file(reader, snow_shot::platform::minizipPath(path).constData()) ==
+                    MZ_OK &&
+                mz_zip_reader_locate_entry(reader, "config.json", 0) == MZ_OK,
+            "the exported configuration entry must be readable");
+    const int32_t length = mz_zip_reader_entry_save_buffer_length(reader);
+    require(length > 0, "the exported configuration entry must not be empty");
+    QByteArray payload(length, '\0');
+    require(mz_zip_reader_entry_save_buffer(reader, payload.data(), length) == MZ_OK,
+            "the exported configuration bytes must be readable");
+    mz_zip_reader_delete(&reader);
+    const QJsonDocument document = QJsonDocument::fromJson(payload);
+    require(document.isObject(), "the exported configuration must be a JSON object");
+    return document.object();
+}
+
 QByteArray manifestBytes(int schemaVersion, const QByteArray& format = "snow-shot-configuration",
                          int formatVersion = 1) {
     return QJsonDocument(QJsonObject{{QStringLiteral("format"), QString::fromUtf8(format)},
@@ -103,6 +121,111 @@ void roundTripPreservesValuesAndSchemaVersion(const QTemporaryDir& temporary) {
         }
         require(read.values.value(it.key()) == it.value(),
                 "exported values must survive the round trip");
+    }
+}
+
+void exportsOmitLocalDirectories(const QTemporaryDir& temporary) {
+    const QStringList directoryKeys{QStringLiteral("screenshot/image_save_directory"),
+                                    QStringLiteral("screen_recording/video_save_directory"),
+                                    QStringLiteral("screenshot/last_manual_save_directory")};
+    const QMap<QString, QJsonValue> portableValues{
+        {QStringLiteral("drawing/remember_last_used_tool"), true},
+        {QStringLiteral("interface/skin_path"), QStringLiteral("D:/shared/skin.json")},
+        {QStringLiteral("screenshot/save_path_shortcuts"),
+         QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Shared")},
+                                {QStringLiteral("path"), QStringLiteral("D:/shared/images")}}}}};
+    for (int variant = 0; variant < 3; ++variant) {
+        auto values = portableValues;
+        for (const auto& key : directoryKeys) {
+            values.insert(key, variant == 0
+                                   ? storage::ConfigurationSchema::defaultValue(key)
+                                   : QJsonValue(variant == 1 ? QStringLiteral("D:/custom/output")
+                                                             : QString()));
+        }
+        for (const bool redactCredentials : {false, true}) {
+            const QString path = temporary.filePath(
+                QStringLiteral("local-directories-%1-%2.zip").arg(variant).arg(redactCredentials));
+            require(storage::ConfigurationArchive::write(
+                        path, values, storage::ConfigurationStore::currentSchemaVersion(),
+                        redactCredentials)
+                        .isEmpty(),
+                    "directory fixtures must export with either credential policy");
+            const QJsonObject configuration = readZipConfiguration(path);
+            for (const auto& key : directoryKeys) {
+                require(!configuration.contains(key),
+                        "raw exported JSON must omit default, custom, and empty directories");
+            }
+            for (auto it = portableValues.cbegin(); it != portableValues.cend(); ++it) {
+                require(configuration.value(it.key()) == it.value(),
+                        "exports must retain ordinary settings, skin paths, and path shortcuts");
+            }
+            require(storage::ConfigurationArchive::read(path).isValid(),
+                    "an archive without local directories must remain readable");
+        }
+    }
+}
+
+void importsPreserveOmittedDirectories(const QTemporaryDir& temporary) {
+    const QString imageKey = QStringLiteral("screenshot/image_save_directory");
+    const QString videoKey = QStringLiteral("screen_recording/video_save_directory");
+    const QString manualKey = QStringLiteral("screenshot/last_manual_save_directory");
+    const QString archivedKey = QStringLiteral("drawing/remember_last_used_tool");
+    const QString replacedKey = QStringLiteral("screenshot/show_save_result");
+    const QMap<QString, QJsonValue> receivingDirectories{
+        {imageKey, QStringLiteral("D:/receiving/images")},
+        {videoKey, QStringLiteral("D:/receiving/videos")},
+        {manualKey, QString()}};
+    const QString file = temporary.filePath(QStringLiteral("receiving-directories.json"));
+    storage::ConfigurationStore store(file, true, true, 60000);
+    require(store.setValues(receivingDirectories) &&
+                store.setValue(replacedKey, !store.defaultValue(replacedKey).toBool()),
+            "the receiving configuration must accept directory and ordinary fixtures");
+    const QString path = temporary.filePath(QStringLiteral("omitted-directories.zip"));
+    require(storage::ConfigurationArchive::write(
+                path, {{archivedKey, true}}, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "an archive omitting local directories must be writable");
+    auto imported = storage::ConfigurationArchive::read(path);
+    require(imported.isValid(), "the directory import fixture must be readable");
+    imported.preserveOmittedDirectories(store.snapshot());
+    require(store.applySnapshot(imported.values, imported.schemaVersion) &&
+                store.flushNow().success,
+            "an archive preserving directories must apply and persist successfully");
+    storage::ConfigurationStore restored(file, true, true, 60000);
+    for (auto it = receivingDirectories.cbegin(); it != receivingDirectories.cend(); ++it) {
+        require(
+            store.value(it.key()) == it.value() && restored.value(it.key()) == it.value(),
+            "omitted local directories, including empty values, must survive import and reload");
+    }
+    require(store.value(archivedKey).toBool() &&
+                store.value(replacedKey) == store.defaultValue(replacedKey),
+            "directory preservation must not preserve other missing settings");
+
+    for (const bool empty : {false, true}) {
+        require(store.setValues(receivingDirectories), "legacy import directories must be seeded");
+        const QJsonObject configuration{
+            {archivedKey, true},
+            {imageKey, empty ? QString() : QStringLiteral("D:/legacy/images")},
+            {manualKey, empty ? QString() : QStringLiteral("D:/legacy/manual")}};
+        const QString legacyPath =
+            temporary.filePath(QStringLiteral("explicit-directories-%1.zip").arg(empty));
+        writeZip(legacyPath, {{QStringLiteral("manifest.json"),
+                               manifestBytes(storage::ConfigurationStore::currentSchemaVersion())},
+                              {QStringLiteral("config.json"), configurationBytes(configuration)}});
+        auto legacy = storage::ConfigurationArchive::read(legacyPath);
+        require(legacy.isValid(), "older archives with explicit directories must remain readable");
+        legacy.preserveOmittedDirectories(store.snapshot());
+        require(store.applySnapshot(legacy.values, legacy.schemaVersion) &&
+                    store.flushNow().success,
+                "older archives with explicit directories must apply and persist");
+        storage::ConfigurationStore reloaded(file, true, true, 60000);
+        for (auto it = receivingDirectories.cbegin(); it != receivingDirectories.cend(); ++it) {
+            const auto expected =
+                configuration.contains(it.key()) ? configuration.value(it.key()) : it.value();
+            require(
+                store.value(it.key()) == expected && reloaded.value(it.key()) == expected,
+                "explicit legacy directories, including empty values, must override local ones");
+        }
     }
 }
 
@@ -686,6 +809,8 @@ int main(int argc, char** argv) {
     }
     smartSelectionArchivesMigrateAndRoundTrip(temporary);
     roundTripPreservesValuesAndSchemaVersion(temporary);
+    exportsOmitLocalDirectories(temporary);
+    importsPreserveOmittedDirectories(temporary);
     autoSaveAfterExecutionArchivesMigrateAndRoundTrip(temporary);
     readRejectsInvalidArchives(temporary);
     writeRejectsUnwritableTargets(temporary);

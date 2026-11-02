@@ -29,6 +29,13 @@ constexpr int kConfigArchiveMaxEntries = 16;
 constexpr qint64 kConfigArchiveMaxManifestBytes = 64 * 1024;
 constexpr qint64 kConfigArchiveMaxConfigurationBytes = 8 * 1024 * 1024;
 
+const QStringList& configArchiveLocalDirectoryKeys() {
+    static const QStringList keys{QStringLiteral("screenshot/image_save_directory"),
+                                  QStringLiteral("screen_recording/video_save_directory"),
+                                  QStringLiteral("screenshot/last_manual_save_directory")};
+    return keys;
+}
+
 QString configArchiveTranslate(const char* source) {
     return QCoreApplication::translate("snow_shot::storage::ConfigurationArchive", source);
 }
@@ -114,7 +121,8 @@ QString ConfigurationArchive::write(const QString& archivePath,
     const QMap<QString, QJsonValue> currentValues =
         ConfigurationSchema::migrateLegacyValues(values);
     for (auto it = currentValues.cbegin(); it != currentValues.cend(); ++it) {
-        if (it.key() == QLatin1String("storage/schema_version")) {
+        if (it.key() == QLatin1String("storage/schema_version") ||
+            configArchiveLocalDirectoryKeys().contains(it.key())) {
             continue;
         }
         configuration.insert(it.key(), it.value());
@@ -345,6 +353,15 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
                               "The configuration archive contains no compatible settings.")));
     }
     return result;
+}
+
+void ConfigurationArchiveReadResult::preserveOmittedDirectories(
+    const QMap<QString, QJsonValue>& current) {
+    for (const auto& key : configArchiveLocalDirectoryKeys()) {
+        if (!values.contains(key) && current.contains(key)) {
+            values.insert(key, current.value(key));
+        }
+    }
 }
 
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(
