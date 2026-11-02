@@ -12,10 +12,11 @@ use crate::{
     theme::Color,
 };
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, Element, ElementId, Entity, GlobalElementId,
-    InspectorElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels,
-    Refineable, RenderOnce, Role, SharedString, Style, StyleRefinement, Styled, Subscription,
-    WeakEntity, Window, accesskit, canvas, div, fill, point, prelude::*, px, relative, size,
+    AnyElement, App, AvailableSpace, Bounds, Element, ElementId, Entity, Focusable,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent,
+    MouseUpEvent, Pixels, Refineable, RenderOnce, Role, SharedString, Style, StyleRefinement,
+    Styled, Subscription, WeakEntity, Window, accesskit, canvas, div, fill, point, prelude::*, px,
+    relative, size,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -134,6 +135,7 @@ pub struct Slider {
     tooltip: SliderTooltip,
     label: Option<SharedString>,
     description: Option<SharedString>,
+    form_context: Option<crate::form::FormItemContext>,
     automation_id: Option<SharedString>,
     handle_labels: Vec<SharedString>,
     value_text: Option<ValueText>,
@@ -142,6 +144,78 @@ pub struct Slider {
     styles: SliderStyles,
     styles_fn: Option<StyleResolver>,
 }
+impl crate::form::FormControl<SliderValue> for Slider {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<SliderValue>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let fallback = state.read(cx).options().default_value();
+        let fallback_write = fallback.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            |event| match event {
+                super::SliderEvent::Change(change) => {
+                    FormControlEvent::Change(FormPresence::Value(change.value.clone()))
+                }
+                super::SliderEvent::Focus { .. } => FormControlEvent::Focus,
+                super::SliderEvent::Blur { .. } => FormControlEvent::Blur,
+                _ => FormControlEvent::None,
+            },
+            move |state, value, reset, window, cx| {
+                state
+                    .update(cx, |state, cx| {
+                        let value = value.value().unwrap_or_else(|| fallback_write.clone());
+                        if reset {
+                            state.reset_value(value, window, cx)
+                        } else {
+                            state.set_value(value, window, cx)
+                        }
+                    })
+                    .map_err(|error| crate::form::FormError::Control(error.to_string().into()))
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if let Some(index) =
+                        (0..state.model.handles.len()).find(|index| !state.disabled(*index, cx))
+                    {
+                        state.focus(index, window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.value = match field.read(cx) {
+            Ok(value) => Some(value.value().unwrap_or(fallback)),
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.label = self.label.or_else(|| context.label.clone());
+        self.description = self.description.or_else(|| context.description.clone());
+        self.form_context = Some(context);
+        self.into_any_element()
+    }
+}
+
 impl Slider {
     pub fn new(id: impl Into<ElementId>, state: &Entity<SliderState>) -> Self {
         Self {
@@ -155,6 +229,7 @@ impl Slider {
             tooltip: SliderTooltip::default(),
             label: None,
             description: None,
+            form_context: None,
             automation_id: None,
             handle_labels: Vec::new(),
             value_text: None,
@@ -274,6 +349,7 @@ impl RenderOnce for Slider {
             }
         });
         state.update(cx, |s, cx| {
+            s.form_disabled = self.form_context.as_ref().map(|context| context.disabled);
             s.configure_scope(scope.clone(), window, cx);
             if let Some(marks) = &self.marks {
                 let values: Vec<_> = marks.iter().map(|mark| mark.value).collect();
@@ -955,6 +1031,9 @@ impl RenderOnce for Slider {
                 .cloned()
                 .or_else(|| self.label.clone());
             semantics.description = self.description.clone();
+            if let Some(context) = &self.form_context {
+                semantics.in_form(context);
+            }
             semantics.automation_id = self
                 .automation_id
                 .as_ref()

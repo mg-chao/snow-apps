@@ -120,6 +120,7 @@ pub struct ConfigPatch {
     pub pagination: PaginationConfigPatch,
     pub alert: AlertConfigPatch,
     pub descriptions: DescriptionsConfigPatch,
+    pub form: crate::form::FormConfigPatch,
     pub result: ResultConfigPatch,
     pub image: crate::image::ImageConfigPatch,
     pub spin: SpinConfigPatch,
@@ -153,6 +154,7 @@ pub struct ResolvedConfig {
     pub pagination: PaginationConfig,
     pub alert: AlertConfig,
     pub descriptions: DescriptionsConfig,
+    pub form: crate::form::FormConfig,
     pub result: ResultConfig,
     pub image: crate::image::ImageConfig,
     pub spin: SpinConfig,
@@ -187,6 +189,7 @@ impl PartialEq for ResolvedConfig {
             && self.pagination == other.pagination
             && self.alert == other.alert
             && self.descriptions == other.descriptions
+            && self.form == other.form
             && self.result == other.result
             && self.image == other.image
             && self.spin == other.spin
@@ -232,6 +235,7 @@ impl Default for ResolvedConfig {
             pagination: PaginationConfig::default(),
             alert: AlertConfig::default(),
             descriptions: DescriptionsConfig::default(),
+            form: crate::form::FormConfig::default(),
             result: ResultConfig::default(),
             image: Default::default(),
             spin: SpinConfig::default(),
@@ -293,7 +297,7 @@ impl ResolvedConfig {
         parent: &Self,
         patch: &ConfigPatch,
         previous: Option<&Self>,
-    ) -> Result<Self, ConfigError> {
+    ) -> Result<Arc<Self>, ConfigError> {
         let theme_config = patch.theme.as_ref().map_or_else(
             || parent.theme_config.clone(),
             |local| Arc::new(ThemeConfig::merged(&parent.theme_config, local)),
@@ -325,7 +329,7 @@ impl ResolvedConfig {
         } else {
             theme.tokens.font_family.to_gpui_font()
         };
-        Ok(Self {
+        Ok(Arc::new(Self {
             theme,
             icon_palette,
             font,
@@ -345,6 +349,7 @@ impl ResolvedConfig {
             pagination: patch.pagination.resolve(parent.pagination),
             alert: patch.alert.resolve(&parent.alert),
             descriptions: patch.descriptions.resolve(&parent.descriptions),
+            form: patch.form.resolve(&parent.form),
             result: patch.result.resolve(&parent.result),
             image: patch.image.resolve(&parent.image),
             spin: patch.spin.resolve(&parent.spin),
@@ -357,7 +362,7 @@ impl ResolvedConfig {
             date_picker: patch.date_picker.resolve(&parent.date_picker),
             range_picker: patch.range_picker.resolve(&parent.range_picker),
             time_picker: patch.time_picker.resolve(&parent.time_picker),
-        })
+        }))
     }
 }
 
@@ -400,10 +405,10 @@ impl ConfigState {
         let parent = self.parent_snapshot(cx);
         match ResolvedConfig::resolve(&parent, &self.patch, Some(&self.snapshot)) {
             Ok(next) => {
-                let changed = *self.snapshot != next;
+                let changed = self.snapshot.as_ref() != next.as_ref();
                 let recovered = self.last_error.take().is_some();
                 if changed {
-                    self.snapshot = Arc::new(next);
+                    self.snapshot = next;
                 }
                 if changed || recovered {
                     cx.notify();
@@ -465,7 +470,7 @@ impl ConfigScope {
         let patch = Box::new(patch);
         let parent = self.clone();
         let base = parent.snapshot(cx);
-        let snapshot = Arc::new(ResolvedConfig::resolve(&base, &patch, None)?);
+        let snapshot = ResolvedConfig::resolve(&base, &patch, None)?;
         let entity = cx.new(|cx| {
             let subscription = cx.observe(&parent.0, |this: &mut ConfigState, _, cx| {
                 this.recompute(cx)
@@ -494,7 +499,13 @@ impl ConfigScope {
     /// Failure leaves both the patch and effective configuration unchanged.
     /// Returns whether the effective snapshot changed.
     pub fn set_patch(&self, patch: ConfigPatch, cx: &mut App) -> Result<bool, ConfigError> {
-        let patch = Box::new(patch);
+        self.set_boxed_patch(Box::new(patch), cx)
+    }
+
+    // Keep large patches/snapshots behind pointers across GPUI's update closure.
+    // Native Windows main threads have a 1 MiB stack; moving complete semantic
+    // style catalogs through nested by-value closures exhausts that stack.
+    fn set_boxed_patch(&self, patch: Box<ConfigPatch>, cx: &mut App) -> Result<bool, ConfigError> {
         self.0.update(cx, |this, cx| {
             if this.patch == patch {
                 return Ok(false);
@@ -502,10 +513,10 @@ impl ConfigScope {
             let parent = this.parent_snapshot(cx);
             let next = ResolvedConfig::resolve(&parent, &patch, Some(&this.snapshot))?;
             this.patch = patch;
-            let changed = *this.snapshot != next;
+            let changed = this.snapshot.as_ref() != next.as_ref();
             let recovered = this.last_error.take().is_some();
             if changed {
-                this.snapshot = Arc::new(next);
+                this.snapshot = next;
             }
             if changed || recovered {
                 cx.notify();
@@ -520,9 +531,9 @@ impl ConfigScope {
         cx: &mut App,
         edit: impl FnOnce(&mut ConfigPatch),
     ) -> Result<bool, ConfigError> {
-        let mut patch = self.patch(cx);
+        let mut patch = self.0.read(cx).patch.clone();
         edit(&mut patch);
-        self.set_patch(patch, cx)
+        self.set_boxed_patch(patch, cx)
     }
 
     pub fn last_error(&self, cx: &App) -> Option<ConfigError> {
@@ -574,6 +585,41 @@ mod tests {
         // threads. A by-value patch made opening a nested Modal exhaust it as
         // GPUI moved ConfigState through entity-creation closures.
         assert!(std::mem::size_of::<ConfigState>() <= 256);
+    }
+
+    #[test]
+    fn form_theme_scope_updates_fit_the_native_windows_stack_budget() {
+        // This reproduces the actual native capture failure without enlarging
+        // the application's stack or depending on the test runner's larger one.
+        std::thread::Builder::new()
+            .name("form-native-stack-budget".into())
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                let cx = TestAppContext::single();
+                cx.update(|cx| {
+                    let scope = ConfigScope::new_window(cx);
+                    scope
+                        .update_patch(cx, |patch| {
+                            patch.theme = Some(ThemeConfig {
+                                algorithms: Some(crate::theme::AlgorithmChain::dark_compact()),
+                                ..Default::default()
+                            });
+                            patch.form.label_wrap = Some(true);
+                            patch.form.colon = Some(false);
+                        })
+                        .unwrap();
+                    let snapshot = scope.snapshot(cx);
+                    assert!(snapshot.form.label_wrap);
+                    assert!(!snapshot.form.colon);
+                    assert_eq!(
+                        snapshot.theme_config().algorithms,
+                        Some(crate::theme::AlgorithmChain::dark_compact())
+                    );
+                });
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     #[gpui::test]

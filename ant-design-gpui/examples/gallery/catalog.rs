@@ -12,6 +12,7 @@ pub(super) enum ComponentId {
     ColorPicker,
     DatePicker,
     TimePicker,
+    Form,
     Input,
     InputNumber,
     Radio,
@@ -132,6 +133,13 @@ pub(super) const COMPONENTS: &[Component] = &[
         group: "Data Entry",
         title: "TimePicker",
         description: "To select or input a time.",
+    },
+    Component {
+        id: ComponentId::Form,
+        navigation_id: "gallery.navigation.form",
+        group: "Data Entry",
+        title: "Form",
+        description: "Collect and validate values with native form layout and data management.",
     },
     Component {
         id: ComponentId::Input,

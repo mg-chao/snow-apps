@@ -19,7 +19,7 @@ pub use style::{
     RadioButtonVisualStyle, RadioStateStyle, RadioStyle, RadioTheme, RadioTokenPatch, RadioTokens,
 };
 
-use std::time::Duration;
+use std::{rc::Rc, time::Duration};
 
 use gpui::{
     App, Context, ElementId, FocusHandle, Hsla, IntoElement, KeyboardButton, MouseButton,
@@ -71,9 +71,52 @@ pub struct Radio {
     position: (usize, usize),
     button_paint: Option<(ButtonPaintQueue, usize)>,
     on_navigate: Option<NavigationHandler>,
+    form_registration: Option<(crate::form::FieldHandle, crate::form::ControlToken)>,
 }
 
 type NavigationHandler = Box<dyn Fn(RadioNavigation, &mut Window, &mut App)>;
+
+impl crate::form::FormControl<bool> for Radio {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<bool>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        use crate::form::{FormControlBinding, FormPresence, ValidationTrigger};
+        let (value, focus, token) = match FormControlBinding::controlled(
+            self.id.clone(),
+            &field,
+            vec![(self.id.clone(), self.focus.clone())],
+            window,
+            cx,
+        ) {
+            Ok(value) => value,
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.checked = Some(value.value().unwrap_or(false));
+        self.focus = focus.into_iter().next();
+        self.form_registration = Some((field.handle(), token));
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        self.size = self.size.or(Some(context.size));
+        self.accessibility.in_form(&context);
+        let handler = self.on_change.take();
+        self.on_change = Some(Box::new(move |change: &RadioChange, window, cx| {
+            let _ = field.change(
+                FormPresence::Value(change.checked),
+                ValidationTrigger::Change,
+                window,
+                cx,
+            );
+            if let Some(handler) = &handler {
+                handler(change, window, cx);
+            }
+        }));
+        self.into_any_element()
+    }
+}
 
 impl Radio {
     pub fn new(id: impl Into<ElementId>) -> Self {
@@ -100,6 +143,7 @@ impl Radio {
             position: (0, 1),
             button_paint: None,
             on_navigate: None,
+            form_registration: None,
         }
     }
 
@@ -387,6 +431,7 @@ struct RadioState {
     scope: ConfigScope,
     focus: FocusHandle,
     guard: ActivationGuard,
+    activate: Option<crate::form::NativeActivation>,
     checked: bool,
     controlled: bool,
     disabled: Option<bool>,
@@ -414,6 +459,7 @@ impl RadioState {
             scope,
             focus,
             guard,
+            activate: None,
             checked: radio.checked.unwrap_or(radio.default_checked),
             controlled: radio.checked.is_some(),
             disabled: radio.disabled,
@@ -871,11 +917,15 @@ impl RenderOnce for Radio {
         let wave = self.wave;
         let in_group = self.group_tab_stop.is_some();
         let weak = state.downgrade();
-        let root = guard.install(root, move |activation, window, cx| {
+        let activate: crate::form::NativeActivation = Rc::new(move |activation, window, cx| {
             if activation == Activation::Keyboard(KeyboardButton::Enter) {
                 return;
             }
             let change = weak.update(cx, |state, cx| {
+                state.sync_availability(window, cx);
+                if !state.guard.availability().can_activate() {
+                    return None;
+                }
                 if wave && motion.allows_motion() {
                     state.wave.start((state.clock)(cx));
                     cx.notify();
@@ -898,6 +948,28 @@ impl RenderOnce for Radio {
             {
                 callback(&change, window, cx);
             }
+        });
+        state.update(cx, |state, _| state.activate = Some(activate.clone()));
+        if let Some((field, token)) = &self.form_registration {
+            crate::form::FormControlBinding::install_native_actions(
+                field,
+                *token,
+                &state,
+                |state, window, cx| {
+                    state.sync_availability(window, cx);
+                    if state.guard.availability().can_focus() {
+                        state.focus.focus(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                Some(|state| state.activate.clone()),
+                cx,
+            );
+        }
+        let root = guard.install(root, move |activation, window, cx| {
+            activate(activation, window, cx)
         });
         self.accessibility.disabled = availability.disabled;
         if self.accessibility.label.is_none() && !self.label.is_empty() {

@@ -162,6 +162,23 @@ impl<T: Clone + Eq + Hash + 'static> SelectState<T> {
             cx.notify();
         }
     }
+    /// Reset selection and transient editor/popup state without user events.
+    pub fn reset_value(
+        &mut self,
+        values: impl IntoIterator<Item = SelectValue<T>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_open(false, cx);
+        self.set_value(values, cx);
+        self.model.set_query(SharedString::default());
+        self.model.active = None;
+        self.enter_held = false;
+        self.editor
+            .update(cx, |editor, cx| editor.reset_value("", window, cx));
+        cx.notify();
+    }
+
     pub fn set_values(&mut self, values: impl IntoIterator<Item = T>, cx: &mut Context<Self>)
     where
         T: std::fmt::Display,

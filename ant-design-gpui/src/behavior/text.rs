@@ -136,7 +136,7 @@ pub(crate) fn measured_paragraph_text(
     .into_any_element()
 }
 
-fn collapse_css_whitespace(text: &SharedString) -> SharedString {
+pub(crate) fn collapse_css_whitespace(text: &SharedString) -> SharedString {
     let whitespace = |byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c);
     let mut previous_space = false;
     let needs_collapse = text.bytes().enumerate().any(|(index, byte)| {

@@ -87,6 +87,32 @@ fn busy_semantics_keep_focus_action_but_hide_activation() {
 }
 
 #[test]
+fn background_validation_busy_preserves_native_activation_and_embedded_metadata() {
+    let metadata = Accessibility {
+        busy: true,
+        busy_allows_activation: true,
+        invalid: true,
+        required: true,
+        ..Accessibility::new(Role::CheckBox)
+    }
+    .label("Consent")
+    .description("Checking consent");
+    let mut embedded = Accessibility::new(Role::CheckBox);
+    embedded.inherit_control(&metadata);
+    let element = embedded.apply(div().id("validating").focusable().on_click(|_, _, _| {}));
+    let mut node = accesskit::Node::new(Role::CheckBox);
+    element.write_a11y_info(&mut node);
+    assert!(node.is_busy());
+    assert!(node.is_required());
+    assert_eq!(node.invalid(), Some(accesskit::Invalid::True));
+    assert_eq!(node.label(), Some("Consent"));
+    assert_eq!(node.description(), Some("Checking consent"));
+    assert!(node.supports_action(accesskit::Action::Focus));
+    assert!(node.supports_action(accesskit::Action::Click));
+    assert!(!node.is_disabled());
+}
+
+#[test]
 fn cubic_bezier_solves_time_axis_and_preserves_overshoot() {
     let ease = CubicBezier {
         x1: 0.42,

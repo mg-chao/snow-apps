@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "completed_utc": "2026-10-30T17:58:50.5925108Z",
+  "platform": "Windows x64",
+  "scope": "Eight focused gallery regressions and two actual native Form gallery captures. Primary reference comparison is independently recorded in visual-validation-windows.json.",
+  "method": "Start-Process -WindowStyle Hidden, EVENT_SYSTEM_FOREGROUND event hook and 25 ms foreground PID samples across each entire capture process lifetime",
+  "source_files_verified": 397,
+  "source_unchanged": true,
+  "source_manifest_sha256": "fc4110c2fe83e6bce80fc038ac548a968c7d957942eff7a135048e6e5fafab07",
+  "executable_sha256": "84aef3ad74b40406bfcb5411183cc75b8c1f2be40904a95115994e88570baa6f",
+  "result_sha256": "24c0e98a71eb4a805550e627d49bc915b57b15a73c8a853d077863825045ebdd",
+  "captures": [
+    {
+      "name": "default",
+      "exit_code": 0,
+      "width": 1920,
+      "height": 1350,
+      "requested_logical_size": [
+        1280,
+        900
+      ],
+      "native_window": {
+        "clientWidth": 1920,
+        "clientHeight": 1350,
+        "dpi": 144,
+        "visible": false,
+        "extendedStyle": 136577280
+      },
+      "sha256": "17625d671df9423c6344009c2f4238ab11e28eb41c501561433781a813e7b109",
+      "never_foreground": true,
+      "foreground_observations": 0,
+      "foreground_event_hook_active": true,
+      "observation_count": 94
+    },
+    {
+      "name": "dark-compact-rtl",
+      "exit_code": 0,
+      "width": 1920,
+      "height": 1350,
+      "requested_logical_size": [
+        1280,
+        900
+      ],
+      "native_window": {
+        "clientWidth": 1920,
+        "clientHeight": 1350,
+        "dpi": 144,
+        "visible": false,
+        "extendedStyle": 136577280
+      },
+      "sha256": "fae8d29cc6c335f689d3659dd7d91ea059fa31a630e206ae78324aecda8d2f0b",
+      "never_foreground": true,
+      "foreground_observations": 0,
+      "foreground_event_hook_active": true,
+      "observation_count": 98
+    }
+  ],
+  "tests": {
+    "executable_sha256": "a1764ba088e4ae9213ac23e2289ba212f29b297134b068fe8b122f67cc01a7fe",
+    "total_passed": 8,
+    "total_failed": 0,
+    "filters": [
+      {
+        "exit_code": 0,
+        "passed": 4,
+        "filter": "tests::form::",
+        "log": "form-tests.log",
+        "log_sha256": "1ea90ad1314e9b7a54c3b879072391dbc2f0d46ee21b1fece0253b36100e92e3"
+      },
+      {
+        "exit_code": 0,
+        "passed": 1,
+        "filter": "tests::input::input_number_gallery_formatters_wheel_and_external_reset_work",
+        "exact": true,
+        "log": "formatter-test.log",
+        "log_sha256": "5e6a69dd1cf792a9b5643dddbed8e5a0ea3a816c2fb880a69a68fc43144268ce"
+      },
+      {
+        "exit_code": 0,
+        "passed": 1,
+        "filter": "tests::navigation_click_reveals_its_sidebar_target_and_preserves_content_scroll",
+        "exact": true,
+        "log": "navigation-test.log",
+        "log_sha256": "00805d2739d2e9ebca7f9a323da22176856bfb8417bad107dce2a5c91c3278df"
+      },
+      {
+        "exit_code": 0,
+        "passed": 2,
+        "filter": "capture_windows::tests::",
+        "log": "windows-capture-tests.log",
+        "log_sha256": "f9ec89535ceab8392ce79bbd21e8b94704b959bcac0b4585f8b7556b942205d4"
+      }
+    ]
+  }
+}

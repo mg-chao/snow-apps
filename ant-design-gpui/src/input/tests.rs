@@ -24,6 +24,7 @@ struct Consumer {
     loading: bool,
     outer_wheel: Rc<RefCell<usize>>,
     height: Option<f32>,
+    width: Option<f32>,
     events: Rc<RefCell<Vec<InputEvent>>>,
     _subscription: Subscription,
 }
@@ -46,6 +47,7 @@ impl Consumer {
             loading: false,
             outer_wheel: Rc::default(),
             height: None,
+            width: None,
             events,
             _subscription: subscription,
         }
@@ -75,6 +77,9 @@ impl Render for Consumer {
             if let Some(height) = self.height {
                 input = input.h(px(height));
             }
+            if let Some(width) = self.width {
+                input = input.w(px(width));
+            }
             input
         };
         let input = match self.mode {
@@ -99,6 +104,33 @@ impl Render for Consumer {
             .p(px(10.))
             .on_scroll(move |_, _, _| *outer_wheel.borrow_mut() += 1)
             .child(input)
+    }
+}
+
+#[test]
+fn form_sized_password_viewport_reserves_its_visible_suffix_inside_the_frame() {
+    // The original Form inline fixture has a 160px password frame and 118px
+    // editor viewport. An automatic flex minimum made the editor 136px and
+    // displaced the eye 18px outside its expected position.
+    for direction in [crate::Direction::Ltr, crate::Direction::Rtl] {
+        let mut f = Fixture::new(false);
+        f.consumer.update(&mut f.cx, |consumer, cx| {
+            consumer.mode = state::InputMode::Password;
+            consumer.width = Some(160.);
+            consumer
+                .scope
+                .update_patch(cx, |patch| patch.direction = Some(direction))
+                .unwrap();
+            cx.notify();
+        });
+        f.draw();
+        let width = f.state.read_with(&f.cx, |state, _| {
+            state.geometry().unwrap().viewport.size.width
+        });
+        assert!(
+            (f32::from(width) - 118.).abs() <= 1.,
+            "{direction:?}: {width:?}"
+        );
     }
 }
 
@@ -1179,7 +1211,9 @@ fn textarea_scrollbar_drag_preserves_focus_selection_and_native_geometry() {
             assert!(caret.bottom() <= geometry.viewport.bottom());
         });
         let selection = f.state.read_with(&f.cx, |state, _| state.selection());
-        f.click(point(start.x, viewport.bottom() - px(3.)));
+        // The native textarea resize grip owns the bottom 15px. Page through
+        // the actual scrollbar rail above that corner, as the browser does.
+        f.click(point(start.x, viewport.bottom() - px(20.)));
         f.edit(|state, window, _| {
             assert!(state.focus.is_focused(window));
             assert_eq!(state.selection(), selection);

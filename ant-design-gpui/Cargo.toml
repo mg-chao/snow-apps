@@ -21,6 +21,18 @@ num-traits = "0.2"
 image = { version = "0.25.10", default-features = false }
 data-url = "0.3.2"
 chrono = "0.4.45"
+imbl = { version = "=7.0.2", default-features = false }
+regex = "1.13.1"
+url = "2.5.8"
+
+[[bench]]
+name = "form"
+harness = false
+required-features = ["test-support"]
+
+[[example]]
+name = "form_accessibility"
+required-features = ["test-support"]
 
 [dev-dependencies]
 gpui = { git = "https://github.com/mg-chao/gpui.git", rev = "2c0bf70b54c018f99419f386d1cf1105dca57661", default-features = false, features = ["gpu-extensions", "test-support"] }

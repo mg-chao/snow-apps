@@ -12,6 +12,8 @@ pub(crate) mod paragraph;
 pub(crate) mod text;
 mod wave;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use accessibility::AccessibilityInspection;
 pub use accessibility::{Accessibility, SemanticElement};
 pub(crate) use activation::WeakActivationGuard;
 pub use activation::{Activation, ActivationGuard, Availability};

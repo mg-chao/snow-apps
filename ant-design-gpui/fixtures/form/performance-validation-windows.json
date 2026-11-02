@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "completed_utc": "2026-10-30T17:28:20.8723882Z",
+  "scope": "Attested Release Form benchmark; structural assertions and diagnostic timing/allocation distributions.",
+  "platform": "Windows x64",
+  "preset": "windows-msvc-performance",
+  "profile": "Release",
+  "cargo_profile": {
+    "opt_level": "3",
+    "debuginfo": 0,
+    "debug_assertions": false,
+    "overflow_checks": false,
+    "test": true
+  },
+  "features": [
+    "test-support"
+  ],
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "logical_processors": 24,
+  "system_cpu_load_percent": {
+    "after": 2,
+    "before": 9
+  },
+  "source_files_verified": 2017,
+  "source_unchanged": true,
+  "executable_sha256": "6d58f3f04323ed9e0b1016d0fb3e21d9a09fab4e6e778c6f03a68c0118f26eb5",
+  "provenance_sha256": "c4fa55b678b3097468756608c22587f8315cfaacb235cf0d1e69e5e5499ca87f",
+  "results_sha256": "dee0e0f8c848d4462b846b5cd4b63317c347b4014e33c2b14f384981626e95c7",
+  "cmake_cache_sha256": "b67758cfc9c342d6d4b276c76a95e397bd49900cfac4c96be8c111a97f336898",
+  "measurements": [
+    {
+      "name": "snapshot_update_1000_siblings",
+      "iterations": 256,
+      "us": {
+        "p50": 1.1,
+        "p95": 4.6,
+        "p99": 5.3
+      },
+      "allocations": 10.0234375,
+      "allocated_bytes": 1996.5
+    },
+    {
+      "name": "snapshot_update_10000_siblings",
+      "iterations": 256,
+      "us": {
+        "p50": 1.2,
+        "p95": 1.9,
+        "p99": 8
+      },
+      "allocations": 11.0234375,
+      "allocated_bytes": 2572.5
+    },
+    {
+      "name": "native_field_update_with_automatic_draw_10_controls",
+      "iterations": 64,
+      "us": {
+        "p50": 245.3,
+        "p95": 272.6,
+        "p99": 329
+      },
+      "allocations": 551,
+      "allocated_bytes": 268286.5
+    },
+    {
+      "name": "native_field_update_with_automatic_draw_100_controls",
+      "iterations": 64,
+      "us": {
+        "p50": 987.7,
+        "p95": 1069.7,
+        "p99": 1192.9
+      },
+      "allocations": 2180,
+      "allocated_bytes": 1879086.5
+    },
+    {
+      "name": "native_field_update_with_automatic_draw_1000_controls",
+      "iterations": 64,
+      "us": {
+        "p50": 15314.8,
+        "p95": 17862.5,
+        "p99": 19123.600000000002
+      },
+      "allocations": 19363,
+      "allocated_bytes": 19700534.5
+    },
+    {
+      "name": "silent_field_set_1000_fields",
+      "iterations": 128,
+      "us": {
+        "p50": 293.7,
+        "p95": 345.3,
+        "p99": 535
+      },
+      "allocations": 579,
+      "allocated_bytes": 311784.375
+    },
+    {
+      "name": "user_change_with_dependency_and_native_field_frame",
+      "iterations": 128,
+      "us": {
+        "p50": 302.8,
+        "p95": 343.8,
+        "p99": 357.8
+      },
+      "allocations": 608,
+      "allocated_bytes": 321429
+    },
+    {
+      "name": "list_move_add_remove_64_rows",
+      "iterations": 64,
+      "us": {
+        "p50": 852.3,
+        "p95": 887.2,
+        "p99": 913
+      },
+      "allocations": 681,
+      "allocated_bytes": 122261
+    },
+    {
+      "name": "validate_and_reset_1000_fields",
+      "iterations": 32,
+      "us": {
+        "p50": 2250.5,
+        "p95": 2376.1,
+        "p99": 2456.9
+      },
+      "allocations": 10536.5625,
+      "allocated_bytes": 3498871.5
+    }
+  ],
+  "native_assertions": [
+    {
+      "kind": "native_assertions",
+      "native_controls": 10,
+      "owner_renders_including_warmup": 69,
+      "work_iterations_including_warmup": 69,
+      "owner_notifications": 0,
+      "unrelated_item_rebuilds": 0,
+      "idle_frame_callbacks": 0
+    },
+    {
+      "kind": "native_assertions",
+      "native_controls": 100,
+      "owner_renders_including_warmup": 69,
+      "work_iterations_including_warmup": 69,
+      "owner_notifications": 0,
+      "unrelated_item_rebuilds": 0,
+      "idle_frame_callbacks": 0
+    },
+    {
+      "kind": "native_assertions",
+      "native_controls": 1000,
+      "owner_renders_including_warmup": 69,
+      "work_iterations_including_warmup": 69,
+      "owner_notifications": 0,
+      "unrelated_item_rebuilds": 0,
+      "idle_frame_callbacks": 0
+    }
+  ],
+  "structural_assertions": {
+    "kind": "assertions",
+    "persistent_snapshot_sharing": true,
+    "unrelated_watcher_notifications": 0,
+    "stable_list_keys": true,
+    "idle_frame_callbacks": 0,
+    "measurement": "Release CPU and allocations; deterministic offscreen GPUI, no GPU presentation or physical input latency"
+  },
+  "owner_render_interpretation": "GPUI updates automatically draw dirty windows. Ancestor render calls are expected and counted; no additional explicit draw is forced. Zero owner notifications and unrelated control factory rebuilds are separately asserted.",
+  "limitations": [
+    "CPU and allocations with deterministic offscreen GPUI; not GPU presentation or physical input latency.",
+    "Diagnostic distributions on this machine; background system load is sampled, not isolated. No hardware-independent timing threshold.",
+    "Assistive-technology-active scene cache bypass costs were not benchmarked."
+  ]
+}

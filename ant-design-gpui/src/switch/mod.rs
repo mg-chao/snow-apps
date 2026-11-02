@@ -7,8 +7,15 @@
 //! Pointer, Space, Enter, arrow keys and accessible actions share one change path.
 //! Loading is disabled, including removal from keyboard traversal, as in Ant Design.
 //! Labels and custom content are decorative; supply a stable accessible label.
+//!
+//! Switch opacity is composited over the theme's uniform container backdrop.
+//! Use [`Switch::opacity_backdrop`] on a different opaque, uniform surface. The
+//! pinned GPUI backend does not provide isolated subtree layers: a nonuniform
+//! backdrop, ancestor opacity, or custom painting outside the layout box and
+//! declared shadow extents cannot reproduce CSS group opacity exactly.
 
 mod geometry;
+mod opacity;
 mod style;
 pub use geometry::{SwitchGeometry, SwitchLayout, SwitchOffset};
 pub use style::{SwitchStyle, SwitchTheme, SwitchTokenPatch, SwitchTokens};
@@ -28,7 +35,7 @@ use crate::{
         ScalarTransition, WaveMotion, WaveState, focus_handle, wave_color,
     },
     icons::{IconName, IconPalette, IconRenderOptions, IconRenderer},
-    theme::CubicBezier,
+    theme::{Color, CubicBezier},
 };
 
 /// A proposed checked value and the input which requested it.
@@ -63,6 +70,50 @@ pub struct Switch {
     style: StyleRefinement,
     content_style: Option<Box<StyleRefinement>>,
     indicator_style: Option<Box<StyleRefinement>>,
+    opacity_backdrop: Option<Color>,
+    form_registration: Option<(crate::form::FieldHandle, crate::form::ControlToken)>,
+}
+
+impl crate::form::FormControl<bool> for Switch {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<bool>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        use crate::form::{FormControlBinding, FormPresence, ValidationTrigger};
+        let (value, focus, token) = match FormControlBinding::controlled(
+            self.id.clone(),
+            &field,
+            vec![(self.id.clone(), self.focus.clone())],
+            window,
+            cx,
+        ) {
+            Ok(value) => value,
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.checked = Some(value.value().unwrap_or(false));
+        self.focus = focus.into_iter().next();
+        self.form_registration = Some((field.handle(), token));
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        self.size = self.size.or(Some(context.size));
+        self.accessibility.in_form(&context);
+        let handler = self.on_change.take();
+        self.on_change = Some(Box::new(move |change: &SwitchChange, window, cx| {
+            let _ = field.change(
+                FormPresence::Value(change.checked),
+                ValidationTrigger::Change,
+                window,
+                cx,
+            );
+            if let Some(handler) = &handler {
+                handler(change, window, cx);
+            }
+        }));
+        self.into_any_element()
+    }
 }
 
 impl Switch {
@@ -87,6 +138,8 @@ impl Switch {
             style: StyleRefinement::default(),
             content_style: None,
             indicator_style: None,
+            opacity_backdrop: None,
+            form_registration: None,
         }
     }
 
@@ -183,6 +236,16 @@ impl Switch {
         self.indicator_style = Some(Box::new(style));
         self
     }
+    /// Opaque, uniform surface behind this switch, used for group opacity.
+    ///
+    /// The default is the current theme's `color_bg_container`. The RGB channels
+    /// identify an opaque surface; the supplied color's alpha is ignored. This
+    /// also covers decorative content inside the layout box and declared shadow
+    /// extents. Keep arbitrary custom painting inside those bounds.
+    pub fn opacity_backdrop(mut self, color: Color) -> Self {
+        self.opacity_backdrop = Some(color.with_alpha(1.));
+        self
+    }
 }
 
 impl Styled for Switch {
@@ -195,6 +258,7 @@ struct SwitchState {
     scope: ConfigScope,
     focus: FocusHandle,
     guard: ActivationGuard,
+    activate: Option<crate::form::NativeActivation>,
     checked: bool,
     controlled: bool,
     disabled: Option<bool>,
@@ -231,6 +295,7 @@ impl SwitchState {
             scope,
             focus,
             guard,
+            activate: None,
             checked,
             controlled: control.checked.is_some(),
             disabled: control.disabled,
@@ -379,6 +444,19 @@ impl RenderOnce for Switch {
             availability.disabled,
             self.loading,
         );
+        // Inline opacity overrides the disabled CSS declaration. Apply the
+        // resolved value once after native content instead of multiplying each
+        // overlapping track, shadow and handle primitive independently.
+        let opacity = self.style.opacity.take().unwrap_or(metrics.opacity as f32);
+        let opacity = if opacity.is_finite() {
+            opacity.clamp(0., 1.)
+        } else {
+            1.
+        };
+        let opacity_backdrop = self.opacity_backdrop.unwrap_or(global.color_bg_container);
+        let mut opacity_outset =
+            opacity_shadow_outset(&metrics, &self.style, self.indicator_style.as_deref());
+        opacity_outset = opacity_outset.max(metrics.focus_width as f32 + 1.);
         let target_color = if retained.hovered {
             metrics.hover_background
         } else {
@@ -550,7 +628,9 @@ impl RenderOnce for Switch {
                         inset: s.inset,
                         color: s.color.into(),
                         offset: point(px(s.x as f32), px(s.y as f32)),
-                        blur_radius: px(s.blur as f32),
+                        // CSS box-shadow blur is twice the Gaussian sigma used
+                        // by GPUI's shadow shader (css-backgrounds-3 §6.1.2).
+                        blur_radius: px((s.blur * 0.5) as f32),
                         spread_radius: px(s.spread as f32),
                     })
                     .collect::<Vec<_>>(),
@@ -633,7 +713,6 @@ impl RenderOnce for Switch {
             .line_height(px(height))
             .text_color(global.color_text)
             .bg(background)
-            .opacity(metrics.opacity as f32)
             .when(availability.can_focus(), |root| root.track_focus(&focus))
             .aria_toggled(if checked {
                 Toggled::True
@@ -650,7 +729,6 @@ impl RenderOnce for Switch {
                 root.cursor_pointer()
             };
         }
-        let focus_opacity = root.style().opacity.unwrap_or(1.);
         let radii = gpui::Corners {
             top_left: root.style().corner_radii.top_left.unwrap_or_default(),
             top_right: root.style().corner_radii.top_right.unwrap_or_default(),
@@ -662,6 +740,7 @@ impl RenderOnce for Switch {
             let color = wave_color(root.style(), global.color_primary.to_hsla());
             for (wave, color) in state.update(cx, |state, _| state.wave.paint_samples(color)) {
                 let spread = wave.spread;
+                opacity_outset = opacity_outset.max(spread);
                 let color = color.opacity(wave.opacity);
                 root = root.child(
                     div().absolute().inset_0().child(
@@ -754,7 +833,7 @@ impl RenderOnce for Switch {
         let weak = state.downgrade();
         let wave = self.wave;
         let click = self.on_click;
-        root = guard.install(root, move |activation, window, cx| {
+        let activate: crate::form::NativeActivation = Rc::new(move |activation, window, cx| {
             if let Some(change) = request_change(&weak, None, activation, wave, motion, cx) {
                 if let Some(callback) = &*callback {
                     callback(&change, window, cx);
@@ -764,18 +843,80 @@ impl RenderOnce for Switch {
                 }
             }
         });
+        state.update(cx, |state, _| state.activate = Some(activate.clone()));
+        if let Some((field, token)) = &self.form_registration {
+            crate::form::FormControlBinding::install_native_actions(
+                field,
+                *token,
+                &state,
+                |state, window, cx| {
+                    state.sync_availability(window, cx);
+                    if state.guard.availability().can_focus() {
+                        state.focus.focus(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                Some(|state| state.activate.clone()),
+                cx,
+            );
+        }
+        root = guard.install(root, move |activation, window, cx| {
+            activate(activation, window, cx)
+        });
         self.accessibility.disabled = availability.disabled;
-        self.accessibility.busy = self.loading;
+        self.accessibility.busy |= self.loading;
+        if self.loading {
+            self.accessibility.busy_allows_activation = false;
+        }
         let root = popup_trigger.install(root, &guard, &focus);
         let root = popup_trigger.apply(self.accessibility.apply(root));
-        FocusRing::new(
-            metrics.focus_color.opacity(focus_opacity),
-            px(metrics.focus_width as f32),
-        )
-        .radius(px(100.))
-        .apply(root, &focus)
-        .corners(radii)
+        opacity::OpacityGroup {
+            element: FocusRing::new(metrics.focus_color, px(metrics.focus_width as f32))
+                .radius(px(100.))
+                .apply(root, &focus)
+                .corners(radii),
+            backdrop: opacity_backdrop,
+            opacity,
+            outset: opacity_outset,
+        }
     }
+}
+
+fn opacity_shadow_outset(
+    metrics: &SwitchStyle,
+    root: &StyleRefinement,
+    indicator: Option<&StyleRefinement>,
+) -> f32 {
+    // GPUI's shadow shader bounds its Gaussian support at three blur radii.
+    // A conservative symmetric extent avoids clipping an offset custom shadow.
+    let native = |style: &StyleRefinement| {
+        style
+            .box_shadow
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .filter(|shadow| !shadow.inset)
+            .map(|shadow| {
+                3. * f32::from(shadow.blur_radius).max(0.)
+                    + f32::from(shadow.spread_radius).max(0.)
+                    + f32::from(shadow.offset.x)
+                        .abs()
+                        .max(f32::from(shadow.offset.y).abs())
+            })
+            .fold(0., f32::max)
+    };
+    let token = metrics
+        .handle_shadow
+        .iter()
+        .filter(|shadow| !shadow.inset)
+        .map(|shadow| {
+            (1.5 * shadow.blur.max(0.) + shadow.spread.max(0.) + shadow.x.abs().max(shadow.y.abs()))
+                as f32
+        })
+        .fold(0., f32::max);
+    token.max(native(root)).max(indicator.map_or(0., native))
 }
 
 fn set_pressed(state: &gpui::WeakEntity<SwitchState>, pressed: bool, keyboard: bool, cx: &mut App) {

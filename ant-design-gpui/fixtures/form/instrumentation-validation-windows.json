@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "cases": 19,
+  "scope": "The exact same source, built with default features and with test-support, produces identical native RGBA pixels for all 19 default/LTR/100% Form scenes.",
+  "source_files_verified": 348,
+  "pe_stack_reserve_bytes": 1048576,
+  "plain_executable_sha256": "e60b39d71d5744f54fe27bc0461cd27af58b5311915359089a418c4849cc070f",
+  "instrumented_executable_sha256": "03a732db066a77494401e99a956d35c7f24d3a6b631a6ad54b0a0fa28d82dbe2",
+  "plain_context_sha256": "4b338b18049a289e58138760f82ba4217d2f6a2e59b25e4f283f823d08cef4d8",
+  "instrumented_context_sha256": "b08ec7d7f1819be6ffb6350ae0dc10a314879b4621324beb65ab2c81d5ee53e2",
+  "records": [
+    {
+      "name": "horizontal-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "070ac4d1f8f962e5c576ca3ecdd1c761a77a38401a55fbe0434c87854289e918",
+      "instrumented_png_sha256": "070ac4d1f8f962e5c576ca3ecdd1c761a77a38401a55fbe0434c87854289e918"
+    },
+    {
+      "name": "vertical-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "05018a3ba9efc40b26363f98f3b5b416b2f7dec6a7225b7212a1dadc2e0d3e6d",
+      "instrumented_png_sha256": "05018a3ba9efc40b26363f98f3b5b416b2f7dec6a7225b7212a1dadc2e0d3e6d"
+    },
+    {
+      "name": "inline-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "061abbfb12da86bdf107adb726c2bca670a91e154b82922f043dda159a5072b6",
+      "instrumented_png_sha256": "061abbfb12da86bdf107adb726c2bca670a91e154b82922f043dda159a5072b6"
+    },
+    {
+      "name": "mixed-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "3668ebb6b20903d01cbc3650645afba29d8e61f568924af8b1c1dc03eedbb5f9",
+      "instrumented_png_sha256": "3668ebb6b20903d01cbc3650645afba29d8e61f568924af8b1c1dc03eedbb5f9"
+    },
+    {
+      "name": "sizes-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "bd684f014242c115b6ba0ad3268cd3796ccea4bf7d408df0edb348377335c437",
+      "instrumented_png_sha256": "bd684f014242c115b6ba0ad3268cd3796ccea4bf7d408df0edb348377335c437"
+    },
+    {
+      "name": "marks-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "a368bbf2ecbb749046456b68524c30ed631b09964c479a4249d4b57056415b72",
+      "instrumented_png_sha256": "a368bbf2ecbb749046456b68524c30ed631b09964c479a4249d4b57056415b72"
+    },
+    {
+      "name": "statuses-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "4dbf9ff81edd608df3e934e4f43750c37bf5d420844a29973dbdf04beb05a5a7",
+      "instrumented_png_sha256": "4dbf9ff81edd608df3e934e4f43750c37bf5d420844a29973dbdf04beb05a5a7"
+    },
+    {
+      "name": "wrapped-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "f24030eea104eb86f90617766175bf09d08066ca82759a1896b7bf98adde5f10",
+      "instrumented_png_sha256": "f24030eea104eb86f90617766175bf09d08066ca82759a1896b7bf98adde5f10"
+    },
+    {
+      "name": "label-absence-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "37018dd21639b54f1c1f3a56b39c02d1d81032ca82cefd28fb0659920a7a727c",
+      "instrumented_png_sha256": "37018dd21639b54f1c1f3a56b39c02d1d81032ca82cefd28fb0659920a7a727c"
+    },
+    {
+      "name": "narrow-520-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "fb6a88996059a5f1e1fb6eafb7dcacb56e8126d31f3988bf8d947197add2d8b9",
+      "instrumented_png_sha256": "fb6a88996059a5f1e1fb6eafb7dcacb56e8126d31f3988bf8d947197add2d8b9"
+    },
+    {
+      "name": "breakpoint-575-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "6dd511dbc5a03600f6e155d4209daab3f53aa923f58aa9a2a43865b60068dcfb",
+      "instrumented_png_sha256": "6dd511dbc5a03600f6e155d4209daab3f53aa923f58aa9a2a43865b60068dcfb"
+    },
+    {
+      "name": "breakpoint-576-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "6f863e7d80a01766b142a4c8f8d19637defa2ffa4ce42d9eab209f37397734bc",
+      "instrumented_png_sha256": "6f863e7d80a01766b142a4c8f8d19637defa2ffa4ce42d9eab209f37397734bc"
+    },
+    {
+      "name": "variants-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "47f1bc1e7004673cf1ad2c42ec5ea413b236747a4a3277a3d0a024006909b35b",
+      "instrumented_png_sha256": "47f1bc1e7004673cf1ad2c42ec5ea413b236747a4a3277a3d0a024006909b35b"
+    },
+    {
+      "name": "disabled-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "0d0ed4e9f66c8933cbe48303d3a4a7ebd15cd855da1e905091740b9b7591e7da",
+      "instrumented_png_sha256": "0d0ed4e9f66c8933cbe48303d3a4a7ebd15cd855da1e905091740b9b7591e7da"
+    },
+    {
+      "name": "tokens-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "b6b3296ef7508bcea65094cf39ec0b33db4555c159a475e94f9fc36ffc9667a7",
+      "instrumented_png_sha256": "b6b3296ef7508bcea65094cf39ec0b33db4555c159a475e94f9fc36ffc9667a7"
+    },
+    {
+      "name": "no-style-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "c5be518b5fc6e3ddfb727fbe8111c8df1433be750440545cf6746023b75d29e0",
+      "instrumented_png_sha256": "c5be518b5fc6e3ddfb727fbe8111c8df1433be750440545cf6746023b75d29e0"
+    },
+    {
+      "name": "nested-items-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "283bbb38ea838cd74ab183021418b1dd0139eee0298a7a9a65855abc314d5f84",
+      "instrumented_png_sha256": "283bbb38ea838cd74ab183021418b1dd0139eee0298a7a9a65855abc314d5f84"
+    },
+    {
+      "name": "dynamic-list-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "3a031f0f5ad0734145a8a3d229aa04e8b5ee241a4dcb66dae38627682c488007",
+      "instrumented_png_sha256": "3a031f0f5ad0734145a8a3d229aa04e8b5ee241a4dcb66dae38627682c488007"
+    },
+    {
+      "name": "semantic-default-ltr-100",
+      "identical_pixels": true,
+      "plain_png_sha256": "f792d4945c2423a89fa492c2acf9fc03facac502c4eabc9cd09d86ee4fb78bc0",
+      "instrumented_png_sha256": "f792d4945c2423a89fa492c2acf9fc03facac502c4eabc9cd09d86ee4fb78bc0"
+    }
+  ]
+}

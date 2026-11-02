@@ -34,6 +34,7 @@ mod color_picker;
 mod context_scroll;
 mod date_time_picker;
 mod descriptions;
+mod form;
 mod image;
 mod input;
 mod menu;
@@ -466,6 +467,11 @@ impl Fixture {
     }
 
     fn click(&mut self, selector: &'static str) {
+        // Debug bounds include entries outside the navigation's clipped scroll
+        // viewport. Use its real wheel path before clicking a logical target.
+        if selector.starts_with("gallery.navigation.") || selector.starts_with("gallery.jump.") {
+            self.reveal_sidebar(selector);
+        }
         let bounds = self.bounds(selector);
         self.cx.simulate_click(bounds.center(), Modifiers::none());
         self.draw();
@@ -558,6 +564,40 @@ impl Fixture {
         let target = self.bounds(selector).center();
         self.scroll(sidebar, f32::from(sidebar.y - target.y));
     }
+}
+
+#[test]
+fn navigation_click_reveals_its_sidebar_target_and_preserves_content_scroll() {
+    let mut fixture = Fixture::new();
+    let sidebar = fixture.bounds("gallery.sidebar");
+    let before = fixture.bounds("gallery.navigation.input-number");
+    let scroll = fixture
+        .gallery
+        .read_with(&fixture.cx, |gallery, _| gallery.scroll.clone());
+    let offset = scroll.offset();
+    fixture.click("gallery.navigation.input-number");
+    let selected = fixture
+        .gallery
+        .read_with(&fixture.cx, |gallery, _| gallery.selected);
+    assert_eq!(
+        selected,
+        ComponentId::InputNumber,
+        "navigation logical bounds {before:?}, sidebar {sidebar:?}; click must reveal the owned scroll region first"
+    );
+    let after = fixture.bounds("gallery.navigation.input-number");
+    assert!((after.center().y - sidebar.center().y).abs() <= px(1.));
+    assert_eq!(
+        scroll.offset(),
+        offset,
+        "sidebar reveal must not scroll the example content"
+    );
+    fixture.click("gallery.navigation.button");
+    assert_eq!(
+        fixture
+            .gallery
+            .read_with(&fixture.cx, |gallery, _| gallery.selected),
+        ComponentId::Button
+    );
 }
 
 #[test]

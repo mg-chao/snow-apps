@@ -95,6 +95,51 @@ pub struct CheckboxGroup<T: Clone + PartialEq + 'static> {
     accessibility: Accessibility,
     on_change: Option<ChangeHandler<T>>,
     style: StyleRefinement,
+    form_registration: Option<(crate::form::FieldHandle, crate::form::ControlToken)>,
+}
+
+impl<T: Clone + PartialEq + 'static> crate::form::FormControl<Vec<T>> for CheckboxGroup<T> {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<Vec<T>>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        use crate::form::{FormControlBinding, FormPresence, ValidationTrigger};
+        let options = self
+            .options
+            .iter()
+            .map(|option| (option.id.clone(), option.focus.clone()))
+            .collect();
+        let (value, focuses, token) =
+            match FormControlBinding::controlled(self.id.clone(), &field, options, window, cx) {
+                Ok(value) => value,
+                Err(error) => return crate::form::binding_error(context.id, &error),
+            };
+        self.value = Some(value.value().unwrap_or_default());
+        self.form_registration = Some((field.handle(), token));
+        for (option, focus) in self.options.iter_mut().zip(focuses) {
+            option.focus = Some(focus);
+        }
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.disabled = self.disabled.or(Some(context.disabled));
+
+        self.accessibility.in_form(&context);
+        let handler = self.on_change.take();
+        self.on_change = Some(Rc::new(move |value: &[T], window, cx| {
+            let _ = field.change(
+                FormPresence::Value(value.to_vec()),
+                ValidationTrigger::Change,
+                window,
+                cx,
+            );
+            if let Some(handler) = &handler {
+                handler(value, window, cx);
+            }
+        }));
+        self.into_any_element()
+    }
 }
 
 impl<T: Clone + PartialEq + 'static> CheckboxGroup<T> {
@@ -110,6 +155,7 @@ impl<T: Clone + PartialEq + 'static> CheckboxGroup<T> {
             accessibility: Accessibility::new(Role::Group),
             on_change: None,
             style: StyleRefinement::default(),
+            form_registration: None,
         }
     }
 
@@ -206,6 +252,7 @@ impl<T: Clone + PartialEq> GroupSelection<T> {
 struct GroupState<T> {
     scope: ConfigScope,
     selection: GroupSelection<T>,
+    focuses: Vec<(FocusHandle, Option<bool>)>,
     _config: Subscription,
 }
 
@@ -218,6 +265,7 @@ impl<T: Clone + PartialEq + 'static> GroupState<T> {
                 uncontrolled: initial,
                 controlled: None,
             },
+            focuses: Vec::new(),
             _config: subscription,
         }
     }
@@ -235,7 +283,38 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for CheckboxGroup<T> {
                 state.scope = scope.clone();
             }
             state.selection.controlled = self.value.take();
+            state.focuses = self
+                .options
+                .iter()
+                .filter_map(|option| {
+                    option
+                        .focus
+                        .clone()
+                        .map(|focus| (focus, option.disabled.or(self.disabled)))
+                })
+                .collect();
         });
+        if let Some((field, token)) = &self.form_registration {
+            crate::form::FormControlBinding::install_focus(
+                field,
+                *token,
+                &state,
+                |state, window, cx| {
+                    let disabled = state.scope.snapshot(cx).disabled;
+                    if let Some((focus, _)) = state
+                        .focuses
+                        .iter()
+                        .find(|(_, override_disabled)| !override_disabled.unwrap_or(disabled))
+                    {
+                        focus.focus(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                cx,
+            );
+        }
         let config = scope.snapshot(cx);
         let tokens = config.theme.component::<CheckboxTheme>();
         let global = tokens.globals();

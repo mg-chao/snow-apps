@@ -141,6 +141,7 @@ pub struct Segmented<T: Clone + PartialEq + 'static> {
     options: Vec<SegmentedOption<T>>,
     value: Option<T>,
     default_value: Option<T>,
+    form_controlled: bool,
     disabled: Option<bool>,
     size: Option<Size>,
     shape: SegmentedShape,
@@ -153,6 +154,51 @@ pub struct Segmented<T: Clone + PartialEq + 'static> {
     item_style: Option<Box<StyleRefinement>>,
     label_style: Option<Box<StyleRefinement>>,
     icon_style: Option<Box<StyleRefinement>>,
+    form_registration: Option<(crate::form::FieldHandle, crate::form::ControlToken)>,
+}
+
+impl<T: Clone + PartialEq + 'static> crate::form::FormControl<T> for Segmented<T> {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<T>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        use crate::form::{FormControlBinding, FormPresence, ValidationTrigger};
+        let options = self
+            .options
+            .iter()
+            .map(|option| (option.id.clone(), option.focus.clone()))
+            .collect();
+        let (value, focuses, token) =
+            match FormControlBinding::controlled(self.id.clone(), &field, options, window, cx) {
+                Ok(value) => value,
+                Err(error) => return crate::form::binding_error(context.id, &error),
+            };
+        self.value = value.value();
+        self.form_registration = Some((field.handle(), token));
+        self.form_controlled = true;
+        for (option, focus) in self.options.iter_mut().zip(focuses) {
+            option.focus = Some(focus);
+        }
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.accessibility.in_form(&context);
+        let handler = self.on_change.take();
+        self.on_change = Some(Rc::new(move |value: &T, window, cx| {
+            let _ = field.change(
+                FormPresence::Value(value.clone()),
+                ValidationTrigger::Change,
+                window,
+                cx,
+            );
+            if let Some(handler) = &handler {
+                handler(value, window, cx);
+            }
+        }));
+        self.into_any_element()
+    }
 }
 
 impl<T: Clone + PartialEq + 'static> Segmented<T> {
@@ -163,6 +209,7 @@ impl<T: Clone + PartialEq + 'static> Segmented<T> {
             options: Vec::new(),
             value: None,
             default_value: None,
+            form_controlled: false,
             disabled: None,
             size: None,
             shape: SegmentedShape::Default,
@@ -175,6 +222,7 @@ impl<T: Clone + PartialEq + 'static> Segmented<T> {
             item_style: None,
             label_style: None,
             icon_style: None,
+            form_registration: None,
         }
     }
     pub fn scope(mut self, scope: ConfigScope) -> Self {
@@ -293,12 +341,16 @@ impl<T: Clone + PartialEq + 'static> SegmentedState<T> {
         let epoch = cx.background_executor().now();
         Self {
             scope,
-            selected: control
-                .value
-                .clone()
-                .or_else(|| control.default_value.clone())
-                .or_else(|| control.options.first().map(|o| o.value.clone())),
-            controlled: control.value.is_some(),
+            selected: if control.form_controlled {
+                control.value.clone()
+            } else {
+                control
+                    .value
+                    .clone()
+                    .or_else(|| control.default_value.clone())
+                    .or_else(|| control.options.first().map(|o| o.value.clone()))
+            },
+            controlled: control.form_controlled || control.value.is_some(),
             disabled: control.disabled,
             items: HashMap::new(),
             order: Vec::new(),
@@ -393,10 +445,12 @@ impl<T: Clone + PartialEq + 'static> SegmentedState<T> {
             self._config = Self::observe_scope(&scope, window, cx);
             self.scope = scope;
         }
-        if let Some(value) = &control.value {
+        if control.form_controlled {
+            self.selected = control.value.clone();
+        } else if let Some(value) = &control.value {
             self.selected = Some(value.clone());
         }
-        self.controlled = control.value.is_some();
+        self.controlled = control.form_controlled || control.value.is_some();
         self.disabled = control.disabled;
         self.order.clear();
         self.generation = self.generation.wrapping_add(1);
@@ -494,6 +548,35 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for Segmented<T> {
         state.update(cx, |state, cx| {
             state.update(&self, scope.clone(), window, cx)
         });
+        if let Some((field, token)) = &self.form_registration {
+            crate::form::FormControlBinding::install_focus(
+                field,
+                *token,
+                &state,
+                |state, window, cx| {
+                    state.sync_availability(window, cx);
+                    let focus = state
+                        .order
+                        .iter()
+                        .filter(|id| state.items[*id].guard.availability().can_focus())
+                        .find(|id| state.selected.as_ref() == Some(&state.items[*id].value))
+                        .or_else(|| {
+                            state
+                                .order
+                                .iter()
+                                .find(|id| state.items[*id].guard.availability().can_focus())
+                        })
+                        .map(|id| state.items[id].focus.clone());
+                    if let Some(focus) = focus {
+                        focus.focus(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                cx,
+            );
+        }
         let config = scope.snapshot(cx);
         let tokens = config.theme.component::<SegmentedTheme>();
         let global = tokens.globals();

@@ -134,6 +134,27 @@ impl OtpState {
             cx.notify();
         }
     }
+    /// Reset the whole verification-code editing session, including equal values.
+    pub fn reset_value(
+        &mut self,
+        value: impl AsRef<str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.composing = None;
+        self.model.reset_value(value.as_ref());
+        self.sync_cells(false, window, cx);
+        for (index, cell) in self.editors.iter_mut().enumerate() {
+            let text = self.model.cells[index].clone();
+            cell.editor
+                .update(cx, |editor, cx| editor.reset_value(text, window, cx));
+            cell.ignore_revision = cell.editor.read(cx).buffer.revision();
+        }
+        self.focused = false;
+        self.sync_tab_stops(cx);
+        cx.notify();
+    }
+
     pub fn set_options(
         &mut self,
         options: OtpOptions,

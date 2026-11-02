@@ -140,6 +140,7 @@ pub struct Select<T: Clone + Eq + Hash + 'static> {
     size: Option<Size>,
     variant: Option<Variant>,
     status: ValidationStatus,
+    status_configured: bool,
     disabled: Option<bool>,
     value: Option<Vec<SelectValue<T>>>,
     default_value: Option<Vec<SelectValue<T>>>,
@@ -177,6 +178,147 @@ pub struct Select<T: Clone + Eq + Hash + 'static> {
     on_event: Option<EventHandler<T>>,
 }
 impl<T: Clone + Eq + Hash + 'static> Select<T> {
+    fn into_bound_form<V: Clone + PartialEq + 'static>(
+        mut self,
+        field: crate::form::FormField<V>,
+        context: crate::form::FormItemContext,
+        collect: fn(Vec<SelectValue<T>>) -> crate::form::FormPresence<V>,
+        display: fn(crate::form::FormPresence<V>) -> Vec<SelectValue<T>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent};
+        let state = self.state.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            move |event| match event {
+                SelectEvent::Change(change) => {
+                    FormControlEvent::Change(collect(change.values.clone()))
+                }
+                SelectEvent::Blur => FormControlEvent::Blur,
+                SelectEvent::Focus => FormControlEvent::Focus,
+                _ => FormControlEvent::None,
+            },
+            move |state, value, reset, window, cx| {
+                state.update(cx, |state, cx| {
+                    let values = display(value);
+                    if reset {
+                        state.reset_value(values, window, cx);
+                    } else {
+                        state.set_value(values, cx);
+                    }
+                });
+                Ok(())
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.disabled(cx) {
+                        false
+                    } else {
+                        state.focus(window, cx);
+                        true
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.value = match field.read(cx) {
+            Ok(value) => Some(display(value)),
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.variant = self.variant.or(Some(context.variant));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        if !self.status_configured {
+            self.status = context.status;
+        }
+        self.accessibility.in_form(&context);
+        if let Some(feedback) = context.feedback_element(window, cx) {
+            self.suffix = Some(match self.suffix {
+                Some(suffix) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child(suffix)
+                    .child(feedback)
+                    .into_any_element(),
+                None => feedback,
+            });
+        }
+        self.into_any_element()
+    }
+}
+
+impl<T: Clone + Eq + Hash + 'static> crate::form::FormControl<SelectValue<T>> for Select<T> {
+    fn into_form_element(
+        self,
+        field: crate::form::FormField<SelectValue<T>>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        if self.state.read(cx).settings().mode != super::SelectMode::Single {
+            return crate::form::binding_error(
+                context.id,
+                &crate::form::FormError::Control(
+                    "A multiple Select requires a vector field".into(),
+                ),
+            );
+        }
+        self.into_bound_form(
+            field,
+            context,
+            |values| {
+                values.into_iter().next().map_or(
+                    crate::form::FormPresence::Null,
+                    crate::form::FormPresence::Value,
+                )
+            },
+            |value| value.value().into_iter().collect(),
+            window,
+            cx,
+        )
+    }
+}
+impl<T: Clone + Eq + Hash + 'static> crate::form::FormControl<Vec<SelectValue<T>>> for Select<T> {
+    fn into_form_element(
+        self,
+        field: crate::form::FormField<Vec<SelectValue<T>>>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        if self.state.read(cx).settings().mode == super::SelectMode::Single {
+            return crate::form::binding_error(
+                context.id,
+                &crate::form::FormError::Control("A single Select requires a scalar field".into()),
+            );
+        }
+        self.into_bound_form(
+            field,
+            context,
+            crate::form::FormPresence::Value,
+            |value| value.value().unwrap_or_default(),
+            window,
+            cx,
+        )
+    }
+}
+
+impl<T: Clone + Eq + Hash + 'static> Select<T> {
     pub fn new(id: impl Into<ElementId>, state: &Entity<SelectState<T>>) -> Self {
         Self {
             id: id.into(),
@@ -185,6 +327,7 @@ impl<T: Clone + Eq + Hash + 'static> Select<T> {
             size: None,
             variant: None,
             status: ValidationStatus::None,
+            status_configured: false,
             disabled: None,
             value: None,
             default_value: None,
@@ -236,6 +379,7 @@ impl<T: Clone + Eq + Hash + 'static> Select<T> {
     }
     pub fn status(mut self, status: ValidationStatus) -> Self {
         self.status = status;
+        self.status_configured = true;
         self
     }
     pub fn disabled(mut self, disabled: bool) -> Self {
@@ -675,25 +819,22 @@ impl<T: Clone + Eq + Hash + 'static> RenderOnce for Select<T> {
             slot.style().refine(&self.styles.prefix);
             root = root.child(slot);
         }
+        self.accessibility.invalid |= self.status == ValidationStatus::Error;
+        if self.status == ValidationStatus::Validating {
+            self.accessibility.busy = true;
+            self.accessibility.busy_allows_activation = true;
+        }
         let mut input = Input::new("editor", &editor)
             .scope(scope.clone())
             .size(size)
             .disabled(disabled)
             .read_only(!searchable || at_limit)
-            .semantic_role(Role::ComboBox);
+            .semantic_role(Role::ComboBox)
+            .inherit_accessibility(&self.accessibility);
         input.embedded = true;
         if multiple {
             input.embedded_line_height =
                 Some(tokens.tag_height(size) + 2. * (g.padding_xxs / 2.).floor());
-        }
-        if let Some(label) = &self.accessibility.label {
-            input = input.accessibility_label(label.clone());
-        }
-        if let Some(description) = &self.accessibility.description {
-            input = input.accessibility_description(description.clone());
-        }
-        if let Some(id) = &self.accessibility.automation_id {
-            input = input.automation_id(id.clone());
         }
         input.style().refine(&self.styles.input);
         let a11y_target = state.clone();

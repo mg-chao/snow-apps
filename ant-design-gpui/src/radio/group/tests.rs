@@ -27,7 +27,7 @@ fn selection_retains_single_value_and_suppresses_reselection() {
 fn controlled_selection_only_proposes_changes_and_resumes_retained_value() {
     let mut selection = GroupSelection {
         uncontrolled: Some(1),
-        controlled: Some(2),
+        controlled: Some(Some(2)),
     };
     assert!(!selection.select(&2));
     assert!(selection.select(&3));

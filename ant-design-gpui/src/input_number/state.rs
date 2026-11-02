@@ -181,6 +181,23 @@ impl InputNumberState {
         Ok(())
     }
 
+    /// Reset canonical display and editing state even if the number is unchanged.
+    pub fn reset_value(
+        &mut self,
+        value: Option<NumericValue>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), NumberError> {
+        let display = self.model.set_value(value)?;
+        self.cancel_repeat();
+        self.editor
+            .update(cx, |editor, cx| editor.reset_value(&display, window, cx));
+        self.ignore_through_revision = self.editor.read(cx).buffer.revision();
+        self.draft_status = self.model.options.parse(&display);
+        cx.notify();
+        Ok(())
+    }
+
     pub fn set_options(
         &mut self,
         options: NumberOptions,

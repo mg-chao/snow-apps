@@ -372,6 +372,16 @@ impl EditingBuffer {
         true
     }
 
+    /// Reset an editing session even when the supplied text is unchanged.
+    pub fn reset(&mut self, text: &str, policy: &EditPolicy) {
+        self.text = policy.normalize(text);
+        self.composition = None;
+        self.marked = None;
+        self.index();
+        self.selection = TextSelection::collapsed(0);
+        self.clear_history();
+    }
+
     /// Insert a user edit, applying the hard limit to the insertion only. Text
     /// supplied by an external owner can remain over the limit and be shortened.
     pub fn replace(

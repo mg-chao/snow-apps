@@ -91,6 +91,8 @@ pub struct OtpInput {
     size: Option<Size>,
     variant: Option<Variant>,
     status: ValidationStatus,
+    status_configured: bool,
+    form_context: Option<crate::form::FormItemContext>,
     disabled: Option<bool>,
     read_only: Option<bool>,
     placeholder: SharedString,
@@ -99,6 +101,76 @@ pub struct OtpInput {
     block: bool,
     style: StyleRefinement,
 }
+impl crate::form::FormControl<SharedString> for OtpInput {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<SharedString>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            |event| match event {
+                super::OtpEvent::Change(change) => {
+                    FormControlEvent::Change(FormPresence::Value(change.value.clone()))
+                }
+                super::OtpEvent::Focus => FormControlEvent::Focus,
+                super::OtpEvent::Blur => FormControlEvent::Blur,
+                super::OtpEvent::Commit(commit) if commit.reason == CommitReason::Enter => {
+                    FormControlEvent::Submit
+                }
+                _ => FormControlEvent::None,
+            },
+            |state, value, reset, window, cx| {
+                state.update(cx, |state, cx| {
+                    let value = value.value().unwrap_or_default();
+                    if reset {
+                        state.reset_value(value, window, cx);
+                    } else {
+                        state.set_value(value, window, cx);
+                    }
+                });
+                Ok(())
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.is_disabled() {
+                        false
+                    } else {
+                        state.focus(window, cx);
+                        true
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.variant = self.variant.or(Some(context.variant));
+        if !self.status_configured {
+            self.status = context.status;
+        }
+        self.accessibility.in_form(&context);
+        self.form_context = Some(context);
+        self.into_any_element()
+    }
+}
+
 impl OtpInput {
     pub fn new(id: impl Into<ElementId>, state: &Entity<OtpState>) -> Self {
         Self {
@@ -108,6 +180,8 @@ impl OtpInput {
             size: None,
             variant: None,
             status: ValidationStatus::None,
+            status_configured: false,
+            form_context: None,
             disabled: None,
             read_only: None,
             placeholder: SharedString::default(),
@@ -131,6 +205,7 @@ impl OtpInput {
     }
     pub fn status(mut self, status: ValidationStatus) -> Self {
         self.status = status;
+        self.status_configured = true;
         self
     }
     pub fn disabled(mut self, disabled: bool) -> Self {
@@ -177,6 +252,7 @@ struct MountedOtp {
     state: Entity<OtpState>,
     scope: ConfigScope,
     disabled_override: Option<bool>,
+    form_disabled: Option<bool>,
     _state: Subscription,
     _scope: Subscription,
 }
@@ -193,6 +269,7 @@ impl MountedOtp {
             state,
             scope,
             disabled_override: None,
+            form_disabled: None,
         }
     }
     fn observe_scope(
@@ -202,7 +279,10 @@ impl MountedOtp {
     ) -> Subscription {
         scope.observe_in(window, cx, |this, window, cx| {
             let disabled = this.disabled_override.unwrap_or(
-                this.scope.snapshot(cx).disabled || this.state.read(cx).requested_disabled,
+                this.state.read(cx).requested_disabled
+                    || this
+                        .form_disabled
+                        .unwrap_or_else(|| this.scope.snapshot(cx).disabled),
             );
             this.state
                 .update(cx, |state, cx| state.apply_disabled(disabled, window, cx));
@@ -226,11 +306,16 @@ impl RenderOnce for OtpInput {
                 mounted._scope = MountedOtp::observe_scope(&scope, window, cx);
             }
             mounted.disabled_override = self.disabled;
+            mounted.form_disabled = self.form_context.as_ref().map(|context| context.disabled);
         });
         let config = scope.snapshot(cx);
-        let disabled = self
-            .disabled
-            .unwrap_or(config.disabled || self.state.read(cx).requested_disabled);
+        let disabled = self.disabled.unwrap_or(
+            self.state.read(cx).requested_disabled
+                || self
+                    .form_context
+                    .as_ref()
+                    .map_or(config.disabled, |context| context.disabled),
+        );
         self.state.update(cx, |state, cx| {
             state.apply_disabled(disabled, window, cx);
             if let Some(read_only) = self.read_only {
@@ -295,7 +380,11 @@ impl RenderOnce for OtpInput {
         self.accessibility.label = Some(label.clone());
         self.accessibility.disabled = disabled;
         self.accessibility.read_only = read_only;
-        self.accessibility.invalid = self.status == ValidationStatus::Error;
+        self.accessibility.invalid |= self.status == ValidationStatus::Error;
+        if self.status == ValidationStatus::Validating {
+            self.accessibility.busy = true;
+            self.accessibility.busy_allows_activation = true;
+        }
         let automation_id = self.accessibility.automation_id.clone();
         let mut root = div()
             .id(self.id)
@@ -328,6 +417,11 @@ impl RenderOnce for OtpInput {
                 .min_w_0();
             if self.block {
                 input = input.flex_1().min_w_0();
+            }
+            if let Some(context) = &self.form_context {
+                let mut context = context.clone();
+                context.has_feedback = false;
+                input = input.in_form(&context, window, cx);
             }
             if let Some(id) = &automation_id {
                 input = input.automation_id(format!("{id}.cell.{index}"));

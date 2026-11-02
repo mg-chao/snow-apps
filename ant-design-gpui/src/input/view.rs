@@ -4,11 +4,11 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, DefiniteLength, Edges, Element,
-    ElementId, ElementInputHandler, Entity, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, MouseButton, Pixels, Point, Refineable, RenderOnce, Role, SharedString, Style,
-    StyleRefinement, Styled, Subscription, Task, Window, canvas, div, fill, point, prelude::*, px,
-    relative, size,
+    AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, CursorStyle, DefiniteLength,
+    Edges, Element, ElementId, ElementInputHandler, Entity, GlobalElementId, HitboxBehavior,
+    InspectorElementId, IntoElement, LayoutId, MouseButton, Pixels, Point, Refineable, RenderOnce,
+    Role, SharedString, Style, StyleRefinement, Styled, Subscription, Task, Window, canvas, div,
+    fill, point, prelude::*, px, relative, size,
 };
 
 use crate::{
@@ -24,6 +24,7 @@ use super::{
     controls::{CountConfig, CountInfo, SearchButton},
     layout::{LayoutCache, LayoutStyle, NavigationLayout, TextAlignment, TextLayout},
     motion::{CSS_EASE, LINEAR, SurfaceMotion},
+    resize::{ResizeState, TextAreaResize},
     state::InputMode,
 };
 
@@ -36,7 +37,10 @@ pub struct Input {
     size: Option<Size>,
     variant: Option<Variant>,
     status: ValidationStatus,
+    status_configured: bool,
     disabled: Option<bool>,
+    // Inherited context is a fallback; it must not become a child override.
+    form_disabled: Option<bool>,
     read_only: Option<bool>,
     placeholder: SharedString,
     accessibility: Accessibility,
@@ -44,6 +48,7 @@ pub struct Input {
     multiline: bool,
     rows: usize,
     auto_size: Option<(usize, usize)>,
+    resize: TextAreaResize,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     allow_clear: bool,
@@ -98,7 +103,9 @@ impl Input {
             size: None,
             variant: None,
             status: ValidationStatus::None,
+            status_configured: false,
             disabled: None,
+            form_disabled: None,
             read_only: None,
             placeholder: SharedString::default(),
             accessibility: Accessibility::new(Role::TextInput),
@@ -106,6 +113,7 @@ impl Input {
             multiline: false,
             rows: 1,
             auto_size: None,
+            resize: TextAreaResize::default(),
             prefix: None,
             suffix: None,
             allow_clear: false,
@@ -140,6 +148,7 @@ impl Input {
     }
     pub fn status(mut self, status: ValidationStatus) -> Self {
         self.status = status;
+        self.status_configured = true;
         self
     }
     pub fn disabled(mut self, disabled: bool) -> Self {
@@ -156,6 +165,17 @@ impl Input {
     }
     pub fn accessibility_label(mut self, value: impl Into<SharedString>) -> Self {
         self.accessibility.label = Some(value.into());
+        self
+    }
+
+    /// Inspect the final native accessibility node in offscreen verification.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn inspect_accessibility(
+        mut self,
+        callback: impl Fn(&gpui::accesskit::Node) + 'static,
+    ) -> Self {
+        self.accessibility.inspection =
+            Some(crate::behavior::AccessibilityInspection::new(callback));
         self
     }
     pub fn accessibility_description(mut self, value: impl Into<SharedString>) -> Self {
@@ -176,6 +196,12 @@ impl Input {
     }
     pub fn auto_size(mut self, min_rows: usize, max_rows: usize) -> Self {
         self.auto_size = Some((min_rows.max(1), max_rows.max(min_rows).max(1)));
+        self
+    }
+    /// Configure the native resize grip for multiline editors.
+    /// `auto_size` takes precedence over manual resizing.
+    pub fn resize(mut self, mode: TextAreaResize) -> Self {
+        self.resize = mode;
         self
     }
     pub fn prefix(mut self, prefix: impl IntoElement) -> Self {
@@ -202,6 +228,39 @@ impl Input {
         self.accessibility.role = Some(role);
         self
     }
+    pub(crate) fn inherit_accessibility(mut self, source: &Accessibility) -> Self {
+        self.accessibility.inherit_control(source);
+        self
+    }
+    pub(crate) fn in_form(
+        mut self,
+        context: &crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.variant = self.variant.or(Some(context.variant));
+        self.form_disabled = Some(context.disabled);
+        if !self.status_configured {
+            self.status = context.status;
+        }
+        self.accessibility.in_form(context);
+        if let Some(feedback) = context.feedback_element(window, cx) {
+            self.suffix = Some(match self.suffix {
+                Some(suffix) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child(suffix)
+                    .child(feedback)
+                    .into_any_element(),
+                None => feedback,
+            });
+        }
+        self
+    }
+
     pub(crate) fn in_group(mut self, context: super::InputGroupContext) -> Self {
         self.scope = self.scope.or_else(|| Some(context.scope.clone()));
         self.size = self.size.or(Some(context.size));
@@ -214,6 +273,70 @@ impl Input {
 impl super::InputGroupItem for Input {
     fn into_group_element(self, context: super::InputGroupContext) -> AnyElement {
         self.in_group(context).into_any_element()
+    }
+}
+
+impl crate::form::FormControl<SharedString> for Input {
+    fn into_form_element(
+        self,
+        field: crate::form::FormField<SharedString>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus.clone()),
+            move |event| match event {
+                super::InputEvent::Change(change) if !change.is_composing => {
+                    FormControlEvent::Change(FormPresence::Value(change.value.clone()))
+                }
+                super::InputEvent::Blur => FormControlEvent::Blur,
+                super::InputEvent::Focus => FormControlEvent::Focus,
+                super::InputEvent::Commit(commit)
+                    if commit.reason == super::CommitReason::Enter =>
+                {
+                    FormControlEvent::Submit
+                }
+                _ => FormControlEvent::None,
+            },
+            |state, value, reset, window, cx| {
+                let value = value.value().unwrap_or_default();
+                state.update(cx, |state, cx| {
+                    if reset {
+                        state.reset_value(value, window, cx);
+                    } else {
+                        state.set_value(value, window, cx);
+                    }
+                });
+                Ok(())
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.is_disabled() {
+                        false
+                    } else {
+                        state.focus(window, cx);
+                        true
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.in_form(&context, window, cx).into_any_element()
     }
 }
 
@@ -234,6 +357,7 @@ struct MountedInput {
     state: Entity<InputState>,
     scope: ConfigScope,
     disabled_override: Option<bool>,
+    form_disabled: Option<bool>,
     hovered: bool,
     selecting: bool,
     drag_position: Option<Point<Pixels>>,
@@ -248,6 +372,8 @@ struct MountedInput {
     ensure_caret: bool,
     cache: Rc<RefCell<LayoutCache>>,
     geometry_cache: Option<GeometryCache>,
+    resize: Option<Box<ResizeState>>,
+    reset_revision: u64,
     surface: SurfaceMotion,
     epoch: std::time::Instant,
     frame_pending: bool,
@@ -269,20 +395,24 @@ impl MountedInput {
         let scope_subscription = Self::observe_scope(&scope, window, cx);
         let active = cx.observe_window_activation(window, |this, window, cx| {
             this.stop_drag();
+            this.end_resize(window);
             this.caret_reset = true;
             this.sync_caret(window, cx);
             cx.notify();
         });
         let visible = cx.observe_window_visibility(window, |this, _, window, cx| {
             this.stop_drag();
+            this.end_resize(window);
             this.caret_reset = true;
             this.sync_caret(window, cx);
             cx.notify();
         });
+        let reset_revision = state.read(cx).reset_revision;
         Self {
             state,
             scope,
             disabled_override: None,
+            form_disabled: None,
             hovered: false,
             selecting: false,
             drag_position: None,
@@ -297,6 +427,8 @@ impl MountedInput {
             ensure_caret: true,
             cache: Rc::default(),
             geometry_cache: None,
+            resize: None,
+            reset_revision,
             surface: SurfaceMotion::default(),
             epoch: cx.background_executor().now(),
             frame_pending: false,
@@ -321,6 +453,17 @@ impl MountedInput {
         }
     }
 
+    fn end_resize(&mut self, window: &mut Window) {
+        if let Some(resize) = &mut self.resize {
+            resize.end(window);
+        }
+    }
+    fn resize_state(&mut self) -> &mut ResizeState {
+        self.resize
+            .as_deref_mut()
+            .expect("a mounted multiline editor owns its resize presentation")
+    }
+
     fn observe_state(
         state: &Entity<InputState>,
         window: &mut Window,
@@ -328,6 +471,12 @@ impl MountedInput {
     ) -> Subscription {
         cx.observe_in(state, window, |this, _, window, cx| {
             let state = this.state.read(cx);
+            if this.reset_revision != state.reset_revision {
+                this.reset_revision = state.reset_revision;
+                if let Some(resize) = &mut this.resize {
+                    resize.reset(window);
+                }
+            }
             if state.disabled || !state.focus.is_focused(window) {
                 this.stop_drag();
             }
@@ -512,7 +661,10 @@ impl MountedInput {
     ) -> Subscription {
         scope.observe_in(window, cx, |this, window, cx| {
             let disabled = this.disabled_override.unwrap_or(
-                this.scope.snapshot(cx).disabled || this.state.read(cx).requested_disabled,
+                this.state.read(cx).requested_disabled
+                    || this
+                        .form_disabled
+                        .unwrap_or_else(|| this.scope.snapshot(cx).disabled),
             );
             this.state
                 .update(cx, |state, cx| state.apply_disabled(disabled, window, cx));
@@ -523,6 +675,12 @@ impl MountedInput {
 
 impl RenderOnce for Input {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let resize_declared = size(self.style.size.width, self.style.size.height);
+        let resize_mode = if self.multiline && self.auto_size.is_none() {
+            self.resize
+        } else {
+            TextAreaResize::None
+        };
         let search = self.mode == InputMode::Search;
         let wrapped = search || (self.multiline && self.count.is_some());
         let mut outer_style = StyleRefinement::default();
@@ -555,12 +713,30 @@ impl RenderOnce for Input {
             MountedInput::new(self.state.clone(), scope.clone(), window, cx)
         });
         mounted.update(cx, |mounted, cx| {
+            if self.multiline && mounted.resize.is_none() {
+                mounted.resize = Some(Box::default());
+                let release = cx.on_release_in(window, |this, window, _| this.end_resize(window));
+                mounted._window_subscriptions.push(release);
+            }
+            if let Some(resize) = &mut mounted.resize {
+                let changed = resize.configure(resize_declared);
+                if changed
+                    || resize_mode == TextAreaResize::None
+                    || !resize
+                        .compatible(resize_mode, scope.snapshot(cx).direction == Direction::Rtl)
+                {
+                    resize.end(window);
+                }
+            }
             mounted.disabled_override = self.disabled;
+            mounted.form_disabled = self.form_disabled;
             if mounted.state != self.state {
                 mounted.stop_drag();
+                mounted.end_resize(window);
                 mounted.caret_reset = true;
                 mounted._state_subscription = MountedInput::observe_state(&self.state, window, cx);
                 mounted.state = self.state.clone();
+                mounted.reset_revision = self.state.read(cx).reset_revision;
                 mounted.set_scroll(Point::default(), cx);
             }
             if mounted.scope != scope {
@@ -575,9 +751,9 @@ impl RenderOnce for Input {
             }
         });
         let config = scope.snapshot(cx);
-        let disabled = self
-            .disabled
-            .unwrap_or(config.disabled || self.state.read(cx).requested_disabled);
+        let disabled = self.disabled.unwrap_or(
+            self.state.read(cx).requested_disabled || self.form_disabled.unwrap_or(config.disabled),
+        );
         self.state.update(cx, |state, cx| {
             state.set_multiline(self.multiline, window, cx);
             state.apply_disabled(disabled, window, cx);
@@ -696,7 +872,11 @@ impl RenderOnce for Input {
         };
         self.accessibility.disabled = disabled;
         self.accessibility.read_only = state.read_only;
-        self.accessibility.invalid = self.status == ValidationStatus::Error || self.value_error;
+        self.accessibility.invalid |= self.status == ValidationStatus::Error || self.value_error;
+        if self.status == ValidationStatus::Validating {
+            self.accessibility.busy = true;
+            self.accessibility.busy_allows_activation = true;
+        }
         if state.is_protected() {
             self.accessibility.role = Some(Role::PasswordInput);
         } else if self.multiline {
@@ -734,6 +914,7 @@ impl RenderOnce for Input {
             multiline: self.multiline,
             rows: self.rows,
             auto_size: self.auto_size,
+            resize_grip: resize_mode != TextAreaResize::None,
             revision,
             placeholder: state.value().is_empty(),
             selection_color: tokens.globals.color_primary_bg.to_hsla(),
@@ -802,6 +983,10 @@ impl RenderOnce for Input {
             })
             .w_full()
             .min_w_0()
+            .when(self.multiline, |root| {
+                root.min_h(px(tokens.globals.control_height as f32))
+                    .max_w_full()
+            })
             .px(px(metrics.padding_inline as f32))
             .py(px(metrics.padding_block as f32))
             .font(tokens.font.clone())
@@ -839,6 +1024,29 @@ impl RenderOnce for Input {
             };
         }
         root.style().refine(&self.style);
+        if self.multiline
+            && let Some(width) = mounted
+                .read(cx)
+                .resize
+                .as_ref()
+                .and_then(|resize| resize.width)
+        {
+            if wrapped {
+                outer_style.size.width = Some(width.into());
+            } else {
+                root = root.w(width);
+            }
+        }
+        if self.multiline
+            && self.auto_size.is_none()
+            && let Some(height) = mounted
+                .read(cx)
+                .resize
+                .as_ref()
+                .and_then(|resize| resize.height)
+        {
+            root = root.h(height);
+        }
         let visibility = self.mode == InputMode::Password && self.visibility_toggle;
         let has_suffix =
             visibility || self.suffix.is_some() || (!self.multiline && count.is_some());
@@ -1104,6 +1312,31 @@ impl RenderOnce for Input {
                 cx,
             );
         }
+        if resize_mode != TextAreaResize::None {
+            let widths = &root.style().border_widths;
+            let border = Edges {
+                top: widths.top.unwrap_or_default().to_pixels(window.rem_size()),
+                right: widths
+                    .right
+                    .unwrap_or_default()
+                    .to_pixels(window.rem_size()),
+                bottom: widths
+                    .bottom
+                    .unwrap_or_default()
+                    .to_pixels(window.rem_size()),
+                left: widths.left.unwrap_or_default().to_pixels(window.rem_size()),
+            };
+            root = root.child(resize_handle(
+                &mounted,
+                resize_mode,
+                config.direction == Direction::Rtl,
+                border,
+                u16::from(tokens.globals.color_bg_container.r)
+                    + u16::from(tokens.globals.color_bg_container.g)
+                    + u16::from(tokens.globals.color_bg_container.b)
+                    < 384,
+            ));
+        }
         // GPUI dispatches same-node actions in registration order. Specialized
         // controls own their commands; the shared editor supplies fallbacks.
         root = super::actions::bind(root, &self.state, focus.is_focused(window));
@@ -1224,6 +1457,137 @@ impl RenderOnce for Input {
     }
 }
 
+/// The grip uses native hit testing and pointer capture. It leaves editor focus,
+/// selection and text history untouched, including for disabled/read-only input.
+fn resize_handle(
+    mounted: &Entity<MountedInput>,
+    mode: TextAreaResize,
+    rtl: bool,
+    border: Edges<Pixels>,
+    dark: bool,
+) -> AnyElement {
+    let measure = mounted.clone();
+    let target = mounted.downgrade();
+    canvas(
+        move |bounds, window, cx| {
+            // Absolute inset zero uses the padding box. Gestures and native
+            // grip coordinates use the complete outer border box instead.
+            let bounds = Bounds::new(
+                bounds.origin - point(border.left, border.top),
+                bounds.size + size(border.left + border.right, border.top + border.bottom),
+            );
+            measure.update(cx, |mounted, _| {
+                mounted.resize_state().bounds = Some(bounds)
+            });
+            let extent = px(15.).min(bounds.size.width).min(bounds.size.height);
+            let hitbox = Bounds::new(
+                point(
+                    if rtl {
+                        bounds.left()
+                    } else {
+                        bounds.right() - extent
+                    },
+                    bounds.bottom() - extent,
+                ),
+                size(extent, extent),
+            );
+            window.insert_hitbox(hitbox, HitboxBehavior::Normal)
+        },
+        move |_, hitbox, window, cx| {
+            let cursor = match mode {
+                TextAreaResize::Vertical => CursorStyle::ResizeUpDown,
+                TextAreaResize::Horizontal => CursorStyle::ResizeLeftRight,
+                _ if rtl => CursorStyle::ResizeUpRightDownLeft,
+                _ => CursorStyle::ResizeUpLeftDownRight,
+            };
+            window.set_cursor_style(cursor, &hitbox);
+            if let Some(mounted) = target.upgrade() {
+                mounted.update(cx, |mounted, _| {
+                    if mounted.resize_state().dragging() {
+                        mounted.resize_state().capture(hitbox.id, window);
+                    }
+                });
+            }
+            let down = target.clone();
+            let pointer = hitbox.clone();
+            window.on_mouse_event(move |event: &gpui::MouseDownEvent, phase, window, cx| {
+                if !phase.bubble()
+                    || event.button != MouseButton::Left
+                    || !pointer.is_hovered(window)
+                {
+                    return;
+                }
+                let started = down
+                    .update(cx, |mounted, _| {
+                        mounted.stop_drag();
+                        let started = mounted.resize_state().begin(event.position, mode, rtl);
+                        if started {
+                            mounted.resize_state().capture(pointer.id, window);
+                        }
+                        started
+                    })
+                    .unwrap_or(false);
+                if started {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            });
+            let movement = target.clone();
+            window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                if !phase.capture() {
+                    return;
+                }
+                let _ = movement.update(cx, |mounted, cx| {
+                    if !mounted.resize_state().dragging() {
+                        return;
+                    }
+                    if event.pressed_button != Some(MouseButton::Left) {
+                        mounted.resize_state().end(window);
+                    } else if mounted.resize_state().update(event.position) {
+                        cx.notify();
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                });
+            });
+            let end = target.clone();
+            window.on_mouse_event(move |event: &gpui::MouseUpEvent, phase, window, cx| {
+                if phase.capture() && event.button == MouseButton::Left {
+                    let _ = end.update(cx, |mounted, _| mounted.resize_state().end(window));
+                }
+            });
+            // The desktop reference has seven- and three-pixel diagonals. Dark
+            // native chrome adds an adjacent highlight to the trailing edges.
+            for (length, bottom) in [(7, 10.), (3, 6.)] {
+                for step in 0..length {
+                    let x = if rtl {
+                        hitbox.left() + px(3. + step as f32)
+                    } else {
+                        hitbox.right() - px(4. + step as f32)
+                    };
+                    let y = hitbox.bottom() - px(bottom - step as f32);
+                    window.paint_quad(fill(
+                        Bounds::new(point(x, y), size(px(1.), px(1.))),
+                        gpui::rgb(if dark { 0x080808 } else { 0x666666 }),
+                    ));
+                    if dark && step > 0 {
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                point(x + px(if rtl { -1. } else { 1. }), y),
+                                size(px(1.), px(1.)),
+                            ),
+                            gpui::rgb(0xa1a1a1),
+                        ));
+                    }
+                }
+            }
+        },
+    )
+    .absolute()
+    .inset_0()
+    .into_any_element()
+}
+
 #[derive(Clone)]
 struct TextViewport {
     state: Entity<InputState>,
@@ -1233,6 +1597,7 @@ struct TextViewport {
     multiline: bool,
     rows: usize,
     auto_size: Option<(usize, usize)>,
+    resize_grip: bool,
     revision: u64,
     placeholder: bool,
     selection_color: gpui::Hsla,
@@ -1272,6 +1637,13 @@ impl Element for TextViewport {
         style.size.width = relative(1.).into();
         style.flex_grow = 1.;
         style.flex_shrink = 1.;
+        // Flex items default to an intrinsic automatic minimum. The measured
+        // editor otherwise keeps the full available width and pushes suffix
+        // actions outside a constrained affix frame instead of sharing space.
+        style.min_size.width = px(0.).into();
+        if self.multiline {
+            style.min_size.height = px(0.).into();
+        }
         style.padding = self.padding;
         let mounted = self.mounted.clone();
         let text = self.text.clone();
@@ -1352,6 +1724,7 @@ impl Element for TextViewport {
             let mut area = ScrollArea::new("text-scroll", &scroll_area)
                 .scope(self.mounted.read(cx).scope.clone())
                 .embedded()
+                .scrollbar_end_inset(if self.resize_grip { px(15.) } else { px(0.) })
                 .w(bounds.size.width)
                 .h(bounds.size.height)
                 .child(

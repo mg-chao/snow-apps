@@ -39,6 +39,7 @@ pub struct ScrollArea {
     style: StyleRefinement,
     children: Vec<AnyElement>,
     embedded: bool,
+    vertical_end_inset: Pixels,
 }
 
 impl ScrollArea {
@@ -56,6 +57,7 @@ impl ScrollArea {
             style: StyleRefinement::default(),
             children: Vec::new(),
             embedded: false,
+            vertical_end_inset: px(0.),
         }
     }
 
@@ -94,6 +96,11 @@ impl ScrollArea {
     /// The containing control owns focus, traversal and keyboard navigation.
     pub(crate) fn embedded(mut self) -> Self {
         self.embedded = true;
+        self
+    }
+    /// Reserve the containing editor's native resize corner outside the rail.
+    pub(crate) fn scrollbar_end_inset(mut self, inset: Pixels) -> Self {
+        self.vertical_end_inset = inset.max(px(0.));
         self
     }
 }
@@ -334,6 +341,7 @@ impl RenderOnce for ScrollArea {
             ),
             duration: config.theme.tokens.motion_duration_mid,
             on_scroll: self.on_scroll,
+            vertical_end_inset: self.vertical_end_inset,
         }
     }
 }
@@ -348,6 +356,7 @@ struct ScrollAreaElement {
     policy: MotionPolicy,
     duration: std::time::Duration,
     on_scroll: Option<ScrollHandler>,
+    vertical_end_inset: Pixels,
 }
 
 impl IntoElement for ScrollAreaElement {
@@ -420,6 +429,7 @@ impl Element for ScrollAreaElement {
                     vertical_width,
                     (native.size.height
                         - 2. * inset
+                        - self.vertical_end_inset
                         - if horizontal {
                             horizontal_height
                         } else {

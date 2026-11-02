@@ -36,6 +36,8 @@ struct Consumer {
     style: StyleRefinement,
     indicator_style: Option<StyleRefinement>,
     content_style: Option<StyleRefinement>,
+    background: Option<Color>,
+    opacity_backdrop: Option<Color>,
 }
 
 impl Consumer {
@@ -60,6 +62,8 @@ impl Consumer {
             style: StyleRefinement::default(),
             indicator_style: None,
             content_style: None,
+            background: None,
+            opacity_backdrop: None,
         }
     }
 }
@@ -72,6 +76,9 @@ impl Render for Consumer {
             .p(px(12.))
             .gap(px(20.))
             .w(px(400.));
+        if let Some(background) = self.background {
+            row = row.bg(background);
+        }
         if self.visible {
             let changes = self.changes.clone();
             let clicks = self.clicks.clone();
@@ -94,6 +101,9 @@ impl Render for Consumer {
             }
             if let Some(value) = self.size {
                 control = control.size(value);
+            }
+            if let Some(value) = self.opacity_backdrop {
+                control = control.opacity_backdrop(value);
             }
             if self.external_focus {
                 control = control.focus_handle(&self.focus);
@@ -333,7 +343,9 @@ impl Fixture {
     fn handle(&mut self) -> gpui::Bounds<gpui::Pixels> {
         self.quads()
             .into_iter()
-            .find(|(b, c)| *c == Color::WHITE.to_hsla() && b.left() < px(120.))
+            .find(|(b, c)| {
+                *c == Color::WHITE.to_hsla() && b.left() >= px(12.) && b.left() < px(120.)
+            })
             .expect("handle quad")
             .0
     }
@@ -722,8 +734,14 @@ fn switch_styled_root_keeps_its_layout_hitbox_and_focus_contour_together() {
             .find(|q| (q.border_widths.left.0 / scale - 3.).abs() < 0.01)
             .expect("keyboard outline");
         assert!((outline.bounds.size.width.0 / scale - 128.).abs() < 0.01);
-        assert!((outline.border_color.a - 0.5).abs() < 1e-6);
+        assert!((outline.border_color.a - 1.).abs() < 1e-6);
         assert!((outline.corner_radii.top_left.0 / scale - 9.).abs() < 0.01);
+        assert!(window.rendered_scene().quads.iter().any(|quad| {
+            quad.background
+                .as_solid()
+                .is_some_and(|color| (color.a - 0.5).abs() < 1e-6)
+                && quad.bounds.contains(&outline.bounds.origin)
+        }));
     })
     .unwrap();
     // The far end of a styled track belongs to the same activation hitbox.
@@ -731,4 +749,124 @@ fn switch_styled_root_keeps_its_layout_hitbox_and_focus_contour_together() {
     f.pointer(false, 120.);
     f.draw();
     assert!(f.checked());
+}
+
+#[test]
+fn switch_group_opacity_matches_executed_original_handle_pixels_on_uniform_backdrops() {
+    #[derive(serde::Deserialize)]
+    struct Reference {
+        cases: Vec<Case>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Case {
+        scene: String,
+        theme: String,
+        id: String,
+        backdrop: String,
+        checked: bool,
+        small: bool,
+        disabled: bool,
+        authored_opacity: Option<f32>,
+        effective_opacity: f32,
+        custom_content: bool,
+        handle_center_rgb: [u8; 3],
+    }
+    let reference: Reference = serde_json::from_str(include_str!(
+        "../../fixtures/form/switch-opacity-reference.json"
+    ))
+    .unwrap();
+    assert_eq!(reference.cases.len(), 216);
+    for case in reference.cases {
+        let backdrop: Color = case.backdrop.parse().unwrap();
+        let mut fixture = Fixture::new(|consumer| {
+            consumer.checked = Some(case.checked);
+            consumer.disabled = Some(case.disabled);
+            consumer.size = Some(if case.small {
+                Size::Small
+            } else {
+                Size::Medium
+            });
+            consumer.background = Some(backdrop);
+            consumer.opacity_backdrop = (!case.scene.ends_with("container")).then_some(backdrop);
+            consumer.style.opacity = case.authored_opacity;
+            consumer.custom_content = case.custom_content;
+        });
+        if case.theme == "dark" {
+            fixture.patch(|patch| {
+                patch.theme = Some(ThemeConfig {
+                    algorithms: Some(AlgorithmChain::dark()),
+                    ..Default::default()
+                });
+            });
+        }
+        let handle = fixture.handle();
+        let center = handle.center();
+        let quads = fixture.quads();
+        // The opaque handle must cover the track before one final composition.
+        assert!(
+            quads
+                .iter()
+                .any(|(bounds, color)| { *bounds == handle && *color == Color::WHITE.to_hsla() })
+        );
+        if case.custom_content {
+            assert!(quads.iter().any(|(_, color)| {
+                *color == Color::rgb(0xff0000).to_hsla() || *color == Color::rgb(0x00ff00).to_hsla()
+            }));
+        }
+        if case.effective_opacity < 1. {
+            let (_, wash) = quads
+                .iter()
+                .rev()
+                .find(|(bounds, _)| bounds.contains(&center))
+                .unwrap();
+            assert!(
+                (wash.a - (1. - case.effective_opacity)).abs() < 1e-6,
+                "{} {} {}: last paint alpha {}, expected {}; quads {quads:?}",
+                case.scene,
+                case.theme,
+                case.id,
+                wash.a,
+                1. - case.effective_opacity
+            );
+        }
+        let mut actual = [
+            f32::from(backdrop.r),
+            f32::from(backdrop.g),
+            f32::from(backdrop.b),
+        ];
+        for (bounds, color) in quads {
+            if bounds.contains(&center) {
+                let color = color.to_rgb();
+                for (channel, foreground) in actual.iter_mut().zip([color.r, color.g, color.b]) {
+                    *channel = foreground * 255. * color.a + *channel * (1. - color.a);
+                }
+            }
+        }
+        for (actual, expected) in actual.into_iter().zip(case.handle_center_rgb) {
+            assert!(
+                (actual.round() - f32::from(expected)).abs() <= 1.,
+                "{} {} {}: native {actual}, original {expected}",
+                case.scene,
+                case.theme,
+                case.id
+            );
+        }
+    }
+}
+
+#[test]
+fn switch_native_handle_shadow_uses_css_blur_standard_deviation() {
+    let mut fixture = Fixture::new(|consumer| consumer.disabled = Some(true));
+    fixture
+        .cx
+        .update_window(fixture.window.into(), |_, window, _| {
+            let shadows = &window.rendered_scene().shadows;
+            assert!(!shadows.is_empty());
+            // Original browser fixture: 0px 2px 4px rgba(0,35,11,0.2).
+            // CSS's 4px blur corresponds to a 2px Gaussian standard deviation.
+            assert!(shadows.iter().all(|shadow| {
+                (shadow.blur_radius.0 / window.scale_factor() - 2.).abs() < 1e-6
+            }));
+        })
+        .unwrap();
 }

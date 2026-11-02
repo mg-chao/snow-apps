@@ -1,0 +1,54 @@
+{
+  "renderer": "Chrome/156.0.8078.74",
+  "observed": {
+    "pseudo": {
+      "fontFamily": "sans-serif",
+      "fontSize": "14px",
+      "fontWeight": "400"
+    },
+    "fonts": [
+      {
+        "font": "SimSun, sans-serif",
+        "advance": 7
+      },
+      {
+        "font": "Arial",
+        "advance": 5.4482421875
+      },
+      {
+        "font": "Segoe UI",
+        "advance": 5.837890625
+      },
+      {
+        "font": "Microsoft YaHei UI",
+        "advance": 6.37109375
+      },
+      {
+        "font": "sans-serif",
+        "advance": 6.537994384765625
+      }
+    ]
+  },
+  "platform_fonts": {
+    "before": {
+      "fonts": [
+        {
+          "familyName": "Noto Sans SC",
+          "postScriptName": "Noto-Sans-SC",
+          "isCustomFont": false,
+          "glyphCount": 1
+        }
+      ]
+    },
+    "after": {
+      "fonts": [
+        {
+          "familyName": "Segoe UI",
+          "postScriptName": "SegoeUI",
+          "isCustomFont": false,
+          "glyphCount": 1
+        }
+      ]
+    }
+  }
+}

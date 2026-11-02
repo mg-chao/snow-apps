@@ -15,9 +15,9 @@ use crate::{
     segmented::{Segmented, SegmentedOption},
 };
 use gpui::{
-    AnyElement, App, ElementId, Entity, IntoElement, MouseButton, MouseMoveEvent, MouseUpEvent,
-    Refineable, RenderOnce, Role, SharedString, StyleRefinement, Styled, Subscription, WeakEntity,
-    Window, accesskit, canvas, div, point, prelude::*, px, relative,
+    AnyElement, App, ElementId, Entity, Focusable, IntoElement, MouseButton, MouseMoveEvent,
+    MouseUpEvent, Refineable, RenderOnce, Role, SharedString, StyleRefinement, Styled,
+    Subscription, WeakEntity, Window, accesskit, canvas, div, point, prelude::*, px, relative,
 };
 use std::{rc::Rc, sync::Arc};
 
@@ -105,6 +105,8 @@ pub struct ColorPicker {
     show_text: bool,
     size: Option<Size>,
     status: ValidationStatus,
+    status_configured: bool,
+    form_context: Option<crate::form::FormItemContext>,
     trigger: PopupTriggers,
     placement: PopupPlacement,
     arrow: Option<PopupArrow>,
@@ -124,6 +126,83 @@ pub struct ColorPicker {
     label: Option<SharedString>,
     automation_id: Option<SharedString>,
 }
+impl crate::form::FormControl<ColorPickerValue> for ColorPicker {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<ColorPickerValue>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let format = self.format.unwrap_or(self.default_format);
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            |event| match event {
+                super::ColorPickerEvent::Change(change) => {
+                    FormControlEvent::Change(if change.value.is_cleared() {
+                        FormPresence::Null
+                    } else {
+                        FormPresence::Value(change.value.clone())
+                    })
+                }
+                super::ColorPickerEvent::Focus => FormControlEvent::Focus,
+                super::ColorPickerEvent::Blur => FormControlEvent::Blur,
+                _ => FormControlEvent::None,
+            },
+            move |state, value, reset, window, cx| {
+                state
+                    .update(cx, |state, cx| {
+                        let value = value.value().unwrap_or(ColorPickerValue::Cleared);
+                        if reset {
+                            state.reset_value(value, format, window, cx)
+                        } else {
+                            state.set_value(value, window, cx)
+                        }
+                    })
+                    .map_err(|error| crate::form::FormError::Control(error.to_string().into()))
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.disabled {
+                        false
+                    } else {
+                        state.focus(window, cx);
+                        true
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.value = match field.read(cx) {
+            Ok(value) => Some(value.value().unwrap_or(ColorPickerValue::Cleared)),
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        if !self.status_configured {
+            self.status = context.status;
+        }
+        self.label = self.label.or_else(|| context.label.clone());
+        self.form_context = Some(context);
+        self.into_any_element()
+    }
+}
+
 impl ColorPicker {
     pub fn new(id: impl Into<ElementId>, state: &Entity<ColorPickerState>) -> Self {
         Self {
@@ -144,6 +223,8 @@ impl ColorPicker {
             show_text: false,
             size: None,
             status: ValidationStatus::None,
+            status_configured: false,
+            form_context: None,
             trigger: PopupTriggers::CLICK,
             placement: PopupPlacement::BottomLeft,
             arrow: None,
@@ -225,6 +306,7 @@ impl ColorPicker {
     }
     pub fn status(mut self, v: ValidationStatus) -> Self {
         self.status = v;
+        self.status_configured = true;
         self
     }
     pub fn trigger(mut self, v: PopupTriggers) -> Self {
@@ -1087,6 +1169,25 @@ impl RenderOnce for ColorPicker {
                     .label
                     .or_else(|| Some(config.locale.color_picker.root_label.clone())),
                 automation_id: self.automation_id,
+                description: self
+                    .form_context
+                    .as_ref()
+                    .and_then(|context| context.description.clone()),
+                required: self
+                    .form_context
+                    .as_ref()
+                    .is_some_and(|context| context.required),
+                invalid: self.status == ValidationStatus::Error
+                    || self
+                        .form_context
+                        .as_ref()
+                        .is_some_and(|context| context.invalid),
+                busy: self.status == ValidationStatus::Validating
+                    || self
+                        .form_context
+                        .as_ref()
+                        .is_some_and(|context| context.busy),
+                busy_allows_activation: true,
                 disabled,
                 ..Accessibility::new(if custom_trigger {
                     Role::Group

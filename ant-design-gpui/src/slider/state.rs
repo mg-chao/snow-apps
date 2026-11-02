@@ -64,6 +64,7 @@ pub struct SliderState {
     pub(super) frame_pending: bool,
     pub(super) scope: Option<ConfigScope>,
     pub(super) disabled_override: Option<SliderDisabled>,
+    pub(super) form_disabled: Option<bool>,
     pub(super) controlled: bool,
     pub(super) initialized: bool,
     pub(super) pending: Option<Proposal>,
@@ -107,6 +108,7 @@ impl SliderState {
             frame_pending: false,
             scope: None,
             disabled_override: None,
+            form_disabled: None,
             controlled: false,
             initialized: false,
             pending: None,
@@ -147,6 +149,26 @@ impl SliderState {
         self.initialized = true;
         Ok(())
     }
+    /// Reset a form field and cancel pending pointer and keyboard gestures.
+    pub fn reset_value(
+        &mut self,
+        value: SliderValue,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), SliderError> {
+        self.cancel_interaction();
+        self.set_value(value, window, cx)?;
+        if self
+            .handles
+            .values()
+            .any(|handle| handle.focus.contains_focused(window, cx))
+        {
+            window.blur(cx);
+        }
+        cx.notify();
+        Ok(())
+    }
+
     pub fn set_options(
         &mut self,
         options: SliderOptions,
@@ -192,11 +214,11 @@ impl SliderState {
     }
     fn disabled_settings(&self, cx: &App) -> SliderDisabled {
         self.disabled_override.clone().unwrap_or_else(|| {
-            if self
-                .scope
-                .as_ref()
-                .is_some_and(|scope| scope.snapshot(cx).disabled)
-            {
+            if self.form_disabled.unwrap_or_else(|| {
+                self.scope
+                    .as_ref()
+                    .is_some_and(|scope| scope.snapshot(cx).disabled)
+            }) {
                 SliderDisabled::All(true)
             } else {
                 self.model.options.disabled.clone()

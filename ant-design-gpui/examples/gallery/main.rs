@@ -5,6 +5,8 @@
 
 mod alert;
 mod button;
+#[cfg(target_os = "windows")]
+mod capture_windows;
 mod carousel;
 mod catalog;
 mod checkbox;
@@ -13,6 +15,7 @@ mod context_menu;
 mod date_time_picker;
 mod descriptions;
 mod divider;
+mod form;
 mod image;
 mod input;
 mod input_examples;
@@ -43,6 +46,8 @@ use std::{path::PathBuf, time::Duration};
 
 use ant_design_gpui::{ConfigScope, Direction, UiRoot, theme::AlgorithmChain};
 use gpui::{App, AppContext, Bounds, Focusable, WindowBounds, WindowOptions, px, size};
+
+const WINDOW_TITLE: &str = "Ant Design GPUI · Components";
 
 #[derive(Default)]
 struct Options {
@@ -76,6 +81,7 @@ impl Options {
                             Some("divider") => catalog::ComponentId::Divider,
                             Some("checkbox") => catalog::ComponentId::Checkbox,
                             Some("color-picker") => catalog::ComponentId::ColorPicker,
+                            Some("form") => catalog::ComponentId::Form,
                             Some("date-picker") => catalog::ComponentId::DatePicker,
                             Some("time-picker") => catalog::ComponentId::TimePicker,
                             Some("input") => catalog::ComponentId::Input,
@@ -105,7 +111,7 @@ impl Options {
                             Some("notification") => catalog::ComponentId::Notification,
 
                             _ => return Err(
-                                "--component requires button, divider, checkbox, color-picker, date-picker, time-picker, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, descriptions, spin, progress, message, notification, carousel, or modal"
+                                "--component requires button, divider, checkbox, color-picker, form, date-picker, time-picker, input, input-number, radio, select, slider, segmented, switch, tag, tooltip, popover, popconfirm, context-menu, menu, pagination, scroll-area, tabs, alert, result, descriptions, spin, progress, message, notification, carousel, or modal"
                                     .into(),
                             ),
                         };
@@ -164,7 +170,7 @@ impl Options {
 
 fn main() {
     let options = Options::parse(std::env::args().skip(1)).unwrap_or_else(|error| {
-        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|color-picker|date-picker|time-picker|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|descriptions|spin|progress|message|notification|modal|carousel] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
+        eprintln!("{error}\nUsage: gallery [--component button|divider|checkbox|color-picker|form|date-picker|time-picker|input|input-number|radio|select|slider|segmented|switch|tag|tooltip|popover|popconfirm|context-menu|menu|pagination|scroll-area|tabs|alert|result|descriptions|spin|progress|message|notification|modal|carousel] [--dark] [--compact] [--rtl] [--reduced-motion] [--window-size WIDTHxHEIGHT] [--capture <path.png>] [--capture-scroll-y OFFSET] [--headless]");
         std::process::exit(2);
     });
     gpui_platform::application().run(move |cx: &mut App| {
@@ -199,10 +205,11 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
+                #[cfg(not(target_os = "windows"))]
                 if !interactive {
                     window.resize(size(px(width as f32), px(height as f32)));
                 }
-                window.set_window_title("Ant Design GPUI · Components");
+                window.set_window_title(WINDOW_TITLE);
                 let gallery = cx.new(|cx| {
                     let mut gallery = shell::Gallery::new(scope.clone(), window, cx);
                     gallery.selected = options.component;
@@ -219,6 +226,25 @@ fn main() {
                             cx.background_executor()
                                 .timer(Duration::from_millis(300))
                                 .await;
+                            #[cfg(target_os = "windows")]
+                            {
+                                let resize = cx
+                                    .update(|window, _| window.scale_factor())
+                                    .map_err(|error| error.to_string())
+                                    .and_then(|scale| {
+                                        capture_windows::resize(
+                                            WINDOW_TITLE,
+                                            (width, height),
+                                            scale,
+                                        )
+                                        .map_err(|error| error.to_string())
+                                    });
+                                if let Err(error) = resize {
+                                    eprintln!("Could not size hidden gallery capture: {error}");
+                                    cx.update(|_, cx| cx.quit()).ok();
+                                    return;
+                                }
+                            }
                             // Hidden windows do not receive presentation frames.
                             // Flush layout-dependent controls through the event loop:
                             // initial measurement, overflow reservation, selection reveal.

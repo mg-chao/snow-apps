@@ -130,6 +130,8 @@ pub struct Picker<S: PickerSelection> {
     size: Option<Size>,
     variant: Option<Variant>,
     status: ValidationStatus,
+    status_configured: bool,
+    form_context: Option<crate::form::FormItemContext>,
     format: PickerFormat,
     format_callback: Option<FormatCallback>,
     allow_clear: Option<bool>,
@@ -167,6 +169,96 @@ pub struct Picker<S: PickerSelection> {
     on_ok: Option<ActionHandler>,
     on_event: Option<EventHandler<S::Value>>,
 }
+impl<S: PickerSelection> crate::form::FormControl<S::Value> for Picker<S> {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<S::Value>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            |event| match event {
+                PickerEvent::Change(change) => {
+                    FormControlEvent::Change(FormPresence::Value(change.value.clone()))
+                }
+                PickerEvent::Focus => FormControlEvent::Focus,
+                PickerEvent::Blur => FormControlEvent::Blur,
+                _ => FormControlEvent::None,
+            },
+            |state, value, reset, window, cx| {
+                state.update(cx, |state, cx| {
+                    let value = value.value().unwrap_or_else(S::empty);
+                    if reset {
+                        state.reset_value(value, window, cx);
+                    } else {
+                        state.set_value(value, window, cx);
+                    }
+                });
+                Ok(())
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.disabled {
+                        return false;
+                    }
+                    if let Some(index) = (0..if S::RANGE { 2 } else { 1 })
+                        .find(|index| !state.options.disabled_endpoints[*index])
+                    {
+                        state.focus_input(index, window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.value = match field.read(cx) {
+            Ok(value) => Some(value.value().unwrap_or_else(S::empty)),
+            Err(error) => return crate::form::binding_error(context.id, &error),
+        };
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.size = self.size.or(Some(context.size));
+        self.variant = self.variant.or(Some(context.variant));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        if !self.status_configured {
+            self.status = context.status;
+        }
+        self.label = self.label.or_else(|| context.label.clone());
+        self.description = self.description.or_else(|| context.description.clone());
+        if let Some(feedback) = context.feedback_element(window, cx) {
+            self.suffix = Some(match self.suffix {
+                Some(suffix) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child(suffix)
+                    .child(feedback)
+                    .into_any_element(),
+                None => feedback,
+            });
+        }
+        self.form_context = Some(context);
+        self.into_any_element()
+    }
+}
+
 impl<S: PickerSelection> Picker<S> {
     pub fn new(id: impl Into<ElementId>, state: &Entity<PickerState<S>>) -> Self {
         Self {
@@ -182,6 +274,8 @@ impl<S: PickerSelection> Picker<S> {
             size: None,
             variant: None,
             status: ValidationStatus::None,
+            status_configured: false,
+            form_context: None,
             format: PickerFormat::default(),
             format_callback: None,
             allow_clear: None,
@@ -340,6 +434,7 @@ impl<S: PickerSelection> Picker<S> {
     }
     pub fn status(mut self, v: ValidationStatus) -> Self {
         self.status = v;
+        self.status_configured = true;
         self
     }
     pub fn placement(mut self, v: PopupPlacement) -> Self {
@@ -1281,6 +1376,11 @@ impl<S: PickerSelection> RenderOnce for Picker<S> {
                 }
                 if let Some(description) = &self.description {
                     input = input.accessibility_description(description.clone());
+                }
+                if let Some(context) = &self.form_context {
+                    let mut context = context.clone();
+                    context.has_feedback = false;
+                    input = input.in_form(&context, window, cx);
                 }
                 input.style().refine(&parts.styles.input);
                 input.frame_decorator = Some(Box::new(move |mut root, _, _, _| {

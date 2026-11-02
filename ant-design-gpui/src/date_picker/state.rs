@@ -64,6 +64,8 @@ pub struct PickerChange<V> {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum PickerEvent<V> {
+    Focus,
+    Blur,
     Change(PickerChange<V>),
     CalendarChange(PickerChange<V>),
     OpenChange(bool),
@@ -510,6 +512,19 @@ impl<S: PickerSelection> PickerState<S> {
             cx.notify();
         }
     }
+    /// Restore a form value and discard every pending editing session.
+    pub fn reset_value(&mut self, value: S::Value, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_scroll_tasks();
+        self.callback_epoch = self.callback_epoch.wrapping_add(1);
+        self.pending_focus_return = None;
+        self.set_open(false, window, cx);
+        self.replace_controlled_value(value, window, cx);
+        for editor in self.editors.clone() {
+            let text = editor.read(cx).value_snapshot();
+            editor.update(cx, |editor, cx| editor.reset_value(text, window, cx));
+        }
+        cx.notify();
+    }
     pub(super) fn replace_controlled_value(
         &mut self,
         value: S::Value,
@@ -877,6 +892,7 @@ impl<S: PickerSelection> PickerState<S> {
                 return;
             }
             match event {
+                PickerEvent::Focus | PickerEvent::Blur => {}
                 PickerEvent::Change(v) => {
                     if let Some(f) = change {
                         f(&v, w, c)
@@ -2041,6 +2057,7 @@ impl<S: PickerSelection> PickerState<S> {
         }
         match event {
             InputEvent::Focus => {
+                self.emit(PickerEvent::Focus, window, cx);
                 if self.active != index
                     && self.need_confirm()
                     && self.touched[self.active]
@@ -2131,6 +2148,9 @@ impl<S: PickerSelection> PickerState<S> {
                             c.notify();
                         } else if !s.owns_focus(w, c) && !s.need_confirm() && s.touched[index] {
                             s.commit(PickerChangeSource::Input, false, w, c);
+                        }
+                        if !s.owns_focus(w, c) {
+                            s.emit(PickerEvent::Blur, w, c);
                         }
                     });
                 });

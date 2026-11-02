@@ -7,6 +7,9 @@
 use gpui::SharedString;
 use std::sync::{Arc, LazyLock};
 
+mod form;
+pub use form::{FormMessagePatch, FormMessages};
+
 macro_rules! common_messages {
     ($($field:ident => $key:ident),+ $(,)?) => {
         /// All common messages required by a complete locale catalog.
@@ -582,6 +585,7 @@ pub struct Locale {
     pub carousel: CarouselMessages,
     pub color_picker: ColorPickerMessages,
     pub picker: PickerLocale,
+    pub form: FormMessages,
 }
 
 impl Locale {
@@ -589,6 +593,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::EnUs,
+                form: FormMessages::en_us(),
                 picker: PickerLocale::en_us(),
                 color_picker: ColorPickerMessages {
                     root_label: "Choose color".into(),
@@ -696,6 +701,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhCn,
+                form: FormMessages::zh_cn(),
                 picker: PickerLocale::zh_cn(),
                 color_picker: ColorPickerMessages {
                     root_label: "选择颜色".into(),
@@ -803,6 +809,7 @@ impl Locale {
         static VALUE: LazyLock<Arc<Locale>> = LazyLock::new(|| {
             Arc::new(Locale {
                 id: LocaleId::ZhTw,
+                form: FormMessages::zh_tw(),
                 picker: PickerLocale::zh_tw(),
                 color_picker: ColorPickerMessages {
                     root_label: "選擇顏色".into(),
@@ -918,6 +925,7 @@ impl Locale {
             carousel: Self::en_us().carousel.clone(),
             color_picker: Self::en_us().color_picker.clone(),
             picker: Self::en_us().picker.clone(),
+            form: Self::en_us().form.clone(),
         })
     }
 
@@ -938,6 +946,7 @@ pub struct LocalePatch {
     pub carousel: CarouselMessagePatch,
     pub color_picker: ColorPickerMessagePatch,
     pub picker: PickerLocalePatch,
+    pub form: FormMessagePatch,
 }
 
 impl LocalePatch {
@@ -960,6 +969,7 @@ impl LocalePatch {
             && self.carousel == CarouselMessagePatch::default()
             && self.color_picker.is_empty()
             && self.picker.is_empty()
+            && self.form.is_empty()
         {
             return base.clone();
         }
@@ -971,6 +981,7 @@ impl LocalePatch {
         let carousel = base.carousel.patched(&self.carousel);
         let color_picker = base.color_picker.patched(&self.color_picker);
         let picker = base.picker.patched(&self.picker);
+        let form = base.form.patched(&self.form);
         if common == base.common
             && image == base.image
             && popconfirm == base.popconfirm
@@ -979,6 +990,7 @@ impl LocalePatch {
             && carousel == base.carousel
             && color_picker == base.color_picker
             && picker == base.picker
+            && form == base.form
         {
             return base.clone();
         }
@@ -992,6 +1004,7 @@ impl LocalePatch {
                 && old.carousel == carousel
                 && old.color_picker == color_picker
                 && old.picker == picker
+                && old.form == form
         }) {
             return previous.clone();
         }
@@ -1005,6 +1018,7 @@ impl LocalePatch {
             carousel,
             color_picker,
             picker,
+            form,
         })
     }
 }
@@ -1012,6 +1026,49 @@ impl LocalePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn form_catalogs_preserve_reference_copy_templates_and_scoped_overrides() {
+        let english = Locale::en_us();
+        let simplified = Locale::zh_cn();
+        let traditional = Locale::zh_tw();
+        assert_eq!(english.form.optional.as_ref(), "(optional)");
+        assert_eq!(simplified.form.optional.as_ref(), "（可选）");
+        assert_eq!(traditional.form.optional.as_ref(), "（選填）");
+        assert_eq!(simplified.form.required.as_ref(), "请输入${label}");
+        assert_eq!(traditional.form.required.as_ref(), "請輸入${label}");
+        for base in [english, simplified, traditional] {
+            assert!(base.form.required.contains("${label}"));
+            assert!(base.form.number_range.contains("${min}"));
+            assert!(base.form.array_range.contains("${max}"));
+            let patch = LocalePatch {
+                form: FormMessagePatch {
+                    required: Some("A value is required for ${label}".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let resolved = patch.resolve(&base);
+            assert_eq!(
+                resolved.form.required.as_ref(),
+                "A value is required for ${label}"
+            );
+            assert_eq!(resolved.form.optional, base.form.optional);
+            assert_eq!(resolved.form.pattern_mismatch, base.form.pattern_mismatch);
+            assert!(Arc::ptr_eq(
+                &resolved,
+                &patch.resolve_with_previous(&base, Some(&resolved))
+            ));
+            let equivalent = LocalePatch {
+                form: FormMessagePatch {
+                    required: Some(base.form.required.clone()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            assert!(Arc::ptr_eq(&base, &equivalent.resolve(&base)));
+        }
+    }
 
     #[test]
     fn picker_catalogs_preserve_week_rules_names_and_native_copy() {

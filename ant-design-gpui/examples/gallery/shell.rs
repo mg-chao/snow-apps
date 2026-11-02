@@ -25,6 +25,7 @@ use super::{
     date_time_picker::{self, PickerPage},
     descriptions::{self, DescriptionsPage},
     divider::{self, DividerPage},
+    form::{self, FormPage},
     image::{self, ImagePage},
     input::{self, InputPage},
     input_examples,
@@ -86,6 +87,7 @@ pub(super) struct Gallery {
     pub button: Entity<ButtonPage>,
     pub checkbox: Entity<CheckboxPage>,
     pub color_picker: Entity<ColorPickerPage>,
+    pub form: Entity<FormPage>,
     pub date_picker: Entity<PickerPage>,
     pub time_picker: Entity<PickerPage>,
     pub divider: Entity<DividerPage>,
@@ -119,6 +121,7 @@ pub(super) struct Gallery {
     anchors: Vec<ScrollAnchor>,
     checkbox_anchors: Vec<ScrollAnchor>,
     color_picker_anchors: Vec<ScrollAnchor>,
+    form_anchors: Vec<ScrollAnchor>,
     date_picker_anchors: Vec<ScrollAnchor>,
     time_picker_anchors: Vec<ScrollAnchor>,
     divider_anchors: Vec<ScrollAnchor>,
@@ -163,6 +166,10 @@ impl Gallery {
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
         let color_picker_anchors: Vec<_> = color_picker::DEMOS
+            .iter()
+            .map(|_| ScrollAnchor::for_handle(scroll.clone()))
+            .collect();
+        let form_anchors: Vec<_> = form::DEMOS
             .iter()
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
@@ -283,6 +290,15 @@ impl Gallery {
             .map(|_| ScrollAnchor::for_handle(scroll.clone()))
             .collect();
         Self {
+            form: cx.new(|cx| {
+                FormPage::new(
+                    scope.clone(),
+                    form_anchors.clone(),
+                    scroll.clone(),
+                    window,
+                    cx,
+                )
+            }),
             carousel: cx
                 .new(|cx| CarouselPage::new(scope.clone(), carousel_anchors.clone(), window, cx)),
             notification: cx.new(|cx| {
@@ -374,6 +390,7 @@ impl Gallery {
             anchors,
             checkbox_anchors,
             color_picker_anchors,
+            form_anchors,
             date_picker_anchors,
             time_picker_anchors,
             divider_anchors,
@@ -531,6 +548,7 @@ impl Gallery {
                         ComponentId::Divider => "Layout / Divider",
                         ComponentId::Checkbox => "Data Entry / Checkbox",
                         ComponentId::ColorPicker => "Data Entry / ColorPicker",
+                        ComponentId::Form => "Data Entry / Form",
                         ComponentId::DatePicker => "Data Entry / DatePicker",
                         ComponentId::TimePicker => "Data Entry / TimePicker",
                         ComponentId::Radio => "Data Entry / Radio",
@@ -791,6 +809,13 @@ impl Gallery {
                         .iter()
                         .zip(&self.color_picker_anchors)
                         .filter(|_| self.selected == ComponentId::ColorPicker)
+                        .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
+                )
+                .chain(
+                    form::DEMOS
+                        .iter()
+                        .zip(&self.form_anchors)
+                        .filter(|_| self.selected == ComponentId::Form)
                         .map(|(demo, anchor)| (demo.id, demo.title, false, anchor)),
                 )
                 .chain(
@@ -1103,6 +1128,7 @@ impl Gallery {
                                 ComponentId::Select => "Open Ant Design Select reference",
                                 ComponentId::Slider => "Open Ant Design Slider reference",
                                 ComponentId::ColorPicker => "Open Ant Design ColorPicker reference",
+                                ComponentId::Form => "Open Ant Design Form reference",
                                 ComponentId::DatePicker => "Open Ant Design DatePicker reference",
                                 ComponentId::TimePicker => "Open Ant Design TimePicker reference",
                                 ComponentId::Tag => "Open Ant Design Tag reference",
@@ -1141,6 +1167,7 @@ impl Gallery {
                                     "https://ant.design/components/input-number"
                                 }
                                 ComponentId::Select => "https://ant.design/components/select",
+                                ComponentId::Form => "https://ant.design/components/form",
                                 ComponentId::Slider => "https://ant.design/components/slider",
                                 ComponentId::ColorPicker => {
                                     "https://ant.design/components/color-picker"
@@ -1211,6 +1238,7 @@ impl Render for Gallery {
                 .count(),
             ComponentId::Checkbox => checkbox::DEMOS.len(),
             ComponentId::ColorPicker => color_picker::DEMOS.len(),
+            ComponentId::Form => form::DEMOS.len(),
             ComponentId::DatePicker => date_time_picker::DATE_DEMOS.len(),
             ComponentId::TimePicker => date_time_picker::TIME_DEMOS.len(),
             ComponentId::Divider => divider::DEMOS.len(),
@@ -1247,6 +1275,7 @@ impl Render for Gallery {
             ComponentId::Select => input_examples::summary(select::DEMOS),
             ComponentId::Slider => input_examples::summary(slider::DEMOS),
             ComponentId::ColorPicker => input_examples::summary(color_picker::DEMOS),
+            ComponentId::Form => input_examples::summary(form::DEMOS),
             ComponentId::DatePicker => input_examples::summary(date_time_picker::DATE_DEMOS),
             ComponentId::TimePicker => input_examples::summary(date_time_picker::TIME_DEMOS),
             ComponentId::Menu => input_examples::summary(menu::DEMOS),
@@ -1352,6 +1381,7 @@ impl Render for Gallery {
                                         ComponentId::Select => self.select.clone().into_any_element(),
                                         ComponentId::Slider => self.slider.clone().into_any_element(),
                                         ComponentId::ColorPicker => self.color_picker.clone().into_any_element(),
+                                        ComponentId::Form => self.form.clone().into_any_element(),
                                         ComponentId::DatePicker => self.date_picker.clone().into_any_element(),
                                         ComponentId::TimePicker => self.time_picker.clone().into_any_element(),
                                         ComponentId::Tag => {
@@ -1404,6 +1434,7 @@ impl Render for Gallery {
                                                 ComponentId::Modal => "Tab stays in the active dialog · Escape closes the top dialog or popup",
                                                 ComponentId::Slider => "Tab to navigate · Arrow keys to step · Home or End to reach bounds",
                                                 ComponentId::ColorPicker => "Choose color or edit channels · Arrow keys adjust values · Escape closes the panel",
+                                                ComponentId::Form => "Tab to navigate fields · Enter submits · Validation focuses the first error when enabled",
                                                 ComponentId::DatePicker => "Enter a date or open the calendar · Arrow keys move between dates · Enter selects · Escape cancels",
                                                 ComponentId::TimePicker => "Enter a time or choose the hour, minute and second · Enter confirms · Escape cancels",
                                                 ComponentId::Pagination => "Tab to navigate · Enter or Space to change page · Enter to jump to a page",

@@ -258,6 +258,15 @@ impl OtpModel {
         self.trim_history();
         true
     }
+    pub fn reset_value(&mut self, value: &str) {
+        let mut cells = self.options.characters(value);
+        cells.truncate(self.options.length);
+        cells.resize(self.options.length, SharedString::default());
+        self.cells = cells;
+        self.selection = Selection::default();
+        self.clear_history();
+    }
+
     fn clear_history(&mut self) {
         self.undo.clear();
         self.redo.clear();

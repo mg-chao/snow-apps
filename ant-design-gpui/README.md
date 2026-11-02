@@ -1,5 +1,11 @@
 # Ant Design GPUI
 
+Form provides native field layouts, typed values, synchronous and asynchronous
+validation, dependencies, watchers, dynamic lists and coordination between forms.
+All existing data-entry controls retain their native editing and focus behavior.
+Open `--component form` for the 37 public examples; see the
+[Form guide](docs/form.md) and [verification status](docs/form-verification.md).
+
 DatePicker and TimePicker provide native date, time, date-time, range and multiple
 selection, period panels, chrono formatting and retained editable inputs.
 Open `--component date-picker` or `--component time-picker` in the gallery;
@@ -42,6 +48,7 @@ cargo run --locked --offline --example gallery
 # Open Descriptions directly: -- --component descriptions
 # Open Modal directly: -- --component modal
 # Open Input directly: -- --component input
+# Open Form directly: -- --component form
 # Open InputNumber directly: -- --component input-number
 # Open ColorPicker directly: -- --component color-picker
 # Open DatePicker directly: -- --component date-picker
@@ -890,8 +897,9 @@ Warm rendering reuses immutable content identities and parsed/rasterized data.
 Retain one `ActivationGuard`, focus handle and blur subscription per actionable
 control. Update availability immediately when state changes. Apply the guard to
 the identified element, then the focus ring, then `Accessibility`. Disabled
-controls relinquish focus and traversal; busy controls retain focus and block
-activation. Pointer, keyboard and accessible actions share the guarded dispatch.
+controls relinquish focus and traversal. Loading controls retain focus and block
+activation; Form background validation reports busy while editing remains
+available. Pointer, keyboard and accessible actions share the guarded dispatch.
 
 `Accessibility` preserves the underlying element's identity and lifecycle while
 adding disabled/busy/invalid/read-only/hidden metadata. Existing GPUI APIs supply

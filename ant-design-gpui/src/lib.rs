@@ -47,6 +47,13 @@ pub use descriptions::{
     DescriptionsSpan, DescriptionsStyleContext, DescriptionsStyleResolver, DescriptionsStyles,
 };
 pub mod divider;
+pub mod form;
+pub use form::{
+    FieldHandle, FieldMeta, FieldOptions, Form, FormCodec, FormColumn, FormControl, FormErrorList,
+    FormEvent, FormField, FormItem, FormItemContext, FormLayout, FormList, FormListItem,
+    FormPresence, FormProvider, FormRule, FormSnapshot, FormState, FormValue, NamePath,
+    NameSegment, ValidateOptions, ValidationTrigger,
+};
 pub mod icons;
 pub mod image;
 pub use image::{Image, ImageState, PreviewGroup, PreviewState};
@@ -122,6 +129,7 @@ pub use input::{
     CountConfig, CountInfo, Input, InputChange, InputCommit, InputEvent, InputGroup,
     InputGroupContext, InputGroupItem, InputGroupOrientation, InputSearch, InputState, OtpEvent,
     OtpInput, OtpOptions, OtpState, PasswordInput, SearchInput, SearchSource, TextArea,
+    TextAreaResize,
 };
 pub use popconfirm::Popconfirm;
 pub use popover::Popover;

@@ -136,6 +136,17 @@ macro_rules! input_control {
                 self.into_any_element()
             }
         }
+        impl crate::form::FormControl<SharedString> for $name {
+            fn into_form_element(
+                self,
+                field: crate::form::FormField<SharedString>,
+                context: crate::form::FormItemContext,
+                window: &mut Window,
+                cx: &mut App,
+            ) -> gpui::AnyElement {
+                crate::form::FormControl::into_form_element(self.input, field, context, window, cx)
+            }
+        }
         impl RenderOnce for $name {
             fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
                 self.input
@@ -168,6 +179,9 @@ impl TextArea {
     }
     pub fn auto_size(self, min_rows: usize, max_rows: usize) -> Self {
         self.configure(|input| input.auto_size(min_rows, max_rows))
+    }
+    pub fn resize(self, mode: super::TextAreaResize) -> Self {
+        self.configure(|input| input.resize(mode))
     }
 }
 

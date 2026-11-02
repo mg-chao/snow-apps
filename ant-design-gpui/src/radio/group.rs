@@ -112,6 +112,7 @@ pub struct RadioGroup<T: Clone + PartialEq + 'static> {
     options: Vec<RadioOption<T>>,
     value: Option<T>,
     default_value: Option<T>,
+    form_controlled: bool,
     disabled: Option<bool>,
     vertical: bool,
     block: bool,
@@ -121,6 +122,52 @@ pub struct RadioGroup<T: Clone + PartialEq + 'static> {
     accessibility: Accessibility,
     on_change: Option<ChangeHandler<T>>,
     style: StyleRefinement,
+    form_registration: Option<(crate::form::FieldHandle, crate::form::ControlToken)>,
+}
+
+impl<T: Clone + PartialEq + 'static> crate::form::FormControl<T> for RadioGroup<T> {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<T>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        use crate::form::{FormControlBinding, FormPresence, ValidationTrigger};
+        let options = self
+            .options
+            .iter()
+            .map(|option| (option.id.clone(), option.focus.clone()))
+            .collect();
+        let (value, focuses, token) =
+            match FormControlBinding::controlled(self.id.clone(), &field, options, window, cx) {
+                Ok(value) => value,
+                Err(error) => return crate::form::binding_error(context.id, &error),
+            };
+        self.value = value.value();
+        self.form_registration = Some((field.handle(), token));
+        self.form_controlled = true;
+        for (option, focus) in self.options.iter_mut().zip(focuses) {
+            option.focus = Some(focus);
+        }
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.disabled = self.disabled.or(Some(context.disabled));
+        self.size = self.size.or(Some(context.size));
+        self.accessibility.in_form(&context);
+        let handler = self.on_change.take();
+        self.on_change = Some(Rc::new(move |value: &T, window, cx| {
+            let _ = field.change(
+                FormPresence::Value(value.clone()),
+                ValidationTrigger::Change,
+                window,
+                cx,
+            );
+            if let Some(handler) = &handler {
+                handler(value, window, cx);
+            }
+        }));
+        self.into_any_element()
+    }
 }
 
 impl<T: Clone + PartialEq + 'static> RadioGroup<T> {
@@ -131,6 +178,7 @@ impl<T: Clone + PartialEq + 'static> RadioGroup<T> {
             options: Vec::new(),
             value: None,
             default_value: None,
+            form_controlled: false,
             disabled: None,
             vertical: false,
             block: false,
@@ -140,6 +188,7 @@ impl<T: Clone + PartialEq + 'static> RadioGroup<T> {
             accessibility: Accessibility::new(Role::RadioGroup),
             on_change: None,
             style: StyleRefinement::default(),
+            form_registration: None,
         }
     }
 
@@ -224,12 +273,15 @@ impl<T: Clone + PartialEq + 'static> Styled for RadioGroup<T> {
 
 struct GroupSelection<T> {
     uncontrolled: Option<T>,
-    controlled: Option<T>,
+    controlled: Option<Option<T>>,
 }
 
 impl<T: Clone + PartialEq> GroupSelection<T> {
     fn selected(&self) -> Option<&T> {
-        self.controlled.as_ref().or(self.uncontrolled.as_ref())
+        match &self.controlled {
+            Some(value) => value.as_ref(),
+            None => self.uncontrolled.as_ref(),
+        }
     }
 
     fn select(&mut self, value: &T) -> bool {
@@ -379,7 +431,11 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for RadioGroup<T> {
                 state._config = scope.observe(cx);
                 state.scope = scope.clone();
             }
-            state.selection.controlled = self.value.take();
+            state.selection.controlled = if self.form_controlled {
+                Some(self.value.take())
+            } else {
+                self.value.take().map(Some)
+            };
             state.on_change = self.on_change.take();
             let mut old_focus: HashMap<_, _> = state
                 .options
@@ -404,6 +460,22 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for RadioGroup<T> {
             state.sync_tab_stops(cx)
         });
         let config = scope.snapshot(cx);
+        if let Some((field, token)) = &self.form_registration {
+            crate::form::FormControlBinding::install_focus(
+                field,
+                *token,
+                &state,
+                |state, window, cx| {
+                    if let Some(index) = state.tab_stop(cx) {
+                        state.options[index].focus.focus(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                },
+                cx,
+            );
+        }
         let tokens = config.theme.component::<RadioTheme>();
         let global = tokens.globals();
         let count = self.options.len();

@@ -82,9 +82,11 @@ pub struct InputState {
     pub(crate) masked: bool,
     pub(crate) requested_disabled: bool,
     pub(crate) availability_revision: u64,
+    pub(crate) reset_revision: u64,
     mode: InputMode,
     password_visible: bool,
     search_loading: bool,
+    suppress_blur_commit: bool,
     geometry: Option<Rc<InputGeometry>>,
     pub(super) navigation_layout: Option<super::layout::NavigationLayout>,
     preferred_x: Option<Pixels>,
@@ -116,7 +118,8 @@ impl InputState {
         let blurred = cx.on_blur(&focus, window, |this, window, cx| {
             this.finish_composition(window, cx);
             this.buffer.break_group();
-            if !this.disabled {
+            let suppress_commit = std::mem::take(&mut this.suppress_blur_commit);
+            if !this.disabled && !suppress_commit {
                 this.commit(CommitReason::Blur, window, cx);
             }
             cx.emit(InputEvent::Blur);
@@ -131,9 +134,11 @@ impl InputState {
             masked: false,
             requested_disabled: false,
             availability_revision: 0,
+            reset_revision: 0,
             mode: InputMode::Text,
             password_visible: false,
             search_loading: false,
+            suppress_blur_commit: false,
             geometry: None,
             navigation_layout: None,
             preferred_x: None,
@@ -220,6 +225,31 @@ impl InputState {
             window.notify_text_input_changed(&self.focus);
             cx.notify();
         }
+    }
+
+    /// Restore a form field, ending its editing session even for an equal value.
+    /// This is silent and deliberately differs from an ordinary owner echo.
+    pub fn reset_value(
+        &mut self,
+        value: impl AsRef<str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.reset_revision = self.reset_revision.wrapping_add(1);
+        self.buffer.reset(value.as_ref(), &self.policy);
+        self.password_visible = false;
+        self.geometry = None;
+        self.navigation_layout = None;
+        self.preferred_x = None;
+        self.caret_affinity = CaretAffinity::Downstream;
+        self.anchor_affinity = CaretAffinity::Downstream;
+        *self.value_snapshot.borrow_mut() = None;
+        // Blur after discarding composition, so no previous preedit is committed.
+        self.suppress_blur_commit |= self.focus.contains_focused(window, cx);
+        self.blur(window, cx);
+        window.notify_text_input_changed(&self.focus);
+        window.notify_text_selection_changed(&self.focus);
+        cx.notify();
     }
 
     /// Internal presentation rewrite that preserves the preceding edit as one

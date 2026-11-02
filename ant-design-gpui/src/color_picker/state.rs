@@ -39,6 +39,8 @@ pub struct ColorPickerChange {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ColorPickerEvent {
+    Focus,
+    Blur,
     Change(ColorPickerChange),
     ChangeComplete(ColorPickerChange),
     FormatChange(ColorPickerFormat),
@@ -182,6 +184,11 @@ impl ColorPickerState {
         });
         let mut subscriptions =
             vec![cx.subscribe_in(&hex, window, |this, _, event, window, cx| {
+                match event {
+                    InputEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
+                    InputEvent::Blur => this.defer_blur(window, cx),
+                    _ => {}
+                }
                 if let InputEvent::Change(change) = event
                     && !change.is_composing
                 {
@@ -193,6 +200,11 @@ impl ColorPickerState {
                 channel,
                 window,
                 move |this, _, event, window, cx| {
+                    match event {
+                        InputNumberEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
+                        InputNumberEvent::Blur => this.defer_blur(window, cx),
+                        _ => {}
+                    }
                     if let InputNumberEvent::Change(change) = event
                         && let Some(value) = change
                             .value
@@ -208,6 +220,11 @@ impl ColorPickerState {
             &format_select,
             window,
             |this, _, event, window, cx| {
+                match event {
+                    SelectEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
+                    SelectEvent::Blur => this.defer_blur(window, cx),
+                    _ => {}
+                }
                 if let SelectEvent::Change(change) = event
                     && let Some(value) = change.values.first()
                 {
@@ -223,6 +240,13 @@ impl ColorPickerState {
         subscriptions.push(
             cx.observe_window_visibility(window, |this, _, window, cx| this.cancel(window, cx)),
         );
+        let trigger_focus = focus_handle(cx);
+        subscriptions.push(cx.on_focus(&trigger_focus, window, |this, window, cx| {
+            this.emit(ColorPickerEvent::Focus, window, cx)
+        }));
+        subscriptions.push(cx.on_blur(&trigger_focus, window, |this, window, cx| {
+            this.defer_blur(window, cx)
+        }));
         let mut this = Self {
             model: PickerModel::new(ColorPickerValue::Cleared),
             accepted: ColorPickerValue::Cleared,
@@ -239,7 +263,7 @@ impl ColorPickerState {
             disabled_format: false,
             modes: vec![ColorPickerMode::Single],
             scope: None,
-            trigger_focus: focus_handle(cx),
+            trigger_focus,
             focuses: HashMap::new(),
             groups: HashMap::new(),
             hex,
@@ -365,6 +389,50 @@ impl ColorPickerState {
         self.sync_editors(None, window, cx);
         cx.notify();
     }
+    /// Restore an initial form value and discard panel/editor interaction state.
+    pub fn reset_value(
+        &mut self,
+        value: ColorPickerValue,
+        format: ColorPickerFormat,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), ColorPickerError> {
+        self.cancel(window, cx);
+        self.set_open(false, window, cx);
+        self.format = format;
+        self.editor_format = None;
+        self.groups.clear();
+        self.set_value(value, window, cx)?;
+        self.sync_editors(None, window, cx);
+        let hex = self.hex.read(cx).value_snapshot();
+        self.hex
+            .update(cx, |editor, cx| editor.reset_value(hex, window, cx));
+        for channel in self.channels.clone() {
+            let value = channel.read(cx).value().cloned();
+            channel
+                .update(cx, |editor, cx| editor.reset_value(value, window, cx))
+                .expect("bounded color channel remains valid");
+        }
+        let format_values = self.format_select.read(cx).values().to_vec();
+        self.format_select.update(cx, |select, cx| {
+            select.reset_value(format_values, window, cx)
+        });
+        self.blur(window, cx);
+        cx.notify();
+        Ok(())
+    }
+
+    fn defer_blur(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let state = cx.weak_entity();
+        window.defer(cx, move |window, cx| {
+            let _ = state.update(cx, |state, cx| {
+                if !state.contains_focus(window, cx) {
+                    state.emit(ColorPickerEvent::Blur, window, cx);
+                }
+            });
+        });
+    }
+
     pub fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.open_initialized = true;
         let open = open && !self.disabled;
@@ -384,8 +452,8 @@ impl ColorPickerState {
             self.trigger_focus.focus(window, cx);
         }
     }
-    pub fn blur(&self, window: &mut Window, cx: &mut App) {
-        if self.trigger_focus.contains_focused(window, cx)
+    pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
+        self.trigger_focus.contains_focused(window, cx)
             || self.focuses.values().any(|focus| focus.is_focused(window))
             || self.hex.read(cx).focus_handle(cx).is_focused(window)
             || self
@@ -397,7 +465,9 @@ impl ColorPickerState {
                 .read(cx)
                 .focus_handle(cx)
                 .is_focused(window)
-        {
+    }
+    pub fn blur(&self, window: &mut Window, cx: &mut App) {
+        if self.contains_focus(window, cx) {
             window.blur(cx);
         }
     }
@@ -443,6 +513,7 @@ impl ColorPickerState {
         let focus = focus_handle(cx);
         let active = control.clone();
         let focused = cx.on_focus(&focus, window, move |this, window, cx| {
+            this.emit(ColorPickerEvent::Focus, window, cx);
             if let Control::Stop(id) = active
                 && let Some(index) = this.model.index_for_id(id)
             {
@@ -452,6 +523,7 @@ impl ColorPickerState {
             cx.notify();
         });
         let blurred = cx.on_blur(&focus, window, |this, window, cx| {
+            this.defer_blur(window, cx);
             if this.key_active {
                 this.cancel(window, cx);
             }
@@ -531,6 +603,7 @@ impl ColorPickerState {
         // A consumer may synchronously update this controller from its callback.
         // Leave the entity borrow before calling consumer code.
         window.defer(cx, move |window, cx| match event {
+            ColorPickerEvent::Focus | ColorPickerEvent::Blur => {}
             ColorPickerEvent::Change(value) => {
                 if let Some(f) = change {
                     f(&value, window, cx);

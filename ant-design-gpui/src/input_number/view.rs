@@ -145,6 +145,76 @@ impl crate::input::InputGroupItem for InputNumber {
     }
 }
 
+impl crate::form::FormControl<crate::NumericValue> for InputNumber {
+    fn into_form_element(
+        mut self,
+        field: crate::form::FormField<crate::NumericValue>,
+        context: crate::form::FormItemContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        use crate::form::{FormControlBinding, FormControlEvent, FormPresence};
+        let state = self.state.clone();
+        let result = FormControlBinding::retained(
+            &field,
+            &state,
+            Some(state.read(cx).focus_handle(cx)),
+            |event| match event {
+                super::InputNumberEvent::Change(change) => {
+                    FormControlEvent::Change(match &change.value {
+                        Some(value) => FormPresence::Value(value.clone()),
+                        None => FormPresence::Null,
+                    })
+                }
+                super::InputNumberEvent::Blur => FormControlEvent::Blur,
+                super::InputNumberEvent::Focus => FormControlEvent::Focus,
+                super::InputNumberEvent::Commit(commit)
+                    if commit.reason == crate::input::CommitReason::Enter =>
+                {
+                    FormControlEvent::Submit
+                }
+                _ => FormControlEvent::None,
+            },
+            |state, value, reset, window, cx| {
+                state
+                    .update(cx, |state, cx| {
+                        if reset {
+                            state.reset_value(value.value(), window, cx)
+                        } else {
+                            state.set_value(value.value(), window, cx)
+                        }
+                    })
+                    .map_err(|error| crate::form::FormError::Control(error.to_string().into()))
+            },
+            window,
+            cx,
+        );
+        if let Ok(token) = &result {
+            FormControlBinding::install_focus(
+                &field.handle(),
+                *token,
+                &state,
+                |state, window, cx| {
+                    if state.is_disabled(cx) {
+                        false
+                    } else {
+                        state.focus(window, cx);
+                        true
+                    }
+                },
+                cx,
+            );
+        }
+        if let Err(error) = result {
+            return crate::form::binding_error(context.id, &error);
+        }
+        self.scope = self.scope.or_else(|| Some(context.scope.clone()));
+        self.variant = self.variant.or(Some(context.variant));
+        self.input = self.input.in_form(&context, window, cx);
+        self.into_any_element()
+    }
+}
+
 struct MountedNumber {
     state: Entity<InputNumberState>,
     hovered: Option<StepDirection>,
