@@ -111,6 +111,51 @@ int main(int argc, char** argv) {
             "external removal refresh never re-registers");
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    const QString startupId = QStringLiteral("system.auto-start-at-boot");
+    const QString updatesId = QStringLiteral("updates.mode");
+    require(configuration.setValue(QStringLiteral("updates/mode"), QStringLiteral("manual")),
+            "prepare nondefault update preference");
+    session.refreshAll();
+    fail = true;
+    error.clear();
+    require(!session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                !backend.switchValue(binding) && error == u"native failure",
+            "failed startup reset remains an aggregate failure and reports the native error");
+    require(session.state(startupId).phase == settings::SettingsWritePhase::Rejected &&
+                session.state(startupId).error == u"native failure" &&
+                session.state(updatesId).phase == settings::SettingsWritePhase::Clean &&
+                session.state(updatesId).acceptedValue.toString() == u"check" &&
+                session.state(updatesId).error.isEmpty(),
+            "failed registration must not prevent or reject the independent update reset");
+    app.processEvents();
+    require(session.state(startupId).error == u"native failure" &&
+                session.state(updatesId).error.isEmpty(),
+            "synchronization preserves only the real startup failure");
+    fail = false;
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                session.state(startupId).phase == settings::SettingsWritePhase::Clean &&
+                session.state(startupId).error.isEmpty(),
+            "reset can recover after registration becomes available");
+    save = false;
+    require(!session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                session.state(startupId).phase == settings::SettingsWritePhase::Rejected &&
+                session.state(startupId).error.contains(QStringLiteral("preference")) &&
+                session.state(updatesId).phase == settings::SettingsWritePhase::Clean &&
+                session.state(updatesId).error.isEmpty(),
+            "startup preference persistence failures remain scoped to startup");
+    save = true;
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral),
+            "recover startup preference persistence");
+    configuration.suspendWrites(true);
+    require(!session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+                session.state(startupId).phase == settings::SettingsWritePhase::Clean &&
+                session.state(startupId).error.isEmpty() &&
+                session.state(updatesId).phase == settings::SettingsWritePhase::Rejected &&
+                !session.state(updatesId).error.isEmpty(),
+            "an update write failure must not reject a successful startup reset");
+    configuration.suspendWrites(false);
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral),
+            "recover update preference persistence");
     SettingsPageWidget page(registry, QStringLiteral("general"), session);
     native = {LoginItemStatus::Unavailable, QStringLiteral("install app")};
     page.show();

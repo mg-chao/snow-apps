@@ -17,9 +17,11 @@
 #include "snow_shot/platform/windows/shellcontextmenuregistration.h"
 
 #include <QObject>
+#include <QHash>
 #include <QPointer>
 #include <QVariant>
 #include <QVector>
+#include <algorithm>
 #include <future>
 #include <functional>
 #include <memory>
@@ -54,6 +56,29 @@ struct SettingsActionState {
     QString label{};
     QString hint{};
     bool successAccent = false;
+};
+
+struct SettingsFieldResetResult {
+    bool accepted = false;
+    QString error{};
+};
+
+struct SettingsResetResult {
+    // Providers with an atomic reset can return a boolean. Compound resets override
+    // individual fields so one failed operation does not reject unrelated fields.
+    SettingsResetResult(bool accepted) : defaultAccepted(accepted) {}
+
+    bool defaultAccepted = false;
+    QHash<QString, SettingsFieldResetResult> fields{};
+
+    [[nodiscard]] SettingsFieldResetResult fieldResult(const QString& fieldId) const {
+        return fields.value(fieldId, {defaultAccepted, {}});
+    }
+    [[nodiscard]] bool success() const {
+        return defaultAccepted &&
+               std::all_of(fields.cbegin(), fields.cend(),
+                           [](const SettingsFieldResetResult& field) { return field.accepted; });
+    }
 };
 
 class SettingsBackend : public QObject {
@@ -232,7 +257,11 @@ class SettingsBackend : public QObject {
     virtual void refreshStorageStatusIfStale() {
         refreshStorageStatus();
     }
-    [[nodiscard]] virtual bool resetSection(SettingsSectionReset reset) = 0;
+    [[nodiscard]] bool resetSection(SettingsSectionReset reset) {
+        return resetSectionWithResults(reset).success();
+    }
+    [[nodiscard]] virtual SettingsResetResult
+    resetSectionWithResults(SettingsSectionReset reset) = 0;
     [[nodiscard]] virtual QString fieldError(const QString& fieldId) const {
         Q_UNUSED(fieldId);
         return {};
@@ -364,7 +393,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     void refreshStorageStatus() override;
     storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) override;
     void refreshStorageStatusIfStale() override;
-    [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
+    [[nodiscard]] SettingsResetResult resetSectionWithResults(SettingsSectionReset reset) override;
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

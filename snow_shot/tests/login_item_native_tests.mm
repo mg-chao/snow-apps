@@ -149,9 +149,9 @@ void nativeStatusAndRegistration() {
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         native.statusReads == 1,
                     "routine query must read macOS status without validating an unsigned bundle");
-            for (const auto status : {SMAppServiceStatusEnabled, SMAppServiceStatusRequiresApproval,
-                                      SMAppServiceStatusNotRegistered,
-                                      SMAppServiceStatusNotFound}) {
+            for (const auto status :
+                 {SMAppServiceStatusEnabled, SMAppServiceStatusRequiresApproval,
+                  SMAppServiceStatusNotRegistered, SMAppServiceStatusNotFound}) {
                 const int before = native.statusReads;
                 native.nativeStatus = status;
                 service.refresh();
@@ -170,7 +170,6 @@ void nativeStatusAndRegistration() {
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         service.hint().isEmpty(),
                     "macOS 26 notFound is retryable instead of unavailable");
-            native.nativeStatus = SMAppServiceStatusNotRegistered;
             native.failure = [NSError errorWithDomain:SMAppServiceErrorDomain
                                                  code:kSMErrorInvalidSignature
                                              userInfo:nil];
@@ -207,9 +206,8 @@ void nativeStatusAndRegistration() {
                     "notFound remains eligible after the item is removed");
             initialized = false;
             native.registrations = 0;
-            require(service.initialize(true).success && initialized &&
-                        native.registrations == 1 && preference &&
-                        service.snapshot().status == LoginItemStatus::Enabled,
+            require(service.initialize(true).success && initialized && native.registrations == 1 &&
+                        preference && service.snapshot().status == LoginItemStatus::Enabled,
                     "first eligible launch registers a notFound login item");
         }
         serviceFixture = nil;

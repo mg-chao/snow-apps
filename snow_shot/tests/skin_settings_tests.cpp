@@ -208,8 +208,9 @@ class SkinStatusBackend final : public settings::SettingsBackend {
     storage::StorageStatus storageStatus() const override {
         return m_backend.storageStatus();
     }
-    bool resetSection(settings::SettingsSectionReset reset) override {
-        return m_backend.resetSection(reset);
+    settings::SettingsResetResult
+    resetSectionWithResults(settings::SettingsSectionReset reset) override {
+        return m_backend.resetSectionWithResults(reset);
     }
 
   private:

@@ -2509,7 +2509,7 @@ void BuiltInSettingsBackend::refreshStorageStatusIfStale() {
     storage::ApplicationStorage::instance().requestStorageUsageRefreshIfStale();
 }
 
-bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
+SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSectionReset reset) {
 #if !SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (reset == SettingsSectionReset::Translation)
         return false;
@@ -3041,40 +3041,52 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                 .toBool());
     case SettingsSectionReset::SystemGeneral: {
         const auto& configuration = storage::ApplicationStorage::instance().configuration();
-        const bool annotationAccepted =
+        SettingsResetResult resetResult(true);
 #ifdef Q_OS_WIN
-            applySwitchValue(
-                SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing,
-                configuration
-                    .defaultValue(QStringLiteral("system/annotation_mode_when_opening_for_editing"))
-                    .toBool());
-#else
-            true;
+        resetResult.fields.insert(
+            QStringLiteral("system.annotation-mode-when-opening-for-editing"),
+            {applySwitchValue(SettingsSwitchBinding::AnnotationModeWhenOpeningForEditing,
+                              configuration
+                                  .defaultValue(QStringLiteral(
+                                      "system/annotation_mode_when_opening_for_editing"))
+                                  .toBool()),
+             {}});
 #endif
-        if (app::distribution::isStoreManaged())
-            return applySelectValue(SettingsSelectBinding::ContextMenuMode,
-                                    configuration.defaultValue(kContextMenuModeKey).toVariant()) &&
-                   annotationAccepted;
+        if (app::distribution::isStoreManaged()) {
+            resetResult.fields.insert(
+                QStringLiteral("system.context-menu-mode"),
+                {applySelectValue(SettingsSelectBinding::ContextMenuMode,
+                                  configuration.defaultValue(kContextMenuModeKey).toVariant()),
+                 {}});
+            return resetResult;
+        }
         emit synchronized();
         const auto result = applyStartupSettings(
             configuration.defaultValue(QStringLiteral("system/auto_start_at_boot")).toBool(),
             false);
+        resetResult.fields.insert(QStringLiteral("system.auto-start-at-boot"),
+                                  {result.success, result.error});
+#ifdef Q_OS_WIN
+        resetResult.fields.insert(QStringLiteral("system.launch-as-administrator"),
+                                  {result.success, result.error});
+#endif
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();
-        // A startup-registration failure is reported above. It must not reject
-        // the independent update preference as unsaved.
-        bool accepted = annotationAccepted;
 #ifdef Q_OS_WIN
-        accepted = applySelectValue(SettingsSelectBinding::ContextMenuMode,
-                                    configuration.defaultValue(kContextMenuModeKey).toVariant()) &&
-                   accepted;
+        resetResult.fields.insert(
+            QStringLiteral("system.context-menu-mode"),
+            {applySelectValue(SettingsSelectBinding::ContextMenuMode,
+                              configuration.defaultValue(kContextMenuModeKey).toVariant()),
+             {}});
 #endif
-        return applySelectValue(SettingsSelectBinding::UpdateMode,
-                                storage::ConfigurationSchema::defaultValue(
-                                    QStringLiteral("updates/mode"))
-                                    .toVariant()) &&
-               accepted;
+        resetResult.fields.insert(
+            QStringLiteral("updates.mode"),
+            {applySelectValue(
+                 SettingsSelectBinding::UpdateMode,
+                 configuration.defaultValue(QStringLiteral("updates/mode")).toVariant()),
+             {}});
+        return resetResult;
     }
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({

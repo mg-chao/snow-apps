@@ -288,7 +288,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     void refreshStorageStatusIfStale() override {
         ++m_staleRefreshCount;
     }
-    bool resetSection(settings::SettingsSectionReset) override {
+    settings::SettingsResetResult resetSectionWithResults(settings::SettingsSectionReset) override {
         return false;
     }
 
@@ -856,7 +856,7 @@ void recordingToolbarToolsCanMoveStackHideAndReset() {
         QCoreApplication::sendEvent(target, &event);
         return event.isAccepted();
     };
-    const auto positionFor = [&backend, kind](const QString& id) {
+    const auto positionFor = [&backend](const QString& id) {
         for (const auto& position : backend.toolbarLayout(kind).positions) {
             if (position.contains(id))
                 return position;
@@ -1134,7 +1134,7 @@ void copyPublishesStableFileAndPreservesClipboardOnFailure() {
     QTemporaryDir directory;
     auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
     snow_shot::diagnostics::DiagnosticsOptions options;
-    options.directories = {directory.path()};
+    options.directories = {QDir(directory.path()).canonicalPath()};
     options.enableCrashCapture = false;
     options.installMessageHandler = false;
     require(diagnostics.initialize(options), "clipboard diagnostics initialize");
@@ -1170,7 +1170,7 @@ void copyPublishesStableFileAndPreservesClipboardOnFailure() {
     snapshot.close();
     diagnostics.shutdown();
     QTemporaryDir failedDirectory;
-    options.directories = {failedDirectory.path()};
+    options.directories = {QDir(failedDirectory.path()).canonicalPath()};
     require(diagnostics.initialize(options), "failed-export logger starts");
     QFile blocker(QDir(failedDirectory.path()).filePath(QStringLiteral("exports")));
     require(blocker.open(QIODevice::WriteOnly), "create export failure fixture");
