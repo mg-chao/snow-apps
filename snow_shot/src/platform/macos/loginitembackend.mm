@@ -67,17 +67,11 @@ LoginItemSnapshot query() {
         case SMAppServiceStatusRequiresApproval:
             return {LoginItemStatus::ApprovalRequired, {}};
         case SMAppServiceStatusNotFound:
-            break;
+            // macOS 26 reports notFound for a main app that has no login item
+            // record yet. Registration is the authoritative eligibility check.
+            return {LoginItemStatus::Unregistered, {}};
         }
-        return {LoginItemStatus::Unavailable,
-                (app::edition::isMini
-                     ? text(QT_TRANSLATE_NOOP("LoginItemService",
-                                              "macOS could not find %1's login item. Reinstall the "
-                                              "app in Applications."))
-                           .arg(app::edition::productName())
-                     : text(QT_TRANSLATE_NOOP("LoginItemService",
-                                              "macOS could not find Snow Shot's login item. "
-                                              "Reinstall the app in Applications.")))};
+        return {LoginItemStatus::Unavailable, {}};
     }
 }
 } // namespace

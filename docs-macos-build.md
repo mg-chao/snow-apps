@@ -867,6 +867,13 @@ startup preference is disabled. Development bundles, disk images, translocated
 copies, and unsigned or invalidly signed apps cannot register. Moving an eligible
 signed copy into Applications allows its initial registration attempt.
 
+macOS 26 may report `SMAppServiceStatusNotFound` instead of `notRegistered` for a
+main app that has no login item record yet. Snow Shot treats both statuses as
+eligible for registration; the `register` call remains the authoritative signature
+and eligibility check. Affected users have no initialization marker, so the first
+launch of a fixed build follows the normal first-launch path and registers when the
+saved preference is enabled (the default).
+
 Use **Settings > System > General > Launch at login** to enable or disable it.
 If approval is required, choose **Open Login Items Settings** and allow Snow Shot
 in **System Settings > General > Login Items** (the panel name can vary by macOS
