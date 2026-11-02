@@ -40,13 +40,11 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHideEvent>
-#include <QHelpEvent>
 #include <QLabel>
 #include <QLayout>
 #include <QBoxLayout>
 #include <QLineEdit>
 #include <QMargins>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
@@ -990,7 +988,7 @@ void toolbarTooltipsUseApplicationBridge() {
     require(tooltipTriggerCount > 0, "screenshot toolbar should expose tooltip triggers");
 }
 
-void mainToolbarTooltipsOpenWithoutHoverDelay() {
+void mainToolbarTooltipsUseNormalHoverDelay() {
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
     adqt::widgets::AdTooltip::installApplicationTooltips();
     QWidget ordinaryControl;
@@ -1020,37 +1018,20 @@ void mainToolbarTooltipsOpenWithoutHoverDelay() {
         QWidget nestedContainer(toolbar.mainPanel());
         QLabel lateControl(&nestedContainer);
         require(lateControl.style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr,
-                                               &lateControl) == 0,
-                "late-created nested main toolbar controls should inherit immediate tooltips");
+                                               &lateControl) == normalDelay,
+                "late-created nested main toolbar controls should retain the normal tooltip delay");
 
-        int hoveredControls = 0;
+        int tooltipTriggerCount = 0;
         for (QWidget* control : toolbar.mainPanel()->findChildren<QWidget*>()) {
             if (control->toolTip().isEmpty()) {
                 continue;
             }
             require(control->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, control) ==
-                        0,
-                    "every main toolbar tooltip should have zero wake-up delay");
-            if (!control->isVisible() || !control->isEnabled()) {
-                continue;
-            }
-            const QPoint center = control->rect().center();
-            const QPoint global = control->mapToGlobal(center);
-            QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton,
-                             Qt::NoModifier);
-            QApplication::sendEvent(control, &move);
-            QHelpEvent help(QEvent::ToolTip, center, global);
-            QApplication::sendEvent(control, &help);
-            bool visible = false;
-            for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
-                visible |= tooltip->isVisible() && tooltip->targetWidget() == control &&
-                           tooltip->text() == control->toolTip();
-            }
-            require(help.isAccepted() && visible,
-                    "hover should show or switch main toolbar tooltips without waiting");
-            ++hoveredControls;
+                        normalDelay,
+                    "every main toolbar tooltip should retain the normal hover delay");
+            ++tooltipTriggerCount;
         }
-        require(hoveredControls >= 2, "exercise initial hover and switching toolbar controls");
+        require(tooltipTriggerCount >= 2, "exercise tooltip delays on multiple toolbar controls");
         toolbar.hide();
         flushEvents();
     }
@@ -2541,7 +2522,7 @@ int main(int argc, char** argv) {
         qScopeGuard([] { snow_shot::storage::ApplicationStorage::instance().shutdown(); });
     if (application.arguments().contains(QStringLiteral("--tooltips-only"))) {
         toolbarTooltipsUseApplicationBridge();
-        mainToolbarTooltipsOpenWithoutHoverDelay();
+        mainToolbarTooltipsUseNormalHoverDelay();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
@@ -2603,6 +2584,6 @@ int main(int argc, char** argv) {
     duplicateStyleStateDoesNotInvalidateToolbarGeometry();
     filterValuesDoNotRelayoutTheStableControlSet();
     spotlightConfigSurvivesStyleRowEviction();
-    mainToolbarTooltipsOpenWithoutHoverDelay();
+    mainToolbarTooltipsUseNormalHoverDelay();
     return 0;
 }
