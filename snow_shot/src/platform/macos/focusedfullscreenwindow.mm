@@ -25,7 +25,7 @@ static bool focusedFullscreenWindowMatches(QScreen* target, bool gamesOnly = fal
         for (NSString* key in @[ @"LSSupportsGameMode", @"GCSupportsGameMode" ]) {
             id value = [bundle objectForInfoDictionaryKey:key];
             // Only plist Booleans count: NSNumber integers and strings are not opt-ins.
-            if (value != nil && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID())
+            if (value != nil && CFGetTypeID(static_cast<CFTypeRef>(value)) == CFBooleanGetTypeID())
                 metadata.insert(QString::fromNSString(key), [value boolValue] == YES);
         }
         if (!isMacOSGameApplication(metadata))
