@@ -409,6 +409,10 @@
             <translation>Reset transform</translation>
         </message>
         <message>
+            <source>Reverse page order</source>
+            <translation>Reverse page order</translation>
+        </message>
+        <message>
             <source>Rotate clockwise by 90°</source>
             <translation>Rotate clockwise by 90°</translation>
         </message>

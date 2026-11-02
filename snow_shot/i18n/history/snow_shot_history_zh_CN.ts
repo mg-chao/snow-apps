@@ -409,6 +409,10 @@
             <translation>重置变换</translation>
         </message>
         <message>
+            <source>Reverse page order</source>
+            <translation>反转页面顺序</translation>
+        </message>
+        <message>
             <source>Rotate clockwise by 90°</source>
             <translation>顺时针旋转 90°</translation>
         </message>

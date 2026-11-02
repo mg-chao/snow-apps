@@ -83,6 +83,7 @@ QString imageName(const QString& label) {
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Flip vertically"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Reset transform"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Preview original image"),
+    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Reverse page order"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Clear"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images to create a PDF document"),
@@ -578,6 +579,7 @@ struct CollagePdfPageGrid::Impl {
     CanvasActionToolbar* toolbar = nullptr;
     CanvasActionToolbar* selectionToolbar = nullptr;
     std::array<AdButton*, 8> selectionActions{};
+    AdButton* reverse = nullptr;
     AdButton* add = nullptr;
     AdButton* clear = nullptr;
     ImageDropSurface* empty = nullptr;
@@ -656,6 +658,7 @@ struct CollagePdfPageGrid::Impl {
     }
 
     void enabled() {
+        reverse->setEnabled(!loading && !exporting && document->items().size() > 1);
         add->setEnabled(!loading && !exporting);
         add->setBusy(loading);
         clear->setEnabled(!exporting && !document->items().isEmpty());
@@ -1083,10 +1086,11 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     layout->addWidget(d.scroll);
     d.toolbar = new CanvasActionToolbar(this);
     d.toolbar->setObjectName(QStringLiteral("collagePdfCanvasToolbar"));
+    d.reverse = d.toolbar->addAction(icons::Swap(), "collagePdfReversePageOrder");
+    d.add = d.toolbar->addAction(icons::Plus(), "collagePdfAddImages");
+    d.toolbar->addSeparator();
     d.clear = d.toolbar->addAction(icons::IconDelete(), "collagePdfClear");
     d.clear->setAccentRole(AdButton::AccentRole::Danger);
-    d.toolbar->addSeparator();
-    d.add = d.toolbar->addAction(icons::Plus(), "collagePdfAddImages");
     d.selectionToolbar = new CanvasActionToolbar(this);
     d.selectionToolbar->setObjectName(QStringLiteral("collagePdfImageToolbar"));
     d.selectionToolbar->hide();
@@ -1132,6 +1136,10 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
         });
     }
     d.selectionActions.back()->setAccentRole(AdButton::AccentRole::Danger);
+    connect(d.reverse, &AdButton::clicked, this, [this] {
+        if (!m_impl->loading && !m_impl->exporting)
+            m_impl->document->reverseItems();
+    });
     connect(d.clear, &AdButton::clicked, this, &CollagePdfPageGrid::clearRequested);
     connect(d.add, &AdButton::clicked, this, &CollagePdfPageGrid::addImagesRequested);
     d.empty = new ImageDropSurface(false, this);
@@ -1248,9 +1256,10 @@ void CollagePdfPageGrid::retranslateUi() {
     setAccessibleDescription(gridText(
         "Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the "
         "original image."));
-    d.clear->setToolTip(gridText("Clear"));
+    d.reverse->setToolTip(gridText("Reverse page order"));
     d.add->setToolTip(gridText("Add images"));
-    for (auto* action : {d.clear, d.add})
+    d.clear->setToolTip(gridText("Clear"));
+    for (auto* action : {d.reverse, d.add, d.clear})
         action->setAccessibleName(action->toolTip());
     constexpr std::array<const char*, 8> actions{
         "Rotate clockwise by 90°", "Rotate counterclockwise by 90°",

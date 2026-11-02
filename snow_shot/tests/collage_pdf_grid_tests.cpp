@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "widgets/button.h"
+#include "widgets/divider.h"
 #include "widgets/image.h"
 #include "widgets/scroll_area.h"
 
@@ -14,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLayout>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
@@ -338,6 +340,71 @@ void keyboardActionsAndBusyStates() {
             "deleting a focused page must restore keyboard focus to the selected surviving page");
 }
 
+void bottomToolbarAndReversePageOrder() {
+    CollageDocument document;
+    document.setOutputType(CollageOutputType::PdfDocument);
+    CollagePdfPageGrid grid(&document);
+    show(grid);
+    auto* reverse = button(&grid, "collagePdfReversePageOrder");
+    auto* add = button(&grid, "collagePdfAddImages");
+    auto* clear = button(&grid, "collagePdfClear");
+    auto* toolbar = grid.findChild<QWidget*>(QStringLiteral("collagePdfCanvasToolbar"));
+    auto* layout = toolbar->layout();
+    require(layout->count() == 4 && layout->itemAt(0)->widget() == reverse &&
+                layout->itemAt(1)->widget() == add &&
+                qobject_cast<adqt::widgets::AdDivider*>(layout->itemAt(2)->widget()) &&
+                layout->itemAt(3)->widget() == clear,
+            "bottom toolbar order must be Reverse page order, Add images, separator, Clear");
+    require(reverse->toolTip() == QStringLiteral("Reverse page order") &&
+                reverse->accessibleName() == reverse->toolTip() && !reverse->isEnabled(),
+            "reverse action must have an accessible label and be disabled for an empty document");
+    document.append(image({20, 30}), QStringLiteral("First"));
+    pump();
+    require(!reverse->isEnabled(), "a single page cannot be reversed");
+    for (int index = 1; index < 21; ++index)
+        document.append(image({20, 30}), QString::number(index));
+    document.moveItem(document.items().front().id, 3);
+    pump();
+    require(reverse->isEnabled() && toolbar->isVisible() && reverse->x() < add->x() &&
+                add->x() < clear->x() &&
+                grid.property("materializedPageCount").toInt() < document.items().size(),
+            "ordered bottom actions must support a document with pages outside the viewport");
+    const auto original = document.items();
+    document.select(original.front().id);
+    reverse->click();
+    pump();
+    auto* viewer = grid.findChild<AdImageViewer*>(QStringLiteral("collagePdfOriginalViewer"));
+    for (int index = 0; index < original.size(); ++index) {
+        const auto expected = original[original.size() - index - 1].id;
+        require(document.items()[index].id == expected &&
+                    viewer->itemAt(index).source.path().toULongLong() == expected,
+                "reverse action must reverse every current page and original-preview entry");
+    }
+    require(card(grid, original.back().id)->property("pageNumber").toInt() == 1 &&
+                document.selectedId() == original.front().id,
+            "reversal updates visible page numbers and preserves the selected page");
+    const auto revision = document.contentRevision();
+    grid.setLoading(true);
+    reverse->click();
+    require(!reverse->isEnabled() && document.contentRevision() == revision,
+            "loading must disable reversal until every pending page has been imported");
+    grid.setLoading(false);
+    grid.setExportBusy(true);
+    reverse->click();
+    require(!reverse->isEnabled() && document.contentRevision() == revision,
+            "export must block page reversal");
+    grid.setExportBusy(false);
+    require(reverse->isEnabled(), "reverse action must recover after export");
+    reverse->click();
+    pump();
+    for (int index = 0; index < original.size(); ++index)
+        require(document.items()[index].id == original[index].id,
+                "a second click must restore the document's prior order");
+    document.clear();
+    pump();
+    require(!reverse->isEnabled(), "clearing all pages must disable reversal");
+}
+
 void selectedPageFloatingToolbar() {
     CollageDocument document;
     QVector<quint64> ids;
@@ -632,6 +699,8 @@ class GridTranslator final : public QTranslator {
         if (QString::fromLatin1(context) == QStringLiteral("CollagePdfPageGrid")) {
             if (QString::fromUtf8(sourceText) == QStringLiteral("Clear"))
                 return QStringLiteral("Translated clear");
+            if (QString::fromUtf8(sourceText) == QStringLiteral("Reverse page order"))
+                return QStringLiteral("Translated reverse");
             if (QString::fromUtf8(sourceText) == QStringLiteral("Rotate clockwise by 90°"))
                 return QStringLiteral("Translated rotation");
             if (QString::fromUtf8(sourceText) == QStringLiteral("Replace image"))
@@ -656,6 +725,11 @@ void languageChangeAndHiddenWork() {
                 button(&grid, "collagePdfClear")->accessibleName() ==
                     QStringLiteral("Translated clear"),
             "language changes must update cached toolbar and accessibility copy");
+    require(button(&grid, "collagePdfReversePageOrder")->toolTip() ==
+                    QStringLiteral("Translated reverse") &&
+                button(&grid, "collagePdfReversePageOrder")->accessibleName() ==
+                    QStringLiteral("Translated reverse"),
+            "language changes update the reverse action tooltip and accessible label");
     require(button(&grid, "collagePdfRotateRight")->toolTip() ==
                     QStringLiteral("Translated rotation") &&
                 button(&grid, "collagePdfRotateRight")->accessibleName() ==
@@ -741,6 +815,7 @@ int main(int argc, char** argv) {
         pageLayoutAndResponsiveColumns();
         imageSizedPagePreview();
         keyboardActionsAndBusyStates();
+        bottomToolbarAndReversePageOrder();
         selectedPageFloatingToolbar();
         insertionReorderAndAutoscroll();
         originalPreviewIsolationAndOrder();
