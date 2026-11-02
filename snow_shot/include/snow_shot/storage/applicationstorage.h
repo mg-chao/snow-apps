@@ -140,6 +140,9 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] std::shared_future<StorageResult> requestRecordingTempClearAsync();
 
   signals:
+    // Synchronous GUI-thread checkpoint before repositories are drained. Worker flushes
+    // consume already captured metadata and never call window-system APIs.
+    void checkpointRequested();
     void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
     void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void captureHistoryChanged();

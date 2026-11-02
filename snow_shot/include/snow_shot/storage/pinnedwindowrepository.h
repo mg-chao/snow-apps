@@ -49,6 +49,7 @@ enum class PinnedWindowOperation {
     PayloadReadAdmission,
     PayloadRead,
     PayloadWrite,
+    ManifestWrite,
     RetentionWait,
     RetentionScan,
     StorageReadDrain
@@ -93,6 +94,13 @@ class PinnedWindowRepository final {
     [[nodiscard]] quint64 membershipRevision() const;
     // Also advances for pending-only visibility changes; image payloads are unaffected.
     [[nodiscard]] quint64 visibilityRevision() const;
+    [[nodiscard]] quint64 stackingRevision() const;
+    [[nodiscard]] QStringList stackingOrder(const QString& groupId) const;
+    // Reorders observed members in their existing slots; absent members retain their order.
+    // These metadata-only operations do not invalidate source previews or group/visibility caches.
+    [[nodiscard]] StorageResult updateStackingOrder(const QString& groupId,
+                                                    const QStringList& frontToBack);
+    [[nodiscard]] StorageResult promoteStackingWindow(const QString& id);
     [[nodiscard]] StorageResult setRecordsHidden(const QVector<QString>& ids, bool hidden);
     [[nodiscard]] int allocateHideToTopAccent();
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;

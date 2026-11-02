@@ -64,6 +64,28 @@ clicks and dismissal release ownership. It returns CTest skip code 77 when the
 host lacks event-posting permission. It never prompts for permission or changes
 privacy settings. Basic pinning does not require this test permission.
 
+## Persistent stacking restoration
+
+Build `snow-shot-pinned-window-stacking-tests` and `snow-shot-pinned-window-tests`.
+Run the focused model, storage, and Cocoa application checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug \
+  -R '^snow-shot-pinned-(window-stacking(-native)?|stacking-restore(-native)?)-tests$' \
+  --output-on-failure
+```
+
+The native adapter checks order permutations, raise/lower, native levels, auxiliary
+ownership, surface rebinding, geometry, and the frontmost application/key window.
+The application case covers storage restart, group switches, hide/show, and explicit
+show commands while image loading is blocked. Cocoa capture uses visible window
+numbers so NSPanel pin surfaces participate.
+
+These Cocoa cases have been added but have not been run on a macOS host in the
+Windows implementation session. Native macOS qualification remains required;
+Windows and offscreen results do not qualify AppKit behavior. Include click-through,
+hide-to-top handles, and application reactivation in the native host pass.
+
 ## Input interruption and boundary audit — 2026-09-21
 
 The follow-up audit covers input behavior independently of the event source or

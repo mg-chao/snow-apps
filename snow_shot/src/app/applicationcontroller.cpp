@@ -37,6 +37,7 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
 #include "snow_shot/presentation/windowgroupswitchercontroller.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
@@ -326,6 +327,11 @@ class ApplicationController::Impl {
                     feature, [this, event]() { dispatchGlobalMouseEvent(event); }, false));
             });
         auto& applicationStorage = storage::ApplicationStorage::instance();
+        auto* stacking = groupManager.stackingCoordinator();
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::checkpointRequested,
+                         stacking, &presentation::PinnedWindowStackingCoordinator::checkpoint);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, stacking,
+                         &presentation::PinnedWindowStackingCoordinator::shutdown);
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
@@ -419,6 +425,7 @@ class ApplicationController::Impl {
                     return storage::StorageResult::failure(ApplicationController::tr(
                         "Finish capturing, recording, exporting, recognizing text, or updating "
                         "before changing storage."));
+                groupManager.stackingCoordinator()->beginMutation();
                 migrationSource = storage::ApplicationStorage::instance().configurationDirectory();
                 migrationInput->active = true;
                 systemTray.setEnabled(false);
@@ -435,6 +442,7 @@ class ApplicationController::Impl {
                 return storage::StorageResult::ok();
             },
             [this](const QString& root) {
+                groupManager.stackingCoordinator()->endMutation();
                 if (ocrRecognition)
                     ocrRecognition->resumeStorage(
                         QDir(root).filePath(QStringLiteral("assets/ocr")));
@@ -611,6 +619,7 @@ class ApplicationController::Impl {
     }
 
     ~Impl() {
+        groupManager.stackingCoordinator()->shutdown();
         storeLifecycle.reset();
         if (memoryOptimization)
             memoryOptimization->stop();
@@ -651,6 +660,7 @@ class ApplicationController::Impl {
     }
 
     std::shared_future<void> terminalCheckpointForStoreUpdate() {
+        groupManager.stackingCoordinator()->shutdown();
         auto& storage = storage::ApplicationStorage::instance();
         auto* configuration = &storage.configuration();
         auto* pins = &storage.pinnedWindows();
@@ -706,6 +716,12 @@ class ApplicationController::Impl {
     }
 
     void setUpdateHandoffPending(bool pending) {
+        if (handoffInput->active != pending) {
+            if (pending)
+                groupManager.stackingCoordinator()->beginMutation();
+            else
+                groupManager.stackingCoordinator()->endMutation();
+        }
         handoffInput->active = pending;
         featureRouter.setSuspended(pending);
         if (screenshotController)

@@ -1,3 +1,5 @@
+#include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
+#include "../src/presentation/pinned/pinnedwindowstackingplatform.h"
 #include "canvas_automatic_selection_test_support.h"
 #include "snow_shot/presentation/imageeditingdocument.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
@@ -11133,6 +11135,8 @@ void restoredPartiallyVisiblePlacementStaysExact() {
     }
 }
 
+#include "pinned_stacking_restore_tests.h"
+
 void restoredStateSavePreservesSourceRevision() {
     IsolatedPinnedStorage isolated;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -22120,14 +22124,25 @@ void pinnedManagementLifecycle() {
     ScreenshotPinnedWindowTestAccess::setGeneralOpacity(*live(first), 65);
     require(service.restoreRecord(unrelated.id), "page restore activates another group");
     require(!live(unrelated.id) && repository.loadRecord(unrelated.id)->ignored &&
-                !service.restoreRecord(unrelated.id),
-            "restore queues payload loading without blocking the UI or duplicating the request");
+                service.restoreRecord(unrelated.id),
+            "repeated restore requests are accepted while payload loading remains asynchronous");
     require(repository.loadRecord(first)->opacityPercent == 65 &&
                 !repository.loadRecord(first)->ignored &&
                 repository.loadRecord(first)->activitySequence == firstActivity,
             "group switches save final state without marking closed or reordering");
     wait([&]() { return !repository.loadRecord(unrelated.id)->ignored; },
          "page restoration completes");
+    require(storage::ApplicationStorage::instance().pinnedFullImagePool().waitForDone(5000),
+            "repeated restoration finishes all payload loads");
+    QCoreApplication::processEvents();
+    const auto topLevels = QApplication::topLevelWidgets();
+    require(std::count_if(topLevels.cbegin(), topLevels.cend(),
+                          [&](QWidget* widget) {
+                              auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                              return pin && pin->persistenceId() == unrelated.id &&
+                                     pin->isVisible();
+                          }) == 1,
+            "accepted repeated restores present exactly one window");
     require(groups.activeGroupId() == *other, "page restore preserves group ownership");
     QPointer<ScreenshotPinnedWindow> otherWindow(live(unrelated.id));
     require(otherWindow, "other group window exists");
@@ -28445,6 +28460,12 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--partial-placement-restore-only"))) {
             restoredPartiallyVisiblePlacementStaysExact();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--stacking-restore-only"))) {
+            pinnedStackingSurvivesRestoration();
+            pinnedStackingExplicitShowDuringRestore();
+            pinnedStackingRestoreDuringMutation();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--restored-state-persistence-only"))) {

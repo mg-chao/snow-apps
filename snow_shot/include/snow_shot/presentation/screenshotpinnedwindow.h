@@ -56,6 +56,7 @@ class WindowShortcutManager;
 class PinnedWindowGroupManager;
 class PinnedWindowSelectionController;
 class PinnedWindowPlatform;
+class PinnedWindowStackingCoordinator;
 class LiveWindowSource;
 } // namespace snow_shot::presentation
 namespace snow_shot::platform {
@@ -152,7 +153,10 @@ class ScreenshotPinnedWindow final : public QWidget {
         // Includes hiding a displayed pin or canceling a peer's pending presentation/restore.
         bool changed = false;
     };
+    enum class PresentationPolicy { Activate, PreserveFocus };
     struct Config {
+        PresentationPolicy presentationPolicy = PresentationPolicy::Activate;
+        QPointer<snow_shot::presentation::PinnedWindowStackingCoordinator> stackingCoordinator;
         snow_shot::storage::PinnedSourceIdentity sourceIdentity;
         QDateTime sourceCreatedUtc;
         snow_shot::storage::PinnedWindowPlacement placement;
@@ -298,6 +302,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     Q_INVOKABLE bool requestHide();
     void requestDestroy();
     void showFromManagement();
+    void showPreservingStacking();
     void cancelDeferredInactiveGroupClose();
 
   public:
@@ -850,6 +855,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     snow_shot::storage::PinnedWindowCloseIntent m_closeIntent =
         snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
+    QPointer<snow_shot::presentation::PinnedWindowStackingCoordinator> m_stackingCoordinator;
     QPointer<snow_shot::presentation::PinnedWindowSelectionController> m_selectionController;
     adqt::widgets::AdButton* m_selectionIndicator = nullptr;
     bool m_windowSelected = false;

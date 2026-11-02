@@ -98,6 +98,8 @@ class PinnedWindowPlatform : public QObject {
     [[nodiscard]] virtual QRect windowGeometry() const;
     // Layout changes may recover offscreen controls; backing changes only refresh rendering.
     std::function<void(bool layoutChanged)> environmentChanged;
+    std::function<void()> stackingChanged;
+    std::function<void()> stackingActivated;
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
