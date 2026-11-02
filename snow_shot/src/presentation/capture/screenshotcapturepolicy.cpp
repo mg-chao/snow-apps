@@ -12,6 +12,10 @@
 namespace snow_shot::presentation::capture {
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+ScreenshotApiMode detail::autoScreenshotApiMode(bool anyActiveHdr) noexcept {
+    return anyActiveHdr ? ScreenshotApiMode::Wgc : ScreenshotApiMode::Gdi;
+}
+
 bool detail::displayHdrEnabled(const DISPLAYCONFIG_PATH_TARGET_INFO& target,
                                DisplayColorInfoQuery query) noexcept {
     DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 current{};
@@ -20,7 +24,7 @@ bool detail::displayHdrEnabled(const DISPLAYCONFIG_PATH_TARGET_INFO& target,
     current.header.adapterId = target.adapterId;
     current.header.id = target.id;
     if (query(&current.header) == ERROR_SUCCESS) {
-        // Advanced Color also covers SDR automatic color management. Only active HDR needs DXGI.
+        // Advanced Color also covers SDR automatic color management. Only active HDR prefers WGC.
         return current.activeColorMode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
     }
 
@@ -53,6 +57,8 @@ std::uint8_t nativeBackendForNormalScreenshot(ScreenshotApiMode mode) noexcept {
     Q_UNUSED(mode);
     return SNOW_CAPTURE_BACKEND_SCREEN_CAPTURE_KIT;
 #else
+    if (mode == ScreenshotApiMode::Auto)
+        mode = resolveAutoScreenshotApiMode();
     switch (mode) {
     case ScreenshotApiMode::Dxgi:
         return SNOW_CAPTURE_BACKEND_DXGI;
@@ -80,7 +86,7 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
                                    modes.data(), nullptr) == ERROR_SUCCESS) {
                 for (UINT index = 0; index < pathCount; ++index) {
                     if (detail::displayHdrEnabled(paths[index].targetInfo)) {
-                        return ScreenshotApiMode::Dxgi;
+                        return detail::autoScreenshotApiMode(true);
                     }
                 }
             }
@@ -88,6 +94,8 @@ ScreenshotApiMode resolveAutoScreenshotApiMode() noexcept {
 #endif
 #ifdef Q_OS_MACOS
         return ScreenshotApiMode::Auto;
+#elif defined(Q_OS_WIN) || defined(_WIN32)
+        return detail::autoScreenshotApiMode(false);
 #else
         return ScreenshotApiMode::Gdi;
 #endif

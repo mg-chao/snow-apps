@@ -765,7 +765,11 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("ultrafast"), QStringLiteral("veryfast"), QStringLiteral("medium"),
       QStringLiteral("veryslow"), QStringLiteral("placebo")}},
     {QStringLiteral("screen_recording/api_mode"),
+#ifdef Q_OS_WIN
+     QStringLiteral("wgc"),
+#else
      QStringLiteral("dxgi"),
+#endif
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}},

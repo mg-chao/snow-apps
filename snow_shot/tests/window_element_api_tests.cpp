@@ -400,8 +400,13 @@ void recordingApiModePersistsAndResets(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     constexpr auto binding = settings::SettingsSelectBinding::ScreenRecordingApiMode;
-    require(backend.selectValue(binding) == QStringLiteral("dxgi"),
-            "recording API must default to DXGI");
+#ifdef Q_OS_WIN
+    const auto defaultMode = QStringLiteral("wgc");
+#else
+    const auto defaultMode = QStringLiteral("dxgi");
+#endif
+    require(backend.selectValue(binding) == defaultMode,
+            "recording API must use the platform default");
     const QString screenshotApi = storage::ScreenshotSettings().apiMode();
     for (const auto& mode :
          {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}) {
@@ -428,8 +433,8 @@ void recordingApiModePersistsAndResets(const QString& configurationPath) {
                 backend.selectValue(binding) == QStringLiteral("gdi"),
             "screenshot settings reset must preserve recording API");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
-                backend.selectValue(binding) == QStringLiteral("dxgi"),
-            "system recording settings reset must restore DXGI");
+                backend.selectValue(binding) == defaultMode,
+            "system recording settings reset must restore the platform default");
 }
 
 void ownUiCapturePreferencesPersistAndReset() {
@@ -1120,6 +1125,11 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
+    if (application.arguments().contains(QStringLiteral("--recording-api-only"))) {
+        recordingApiModePersistsAndResets(temporary.filePath(QStringLiteral("data/config.json")));
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--smart-selection-only"))) {
         smartSelectionModesPersistAndDisablePendingLookup(
             temporary.filePath(QStringLiteral("data/config.json")));

@@ -80,6 +80,18 @@ impl Source {
     }
 }
 
+fn create_gpu_source<T>(
+    backend: CaptureBackendKind,
+    mut create: impl FnMut(CaptureBackendKind) -> CaptureResult<T>,
+) -> CaptureResult<T> {
+    if backend == CaptureBackendKind::Auto {
+        create(CaptureBackendKind::WindowsGraphicsCapture)
+            .or_else(|_| create(CaptureBackendKind::DxgiDuplication))
+    } else {
+        create(backend)
+    }
+}
+
 struct LayerSource {
     source: Source,
     desktop: Rect,
@@ -142,28 +154,17 @@ impl GpuCaptureSession {
         let device = SharedDevice::create(&first.0.adapter).map_err(CaptureError::platform)?;
         let mut sources = Vec::new();
         for (monitor, desktop, intersection) in overlapping {
-            let source = match backend {
-                CaptureBackendKind::DxgiDuplication => Source::Dxgi(Box::new(
+            let source = create_gpu_source(backend, |kind| match kind {
+                CaptureBackendKind::DxgiDuplication => Ok(Source::Dxgi(Box::new(
                     duplication::GpuDxgiCapturer::new(&monitor, device.clone())?,
-                )),
-                CaptureBackendKind::WindowsGraphicsCapture => Source::Wgc(Box::new(
+                ))),
+                CaptureBackendKind::WindowsGraphicsCapture => Ok(Source::Wgc(Box::new(
                     wgc::GpuWgcCapturer::new(&monitor, device.clone())?,
+                ))),
+                _ => Err(CaptureError::BackendUnavailable(
+                    "selected backend has no GPU frame delivery".into(),
                 )),
-                CaptureBackendKind::Auto => {
-                    match duplication::GpuDxgiCapturer::new(&monitor, device.clone()) {
-                        Ok(source) => Source::Dxgi(Box::new(source)),
-                        Err(_) => Source::Wgc(Box::new(wgc::GpuWgcCapturer::new(
-                            &monitor,
-                            device.clone(),
-                        )?)),
-                    }
-                }
-                _ => {
-                    return Err(CaptureError::BackendUnavailable(
-                        "selected backend has no GPU frame delivery".into(),
-                    ));
-                }
-            };
+            })?;
             sources.push(LayerSource {
                 source,
                 desktop,
@@ -417,6 +418,53 @@ pub(crate) fn acquire_conversion_output(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gpu_auto_initialization_prefers_wgc_and_falls_back_to_dxgi() {
+        use CaptureBackendKind::{Auto, DxgiDuplication as Dxgi, WindowsGraphicsCapture as Wgc};
+        for failures in 0..=2 {
+            let mut attempted = Vec::new();
+            let result = create_gpu_source(Auto, |kind| {
+                attempted.push(kind);
+                if attempted.len() <= failures {
+                    Err(CaptureError::BackendUnavailable(
+                        "injected startup failure".into(),
+                    ))
+                } else {
+                    Ok(kind)
+                }
+            });
+            assert_eq!(
+                attempted,
+                if failures == 0 {
+                    vec![Wgc]
+                } else {
+                    vec![Wgc, Dxgi]
+                }
+            );
+            if failures == 2 {
+                assert!(matches!(result, Err(CaptureError::BackendUnavailable(_))));
+            } else {
+                assert_eq!(result.unwrap(), if failures == 0 { Wgc } else { Dxgi });
+            }
+        }
+    }
+
+    #[test]
+    fn gpu_explicit_backend_initialization_does_not_switch_backends() {
+        for preferred in [
+            CaptureBackendKind::DxgiDuplication,
+            CaptureBackendKind::WindowsGraphicsCapture,
+        ] {
+            let mut attempted = Vec::new();
+            let result = create_gpu_source::<()>(preferred, |kind| {
+                attempted.push(kind);
+                Err(CaptureError::Timeout)
+            });
+            assert!(matches!(result, Err(CaptureError::Timeout)));
+            assert_eq!(attempted, vec![preferred]);
+        }
+    }
+
     #[test]
     fn gpu_cursor_observations_survive_drops_and_shape_switches() {
         use snow_cursor::{CursorCompositionMode, CursorShapeCapture, CursorSnapshot};

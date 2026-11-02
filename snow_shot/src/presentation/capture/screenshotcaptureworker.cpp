@@ -262,11 +262,8 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
 
 bool ScreenshotCaptureWorker::ensureSession(const QVector<std::uint32_t>& excludedWindowIds) {
     const QString apiMode = snow_shot::storage::ScreenshotSettings().apiMode();
-    auto requested = snow_shot::presentation::capture::screenshotApiModeFromValue(
+    const auto requested = snow_shot::presentation::capture::screenshotApiModeFromValue(
         apiMode.toLatin1().constData());
-    if (requested == snow_shot::presentation::capture::ScreenshotApiMode::Auto) {
-        requested = snow_shot::presentation::capture::resolveAutoScreenshotApiMode();
-    }
     const auto backend =
         snow_shot::presentation::capture::nativeBackendForNormalScreenshot(requested);
     if (m_session != nullptr && m_sessionBackend == backend &&

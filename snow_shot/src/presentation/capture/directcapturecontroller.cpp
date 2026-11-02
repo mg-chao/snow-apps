@@ -3,6 +3,7 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
 #include "snow_shot/presentation/directcapturebudget.h"
+#include "snow_shot/presentation/capture/screenshotcapturepolicy.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 
 #include "directcapturenative.h"
@@ -205,6 +206,10 @@ class DirectCaptureController::Impl {
         const storage::ScreenshotSettings settings;
         DirectCaptureRequest result;
         result.target = target;
+        if (target == DirectCaptureTarget::CurrentMonitor) {
+            result.captureBackend = capture::nativeBackendForNormalScreenshot(
+                capture::screenshotApiModeFromValue(settings.apiMode().toLatin1().constData()));
+        }
         result.shutterSoundNotification = settings.shutterSoundNotification();
         result.restoreOriginalScreenColors = settings.restoreOriginalScreenColors();
         result.requestedAt = QDateTime::currentDateTime();
@@ -316,6 +321,11 @@ bool DirectCaptureController::mcpCapture(
                          : DirectCaptureTarget::CurrentMonitor;
     request.restoreOriginalScreenColors =
         storage::ScreenshotSettings().restoreOriginalScreenColors();
+    if (request.target == DirectCaptureTarget::CurrentMonitor) {
+        request.captureBackend =
+            capture::nativeBackendForNormalScreenshot(capture::screenshotApiModeFromValue(
+                storage::ScreenshotSettings().apiMode().toLatin1().constData()));
+    }
     request.captureCursor = options.value(QStringLiteral("capture_cursor")).toBool(false);
 #if defined(Q_OS_WIN)
     if (request.target == DirectCaptureTarget::FocusedWindow) {

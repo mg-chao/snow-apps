@@ -1131,8 +1131,8 @@ mod tests {
         assert_eq!(
             crate::backend::DEFAULT_AUTO_BACKEND_PRIORITY,
             [
-                CaptureBackendKind::DxgiDuplication,
                 CaptureBackendKind::WindowsGraphicsCapture,
+                CaptureBackendKind::DxgiDuplication,
                 CaptureBackendKind::Gdi,
             ]
         );

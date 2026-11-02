@@ -102,8 +102,8 @@ impl Default for AutoBackendPolicy {
 
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_AUTO_BACKEND_PRIORITY: [CaptureBackendKind; 3] = [
-    CaptureBackendKind::DxgiDuplication,
     CaptureBackendKind::WindowsGraphicsCapture,
+    CaptureBackendKind::DxgiDuplication,
     CaptureBackendKind::Gdi,
 ];
 

@@ -137,13 +137,17 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
     first.encoding.quality = 35;
     first.encoding.compressionLevel = ScreenshotCompressionLevel::High;
     first.filenameFormat = QStringLiteral("first");
+    first.captureBackend = 3;
     f.workflow.enqueue(first);
     DirectCaptureRequest second;
     require(second.encoding.compressionLevel == ScreenshotCompressionLevel::Medium,
             "direct capture requests must default to medium file compression");
     second.monitorName = QStringLiteral("second-monitor");
+    second.captureBackend = 2;
     f.workflow.enqueue(second);
-    require(f.requests.size() == 1 && f.requests.front().window == 1234,
+    second.captureBackend = 1;
+    require(f.requests.size() == 1 && f.requests.front().window == 1234 &&
+                f.requests.front().captureBackend == 3,
             "FIFO target snapshot lost");
     f.acquired(frame());
     require(f.output == frame().image, "capture pixels were styled or resampled");
@@ -160,7 +164,8 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
     require(f.workflow.pendingCount() == 2, "next capture began before history completion");
     f.recorded({});
     QCoreApplication::processEvents();
-    require(f.requests.size() == 2 && f.requests.back().monitorName == second.monitorName,
+    require(f.requests.size() == 2 && f.requests.back().monitorName == second.monitorName &&
+                f.requests.back().captureBackend == 2,
             "mixed direct captures were dropped or reordered");
     f.acquired(frame());
     f.copied({});
