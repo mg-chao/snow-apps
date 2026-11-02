@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -87,6 +88,9 @@ struct Fixture {
     int second = 0;
     int commits = 0;
     Fixture(bool addGroups = true) {
+        require(storage::GlobalShortcutSettings().setFullscreenWindowFilter(
+                    QStringLiteral("all_windows")),
+                "switcher fullscreen fixtures use all-window suppression");
         if (addGroups) {
             beta = groups.createGroup(QStringLiteral("Beta")).value();
             alpha = groups.createGroup(QStringLiteral("Alpha")).value();

@@ -6,6 +6,9 @@
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QHash>
+#include <QFile>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -16,6 +19,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <dwmapi.h>
 #include "../src/platform/windows/globalshortcutbackend_p.h"
 #endif
 
@@ -112,6 +116,133 @@ class FakeBackend final : public GlobalShortcutBackend {
     int registerCalls = 0;
     int unregisterCalls = 0;
 };
+
+#ifdef Q_OS_WIN
+bool activateNativeFixtureWindow(HWND window) {
+    const DWORD currentThread = GetCurrentThreadId();
+    const DWORD foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                          AttachThreadInput(currentThread, foregroundThread, TRUE);
+    SetForegroundWindow(window);
+    if (attached)
+        AttachThreadInput(currentThread, foregroundThread, FALSE);
+    // Foreground activation across input queues is asynchronous; let the owner process it.
+    DWORD_PTR ignored = 0;
+    SendMessageTimeoutW(window, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 2000, &ignored);
+    return GetForegroundWindow() == window;
+}
+
+int runNativeFullscreenFixture() {
+    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    WNDCLASSW windowClass{};
+    windowClass.hInstance = GetModuleHandleW(nullptr);
+    windowClass.lpszClassName = L"SnowShotFullscreenGameFixture";
+    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    windowClass.lpfnWndProc = [](HWND window, UINT message, WPARAM first,
+                                 LPARAM second) -> LRESULT {
+        if (message == WM_TIMER || message == WM_CLOSE) {
+            DestroyWindow(window);
+            return 0;
+        }
+        if (message == WM_DESTROY) {
+            PostQuitMessage(0);
+            return 0;
+        }
+        return DefWindowProcW(window, message, first, second);
+    };
+    if (!RegisterClassW(&windowClass))
+        return 1;
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY), &monitor))
+        return 1;
+    const RECT frame = monitor.rcMonitor;
+    const HWND window =
+        CreateWindowExW(0, windowClass.lpszClassName, L"Fullscreen game filter test", WS_POPUP,
+                        frame.left, frame.top, frame.right - frame.left, frame.bottom - frame.top,
+                        nullptr, nullptr, windowClass.hInstance, nullptr);
+    if (!window)
+        return 1;
+    SetTimer(window, 1, 15000, nullptr);
+    ShowWindow(window, SW_SHOW);
+    SetWindowPos(window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    UpdateWindow(window);
+    activateNativeFixtureWindow(window);
+    DwmFlush();
+    std::cout << reinterpret_cast<quintptr>(window) << std::endl;
+    MSG message{};
+    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+    return 0;
+}
+
+bool nativeFullscreenGameClassificationProbe() {
+    const auto previousDpi =
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    QTemporaryDir temporary(QCoreApplication::applicationDirPath() +
+                            QStringLiteral("/native-game-filter-XXXXXX"));
+    require(temporary.isValid(), "create native fullscreen fixture directory");
+    const QString fixturePath = temporary.filePath(QStringLiteral("Fixture.exe"));
+    const QString original = QCoreApplication::applicationFilePath();
+    require(CreateHardLinkW(reinterpret_cast<const wchar_t*>(fixturePath.utf16()),
+                            reinterpret_cast<const wchar_t*>(original.utf16()), nullptr) ||
+                QFile::copy(original, fixturePath),
+            "copy an isolated native fullscreen fixture executable");
+    const HWND previousForeground = GetForegroundWindow();
+    QProcess fixture;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("PATH"), QCoreApplication::applicationDirPath() + u';' +
+                                                   environment.value(QStringLiteral("PATH")));
+    fixture.setProcessEnvironment(environment);
+    fixture.start(fixturePath, {QStringLiteral("--native-fullscreen-fixture-child")});
+    bool correct = fixture.waitForReadyRead(5000);
+    if (!correct)
+        std::cerr << "Fixture startup: " << fixture.errorString().toStdString() << ' '
+                  << fixture.readAllStandardError().toStdString() << '\n';
+    const HWND window = correct ? reinterpret_cast<HWND>(static_cast<quintptr>(
+                                      fixture.readLine().trimmed().toULongLong()))
+                                : nullptr;
+    correct = correct && window && IsWindow(window);
+    if (correct) {
+        const bool focused = activateNativeFixtureWindow(window);
+        const bool fullscreen = snow_shot::platform::focusedFullscreenWindowExists();
+        const bool initiallyGame = snow_shot::platform::focusedFullscreenGameWindowExists();
+        correct = focused && fullscreen && !initiallyGame;
+        if (!correct)
+            std::cerr << "Fixture admission: focused=" << focused << " fullscreen=" << fullscreen
+                      << " game=" << initiallyGame << '\n';
+        QFile config(temporary.filePath(QStringLiteral("MicrosoftGame.config")));
+        const QByteArray declaration =
+            "<Game><ExecutableList><Executable Name=\"Fixture.exe\"/></ExecutableList></Game>";
+        const bool written =
+            config.open(QIODevice::WriteOnly) && config.write(declaration) == declaration.size();
+        config.close();
+        const bool declaredGame = snow_shot::platform::focusedFullscreenGameWindowExists();
+        correct = correct && written && declaredGame;
+        if (!written || !declaredGame)
+            std::cerr << "Declared game: written=" << written << " game=" << declaredGame << '\n';
+        correct = config.remove() && correct;
+        correct = correct && snow_shot::platform::focusedFullscreenWindowExists() &&
+                  !snow_shot::platform::focusedFullscreenGameWindowExists();
+        PostMessageW(window, WM_CLOSE, 0, 0);
+    }
+    if (!fixture.waitForFinished(5000)) {
+        fixture.kill();
+        fixture.waitForFinished();
+        correct = false;
+    }
+    if (previousForeground && IsWindow(previousForeground))
+        activateNativeFixtureWindow(previousForeground);
+    if (previousDpi)
+        SetThreadDpiAwarenessContext(previousDpi);
+    if (!correct)
+        std::cerr << "native fullscreen detection must track exact game metadata on the focused "
+                     "external window\n";
+    return correct;
+}
+#endif
 
 int registrationId(const FakeBackend& backend, const QString& shortcut) {
     for (auto it = backend.registrations.cbegin(); it != backend.registrations.cend(); ++it) {
@@ -681,6 +812,113 @@ void fullscreenClassificationIgnoresSnowShotWindows() {
             "own windows must not mask the focused external fullscreen window");
 }
 
+void fullscreenGameFilterControlsRegistration() {
+    auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString enabledKey =
+        QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+    const QString filterKey = QStringLiteral("global_shortcuts/fullscreen_window_filter");
+    const auto previousEnabled = store.value(enabledKey);
+    const auto previousFilter = store.value(filterKey);
+    require(previousFilter.toString() == QStringLiteral("game_windows"),
+            "new configurations default to game windows");
+    require(!snow_shot::storage::GlobalShortcutSettings().setFullscreenWindowFilter(
+                QStringLiteral("unsupported")) &&
+                snow_shot::storage::GlobalShortcutSettings().fullscreenWindowFilter() ==
+                    QStringLiteral("game_windows"),
+            "the typed filter adapter rejects invalid identifiers");
+    bool fullscreen = false;
+    bool game = false;
+    int allSamples = 0;
+    int gameSamples = 0;
+    auto native = std::make_unique<FakeBackend>();
+    auto* input = native.get();
+    GlobalShortcutManager manager(
+        std::move(native), nullptr,
+        [&] {
+            ++allSamples;
+            return fullscreen;
+        },
+        [&] {
+            ++gameSamples;
+            return fullscreen && game;
+        });
+    manager.initialize();
+    clearAll(manager);
+    require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                                     {QStringLiteral("Ctrl+F11")}) &&
+                manager.setShortcuts(GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
+                                     {QStringLiteral("Ctrl+F12")}),
+            "configure filtered fullscreen fixtures");
+    int notifications = 0;
+    QObject::connect(&manager, &GlobalShortcutManager::focusedFullscreenSuppressionChanged,
+                     &manager, [&](bool) { ++notifications; });
+    for (const QString& filter : {QStringLiteral("all_windows"), QStringLiteral("game_windows")}) {
+        for (const bool enabled : {false, true}) {
+            for (const bool focusedFullscreen : {false, true}) {
+                for (const bool focusedGame : {false, true}) {
+                    fullscreen = focusedFullscreen;
+                    game = focusedGame;
+                    require(store.setValues({{enabledKey, enabled}, {filterKey, filter}}),
+                            "set the fullscreen filter matrix");
+                    const int previousAllSamples = allSamples;
+                    const int previousGameSamples = gameSamples;
+                    manager.refreshFocusedFullscreenState();
+                    const bool suppressed =
+                        enabled && fullscreen && (filter == QStringLiteral("all_windows") || game);
+                    require(
+                        manager.focusedFullscreenSuppressionActive() == suppressed &&
+                            manager.state(GlobalShortcutAction::Screenshot)
+                                    .bindings.first()
+                                    .registered == !suppressed &&
+                            manager.state(GlobalShortcutAction::ToggleGlobalHotkeys)
+                                .bindings.first()
+                                .registered &&
+                            manager
+                                .state(GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow)
+                                .bindings.first()
+                                .registered,
+                        "filtered fullscreen suppresses only regular shortcuts in the matrix");
+                    require(allSamples - previousAllSamples ==
+                                    (enabled && filter == QStringLiteral("all_windows") ? 1 : 0) &&
+                                gameSamples - previousGameSamples ==
+                                    (enabled && filter == QStringLiteral("game_windows") ? 1 : 0),
+                            "disabled and all-window modes avoid unnecessary game inspection");
+                }
+            }
+        }
+    }
+    fullscreen = true;
+    game = false;
+    require(store.setValue(filterKey, QStringLiteral("all_windows")) &&
+                manager.focusedFullscreenSuppressionActive() &&
+                store.setValue(filterKey, QStringLiteral("game_windows")) &&
+                !manager.focusedFullscreenSuppressionActive(),
+            "changing filters immediately releases and restores non-game fullscreen hotkeys");
+    const int oldId =
+        input->registrations.key(snow_shot::shortcuts::ShortcutBinding{QStringLiteral("Ctrl+F10")});
+    int activations = 0;
+    QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                     [&](GlobalShortcutAction) { ++activations; });
+    game = true;
+    input->handler(oldId);
+    require(activations == 0 && manager.focusedFullscreenSuppressionActive(),
+            "activation rechecks game identity even before the next timer tick");
+    game = false;
+    manager.refreshFocusedFullscreenState();
+    require(!manager.focusedFullscreenSuppressionActive() && notifications > 0,
+            "focus between fullscreen games and non-games updates suppression notifications");
+    manager.setGlobalHotkeysEnabled(false);
+    game = true;
+    manager.refreshFocusedFullscreenState();
+    game = false;
+    manager.refreshFocusedFullscreenState();
+    require(!manager.state(GlobalShortcutAction::Screenshot).bindings.first().registered,
+            "leaving a game preserves manual disablement");
+    require(store.setValues({{enabledKey, previousEnabled}, {filterKey, previousFilter}}),
+            "restore fullscreen game fixture settings");
+}
+
 void ownFullscreenFocusPreservesAndRestoresHotkeys() {
     auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
     const QString key = QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
@@ -1193,12 +1431,14 @@ void disabledDuplicateBindingBecomesAvailableToGateControl() {
             "reopening the gate must restore normal deterministic duplicate precedence");
 }
 
-void focusedFullscreenTimerReleasesAndRestoresHotkeys() {
+void focusedFullscreenTimerReleasesAndRestoresHotkeys(const QString& filter) {
     auto backend = std::make_unique<FakeBackend>();
     auto* input = backend.get();
     bool focusedFullscreen = false;
-    GlobalShortcutManager manager(std::move(backend), nullptr,
-                                  [&focusedFullscreen] { return focusedFullscreen; });
+    bool focusedGame = false;
+    GlobalShortcutManager manager(
+        std::move(backend), nullptr, [&focusedFullscreen] { return focusedFullscreen; },
+        [&] { return focusedFullscreen && focusedGame; });
     manager.initialize();
     clearAll(manager);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}),
@@ -1207,7 +1447,10 @@ void focusedFullscreenTimerReleasesAndRestoresHotkeys() {
     const QString suppressionKey =
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
     const auto previousSuppression = store.value(suppressionKey);
-    require(store.setValue(suppressionKey, true), "enable background fullscreen observation");
+    const QString filterKey = QStringLiteral("global_shortcuts/fullscreen_window_filter");
+    const auto previousFilter = store.value(filterKey);
+    require(store.setValues({{suppressionKey, true}, {filterKey, filter}}),
+            "enable background fullscreen observation");
     QVector<bool> suppressionNotifications;
     QObject::connect(&manager, &GlobalShortcutManager::focusedFullscreenSuppressionChanged,
                      &manager, [&](bool active) { suppressionNotifications.append(active); });
@@ -1231,10 +1474,12 @@ void focusedFullscreenTimerReleasesAndRestoresHotkeys() {
         require(observed, "background fullscreen observation must update hotkey registration");
     };
     focusedFullscreen = true;
+    focusedGame = true;
     waitForStatus(GlobalShortcutStatus::Disabled);
     require(input->registrations.isEmpty() && suppressionNotifications == QVector<bool>{true},
             "the fullscreen timer releases hotkeys without receiving a keyboard activation");
-    focusedFullscreen = false;
+    focusedFullscreen = filter == QStringLiteral("game_windows");
+    focusedGame = false;
     waitForStatus(GlobalShortcutStatus::Registered);
     const int restoredId = registrationId(*input, QStringLiteral("Ctrl+F10"));
     require(restoredId != 0 && restoredId != oldId &&
@@ -1244,13 +1489,14 @@ void focusedFullscreenTimerReleasesAndRestoresHotkeys() {
     QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
                      [&](GlobalShortcutAction) { ++activations; });
     focusedFullscreen = true;
+    focusedGame = true;
     input->handler(restoredId);
     require(activations == 0 && input->registrations.isEmpty() &&
                 suppressionNotifications == QVector<bool>{true, false, true},
             "activation before the next timer tick must refresh focus and release the shortcut");
     focusedFullscreen = false;
     manager.refreshFocusedFullscreenState();
-    require(store.setValue(suppressionKey, previousSuppression),
+    require(store.setValues({{suppressionKey, previousSuppression}, {filterKey, previousFilter}}),
             "restore background fullscreen observation preference");
 }
 
@@ -1726,6 +1972,10 @@ void nativeRegistrationProbe() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+#ifdef Q_OS_WIN
+    if (application.arguments().contains(QStringLiteral("--native-fullscreen-fixture-child")))
+        return runNativeFullscreenFixture();
+#endif
     QTemporaryDir temporary;
     require(temporary.isValid(), "test storage directory must be available");
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -1734,6 +1984,17 @@ int main(int argc, char** argv) {
                              .appDataDirectory = temporary.path()})
                 .success,
             "initialize shortcut test storage");
+#ifdef Q_OS_WIN
+    if (application.arguments().contains(QStringLiteral("--native-fullscreen-game-smoke"))) {
+        const bool success = nativeFullscreenGameClassificationProbe();
+        storage.shutdown();
+        return success ? 0 : 1;
+    }
+#endif
+    fullscreenGameFilterControlsRegistration();
+    require(snow_shot::storage::GlobalShortcutSettings().setFullscreenWindowFilter(
+                QStringLiteral("all_windows")),
+            "legacy fullscreen fixtures explicitly test all-window suppression");
     validationCoversSupportedAndRejectedKeys();
     if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
         hiddenFloatingToolsPreserveGlobalHotkeys();
@@ -1767,7 +2028,8 @@ int main(int argc, char** argv) {
     gateControlShortcutsSurviveBothHotkeyGates();
     hotkeyGatesApplyBeforeInitialRegistration();
     disabledDuplicateBindingBecomesAvailableToGateControl();
-    focusedFullscreenTimerReleasesAndRestoresHotkeys();
+    focusedFullscreenTimerReleasesAndRestoresHotkeys(QStringLiteral("all_windows"));
+    focusedFullscreenTimerReleasesAndRestoresHotkeys(QStringLiteral("game_windows"));
     disabledHotkeysReconcileEditsAvailabilityAndSuspension();
     if (application.arguments().contains(QStringLiteral("--native-registration-smoke"))) {
         nativeRegistrationProbe();

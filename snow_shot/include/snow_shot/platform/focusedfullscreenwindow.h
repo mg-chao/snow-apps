@@ -24,6 +24,7 @@ struct FocusedWindowSnapshot {
 
 // Permission-free best-effort checks for external focused fullscreen windows.
 [[nodiscard]] bool focusedFullscreenWindowExists();
+[[nodiscard]] bool focusedFullscreenGameWindowExists();
 [[nodiscard]] bool focusedFullscreenWindowOnScreen(QScreen* screen);
 
 } // namespace snow_shot::platform

@@ -235,6 +235,8 @@ class GlobalShortcutSettings final {
   public:
     [[nodiscard]] bool disableOnFocusedFullscreenWindow() const;
     bool setDisableOnFocusedFullscreenWindow(bool disabled) const;
+    [[nodiscard]] QString fullscreenWindowFilter() const;
+    bool setFullscreenWindowFilter(const QString& filter) const;
 };
 
 class ScreenshotSettings final {

@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/screenshotglobalmousedrag.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
 #include <QHash>
@@ -345,6 +346,9 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
         storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path()}));
     require(storage.isInitialized(), "test storage must initialize");
     auto& store = storage.configuration();
+    require(snow_shot::storage::GlobalShortcutSettings().setFullscreenWindowFilter(
+                QStringLiteral("all_windows")),
+            "test all-window hotkey suppression");
     const QString fullscreenKey =
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
     require(store.setValue(fullscreenKey, true), "initial fullscreen suppression must persist");

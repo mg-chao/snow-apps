@@ -1268,6 +1268,10 @@
             <translation>所有截图历史都将被删除</translation>
         </message>
         <message>
+            <source>All windows</source>
+            <translation>所有窗口</translation>
+        </message>
+        <message>
             <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
             <translation>允许以当前系统用户身份运行的 MCP 客户端控制 Snow Shot。Snow Shot 必须保持运行。</translation>
         </message>
@@ -1826,6 +1830,10 @@
         <message>
             <source>Choose which actions also save an image in the selected image format and save directory</source>
             <translation>选择执行哪些操作时，同时以所选图像格式保存到指定目录</translation>
+        </message>
+        <message>
+            <source>Choose which fullscreen windows automatically disable global hotkeys</source>
+            <translation>选择哪些全屏窗口会自动禁用全局快捷键</translation>
         </message>
         <message>
             <source>Clear</source>
@@ -2576,6 +2584,10 @@
             <translation>GPU</translation>
         </message>
         <message>
+            <source>Game windows</source>
+            <translation>游戏窗口</translation>
+        </message>
+        <message>
             <source>General</source>
             <translation>常规</translation>
         </message>
@@ -2672,8 +2684,8 @@
             <translation>图标</translation>
         </message>
         <message>
-            <source>Ignore global hotkeys while the focused window occupies an entire monitor</source>
-            <translation>焦点窗口占满整个显示器时忽略全局快捷键</translation>
+            <source>Ignore global hotkeys while a matching focused window occupies an entire monitor</source>
+            <translation>符合筛选条件的焦点窗口占满整个显示器时忽略全局快捷键</translation>
         </message>
         <message>
             <source>Image Recognition</source>
@@ -4794,6 +4806,10 @@
         <message>
             <source>Window capture</source>
             <translation>窗口截图</translation>
+        </message>
+        <message>
+            <source>Window filter type</source>
+            <translation>窗口筛选类型</translation>
         </message>
         <message>
             <source>Window grouping</source>

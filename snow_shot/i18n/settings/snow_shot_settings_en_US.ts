@@ -1268,6 +1268,10 @@
             <translation>All screenshot history will be removed</translation>
         </message>
         <message>
+            <source>All windows</source>
+            <translation>All windows</translation>
+        </message>
+        <message>
             <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
             <translation>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</translation>
         </message>
@@ -1826,6 +1830,10 @@
         <message>
             <source>Choose which actions also save an image in the selected image format and save directory</source>
             <translation>Choose which actions also save an image in the selected image format and save directory</translation>
+        </message>
+        <message>
+            <source>Choose which fullscreen windows automatically disable global hotkeys</source>
+            <translation>Choose which fullscreen windows automatically disable global hotkeys</translation>
         </message>
         <message>
             <source>Clear</source>
@@ -2576,6 +2584,10 @@
             <translation>GPU</translation>
         </message>
         <message>
+            <source>Game windows</source>
+            <translation>Game windows</translation>
+        </message>
+        <message>
             <source>General</source>
             <translation>General</translation>
         </message>
@@ -2672,8 +2684,8 @@
             <translation>Icon</translation>
         </message>
         <message>
-            <source>Ignore global hotkeys while the focused window occupies an entire monitor</source>
-            <translation>Ignore global hotkeys while the focused window occupies an entire monitor</translation>
+            <source>Ignore global hotkeys while a matching focused window occupies an entire monitor</source>
+            <translation>Ignore global hotkeys while a matching focused window occupies an entire monitor</translation>
         </message>
         <message>
             <source>Image Recognition</source>
@@ -4794,6 +4806,10 @@
         <message>
             <source>Window capture</source>
             <translation>Window capture</translation>
+        </message>
+        <message>
+            <source>Window filter type</source>
+            <translation>Window filter type</translation>
         </message>
         <message>
             <source>Window grouping</source>

@@ -42,7 +42,8 @@ class GlobalShortcutManager final : public QObject {
     using RegistrationSuspensionHandle = quint64;
     explicit GlobalShortcutManager(QObject* parent = nullptr);
     GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend, QObject* parent = nullptr,
-                          std::function<bool()> focusedFullscreenDetector = {});
+                          std::function<bool()> focusedFullscreenDetector = {},
+                          std::function<bool()> focusedFullscreenGameDetector = {});
     ~GlobalShortcutManager() override;
 
     void initialize();

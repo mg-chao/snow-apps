@@ -90,6 +90,42 @@ void writeBytes(const QString& path, const QByteArray& bytes) {
     require(file.write(bytes) == bytes.size(), "failed to write test file");
 }
 
+void fullscreenWindowFilterPersistsAndDefaultsToGames() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "fullscreen filter requires isolated storage");
+    const QString path = temporary.filePath(QStringLiteral("filter.json"));
+    const QString key = QStringLiteral("global_shortcuts/fullscreen_window_filter");
+    const QString enabledKey =
+        QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+    QMap<QString, QJsonValue> exported;
+    {
+        storage::ConfigurationStore store(path, true, true, 60000);
+        require(store.value(key) == QJsonValue(QStringLiteral("game_windows")) &&
+                    !store.value(enabledKey).toBool(),
+                "new configurations default to game filtering without enabling suppression");
+        require(store.setValue(key, QStringLiteral("all_windows")) &&
+                    !store.setValue(key, QStringLiteral("unknown")) && !store.setValue(key, true) &&
+                    store.value(key) == QJsonValue(QStringLiteral("all_windows")),
+                "only the two stable filter identifiers can be persisted");
+        exported = store.snapshot();
+        require(store.flushNow().success, "persist the selected fullscreen filter");
+    }
+    storage::ConfigurationStore reloaded(path, true, true, 60000);
+    require(reloaded.value(key) == QJsonValue(QStringLiteral("all_windows")),
+            "fullscreen filter survives a storage restart");
+    storage::ConfigurationStore imported(temporary.filePath(QStringLiteral("import.json")), true,
+                                         true, 60000);
+    require(imported.applySnapshot(exported) &&
+                imported.value(key) == QJsonValue(QStringLiteral("all_windows")),
+            "configuration snapshots export and import the filter");
+    require(imported.applySnapshot({{enabledKey, true}}) && imported.value(enabledKey).toBool() &&
+                imported.value(key) == QJsonValue(QStringLiteral("game_windows")),
+            "older configurations retain suppression but adopt the game filter default");
+    require(imported.applySnapshot({{key, QStringLiteral("unsupported")}}) &&
+                imported.value(key) == QJsonValue(QStringLiteral("game_windows")),
+            "invalid imported filters recover to game windows");
+}
+
 void ocrHardwareAccelerationPersistsAndDefaultsOff() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "OCR acceleration requires isolated storage");
@@ -4262,6 +4298,10 @@ int main(int argc, char** argv) {
         globalMouseCombinationSchemaIsStrictAndPersistent();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--fullscreen-filter-only"))) {
+        fullscreenWindowFilterPersistsAndDefaultsToGames();
+        return 0;
+    }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
     if (application.arguments().contains(QStringLiteral("--ocr-settings-only"))) {
@@ -4348,6 +4388,7 @@ int main(int argc, char** argv) {
     selectionAspectRatioSettingsValidateAndPreserveLegacyLock();
     settingsSchemaDefaultsAndValidationAreComplete();
     pinnedDestroyShortcutMigratesPreviousDefault();
+    fullscreenWindowFilterPersistsAndDefaultsToGames();
     obsoleteClickThroughShortcutIsIgnored();
     shortcutSchemaMigrationAndPhysicalMetadataRoundTrip();
     localShortcutDefaultsPreserveConfiguredBindings();

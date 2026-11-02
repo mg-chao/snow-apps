@@ -908,6 +908,9 @@ int main(int argc, char* argv[]) {
     require(storageDirectory.isValid(), "temporary storage directory should be available");
     static_cast<void>(snow_shot::storage::ApplicationStorage::instance().initialize(
         {storageDirectory.path(), storageDirectory.path(), 8000}));
+    require(snow_shot::storage::GlobalShortcutSettings().setFullscreenWindowFilter(
+                QStringLiteral("all_windows")),
+            "tray fullscreen fixtures use all-window suppression");
     auto& languageManager = snow_shot::presentation::LanguageManager::instance();
     require(languageManager.setLanguage(QStringLiteral("en_US")),
             "English should be available from the English catalog");

@@ -452,6 +452,8 @@ bool BuiltInSettingsBackend::selectEnabled(SettingsSelectBinding binding) const 
 
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
+    case SettingsSelectBinding::FullscreenWindowFilter:
+        return storage::GlobalShortcutSettings().fullscreenWindowFilter();
     case SettingsSelectBinding::TranslationSourceLanguage:
     case SettingsSelectBinding::TranslationPrimaryTargetLanguage:
     case SettingsSelectBinding::TranslationSecondaryTargetLanguage:
@@ -878,6 +880,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::TraySettings().setLeftClickAction(value.toString());
     case SettingsSelectBinding::TrayMiddleClickAction:
         return storage::TraySettings().setMiddleClickAction(value.toString());
+    case SettingsSelectBinding::FullscreenWindowFilter:
+        return storage::GlobalShortcutSettings().setFullscreenWindowFilter(value.toString());
     }
     return false;
 }
@@ -3035,10 +3039,7 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                  QStringLiteral("screen_recording/capture_toolbar_in_recording"))},
         });
     case SettingsSectionReset::GlobalHotkeys:
-        return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))
-                .toBool());
+        return resetAvailableConfigurationValues(sectionDefaults(reset));
     case SettingsSectionReset::SystemGeneral: {
         const auto& configuration = storage::ApplicationStorage::instance().configuration();
         SettingsResetResult resetResult(true);

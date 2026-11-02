@@ -119,6 +119,7 @@ enum class SettingsSelectBinding {
     SkinPosition,
     ToolbarSkinPosition,
     TrayMenuSkinPosition,
+    FullscreenWindowFilter,
 };
 
 struct SettingsSelectDefinition {

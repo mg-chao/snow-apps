@@ -298,13 +298,16 @@ class GlobalShortcutManager::Impl {
     };
 
     Impl(GlobalShortcutManager& owner, std::unique_ptr<GlobalShortcutBackend> backend,
-         std::function<bool()> fullscreenDetector)
+         std::function<bool()> fullscreenDetector, std::function<bool()> fullscreenGameDetector)
         : q(owner), m_backend(backend != nullptr ? std::move(backend)
                                                  : createPlatformGlobalShortcutBackend()),
           m_focusedFullscreenDetector(
-              fullscreenDetector
-                  ? std::move(fullscreenDetector)
-                  : std::function<bool()>(&platform::focusedFullscreenWindowExists)) {
+              fullscreenDetector ? std::move(fullscreenDetector)
+                                 : std::function<bool()>(&platform::focusedFullscreenWindowExists)),
+          m_focusedFullscreenGameDetector(
+              fullscreenGameDetector
+                  ? std::move(fullscreenGameDetector)
+                  : std::function<bool()>(&platform::focusedFullscreenGameWindowExists)) {
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             m_states[actionIndex(action)].action = action;
         }
@@ -362,7 +365,8 @@ class GlobalShortcutManager::Impl {
                 if (m_initialized &&
                     (key == QStringLiteral("extended_features/translation_page_enabled") ||
                      key ==
-                         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"))) {
+                         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window") ||
+                     key == QStringLiteral("global_shortcuts/fullscreen_window_filter"))) {
                     reconcile();
                 }
             });
@@ -468,10 +472,12 @@ class GlobalShortcutManager::Impl {
         if (!m_initialized) {
             return false;
         }
-        const bool suppressionEnabled =
-            storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
-        const bool fullscreen =
-            suppressionEnabled && m_focusedFullscreenDetector && m_focusedFullscreenDetector();
+        const storage::GlobalShortcutSettings settings;
+        const bool suppressionEnabled = settings.disableOnFocusedFullscreenWindow();
+        const auto& detector = settings.fullscreenWindowFilter() == QStringLiteral("all_windows")
+                                   ? m_focusedFullscreenDetector
+                                   : m_focusedFullscreenGameDetector;
+        const bool fullscreen = suppressionEnabled && detector && detector();
         const bool fullscreenChanged = fullscreen != m_focusedFullscreen;
         const bool changed =
             suppressionEnabled != m_fullscreenSuppressionEnabled || fullscreenChanged;
@@ -627,6 +633,7 @@ class GlobalShortcutManager::Impl {
     GlobalShortcutManager& q;
     std::unique_ptr<GlobalShortcutBackend> m_backend;
     std::function<bool()> m_focusedFullscreenDetector;
+    std::function<bool()> m_focusedFullscreenGameDetector;
     QTimer m_fullscreenTimer;
     std::array<shortcuts::ShortcutBindingList, ACTION_COUNT> m_shortcuts;
     std::array<GlobalShortcutRegistrationState, ACTION_COUNT> m_states;
@@ -647,9 +654,11 @@ GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
 
 GlobalShortcutManager::GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend,
                                              QObject* parent,
-                                             std::function<bool()> fullscreenDetector)
+                                             std::function<bool()> fullscreenDetector,
+                                             std::function<bool()> fullscreenGameDetector)
     : QObject(parent),
-      m_impl(std::make_unique<Impl>(*this, std::move(backend), std::move(fullscreenDetector))) {}
+      m_impl(std::make_unique<Impl>(*this, std::move(backend), std::move(fullscreenDetector),
+                                    std::move(fullscreenGameDetector))) {}
 
 GlobalShortcutManager::~GlobalShortcutManager() = default;
 

@@ -675,6 +675,9 @@ int main(int argc, char** argv) {
     auto& applicationStorage = storage::ApplicationStorage::instance();
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success,
             "initialize translation settings storage");
+    require(
+        storage::GlobalShortcutSettings().setFullscreenWindowFilter(QStringLiteral("all_windows")),
+        "translation hotkey fixtures explicitly use all-window suppression");
 #ifdef Q_OS_WIN
     if (application.arguments().contains(QStringLiteral("--window-always-on-top-only"))) {
         windowAlwaysOnTopShortcutSettings();

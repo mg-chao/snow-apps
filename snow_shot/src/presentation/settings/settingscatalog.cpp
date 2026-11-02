@@ -2404,9 +2404,23 @@ SettingsItemDefinition fullscreenHotkeySuppressionItem() {
                           "Automatically disable when a focused fullscreen window exists"),
         QT_TRANSLATE_NOOP(
             "SettingsCatalog",
-            "Ignore global hotkeys while the focused window occupies an entire monitor"),
+            "Ignore global hotkeys while a matching focused window occupies an entire monitor"),
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"),
         SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+}
+
+SettingsItemDefinition fullscreenWindowFilterItem() {
+    return fixedSelectItem(
+        QStringLiteral("global-hotkeys.window-filter-type"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Window filter type"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Choose which fullscreen windows automatically disable global hotkeys"),
+        QStringLiteral("global_shortcuts/fullscreen_window_filter"),
+        SettingsSelectBinding::FullscreenWindowFilter,
+        {{QStringLiteral("all_windows"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "All windows"))},
+         {QStringLiteral("game_windows"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Game windows"))}});
 }
 
 #ifndef Q_OS_MACOS
@@ -3292,7 +3306,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Global hotkey activation behavior")),
                     SettingsSectionReset::GlobalHotkeys,
-                    {fullscreenHotkeySuppressionItem()},
+                    {fullscreenHotkeySuppressionItem(), fullscreenWindowFilterItem()},
                 },
             },
         },
@@ -5041,6 +5055,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     QString expectedKey;
                     SettingsSelectSource expectedSource = SettingsSelectSource::Fixed;
                     switch (select->binding) {
+                    case SettingsSelectBinding::FullscreenWindowFilter:
+                        expectedKey = QStringLiteral("global_shortcuts/fullscreen_window_filter");
+                        break;
                     case SettingsSelectBinding::Theme:
                         expectedKey = QStringLiteral("interface/theme_mode");
                         break;
