@@ -373,13 +373,14 @@ bool SettingsRuntimeSession::reset(SettingsSectionReset resetGroup) {
         beforeStates.insert(descriptor.id, state(descriptor.id));
     }
     const storage::StorageStatus beforeStatus = storageStatus();
-    const bool accepted = m_backend.resetSection(resetGroup);
+    const SettingsResetResult result = m_backend.resetSectionWithResults(resetGroup);
     for (int index : indexes) {
         if (index < 0 || index >= m_registry.fields().size()) {
             continue;
         }
         const SettingsFieldDescriptor& descriptor = m_registry.fields().at(index);
-        if (accepted) {
+        const SettingsFieldResetResult fieldResult = result.fieldResult(descriptor.id);
+        if (fieldResult.accepted) {
             SettingsFieldState next = beforeStates.value(descriptor.id);
             if (const auto pending = m_pendingWrites.constFind(descriptor.id);
                 pending != m_pendingWrites.cend()) {
@@ -419,11 +420,8 @@ bool SettingsRuntimeSession::reset(SettingsSectionReset resetGroup) {
             }
             updateState(descriptor.id, next);
         } else {
-            // Reset providers may reject a compound operation after touching
-            // one or more values. Retire every older generation in the group,
-            // retain the user's existing draft/baseline, and expose a
-            // retryable rejected phase instead of silently accepting a partial
-            // reset.
+            // Retire older generations for rejected fields and retain their
+            // draft/baseline. Successful independent fields settle above.
             SettingsFieldState next = beforeStates.value(descriptor.id);
             if (const auto pending = m_pendingWrites.constFind(descriptor.id);
                 pending != m_pendingWrites.cend()) {
@@ -437,14 +435,14 @@ bool SettingsRuntimeSession::reset(SettingsSectionReset resetGroup) {
             }
             next.busy = false;
             next.phase = SettingsWritePhase::Rejected;
-            next.error = writeError(descriptor);
+            next.error = fieldResult.error.isEmpty() ? writeError(descriptor) : fieldResult.error;
             ++next.revision;
             updateState(descriptor.id, next);
         }
         refreshField(descriptor.id);
     }
     refreshCommandStates();
-    return accepted;
+    return result.success();
 }
 
 void SettingsRuntimeSession::refreshField(const QString& fieldId) {
@@ -1189,7 +1187,7 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
     if (!currentError.isEmpty()) {
         return currentError;
     }
-    return QStringLiteral("The setting could not be saved");
+    return QCoreApplication::translate("SettingsBackend", "The setting could not be saved.");
 }
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,

@@ -412,7 +412,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         emit synchronized();
     }
 
-    bool resetSection(settings::SettingsSectionReset reset) override {
+    settings::SettingsResetResult
+    resetSectionWithResults(settings::SettingsSectionReset reset) override {
         if (!m_resetAccepted) {
             m_status.lastConfigurationError = QStringLiteral("reset rejected");
             emit synchronized();
@@ -424,7 +425,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         if (reset == settings::SettingsSectionReset::GlobalMouse) {
             m_globalMouseCombinations.clear();
         }
-        return true;
+        settings::SettingsResetResult result(true);
+        result.fields = m_resetFieldResults;
+        return result;
     }
 
     QString fieldError(const QString& fieldId) const override {
@@ -443,6 +446,10 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     void setResetAccepted(bool accepted) {
         m_resetAccepted = accepted;
+    }
+
+    void setResetFieldResult(const QString& fieldId, settings::SettingsFieldResetResult result) {
+        m_resetFieldResults.insert(fieldId, std::move(result));
     }
 
     void setResetHistoryPending(bool pending) {
@@ -611,6 +618,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     QHash<QString, QString> m_fieldErrors;
     QHash<QString, QVector<QVariant>> m_pending;
     bool m_resetAccepted = true;
+    QHash<QString, settings::SettingsFieldResetResult> m_resetFieldResults;
     bool m_resetHistoryPending = false;
     int m_refreshCount = 0;
     QStringList m_importConfigurationPaths;
@@ -1432,6 +1440,46 @@ void rejectedResetRetainsStateAndErrorUntilDiscarded() {
             "discard must clear a rejected reset state");
 }
 
+void partialResetSettlesOnlySuccessfulFields() {
+    const auto registry = testRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    const QString theme = QStringLiteral("theme");
+    const QString tray = QStringLiteral("tray-enabled");
+    backend.setMode(theme, WriteMode::Reject);
+    require(!session.submitDraft(theme, QStringLiteral("dark")), "prepare a rejected theme draft");
+    backend.setMode(tray, WriteMode::Pending);
+    require(session.submitDraft(tray, false), "prepare an older tray write");
+    backend.setResetFieldResult(theme, {false, QStringLiteral("theme reset rejected")});
+    require(!backend.resetSection(settings::SettingsSectionReset::None),
+            "the aggregate reset result must preserve a field failure");
+    require(!session.reset(settings::SettingsSectionReset::None),
+            "a partial reset must report aggregate failure");
+    const auto rejected = session.state(theme);
+    const auto accepted = session.state(tray);
+    require(rejected.phase == settings::SettingsWritePhase::Rejected && rejected.dirty &&
+                rejected.acceptedValue == QStringLiteral("system") &&
+                rejected.draftValue == QStringLiteral("dark") &&
+                rejected.error == QStringLiteral("theme reset rejected"),
+            "only the rejected field retains its draft and operation-specific reset error");
+    require(accepted.phase == settings::SettingsWritePhase::Clean && !accepted.dirty &&
+                !accepted.busy && accepted.acceptedValue.toBool() && accepted.error.isEmpty(),
+            "successful fields settle even when another reset operation fails");
+    backend.complete(tray);
+    backend.notify();
+    flushEvents();
+    require(session.state(theme).error == rejected.error &&
+                session.state(theme).phase == settings::SettingsWritePhase::Rejected &&
+                session.state(tray).phase == settings::SettingsWritePhase::Clean &&
+                session.state(tray).acceptedValue == accepted.acceptedValue,
+            "later synchronization preserves the rejection and quarantines retired writes");
+    backend.setResetFieldResult(theme, {true, {}});
+    require(session.reset(settings::SettingsSectionReset::None) &&
+                session.state(theme).phase == settings::SettingsWritePhase::Clean &&
+                session.state(theme).error.isEmpty() && !session.state(theme).dirty,
+            "a successful reset retry clears the previous field failure");
+}
+
 void auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields() {
     const settings::SettingsRegistry registry = registryWithoutStandaloneDelay();
     FakeSettingsBackend backend;
@@ -1823,6 +1871,7 @@ int main(int argc, char** argv) {
     asynchronousResetTracksPendingStateAndLateUserEdits();
     discardingAsynchronousResetQuarantinesLateCompletion();
     rejectedResetRetainsStateAndErrorUntilDiscarded();
+    partialResetSettlesOnlySuccessfulFields();
     auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields();
     globalMouseCombinationsUseTypedStateAndRejectDuplicates();
     configurationImportsDelegateToBackend();

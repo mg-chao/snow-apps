@@ -149,8 +149,9 @@ void nativeStatusAndRegistration() {
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         native.statusReads == 1,
                     "routine query must read macOS status without validating an unsigned bundle");
-            for (const auto status : {SMAppServiceStatusEnabled, SMAppServiceStatusRequiresApproval,
-                                      SMAppServiceStatusNotRegistered}) {
+            for (const auto status :
+                 {SMAppServiceStatusEnabled, SMAppServiceStatusRequiresApproval,
+                  SMAppServiceStatusNotRegistered, SMAppServiceStatusNotFound}) {
                 const int before = native.statusReads;
                 native.nativeStatus = status;
                 service.refresh();
@@ -165,9 +166,10 @@ void nativeStatusAndRegistration() {
             }
             native.nativeStatus = SMAppServiceStatusNotFound;
             service.refresh();
-            require(!service.available() && !service.hint().isEmpty(),
-                    "missing native service remains unavailable with guidance");
-            native.nativeStatus = SMAppServiceStatusNotRegistered;
+            require(service.available() &&
+                        service.snapshot().status == LoginItemStatus::Unregistered &&
+                        service.hint().isEmpty(),
+                    "macOS 26 notFound is retryable instead of unavailable");
             native.failure = [NSError errorWithDomain:SMAppServiceErrorDomain
                                                  code:kSMErrorInvalidSignature
                                              userInfo:nil];
@@ -197,6 +199,16 @@ void nativeStatusAndRegistration() {
             require(service.setEnabled(false).success && !service.snapshot().requested() &&
                         !preference && native.unregistrations == 1,
                     "unregistration continues to reflect native status");
+            native.nativeStatus = SMAppServiceStatusNotFound;
+            service.refresh();
+            require(service.available() &&
+                        service.snapshot().status == LoginItemStatus::Unregistered,
+                    "notFound remains eligible after the item is removed");
+            initialized = false;
+            native.registrations = 0;
+            require(service.initialize(true).success && initialized && native.registrations == 1 &&
+                        preference && service.snapshot().status == LoginItemStatus::Enabled,
+                    "first eligible launch registers a notFound login item");
         }
         serviceFixture = nil;
         bundleFixture = nil;

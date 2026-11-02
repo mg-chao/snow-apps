@@ -193,7 +193,7 @@ class RecordingSettingsBackend final : public settings::SettingsBackend {
         status.effectiveDirectory = QStringLiteral("C:/configuration-transfer-tests");
         return status;
     }
-    bool resetSection(settings::SettingsSectionReset) override {
+    settings::SettingsResetResult resetSectionWithResults(settings::SettingsSectionReset) override {
         return false;
     }
 

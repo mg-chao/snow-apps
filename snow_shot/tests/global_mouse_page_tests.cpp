@@ -249,7 +249,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         status.writeAvailable = true;
         return status;
     }
-    bool resetSection(settings::SettingsSectionReset reset) override {
+    settings::SettingsResetResult
+    resetSectionWithResults(settings::SettingsSectionReset reset) override {
         if (reset == settings::SettingsSectionReset::GlobalMouse) {
             m_combinations.clear();
             return true;
@@ -950,21 +951,27 @@ void builtInGlobalMouseResetRestoresDefaults() {
                 "Save as file must persist through the built-in backend");
         require(backend.resetSection(settings::SettingsSectionReset::GlobalMouse),
                 "built-in global mouse reset must succeed");
-        require(backend.globalMouseCombination(Action::ScreenshotCopy) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("left_drag")} &&
-                    backend.globalMouseCombination(Action::ScreenshotFixed) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("wheel_drag")} &&
-                    backend.globalMouseCombination(Action::ScreenshotOcr) ==
-                        Combination{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
-                                    QStringLiteral("right_drag")} &&
+#ifdef Q_OS_MACOS
+        const Combination copyDefault;
+        const Combination fixedDefault;
+        const Combination ocrDefault;
+#else
+        const Combination copyDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                      QStringLiteral("left_drag")};
+        const Combination fixedDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                       QStringLiteral("wheel_drag")};
+        const Combination ocrDefault{{snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                                     QStringLiteral("right_drag")};
+#endif
+        require(backend.globalMouseCombination(Action::ScreenshotCopy) == copyDefault &&
+                    backend.globalMouseCombination(Action::ScreenshotFixed) == fixedDefault &&
+                    backend.globalMouseCombination(Action::ScreenshotOcr) == ocrDefault &&
                     backend.globalMouseCombination(Action::ScreenshotOcrCopy).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotTranslation).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotSave).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotQuickSave).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenRecording).isUnset(),
-                "reset must restore the three Windows bindings and clear the other actions");
+                "reset must restore platform mouse defaults and clear the other actions");
     }
     applicationStorage.shutdown();
 }

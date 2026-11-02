@@ -238,8 +238,12 @@ void settingsTransactions(const QString& configurationDirectory, const QString& 
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     int startupApplications = 0;
+    bool failStartup = false;
     const auto applyStartup = [&](bool enabled, bool elevated) {
         ++startupApplications;
+        if (failStartup)
+            return windows::AdministratorResult{false, false,
+                                                QStringLiteral("startup reset failed")};
         const bool saved =
             configuration.setValues({{QStringLiteral("system/auto_start_at_boot"), enabled},
                                      {QStringLiteral("system/launch_as_administrator"), elevated}});
@@ -314,6 +318,27 @@ void settingsTransactions(const QString& configurationDirectory, const QString& 
                 startupApplications == 1,
             "resetting Startup and updates restores the default native menu through isolated "
             "startup injection");
+    require(session.applySelectValue(kBinding, QStringLiteral("disabled")) &&
+                configuration.setValue(QStringLiteral("updates/mode"), QStringLiteral("manual")),
+            "prepare independent startup-section reset operations");
+    failStartup = true;
+    require(
+        !session.reset(settings::SettingsSectionReset::SystemGeneral) &&
+            session.state(QStringLiteral("system.auto-start-at-boot")).phase ==
+                settings::SettingsWritePhase::Rejected &&
+            session.state(QStringLiteral("system.launch-as-administrator")).error ==
+                u"startup reset failed" &&
+            session.state(kId).phase == settings::SettingsWritePhase::Clean &&
+            session.state(kId).acceptedValue == QStringLiteral("image_files") &&
+            session.state(kAnnotationId).phase == settings::SettingsWritePhase::Clean &&
+            session.state(QStringLiteral("updates.mode")).phase ==
+                settings::SettingsWritePhase::Clean &&
+            session.state(QStringLiteral("updates.mode")).acceptedValue ==
+                configuration.defaultValue(QStringLiteral("updates/mode")).toVariant(),
+        "Windows startup failure must not reject successful menu, annotation and update resets");
+    failStartup = false;
+    require(session.reset(settings::SettingsSectionReset::SystemGeneral),
+            "startup section reset recovers after native failure");
     require(session.applySelectValue(kBinding, QStringLiteral("disabled")),
             "prepare a rejected reset");
     configuration.suspendWrites(true);
