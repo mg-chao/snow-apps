@@ -1,10 +1,13 @@
 #include "screenshotcapturepolicy_p.h"
+#include "snow_capture.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
 
 namespace {
+using snow_shot::presentation::capture::ScreenshotApiMode;
+using snow_shot::presentation::capture::detail::autoScreenshotApiMode;
 using snow_shot::presentation::capture::detail::displayHdrEnabled;
 
 DISPLAYCONFIG_PATH_TARGET_INFO target{};
@@ -65,13 +68,14 @@ void wideColorWithoutHdrUsesGdi() {
     legacyInfo.advancedColorSupported = 1;
     legacyInfo.advancedColorEnabled = 1;
     legacyInfo.wideColorEnforced = 1;
-    require(!displayHdrEnabled(target, queryColorInfo),
-            "WCG with automatic color management must not select HDR capture");
+    require(autoScreenshotApiMode(displayHdrEnabled(target, queryColorInfo)) ==
+                ScreenshotApiMode::Gdi,
+            "WCG with automatic color management must prefer GDI");
     require(modernQueries == 1 && legacyQueries == 0,
             "a successful active color mode query must be authoritative");
 }
 
-void onlyActiveHdrSelectsDxgi() {
+void onlyActiveHdrSelectsWgc() {
     for (const auto mode :
          {DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR, DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG,
           DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR}) {
@@ -83,8 +87,10 @@ void onlyActiveHdrSelectsDxgi() {
             // Do not let legacy flags override a successful active-mode query.
             legacyInfo.advancedColorSupported = 1;
             legacyInfo.advancedColorEnabled = 1;
-            require(displayHdrEnabled(target, queryColorInfo) ==
-                        (mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR),
+            const auto expected = mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR
+                                      ? ScreenshotApiMode::Wgc
+                                      : ScreenshotApiMode::Gdi;
+            require(autoScreenshotApiMode(displayHdrEnabled(target, queryColorInfo)) == expected,
                     "HDR capture must follow the active mode, not capability or user preference");
             require(modernQueries == 1 && legacyQueries == 0,
                     "a successful active color mode query must not use legacy flags");
@@ -103,8 +109,11 @@ void legacyQueriesDistinguishHdrFromWideColor() {
                     legacyInfo.advancedColorSupported = supported;
                     legacyInfo.advancedColorEnabled = enabled;
                     legacyInfo.wideColorEnforced = wideColor;
-                    require(displayHdrEnabled(target, queryColorInfo) ==
-                                (supported && enabled && !wideColor),
+                    const auto expected = supported && enabled && !wideColor
+                                              ? ScreenshotApiMode::Wgc
+                                              : ScreenshotApiMode::Gdi;
+                    require(autoScreenshotApiMode(displayHdrEnabled(target, queryColorInfo)) ==
+                                expected,
                             "legacy query must require enabled HDR and exclude WCG");
                     require(modernQueries == 1 && legacyQueries == 1,
                             "unavailable modern query must fall back to the same display target");
@@ -121,15 +130,43 @@ void failedQueriesDoNotReportHdr() {
     modernInfo.activeColorMode = DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
     legacyInfo.advancedColorSupported = 1;
     legacyInfo.advancedColorEnabled = 1;
-    require(!displayHdrEnabled(target, queryColorInfo),
-            "failed queries must not use untrusted HDR output fields");
+    require(autoScreenshotApiMode(displayHdrEnabled(target, queryColorInfo)) ==
+                ScreenshotApiMode::Gdi,
+            "failed HDR queries must prefer GDI");
+}
+
+void screenshotSettingsResolveThroughOnePolicy() {
+    using namespace snow_shot::presentation::capture;
+    for (const auto* value : {"auto", "unknown", "", static_cast<const char*>(nullptr)}) {
+        require(nativeBackendForNormalScreenshot(screenshotApiModeFromValue(value)) ==
+                    nativeBackendForNormalScreenshot(resolveAutoScreenshotApiMode()),
+                "Auto and invalid settings must use the shared SDR/HDR preference");
+    }
+    for (const auto mode :
+         {ScreenshotApiMode::Dxgi, ScreenshotApiMode::Wgc, ScreenshotApiMode::Gdi}) {
+        const auto expected = mode == ScreenshotApiMode::Dxgi  ? SNOW_CAPTURE_BACKEND_DXGI
+                              : mode == ScreenshotApiMode::Wgc ? SNOW_CAPTURE_BACKEND_WGC
+                                                               : SNOW_CAPTURE_BACKEND_GDI;
+        const char* value = mode == ScreenshotApiMode::Dxgi  ? "dxgi"
+                            : mode == ScreenshotApiMode::Wgc ? "wgc"
+                                                             : "gdi";
+        require(screenshotApiModeFromValue(value) == mode &&
+                    nativeBackendForNormalScreenshot(mode) == expected,
+                "explicit screenshot API settings must override Auto");
+    }
+    require(nativeBackendForNormalScreenshot(autoScreenshotApiMode(false)) ==
+                    SNOW_CAPTURE_BACKEND_GDI &&
+                nativeBackendForNormalScreenshot(autoScreenshotApiMode(true)) ==
+                    SNOW_CAPTURE_BACKEND_WGC,
+            "SDR must prefer GDI and active HDR must prefer WGC");
 }
 } // namespace
 
 int main() {
     wideColorWithoutHdrUsesGdi();
-    onlyActiveHdrSelectsDxgi();
+    onlyActiveHdrSelectsWgc();
     legacyQueriesDistinguishHdrFromWideColor();
     failedQueriesDoNotReportHdr();
+    screenshotSettingsResolveThroughOnePolicy();
     return 0;
 }

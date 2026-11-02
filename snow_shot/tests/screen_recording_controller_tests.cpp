@@ -2393,7 +2393,12 @@ std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* 
 void recordingApiModeWiring() {
     using snow_shot::storage::RecordingSettings;
     const RecordingSettings settings;
-    require(settings.apiMode() == QStringLiteral("dxgi"), "recording must prefer DXGI by default");
+    const QString defaultMode = settings.apiMode();
+#ifdef Q_OS_WIN
+    require(settings.apiMode() == QStringLiteral("wgc"), "recording must prefer WGC by default");
+#else
+    require(settings.apiMode() == QStringLiteral("dxgi"), "preserve the non-Windows default");
+#endif
     require(settings.setStartDelaySeconds(0), "disable countdown");
     for (bool deferred : {false, true}) {
         require(settings.setPostProcessingEnabled(deferred), "set recording pipeline");
@@ -2434,7 +2439,7 @@ void recordingApiModeWiring() {
             palette()->recordingCloseRequested();
         }
     }
-    require(settings.setApiMode(QStringLiteral("dxgi")) && settings.setPostProcessingEnabled(false),
+    require(settings.setApiMode(defaultMode) && settings.setPostProcessingEnabled(false),
             "restore recording defaults");
 }
 

@@ -906,8 +906,8 @@ void builtInCatalogIsCompleteAndValid() {
                 recordingApiSelect.options[1].value == QStringLiteral("wgc") &&
                 recordingApiSelect.options[2].value == QStringLiteral("gdi") &&
                 storage::ConfigurationSchema::defaultValue(recordingApiMode->configurationKey) ==
-                    QStringLiteral("dxgi"),
-            "recording API mode must offer exactly DXGI, WGC, GDI and default to DXGI");
+                    QStringLiteral("wgc"),
+            "recording API mode must offer exactly DXGI, WGC, GDI and default to WGC");
 #endif
     require(
         recordingToolbarCapture != nullptr && recordingCaptureSection != nullptr &&
@@ -3957,8 +3957,46 @@ void memoryOptimizationPolicyCatalog() {
 }
 } // namespace
 
+void captureApiCatalog() {
+    const auto& catalog = settings::builtInSettingsRegistry().catalog();
+    const auto* screenshot =
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("capture-compatibility"),
+                      QStringLiteral("screenshot.api-mode")});
+    const auto* recording = catalog.item({QStringLiteral("screen-recording"),
+                                          QStringLiteral("screen-recording-capture"),
+                                          QStringLiteral("screen-recording.api-mode")});
+#ifdef Q_OS_MACOS
+    require(!screenshot && !recording, "macOS must omit Windows capture API settings");
+#else
+    require(screenshot && recording, "Windows capture API settings must be present");
+    const auto& screenshotSelect =
+        std::get<settings::SettingsSelectDefinition>(screenshot->payload);
+    require(screenshotSelect.binding == settings::SettingsSelectBinding::ScreenshotApiMode &&
+                screenshotSelect.options.size() == 4 &&
+                storage::ConfigurationSchema::defaultValue(screenshot->configurationKey) ==
+                    QStringLiteral("auto") &&
+                QString::fromUtf8(screenshot->description.source) ==
+                    QStringLiteral("Choose the preferred API for screenshots and current-monitor "
+                                   "captures; Auto uses WGC on HDR displays and GDI otherwise"),
+            "screenshot API must retain Auto and describe the shared current-monitor HDR policy");
+    const auto& recordingSelect = std::get<settings::SettingsSelectDefinition>(recording->payload);
+    require(recordingSelect.binding == settings::SettingsSelectBinding::ScreenRecordingApiMode &&
+                recordingSelect.options.size() == 3 &&
+                recordingSelect.options[0].value == QStringLiteral("dxgi") &&
+                recordingSelect.options[1].value == QStringLiteral("wgc") &&
+                recordingSelect.options[2].value == QStringLiteral("gdi") &&
+                storage::ConfigurationSchema::defaultValue(recording->configurationKey) ==
+                    QStringLiteral("wgc"),
+            "recording API must default to WGC and retain every manual preference");
+#endif
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--capture-api-only"))) {
+        captureApiCatalog();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--screenshot-interaction-only"))) {
         screenshotInteractionCatalog();
         searchIndexRebuildsLocalizedFields();

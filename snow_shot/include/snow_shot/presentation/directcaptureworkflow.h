@@ -46,6 +46,7 @@ struct DirectCaptureRequest {
     bool restoreOriginalScreenColors = false;
     bool shutterSoundNotification = true;
     bool captureCursor = false;
+    quint8 captureBackend = 0;
     // Called on native capture threads with the fixed target's geometry before allocation.
     std::function<bool(QSize)> admitRaster;
 };

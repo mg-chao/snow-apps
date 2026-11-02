@@ -124,7 +124,7 @@ ScrollingSourceFactory nativeScrollingSource(QRect selection, bool restoreOrigin
         config.max_consecutive_errors = 30;
         config.capture_retry_count = 1;
         config.wgc_update_mode = SNOW_CAPTURE_WGC_UPDATE_MODE_COMPLETE_ONLY;
-        // Auto tries DXGI first, then WGC and GDI on eligible capture failures.
+        // Auto tries WGC first, then DXGI and GDI on eligible capture failures.
         config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
         config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_RGBA8;
         config.adaptive_fps = 1;

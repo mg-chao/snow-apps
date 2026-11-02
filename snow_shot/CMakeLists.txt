@@ -3167,6 +3167,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-batch-shortcut-catalog-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
+    add_test(NAME snow-shot-capture-api-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --capture-api-only)
+    set_tests_properties(snow-shot-capture-api-catalog-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screenshot-interaction-catalog-tests
         COMMAND snow-shot-settings-catalog-tests --screenshot-interaction-only)
     set_tests_properties(snow-shot-screenshot-interaction-catalog-tests PROPERTIES
@@ -3645,6 +3649,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-window-element-api-tests
              COMMAND snow-shot-window-element-api-tests)
+    add_test(NAME snow-shot-recording-api-settings-tests
+        COMMAND snow-shot-window-element-api-tests --recording-api-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-api-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-smart-selection-settings-tests
         COMMAND snow-shot-window-element-api-tests --smart-selection-only)
     set_tests_properties(snow-shot-smart-selection-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30)

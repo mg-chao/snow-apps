@@ -1113,9 +1113,9 @@ SettingsItemDefinition screenshotApiModeItem() {
     return {
         QStringLiteral("screenshot.api-mode"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot capture API")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                       "Choose the preferred API for normal screenshots; Auto uses "
-                                       "DXGI on HDR displays and GDI otherwise")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Choose the preferred API for screenshots and current-monitor "
+                               "captures; Auto uses WGC on HDR displays and GDI otherwise")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot API")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Capture backend"))},
         QStringLiteral("screenshot/api_mode"),

@@ -1756,8 +1756,8 @@
             <translation>選擇手動和自動儲存 PDF 檔案時使用的頁面大小</translation>
         </message>
         <message>
-            <source>Choose the preferred API for normal screenshots; Auto uses DXGI on HDR displays and GDI otherwise</source>
-            <translation>選擇一般螢幕擷取的偏好 API；自動模式在 HDR 顯示器上使用 DXGI，其他情況使用 GDI</translation>
+            <source>Choose the preferred API for screenshots and current-monitor captures; Auto uses WGC on HDR displays and GDI otherwise</source>
+            <translation>選擇截圖和目前顯示器擷取的首選 API；自動模式在 HDR 顯示器上使用 WGC，其他情況下使用 GDI</translation>
         </message>
         <message>
             <source>Choose the preferred capture API for screen recording</source>

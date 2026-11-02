@@ -7,6 +7,7 @@
 #include <QTemporaryDir>
 
 #include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -22,6 +23,26 @@ struct SnowCaptureScreenshotResultImpl {
 };
 
 namespace {
+struct OriginalTargetScreenshotRequest {
+    uint32_t version;
+    uint32_t struct_size;
+    SnowCaptureScreenshotRequest screenshot;
+    const char* monitor_utf8;
+    uint8_t pixel_format;
+    uint8_t reserved[7];
+    void* admission_context;
+    uint8_t (*admit_raster)(void*, uint32_t, uint32_t);
+};
+static_assert(SNOW_CAPTURE_TARGET_SCREENSHOT_REQUEST_VERSION == 1);
+static_assert(sizeof(SnowCaptureTargetScreenshotRequest) ==
+              sizeof(OriginalTargetScreenshotRequest));
+static_assert(offsetof(SnowCaptureTargetScreenshotRequest, capture_backend) ==
+              offsetof(OriginalTargetScreenshotRequest, reserved));
+static_assert(offsetof(SnowCaptureTargetScreenshotRequest, admission_context) ==
+              offsetof(OriginalTargetScreenshotRequest, admission_context));
+static_assert(offsetof(SnowCaptureTargetScreenshotRequest, admit_raster) ==
+              offsetof(OriginalTargetScreenshotRequest, admit_raster));
+
 int leases = 0;
 int sessions = 0;
 int sessionCreations = 0;
@@ -30,6 +51,7 @@ int desktopCaptures = 0;
 int targetCaptures = 0;
 intptr_t capturedWindow = 0;
 uint32_t capturedFlags = 0;
+uint8_t capturedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 bool failCapture = false;
 bool failSecondDisplay = false;
 bool failWindow = false;
@@ -61,6 +83,7 @@ SnowCaptureDesktopSession*
 snow_capture_desktop_session_create(const SnowCaptureDesktopSessionConfig* config) {
     require(config->pixel_format == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8,
             "direct desktop capture did not request BGRA pixels");
+    capturedBackend = config->capture_backend;
     ++sessions;
     ++sessionCreations;
     return new SnowCaptureDesktopSession;
@@ -95,6 +118,7 @@ snow_capture_target_screenshot(const SnowCaptureTargetScreenshotRequest* request
                 request->pixel_format == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8,
             "invalid targeted capture contract");
     ++targetCaptures;
+    capturedBackend = request->capture_backend;
     if (request->admit_raster) {
         if (!request->admit_raster(request->admission_context, 2, 2))
             return nullptr;
@@ -209,6 +233,29 @@ int main() {
                 "window PNG must preserve straight colors and alpha");
     }
     require(leases == 0, "premultiplied image lease leaked");
+    for (const bool history : {false, true}) {
+        for (const auto target :
+             {DirectCaptureTarget::CurrentMonitor, DirectCaptureTarget::FocusedWindow}) {
+            for (const auto backend : {SNOW_CAPTURE_BACKEND_AUTO, SNOW_CAPTURE_BACKEND_GDI,
+                                       SNOW_CAPTURE_BACKEND_WGC, SNOW_CAPTURE_BACKEND_DXGI}) {
+                DirectCaptureRequest request;
+                request.target = target;
+                request.window = 123;
+                request.monitorName = QStringLiteral("device-B");
+                request.historyEnabled = history;
+                request.captureBackend = static_cast<quint8>(backend);
+                const auto result = captureDirectTarget(request);
+                require(result.isValid(), "backend preference capture failed");
+                require(capturedBackend == (target == DirectCaptureTarget::CurrentMonitor
+                                                ? backend
+                                                : SNOW_CAPTURE_BACKEND_AUTO),
+                        "monitor capture must forward its preference and focused windows must keep "
+                        "Auto");
+            }
+        }
+    }
+    require(leases == 0 && sessions == 0 && snapshots == 0,
+            "backend preference captures leaked native resources");
     for (const auto target :
          {DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor}) {
         DirectCaptureRequest request;

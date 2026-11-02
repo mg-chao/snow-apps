@@ -159,10 +159,7 @@ void requireBackend(ScreenshotCaptureWorker& worker, uint8_t expected) {
 
 uint8_t backendFor(const char* mode) {
     namespace policy = snow_shot::presentation::capture;
-    auto requested = policy::screenshotApiModeFromValue(mode);
-    if (requested == policy::ScreenshotApiMode::Auto) {
-        requested = policy::resolveAutoScreenshotApiMode();
-    }
+    const auto requested = policy::screenshotApiModeFromValue(mode);
     return policy::nativeBackendForNormalScreenshot(requested);
 }
 
