@@ -839,7 +839,7 @@ add_library(snow_shot_window_shortcuts STATIC
 target_include_directories(snow_shot_window_shortcuts PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
-target_link_libraries(snow_shot_window_shortcuts PUBLIC Qt6::Widgets)
+target_link_libraries(snow_shot_window_shortcuts PUBLIC Qt6::Widgets PRIVATE Qt6::GuiPrivate)
 target_link_libraries(snow_shot_window_shortcuts PUBLIC snow_shot_shortcuts)
 if(APPLE)
     target_sources(snow_shot_window_shortcuts PRIVATE src/platform/macos/windowshortcutinput.mm)
@@ -3984,6 +3984,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_window_shortcuts
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-window-shortcut-manager-tests)
     add_test(
         NAME snow-shot-window-shortcut-manager-tests
         COMMAND snow-shot-window-shortcut-manager-tests
@@ -4113,6 +4114,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-selection-resize-workflow-tests PRIVATE
         ant_design_qt
+        snow_shot_window_shortcuts
         Qt6::Widgets
     )
     snow_shot_add_translations(snow-shot-selection-resize-workflow-tests)
@@ -6103,6 +6105,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests
         COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-translation-modal-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --translation-modal-shortcuts-only -platform offscreen)
     add_test(NAME snow-shot-pinned-mouse-recognition-tests
         COMMAND snow-shot-pinned-window-tests --mouse-recognition-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-mouse-recognition-tests PROPERTIES
@@ -6235,6 +6239,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-cached-ocr-provider-tests
         snow-shot-pinned-recognition-shortcut-tests
         snow-shot-pinned-recognition-shortcut-offscreen-tests
+        snow-shot-pinned-translation-modal-shortcut-tests
         snow-shot-pinned-transformed-ocr-tests
         snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-selection-restore-tests
@@ -7420,6 +7425,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screen-recording-shortcut-tests --auto-hide-shortcuts-only -platform offscreen)
     set_tests_properties(snow-shot-recording-auto-hide-shortcut-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE)
+    add_test(NAME snow-shot-recording-modal-shortcut-tests
+        COMMAND snow-shot-screen-recording-shortcut-tests --modal-shortcuts-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-modal-shortcut-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(WIN32)
         foreach(_close_release_pair IN ITEMS
                 "overlay|snow-shot-screenshot-canvas-renderer-tests"

@@ -14,6 +14,7 @@
 #include <QTextEdit>
 #include <QWidget>
 #include <QWindow>
+#include <QtGui/private/qguiapplication_p.h>
 
 #include <algorithm>
 #include <utility>
@@ -283,8 +284,30 @@ struct WindowShortcutManager::Impl {
         return nullptr;
     }
 
+    [[nodiscard]] static bool scopeInputBlocked(QWidget* window) {
+        // Match Qt's full modal stack, including native transient ownership and
+        // nested window-modal dialogs. activeModalWidget() alone cannot tell
+        // whether a particular scope is blocked.
+        QWindow* handle = window != nullptr ? window->windowHandle() : nullptr;
+        return handle != nullptr && QGuiApplicationPrivate::instance()->isWindowBlocked(handle);
+    }
+
     [[nodiscard]] bool inputSuspended() const {
-        return !m_inputSuspensions.isEmpty();
+        if (!m_inputSuspensions.isEmpty()) {
+            return true;
+        }
+        bool hasScope = false;
+        // Retained overlays and lazy tool windows can stay registered while
+        // hidden. They must not make blocked visible scopes appear available.
+        for (const RegisteredScope& scope : m_scopeWindows) {
+            if (scope.window != nullptr && scope.window->isVisible()) {
+                hasScope = true;
+                if (!scopeInputBlocked(scope.window)) {
+                    return false;
+                }
+            }
+        }
+        return hasScope;
     }
 
     void invalidateHeldKeys() {
@@ -642,6 +665,16 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
     if (event == nullptr) {
         return QObject::eventFilter(watched, event);
     }
+    if (event->type() == QEvent::WindowBlocked || event->type() == QEvent::WindowUnblocked) {
+        if (std::any_of(m_impl->m_scopeWindows.cbegin(), m_impl->m_scopeWindows.cend(),
+                        [watched](const auto& scope) { return scope.window == watched; })) {
+            m_impl->invalidateHeldKeys();
+            if (event->type() == QEvent::WindowBlocked) {
+                m_impl->cancelHeldBindings();
+            }
+        }
+        return false;
+    }
     if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate) {
         if (event->type() == QEvent::WindowDeactivate) {
             m_impl->cancelPendingTaps();
@@ -674,6 +707,7 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
     }
 
     auto* keyEvent = static_cast<QKeyEvent*>(event);
+    QWidget* scopeWindow = m_impl->scopeForReceiver(watched);
     const quint64 keyToken =
         shortcuts::eventKeyToken(*keyEvent, shortcuts::ShortcutPolicy::Application);
     const bool keyRelease = event->type() == QEvent::KeyRelease;
@@ -709,7 +743,8 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
             auto* registered = m_impl->findBinding(activation.handle);
             if (registered == nullptr || registered->owner == nullptr || !activation.scope ||
                 !activation.scope->isVisible() || m_impl->inputSuspended() ||
-                m_impl->scopeForReceiver(watched) == nullptr) {
+                m_impl->scopeInputBlocked(activation.scope) || scopeWindow == nullptr ||
+                m_impl->scopeInputBlocked(scopeWindow)) {
                 return true;
             }
             const QPointer<WindowShortcutManager> guard(this);
@@ -757,11 +792,10 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
             }
         }
     }
-    if (m_impl->inputSuspended()) {
+    if (m_impl->inputSuspended() || m_impl->scopeInputBlocked(scopeWindow)) {
         return QObject::eventFilter(watched, event);
     }
 
-    QWidget* scopeWindow = m_impl->scopeForReceiver(watched);
     const bool receiverInScope = scopeWindow != nullptr;
     const ActivationContext context{watched, QApplication::focusWidget(), keyEvent, scopeWindow};
     const auto candidateAllowedForReceiver = [this, receiverInScope,

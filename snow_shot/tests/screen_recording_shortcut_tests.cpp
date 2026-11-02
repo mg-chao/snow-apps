@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
+#include "snow_shot/presentation/components/screenrecordingmodal.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
@@ -572,6 +573,73 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     require(exports == 5 && arrows == 1,
             "unavailable recording buttons must allow drawing fallback");
     require(settings.setAllShortcutsAtomic(defaults), "recording defaults must be restorable");
+}
+
+void recordingModalsBlockSessionShortcuts() {
+    namespace storage = snow_shot::storage;
+    const storage::DrawingShortcutSettings drawing;
+    const storage::ScreenRecordingShortcutSettings recording;
+    const auto savedShape = drawing.shape();
+    const auto savedRecording = recording.allShortcuts();
+    const auto restore = qScopeGuard([&] {
+        require(drawing.setShape(savedShape) && recording.setAllShortcutsAtomic(savedRecording),
+                "restore recording modal shortcut settings");
+    });
+    require(
+        drawing.setShape({QStringLiteral("F6")}) &&
+            recording.setShortcuts(QStringLiteral("toggle_recording"), {QStringLiteral("F8")}) &&
+            recording.setShortcuts(QStringLiteral("end_recording"), {QStringLiteral("F9")}),
+        "configure independent drawing and recording modal shortcuts");
+
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setRecordingRegion(QRect(40, 40, 320, 240));
+    toolbar.setTransientOwnerWindow(&area);
+    ScreenRecordingShortcutController shortcuts(area, toolbar);
+    auto* palette = toolbar.palette();
+    int shapes = 0;
+    int starts = 0;
+    int closes = 0;
+    QObject::connect(palette, &ScreenshotToolPalette::shapeRequested, &area, [&] { ++shapes; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested, &area,
+                     [&] { ++starts; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested, &area,
+                     [&] { ++closes; });
+    const auto pressCommands = [&](QWidget& receiver) {
+        palette->clearActiveTool();
+        press(receiver, Qt::Key_F6);
+        press(receiver, Qt::Key_F8);
+        press(receiver, Qt::Key_F9);
+    };
+    area.show();
+    toolbar.show();
+    focus(area);
+    pressCommands(area);
+    require(shapes == 1 && starts == 1 && closes == 1,
+            "recording modal fixture shortcuts must activate before the modal opens");
+
+    adqt::widgets::AdModal modal(&area);
+    snow_shot::presentation::configureScreenRecordingModal(modal, &area);
+    auto* button = new adqt::widgets::AdButton;
+    modal.setContentWidget(button);
+    modal.setInitialFocusWidget(button);
+    modal.open();
+    QCoreApplication::processEvents();
+    require(modal.isOpen() && button->isVisible() &&
+                !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(button),
+            "recording modal must present a noneditable shortcut receiver");
+    for (QWidget* receiver : {static_cast<QWidget*>(button), static_cast<QWidget*>(&area),
+                              static_cast<QWidget*>(&toolbar)}) {
+        pressCommands(*receiver);
+        require(shapes == 1 && starts == 1 && closes == 1 && modal.isOpen(),
+                "recording modals must block drawing and recording controls from every surface");
+    }
+    modal.close();
+    QCoreApplication::processEvents();
+    focus(area);
+    pressCommands(area);
+    require(shapes == 2 && starts == 2 && closes == 2,
+            "drawing and recording shortcuts must resume after closing the recording modal");
 }
 
 void autoHiddenRecordingToolbarRetainsAreaShortcuts() {
@@ -1308,6 +1376,11 @@ int main(int argc, char* argv[]) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "isolated recording shortcut settings must initialize");
+    if (app.arguments().contains(QStringLiteral("--modal-shortcuts-only"))) {
+        recordingModalsBlockSessionShortcuts();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--area-history-only"))) {
         recordingAreaHistoryShortcuts();
         storage.shutdown();
@@ -1358,6 +1431,7 @@ int main(int argc, char* argv[]) {
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();
     recordingControlShortcutsFollowButtonsAndSettings();
+    recordingModalsBlockSessionShortcuts();
     recordingShortcutsFollowBothWindowsAndConfiguredKeys();
     autoHiddenRecordingToolbarRetainsAreaShortcuts();
     storage.shutdown();

@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshotselectionresizemodalcontent.h"
 #include "snow_shot/presentation/screenshotselectionsettingsstore.h"
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
+#include "physical_key_test_support.h"
 
 #include "widgets/button.h"
 #include "widgets/input_line_edit.h"
@@ -23,6 +25,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -71,6 +74,74 @@ void selectionResizeModalUsesApplicationModality(ScreenshotSelectionResizeWorkfl
 
     modal->reject();
     flushEvents();
+}
+
+void selectionResizeModalBlocksOwnerShortcuts(ScreenshotSelectionResizeWorkflow& workflow) {
+    QWidget owner;
+    owner.resize(900, 700);
+    owner.show();
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    shortcuts.addScopeWindow(&owner);
+    int commands = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding command;
+    command.id = QStringLiteral("screenshot-command");
+    command.keyCombinations = {QKeyCombination(Qt::Key_F8)};
+    command.activate = [&](const auto&) {
+        ++commands;
+        return true;
+    };
+    require(shortcuts.addBinding(&owner, std::move(command)) != 0,
+            "the screenshot owner should register its shortcut");
+    const auto press = [](QWidget* receiver, Qt::Key key) {
+        PhysicalKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(receiver, &press);
+        PhysicalKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(receiver, &release);
+    };
+    press(&owner, Qt::Key_F8);
+    require(commands == 1, "the screenshot shortcut should work before editing the selection");
+
+    ScreenshotSelectionResizeRequest request;
+    request.currentParams.selection = QRect(20, 30, 320, 180);
+    request.selectionBounds = QRect(0, 0, 1920, 1080);
+    request.ownerWindow = &owner;
+    require(workflow.open(&owner, request, [](const ScreenshotSelectionParams&) {}),
+            "selection editing should open its modal");
+    flushEvents();
+    auto* modal = owner.findChild<adqt::widgets::AdModal*>();
+    require(modal != nullptr && modal->rejectButton() != nullptr,
+            "selection editing should expose its cancel action");
+    modal->rejectButton()->setFocus();
+    press(modal->rejectButton(), Qt::Key_F8);
+    press(&owner, Qt::Key_F8);
+    require(commands == 1 && shortcuts.inputSuspended(),
+            "selection editing should block owner shortcuts from modal controls and the owner");
+
+    auto* addPreset = modal->contentWidget()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("selectionPresetAddButton"));
+    require(addPreset != nullptr, "selection editing should expose its nested preset modal");
+    addPreset->click();
+    flushEvents();
+    auto* nested = modal->contentWidget()->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("selectionPresetCreateModal"));
+    require(nested != nullptr && nested->rejectButton() != nullptr,
+            "adding a preset should open a nested modal");
+    nested->rejectButton()->setFocus();
+    press(nested->rejectButton(), Qt::Key_F8);
+    nested->reject();
+    flushEvents();
+    modal->contentWidget()->window()->activateWindow();
+    modal->rejectButton()->setFocus();
+    flushEvents();
+    press(modal->rejectButton(), Qt::Key_F8);
+    require(commands == 1 && shortcuts.inputSuspended(),
+            "closing a nested modal must keep selection editing shortcuts blocked");
+
+    press(modal->rejectButton(), Qt::Key_Escape);
+    flushEvents();
+    require(!shortcuts.inputSuspended(), "Escape should close selection editing normally");
+    press(&owner, Qt::Key_F8);
+    require(commands == 2, "screenshot shortcuts should resume after selection editing closes");
 }
 
 void resizingDoesNotReplacePreviousScreenshotSelection(
@@ -434,6 +505,7 @@ int main(int argc, char* argv[]) {
     compoundPreviousSelectionKeepsPresetsRectangular(settingsStore);
 
     selectionResizeModalUsesApplicationModality(workflow);
+    selectionResizeModalBlocksOwnerShortcuts(workflow);
     resizingDoesNotReplacePreviousScreenshotSelection(workflow, settingsStore);
     unavailablePreviousGeometryIsDisabled(workflow, settingsStore);
     confirmedPresetCreationPersistsBeforeResizeCloses(workflow, settingsStore);
