@@ -3062,16 +3062,19 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();
-        bool accepted = result.success && annotationAccepted;
+        // A startup-registration failure is reported above. It must not reject
+        // the independent update preference as unsaved.
+        bool accepted = annotationAccepted;
 #ifdef Q_OS_WIN
         accepted = applySelectValue(SettingsSelectBinding::ContextMenuMode,
                                     configuration.defaultValue(kContextMenuModeKey).toVariant()) &&
                    accepted;
 #endif
-        return accepted && applySelectValue(SettingsSelectBinding::UpdateMode,
-                                            storage::ConfigurationSchema::defaultValue(
-                                                QStringLiteral("updates/mode"))
-                                                .toVariant());
+        return applySelectValue(SettingsSelectBinding::UpdateMode,
+                                storage::ConfigurationSchema::defaultValue(
+                                    QStringLiteral("updates/mode"))
+                                    .toVariant()) &&
+               accepted;
     }
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({
