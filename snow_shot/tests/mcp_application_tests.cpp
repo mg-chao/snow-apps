@@ -727,11 +727,28 @@ void runMcpApplicationTests() {
             "shutdown replay never repeats accepted action");
     QTemporaryDir temporary;
     const auto path = temporary.filePath(QStringLiteral("redacted.zip"));
+    const QMap<QString, QJsonValue> sourceDirectories{
+        {QStringLiteral("screenshot/image_save_directory"),
+         temporary.filePath(QStringLiteral("source-images"))},
+        {QStringLiteral("screen_recording/video_save_directory"),
+         temporary.filePath(QStringLiteral("source-videos"))},
+        {QStringLiteral("screenshot/last_manual_save_directory"),
+         temporary.filePath(QStringLiteral("source-manual"))}};
+    require(configuration.setValues(sourceDirectories), "seed MCP export directories");
     require(call(QStringLiteral("configuration_export"), {{QStringLiteral("path"), path}}).ok,
             "configuration export uses bounded worker");
     const auto archive = storage::ConfigurationArchive::read(path);
     require(archive.isValid() && archive.redactedCredentialIds.contains(model.id),
             "configuration archive records redacted provider identities");
+    auto receivingDirectories = sourceDirectories;
+    for (auto it = receivingDirectories.begin(); it != receivingDirectories.end(); ++it) {
+        require(!archive.values.contains(it.key()) &&
+                    configuration.value(it.key()) == sourceDirectories.value(it.key()),
+                "MCP exports must omit local directories without changing their stored values");
+        it.value() =
+            temporary.filePath(QStringLiteral("receiving-%1").arg(it.key().section(u'/', 1)));
+    }
+    require(configuration.setValues(receivingDirectories), "seed receiving MCP directories");
     const auto archivedTheme =
         archive.values.value(QStringLiteral("interface/theme_mode")).toString();
     require(session.applySelectValue(settings::SettingsSelectBinding::Theme,
@@ -764,6 +781,10 @@ void runMcpApplicationTests() {
                 session.switchValue(settings::SettingsSwitchBinding::HistoryEnabled) ==
                     archivedHistoryEnabled,
             "configuration import waits for runtime theme and asynchronous history policy");
+    for (auto it = receivingDirectories.cbegin(); it != receivingDirectories.cend(); ++it) {
+        require(configuration.value(it.key()) == it.value(),
+                "MCP imports must preserve receiving directories omitted from the archive");
+    }
     require(call(QStringLiteral("history_list"), {{QStringLiteral("limit"), 0}}).errorCode ==
                 QStringLiteral("invalid_parameters"),
             "history page limits enforced");

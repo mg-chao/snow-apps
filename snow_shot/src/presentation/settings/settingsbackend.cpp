@@ -2336,12 +2336,12 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             return true;
         }
         storage::ApplicationStorage& applicationStorage = storage::ApplicationStorage::instance();
-        // An import replaces the whole configuration: keys the archive does not
-        // carry (settings added after the archive's schema version, for example)
-        // revert to schema defaults. The overlay is materialized with the same
-        // salvage rules as loading the persisted configuration, including schema
-        // upgrades.
-        read.preserveOmittedCredentials(applicationStorage.configuration().snapshot());
+        // An import preserves omitted local directories and redacted credentials.
+        // Other keys the archive does not carry revert to schema defaults, using
+        // the same salvage and upgrade rules as loading persisted configuration.
+        const auto current = applicationStorage.configuration().snapshot();
+        read.preserveOmittedDirectories(current);
+        read.preserveOmittedCredentials(current);
         if (!importConfigurationSnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
                                                       "The configuration could not be imported."));

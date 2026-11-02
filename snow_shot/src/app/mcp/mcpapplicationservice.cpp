@@ -1081,7 +1081,9 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 const bool ok = configuration().mutateIfRevision(
                     revision,
                     [&] {
-                        read.preserveOmittedCredentials(configuration().snapshot());
+                        const auto current = configuration().snapshot();
+                        read.preserveOmittedDirectories(current);
+                        read.preserveOmittedCredentials(current);
                         return ports.settings->importConfigurationSnapshot(
                             read.values, read.schemaVersion, &runtimeCompletion);
                     },
