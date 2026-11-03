@@ -60,6 +60,72 @@ void pinnedShakeSettingIsDiscoverable() {
     }
 }
 
+void trayClickActionSettingsRespectPlatformSupport() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto* left =
+        registry.fieldForSelect(settings::SettingsSelectBinding::TrayLeftClickAction);
+    const auto* middle =
+        registry.fieldForSelect(settings::SettingsSelectBinding::TrayMiddleClickAction);
+    require(left && registry.validationErrors().isEmpty() &&
+                left->configurationKey == QStringLiteral("tray/left_click_action"),
+            "tray left-click action must remain available on every platform");
+    const auto& leftSelect =
+        std::get<settings::SettingsSelectDefinition>(left->definition->payload);
+    const QStringList actionValues{QStringLiteral("none"),
+                                   QStringLiteral("screenshot"),
+                                   QStringLiteral("show_main_window"),
+                                   QStringLiteral("screenshot_copy"),
+                                   QStringLiteral("screenshot_fixed"),
+                                   QStringLiteral("open_capture_history"),
+                                   QStringLiteral("open_pin_to_screen_management"),
+                                   QStringLiteral("open_function_settings")};
+    require(leftSelect.options.size() == actionValues.size() &&
+                leftSelect.options.constFirst().label.translated() == QStringLiteral("None"),
+            "tray left-click action must expose eight options with None first");
+    require(leftSelect.options.at(5).label.translated() ==
+                    QStringLiteral("Open Screenshot History") &&
+                leftSelect.options.at(6).label.translated() ==
+                    QStringLiteral("Open Pin to Screen Management"),
+            "tray selectors must name the history and pin management destinations");
+    for (qsizetype index = 0; index < actionValues.size(); ++index) {
+        require(leftSelect.options.at(index).value == actionValues.at(index),
+                "tray left-click actions must retain their ordered values");
+    }
+    const auto& catalog = registry.catalog();
+    const auto* middleItem = catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray"),
+                                           QStringLiteral("tray.middle-click-action")});
+    const settings::SettingsSearchIndex search(registry);
+    const auto results = search.search(QStringLiteral("middle-clicking the tray icon"));
+    const bool middleIsSearchable =
+        std::any_of(results.begin(), results.end(), [](const auto& result) {
+            return result.location.itemId == QStringLiteral("tray.middle-click-action");
+        });
+    const auto* section = catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));
+    require(section && section->items.size() >= 3 &&
+                section->items.constLast().id == QStringLiteral("tray.menu-options"),
+            "tray menu options must follow the click actions");
+#ifdef Q_OS_MACOS
+    require(!middle && !middleItem && !middleIsSearchable &&
+                section->items.at(section->items.size() - 2).id == left->definition->id,
+            "macOS must omit the unsupported tray middle-click setting from the page and search");
+#else
+    require(middle && middleItem && middleIsSearchable &&
+                middle->configurationKey == QStringLiteral("tray/middle_click_action") &&
+                section->items.at(section->items.size() - 3).id == left->definition->id &&
+                section->items.at(section->items.size() - 2).id == middleItem->id,
+            "supported platforms must retain middle-click action immediately after left-click");
+    const auto& middleSelect = std::get<settings::SettingsSelectDefinition>(middleItem->payload);
+    require(middleSelect.options.size() == leftSelect.options.size(),
+            "tray click selectors must retain independent bindings and shared options");
+    for (qsizetype index = 0; index < actionValues.size(); ++index) {
+        require(middleSelect.options.at(index).value == actionValues.at(index) &&
+                    middleSelect.options.at(index).label.translated() ==
+                        leftSelect.options.at(index).label.translated(),
+                "tray click selectors must share ordered values and labels");
+    }
+#endif
+}
+
 void trayDarkIconSettingsHaveIndependentContracts() {
     const auto& registry = settings::builtInSettingsRegistry();
     const auto* icon = registry.fieldForRadio(settings::SettingsRadioBinding::TrayDarkIcon);
@@ -1264,46 +1330,6 @@ void builtInCatalogIsCompleteAndValid() {
                     std::get<settings::SettingsColorPaletteDefinition>(field->definition->payload)
                             .colorCount == 5,
                 "stroke and fill quick-set palettes expose five resettable color settings");
-    }
-
-    const auto& traySection =
-        *catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));
-    require(traySection.items.size() == 8 &&
-                traySection.items.at(3).id == QStringLiteral("interface.tray.dark-icon") &&
-                traySection.items.at(4).id == QStringLiteral("interface.tray.dark-custom-icon") &&
-                traySection.items.at(5).id == QStringLiteral("tray.left-click-action") &&
-                traySection.items.at(6).id == QStringLiteral("tray.middle-click-action") &&
-                traySection.items.at(7).id == QStringLiteral("tray.menu-options"),
-            "middle-click action must appear immediately below left-click action");
-    const auto& leftTray =
-        std::get<settings::SettingsSelectDefinition>(traySection.items.at(5).payload);
-    const auto& middleTray =
-        std::get<settings::SettingsSelectDefinition>(traySection.items.at(6).payload);
-    require(leftTray.binding == settings::SettingsSelectBinding::TrayLeftClickAction &&
-                middleTray.binding == settings::SettingsSelectBinding::TrayMiddleClickAction &&
-                leftTray.options.size() == 8 && middleTray.options.size() == 8,
-            "tray selectors must expose independent bindings and eight options");
-    const QStringList trayActionValues{QStringLiteral("none"),
-                                       QStringLiteral("screenshot"),
-                                       QStringLiteral("show_main_window"),
-                                       QStringLiteral("screenshot_copy"),
-                                       QStringLiteral("screenshot_fixed"),
-                                       QStringLiteral("open_capture_history"),
-                                       QStringLiteral("open_pin_to_screen_management"),
-                                       QStringLiteral("open_function_settings")};
-    require(leftTray.options.constFirst().label.translated() == QStringLiteral("None"),
-            "tray selectors must offer None as the first option");
-    require(leftTray.options.at(5).label.translated() ==
-                    QStringLiteral("Open Screenshot History") &&
-                leftTray.options.at(6).label.translated() ==
-                    QStringLiteral("Open Pin to Screen Management"),
-            "tray selectors must name the history and pin management destinations");
-    for (int index = 0; index < trayActionValues.size(); ++index) {
-        require(leftTray.options.at(index).value == trayActionValues.at(index) &&
-                    middleTray.options.at(index).value == trayActionValues.at(index) &&
-                    leftTray.options.at(index).label.translated() ==
-                        middleTray.options.at(index).label.translated(),
-                "tray selectors must share ordered values and labels");
     }
 
     const auto* pinDoubleClick =
@@ -4072,6 +4098,10 @@ int main(int argc, char** argv) {
         trayDarkIconSettingsHaveIndependentContracts();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--tray-click-actions-only"))) {
+        trayClickActionSettingsRespectPlatformSupport();
+        return 0;
+    }
     if (snow_shot::app::distribution::isStoreManaged()) {
         const auto& registry = settings::builtInSettingsRegistry();
         require(registry.isValid(), "Store settings retain a valid registry");
@@ -4214,6 +4244,7 @@ int main(int argc, char** argv) {
             "administrator controls must exist in the settings catalog");
 #endif
     builtInCatalogIsCompleteAndValid();
+    trayClickActionSettingsRespectPlatformSupport();
     trayDarkIconSettingsHaveIndependentContracts();
     translationConfidenceCatalog();
     featureNavigationAndSearchAreConsistent();

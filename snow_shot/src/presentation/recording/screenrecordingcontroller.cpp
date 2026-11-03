@@ -23,6 +23,7 @@
 #include <QElapsedTimer>
 
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/components/screenrecordingmodal.h"
 #include "snow_shot/presentation/components/screenrecordingsettingsdialog.h"
 #include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
@@ -2501,8 +2502,16 @@ struct ScreenRecordingController::Impl {
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         if (automationOwned || automationCommand)
             return;
-        QMessageBox::critical(toolbarWindow, tr("Screen recording"),
-                              message.isEmpty() ? tr("The recording operation failed") : message);
+        using adqt::widgets::AdModal;
+        auto* modal = new AdModal(uiSession ? static_cast<QObject*>(uiSession) : &owner);
+        modal->setObjectName(QStringLiteral("screenRecordingErrorModal"));
+        snow_shot::presentation::configureScreenRecordingModal(*modal, areaWindow);
+        modal->setPreset(AdModal::Preset::Error);
+        modal->setWindowTitle(tr("Screen recording"));
+        modal->setText(message.isEmpty() ? tr("The recording operation failed") : message);
+        modal->setStandardButtons(AdModal::StandardButton::Ok);
+        QObject::connect(modal, &AdModal::finished, modal, &QObject::deleteLater);
+        modal->open();
     }
 
     PermissionCheck permissionCheck;

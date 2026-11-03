@@ -2165,6 +2165,7 @@ SettingsItemDefinition trayLeftClickItem() {
         trayClickActionOptions());
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition trayMiddleClickItem() {
     return fixedSelectItem(
         QStringLiteral("tray.middle-click-action"),
@@ -2173,6 +2174,7 @@ SettingsItemDefinition trayMiddleClickItem() {
         QStringLiteral("tray/middle_click_action"), SettingsSelectBinding::TrayMiddleClickAction,
         trayClickActionOptions());
 }
+#endif
 
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 QVector<SettingsOptionDefinition> translationLanguageOptions(bool source) {
@@ -4001,7 +4003,10 @@ QVector<SettingsPageDefinition> builtInPages() {
                   trayUseSystemIconColorItem(),
 #endif
                   trayIconItem(), trayCustomIconItem(), trayDarkIconItem(),
-                  trayDarkCustomIconItem(), trayLeftClickItem(), trayMiddleClickItem(),
+                  trayDarkCustomIconItem(), trayLeftClickItem(),
+#ifndef Q_OS_MACOS
+                  trayMiddleClickItem(),
+#endif
                   trayMenuOptionsItem()},
              },
              {

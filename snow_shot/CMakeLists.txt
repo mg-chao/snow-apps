@@ -3232,6 +3232,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-tray-icon-settings-catalog-tests PROPERTIES
         LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-tray-click-action-settings-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --tray-click-actions-only)
+    set_tests_properties(snow-shot-tray-click-action-settings-catalog-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-translation-confidence-catalog-tests
         COMMAND snow-shot-settings-catalog-tests --translation-confidence-only)
     set_tests_properties(snow-shot-translation-confidence-catalog-tests PROPERTIES
@@ -8790,7 +8795,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-modal-stacking-tests
         COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform offscreen)
     set_tests_properties(snow-shot-recording-modal-stacking-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME snow-shot-recording-error-dialog-tests
+        COMMAND snow-shot-screen-recording-controller-tests --error-dialogs-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-error-dialog-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    add_test(NAME snow-shot-recording-error-recovery-tests
+        COMMAND snow-shot-screen-recording-controller-tests --error-recovery-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-error-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     if(APPLE)
+        add_test(NAME snow-shot-macos-recording-error-dialog-tests
+            COMMAND snow-shot-screen-recording-controller-tests --error-dialogs-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-error-dialog-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
         add_test(NAME snow-shot-macos-recording-modal-stacking-tests
             COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform cocoa)
         set_tests_properties(snow-shot-macos-recording-modal-stacking-tests PROPERTIES

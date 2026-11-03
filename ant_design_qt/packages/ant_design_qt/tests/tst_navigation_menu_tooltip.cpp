@@ -310,7 +310,7 @@ class NavigationMenuTooltipTest final : public QObject {
   void menuIconsUseLargeThemeMetric();
   void collapsedInlineLeafDoesNotReopenAsEmptyTooltipOnMouseLeave();
   void modalCanRenderDirectlyIntoContainer();
-  void windowModeConfirmHidesPanelCloseButton();
+  void windowModeConfirmRespectsPanelCloseButtonSetting();
 };
 
 void NavigationMenuTooltipTest::colorPickerCreationDoesNotShowPopup_data() {
@@ -576,7 +576,7 @@ void NavigationMenuTooltipTest::collapsedInlineLeafDoesNotReopenAsEmptyTooltipOn
   QVERIFY(!surface->isVisible());
 }
 
-void NavigationMenuTooltipTest::windowModeConfirmHidesPanelCloseButton() {
+void NavigationMenuTooltipTest::windowModeConfirmRespectsPanelCloseButtonSetting() {
   QWidget owner;
   owner.resize(640, 480);
   owner.show();
@@ -584,12 +584,17 @@ void NavigationMenuTooltipTest::windowModeConfirmHidesPanelCloseButton() {
 
   AdModalService::Request request;
   request.mode = AdModal::Mode::Window;
-  request.closeButtonVisible = true;
   AdModal* modal = AdModalService::showConfirm(request, &owner);
   QVERIFY(modal);
   QVERIFY(modal->closeButton());
   QTRY_VERIFY_WITH_TIMEOUT(!modal->closeButton()->isVisible(), 1000);
 
+  request.closeButtonVisible = true;
+  AdModal* closableModal = AdModalService::showConfirm(request, &owner);
+  QVERIFY(closableModal);
+  QVERIFY(closableModal->closeButton());
+  QTRY_VERIFY_WITH_TIMEOUT(closableModal->closeButton()->isVisible(), 1000);
+  closableModal->close();
   modal->close();
   QCoreApplication::processEvents();
   AdModalService::closeAll();

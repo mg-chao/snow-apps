@@ -271,7 +271,7 @@ ScreenRecordingAreaWindow* recordingAreaWindow() {
 
 void requireModalCenteredOnArea(adqt::widgets::AdModal* modal, const QRect& areaGeometry,
                                 QScreen* screen) {
-    const auto* window = modal->contentWidget()->window();
+    const auto* window = modal->acceptButton()->window();
     const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
     QPoint expected(areaGeometry.center().x() - window->width() / 2,
                     areaGeometry.center().y() - window->height() / 2);
@@ -285,14 +285,30 @@ void requireModalCenteredOnArea(adqt::widgets::AdModal* modal, const QRect& area
 
 class ErrorObserver final : public QObject {
   public:
+    explicit ErrorObserver(ScreenRecordingController* controller = nullptr)
+        : controller(controller) {}
+    QPointer<ScreenRecordingController> controller;
+    bool autoDismiss = true;
     int shown = 0;
     QString lastText;
+    QPointer<adqt::widgets::AdModal> lastModal;
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (event->type() == QEvent::Show) {
             if (auto* dialog = qobject_cast<QMessageBox*>(watched)) {
                 ++shown;
                 lastText = dialog->text();
                 QTimer::singleShot(0, dialog, &QMessageBox::accept);
+            } else if (controller) {
+                for (auto* modal : controller->findChildren<adqt::widgets::AdModal*>(
+                         QStringLiteral("screenRecordingErrorModal"))) {
+                    if (modal->acceptButton() && modal->acceptButton()->window() == watched) {
+                        ++shown;
+                        lastText = modal->text();
+                        lastModal = modal;
+                        if (autoDismiss)
+                            QTimer::singleShot(0, modal, &adqt::widgets::AdModal::accept);
+                    }
+                }
             }
         }
         return false;
@@ -1001,6 +1017,7 @@ void closeAndStopHaveIndependentUiLifetimes() {
     for (const bool close : {false, true}) {
         for (const bool failure : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            errors.controller = &controller;
             QVector<bool> captureActivity;
             QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
                              &controller, [&](bool active) { captureActivity.push_back(active); });
@@ -2325,7 +2342,7 @@ void controllerPreviewTransitions() {
             "switching from export settings to drawing must retain hit-test coverage");
     exportButton->click();
     pumpPreview();
-    ErrorObserver errors;
+    ErrorObserver errors(&controller);
     qApp->installEventFilter(&errors);
     failStart = true;
     controller.startRecording();
@@ -2451,9 +2468,9 @@ void recordingStartupFailureAllowsRetry() {
         require(settings.setPostProcessingEnabled(deferred), "select recording pipeline");
         for (int failure : {1, 2}) {
             require(settings.setApiMode(QStringLiteral("wgc")), "set initial recording preference");
-            ErrorObserver observer;
-            qApp->installEventFilter(&observer);
             ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver observer(&controller);
+            qApp->installEventFilter(&observer);
             controller.open(QRect(40, 40, 320, 240));
             auto* startButton = palette()->findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenRecordingStart"));
@@ -2567,9 +2584,9 @@ void recordingCaptureExclusionWiring() {
                 "set toolbar capture preference");
         for (int failure : {0, 1, 2}) {
             const bool fail = failure != 0;
-            ErrorObserver observer;
-            qApp->installEventFilter(&observer);
             ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver observer(&controller);
+            qApp->installEventFilter(&observer);
             controller.open({40, 40, 320, 240});
             auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(palette()->window());
             require(toolbar != nullptr, "recording capture has a toolbar window");
@@ -4185,7 +4202,7 @@ void recordingWebcamSettingsSurviveInterruptedStartup() {
                      {QStringLiteral("screen_recording/webcam_size"), 280},
                      {QStringLiteral("screen_recording/webcam_shape"), QStringLiteral("circle")}}),
                 "save webcam preferences before interrupted startup retires");
-        ErrorObserver errors;
+        ErrorObserver errors(&controller);
         if (cancelCountdown) {
             palette()->recordingCloseRequested();
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -4569,6 +4586,115 @@ void recordingActionToolbarPreferenceUpdatesOpenWindow() {
                     ->isVisible(),
             "resetting preferences restores the active phase's default controls immediately");
     require(toolbarSettings.setLayout(kind, original), "restore the recording action preferences");
+}
+
+void recordingErrorDialogs() {
+    using namespace adqt::widgets;
+    const snow_shot::storage::RecordingSettings settings;
+    const bool previousPostProcessing = settings.postProcessingEnabled();
+    const int previousDelay = settings.startDelaySeconds();
+    const auto restore = qScopeGuard([&] {
+        failStart = false;
+        failStartOperation = false;
+        failExport = false;
+        require(settings.setPostProcessingEnabled(previousPostProcessing) &&
+                    settings.setStartDelaySeconds(previousDelay),
+                "restore recording error dialog preferences");
+    });
+    require(settings.setStartDelaySeconds(0), "disable the error dialog fixture countdown");
+    enum class Failure { Create, Start, Export, DetachedExport };
+    for (bool deferred : {false, true}) {
+        require(settings.setPostProcessingEnabled(deferred), "select the error dialog pipeline");
+        for (Failure failure :
+             {Failure::Create, Failure::Start, Failure::Export, Failure::DetachedExport}) {
+            const bool exportFailure =
+                failure == Failure::Export || failure == Failure::DetachedExport;
+            if (deferred && exportFailure)
+                continue; // Deferred export failures use the existing render progress modal.
+            ScreenRecordingController controller(testEffectsSource);
+            ErrorObserver errors(&controller);
+            errors.autoDismiss = false;
+            qApp->installEventFilter(&errors);
+            controller.open({80, 80, 320, 240});
+            auto* controls = palette();
+            auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(controls->window());
+            QPointer<ScreenRecordingAreaWindow> area = recordingAreaWindow();
+            const QRect anchor = area->frameGeometry();
+            QScreen* screen = area->screen();
+            failStart = failure == Failure::Create;
+            failStartOperation = failure == Failure::Start;
+            controller.startRecording();
+            if (exportFailure) {
+                waitForRecording(controller);
+                failExport = true;
+                if (failure == Failure::DetachedExport) {
+                    controls->recordingCloseRequested();
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                    require(!area, "Close must retire the area before detached export fails");
+                } else {
+                    controls->recordingStopRequested();
+                }
+            }
+            waitForWebcam([&] { return errors.shown == 1; }, "recording failure opens one dialog");
+            QPointer<AdModal> modal = errors.lastModal;
+            require(modal && modal->isOpen() && modal->preset() == AdModal::Preset::Error &&
+                        modal->standardButtons() == AdModal::StandardButton::Ok &&
+                        modal->text() == errors.lastText && !modal->text().isEmpty(),
+                    "recording failures must use an AntDesignQt error dialog with one OK action");
+            auto* surface = modal->acceptButton()->window();
+            require(modal->mode() == AdModal::Mode::Window && modal->centered() &&
+                        modal->windowModality() == Qt::ApplicationModal &&
+                        QApplication::activeModalWidget() == surface,
+                    "recording error dialogs must block the recording controls");
+            require(
+                modal->ownerWindow() == area && modal->windowModeDetached() == !area &&
+                    surface->windowHandle()->transientParent() ==
+                        (area ? area->windowHandle() : nullptr),
+                "recording error dialogs must use the area as their native owner while it exists");
+            if (area) {
+                area->raise();
+                toolbar->raise();
+#ifdef Q_OS_MACOS
+                if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+                    waitForWebcam(
+                        [&] {
+                            QEventLoop loop;
+                            QObject::connect(QAbstractEventDispatcher::instance(),
+                                             &QAbstractEventDispatcher::aboutToBlock, &loop,
+                                             &QEventLoop::quit, Qt::QueuedConnection);
+                            loop.exec();
+                            return macosRecordingModalAboveControls(surface, area, toolbar);
+                        },
+                        "native recording errors must stay above the area and toolbar after "
+                        "raises");
+                }
+#endif
+                requireModalCenteredOnArea(modal, anchor, screen);
+            } else {
+                require(modal->windowAlwaysOnTop(), "detached export errors remain visible");
+            }
+            failStart = false;
+            failStartOperation = false;
+            failExport = false;
+            if (failure == Failure::Start) {
+                controls->recordingCloseRequested();
+            } else {
+                modal->acceptButton()->click();
+            }
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(!modal, "dismissal or recording area closure must destroy the error dialog");
+            if (failure == Failure::Create && !deferred) {
+                controller.startRecording();
+                waitForRecording(controller);
+                require(controller.isRecording(), "dismissing a startup error permits retry");
+            }
+            if (controller.isOpen())
+                controls->recordingCloseRequested();
+            waitForIdle(controller);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            qApp->removeEventFilter(&errors);
+        }
+    }
 }
 
 void recordingModalStacking() {
@@ -7387,7 +7513,7 @@ void recordingAreaHistoryTests() {
         key(area, Qt::Key_R);
         key(area, Qt::Key_R);
         require(area->recordingRegion() == first, "browse older history before a failed start");
-        ErrorObserver errors;
+        ErrorObserver errors(&controller);
         qApp->installEventFilter(&errors);
         for (int failure = 0; failure < 2; ++failure) {
             failStart = failure == 0;
@@ -7779,6 +7905,15 @@ template <typename Application> int runRecordingControllerTests(Application& app
     }
     if (app.arguments().contains(QStringLiteral("--modal-stacking-only"))) {
         recordingModalStacking();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--error-dialogs-only"))) {
+        recordingErrorDialogs();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--error-recovery-only"))) {
+        controllerPreviewTransitions();
+        recordingWebcamSettingsSurviveInterruptedStartup();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--post-processing-only"))) {
