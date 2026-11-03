@@ -14,6 +14,7 @@
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "widgets/modal.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
@@ -30,12 +31,14 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QMimeData>
 #include <QJsonArray>
 #include <QScopeGuard>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 #include <QUrl>
 
 #ifdef Q_OS_WIN
@@ -350,6 +353,123 @@ void capturePinCopiesOnlyWhenEnabled() {
 }
 } // namespace
 
+#ifdef Q_OS_MACOS
+namespace {
+void screenshotSessionFocusRouting() {
+    using namespace snow_shot::platform::macos;
+    struct Target final : ScreenshotFocusTarget {
+        Target(ScreenshotController& controller, int& restores, int& live)
+            : controller(controller), restores(restores), live(live) {
+            ++this->live;
+        }
+        ~Target() override {
+            --live;
+        }
+        bool canRestore() const override {
+            return true;
+        }
+        void restore() override {
+            require(controller.captureAvailable(), "focus must return only after session teardown");
+            ++restores;
+        }
+        ScreenshotController& controller;
+        int& restores;
+        int& live;
+    };
+    QTemporaryDir output;
+    require(output.isValid(), "focus routing needs isolated output storage");
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setImageSaveDirectory(output.path()) &&
+                settings.setLastManualSaveDirectory(output.path()) &&
+                settings.setSaveAsFileDialog(QStringLiteral("system")) &&
+                settings.setShowSaveResult(false) && settings.setCopyAfterPinningToScreen(false),
+            "focus routing must isolate save and pin settings");
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    for (int action = 0; action < 8; ++action) {
+        int restores = 0;
+        int live = 0;
+        {
+            ScreenshotController controller;
+            ScreenshotSelectionParams selection;
+            selection.selection = QRect(0, 0, 100, 60);
+            ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+            ScreenshotControllerTestAccess::installSessionFocus(
+                controller, [&] { return std::make_unique<Target>(controller, restores, live); });
+            auto& commands = ScreenshotControllerTestAccess::commands(controller);
+            switch (action) {
+            case 0:
+                controller.mcpCancelCapture();
+                controller.mcpCancelCapture();
+                break;
+            case 1:
+                controller.mcpCopySelectionToClipboard();
+                break;
+            case 2:
+                commands.quickSaveSelection();
+                break;
+            case 3:
+            case 4: {
+                bool dialogHandled = false;
+                QTimer closeDialog;
+                closeDialog.setInterval(10);
+                QObject::connect(&closeDialog, &QTimer::timeout, &controller, [&] {
+                    for (auto* widget : QApplication::topLevelWidgets()) {
+                        auto* dialog = qobject_cast<QFileDialog*>(widget);
+                        if (!dialog || !dialog->isVisible())
+                            continue;
+                        closeDialog.stop();
+                        dialogHandled = true;
+                        if (action == 3) {
+                            dialog->selectFile(output.filePath(QStringLiteral("manual.png")));
+                            QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+                        } else {
+                            dialog->reject();
+                        }
+                        return;
+                    }
+                });
+                closeDialog.start();
+                commands.saveSelectionToFile();
+                require(dialogHandled, "manual save must exercise the real file dialog");
+                if (action == 4) {
+                    QCoreApplication::processEvents();
+                    require(restores == 0 && live == 1 && !controller.captureAvailable(),
+                            "cancelling Save must retain the session and its original target");
+                    controller.mcpCancelCapture();
+                }
+                break;
+            }
+            case 5:
+                controller.mcpPinSelectionToScreen();
+                break;
+            case 6:
+                commands.startScreenRecording();
+                break;
+            case 7:
+                break; // Destruction of an active session must not reactivate another app.
+            }
+            if (action < 7) {
+                waitUntil([&] { return live == 0; },
+                          "terminal action must release its focus target");
+                require(restores == (action < 5 ? 1 : 0),
+                        "copy/save/cancel restore focus; pin/recording preserve destination focus");
+                waitUntil([&] { return !ScreenshotControllerTestAccess::exportActive(controller); },
+                          "focus fixture export must settle");
+                QCoreApplication::processEvents();
+                require(restores == (action < 5 ? 1 : 0),
+                        "late export completion must not restore focus again");
+            }
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+        require(live == 0 && (action != 7 || restores == 0),
+                "shutdown must discard the target and pending restoration");
+        closePins();
+    }
+}
+} // namespace
+#endif
+
 int runScreenshotControllerClipboardTests(int argc, char** argv) {
     QStandardPaths::setTestModeEnabled(true);
     QApplication application(argc, argv);
@@ -366,6 +486,13 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
                 settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
             "clipboard controller settings must be isolated and deterministic");
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
+#ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--session-focus-tests"))) {
+        const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        screenshotSessionFocusRouting();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--shell-file-startup-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
         auto& configuration = storage.configuration();

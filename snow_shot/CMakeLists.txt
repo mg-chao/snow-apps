@@ -2121,6 +2121,7 @@ set(PROJECT_CXX_SOURCES
 )
 if(APPLE)
     list(APPEND PROJECT_CXX_SOURCES
+        src/platform/macos/screenshotsessionfocus.mm
         src/platform/macos/applicationactivation.mm
         src/platform/macos/systemtraymenu.mm
         src/platform/macos/windowcaptureexclusion.mm)
@@ -11978,6 +11979,35 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-macos-recapture-focus-tests PRIVATE Qt6::Core)
     add_test(NAME snow-shot-macos-recapture-focus-tests COMMAND snow-shot-macos-recapture-focus-tests)
     set_tests_properties(snow-shot-macos-recapture-focus-tests PROPERTIES LABELS "unit;macos")
+
+    add_test(NAME snow-shot-macos-screenshot-focus-controller-tests
+        COMMAND snow_shot --session-focus-tests)
+    set_tests_properties(snow-shot-macos-screenshot-focus-controller-tests PROPERTIES
+        LABELS "unit;macos" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(snow-shot-macos-screenshot-focus-tests tests/macos_screenshot_focus_tests.cpp)
+    target_include_directories(snow-shot-macos-screenshot-focus-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-screenshot-focus-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-macos-screenshot-focus-tests COMMAND snow-shot-macos-screenshot-focus-tests)
+    set_tests_properties(snow-shot-macos-screenshot-focus-tests PROPERTIES LABELS "unit;macos")
+
+    add_executable(snow-shot-macos-screenshot-focus-native-tests
+        tests/macos_screenshot_focus_native_tests.mm src/platform/macos/screenshotsessionfocus.mm)
+    target_include_directories(snow-shot-macos-screenshot-focus-native-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-screenshot-focus-native-tests PRIVATE
+        Qt6::Widgets "-framework AppKit" "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-screenshot-focus-native-tests
+        COMMAND snow-shot-macos-screenshot-focus-native-tests)
+    add_test(NAME snow-shot-macos-screenshot-focus-local-tests
+        COMMAND snow-shot-macos-screenshot-focus-native-tests --local)
+    add_test(NAME snow-shot-macos-screenshot-focus-app-only-tests
+        COMMAND snow-shot-macos-screenshot-focus-native-tests --app-only)
+    add_test(NAME snow-shot-macos-screenshot-focus-closed-window-tests
+        COMMAND snow-shot-macos-screenshot-focus-native-tests --closed-window)
+    set_tests_properties(snow-shot-macos-screenshot-focus-native-tests
+        snow-shot-macos-screenshot-focus-local-tests snow-shot-macos-screenshot-focus-app-only-tests
+        snow-shot-macos-screenshot-focus-closed-window-tests PROPERTIES LABELS "interactive;macos"
+        RUN_SERIAL TRUE TIMEOUT 30 SKIP_RETURN_CODE 77 ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
 
     add_executable(snow-shot-macos-scrolling-input-tests
         tests/macos_scrolling_input_tests.mm)

@@ -70,6 +70,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
                                              PresentationMode presentation) {
     if (m_captureSuspended)
         return;
+    m_context.captureStarting(presentation == PresentationMode::Visible);
     const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
@@ -161,7 +162,8 @@ void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sess
     showCapturePresentationWhenReady(sessionId);
 }
 
-void ScreenshotCaptureWorkflow::cancelCapture() {
+void ScreenshotCaptureWorkflow::cancelCapture(ScreenshotCaptureFocusDisposition focus) {
+    m_context.captureEnding(focus);
     const bool refreshAfterCancel = m_refreshAfterCapture || m_state.layoutDirty;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
@@ -180,12 +182,14 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     resetCaptureModels();
     resetCanvasRuntimeState();
     finishCaptureSession();
+    m_context.captureEnded();
     if (refreshAfterCancel) {
         scheduleLayoutRefresh(m_layoutChangeSerial);
     }
 }
 
 void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
+    m_context.captureEnding(ScreenshotCaptureFocusDisposition::KeepCurrent);
     *m_startup = {};
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_capture_for_export");
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.export_cancel_requested");
@@ -205,6 +209,7 @@ void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
     m_refreshAfterCapture = false;
     resetCaptureModels();
     finishCaptureSession(true);
+    m_context.captureEnded();
 }
 
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
