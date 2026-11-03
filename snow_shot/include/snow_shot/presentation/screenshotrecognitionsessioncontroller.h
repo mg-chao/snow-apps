@@ -172,6 +172,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void applyTextFormatting(const QString& value);
     void applyTextPunctuation(const QString& value);
     void applyTextTargetLanguage(const QString& language);
+    // Catalog discovery belongs to the selector, independently of translation job readiness.
+    void requestTextTranslationServices();
     void applyTextTranslationService(const QString& service);
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;

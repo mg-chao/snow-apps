@@ -9060,6 +9060,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textTranslationServiceSelect->setSearchFilterFields({QStringLiteral("label")});
     m_textTranslationServiceSelect->setAllowClear(false);
     m_selectActionLayout->addWidget(m_textTranslationServiceSelect);
+    connect(m_textTranslationServiceSelect, &adqt::widgets::AdSelect::popupOpening, this,
+            &ScreenshotToolPalette::textTranslationServicesRequested);
     connect(m_textTranslationServiceSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
                 if (!m_replayingMaterializedState && value.isValid())

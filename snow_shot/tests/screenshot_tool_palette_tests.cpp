@@ -7874,7 +7874,10 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                 actionLayout->indexOf(serviceSelect) < actionLayout->indexOf(reset),
             "quick translation service follows target language and precedes Reset");
     int serviceRequests = 0;
+    int catalogRequests = 0;
     QString requestedService;
+    QObject::connect(&palette, &ScreenshotToolPalette::textTranslationServicesRequested,
+                     [&] { ++catalogRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::textTranslationServiceRequested,
                      [&](const QString& value) {
                          ++serviceRequests;
@@ -7892,7 +7895,8 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(serviceSelect->loading() && !serviceSelect->isEnabled(),
             "an empty service catalog shows loading and prevents selection");
     palette.setTextTranslationServices(services, QStringLiteral("translation:test"), false);
-    require(serviceRequests == 0 && !serviceSelect->loading() && serviceSelect->isEnabled() &&
+    require(serviceRequests == 0 && catalogRequests == 0 && !serviceSelect->loading() &&
+                serviceSelect->isEnabled() &&
                 serviceSelect->currentValue() == QStringLiteral("translation:test") &&
                 serviceSelect->model()->rowCount() == services.size() &&
                 !serviceSelect->allowClear(),
@@ -8040,6 +8044,14 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(!serviceSelect->isHidden() && serviceSelect->isEnabled() &&
                 serviceSelect->searchEnabled(),
             "quick service remains visible and searchable during streaming");
+    serviceSelect->setPopupVisible(true);
+    require(catalogRequests == 1 && serviceRequests == 0,
+            "opening the quick picker requests services without selecting one");
+    serviceSelect->setPopupVisible(false);
+    serviceSelect->setPopupVisible(true);
+    require(catalogRequests == 2 && serviceRequests == 0,
+            "reopening the quick picker allows catalog loading to retry");
+    serviceSelect->setPopupVisible(false);
     serviceSelect->setCurrentValue(QStringLiteral("model-a"));
     require(serviceRequests == 1 && requestedService == QStringLiteral("model-a"),
             "quick service publishes the stable service identity");

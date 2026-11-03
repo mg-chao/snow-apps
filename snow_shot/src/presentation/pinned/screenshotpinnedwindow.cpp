@@ -5384,6 +5384,10 @@ void ScreenshotPinnedWindow::configureEditToolbar(
                 if (m_recognitionSession != nullptr)
                     m_recognitionSession->applyTextTargetLanguage(language);
             });
+    connect(toolbar, &ScreenshotToolPalette::textTranslationServicesRequested, this, [this] {
+        if (m_recognitionSession != nullptr)
+            m_recognitionSession->requestTextTranslationServices();
+    });
     connect(toolbar, &ScreenshotToolPalette::textTranslationServiceRequested, this,
             [this](const QString& service) {
                 if (m_recognitionSession != nullptr)

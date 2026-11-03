@@ -2209,6 +2209,13 @@ void ScreenshotRecognitionSessionController::applyTextTargetLanguage(const QStri
 #endif
 }
 
+void ScreenshotRecognitionSessionController::requestTextTranslationServices() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_translationService != nullptr)
+        m_translationService->refreshModels();
+#endif
+}
+
 void ScreenshotRecognitionSessionController::applyTextTranslationService(const QString& service) {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     const QPointer<ScreenshotRecognitionSessionController> lifetime(this);

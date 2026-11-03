@@ -649,6 +649,10 @@ void ScreenshotOcrController::applyTextTargetLanguage(const QString& language) {
     m_session->applyTextTargetLanguage(language);
 }
 
+void ScreenshotOcrController::requestTextTranslationServices() {
+    m_session->requestTextTranslationServices();
+}
+
 void ScreenshotOcrController::applyTextTranslationService(const QString& service) {
     m_session->applyTextTranslationService(service);
 }
