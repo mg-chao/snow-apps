@@ -139,6 +139,33 @@ void paintImage(QPainter& painter, const QRectF& target, const CollageItem& item
     painter.restore();
 }
 
+void paintPreviewBorder(QPainter& painter, const QRectF& bounds, const QColor& color) {
+    // Quantize the one-logical-pixel guide and its edges in device space, including
+    // backing-store translations, so every side covers the same whole pixel count.
+    const auto deviceTransform = painter.deviceTransform();
+    const auto pixels = deviceTransform.mapRect(bounds);
+    const qreal stroke = std::max(1, qRound(deviceTransform.m11()));
+    const qreal halfStroke = stroke / 2;
+    const auto snapEdge = [halfStroke](qreal coordinate) {
+        const qreal edge = coordinate - halfStroke;
+        // Shared cell edges can differ by floating-point roundoff at a half-pixel tie.
+        const qreal tie = std::floor(edge) + .5;
+        return qFuzzyCompare(edge, tie) ? std::ceil(edge) : std::round(edge);
+    };
+    const QRectF outer(
+        QPointF(snapEdge(pixels.left()), snapEdge(pixels.top())),
+        QPointF(snapEdge(pixels.right()) + stroke, snapEdge(pixels.bottom()) + stroke));
+    QPainterPath border;
+    border.addRect(outer);
+    const auto inner = outer.adjusted(stroke, stroke, -stroke, -stroke);
+    if (!inner.isEmpty())
+        border.addRect(inner);
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.fillPath(deviceTransform.inverted().map(border), color);
+    painter.restore();
+}
+
 Qt::CursorShape resizeCursor(SnowCanvasSelectionHandle handle) {
     switch (handle) {
     case SnowCanvasSelectionHandle::TopLeft:
@@ -836,13 +863,12 @@ void CollagePdfTemplateCanvas::paintEvent(QPaintEvent*) {
                        d.document->items()[cell.itemIndex],
                        d.detailFor(d.document->items()[cell.itemIndex]));
         painter.restore();
-        painter.setPen(QPen(QColor(190, 190, 190), 1, Qt::DashLine));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawRect(bounds);
     }
-    painter.setPen(QPen(theme.colorBorder, 1));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawRect(d.paper);
+    paintPreviewBorder(painter, d.paper, theme.colorBorder);
+    const QColor cellBorderColor(0xf0, 0xf0, 0xf0);
+    // Paint guides above every image so neighbors cannot cover a shared edge.
+    for (const auto& cell : d.page.cells)
+        paintPreviewBorder(painter, d.mapped(cell.clipMillimeters), cellBorderColor);
     if (d.targetId && d.targetId != d.gestureId) {
         if (const auto* target = d.cellFor(d.targetId))
             snowCanvasPaintSelectionMarquee(painter, d.mapped(target->clipMillimeters));
