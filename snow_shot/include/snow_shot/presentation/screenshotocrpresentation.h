@@ -8,6 +8,7 @@
 #include <QString>
 #include <QTransform>
 #include <QVector>
+#include <optional>
 
 enum class ScreenshotOcrTextDirection {
     Horizontal,
@@ -22,6 +23,9 @@ struct ScreenshotOcrLine {
     QVector<QPolygonF> sourceLineQuads{};
     bool paragraph = false;
     QColor backgroundFillColor{};
+    // Derived translation-only limit: effective font size / quad cross-axis size.
+    // Kept independent of translated text and reconstructed from source OCR on restore.
+    std::optional<qreal> fontSizeCapRatio{};
 };
 
 struct ScreenshotOcrTextPosition {

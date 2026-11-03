@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrtextlayout.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
@@ -28,6 +29,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -75,6 +77,16 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::_Exit(EXIT_FAILURE);
     }
+}
+
+qreal renderedFontSize(const ScreenshotOcrLine& line) {
+    ScreenshotOcrTextLayout layout;
+    QTransform transform;
+    qreal size = 0;
+    require(configureScreenshotOcrTextLayout(layout, line, {}, QApplication::font(), Qt::black, {},
+                                             &transform, &size),
+            "translated OCR font size must be measurable");
+    return size;
 }
 
 void waitUntil(const std::function<bool()>& condition, const char* message) {
@@ -517,9 +529,14 @@ void smartLayoutStreamsParagraphsAndSwitchesModes() {
                 session.source->lines.size() == 3 &&
                 session.source->lines[0].text == QStringLiteral("source 0"),
             "Smart Merge sends one paragraph with combined geometry and preserves original OCR");
+    const auto paragraphCap = session.displayed->lines[0].fontSizeCapRatio;
+    require(paragraphCap.has_value() && !session.source->lines[0].fontSizeCapRatio,
+            "merged translations capture a font cap without changing source OCR");
     server.delta(0, QStringLiteral("partial paragraph"));
     waitUntil([&]() { return session.textUpdates == 1; },
               "merged paragraph streams into its block");
+    require(session.displayed->lines[0].fontSizeCapRatio == paragraphCap,
+            "streaming updates must preserve the original paragraph baseline");
     require(settings.setLayoutProcessing(QStringLiteral("original")),
             "switch layout while streaming");
     server.waitForStreams(4);
@@ -553,6 +570,8 @@ void smartLayoutStreamsParagraphsAndSwitchesModes() {
     require(session.displayed->lines[0].text == QStringLiteral("finished paragraph") &&
                 session.source->lines[2].text == QStringLiteral("source 2"),
             "merged output and original remain independent");
+    require(session.displayed->lines[0].fontSizeCapRatio == paragraphCap,
+            "layout changes and retries must derive caps from original text");
 }
 
 void sourceSelectionSurvivesOriginalImageTranslation() {
@@ -722,6 +741,9 @@ void streamsIndividualBoxesAndKeepsOriginals() {
     for (int index = 0; index < 6; ++index) {
         require(server.streams[index].text == session.source->lines[index].text,
                 "each request must carry exactly its source OCR box");
+        require(session.displayed->lines[index].fontSizeCapRatio &&
+                    !session.source->lines[index].fontSizeCapRatio,
+                "each translated box owns an immutable source font cap");
     }
     const int backgrounds = session.backgrounds;
     server.delta(2, QStringLiteral("third"));
@@ -740,6 +762,14 @@ void streamsIndividualBoxesAndKeepsOriginals() {
                 snapshot.translatedText->lines[2].text == QStringLiteral("third") &&
                 snapshot.translatedText->lines[1].text == QStringLiteral("source 1"),
             "a pin snapshot must freeze partial translation and untouched source boxes");
+    for (int index = 0; index < 6; ++index) {
+        require(snapshot.translatedText->lines[index].fontSizeCapRatio ==
+                    session.displayed->lines[index].fontSizeCapRatio,
+                "partial translation snapshots retain every source font cap");
+        require(renderedFontSize(snapshot.translatedText->lines[index]) <=
+                    renderedFontSize(session.source->lines[index]) + 0.0001,
+                "streamed text and its frozen snapshot cannot exceed the original font size");
+    }
     session.displayed->beginTextSelection(ScreenshotOcrTextPosition{0, 1});
     session.displayed->updateTextSelection(ScreenshotOcrTextPosition{0, 4});
     session.displayed->finishTextSelection();
@@ -1477,6 +1507,9 @@ void runPinnedOriginalImageTranslationTests() {
                         actual.sourceLineQuads == expected.sourceLineQuads &&
                         actual.direction == expected.direction,
                     "pin persistence must retain paragraph geometry and rendering metadata");
+            require(actual.fontSizeCapRatio && expected.fontSizeCapRatio &&
+                        std::abs(*actual.fontSizeCapRatio - *expected.fontSizeCapRatio) < 0.0001,
+                    "pin restoration reconstructs the original font cap from saved OCR");
             auto* content = window->findChild<ScreenshotRecognitionWindow*>();
             auto* layer =
                 content == nullptr
@@ -1665,6 +1698,15 @@ void runPinnedOriginalImageTranslationTests() {
                     session->recognitionResultsSnapshot().translatedText->lines[0].text ==
                         QStringLiteral("translated"),
                 "restoration must retain separate original OCR and frozen partial translation");
+        const auto restoredResults = session->recognitionResultsSnapshot();
+        for (int index = 0; index < restoredResults.translatedText->lines.size(); ++index) {
+            const auto& line = restoredResults.translatedText->lines[index];
+            require(line.fontSizeCapRatio &&
+                        renderedFontSize(line) <=
+                            renderedFontSize(restoredResults.text->presentation->lines[index]) +
+                                0.0001,
+                    "current and legacy pin payloads reconstruct bounded original font sizes");
+        }
         require(restored->findChild<ScreenshotPinnedEditController*>() == nullptr,
                 "initial and restored translations must keep the toolbar hidden");
         if (visible) {

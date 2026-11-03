@@ -21,6 +21,16 @@ qreal edgeLength(const QPointF& first, const QPointF& second) {
     return std::hypot(second.x() - first.x(), second.y() - first.y());
 }
 
+qreal quadCrossAxisSize(const ScreenshotOcrLine& line) {
+    if (line.quad.size() != 4)
+        return 0;
+    return line.direction == ScreenshotOcrTextDirection::Vertical
+               ? (edgeLength(line.quad[0], line.quad[1]) + edgeLength(line.quad[3], line.quad[2])) /
+                     2
+               : (edgeLength(line.quad[0], line.quad[3]) + edgeLength(line.quad[1], line.quad[2])) /
+                     2;
+}
+
 QPolygonF mappedQuad(const QPolygonF& quad, const QTransform& transform) {
     return transform.map(quad);
 }
@@ -415,7 +425,7 @@ QPolygonF ocrTextFitQuad(const QPolygonF& quad, ScreenshotOcrTextDirection direc
 }
 
 bool aspectFitQuadTransform(const QPolygonF& destination, qreal sourceWidth, qreal sourceHeight,
-                            QTransform* outTransform) {
+                            QTransform* outTransform, qreal maximumScale, qreal* fittedScale) {
     if (destination.size() != 4 || sourceWidth <= 0.0 || sourceHeight <= 0.0 ||
         outTransform == nullptr) {
         return false;
@@ -431,7 +441,8 @@ bool aspectFitQuadTransform(const QPolygonF& destination, qreal sourceWidth, qre
         return false;
     }
 
-    const qreal scale = std::min(destinationWidth / sourceWidth, destinationHeight / sourceHeight);
+    const qreal scale =
+        std::min({destinationWidth / sourceWidth, destinationHeight / sourceHeight, maximumScale});
     const qreal fittedWidth = sourceWidth * scale;
     const qreal fittedHeight = sourceHeight * scale;
     const QRectF fittedRect((destinationWidth - fittedWidth) / 2.0,
@@ -447,7 +458,10 @@ bool aspectFitQuadTransform(const QPolygonF& destination, qreal sourceWidth, qre
         fittedRect.bottomRight(),
         fittedRect.bottomLeft(),
     }));
-    return quadTransform(fittedQuad, sourceWidth, sourceHeight, outTransform);
+    if (!quadTransform(fittedQuad, sourceWidth, sourceHeight, outTransform))
+        return false;
+    *fittedScale = scale;
+    return true;
 }
 
 } // namespace
@@ -509,6 +523,9 @@ bool ScreenshotOcrTextLayout::fitSourceRows(qreal aspectRatio) {
             std::min({scale, heightScale, slot.width() * aspectRatio / row.visualBounds.width()});
         measured.push_back(std::move(row));
     }
+    // Cap glyphs inside each slot without shrinking the slots or their line gaps.
+    if (m_fontSizeCapRatio)
+        scale = std::min(scale, *m_fontSizeCapRatio / m_font.pixelSize());
     // A substantially longer translation should reflow instead of becoming tiny in fixed rows.
     if (scale < idealScale * kOcrSourceRowMinimumScale) {
         return false;
@@ -540,6 +557,7 @@ bool ScreenshotOcrTextLayout::fitSourceRows(qreal aspectRatio) {
                           transform, slot});
     }
     m_fittedRows = std::move(fitted);
+    m_sourceRowScale = scale;
     m_layoutOrigin = {};
     m_bounds = QRectF(0, 0, aspectRatio, 1);
     return true;
@@ -550,7 +568,8 @@ void ScreenshotOcrTextLayout::configure(const QString& text, const QFont& font,
                                         const ScreenshotOcrTextRange& selection,
                                         ScreenshotOcrTextDirection direction,
                                         qreal targetAspectRatio, bool paragraph,
-                                        const QVector<QRectF>& sourceRows) {
+                                        const QVector<QRectF>& sourceRows,
+                                        std::optional<qreal> fontSizeCapRatio) {
     targetAspectRatio = std::max<qreal>(0.0, targetAspectRatio);
     const bool hasLayout = direction == ScreenshotOcrTextDirection::Vertical
                                ? !m_verticalGlyphs.empty() || text.isEmpty()
@@ -558,7 +577,8 @@ void ScreenshotOcrTextLayout::configure(const QString& text, const QFont& font,
     const bool aspectRatioMatches =
         qFuzzyCompare(1.0 + m_targetAspectRatio, 1.0 + targetAspectRatio);
     if (hasLayout && m_text == text && m_font == font && m_direction == direction &&
-        aspectRatioMatches && m_paragraph == paragraph && m_sourceRows == sourceRows) {
+        aspectRatioMatches && m_paragraph == paragraph && m_sourceRows == sourceRows &&
+        m_fontSizeCapRatio == fontSizeCapRatio) {
         m_textColor = textColor;
         m_selection = selection;
         return;
@@ -572,6 +592,8 @@ void ScreenshotOcrTextLayout::configure(const QString& text, const QFont& font,
     m_targetAspectRatio = targetAspectRatio;
     m_paragraph = paragraph;
     m_sourceRows = sourceRows;
+    m_fontSizeCapRatio = fontSizeCapRatio;
+    m_sourceRowScale = 1.0;
     m_layout.reset();
     m_line = QTextLine();
     m_verticalGlyphs.clear();
@@ -907,7 +929,12 @@ bool configureScreenshotOcrTextLayout(ScreenshotOcrTextLayout& layout,
                                       const QTransform& canvasToOutput, QFont font,
                                       const QColor& defaultTextColor,
                                       const ScreenshotOcrTextRange& selection,
-                                      QTransform* textToOutput) {
+                                      QTransform* textToOutput, qreal* fittedFontPixelSize) {
+    if (fittedFontPixelSize)
+        *fittedFontPixelSize = 0;
+    if (line.fontSizeCapRatio &&
+        (!std::isfinite(*line.fontSizeCapRatio) || *line.fontSizeCapRatio <= 0))
+        return false;
     for (const QPointF& point : line.quad) {
         if (!std::isfinite(point.x()) || !std::isfinite(point.y()))
             return false;
@@ -917,12 +944,15 @@ bool configureScreenshotOcrTextLayout(ScreenshotOcrTextLayout& layout,
     if (text.isEmpty() || viewQuad.size() != 4 || textToOutput == nullptr) {
         return false;
     }
-    const qreal lineWidth = std::max(1.0, (edgeLength(viewQuad.at(0), viewQuad.at(1)) +
-                                           edgeLength(viewQuad.at(3), viewQuad.at(2))) /
-                                              2.0);
-    const qreal lineHeight = std::max(1.0, (edgeLength(viewQuad.at(0), viewQuad.at(3)) +
-                                            edgeLength(viewQuad.at(1), viewQuad.at(2))) /
-                                               2.0);
+    const qreal lineWidth =
+        (edgeLength(viewQuad.at(0), viewQuad.at(1)) + edgeLength(viewQuad.at(3), viewQuad.at(2))) /
+        2.0;
+    const qreal lineHeight =
+        (edgeLength(viewQuad.at(0), viewQuad.at(3)) + edgeLength(viewQuad.at(1), viewQuad.at(2))) /
+        2.0;
+    if (!std::isfinite(lineWidth) || !std::isfinite(lineHeight) || lineWidth <= 0 ||
+        lineHeight <= 0)
+        return false;
     const qreal crossAxisSize =
         line.direction == ScreenshotOcrTextDirection::Vertical ? lineWidth : lineHeight;
     font.setPixelSize(std::max(kOcrTextLayoutMinPixelSize, qCeil(crossAxisSize * 2.0)));
@@ -943,16 +973,66 @@ bool configureScreenshotOcrTextLayout(ScreenshotOcrTextLayout& layout,
                                  ? screenshotOcrContrastingTextColor(line.backgroundFillColor)
                                  : defaultTextColor;
     layout.configure(text, font, textColor, selection, line.direction, targetAspectRatio,
-                     line.paragraph, normalizedOcrSourceRows(line));
+                     line.paragraph, normalizedOcrSourceRows(line), line.fontSizeCapRatio);
 
     const QRectF sourceBounds = layout.boundingRect();
     QTransform transform;
+    qreal fittedScale = 0;
+    // Source-row glyphs are capped inside their slots, preserving the original row positions.
+    const qreal maximumScale = line.fontSizeCapRatio && !layout.usesSourceRows()
+                                   ? *line.fontSizeCapRatio * crossAxisSize / layout.fontPixelSize()
+                                   : std::numeric_limits<qreal>::max();
     // Fit in the quad's local rectangle with one uniform scale, then project
     // that centered rectangle back into the rotated or perspective quad.
     if (!aspectFitQuadTransform(layout.usesSourceRows() ? viewQuad : textFitQuad,
-                                sourceBounds.width(), sourceBounds.height(), &transform)) {
+                                sourceBounds.width(), sourceBounds.height(), &transform,
+                                maximumScale, &fittedScale)) {
         return false;
     }
     *textToOutput = transform;
+    if (fittedFontPixelSize)
+        *fittedFontPixelSize = layout.fontPixelSize() * fittedScale;
     return true;
+}
+
+void setScreenshotOcrTranslationFontCaps(QVector<ScreenshotOcrLine>& translation,
+                                         const QVector<ScreenshotOcrLine>& source,
+                                         const QVector<QVector<int>>& sourceIndices,
+                                         const QFont& font) {
+    if (translation.size() != sourceIndices.size() ||
+        std::all_of(translation.cbegin(), translation.cend(), [](const ScreenshotOcrLine& line) {
+            return line.fontSizeCapRatio.has_value();
+        }))
+        return;
+    QVector<qreal> baselines(source.size(), 0);
+    ScreenshotOcrTextLayout layout;
+    for (int index = 0; index < source.size(); ++index) {
+        auto original = source[index];
+        original.fontSizeCapRatio.reset();
+        QTransform transform;
+        if (!configureScreenshotOcrTextLayout(layout, original, {}, font, Qt::black, {}, &transform,
+                                              &baselines[index]))
+            baselines[index] = 0;
+    }
+    for (int index = 0; index < translation.size(); ++index) {
+        auto& line = translation[index];
+        if (line.fontSizeCapRatio)
+            continue;
+        const qreal crossAxis = quadCrossAxisSize(line);
+        if (!std::isfinite(crossAxis) || crossAxis <= 0)
+            continue;
+        QVector<qreal> sizes;
+        for (const int sourceIndex : sourceIndices[index]) {
+            if (sourceIndex >= 0 && sourceIndex < baselines.size() &&
+                std::isfinite(baselines[sourceIndex]) && baselines[sourceIndex] > 0)
+                sizes.push_back(baselines[sourceIndex]);
+        }
+        if (sizes.isEmpty())
+            continue;
+        std::sort(sizes.begin(), sizes.end());
+        const auto middle = sizes.size() / 2;
+        const qreal median =
+            sizes.size() % 2 ? sizes[middle] : (sizes[middle - 1] + sizes[middle]) / 2;
+        line.fontSizeCapRatio = median / crossAxis;
+    }
 }

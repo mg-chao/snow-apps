@@ -16,7 +16,8 @@ class ScreenshotOcrTextLayout final {
 
     void configure(const QString& text, const QFont& font, const QColor& textColor,
                    const ScreenshotOcrTextRange& selection, ScreenshotOcrTextDirection direction,
-                   qreal targetAspectRatio, bool paragraph, const QVector<QRectF>& sourceRows = {});
+                   qreal targetAspectRatio, bool paragraph, const QVector<QRectF>& sourceRows = {},
+                   std::optional<qreal> fontSizeCapRatio = {});
     void setSelection(const ScreenshotOcrTextRange& selection);
     [[nodiscard]] int cursorPositionAt(const QPointF& itemPosition) const;
 
@@ -29,6 +30,10 @@ class ScreenshotOcrTextLayout final {
     }
 
     [[nodiscard]] QRectF boundingRect() const;
+    // Font size in layout coordinates, including the internal source-row transform.
+    [[nodiscard]] qreal fontPixelSize() const {
+        return m_font.pixelSize() * m_sourceRowScale;
+    }
     [[nodiscard]] QRectF glyphRasterBounds() const {
         return m_glyphRasterBounds;
     }
@@ -68,6 +73,8 @@ class ScreenshotOcrTextLayout final {
     QVector<int> m_graphemeBoundaries;
     qreal m_verticalCellAdvance = 0.0;
     qreal m_targetAspectRatio = 0.0;
+    qreal m_sourceRowScale = 1.0;
+    std::optional<qreal> m_fontSizeCapRatio;
     bool m_paragraph = false;
     bool m_glyphRasterCacheable = true;
     QPointF m_layoutOrigin;
@@ -75,11 +82,16 @@ class ScreenshotOcrTextLayout final {
     QRectF m_glyphRasterBounds;
 };
 
-[[nodiscard]] bool configureScreenshotOcrTextLayout(ScreenshotOcrTextLayout& layout,
-                                                    const ScreenshotOcrLine& line,
-                                                    const QTransform& canvasToOutput, QFont font,
-                                                    const QColor& textColor,
-                                                    const ScreenshotOcrTextRange& selection,
-                                                    QTransform* textToOutput);
+[[nodiscard]] bool
+configureScreenshotOcrTextLayout(ScreenshotOcrTextLayout& layout, const ScreenshotOcrLine& line,
+                                 const QTransform& canvasToOutput, QFont font,
+                                 const QColor& textColor, const ScreenshotOcrTextRange& selection,
+                                 QTransform* textToOutput, qreal* fittedFontPixelSize = nullptr);
+
+// Capture source baselines once. Existing caps survive streaming, snapshots and font changes.
+void setScreenshotOcrTranslationFontCaps(QVector<ScreenshotOcrLine>& translation,
+                                         const QVector<ScreenshotOcrLine>& source,
+                                         const QVector<QVector<int>>& sourceIndices,
+                                         const QFont& font);
 
 #endif

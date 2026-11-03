@@ -5313,6 +5313,28 @@ void ocrGlyphDeviceCachesMatchDirectPaintingAndInvalidate() {
         require(renderOcrSelectionLayer(layer, 1.5) != beforeTextReplacement,
                 "a streaming replacement must display changed glyph pixels even when its new "
                 "geometry requires direct painting");
+        presentation->setLineText(
+            0, QStringLiteral("A long original OCR line constrained by the source box width"));
+        const auto sourceLines = presentation->lines;
+        QVector<QVector<int>> sourceIndices;
+        for (int index = 0; index < sourceLines.size(); ++index)
+            sourceIndices.push_back({index});
+        setScreenshotOcrTranslationFontCaps(presentation->lines, sourceLines, sourceIndices,
+                                            QApplication::font());
+        presentation->setLineText(0, QStringLiteral("M"));
+        layer.updateLineText(0);
+        compareWithDirect(1.5);
+        const auto fontCap = presentation->lines[0].fontSizeCapRatio;
+        require(fontCap.has_value(), "live translation must retain its source font cap");
+        const auto cappedRaster = renderOcrSelectionLayer(layer, 1.5);
+        presentation->lines[0].fontSizeCapRatio.reset();
+        layer.updateLineText(0);
+        require(renderOcrSelectionLayer(layer, 1.5) != cappedRaster,
+                "removing the cap must reveal the short-text enlargement regression");
+        presentation->lines[0].fontSizeCapRatio = fontCap;
+        layer.updateLineText(0);
+        require(renderOcrSelectionLayer(layer, 1.5) == cappedRaster,
+                "cap-only changes must invalidate both shaping and device glyph caches");
         const auto fontBuilds = layer.glyphRasterBuildCount();
         QFont boldFont = originalFont;
         boldFont.setBold(!originalFont.bold());
