@@ -20,6 +20,7 @@
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/translation/translationservice.h"
+#include "snow_shot/app/accountsessionservice.h"
 #endif
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -341,6 +342,10 @@ class ApplicationController::Impl {
                 applicationStorage.configuration()
                     .value(QStringLiteral("api_configuration/server_url"))
                     .toString()));
+        auto* accountSession = AccountSessionService::forClient(translationClient.get());
+        QObject::connect(accountSession, &AccountSessionService::registrationActivated, &q, [this] {
+            ensureMainWindow().showSettingsLocation(QStringLiteral("account"));
+        });
         translationService = &translation::TranslationService::forClient(
             *translationClient, applicationStorage.configuration(),
             presentation::LanguageManager::instance().currentLocale());

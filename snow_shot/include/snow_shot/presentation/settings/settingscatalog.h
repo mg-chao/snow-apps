@@ -561,6 +561,7 @@ struct SettingsSectionDefinition {
 };
 
 enum class SettingsPageKind {
+    Account,
     GeneratedSettings,
     ScreenshotHistory,
     PinnedWindowManagement,

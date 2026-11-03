@@ -3459,6 +3459,12 @@ QVector<SettingsPageDefinition> builtInPages() {
          {},
          {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System settings")),
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Autostart"))}},
+        {QStringLiteral("account"),
+         QStringLiteral("/settings/account"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Account")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Membership, credits and transactions")),
+         {},
+         SettingsPageKind::Account},
         {QStringLiteral("general-appearance"),
          QStringLiteral("/settings/general-appearance"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Appearance")),
@@ -4342,6 +4348,8 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     settingsGroup.pages = {
         {QStringLiteral("nav.general"), QStringLiteral("general"),
          []() { return outlined_icons::Setting(); }},
+        {QStringLiteral("nav.account"), QStringLiteral("account"),
+         []() { return outlined_icons::User(); }},
         {QStringLiteral("nav.general-appearance"), QStringLiteral("general-appearance"),
          []() { return outlined_icons::Control(); }},
         {QStringLiteral("nav.screenshots"), QStringLiteral("screenshots"),
@@ -4522,7 +4530,8 @@ SettingsCatalog::SettingsCatalog(QVector<SettingsPageDefinition> pages,
                   !app::edition::textTranslation || !app::edition::apiConfiguration ||
                   !app::edition::extendedFeatures) {
         const auto pageAvailable = [](const QString& id) {
-            return (app::edition::textTranslation || id != QStringLiteral("translation")) &&
+            return (!app::edition::isMini || id != QStringLiteral("account")) &&
+                   (app::edition::textTranslation || id != QStringLiteral("translation")) &&
                    (app::edition::apiConfiguration || id != QStringLiteral("api-configuration")) &&
                    (app::edition::extendedFeatures || id != QStringLiteral("extended-features"));
         };

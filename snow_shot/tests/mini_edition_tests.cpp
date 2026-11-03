@@ -31,8 +31,9 @@ void settingsExcludeRemovedFeatures() {
     const auto& registry = settings::builtInSettingsRegistry();
     const auto& catalog = registry.catalog();
     require(catalog.validationErrors().isEmpty(), "Mini settings catalog must validate");
-    for (const QString& page : {QStringLiteral("translation"), QStringLiteral("api-configuration"),
-                                QStringLiteral("extended-features")}) {
+    for (const QString& page :
+         {QStringLiteral("account"), QStringLiteral("translation"),
+          QStringLiteral("api-configuration"), QStringLiteral("extended-features")}) {
         require(catalog.page(page) == nullptr, "removed settings pages must be unavailable");
     }
     require(

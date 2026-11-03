@@ -497,9 +497,9 @@ void builtInCatalogIsCompleteAndValid() {
             }) != screenshotInterface->items.cend(),
         "selection center guide color must appear immediately below cursor guide color");
 #ifdef Q_OS_MACOS
-    require(catalog.pages().size() == 17, "macOS includes App Permissions");
+    require(catalog.pages().size() == 18, "macOS includes Account and App Permissions");
 #else
-    require(catalog.pages().size() == 16, "other platforms include pin management");
+    require(catalog.pages().size() == 17, "other platforms include Account and pin management");
 #endif
 
     for (const auto& pageId :
@@ -1635,35 +1635,36 @@ void builtInCatalogIsCompleteAndValid() {
             break;
         }
     }
-    require(settingsGroup != nullptr && settingsGroup->pages.size() >= 3 &&
+    require(settingsGroup != nullptr && settingsGroup->pages.size() >= 4 &&
                 settingsGroup->pages.at(0).pageId == QStringLiteral("general") &&
-                settingsGroup->pages.at(1).pageId == QStringLiteral("general-appearance") &&
-                settingsGroup->pages.at(2).pageId == QStringLiteral("screenshots"),
-            "Screenshots must appear below General and Appearance in the Settings navigation");
+                settingsGroup->pages.at(1).pageId == QStringLiteral("account") &&
+                settingsGroup->pages.at(2).pageId == QStringLiteral("general-appearance") &&
+                settingsGroup->pages.at(3).pageId == QStringLiteral("screenshots"),
+            "Account follows General, with Appearance and Screenshots after it");
 #ifdef Q_OS_MACOS
-    constexpr int expectedSettingsPages = 11;
+    constexpr int expectedSettingsPages = 12;
     require(settingsGroup->pages.constLast().pageId == QStringLiteral("app-permissions"),
             "macOS App Permissions follows System settings");
 #else
-    constexpr int expectedSettingsPages = 10;
+    constexpr int expectedSettingsPages = 11;
 #endif
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
                 settingsGroup->pages.size() == expectedSettingsPages &&
-                settingsGroup->pages.at(3).pageId == QStringLiteral("pinned-windows") &&
-                settingsGroup->pages.at(4).pageId == QStringLiteral("screen-recording") &&
-                settingsGroup->pages.at(5).pageId ==
+                settingsGroup->pages.at(4).pageId == QStringLiteral("pinned-windows") &&
+                settingsGroup->pages.at(5).pageId == QStringLiteral("screen-recording") &&
+                settingsGroup->pages.at(6).pageId ==
                     QStringLiteral("text-recognition-translation") &&
-                settingsGroup->pages.at(6).pageId == QStringLiteral("shortcuts-mouse") &&
-                settingsGroup->pages.at(7).pageId == QStringLiteral("desktop-tools") &&
-                settingsGroup->pages.at(8).pageId == QStringLiteral("files-history") &&
-                settingsGroup->pages.at(9).pageId == QStringLiteral("connections-services"),
+                settingsGroup->pages.at(7).pageId == QStringLiteral("shortcuts-mouse") &&
+                settingsGroup->pages.at(8).pageId == QStringLiteral("desktop-tools") &&
+                settingsGroup->pages.at(9).pageId == QStringLiteral("files-history") &&
+                settingsGroup->pages.at(10).pageId == QStringLiteral("connections-services"),
             "Settings navigation must group feature controls and shared preferences predictably");
     const auto* applicationShortcutsPage = catalog.page(QStringLiteral("shortcuts-mouse"));
     require(applicationShortcutsPage != nullptr &&
                 applicationShortcutsPage->route == QStringLiteral("/settings/shortcuts-mouse") &&
                 applicationShortcutsPage->title.translated() ==
                     QStringLiteral("Application shortcuts") &&
-                settingsGroup->pages.at(6).id == QStringLiteral("nav.shortcuts-mouse"),
+                settingsGroup->pages.at(7).id == QStringLiteral("nav.shortcuts-mouse"),
             "Application shortcuts must expose the renamed title, route, and navigation");
     const auto* drawingShortcuts =
         catalog.section(QStringLiteral("shortcuts-mouse"), QStringLiteral("drawing-shortcuts"));
@@ -1851,8 +1852,20 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 screenshotShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
-            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 19 &&
+            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 20 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
+            drawingShortcuts->items.at(5).id == QStringLiteral("drawing-shortcut.bracket") &&
+            drawingShortcuts->items.at(5).title.translated() ==
+                QStringLiteral("Bracket annotation") &&
+            drawingShortcuts->items.at(5).configurationKey ==
+                QStringLiteral("drawing_shortcuts/bracket") &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                drawingShortcuts->items.at(5).payload)
+                    .scope == settings::SettingsLocalShortcutScope::Drawing &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                drawingShortcuts->items.at(5).payload)
+                    .iconFactory() ==
+                snow_shot::presentation::icons::custom::outlined::BracketAnnotation() &&
             drawingShortcuts->items.at(2).id == QStringLiteral("drawing-shortcut.speech_bubble") &&
             drawingShortcuts->items.at(2).title.translated() == QStringLiteral("Speech Bubble") &&
             drawingShortcuts->items.at(2).configurationKey ==
@@ -1947,33 +1960,33 @@ void builtInCatalogIsCompleteAndValid() {
             otherShortcutSection->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             otherShortcutSection->title.translated() == QStringLiteral("Image Recognition") &&
-            drawingShortcuts->items.at(9).id == QStringLiteral("drawing-shortcut.magnifier") &&
-            drawingShortcuts->items.at(9).title.translated() == QStringLiteral("Magnifier") &&
-            drawingShortcuts->items.at(9).configurationKey ==
+            drawingShortcuts->items.at(10).id == QStringLiteral("drawing-shortcut.magnifier") &&
+            drawingShortcuts->items.at(10).title.translated() == QStringLiteral("Magnifier") &&
+            drawingShortcuts->items.at(10).configurationKey ==
                 QStringLiteral("drawing_shortcuts/magnifier") &&
-            drawingShortcuts->items.at(15).id == QStringLiteral("drawing-shortcut.reset_canvas") &&
-            drawingShortcuts->items.at(15).title.translated() == QStringLiteral("Reset canvas") &&
-            drawingShortcuts->items.at(15).configurationKey ==
+            drawingShortcuts->items.at(16).id == QStringLiteral("drawing-shortcut.reset_canvas") &&
+            drawingShortcuts->items.at(16).title.translated() == QStringLiteral("Reset canvas") &&
+            drawingShortcuts->items.at(16).configurationKey ==
                 QStringLiteral("drawing_shortcuts/reset_canvas") &&
-            drawingShortcuts->items.at(17).id == QStringLiteral("screenshot-shortcut.undo") &&
-            drawingShortcuts->items.at(18).id == QStringLiteral("screenshot-shortcut.redo") &&
+            drawingShortcuts->items.at(18).id == QStringLiteral("screenshot-shortcut.undo") &&
+            drawingShortcuts->items.at(19).id == QStringLiteral("screenshot-shortcut.redo") &&
             drawingShortcuts->items.at(4).configurationKey ==
                 QStringLiteral("drawing_shortcuts/distance") &&
-            drawingShortcuts->items.at(5).id == QStringLiteral("drawing-shortcut.angle") &&
-            drawingShortcuts->items.at(5).title.translated() ==
+            drawingShortcuts->items.at(6).id == QStringLiteral("drawing-shortcut.angle") &&
+            drawingShortcuts->items.at(6).title.translated() ==
                 QStringLiteral("Angle annotation") &&
-            drawingShortcuts->items.at(5).configurationKey ==
+            drawingShortcuts->items.at(6).configurationKey ==
                 QStringLiteral("drawing_shortcuts/angle") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                drawingShortcuts->items.at(5).payload)
+                drawingShortcuts->items.at(6).payload)
                     .scope == settings::SettingsLocalShortcutScope::Drawing &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                drawingShortcuts->items.at(5).payload)
+                drawingShortcuts->items.at(6).payload)
                     .iconFactory() ==
                 snow_shot::presentation::icons::custom::outlined::AngleAnnotation() &&
-            drawingShortcuts->items.at(6).configurationKey ==
+            drawingShortcuts->items.at(7).configurationKey ==
                 QStringLiteral("drawing_shortcuts/line") &&
-            drawingShortcuts->items.at(10).configurationKey ==
+            drawingShortcuts->items.at(11).configurationKey ==
                 QStringLiteral("drawing_shortcuts/spotlight") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),

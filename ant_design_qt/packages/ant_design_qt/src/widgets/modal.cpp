@@ -947,6 +947,13 @@ bool isFocusableWidget(QWidget* widget) {
          focusPolicy == Qt::WheelFocus;
 }
 
+QWidget* effectiveFocusTarget(QWidget* widget) {
+  while (widget && widget->focusProxy()) {
+    widget = widget->focusProxy();
+  }
+  return widget;
+}
+
 }  // namespace
 
 AdModal* AdModalService::showStaticRequest(const AdModalService::Request& request,
@@ -2983,7 +2990,7 @@ void AdModal::updateAccessibility() {
   }
 }
 
-QWidget* AdModal::nextFocusableFrom(QWidget* start, bool next) const {
+QWidget* AdModal::nextFocusableFrom(QWidget* start, bool next, QWidget* excluded) const {
   if (!overlay_ || !start) {
     return nullptr;
   }
@@ -2993,7 +3000,13 @@ QWidget* AdModal::nextFocusableFrom(QWidget* start, bool next) const {
   while (cursor && !visited.contains(cursor)) {
     visited.insert(cursor);
     if (cursor != overlay_.data() && overlay_->isAncestorOf(cursor) && isFocusableWidget(cursor)) {
-      return cursor;
+      // Composite controls and their internal editors can share the same effective
+      // focus target. Visiting a proxy back to the current control consumes Tab
+      // without moving focus (for example QAbstractSpinBox's line edit).
+      QWidget* target = effectiveFocusTarget(cursor);
+      if (target != excluded && overlay_->isAncestorOf(target) && isFocusableWidget(target)) {
+        return target;
+      }
     }
     cursor = next ? cursor->nextInFocusChain() : cursor->previousInFocusChain();
   }
@@ -3008,7 +3021,10 @@ QWidget* AdModal::firstFocusableWidget(bool reverse) const {
 QWidget* AdModal::resolveInitialFocusTarget() const {
   if (initialFocusWidget_ && overlay_ && overlay_->isAncestorOf(initialFocusWidget_) &&
       isFocusableWidget(initialFocusWidget_)) {
-    return initialFocusWidget_;
+    QWidget* target = effectiveFocusTarget(initialFocusWidget_);
+    if (overlay_->isAncestorOf(target) && isFocusableWidget(target)) {
+      return target;
+    }
   }
   if (acceptButtonControl_ && acceptButtonControl_->isVisible() &&
       acceptButtonControl_->isEnabled()) {
@@ -3043,18 +3059,10 @@ bool AdModal::focusNextPrevChildInModal(bool next) {
     return true;
   }
 
-  QWidget* cursor = current;
-  QSet<QWidget*> visited;
-  while (cursor && !visited.contains(cursor)) {
-    visited.insert(cursor);
-    cursor = next ? cursor->nextInFocusChain() : cursor->previousInFocusChain();
-    if (!cursor) {
-      break;
-    }
-    if (overlay_->isAncestorOf(cursor) && isFocusableWidget(cursor)) {
-      cursor->setFocus(next ? Qt::TabFocusReason : Qt::BacktabFocusReason);
-      return true;
-    }
+  QWidget* start = next ? current->nextInFocusChain() : current->previousInFocusChain();
+  if (QWidget* target = nextFocusableFrom(start, next, effectiveFocusTarget(current))) {
+    target->setFocus(next ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+    return true;
   }
 
   QWidget* wrap = firstFocusableWidget(!next);

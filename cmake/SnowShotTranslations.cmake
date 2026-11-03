@@ -42,7 +42,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT_MINI)
             "${_snow_shot_mini_merged_dir}/snow_shot_${_locale}.ts")
     endforeach()
     set(_snow_shot_mini_catalog_arguments --exclude-module translation)
-    foreach(_context IN ITEMS SnowShotApiClient CustomAiModelsSettingsWidget
+    foreach(_context IN ITEMS AccountPageWidget AccountSessionService
+            snow_shot::app::AccountSessionService SnowShotApiClient CustomAiModelsSettingsWidget
             TextTranslationSettingsWidget ScreenshotQrController
             ScreenshotImageConversionController ScreenshotImageConversionView
             ScreenshotTableEditor ScreenshotRecognitionFileExport)

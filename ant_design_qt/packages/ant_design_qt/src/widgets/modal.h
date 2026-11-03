@@ -469,7 +469,7 @@ class AdModal final : public QObject {
   void updateAccessibility();
   bool focusNextPrevChildInModal(bool next);
   QWidget* firstFocusableWidget(bool reverse = false) const;
-  QWidget* nextFocusableFrom(QWidget* start, bool next) const;
+  QWidget* nextFocusableFrom(QWidget* start, bool next, QWidget* excluded = nullptr) const;
   QWidget* resolveInitialFocusTarget() const;
   VisualStyle resolveVisualStyle() const;
   void attachContentWidget(QWidget* widget);

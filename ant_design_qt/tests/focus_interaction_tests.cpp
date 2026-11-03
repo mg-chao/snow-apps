@@ -1,20 +1,28 @@
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
+#include "widgets/combo_box.h"
 #include "widgets/modal.h"
+#include "widgets/multi_select.h"
 #include "widgets/popconfirm.h"
 #include "widgets/radio.h"
+#include "widgets/select.h"
 #include "widgets/switch.h"
 #include "widgets/input_internal.h"
 #include "widgets/input_line_edit.h"
+#include "widgets/input_number.h"
+#include "widgets/input_password_edit.h"
+#include "widgets/input_search_edit.h"
 #include "widgets/input_text_edit.h"
 
 #include <QApplication>
 #include <QFocusEvent>
 #include <QImage>
+#include <QListView>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTest>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <iostream>
@@ -385,6 +393,142 @@ void popconfirmDismissalPreservesCurrentFocus(bool action) {
   require(current.hasFocus(), "closing a popconfirm must not refocus its source button");
 }
 
+void modalTabNavigationSkipsCompositeInternals(AdModal::Mode mode) {
+  QWidget owner;
+  owner.show();
+  owner.activateWindow();
+  auto* content = new QWidget;
+  auto* layout = new QVBoxLayout(content);
+  auto* first = new AdInputNumber(content);
+  auto* second = new AdInputNumber(content);
+  auto* disabled = new AdInputNumber(content);
+  disabled->setEnabled(false);
+  auto* hidden = new AdLineEdit(content);
+  hidden->hide();
+  auto* searchHost = new QWidget(content);
+  auto* searchLayout = new QVBoxLayout(searchHost);
+  auto* search = new AdSearchEdit(searchHost);
+  searchLayout->addWidget(search);
+  searchHost->setFocusPolicy(Qt::StrongFocus);
+  searchHost->setFocusProxy(search);
+  auto* last = new AdLineEdit(content);
+  layout->addWidget(first);
+  layout->addWidget(second);
+  layout->addWidget(disabled);
+  layout->addWidget(hidden);
+  layout->addWidget(searchHost);
+  layout->addWidget(last);
+  AdModal modal(&owner);
+  modal.setMode(mode);
+  modal.setCloseButtonVisible(false);
+  modal.setFooterVisible(false);
+  modal.setContentWidget(content);
+  modal.setInitialFocusWidget(searchHost);
+  modal.open();
+  settle();
+  require(search->focusProxy()->hasFocus(), "initial focus must resolve nested control proxies");
+  first->focusEditor();
+  settle();
+  auto* firstEditor = first->findChild<QLineEdit*>();
+  require(firstEditor && firstEditor->hasFocus(), "number fixture must focus its editor");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(second->findChild<QLineEdit*>()->hasFocus(),
+          "one Tab must leave a composite number input and activate the next editor");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(search->focusProxy()->hasFocus(),
+          "Tab must skip disabled and hidden controls and resolve nested focus proxies");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(search->findChild<AdButton*>()->hasFocus(),
+          "Tab must retain the search control's independent submit action");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(last->hasFocus(), "Tab must leave the search action for the next field");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(firstEditor->hasFocus(), "Tab must wrap to the first logical editor");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+  require(last->hasFocus(), "Shift+Tab must wrap to the last logical editor");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+  require(search->findChild<AdButton*>()->hasFocus(),
+          "reverse traversal must retain the search submit action");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+  require(search->focusProxy()->hasFocus(), "reverse traversal must activate a nested proxy once");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+  require(second->findChild<QLineEdit*>()->hasFocus(),
+          "Shift+Tab must activate the previous composite editor");
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+  require(firstEditor->hasFocus(), "reverse traversal must visit each number input once");
+}
+
+void selectorTabNavigationVisitsEachFieldOnce() {
+  QWidget owner;
+  auto* layout = new QVBoxLayout(&owner);
+  AdLineEdit before;
+  AdSelect select;
+  AdComboBox combo;
+  AdMultiSelect multiple;
+  AdLineEdit after;
+  for (auto* control : QVector<QWidget*>{&before, &select, &combo, &multiple, &after}) {
+    layout->addWidget(control);
+  }
+  auto* cachedView = select.view();
+  owner.show();
+  owner.activateWindow();
+  settle();
+  require(!cachedView->isVisible() && !select.popupVisible(),
+          "preparing a selector view under a hidden owner must keep its popup closed");
+  for (const auto mode : {AdSelect::Mode::Single, AdSelect::Mode::Multiple, AdSelect::Mode::Tags}) {
+    select.setMode(mode);
+    combo.setEditable(mode != AdSelect::Mode::Single);
+    settle();
+    before.setFocus();
+    for (auto* expected : QVector<QWidget*>{&select, &combo, &multiple, &after}) {
+      QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+      require(expected->hasFocus(), "selectors must expose one logical Tab stop per field");
+    }
+    for (auto* expected : QVector<QWidget*>{&multiple, &combo, &select, &before}) {
+      QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+      require(expected->hasFocus(), "reverse selector traversal must visit each field once");
+    }
+  }
+}
+
+void passwordTabNavigationVisitsEachFieldOnce() {
+  QWidget owner;
+  auto* layout = new QVBoxLayout(&owner);
+  AdLineEdit username;
+  AdPasswordEdit password;
+  AdPasswordEdit confirmation;
+  AdLineEdit captcha;
+  for (auto* editor : {&username, static_cast<AdLineEdit*>(&password),
+                       static_cast<AdLineEdit*>(&confirmation), &captcha}) {
+    layout->addWidget(editor);
+    editor->setText(QStringLiteral("value"));
+  }
+  owner.show();
+  owner.activateWindow();
+  settle();
+  username.setFocus();
+  for (QWidget* expected : QVector<QWidget*>{&password, &confirmation, &captcha}) {
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+    require(QApplication::focusWidget() == expected,
+            "one Tab must activate the next field without stopping on password accessories");
+  }
+  for (QWidget* expected : QVector<QWidget*>{&confirmation, &password, &username}) {
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab, Qt::ShiftModifier);
+    require(QApplication::focusWidget() == expected,
+            "Shift+Tab must visit password fields without accessory stops");
+  }
+  password.setFocus();
+  auto* reveal = password.findChild<QToolButton*>(QStringLiteral("ad-input-suffix-action"));
+  require(reveal, "password fixture must expose its reveal action");
+  QTest::mouseClick(reveal, Qt::LeftButton);
+  require(password.textVisible() && password.hasFocus(),
+          "revealing a password with the mouse must preserve the editing focus");
+  password.setRevealActionVisible(false);
+  password.setRevealActionVisible(true);
+  QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+  require(confirmation.hasFocus(), "refreshing the reveal action must preserve field navigation");
+}
+
 void modalTabNavigationRemainsAvailable() {
   QWidget owner;
   owner.show();
@@ -427,6 +571,10 @@ int main(int argc, char* argv[]) {
     focusOutlineRequiresKeyboardInput<AdRadio>();
     focusOutlineRequiresKeyboardInput<AdSwitch>();
     modalTabNavigationRemainsAvailable();
+    passwordTabNavigationVisitsEachFieldOnce();
+    selectorTabNavigationVisitsEachFieldOnce();
+    modalTabNavigationSkipsCompositeInternals(AdModal::Mode::Overlay);
+    modalTabNavigationSkipsCompositeInternals(AdModal::Mode::Window);
     std::cout << "Focus interaction tests passed\n";
     return 0;
   } catch (const std::exception& error) {

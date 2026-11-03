@@ -11,6 +11,8 @@
 
 #include <QApplication>
 #include <QLabel>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QCursor>
@@ -311,7 +313,7 @@ void selectionResizeModalAlignsColorPickerTriggerToControlStart() {
     require(form != nullptr, "selection resize modal should create its normal form");
     layoutForm(*form, 452);
 
-    AdFormItem* colorItem = form->itemForName(QStringLiteral("shadowColor"));
+    AdFormItem* colorItem = form->itemForName(QStringLiteral("effectColor"));
     require(colorItem != nullptr, "selection resize modal should create its color field");
     auto* picker = colorItem->findChild<adqt::widgets::AdColorPicker*>();
     auto* trigger =
@@ -422,6 +424,63 @@ void selectionResizeModalUsesSettledFirstFrameGeometry() {
             "selection resize modal window should keep the settled content size");
     require(hasFocusWithin(content->initialFocusWidget()),
             "selection resize modal should initially focus the quick-set control");
+    modal.close();
+    flushEvents();
+}
+
+void selectionResizeModalNavigatesEditorsWithTab() {
+    QWidget owner;
+    owner.resize(900, 700);
+    owner.show();
+    owner.activateWindow();
+    flushEvents();
+    ScreenshotSelectionParams params;
+    params.selection = QRect(40, 30, 640, 360);
+    auto* content = new ScreenshotSelectionResizeModalContent(params, QRect(0, 0, 1920, 1080),
+                                                              false, params, {});
+    adqt::widgets::AdModal modal(&owner);
+    modal.setMode(adqt::widgets::AdModal::Mode::Window);
+    modal.setContentWidget(content);
+    modal.setInitialFocusWidget(content->initialFocusWidget());
+    modal.open();
+    flushEvents();
+    auto* form = content->findChild<AdForm*>(QStringLiteral("selectionResizeForm"));
+    require(form, "selection focus fixture exposes its form");
+    const auto editor = [form](const char* key) {
+        auto* item = form->itemForName(QString::fromLatin1(key));
+        return item ? item->findChild<QLineEdit*>() : nullptr;
+    };
+    auto* x = editor("x");
+    auto* y = editor("y");
+    auto* width = editor("width");
+    require(x && y && width, "selection focus fixture exposes coordinate and size editors");
+    int step = 0;
+    const auto tabTo = [&step](QWidget* expected, bool reverse = false) {
+        ++step;
+        QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, reverse ? Qt::ShiftModifier : Qt::NoModifier);
+        QCoreApplication::sendEvent(QApplication::focusWidget(), &tab);
+        if (!expected->hasFocus()) {
+            const auto fieldName = [](QWidget* widget) {
+                for (auto* parent = widget; parent; parent = parent->parentWidget()) {
+                    if (auto* item = qobject_cast<AdFormItem*>(parent)) {
+                        return item->fieldKey();
+                    }
+                }
+                return widget ? widget->objectName() : QStringLiteral("null");
+            };
+            std::cerr << "Selection Tab step " << step << ": expected "
+                      << fieldName(expected).toStdString() << ", actual "
+                      << fieldName(QApplication::focusWidget()).toStdString() << '\n';
+        }
+        require(expected->hasFocus(),
+                "one Tab or Shift+Tab must activate the adjacent selection value editor");
+    };
+    tabTo(x);
+    tabTo(y);
+    tabTo(width);
+    tabTo(y, true);
+    tabTo(x, true);
+    tabTo(content->initialFocusWidget(), true);
     modal.close();
     flushEvents();
 }
@@ -735,6 +794,7 @@ int main(int argc, char* argv[]) {
     selectionResizeModalAlignsColorPickerTriggerToControlStart();
     selectionResizeModalUsesSingleAspectRatioLockControl();
     selectionResizeModalUsesSettledFirstFrameGeometry();
+    selectionResizeModalNavigatesEditorsWithTab();
     selectionPresetSelectUsesPrimaryAddActionAndClearsAfterEdits();
     selectedPresetPopupOpensAtItsSettledSize();
     selectionPresetCreateModalRequiresNameAndUsesCurrentDimensions();

@@ -1407,6 +1407,8 @@ AdSelect::AdSelect(QWidget* parent) : QWidget(parent) {
   lineEdit_->setPalette(inputBasePalette);
   lineEdit_->setPlaceholderText(placeholder_);
   lineEdit_->installEventFilter(this);
+  // The selector shell and its editor represent one keyboard focus stop in all modes.
+  setFocusProxy(lineEdit_);
   contentLayout_->addWidget(lineEdit_, 1);
   rootLayout_->addWidget(contentHost_, 1);
 
@@ -5382,6 +5384,8 @@ void AdSelect::ensurePopup() {
   popup_->setProperty("adqt.interaction.surface", true);
   popup_->installEventFilter(this);
   applyPopupLayerMode();
+  // Preparing the view must not let a hidden owner's later show open the popup.
+  popup_->hide();
 
   popupLayout_ = new QVBoxLayout(popup_);
   popupLayout_->setContentsMargins(4, 4, 4, 4);

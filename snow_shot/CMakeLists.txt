@@ -256,7 +256,7 @@ if(NOT DEFINED SNOW_SHOT_API_BASE_URL OR SNOW_SHOT_API_BASE_URL STREQUAL "")
         set(SNOW_SHOT_API_BASE_URL "https://snowshot.top" CACHE STRING
             "Snow Shot API base URL." FORCE)
     elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(SNOW_SHOT_API_BASE_URL "http://localhost:8080" CACHE STRING
+        set(SNOW_SHOT_API_BASE_URL "https://test.snowshot.top" CACHE STRING
             "Snow Shot API base URL." FORCE)
     else()
         set(SNOW_SHOT_API_BASE_URL "https://snowshot.top" CACHE STRING
@@ -806,6 +806,10 @@ target_link_libraries(snow_shot_storage PUBLIC
 )
 
 add_library(snow_shot_translation STATIC
+    include/snow_shot/app/accountsessionservice.h
+    src/app/accountsessionservice.cpp
+    include/snow_shot/storage/accountsecretstore.h
+    src/storage/accountsecretstore.cpp
     include/snow_shot/translation/translationservice.h
     include/snow_shot/translation/translationlanguages.h
     include/snow_shot/translation/translationlanguagecatalog.h
@@ -822,6 +826,12 @@ add_library(snow_shot_translation STATIC
     include/snow_shot/presentation/translationpagecontroller.h
     src/presentation/services/translationpagecontroller.cpp
 )
+if(WIN32)
+    target_link_libraries(snow_shot_translation PRIVATE crypt32)
+elseif(APPLE)
+    target_sources(snow_shot_translation PRIVATE src/platform/macos/accountsecretstore.mm)
+    target_link_libraries(snow_shot_translation PRIVATE "-framework Security" "-framework Foundation")
+endif()
 snow_enable_unity_build(snow_shot_translation)
 target_include_directories(snow_shot_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_translation PUBLIC snow_shot_storage Qt6::Network
@@ -897,6 +907,8 @@ target_link_libraries(snow_shot_main_window_skin PUBLIC Qt6::Widgets
     PRIVATE snow_shot_storage snow_shot_image_codec snow_draw_engine_qt_canvas)
 
 set(SNOW_SHOT_SETTINGS_SOURCES
+    include/snow_shot/presentation/components/accountpagewidget.h
+    src/presentation/components/accountpagewidget.cpp
     src/presentation/services/pinnedtextstylecapture.cpp
     include/snow_shot/presentation/selectedtexttranslationcoordinator.h
     src/presentation/services/selectedtexttranslationcoordinator.cpp
@@ -9596,6 +9608,18 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow_shot_translation snow_shot_diagnostics Qt6::Core Qt6::Gui Qt6::Network
             snow_shot_image_codec)
     endif()
+
+    add_executable(snow-shot-account-tests tests/account_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-account-tests PRIVATE snow_shot_settings Qt6::Network)
+    if(WIN32)
+        target_link_libraries(snow-shot-account-tests PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    snow_shot_add_translations(snow-shot-account-tests)
+    snow_shot_import_offscreen_platform(snow-shot-account-tests)
+    add_test(NAME snow-shot-account-tests COMMAND snow-shot-account-tests -platform offscreen)
+    set_tests_properties(snow-shot-account-tests PROPERTIES LABELS "unit" TIMEOUT 45
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 
     add_executable(snow-shot-api-client-tests
         tests/snowshot_api_client_tests.cpp
