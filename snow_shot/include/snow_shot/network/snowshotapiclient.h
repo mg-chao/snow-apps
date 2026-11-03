@@ -18,6 +18,8 @@
 #include <QVector>
 
 #include <functional>
+#include <memory>
+#include <optional>
 
 class QNetworkAccessManager;
 class QJsonObject;
@@ -119,6 +121,15 @@ struct SnowShotImageConversionRequest {
 
 using SnowShotImageConversionResult = SnowShotTranslationResult;
 
+// Immutable after preparation. Corrections append turns without re-encoding the image or
+// changing the model's cached conversation prefix. Never persist this image-bearing context.
+class SnowShotTableVisionConversation final {
+    friend class SnowShotApiClient;
+    QByteArray m_body;
+    QString m_model;
+    QString m_fingerprint;
+};
+
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_LATEX_RECOGNITION || SNOW_SHOT_ENABLE_IMAGE_CONVERSION ||                     \
     SNOW_SHOT_ENABLE_API_CONFIGURATION
@@ -156,6 +167,14 @@ class SnowShotApiClient final : public QObject {
                                             LatexCompletion completion);
     [[nodiscard]] RequestToken extractTableVision(const QImage& image, const QString& model,
                                                   QObject* receiver, Completion completion);
+    [[nodiscard]] RequestToken
+    streamTableVision(const QImage& image, const QString& model,
+                      std::shared_ptr<SnowShotTableVisionConversation> conversation,
+                      QObject* receiver, TranslationDelta delta, TranslationCompletion completion);
+    [[nodiscard]] RequestToken
+    correctTableVision(std::shared_ptr<SnowShotTableVisionConversation> conversation,
+                       const QString& source, QObject* receiver, TranslationDelta delta,
+                       TranslationCompletion completion);
     // Optional progress receives raw content chunks; only completion publishes validated LaTeX.
     [[nodiscard]] RequestToken extractLatexVision(const QImage& image, const QString& model,
                                                   QObject* receiver, LatexCompletion completion,
@@ -224,10 +243,12 @@ class SnowShotApiClient final : public QObject {
     void startChatStream(RequestToken token, const QByteArray& body);
     void drainChatStream(RequestToken token);
     void completeChatStream(RequestToken token);
-    RequestToken streamImageRequest(const QString& model, const QImage& image,
-                                    const QString& format, const QString& prompt, QObject* receiver,
-                                    TranslationDelta delta, TranslationCompletion completion,
-                                    bool absoluteDeadline);
+    RequestToken
+    streamImageRequest(const QString& model, const QImage& image, const QString& format,
+                       const QString& prompt, QObject* receiver, TranslationDelta delta,
+                       TranslationCompletion completion, bool absoluteDeadline,
+                       std::shared_ptr<SnowShotTableVisionConversation> conversation = {},
+                       std::optional<QString> correction = std::nullopt);
     void finishModelCatalogSubscribers(RequestToken owner, SnowShotChatModelsResult result);
     void noteChatModelsLocale(const QString& locale);
 

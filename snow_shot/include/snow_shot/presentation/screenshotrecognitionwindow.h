@@ -35,6 +35,7 @@ class QTextDocument;
 class QTextBrowser;
 class QTextEdit;
 class QTimer;
+class ScreenshotTableDocument;
 class ScreenshotLatexRenderer;
 class QUrl;
 class ScreenshotFormattedTextLayer;
@@ -159,6 +160,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void clearFormattedText();
 
     void setTableSession(std::shared_ptr<ScreenshotTableEditingSession> session);
+    void showTablePreview(const ScreenshotTableDocument& document);
     void clearTableSession(bool retainEditor = false);
     [[nodiscard]] ScreenshotTableCommandState tableCommandState() const;
     void mergeTableSelection();
@@ -331,6 +333,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     ScreenshotFormattedTextLayer* m_formattedTextLayer = nullptr;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     ScreenshotTableEditor* m_tableEditor = nullptr;
+    bool m_tablePreview = false;
 #else
     static constexpr QWidget* m_tableEditor = nullptr;
 #endif

@@ -1084,6 +1084,12 @@ void ScreenshotRecognitionWindow::clearFormattedText() {
 void ScreenshotRecognitionWindow::setTableSession(
     std::shared_ptr<ScreenshotTableEditingSession> session) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    const bool preservePreview = m_tablePreview && m_tableEditor;
+    const int vertical = preservePreview ? m_tableEditor->verticalScrollBar()->value() : 0;
+    const int horizontal = preservePreview ? m_tableEditor->horizontalScrollBar()->value() : 0;
+    QVector<int> widths;
+    if (preservePreview)
+        widths = tableColumnWidths();
     clearImageConversion();
     hideTextEditor();
     clearFormattedText();
@@ -1120,13 +1126,38 @@ void ScreenshotRecognitionWindow::setTableSession(
     }
     // Showing and focusing a table scrolls its current cell into view. Do that while unbound,
     // then let session restoration apply the model's independent selection and scroll position.
+    m_tablePreview = false;
+    m_tableEditor->setPreviewOnly(false);
     m_stack->setCurrentWidget(m_tableEditor);
     if (!m_showOriginalImage) {
         m_tableEditor->setFocus(Qt::OtherFocusReason);
     }
     m_tableEditor->setSession(std::move(session));
+    if (preservePreview) {
+        for (int column = 0;
+             column < std::min(widths.size(), qsizetype(m_tableEditor->model()->columnCount()));
+             ++column)
+            m_tableEditor->setColumnWidth(column, widths[column]);
+        m_tableEditor->horizontalScrollBar()->setValue(horizontal);
+        m_tableEditor->verticalScrollBar()->setValue(vertical);
+    }
 #else
     Q_UNUSED(session)
+#endif
+}
+
+void ScreenshotRecognitionWindow::showTablePreview(const ScreenshotTableDocument& document) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    const QPointer<ScreenshotRecognitionWindow> guard(this);
+    if (!m_tablePreview || !m_tableEditor)
+        setTableSession({});
+    if (!guard)
+        return;
+    m_tablePreview = true;
+    m_stack->setCurrentWidget(m_tableEditor);
+    m_tableEditor->setPreview(document);
+#else
+    Q_UNUSED(document)
 #endif
 }
 
@@ -1135,6 +1166,8 @@ void ScreenshotRecognitionWindow::clearTableSession(bool retainEditor) {
     if (m_tableEditor == nullptr) {
         return;
     }
+    m_tablePreview = false;
+    m_tableEditor->setPreviewOnly(false);
     m_tableEditor->clearSession();
     if (!retainEditor) {
         m_stack->removeWidget(m_tableEditor);

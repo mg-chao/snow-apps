@@ -29,6 +29,8 @@
 #include <QUuid>
 
 #include <memory>
+#include <atomic>
+#include <utility>
 
 #include <cstring>
 #include <cstdlib>
@@ -2626,9 +2628,89 @@ void visionExtractionRejectsIncompleteAndInvalidResponses() {
         else if (!server.disconnected(0))
             server.finish(0);
         translation_tests::waitUntil([&] { return completed; }, "invalid vision stream completes");
-        require(
-            !result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
-            "invalid fragments, incomplete streams, and empty output never become usable tables");
+        if (scenario == 0 || scenario == 1)
+            require(result.succeeded(),
+                    "the table importer decides renderability after transport completion");
+        else if (scenario == 3)
+            require(!result.succeeded() && result.html.isEmpty() &&
+                        result.code == QStringLiteral("length"),
+                    "token-limited output must fail even when its HTML is renderable");
+        else if (scenario == 5)
+            require(result.html.isEmpty() && result.error.isEmpty(),
+                    "empty completed table output represents no recognizable table");
+        else
+            require(!result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
+                    "invalid or incomplete transports are never format-correction candidates");
+    }
+}
+
+void tableVisionCorrectionsReusePreparedConversation() {
+    for (const bool custom : {false, true}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QString model = QStringLiteral("vision");
+        if (custom) {
+            snow_shot::CustomAiModelConfiguration config{
+                QStringLiteral("11111111-1111-4111-8111-111111111111"),
+                QStringLiteral("Fixture"),
+                server.url() + QStringLiteral("/v1"),
+                {},
+                QStringLiteral("fixture-model"),
+                true};
+            client.setCustomModels({config});
+            model = config.selectionId();
+            server.streamPath = "/v1/chat/completions";
+        }
+        std::atomic_int encodes{0};
+        SnowShotApiClientTestAccess::prepare(client, [&](const QImage&) {
+            ++encodes;
+            return QByteArray("identical-encoded-image");
+        });
+        auto conversation = std::make_shared<SnowShotTableVisionConversation>();
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QString source;
+        int completions = 0;
+        const auto delta = [&](const QString& text) { source += text; };
+        const auto completion = [&](SnowShotTranslationResult result) {
+            require(result.succeeded(), "table transport does not validate syntax");
+            ++completions;
+        };
+        require(client.streamTableVision(image, model, conversation, &client, delta, completion) !=
+                    0,
+                "prepare a streaming table conversation");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "initial table request");
+        server.delta(0, QStringLiteral("Unusable response"));
+        translation_tests::waitUntil([&] { return !source.isEmpty(); },
+                                     "raw delta arrives before completion");
+        require(completions == 0, "progress does not require a terminal event");
+        server.finish(0);
+        translation_tests::waitUntil([&] { return completions == 1; }, "initial completion");
+        const QString failed = std::exchange(source, {});
+        require(client.correctTableVision(conversation, failed, &client, delta, completion) != 0,
+                "correct using the prepared conversation");
+        translation_tests::waitUntil([&] { return server.streams.size() == 2; },
+                                     "correction request");
+        const auto first = server.streams[0].body.value(QStringLiteral("messages")).toArray();
+        const auto second = server.streams[1].body.value(QStringLiteral("messages")).toArray();
+        require(encodes == 1 && first.size() == 2 && second.size() == 4 && first[0] == second[0] &&
+                    first[1] == second[1] &&
+                    second[2].toObject().value(QStringLiteral("content")).toString() == failed,
+                "correction preserves the prefix and image and appends two turns");
+        const auto requestId = [](const QByteArray& headers) {
+            for (const auto& line : headers.split('\n'))
+                if (line.toLower().startsWith("x-request-id:"))
+                    return line.trimmed();
+            return QByteArray{};
+        };
+        require(!requestId(server.streams[0].headers).isEmpty() &&
+                    requestId(server.streams[0].headers) != requestId(server.streams[1].headers),
+                "correction has an independent operation identity");
+        server.delta(1, QStringLiteral("<table><tr><td>Fixed"));
+        server.finish(1);
+        translation_tests::waitUntil([&] { return completions == 2; }, "correction completion");
+        require(source == QStringLiteral("<table><tr><td>Fixed"), "repair replaces its source");
     }
 }
 
@@ -2849,6 +2931,12 @@ void visionLatexResponsesMustContainCompleteSource() {
         {QStringLiteral("\\text{literal \\{ braces \\} and <table>markup</table>}"), true},
         {QStringLiteral("\\unsupportedcommand[optional]{x}"), true},
         {QStringLiteral("\\begin{aligned}a&=b\\\\c&=d\\end{aligned}"), true},
+        {QStringLiteral("\\begin{gathered}x^2\\\\y_1\\end{gathered}"), true},
+        {QStringLiteral("f(x)=\\begin{cases}x&\\text{if }x>0\\\\0&\\text{otherwise}"
+                        "\\end{cases}\\quad\\text{(1)}"),
+         true},
+        {QStringLiteral("\\left(x+1\\right."), true},
+        {QStringLiteral("\\text{50\\% of A\\&B}"), true},
         {QStringLiteral("\\begin{matrix}\\begin{aligned}a&=b\\end{aligned}\\end{matrix}"), true},
         {QStringLiteral("\\verb|{| + x"), true},
         {QStringLiteral("\\begin{verbatim}{literal\\end{verbatim}"), true},
@@ -3017,6 +3105,19 @@ int main(int argc, char** argv) {
         imageConversionUsesVisionAndRejectsIncompleteStreams();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--table-vision-only"))) {
+        tableVisionCorrectionsReusePreparedConversation();
+        visionExtractionPreservesTypedOutputAndImageDetails();
+        visionExtractionRejectsIncompleteAndInvalidResponses();
+        visionLatexResponsesMustContainCompleteSource();
+        visionQueuedDrainsCheckElapsedDeadlineBeforeTimerDelivery();
+        typedVisionStreamsCompleteAfterEveryQueuedFrame();
+        visionPreparationRetainsMemoryActivity();
+        visionExtractionDeadlinesCoverPreparationAndCustomQueues();
+        visionExtractionCannotOutrunAnExpiredTimerEvent();
+        return 0;
+    }
+    tableVisionCorrectionsReusePreparedConversation();
     modelNotificationsAllowClientDestruction();
     abortObserversMayDestroyApiClient();
     if (application.arguments().contains(QStringLiteral("--lifetime-only")))

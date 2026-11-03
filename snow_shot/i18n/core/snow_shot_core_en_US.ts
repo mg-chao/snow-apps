@@ -772,10 +772,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The model returned no usable formula</translation>
         </message>
         <message>
-            <source>The model returned no usable table</source>
-            <translation>The model returned no usable table</translation>
-        </message>
-        <message>
             <source>The model service changed. Retry to load its models.</source>
             <translation>The model service changed. Retry to load its models.</translation>
         </message>

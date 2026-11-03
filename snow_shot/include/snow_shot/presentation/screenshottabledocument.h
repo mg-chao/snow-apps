@@ -58,6 +58,7 @@ class ScreenshotTableDocument final {
 
     [[nodiscard]] static ScreenshotTableDocument fromHtml(const QString& source,
                                                           bool requireTable = false);
+    [[nodiscard]] static ScreenshotTableDocument fromModelOutput(const QString& source);
     [[nodiscard]] static ScreenshotTableDocument fromPlainText(const QString& source);
     [[nodiscard]] static ScreenshotTableDocument fromClipboardMimeData(const QMimeData& source);
 

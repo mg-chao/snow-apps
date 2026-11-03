@@ -107,6 +107,7 @@
     "ScreenshotOriginalImagePreviewWindow",
     "ScreenshotRecognitionWindow",
     "ScreenshotRecognitionSessionController",
+    "ScreenshotTableConversionController",
     "ScreenshotTableEditor"
   ],
   "translation": [

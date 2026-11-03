@@ -38,6 +38,8 @@ class ScreenshotOcrTextEditingSession;
 class ScreenshotRecognitionWindow;
 class ScreenshotImageConversionController;
 class ScreenshotTableEditingSession;
+class ScreenshotTableConversionController;
+class ScreenshotTableDocument;
 struct ScreenshotTableCommandState;
 
 namespace adqt::widgets {
@@ -303,9 +305,11 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void handleLatexOutput(quint64 generation, const QString& key, SnowShotLatexResult result);
     void handleTextOutput(quint64 generation, const QString& key,
                           ScreenshotOcrRecognitionResult output);
-    void handleTableOutput(quint64 generation, const QString& key, SnowShotTableResult result);
+    void handleTableOutput(quint64 generation, const QString& key, SnowShotTableResult result,
+                           std::shared_ptr<ScreenshotTableDocument> prepared = {});
     void materializeTableEntry(quint64 generation, const QString& key,
-                               ScreenshotTableRecognitionEntry entry, bool allowSynchronous);
+                               ScreenshotTableRecognitionEntry entry, bool allowSynchronous,
+                               std::shared_ptr<ScreenshotTableDocument> prepared = {});
     void handleQrOutput(quint64 generation, const QString& key,
                         ScreenshotQrRecognitionResult result);
     void ensureContent();
@@ -375,6 +379,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QHash<QString, QString> m_tableEntryTargets;
     QString m_tableModelSelection;
     bool m_tableParsing = false;
+    ScreenshotTableConversionController* m_tableConversion = nullptr;
     std::shared_ptr<std::atomic_bool> m_tableParsingCancellation;
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
