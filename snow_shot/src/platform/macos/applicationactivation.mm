@@ -2,6 +2,7 @@
 #include "snow_shot/platform/macos/loginitemservice.h"
 
 #import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
 
 #include <QApplication>
 #include <QGuiApplication>
@@ -10,6 +11,7 @@
 #include <QWindow>
 
 #include <array>
+#include <dispatch/dispatch.h>
 #include <utility>
 
 @interface SnowShotApplicationDelegateProxy : NSObject <NSApplicationDelegate> {
@@ -152,15 +154,63 @@ class PreviousApplicationActivation::Impl final {
             return;
         }
         application = [frontmost retain];
+
+        // Activating the previous process restores its app-level frontmost state, but macOS
+        // does not always restore the control that owned keyboard focus. Keep the focused
+        // window and UI element so a text field (for example, a chat composer) keeps its
+        // insertion point after a screenshot is copied.
+        if (AXIsProcessTrusted()) {
+            axApplication = AXUIElementCreateApplication(frontmost.processIdentifier);
+            if (axApplication != nullptr) {
+                CFTypeRef value = nullptr;
+                if (AXUIElementCopyAttributeValue(axApplication, kAXFocusedWindowAttribute,
+                                                  &value) == kAXErrorSuccess &&
+                    value != nullptr) {
+                    axFocusedWindow = static_cast<AXUIElementRef>(value);
+                }
+                value = nullptr;
+                if (AXUIElementCopyAttributeValue(axApplication, kAXFocusedUIElementAttribute,
+                                                  &value) == kAXErrorSuccess &&
+                    value != nullptr) {
+                    axFocusedElement = static_cast<AXUIElementRef>(value);
+                }
+            }
+        }
     }
 
     ~Impl() {
+        if (axFocusedElement != nullptr)
+            CFRelease(axFocusedElement);
+        if (axFocusedWindow != nullptr)
+            CFRelease(axFocusedWindow);
+        if (axApplication != nullptr)
+            CFRelease(axApplication);
         [application release];
     }
 
     NSRunningApplication* application = nil;
+    AXUIElementRef axApplication = nullptr;
+    AXUIElementRef axFocusedWindow = nullptr;
+    AXUIElementRef axFocusedElement = nullptr;
     bool restored = false;
 };
+
+void restoreFocusedAccessibilityElements(AXUIElementRef application,
+                                         AXUIElementRef focusedWindow,
+                                         AXUIElementRef focusedElement) {
+    if (application == nullptr)
+        return;
+    if (focusedWindow != nullptr) {
+        static_cast<void>(AXUIElementSetAttributeValue(application, kAXFocusedWindowAttribute,
+                                                        focusedWindow));
+    }
+    if (focusedElement != nullptr) {
+        static_cast<void>(AXUIElementSetAttributeValue(application, kAXFocusedUIElementAttribute,
+                                                        focusedElement));
+        static_cast<void>(AXUIElementSetAttributeValue(focusedElement, kAXFocusedAttribute,
+                                                        kCFBooleanTrue));
+    }
+}
 
 PreviousApplicationActivation::PreviousApplicationActivation() : m_impl(std::make_unique<Impl>()) {}
 
@@ -185,6 +235,35 @@ void PreviousApplicationActivation::restore() {
     m_impl->restored = true;
     [NSApp yieldActivationToApplication:m_impl->application];
     [m_impl->application activateWithOptions:0];
+
+    restoreFocusedAccessibilityElements(m_impl->axApplication, m_impl->axFocusedWindow,
+                                        m_impl->axFocusedElement);
+
+    // Activation is asynchronous on macOS. Retry after the target application has become
+    // frontmost so the AX focus assignment is not lost during the handoff from Snow Shot.
+    if (m_impl->axApplication != nullptr && m_impl->axFocusedElement != nullptr) {
+        AXUIElementRef application = static_cast<AXUIElementRef>(CFRetain(m_impl->axApplication));
+        AXUIElementRef focusedWindow = m_impl->axFocusedWindow == nullptr
+                                           ? nullptr
+                                           : static_cast<AXUIElementRef>(CFRetain(
+                                                 m_impl->axFocusedWindow));
+        AXUIElementRef focusedElement = static_cast<AXUIElementRef>(CFRetain(
+            m_impl->axFocusedElement));
+        NSRunningApplication* target = [m_impl->application retain];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+                           if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier ==
+                               target.processIdentifier) {
+                               restoreFocusedAccessibilityElements(application, focusedWindow,
+                                                                   focusedElement);
+                           }
+                           CFRelease(application);
+                           if (focusedWindow != nullptr)
+                               CFRelease(focusedWindow);
+                           CFRelease(focusedElement);
+                           [target release];
+                       });
+    }
 }
 
 class ApplicationReopenHandler::Impl final {
