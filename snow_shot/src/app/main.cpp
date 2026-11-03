@@ -191,6 +191,11 @@ int main(int argc, char* argv[]) {
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--controller-lifetime-tests") {
         return runScreenshotControllerLifetimeTests(argc, argv);
     }
+#ifdef Q_OS_MACOS
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--session-focus-tests") {
+        return runScreenshotControllerClipboardTests(argc, argv);
+    }
+#endif
     if (argc == 2 && (QString::fromLocal8Bit(argv[1]) == u"--clipboard-pin-tests" ||
                       QString::fromLocal8Bit(argv[1]) == u"--automatic-selection-tests" ||
                       QString::fromLocal8Bit(argv[1]) == u"--shell-file-startup-tests" ||

@@ -2487,7 +2487,59 @@ void suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff() {
             "resuming capture must also restore recapture acquisition");
 }
 
+void focusLifecycleBracketsPresentation() {
+    using Focus = ScreenshotCaptureFocusDisposition;
+    for (const auto disposition : {Focus::RestorePrevious, Focus::KeepCurrent}) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        int starts = 0;
+        int endings = 0;
+        int ended = 0;
+        bool toolbarHidden = false;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        context.captureStarting = [&](bool visible) {
+            require(visible && runtime.createColorPickerCalls == 0 &&
+                        runtime.captureAllAsyncCalls == 0,
+                    "focus snapshot must precede acquisition and presentation");
+            ++starts;
+        };
+        context.captureEnding = [&](Focus focus) {
+            require(focus == disposition && runtime.hideOverlayCalls == 0 &&
+                        runtime.hideOverlayImmediatelyCalls == 0,
+                    "foreground ownership must be checked before hiding any presentation");
+            ++endings;
+        };
+        context.captureTerminated = [&] {
+            require(endings == 1 && ended == 0,
+                    "existing termination hook must precede final focus restoration");
+        };
+        context.presentation.hideToolbar = [&] { toolbarHidden = true; };
+        context.captureEnded = [&] {
+            require(toolbarHidden && runtime.hideOverlayCalls > 0 &&
+                        state.sessionState == ScreenshotSessionState::IdlePrepared,
+                    "focus restoration must follow toolbar and overlay teardown");
+            ++ended;
+        };
+        ScreenshotCaptureWorkflow workflow(std::move(context));
+        workflow.setCaptureSuspended(true);
+        workflow.startCapture();
+        require(starts == 0, "rejected starts must not record foreground state");
+        workflow.setCaptureSuspended(false);
+        workflow.startCapture();
+        workflow.cancelCapture(disposition);
+        require(starts == 1 && endings == 1 && ended == 1,
+                "accepted capture must deliver one complete focus lifecycle");
+    }
+}
+
 int main() {
+    focusLifecycleBracketsPresentation();
     captureStartSoundDefaultsToDisabled();
     captureStartSoundFollowsSessionLifetime();
     suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff();
