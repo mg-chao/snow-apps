@@ -3184,6 +3184,14 @@
             <translation>開啟登入項目設定</translation>
         </message>
         <message>
+            <source>Open Pin to Screen Management</source>
+            <translation>開啟固定到螢幕管理</translation>
+        </message>
+        <message>
+            <source>Open Screenshot History</source>
+            <translation>開啟截圖歷史</translation>
+        </message>
+        <message>
             <source>Open a canvas on the current display or toggle click-through</source>
             <translation>在目前顯示器上開啟畫布或切換滑鼠穿透</translation>
         </message>

@@ -2147,6 +2147,10 @@ QVector<SettingsOptionDefinition> trayClickActionOptions() {
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to Clipboard"))},
         {QStringLiteral("screenshot_fixed"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen"))},
+        {QStringLiteral("open_capture_history"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open Screenshot History"))},
+        {QStringLiteral("open_pin_to_screen_management"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open Pin to Screen Management"))},
         {QStringLiteral("open_function_settings"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open screenshot settings"))},
     };

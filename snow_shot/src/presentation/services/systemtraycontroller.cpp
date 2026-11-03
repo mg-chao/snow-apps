@@ -119,6 +119,8 @@ QString normalizedClickAction(const QString& action, const char* defaultAction) 
                    action == QStringLiteral("show_main_window") ||
                    action == QStringLiteral("screenshot_copy") ||
                    action == QStringLiteral("screenshot_fixed") ||
+                   action == QStringLiteral("open_capture_history") ||
+                   action == QStringLiteral("open_pin_to_screen_management") ||
                    action == QStringLiteral("open_function_settings")
                ? action
                : QString::fromLatin1(defaultAction);
@@ -546,6 +548,10 @@ class SystemTrayController::Impl {
             emit q.quickActionRequested(GlobalShortcutAction::ScreenshotCopy);
         } else if (action == QStringLiteral("screenshot_fixed")) {
             emit q.quickActionRequested(GlobalShortcutAction::ScreenshotFixed);
+        } else if (action == QStringLiteral("open_capture_history")) {
+            emit q.quickActionRequested(GlobalShortcutAction::OpenCaptureHistory);
+        } else if (action == QStringLiteral("open_pin_to_screen_management")) {
+            emit q.quickActionRequested(GlobalShortcutAction::OpenPinToScreenManagement);
         } else if (action == QStringLiteral("open_function_settings")) {
             emit q.openFunctionSettingsRequested();
         } else {

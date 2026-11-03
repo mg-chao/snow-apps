@@ -76,10 +76,17 @@ void trayClickActionSettingsRespectPlatformSupport() {
                                    QStringLiteral("show_main_window"),
                                    QStringLiteral("screenshot_copy"),
                                    QStringLiteral("screenshot_fixed"),
+                                   QStringLiteral("open_capture_history"),
+                                   QStringLiteral("open_pin_to_screen_management"),
                                    QStringLiteral("open_function_settings")};
     require(leftSelect.options.size() == actionValues.size() &&
                 leftSelect.options.constFirst().label.translated() == QStringLiteral("None"),
-            "tray left-click action must retain its six options with None first");
+            "tray left-click action must expose eight options with None first");
+    require(leftSelect.options.at(5).label.translated() ==
+                    QStringLiteral("Open Screenshot History") &&
+                leftSelect.options.at(6).label.translated() ==
+                    QStringLiteral("Open Pin to Screen Management"),
+            "tray selectors must name the history and pin management destinations");
     for (qsizetype index = 0; index < actionValues.size(); ++index) {
         require(leftSelect.options.at(index).value == actionValues.at(index),
                 "tray left-click actions must retain their ordered values");

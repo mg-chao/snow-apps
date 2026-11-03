@@ -3184,6 +3184,14 @@
             <translation>Open Login Items Settings</translation>
         </message>
         <message>
+            <source>Open Pin to Screen Management</source>
+            <translation>Open Pin to Screen Management</translation>
+        </message>
+        <message>
+            <source>Open Screenshot History</source>
+            <translation>Open Screenshot History</translation>
+        </message>
+        <message>
             <source>Open a canvas on the current display or toggle click-through</source>
             <translation>Open a canvas on the current display or toggle click-through</translation>
         </message>
