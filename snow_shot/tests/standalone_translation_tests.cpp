@@ -624,6 +624,9 @@ int main(int argc, char** argv) {
     require(directory.isValid() &&
                 storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize isolated standalone translation storage");
+    require(storage.configuration().setValue(QStringLiteral("screenshot_translation/model"),
+                                             QStringLiteral("general")),
+            "select the server fixture for translation UI tests");
     styles::ThemeManager::instance().initialize(app);
     if (app.arguments().contains(QStringLiteral("--native-display-check"))) {
         nativeDisplayCheck();

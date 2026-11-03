@@ -275,6 +275,8 @@ struct SessionProbe {
     std::unique_ptr<ScreenshotRecognitionSessionController> controller;
     QStringList errors;
     QString primaryTarget;
+    QString translationService;
+    QVector<SnowShotChatModel> translationServices;
     int textUpdates = 0;
     int backgrounds = 0;
     bool streaming = false;
@@ -297,6 +299,11 @@ struct SessionProbe {
         }
         actions.setTextTargetLanguage = [this](const QString& language) {
             primaryTarget = language;
+        };
+        actions.setTextTranslationServices = [this](const QVector<SnowShotChatModel>& models,
+                                                    const QString& selection, bool) {
+            translationServices = models;
+            translationService = selection;
         };
         actions.translationSettingsOwner = [settingsOwner]() { return settingsOwner; };
         actions.applyOcrPresentation = [this, recognitionWindow](auto presentation) {
@@ -1207,6 +1214,45 @@ void quickPrimaryTargetRestartsOriginalBlocks() {
             "translation");
 }
 
+void quickServiceRestartsOriginalBlocks() {
+    configureTranslation();
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const auto original = settings.configuration();
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 2);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(2);
+    require(session.translationService == QStringLiteral("model-a") &&
+                std::any_of(session.translationServices.cbegin(),
+                            session.translationServices.cend(),
+                            [](const auto& model) { return model.id == QStringLiteral("qwen"); }),
+            "quick service state publishes the saved service and shared catalog");
+    server.delta(0, QStringLiteral("old partial"));
+    waitUntil([&] { return session.textUpdates == 1; }, "show a partial result before switching");
+    session.controller->applyTextTranslationService(QStringLiteral("qwen"));
+    server.waitForStreams(4);
+    const auto selected = settings.configuration();
+    require(selected.modelId == QStringLiteral("qwen") &&
+                session.translationService == QStringLiteral("qwen") &&
+                selected.sourceLanguage == original.sourceLanguage &&
+                selected.targetLanguage == original.targetLanguage &&
+                selected.secondaryTargetLanguage == original.secondaryTargetLanguage &&
+                session.displayed->lines[0].text == QStringLiteral("source 0") &&
+                session.displayed->lines[1].text == QStringLiteral("source 1"),
+            "quick service changes persist only the service and discard old partial output");
+    for (int index = 0; index < 2; ++index) {
+        waitUntil([&] { return server.disconnected(index); }, "switching cancels the old service");
+        const auto& request = server.streams[index + 2];
+        require(request.body.value(QStringLiteral("model")) == QStringLiteral("qwen") &&
+                    request.text == session.source->lines[index].text,
+                "the selected service translates each original block");
+    }
+    session.controller->applyTextTranslationService(QStringLiteral("qwen"));
+    QCoreApplication::processEvents();
+    require(server.streams.size() == 4, "reselecting the service does not restart translation");
+}
+
 void mixedOriginalBoxesShareOneDetectedTarget() {
     configureTranslation();
     const snow_shot::storage::ScreenshotTranslationSettings settings;
@@ -1430,6 +1476,7 @@ void runOriginalImageTranslationTests() {
     translationImageCopyHonorsSelectionAndSnapshots();
     mixedOriginalBoxesShareOneDetectedTarget();
     quickPrimaryTargetRestartsOriginalBlocks();
+    quickServiceRestartsOriginalBlocks();
     customModelPageAndScreenshotParity(false);
     customModelPageAndScreenshotParity(true);
     translationSettingsSwitchKeepsReadableSize();

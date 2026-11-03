@@ -313,6 +313,14 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 }
                 return snapshot ? renderScreenshotRecognitionImage(*snapshot) : QImage{};
             },
+            {},
+            [this](const QVector<SnowShotChatModel>& models, const QString& selection,
+                   bool loading) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
+                    if (auto* palette = toolbar->palette())
+                        palette->setTextTranslationServices(models, selection, loading);
+                }
+            },
         },
         this);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textEditingChanged, this,
@@ -639,6 +647,10 @@ void ScreenshotOcrController::applyTextFormatting(const QString& value) {
 
 void ScreenshotOcrController::applyTextTargetLanguage(const QString& language) {
     m_session->applyTextTargetLanguage(language);
+}
+
+void ScreenshotOcrController::applyTextTranslationService(const QString& service) {
+    m_session->applyTextTranslationService(service);
 }
 
 void ScreenshotOcrController::applyTextPunctuation(const QString& value) {

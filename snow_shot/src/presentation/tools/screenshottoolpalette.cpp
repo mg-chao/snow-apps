@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/pointerhoverevents.h"
 #include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/translation/translationlanguagecatalog.h"
+#include "snow_shot/presentation/components/translationserviceoptions.h"
 #include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -1622,6 +1623,8 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
         (m_textTargetLanguageSelect == nullptr ||
          m_textTargetLanguageSelect->isHidden() == !targetLanguageVisible) &&
+        (m_textTranslationServiceSelect == nullptr ||
+         m_textTranslationServiceSelect->isHidden() == !targetLanguageVisible) &&
         (m_jumpToTranslationPageButton == nullptr ||
          m_jumpToTranslationPageButton->isHidden() ==
              !(ocrVisible && m_jumpToTranslationPageVisible)) &&
@@ -1680,6 +1683,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_textTargetLanguageSelect != nullptr)
         m_textTargetLanguageSelect->setVisible(targetLanguageVisible);
     setStyleToolbarSpacingVisible(m_textTargetLanguageSpacer, targetLanguageVisible);
+    if (m_textTranslationServiceSelect != nullptr)
+        m_textTranslationServiceSelect->setVisible(targetLanguageVisible);
+    setStyleToolbarSpacingVisible(m_textTranslationServiceSpacer, targetLanguageVisible);
     if (m_tableMergeButton != nullptr) {
         m_tableMergeButton->setVisible(tableVisible);
     }
@@ -3795,8 +3801,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
             }
         }
-        for (adqt::widgets::AdSelect* select : {m_textFormattingSelect, m_textPunctuationSelect,
-                                                m_textTargetLanguageSelect, m_drawTemplateSelect}) {
+        for (adqt::widgets::AdSelect* select :
+             {m_textFormattingSelect, m_textPunctuationSelect, m_textTargetLanguageSelect,
+              m_textTranslationServiceSelect, m_drawTemplateSelect}) {
             ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
             configureScreenshotToolPaletteSelectEditor(editor, metrics);
         }
@@ -4597,6 +4604,7 @@ void ScreenshotToolPalette::retranslateUi() {
                              m_layoutCompactionCanvasUsesPoints);
     refreshRecognitionModelSelect();
     retranslateDrawTemplateUi();
+    refreshTextTranslationServiceSelect();
     if (m_styleControls != nullptr) {
         m_styleControls->retranslateWatermarkTemplateUi();
         m_styleControls->retranslateTextEmphasisUi();
@@ -8074,6 +8082,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textPunctuationSelect = nullptr;
     m_textTargetLanguageSelect = nullptr;
     m_textTargetLanguageSpacer = nullptr;
+    m_textTranslationServiceSelect = nullptr;
+    m_textTranslationServiceSpacer = nullptr;
     finishScrollingSelectionMove();
     m_scrollingMoveHorizontalButton = nullptr;
     m_scrollingMoveVerticalButton = nullptr;
@@ -9034,6 +9044,28 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                     emit textTargetLanguageRequested(value.toString());
             });
     setTextTargetLanguage(m_textTargetLanguageSelection);
+    m_textTranslationServiceSpacer =
+        addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    ScreenshotToolPaletteSelectEditorConfig serviceConfig;
+    serviceConfig.objectName = QStringLiteral("screenshotTranslationQuickServiceSelect");
+    serviceConfig.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation service");
+    serviceConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    serviceConfig.compact = false;
+    serviceConfig.popupMatchSelectWidth = false;
+    m_textTranslationServiceSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, serviceConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
+    m_textTranslationServiceSelect->setSearchEnabled(true);
+    m_textTranslationServiceSelect->setSearchFilterFields({QStringLiteral("label")});
+    m_textTranslationServiceSelect->setAllowClear(false);
+    m_selectActionLayout->addWidget(m_textTranslationServiceSelect);
+    connect(m_textTranslationServiceSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
+            [this](const QVariant& value) {
+                if (!m_replayingMaterializedState && value.isValid())
+                    emit textTranslationServiceRequested(value.toString());
+            });
+    refreshTextTranslationServiceSelect();
 #endif
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
@@ -9079,6 +9111,33 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
     static_cast<void>(applyActiveToolSecondaryToolbarVisibility());
+}
+
+void ScreenshotToolPalette::setTextTranslationServices(const QVector<SnowShotChatModel>& models,
+                                                       const QString& selection, bool loading) {
+    if (m_textTranslationServices == models && m_textTranslationServiceSelection == selection &&
+        m_textTranslationServicesLoading == loading)
+        return;
+    m_textTranslationServices = models;
+    m_textTranslationServiceSelection = selection;
+    m_textTranslationServicesLoading = loading;
+    refreshTextTranslationServiceSelect();
+}
+
+void ScreenshotToolPalette::refreshTextTranslationServiceSelect() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_textTranslationServiceSelect == nullptr)
+        return;
+    const QSignalBlocker blocker(m_textTranslationServiceSelect);
+    const auto options =
+        snow_shot::presentation::translationServiceOptions(m_textTranslationServices);
+    m_textTranslationServiceSelect->setOptions(options);
+    m_textTranslationServiceSelect->setCurrentValue(m_textTranslationServiceSelection);
+    m_textTranslationServiceSelect->setLoading(options.isEmpty() &&
+                                               m_textTranslationServicesLoading);
+    m_textTranslationServiceSelect->setEnabled(!options.isEmpty());
+    m_textTranslationServiceSelect->setAccessibleName(tr("Translation service"));
+#endif
 }
 
 void ScreenshotToolPalette::setTextTargetLanguage(const QString& language) {

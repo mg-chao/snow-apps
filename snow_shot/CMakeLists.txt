@@ -806,6 +806,7 @@ target_link_libraries(snow_shot_storage PUBLIC
 )
 
 add_library(snow_shot_translation STATIC
+    include/snow_shot/translation/freetranslation.h
     include/snow_shot/translation/translationservice.h
     include/snow_shot/translation/translationlanguages.h
     include/snow_shot/translation/translationlanguagecatalog.h
@@ -816,6 +817,7 @@ add_library(snow_shot_translation STATIC
     src/presentation/services/selectedtexttranslationcontroller.cpp
     include/snow_shot/network/snowshotapiclient.h
     src/network/boundednetworkresponse.h
+    src/network/freetranslationprotocol.h
     src/network/snowshotapiclient.cpp
     include/snow_shot/presentation/translationlanguages.h
     src/presentation/services/translationlanguages.cpp
@@ -828,6 +830,7 @@ target_link_libraries(snow_shot_translation PUBLIC snow_shot_storage Qt6::Networ
     PRIVATE snow_selected_text_c snow_language_detection_c)
 target_compile_definitions(snow_shot_translation PRIVATE
     SNOW_SHOT_API_BASE_URL=\"${SNOW_SHOT_API_BASE_URL}\"
+    SNOW_SHOT_FREE_TRANSLATION_API_BASE_URL=\"${SNOW_SHOT_FREE_TRANSLATION_API_BASE_URL}\"
 )
 
 add_library(snow_shot_window_shortcuts STATIC
@@ -905,6 +908,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/windowgeometrymemory.h
     src/presentation/windowgeometrymemory.cpp
     include/snow_shot/presentation/components/translationpagewidget.h
+    include/snow_shot/presentation/components/translationserviceoptions.h
     src/presentation/components/translationpagewidget.cpp
     include/snow_shot/presentation/components/aboutpagewidget.h
     include/snow_shot/platform/windows/autostartregistration.h
@@ -2581,6 +2585,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-application-storage-tests
         COMMAND snow-shot-application-storage-tests)
+    add_test(NAME snow-shot-configuration-version-tests
+        COMMAND snow-shot-application-storage-tests --schema-version-only)
+    set_tests_properties(snow-shot-configuration-version-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-smart-selection-storage-tests
         COMMAND snow-shot-application-storage-tests --smart-selection-only)
     set_tests_properties(snow-shot-smart-selection-storage-tests PROPERTIES
@@ -9557,6 +9565,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-translation-service-tests PRIVATE snow_shot_translation)
     add_test(NAME snow-shot-translation-service-tests COMMAND snow-shot-translation-service-tests)
     set_tests_properties(snow-shot-translation-service-tests PROPERTIES LABELS "unit")
+    add_executable(snow-shot-free-translation-tests tests/free_translation_tests.cpp)
+    target_link_libraries(snow-shot-free-translation-tests PRIVATE snow_shot_translation)
+    add_test(NAME snow-shot-free-translation-tests COMMAND snow-shot-free-translation-tests)
+    set_tests_properties(snow-shot-free-translation-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_executable(snow-shot-translation-language-detection-tests
         tests/translation_language_detection_tests.cpp)
     target_link_libraries(snow-shot-translation-language-detection-tests PRIVATE snow_shot_translation)

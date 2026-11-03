@@ -4,6 +4,7 @@
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/components/translationserviceoptions.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationlanguages.h"
@@ -429,11 +430,7 @@ void TranslationPageWidget::syncState() {
     const auto& preferences = m_controller->preferences();
     m_selects[0]->setCurrentValue(preferences.sourceLanguage);
     m_selects[1]->setCurrentValue(preferences.targetLanguage);
-    QVector<AdSelect::Option> services;
-    for (const auto& model : m_controller->models()) {
-        services.push_back(
-            {model.id, model.name, false, snow_shot::translation::translationModelGroup(model)});
-    }
+    const auto services = translation::translationServiceOptions(m_controller->models());
     // Preserve an open selector's search and focus while output tokens arrive.
     const auto previousServices = m_selects[2]->options();
     if (!std::equal(previousServices.cbegin(), previousServices.cend(), services.cbegin(),

@@ -1508,6 +1508,10 @@
             <translation>思考气泡</translation>
         </message>
         <message>
+            <source>Translation service</source>
+            <translation>翻译服务</translation>
+        </message>
+        <message>
             <source>Translation settings</source>
             <translation>翻译设置</translation>
         </message>

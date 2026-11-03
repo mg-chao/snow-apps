@@ -220,6 +220,13 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         }
 
         QJsonValue raw = currentOverlay.value(entry.key);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        if (entry.key == QStringLiteral("screenshot_translation/model") && mutateDocument &&
+            schemaVersion < 5 && !raw.toString().startsWith(QStringLiteral("custom:")) &&
+            !raw.toString().startsWith(QStringLiteral("translation:"))) {
+            raw = entry.defaultValue;
+        }
+#endif
         // Upgrade only the untouched previous tray default. A customized list keeps its order.
         if (entry.key == QStringLiteral("tray/menu_options") && mutateDocument &&
             !currentOverlay.contains(

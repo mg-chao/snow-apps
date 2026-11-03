@@ -7852,10 +7852,13 @@ void ocrToolReplacesSelectionActionToolbarContents() {
         QStringLiteral("screenshotOcrTextPunctuationSelect"));
     auto* targetSelect = palette.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotTranslationQuickTargetLanguageSelect"));
+    auto* serviceSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotTranslationQuickServiceSelect"));
     require(sendToBack == nullptr && edit != nullptr && translate != nullptr && reset != nullptr &&
                 settings != nullptr && undo != nullptr && redo != nullptr &&
-                textSelects.size() == 3 && formattingSelect != nullptr &&
-                punctuationSelect != nullptr && targetSelect != nullptr && targetSelect->isHidden(),
+                textSelects.size() == 4 && formattingSelect != nullptr &&
+                punctuationSelect != nullptr && targetSelect != nullptr &&
+                targetSelect->isHidden() && serviceSelect != nullptr && serviceSelect->isHidden(),
             "the shared action panel should contain the OCR editing controls");
     require(
         undo->toolTip() == shortcutTooltip(QStringLiteral("Undo"), {QStringLiteral("Ctrl+Z")}) &&
@@ -7867,8 +7870,33 @@ void ocrToolReplacesSelectionActionToolbarContents() {
             "OCR mode should replace selection actions with text editing controls");
     QLayout* actionLayout = actionPanel->layout();
     require(actionLayout->indexOf(punctuationSelect) < actionLayout->indexOf(targetSelect) &&
-                actionLayout->indexOf(targetSelect) < actionLayout->indexOf(reset),
-            "quick target language follows punctuation and precedes Reset");
+                actionLayout->indexOf(targetSelect) < actionLayout->indexOf(serviceSelect) &&
+                actionLayout->indexOf(serviceSelect) < actionLayout->indexOf(reset),
+            "quick translation service follows target language and precedes Reset");
+    int serviceRequests = 0;
+    QString requestedService;
+    QObject::connect(&palette, &ScreenshotToolPalette::textTranslationServiceRequested,
+                     [&](const QString& value) {
+                         ++serviceRequests;
+                         requestedService = value;
+                     });
+    const QVector<SnowShotChatModel> services{
+        {QStringLiteral("model-a"), QStringLiteral("Model A")},
+        {QStringLiteral("custom:test"), QStringLiteral("Custom AI model")},
+        {QStringLiteral("free-translation"), QStringLiteral("Free Translation"), false,
+         QStringLiteral("free-translation")},
+        {QStringLiteral("translation:test"), QStringLiteral("Custom service"), false,
+         QStringLiteral("text")},
+        {QStringLiteral("qwen-mt"), QStringLiteral("Qwen MT"), false, QStringLiteral("qwen-mt")}};
+    palette.setTextTranslationServices({}, {}, true);
+    require(serviceSelect->loading() && !serviceSelect->isEnabled(),
+            "an empty service catalog shows loading and prevents selection");
+    palette.setTextTranslationServices(services, QStringLiteral("translation:test"), false);
+    require(serviceRequests == 0 && !serviceSelect->loading() && serviceSelect->isEnabled() &&
+                serviceSelect->currentValue() == QStringLiteral("translation:test") &&
+                serviceSelect->model()->rowCount() == services.size() &&
+                !serviceSelect->allowClear(),
+            "publishing free, custom and AI services selects the saved identity without saving");
     int targetRequests = 0;
     QString requestedTarget;
     QObject::connect(&palette, &ScreenshotToolPalette::textTargetLanguageRequested,
@@ -7945,6 +7973,26 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                     targetSelect->currentValue().toString() == QStringLiteral("zh-Hant") &&
                     targetRequests == 0,
                 "OCR options retranslate without changing selections or requesting a target save");
+        require(serviceSelect->currentValue() == QStringLiteral("translation:test") &&
+                    serviceRequests == 0 &&
+                    serviceSelect->accessibleName() ==
+                        QCoreApplication::translate("ScreenshotToolPalette", "Translation service"),
+                "service labels retranslate without saving or changing the selected service");
+        const auto serviceOptions = serviceSelect->options();
+        require(serviceOptions.size() == services.size(),
+                "quick service exposes every shared service exactly once");
+        for (qsizetype row = 0; row < serviceOptions.size(); ++row) {
+            const auto& option = serviceOptions.at(row);
+            const auto& model = services.at(row);
+            const QString label =
+                row == 2 ? QCoreApplication::translate("snow_shot::translation::TranslationService",
+                                                       "Free Translation")
+                         : model.name;
+            const QString group = QCoreApplication::translate(
+                "TranslationService", row < 2 ? "General Models" : "Translation Models");
+            require(option.value == model.id && option.label == label && option.group == group,
+                    "quick services preserve the shared catalog order, names and model groups");
+        }
     }
     formattingSelect->setCurrentValue(QStringLiteral("remove"));
     punctuationSelect->setCurrentValue(QStringLiteral("full"));
@@ -7989,6 +8037,13 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     palette.setTextTranslationState(true, true, true, false, false, false);
     require(!targetSelect->isHidden() && targetSelect->isEnabled() && targetSelect->searchEnabled(),
             "quick target is visible and remains searchable during streaming");
+    require(!serviceSelect->isHidden() && serviceSelect->isEnabled() &&
+                serviceSelect->searchEnabled(),
+            "quick service remains visible and searchable during streaming");
+    serviceSelect->setCurrentValue(QStringLiteral("model-a"));
+    require(serviceRequests == 1 && requestedService == QStringLiteral("model-a"),
+            "quick service publishes the stable service identity");
+    palette.setTextTranslationServices(services, QStringLiteral("model-a"), false);
     targetSelect->setCurrentValue(QStringLiteral("ko"));
     require(targetRequests == 1 && requestedTarget == QStringLiteral("ko"),
             "quick target publishes a primary-language change");
@@ -8013,7 +8068,11 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                 !reset->isEnabled(),
             "Edit should return to its inactive state after text editing exits");
     palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
-    require(targetSelect->isHidden(), "quick target is hidden outside Text Translation");
+    require(targetSelect->isHidden() && serviceSelect->isHidden(),
+            "quick target and service are hidden outside Text Translation");
+    palette.setTextTranslationServices({}, {}, false);
+    require(!serviceSelect->isEnabled() && !serviceSelect->loading() && serviceRequests == 1,
+            "clearing the service catalog disables the selector without sending a save");
 }
 
 void recognitionToolsKeepDrawingToolsAvailable() {

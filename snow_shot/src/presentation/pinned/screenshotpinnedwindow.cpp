@@ -5384,6 +5384,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
                 if (m_recognitionSession != nullptr)
                     m_recognitionSession->applyTextTargetLanguage(language);
             });
+    connect(toolbar, &ScreenshotToolPalette::textTranslationServiceRequested, this,
+            [this](const QString& service) {
+                if (m_recognitionSession != nullptr)
+                    m_recognitionSession->applyTextTranslationService(service);
+            });
     connect(toolbar, &ScreenshotToolPalette::tableMergeRequested, this,
             &ScreenshotPinnedWindow::handleTableMergeRequested);
     connect(toolbar, &ScreenshotToolPalette::tableSplitRequested, this,
@@ -6151,6 +6156,14 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 if (m_cropRect)
                     snapshot->visibleCanvasRect = visibleCanvasRect();
                 return renderScreenshotRecognitionImage(*snapshot);
+            },
+            {},
+            [this](const QVector<SnowShotChatModel>& models, const QString& selection,
+                   bool loading) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette())
+                        palette->setTextTranslationServices(models, selection, loading);
+                }
             },
         },
         this);

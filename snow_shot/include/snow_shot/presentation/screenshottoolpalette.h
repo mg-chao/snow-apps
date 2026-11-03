@@ -470,6 +470,8 @@ class ScreenshotToolPalette final : public QWidget,
     void setJumpToTranslationPageVisible(bool visible);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     void setTextTargetLanguage(const QString& language);
+    void setTextTranslationServices(const QVector<SnowShotChatModel>& models,
+                                    const QString& selection, bool loading);
     [[nodiscard]] bool ensureActionFamily(ActionFamily family);
     [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
@@ -565,6 +567,7 @@ class ScreenshotToolPalette final : public QWidget,
     void textFormattingRequested(const QString& value);
     void textPunctuationRequested(const QString& value);
     void textTargetLanguageRequested(const QString& language);
+    void textTranslationServiceRequested(const QString& service);
     void scrollingScreenshotRequested();
     void scrollingImageSplittingRequested();
     void scrollingImageEditingRequested();
@@ -682,6 +685,7 @@ class ScreenshotToolPalette final : public QWidget,
     void createTableRecognitionActionFamily();
 #endif
     void refreshRecognitionModelSelect();
+    void refreshTextTranslationServiceSelect();
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     void createImageConversionActionFamily();
 #endif
@@ -1004,6 +1008,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdSelect* m_textPunctuationSelect = nullptr;
     adqt::widgets::AdSelect* m_textTargetLanguageSelect = nullptr;
     QSpacerItem* m_textTargetLanguageSpacer = nullptr;
+    adqt::widgets::AdSelect* m_textTranslationServiceSelect = nullptr;
+    QSpacerItem* m_textTranslationServiceSpacer = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_printButton = nullptr;
     adqt::widgets::AdButton* m_airDropButton = nullptr;
@@ -1216,6 +1222,9 @@ class ScreenshotToolPalette final : public QWidget,
     QString m_textFormattingSelection;
     QString m_textPunctuationSelection;
     QString m_textTargetLanguageSelection = QStringLiteral("en");
+    QVector<SnowShotChatModel> m_textTranslationServices;
+    QString m_textTranslationServiceSelection;
+    bool m_textTranslationServicesLoading = false;
     qint64 m_recordingDurationMilliseconds = 0;
     bool m_replayingMaterializedState = false;
     bool m_releasingSecondaryResources = false;

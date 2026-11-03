@@ -69,6 +69,9 @@ void coalescedEditsAndCancellation(const QString& directory) {
     ConfigurationStore settings(directory + QStringLiteral("/cancellation.json"), true, true,
                                 60000);
     require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
                               QStringLiteral("specialist")),
             "save a preferred service before discovery");
     auto controller =
@@ -138,6 +141,9 @@ void streamLifecycleAndSharedPreferences(const QString& directory) {
     server.holdModels = true;
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/stream.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     TranslationPageController controller(client, settings, QLocale(QStringLiteral("zh_CN")),
                                          nullptr, 0);
     require(controller.preferences().sourceLanguage == QStringLiteral("auto") &&
@@ -214,6 +220,9 @@ void modelFailureAndDestroyedReceiver(const QString& directory) {
     server.rejectModels = true;
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/models.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     TranslationPageController controller(client, settings, QLocale::English, nullptr, 0);
     controller.activate();
     controller.setSourceText(QStringLiteral("Hello"));
@@ -246,6 +255,9 @@ void persistenceAndFailedWrites(const QString& directory) {
     SnowShotApiClient client(QString{});
     {
         ConfigurationStore settings(file, true, true, 60000);
+        require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                                  QStringLiteral("general")),
+                "select the server fixture");
         require(settings.setValue(QStringLiteral("screenshot_translation/layout_processing"),
                                   QStringLiteral("original")),
                 "set screenshot-only setting");
@@ -276,6 +288,9 @@ void independentConsumers(const QString& directory) {
     Server server;
     SnowShotApiClient client(server.url());
     ConfigurationStore settings(directory + QStringLiteral("/independent.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     TranslationPageController first(client, settings, QLocale::English, nullptr, 0);
     TranslationPageController second(client, settings, QLocale::English, nullptr, 0);
     first.activate();
@@ -303,6 +318,9 @@ void customModelEditStopsPendingDraft(const QString& directory) {
     server.streamPath = QByteArrayLiteral("/v1/chat/completions");
     ConfigurationStore settings(directory + QStringLiteral("/pending-custom.json"), true, true,
                                 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"),
+                              QStringLiteral("general")),
+            "select the server fixture");
     snow_shot::CustomAiModelConfiguration model{
         QStringLiteral("33333333-3333-4333-8333-333333333333"),
         QStringLiteral("Custom model"),
@@ -313,6 +331,8 @@ void customModelEditStopsPendingDraft(const QString& directory) {
     const QString key = QStringLiteral("api_configuration/custom_models");
     require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
             "configure the pending draft's custom model");
+    require(settings.setValue(QStringLiteral("screenshot_translation/model"), model.selectionId()),
+            "select pending custom model");
     SnowShotApiClient client(QString{});
     TranslationPageController controller(client, settings, QLocale::English, nullptr, 60000);
     controller.activate();

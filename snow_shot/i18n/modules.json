@@ -111,6 +111,7 @@
     "ScreenshotTableEditor"
   ],
   "translation": [
+    "FreeTranslation",
     "ScreenshotTranslationSettingsDialog",
     "TranslationLanguages",
     "TranslationPageWidget",

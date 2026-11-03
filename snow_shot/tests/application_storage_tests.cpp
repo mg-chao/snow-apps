@@ -414,7 +414,8 @@ void autoSaveAfterExecutionSettingsMigrateAndPersist() {
             {
                 storage::ConfigurationStore store(path, true, true, 60000);
                 require(store.value(key) == expected && !store.snapshot().contains(legacyKey) &&
-                            store.value(QStringLiteral("storage/schema_version")).toInt() == 4 &&
+                            store.value(QStringLiteral("storage/schema_version")).toInt() ==
+                                storage::ConfigurationSchema::currentVersion() &&
                             store.flushNow().success,
                         "legacy booleans must retain their original five auto-save scenarios");
                 const QJsonObject screenshot =
@@ -451,10 +452,12 @@ void autoSaveAfterExecutionSettingsMigrateAndPersist() {
     }
     const QString futurePath = temporary.filePath(QStringLiteral("future.json"));
     const QByteArray futureBytes =
-        QJsonDocument(QJsonObject{{QStringLiteral("storage"),
-                                   QJsonObject{{QStringLiteral("schema_version"), 5}}},
-                                  {QStringLiteral("screenshot"),
-                                   QJsonObject{{QStringLiteral("auto_save_after_copy"), true}}}})
+        QJsonDocument(
+            QJsonObject{{QStringLiteral("storage"),
+                         QJsonObject{{QStringLiteral("schema_version"),
+                                      storage::ConfigurationSchema::currentVersion() + 1}}},
+                        {QStringLiteral("screenshot"),
+                         QJsonObject{{QStringLiteral("auto_save_after_copy"), true}}}})
             .toJson();
     writeBytes(futurePath, futureBytes);
     storage::ConfigurationStore future(futurePath, true, true, 60000);
@@ -1804,8 +1807,9 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
     require(!translation.copyTranslationResultsAsImage(), "translation image copy defaults off");
     require(translation.setCopyTranslationResultsAsImage(true), "enable translation image copy");
     require(translation.configuration() ==
-                storage::ScreenshotTranslationConfiguration{QStringLiteral("auto"), {}, {}},
-            "translation settings should default to Auto source and runtime-derived target/model");
+                storage::ScreenshotTranslationConfiguration{
+                    QStringLiteral("auto"), {}, QStringLiteral("free-translation")},
+            "translation settings default to Auto source, runtime target, and Free Translation");
     require(translation.configuration().languageDetectionConfidenceThreshold == 60,
             "language detection confidence defaults to 60 percent");
     const storage::ScreenshotTranslationConfiguration selected{
@@ -3341,7 +3345,7 @@ void futureVersionIsReadOnly() {
     require(temporary.isValid(), "failed to create future-version directory");
     const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
     writeBytes(config, QByteArrayLiteral("{\n"
-                                         "  \"storage\": {\"schema_version\": 5},\n"
+                                         "  \"storage\": {\"schema_version\": 6},\n"
                                          "  \"interface\": {\"theme_mode\": \"dark\"},\n"
                                          "  \"future\": {\"value\": 42}\n"
                                          "}\n"));
@@ -4345,6 +4349,12 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--translation-settings-only"))) {
         screenshotTranslationSettingsRoundTripSupportedValues();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--schema-version-only"))) {
+        autoSaveAfterExecutionSettingsMigrateAndPersist();
+        futureVersionIsReadOnly();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

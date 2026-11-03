@@ -892,6 +892,10 @@ Session* ImageEditingWindow::Impl::ensureSession() {
     actions.setTextTargetLanguage = [this](const QString& text) {
         palette->setTextTargetLanguage(text);
     };
+    actions.setTextTranslationServices = [this](const QVector<SnowShotChatModel>& models,
+                                                const QString& selection, bool modelsLoading) {
+        palette->setTextTranslationServices(models, selection, modelsLoading);
+    };
     actions.setShowOriginalImage = [this](bool) {
         palette->setShowOriginalImage(false);
         palette->setOriginalImageToggleEnabled(false);
@@ -998,6 +1002,7 @@ void ImageEditingWindow::Impl::bindRecognition() {
     SESSION_VALUE(textFormattingRequested, applyTextFormatting);
     SESSION_VALUE(textPunctuationRequested, applyTextPunctuation);
     SESSION_VALUE(textTargetLanguageRequested, applyTextTargetLanguage);
+    SESSION_VALUE(textTranslationServiceRequested, applyTextTranslationService);
     SESSION_VALUE(recognitionModelChanged, setRecognitionModel);
 #undef SESSION_VALUE
     palette->setOriginalImageToggleEnabled(false);

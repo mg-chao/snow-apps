@@ -1,4 +1,5 @@
 #include "snow_shot/translation/translationservice.h"
+#include "snow_shot/translation/freetranslation.h"
 
 #include "snow_shot/translation/translationlanguages.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -154,6 +155,9 @@ void TranslationService::publishModels(bool resolveSelection) {
     if (m_client == nullptr)
         return;
     m_models = m_client->cachedChatModels();
+    m_models.removeIf([](const auto& model) { return model.id == freeTranslationId; });
+    m_models.prepend({freeTranslationId, tr("Free Translation"), false,
+                      QStringLiteral("free-translation"), false});
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.
     std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {
@@ -175,7 +179,8 @@ void TranslationService::publishModels(bool resolveSelection) {
                                (selectedModel.startsWith(QStringLiteral("translation:")) &&
                                 !m_client->isTextTranslation(selectedModel));
     const bool localDefault = selectedModel.isEmpty() && index >= 0 &&
-                              (m_client->isCustomModel(m_models.at(index).id) ||
+                              (m_models.at(index).id == freeTranslationId ||
+                               m_client->isCustomModel(m_models.at(index).id) ||
                                m_client->isTextTranslation(m_models.at(index).id));
     if (!unresolvedLegacy && (resolveSelection || missingCustom || localDefault) &&
         (index >= 0 || missingCustom)) {
@@ -209,9 +214,16 @@ void TranslationService::refreshModels(bool force) {
 }
 
 void TranslationService::setLocale(const QLocale& locale) {
-    if (locale == m_locale)
+    if (locale == m_locale) {
+        // LanguageChange can arrive before the language manager publishes its new locale.
+        publishModels(false);
         return;
+    }
     m_locale = locale;
+    const QPointer<TranslationService> guard(this);
+    publishModels(false);
+    if (!guard)
+        return;
     if (m_client != nullptr)
         m_client->cancel(std::exchange(m_modelsToken, 0));
     // The effective target belongs to the translation, not to the language of its UI.
@@ -368,6 +380,10 @@ void TranslationJob::prepare() {
             m_service->refreshModels();
             return;
         }
+        if (!m_service->m_catalogError.isEmpty() && !m_preferences.modelId.isEmpty()) {
+            fail(m_service->m_catalogError);
+            return;
+        }
         if (m_fixedPreferences && !m_preferences.modelId.isEmpty()) {
             fail(m_service->errorText());
             return;
@@ -512,6 +528,8 @@ QString TranslationJob::errorText() const {
     if (m_state == State::Invalidated) {
         return TranslationService::modelConfigurationChangedText();
     }
+    if (m_preferences.modelId == freeTranslationId && !m_result.error.isEmpty())
+        return freeTranslationErrorText();
     return m_result.error;
 }
 } // namespace snow_shot::translation

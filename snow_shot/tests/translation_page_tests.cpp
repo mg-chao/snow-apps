@@ -140,6 +140,22 @@ void additionalLanguageSelectors() {
             QApplication::sendEvent(&page, &languageChange);
             QApplication::sendEvent(modal->contentWidget(), &languageChange);
             flushEvents();
+            const QStringList freeLabels{QStringLiteral("Free Translation"),
+                                         QStringLiteral("免费翻译"), QStringLiteral("免費翻譯")};
+            const auto checkFreeLabel = [&](const auto& options) {
+                require(std::count_if(options.cbegin(), options.cend(),
+                                      [&](const auto& option) {
+                                          return option.value ==
+                                                     QStringLiteral("free-translation") &&
+                                                 option.label == freeLabels[index];
+                                      }) == 1,
+                        "Free Translation retranslates in every shared service selector");
+            };
+            checkFreeLabel(child<AdSelect>(page, "translationService")->options());
+            checkFreeLabel(child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService")
+                               ->options());
+            checkFreeLabel(
+                runtime.dynamicSelectOptions(settings::SettingsSelectBinding::TranslationService));
             const auto checkOptions = [&](const auto& options) {
                 require(std::count_if(options.cbegin(), options.cend(),
                                       [&](const auto& option) {
@@ -315,11 +331,12 @@ void sharedServiceSelectors() {
         }
     }
     const auto options = pageSelect->options();
-    require(options.size() == 4 && options[0].value == QStringLiteral("general") &&
+    require(options.size() == 5 && options[0].value == QStringLiteral("general") &&
                 options[1].value == QStringLiteral("vision") &&
                 options[2].value == model.selectionId() && options[0].group == options[1].group &&
                 options[1].group == options[2].group &&
-                options[3].value == QStringLiteral("specialist"),
+                options[3].value == QStringLiteral("free-translation") &&
+                options[4].value == QStringLiteral("specialist"),
             "both selectors show server vision-capable general models alongside custom models");
     require(service.savePreferences({QStringLiteral("en"), QStringLiteral("fr"),
                                      QStringLiteral("specialist"), QStringLiteral("en"), 85}),
@@ -338,7 +355,7 @@ void sharedServiceSelectors() {
     require(configuration.setValue(customKey, QJsonArray{}), "remove selected model");
     compare();
     require(pageSelect->currentValue() == screenshotSelect->currentValue() &&
-                pageSelect->currentValue().toString() == QStringLiteral("general"),
+                pageSelect->currentValue().toString() == QStringLiteral("free-translation"),
             "both views resolve the same fallback after deletion");
     require(
         sharedEdits == 0 && sharedCommits == 0,
@@ -465,8 +482,8 @@ void screenshotSettingsGeometry() {
                         label->height() >= label->fontMetrics().height(),
                     "screenshot settings labels fit on one line without clipping");
         }
-        require(modal->acceptButton()->isEnabled() == cached,
-                "OK is available only once translation models are ready");
+        require(modal->acceptButton()->isEnabled(),
+                "local free translation keeps OK available during model discovery");
         if (!cached) {
             waitUntil([&] { return server.modelRequests == 1; }, "request translation models");
             server.respondModels();
@@ -1439,6 +1456,9 @@ int main(int argc, char** argv) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize isolated translation-page storage");
+    require(storage.configuration().setValue(QStringLiteral("screenshot_translation/model"),
+                                             QStringLiteral("general")),
+            "select the server fixture for translation UI tests");
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "enable optional translation page for translation UI tests");
     styles::ThemeManager::instance().initialize(app);

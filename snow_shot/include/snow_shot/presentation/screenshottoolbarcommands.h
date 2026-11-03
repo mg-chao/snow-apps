@@ -109,6 +109,7 @@ class ScreenshotToolbarCommandSink {
     virtual void applyTextFormatting(const QString&) {}
     virtual void applyTextPunctuation(const QString&) {}
     virtual void applyTextTargetLanguage(const QString&) {}
+    virtual void applyTextTranslationService(const QString&) {}
     virtual void startScrollingScreenshot() = 0;
     virtual void restartScrollingScreenshot() {}
     virtual void splitScrollingScreenshot() {}
