@@ -60,6 +60,7 @@ function Test-FilterAudit {
 }
 try {
     Test-FilterAudit actual-audio-filter-symbols $symbols $true
+    Test-FilterAudit unexpected-ffmpeg-gif-encoder @($symbols + 'ff_gif_encoder') $false
     Test-FilterAudit missing-tempo @($symbols | Where-Object { $_ -ne 'ff_af_atempo' }) $false
     Test-FilterAudit missing-audio-source @($symbols | Where-Object { $_ -ne 'ff_asrc_abuffer' }) $false
     Test-FilterAudit unexpected-video-filter @($symbols + 'ff_vf_scale') $false

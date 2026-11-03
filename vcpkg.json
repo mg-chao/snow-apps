@@ -38,7 +38,7 @@
         {
           "name": "ffmpeg",
           "default-features": false,
-          "features": ["snow-macos-media"],
+          "features": ["snow-shot-macos-minimal"],
           "platform": "osx"
         },
         { "name": "libpng", "features": ["apng"] },

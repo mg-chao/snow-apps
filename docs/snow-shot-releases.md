@@ -186,13 +186,20 @@ fallback for dynamic lookups. Changes to sources, headers, manifests, or SVGs
 regenerate the subset without altering the checked-in library or public API.
 
 Cold configuration, settings forms, import/export, and shell code use `/O1 /Os`
-on MSVC or `-Os` on Clang. Capture, recording, drawing, image processing, history
-thumbnails, clipboard decoding, and shortcut dispatch retain their speed policy.
+on MSVC or `-Os` on Clang, including cloud-upload configuration and the compact
+recording and translation settings dialogs. Capture, recording, drawing, image
+processing, history thumbnails, clipboard decoding, and shortcut dispatch retain
+their speed policy.
 Optimized Release targets keep LTO; MSVC `/Gw` and `/Gy` allow `/OPT:REF` and
 `/OPT:ICF` to discard unused data/functions and fold identical code. macOS enables
 `-dead_strip` only for Release builds with the shipping size option enabled.
 The source and target policies are centralized in
 `cmake/SnowShotReleaseOptimization.cmake` for both editions.
+
+Application FFmpeg profiles retain legacy recording inputs while limiting outputs
+to MP4, GIF, APNG and WebP. GIF packets use the Rust encoder directly, without
+opening or bundling a second FFmpeg GIF encoder. The standalone compatibility
+profiles retain their additional encoders and Matroska, AVI and WAV outputs.
 
 ### Snow Shot Mini paired releases
 

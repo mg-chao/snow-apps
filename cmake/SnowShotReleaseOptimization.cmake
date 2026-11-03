@@ -29,7 +29,9 @@ set(SNOW_SHOT_RELEASE_SIZE_STORAGE_SOURCES
 # code, streaming translation, theme rendering and shortcut dispatch stay fast.
 set(SNOW_SHOT_RELEASE_SIZE_SETTINGS_SOURCES
     src/presentation/components/aboutpagewidget.cpp
+    src/presentation/components/clouduploadsettingswidget.cpp
     src/presentation/components/customaimodelssettingswidget.cpp
+    src/presentation/components/screenrecordingsettingsdialog.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     src/presentation/components/storagestatussettingswidget.cpp
@@ -45,6 +47,7 @@ set(SNOW_SHOT_RELEASE_SIZE_SHELL_SOURCES
     src/app/featureavailability.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
+    src/presentation/components/screenshottranslationsettingsdialog.cpp
     src/presentation/components/sidebarwidget.cpp
     src/presentation/components/titlebarwidget.cpp)
 

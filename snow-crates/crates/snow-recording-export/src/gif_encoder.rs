@@ -9,6 +9,22 @@ use ffmpeg_next as ffmpeg;
 use crate::error::{RecordingExportError, Result};
 use crate::gif_palette::GifPalette;
 
+/// GIF's muxer consumes complete GIF packets and needs no opened FFmpeg encoder.
+/// Describe their decoded canvas independently of the RGB input transport.
+pub(crate) fn muxer_parameters(width: u32, height: u32) -> ffmpeg::codec::Parameters {
+    let mut parameters = ffmpeg::codec::Parameters::new();
+    parameters.set_medium(ffmpeg::media::Type::Video);
+    parameters.set_id(ffmpeg::codec::Id::GIF);
+    // SAFETY: parameters owns this newly allocated codec parameter block.
+    unsafe {
+        let raw = parameters.as_mut_ptr();
+        (*raw).width = width as i32;
+        (*raw).height = height as i32;
+        (*raw).format = ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_PAL8 as i32;
+    }
+    parameters
+}
+
 pub(crate) struct GifEncoder {
     palette: GifPalette,
     previous_rgb: Vec<u8>,

@@ -266,7 +266,10 @@ target_sources(snow_shot_settings PRIVATE ${{SNOW_SHOT_RELEASE_SIZE_SETTINGS_SOU
 target_sources(snow_shot PRIVATE ${{SNOW_SHOT_RELEASE_SIZE_SHELL_SOURCES}}
     src/presentation/capture/screenshotcaptureworker.cpp
     src/presentation/overlay/screenshotcanvasrenderer.cpp
-    src/presentation/recording/recordingrenderjob.cpp)
+    src/presentation/recording/recordingrenderjob.cpp
+    src/presentation/ocr/screenshottableconversioncontroller.cpp
+    src/presentation/ocr/screenshottabledocument.cpp
+    src/presentation/services/screenshotpdfexport.cpp)
 target_sources(snow_shot_collage PRIVATE ${{SNOW_SHOT_RELEASE_SIZE_COLLAGE_SOURCES}}
     src/presentation/collage/collageeditorwidget.cpp
     src/presentation/collage/collagepdfpagegrid.cpp
@@ -291,6 +294,20 @@ foreach(target IN LISTS targets)
 endforeach()
 set(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION ON)
 include("{POLICY.as_posix()}")
+# These settings surfaces must use the cold policy without pulling the
+# streaming table parser, renderer or export pixel loops into it.
+get_target_property(settings_cold snow_shot_settings SNOW_RELEASE_SIZE_SOURCES)
+foreach(source IN ITEMS
+        src/presentation/components/clouduploadsettingswidget.cpp
+        src/presentation/components/screenrecordingsettingsdialog.cpp)
+    if(NOT source IN_LIST settings_cold)
+        message(FATAL_ERROR "Settings dialog is missing the cold policy: ${{source}}")
+    endif()
+endforeach()
+get_target_property(shell_cold snow_shot SNOW_RELEASE_SIZE_SOURCES)
+if(NOT "src/presentation/components/screenshottranslationsettingsdialog.cpp" IN_LIST shell_cold)
+    message(FATAL_ERROR "Translation settings must use the cold policy")
+endif()
 foreach(target IN LISTS SNOW_SHOT_RELEASE_SPEED_TARGETS)
     get_target_property(named_policy ${{target}} SNOW_RELEASE_OPTIMIZATION_POLICY)
     if(NOT named_policy STREQUAL "speed")
@@ -323,6 +340,9 @@ foreach(source IN ITEMS src/storage/preparedpngimage.cpp
         src/presentation/capture/screenshotcaptureworker.cpp
         src/presentation/overlay/screenshotcanvasrenderer.cpp
         src/presentation/recording/recordingrenderjob.cpp
+        src/presentation/ocr/screenshottableconversioncontroller.cpp
+        src/presentation/ocr/screenshottabledocument.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/collage/collagedocument.cpp
         src/presentation/collage/collagetransformedrows_p.h
         src/presentation/collage/collageresourcebudget.cpp

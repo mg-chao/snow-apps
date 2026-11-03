@@ -457,6 +457,34 @@ struct StreamingAudioState {
     final_duration_us: Option<u64>,
 }
 
+enum StreamingVideoEncoder {
+    Ffmpeg(ffmpeg::encoder::video::Encoder),
+    Gif(crate::gif_encoder::GifEncoder),
+}
+
+impl StreamingVideoEncoder {
+    fn ffmpeg(&self) -> Option<&ffmpeg::encoder::video::Encoder> {
+        match self {
+            Self::Ffmpeg(encoder) => Some(encoder),
+            Self::Gif(_) => None,
+        }
+    }
+
+    fn ffmpeg_mut(&mut self) -> Option<&mut ffmpeg::encoder::video::Encoder> {
+        match self {
+            Self::Ffmpeg(encoder) => Some(encoder),
+            Self::Gif(_) => None,
+        }
+    }
+
+    fn gif_mut(&mut self) -> Option<&mut crate::gif_encoder::GifEncoder> {
+        match self {
+            Self::Gif(encoder) => Some(encoder),
+            Self::Ffmpeg(_) => None,
+        }
+    }
+}
+
 pub struct StreamingEncoder {
     format: ExportFormat,
     loop_images: bool,
@@ -465,10 +493,9 @@ pub struct StreamingEncoder {
     recovery: Option<recovery::RecoveryState>,
     audio_output: Option<ffmpeg::format::context::Output>,
     output: Option<ffmpeg::format::context::Output>,
-    // For GIF this context supplies muxer parameters and the shared time base;
-    // frame packets come from the RGB-difference encoder below.
-    encoder: ffmpeg::encoder::video::Encoder,
-    gif: Option<crate::gif_encoder::GifEncoder>,
+    // GIF packets are encoded directly; only the other formats open a codec.
+    encoder: StreamingVideoEncoder,
+    video_time_base: ffmpeg::Rational,
     gif_packet: Option<ffmpeg::Packet>,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
@@ -647,312 +674,348 @@ impl StreamingEncoder {
         let gpu_enabled = native_input.is_some();
         #[cfg(not(any(windows, target_os = "macos")))]
         let gpu_enabled = false;
-        let mut video_codec = select_video_codec(
-            &output,
-            &staging_path,
-            config.format,
-            config.codec,
-            config.prefer_hardware_h264,
-            config.execution_mode,
-            config.software_h264_priority,
-        )?;
-        #[cfg(windows)]
-        if let Some(frames) = &hardware_frames {
-            if config.format != ExportFormat::Mp4
-                || config.execution_mode == ExportExecutionMode::SoftwareOnly
-            {
-                return Err(RecordingExportError::InvalidConfig(
-                    "GPU input requires hardware H.264 or H.265 MP4".into(),
-                ));
-            }
-            video_codec = ffmpeg::encoder::find_by_name(frames.codec_name()).ok_or_else(|| {
-                RecordingExportError::Encode(format!(
-                    "{} is absent from the FFmpeg build",
-                    frames.codec_name()
-                ))
-            })?;
-        }
-        #[cfg(target_os = "macos")]
-        if let Some(format) = native_input {
-            if config.format != ExportFormat::Mp4
-                || config.execution_mode == ExportExecutionMode::SoftwareOnly
-                || !matches!(
-                    format,
-                    snow_media::PixelFormat::Bgra8 | snow_media::PixelFormat::P010
-                )
-                || (format == snow_media::PixelFormat::P010 && config.codec != VideoCodec::H265)
-            {
-                return Err(RecordingExportError::InvalidConfig(
-                    "native input requires hardware MP4 with BGRA SDR or HEVC P010 HDR10".into(),
-                ));
-            }
-            video_codec = ffmpeg::encoder::find_by_name(match config.codec {
-                VideoCodec::H264 => "h264_videotoolbox",
-                VideoCodec::H265 => "hevc_videotoolbox",
-            })
-            .ok_or_else(|| {
-                RecordingExportError::Encode("VideoToolbox encoder absent from FFmpeg".into())
-            })?;
-        }
-        if cpu_hdr_input && (config.codec != VideoCodec::H265 || config.format != ExportFormat::Mp4)
+        let (encoder, requested_video_encoder, video_encoder, pixel_format) = if config.format
+            == ExportFormat::Gif
         {
-            return Err(RecordingExportError::InvalidConfig(
-                "CPU HDR input requires HEVC MP4".into(),
-            ));
-        }
-        let requested_video_encoder = video_codec.name().to_owned();
-        let mut pixel_format = choose_video_pixel_format(
-            config.format,
-            video_codec.video().map_err(|error| {
-                RecordingExportError::Encode(format!(
-                    "selected streaming codec is not a video encoder: {error}"
-                ))
-            })?,
-            cpu_input_format_hint,
-            config.execution_mode,
-        );
-        let hdr_pixel_error = if cpu_hdr_input {
-            match crate::hdr::pixel_format(
-                video_codec
-                    .video()
-                    .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
-            ) {
-                Ok(pixel) => {
-                    pixel_format = pixel;
-                    None
-                }
-                Err(error) => Some(error),
+            if gpu_enabled || cpu_hdr_input {
+                return Err(RecordingExportError::InvalidConfig(
+                    "GIF requires CPU SDR input".into(),
+                ));
             }
+            (
+                None,
+                "gif".into(),
+                "gif".into(),
+                ffmpeg::format::Pixel::RGB24,
+            )
         } else {
-            None
-        };
-        #[cfg(windows)]
-        if let Some(frames) = &hardware_frames {
-            pixel_format = frames.pixel_format();
-        }
-        #[cfg(target_os = "macos")]
-        if native_input.is_some() {
-            pixel_format = ffmpeg::format::Pixel::VIDEOTOOLBOX;
-        }
-        let effective_video = effective_video_config(&config.video);
-        let open_encoder = |codec: ffmpeg::Codec,
-                            pixel: ffmpeg::format::Pixel,
-                            purpose: VideoEncoderPurpose|
-         -> Result<ffmpeg::encoder::video::Encoder> {
-            let mut encoder = ffmpeg::codec::context::Context::new_with_codec(codec)
-                .encoder()
-                .video()
-                .map_err(|error| {
-                    RecordingExportError::Encode(format!(
-                        "failed to create streaming video encoder: {error}"
-                    ))
-                })?;
-            // hvc1 keeps HEVC MP4 playable in Apple players as well as FFmpeg.
-            // GLOBAL_HEADER below stores parameter sets in the sample entry.
-            if config.format == ExportFormat::Mp4 && config.codec == VideoCodec::H265 {
-                unsafe {
-                    (*encoder.as_mut_ptr()).codec_tag = u32::from_le_bytes(*b"hvc1");
-                }
-            }
-            encoder.set_width(config.width);
-            encoder.set_height(config.height);
-            encoder.set_format(pixel);
-            #[cfg(target_os = "macos")]
-            if let Some(format) = native_input {
-                unsafe {
-                    (*encoder.as_mut_ptr()).sw_pix_fmt = match format {
-                        snow_media::PixelFormat::P010 => {
-                            ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_P010LE
-                        }
-                        _ => ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_BGRA,
-                    };
-                }
-            }
-            encoder.set_time_base(video_time_base);
-            encoder.set_frame_rate(Some(video_frame_rate));
-            if !config.format.is_animated_image() {
-                unsafe {
-                    let context = encoder.as_mut_ptr();
-                    (*context).color_range = ffmpeg::ffi::AVColorRange::AVCOL_RANGE_MPEG;
-                    (*context).colorspace = ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709;
-                    (*context).color_primaries = ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT709;
-                    (*context).color_trc =
-                        ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_BT709;
-                }
-            }
-            #[cfg(target_os = "macos")]
-            if native_input == Some(snow_media::PixelFormat::Bgra8) {
-                unsafe {
-                    (*encoder.as_mut_ptr()).color_trc =
-                        ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_IEC61966_2_1;
-                }
-            }
-            if cpu_hdr_input {
-                crate::hdr::context(&mut encoder, true);
-            }
-            #[cfg(target_os = "macos")]
-            if native_input == Some(snow_media::PixelFormat::P010) {
-                crate::hdr::context(&mut encoder, true);
-            }
-            // Resolve against the codec being opened, never an already-opened
-            // hardware context's effective thread count. The fallback may also
-            // have been selected during codec discovery, before an open fails.
-            let encode_threads =
-                if config.prefer_hardware_h264 && !is_hardware_video_encoder(&codec) {
-                    software_fallback_threads.unwrap_or(config.encode_threads)
-                } else {
-                    config.encode_threads
-                };
-            configure_codec_threads(
-                &mut encoder,
-                encode_threads,
-                ffmpeg::codec::threading::Type::Frame,
-            );
-            if !config.format.is_animated_image() {
-                let bitrate = smart_quality_bitrate_bps(
-                    config.width,
-                    config.height,
-                    config.fps,
-                    &effective_video,
-                    false,
-                );
-                encoder.set_bit_rate(if purpose == VideoEncoderPurpose::RecordingSource {
-                    bitrate.saturating_mul(2).clamp(1_200_000, 240_000_000)
-                } else {
-                    bitrate
-                });
-            }
-            if global_header {
-                encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-            }
+            let mut video_codec = select_video_codec(
+                &output,
+                &staging_path,
+                config.format,
+                config.codec,
+                config.prefer_hardware_h264,
+                config.execution_mode,
+                config.software_h264_priority,
+            )?;
             #[cfg(windows)]
             if let Some(frames) = &hardware_frames {
-                frames.configure(&mut encoder)?;
+                if config.format != ExportFormat::Mp4
+                    || config.execution_mode == ExportExecutionMode::SoftwareOnly
+                {
+                    return Err(RecordingExportError::InvalidConfig(
+                        "GPU input requires hardware H.264 or H.265 MP4".into(),
+                    ));
+                }
+                video_codec =
+                    ffmpeg::encoder::find_by_name(frames.codec_name()).ok_or_else(|| {
+                        RecordingExportError::Encode(format!(
+                            "{} is absent from the FFmpeg build",
+                            frames.codec_name()
+                        ))
+                    })?;
             }
-            #[cfg(not(windows))]
-            let surface_capacity = None;
-            #[cfg(windows)]
-            let surface_capacity = hardware_frames
-                .as_ref()
-                .map(|_| crate::gpu::HardwareFrames::LIVE_CAPACITY);
-            open_video_encoder(
-                encoder,
-                &codec,
-                &effective_video,
-                purpose,
-                config.fps,
-                surface_capacity,
-            )
-        };
-
-        let make_encoder = |codec: ffmpeg::Codec, pixel| {
-            crate::codec::open_with_hardware_compatibility(
-                purpose,
-                is_hardware_video_encoder(&codec),
-                |profile| open_encoder(codec, pixel, profile),
-            )
-        };
-
-        let primary = if let Some(error) = hdr_pixel_error {
-            Err(error)
-        } else if force_hardware_failure && is_hardware_video_encoder(&video_codec) {
-            Err(RecordingExportError::Encode(
-                "benchmark forced hardware initialization failure".into(),
-            ))
-        } else {
-            make_encoder(video_codec, pixel_format)
-        };
-        let encoder = match primary {
-            Ok(encoder) => encoder,
-            Err(primary_error)
-                if !gpu_enabled
-                    && config.prefer_hardware_h264
-                    && is_hardware_video_encoder(&video_codec) =>
+            #[cfg(target_os = "macos")]
+            if let Some(format) = native_input {
+                if config.format != ExportFormat::Mp4
+                    || config.execution_mode == ExportExecutionMode::SoftwareOnly
+                    || !matches!(
+                        format,
+                        snow_media::PixelFormat::Bgra8 | snow_media::PixelFormat::P010
+                    )
+                    || (format == snow_media::PixelFormat::P010 && config.codec != VideoCodec::H265)
+                {
+                    return Err(RecordingExportError::InvalidConfig(
+                        "native input requires hardware MP4 with BGRA SDR or HEVC P010 HDR10"
+                            .into(),
+                    ));
+                }
+                video_codec = ffmpeg::encoder::find_by_name(match config.codec {
+                    VideoCodec::H264 => "h264_videotoolbox",
+                    VideoCodec::H265 => "hevc_videotoolbox",
+                })
+                .ok_or_else(|| {
+                    RecordingExportError::Encode("VideoToolbox encoder absent from FFmpeg".into())
+                })?;
+            }
+            if cpu_hdr_input
+                && (config.codec != VideoCodec::H265 || config.format != ExportFormat::Mp4)
             {
-                let mut opened_hardware = None;
-                if !force_hardware_failure {
-                    for candidate in hardware_codec_candidates(config.codec) {
-                        if candidate.name() == video_codec.name() {
-                            continue;
-                        }
-                        let pixel = choose_video_pixel_format(
-                            config.format,
-                            candidate
-                                .video()
-                                .map_err(|error| RecordingExportError::Encode(error.to_string()))?,
-                            cpu_input_format_hint,
-                            config.execution_mode,
-                        );
-                        let pixel = if cpu_hdr_input {
-                            // An 8-bit-only MFT must not prevent the remaining
-                            // candidates or libx265 from preserving HDR10.
-                            let Ok(pixel) =
-                                crate::hdr::pixel_format(candidate.video().map_err(|error| {
-                                    RecordingExportError::Encode(error.to_string())
-                                })?)
-                            else {
-                                continue;
-                            };
-                            pixel
-                        } else {
-                            pixel
-                        };
-                        if let Ok(encoder) = make_encoder(candidate, pixel) {
-                            opened_hardware = Some((candidate, pixel, encoder));
-                            break;
-                        }
-                    }
-                }
-                if let Some((codec, pixel, encoder)) = opened_hardware {
-                    video_codec = codec;
-                    pixel_format = pixel;
-                    encoder
-                } else {
-                    if config.execution_mode == ExportExecutionMode::HardwareOnly {
-                        return Err(primary_error);
-                    }
-                    video_codec = select_video_codec(
-                        &output,
-                        &staging_path,
-                        config.format,
-                        config.codec,
-                        false,
-                        ExportExecutionMode::SoftwareOnly,
-                        config.software_h264_priority,
-                    )?;
-                    pixel_format = choose_video_pixel_format(
-                        config.format,
-                        video_codec.video().map_err(|error| {
-                            RecordingExportError::Encode(format!(
-                                "fallback streaming codec is not a video encoder: {error}"
-                            ))
-                        })?,
-                        cpu_input_format_hint,
-                        ExportExecutionMode::SoftwareOnly,
-                    );
-                    if cpu_hdr_input {
-                        pixel_format = crate::hdr::pixel_format(
-                            video_codec
-                                .video()
-                                .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
-                        )?;
-                    }
-                    make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
-                }
+                return Err(RecordingExportError::InvalidConfig(
+                    "CPU HDR input requires HEVC MP4".into(),
+                ));
             }
-            Err(error) => return Err(error),
+            let requested_video_encoder = video_codec.name().to_owned();
+            let mut pixel_format = choose_video_pixel_format(
+                config.format,
+                video_codec.video().map_err(|error| {
+                    RecordingExportError::Encode(format!(
+                        "selected streaming codec is not a video encoder: {error}"
+                    ))
+                })?,
+                cpu_input_format_hint,
+                config.execution_mode,
+            );
+            let hdr_pixel_error = if cpu_hdr_input {
+                match crate::hdr::pixel_format(
+                    video_codec
+                        .video()
+                        .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
+                ) {
+                    Ok(pixel) => {
+                        pixel_format = pixel;
+                        None
+                    }
+                    Err(error) => Some(error),
+                }
+            } else {
+                None
+            };
+            #[cfg(windows)]
+            if let Some(frames) = &hardware_frames {
+                pixel_format = frames.pixel_format();
+            }
+            #[cfg(target_os = "macos")]
+            if native_input.is_some() {
+                pixel_format = ffmpeg::format::Pixel::VIDEOTOOLBOX;
+            }
+            let effective_video = effective_video_config(&config.video);
+            let open_encoder = |codec: ffmpeg::Codec,
+                                pixel: ffmpeg::format::Pixel,
+                                purpose: VideoEncoderPurpose|
+             -> Result<ffmpeg::encoder::video::Encoder> {
+                let mut encoder = ffmpeg::codec::context::Context::new_with_codec(codec)
+                    .encoder()
+                    .video()
+                    .map_err(|error| {
+                        RecordingExportError::Encode(format!(
+                            "failed to create streaming video encoder: {error}"
+                        ))
+                    })?;
+                // hvc1 keeps HEVC MP4 playable in Apple players as well as FFmpeg.
+                // GLOBAL_HEADER below stores parameter sets in the sample entry.
+                if config.format == ExportFormat::Mp4 && config.codec == VideoCodec::H265 {
+                    unsafe {
+                        (*encoder.as_mut_ptr()).codec_tag = u32::from_le_bytes(*b"hvc1");
+                    }
+                }
+                encoder.set_width(config.width);
+                encoder.set_height(config.height);
+                encoder.set_format(pixel);
+                #[cfg(target_os = "macos")]
+                if let Some(format) = native_input {
+                    unsafe {
+                        (*encoder.as_mut_ptr()).sw_pix_fmt = match format {
+                            snow_media::PixelFormat::P010 => {
+                                ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_P010LE
+                            }
+                            _ => ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_BGRA,
+                        };
+                    }
+                }
+                encoder.set_time_base(video_time_base);
+                encoder.set_frame_rate(Some(video_frame_rate));
+                if !config.format.is_animated_image() {
+                    unsafe {
+                        let context = encoder.as_mut_ptr();
+                        (*context).color_range = ffmpeg::ffi::AVColorRange::AVCOL_RANGE_MPEG;
+                        (*context).colorspace = ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709;
+                        (*context).color_primaries = ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT709;
+                        (*context).color_trc =
+                            ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_BT709;
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                if native_input == Some(snow_media::PixelFormat::Bgra8) {
+                    unsafe {
+                        (*encoder.as_mut_ptr()).color_trc =
+                            ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_IEC61966_2_1;
+                    }
+                }
+                if cpu_hdr_input {
+                    crate::hdr::context(&mut encoder, true);
+                }
+                #[cfg(target_os = "macos")]
+                if native_input == Some(snow_media::PixelFormat::P010) {
+                    crate::hdr::context(&mut encoder, true);
+                }
+                // Resolve against the codec being opened, never an already-opened
+                // hardware context's effective thread count. The fallback may also
+                // have been selected during codec discovery, before an open fails.
+                let encode_threads =
+                    if config.prefer_hardware_h264 && !is_hardware_video_encoder(&codec) {
+                        software_fallback_threads.unwrap_or(config.encode_threads)
+                    } else {
+                        config.encode_threads
+                    };
+                configure_codec_threads(
+                    &mut encoder,
+                    encode_threads,
+                    ffmpeg::codec::threading::Type::Frame,
+                );
+                if !config.format.is_animated_image() {
+                    let bitrate = smart_quality_bitrate_bps(
+                        config.width,
+                        config.height,
+                        config.fps,
+                        &effective_video,
+                        false,
+                    );
+                    encoder.set_bit_rate(if purpose == VideoEncoderPurpose::RecordingSource {
+                        bitrate.saturating_mul(2).clamp(1_200_000, 240_000_000)
+                    } else {
+                        bitrate
+                    });
+                }
+                if global_header {
+                    encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+                }
+                #[cfg(windows)]
+                if let Some(frames) = &hardware_frames {
+                    frames.configure(&mut encoder)?;
+                }
+                #[cfg(not(windows))]
+                let surface_capacity = None;
+                #[cfg(windows)]
+                let surface_capacity = hardware_frames
+                    .as_ref()
+                    .map(|_| crate::gpu::HardwareFrames::LIVE_CAPACITY);
+                open_video_encoder(
+                    encoder,
+                    &codec,
+                    &effective_video,
+                    purpose,
+                    config.fps,
+                    surface_capacity,
+                )
+            };
+
+            let make_encoder = |codec: ffmpeg::Codec, pixel| {
+                crate::codec::open_with_hardware_compatibility(
+                    purpose,
+                    is_hardware_video_encoder(&codec),
+                    |profile| open_encoder(codec, pixel, profile),
+                )
+            };
+
+            let primary = if let Some(error) = hdr_pixel_error {
+                Err(error)
+            } else if force_hardware_failure && is_hardware_video_encoder(&video_codec) {
+                Err(RecordingExportError::Encode(
+                    "benchmark forced hardware initialization failure".into(),
+                ))
+            } else {
+                make_encoder(video_codec, pixel_format)
+            };
+            let encoder = match primary {
+                Ok(encoder) => encoder,
+                Err(primary_error)
+                    if !gpu_enabled
+                        && config.prefer_hardware_h264
+                        && is_hardware_video_encoder(&video_codec) =>
+                {
+                    let mut opened_hardware = None;
+                    if !force_hardware_failure {
+                        for candidate in hardware_codec_candidates(config.codec) {
+                            if candidate.name() == video_codec.name() {
+                                continue;
+                            }
+                            let pixel = choose_video_pixel_format(
+                                config.format,
+                                candidate.video().map_err(|error| {
+                                    RecordingExportError::Encode(error.to_string())
+                                })?,
+                                cpu_input_format_hint,
+                                config.execution_mode,
+                            );
+                            let pixel = if cpu_hdr_input {
+                                // An 8-bit-only MFT must not prevent the remaining
+                                // candidates or libx265 from preserving HDR10.
+                                let Ok(pixel) =
+                                    crate::hdr::pixel_format(candidate.video().map_err(
+                                        |error| RecordingExportError::Encode(error.to_string()),
+                                    )?)
+                                else {
+                                    continue;
+                                };
+                                pixel
+                            } else {
+                                pixel
+                            };
+                            if let Ok(encoder) = make_encoder(candidate, pixel) {
+                                opened_hardware = Some((candidate, pixel, encoder));
+                                break;
+                            }
+                        }
+                    }
+                    if let Some((codec, pixel, encoder)) = opened_hardware {
+                        video_codec = codec;
+                        pixel_format = pixel;
+                        encoder
+                    } else {
+                        if config.execution_mode == ExportExecutionMode::HardwareOnly {
+                            return Err(primary_error);
+                        }
+                        video_codec = select_video_codec(
+                            &output,
+                            &staging_path,
+                            config.format,
+                            config.codec,
+                            false,
+                            ExportExecutionMode::SoftwareOnly,
+                            config.software_h264_priority,
+                        )?;
+                        pixel_format = choose_video_pixel_format(
+                            config.format,
+                            video_codec.video().map_err(|error| {
+                                RecordingExportError::Encode(format!(
+                                    "fallback streaming codec is not a video encoder: {error}"
+                                ))
+                            })?,
+                            cpu_input_format_hint,
+                            ExportExecutionMode::SoftwareOnly,
+                        );
+                        if cpu_hdr_input {
+                            pixel_format = crate::hdr::pixel_format(
+                                video_codec
+                                    .video()
+                                    .map_err(|e| RecordingExportError::Encode(e.to_string()))?,
+                            )?;
+                        }
+                        make_encoder(video_codec, pixel_format).map_err(|_| primary_error)?
+                    }
+                }
+                Err(error) => return Err(error),
+            };
+
+            let video_encoder = video_codec.name().to_string();
+            (
+                Some(encoder),
+                requested_video_encoder,
+                video_encoder,
+                pixel_format,
+            )
         };
 
         let stream_index = {
-            let mut stream = output.add_stream(video_codec).map_err(|error| {
-                RecordingExportError::Encode(format!(
-                    "failed to add streaming video track: {error}"
-                ))
-            })?;
+            let mut stream = output
+                .add_stream(encoder.as_ref().and_then(|encoder| encoder.codec()))
+                .map_err(|error| {
+                    RecordingExportError::Encode(format!(
+                        "failed to add streaming video track: {error}"
+                    ))
+                })?;
             stream.set_time_base(video_time_base);
             stream.set_rate(video_frame_rate);
             stream.set_avg_frame_rate(video_frame_rate);
-            stream.set_parameters(&encoder);
+            if let Some(encoder) = &encoder {
+                stream.set_parameters(encoder);
+            } else {
+                stream.set_parameters(crate::gif_encoder::muxer_parameters(
+                    config.width,
+                    config.height,
+                ));
+            }
             stream.index()
         };
         let mut audio = create_audio_states(
@@ -1037,7 +1100,6 @@ impl StreamingEncoder {
         // Keep source colors until GIF submission, including prepared frames
         // from editing. Quantizing in a scaler would lose RGB change identity.
         let gif = if config.format == ExportFormat::Gif {
-            pixel_format = ffmpeg::format::Pixel::RGB24;
             Some(crate::gif_encoder::GifEncoder::new(
                 config.width,
                 config.height,
@@ -1091,8 +1153,16 @@ impl StreamingEncoder {
             report.timings.begin();
             report
         };
-        let used_hardware_video_encoder = opened_video_encoder_uses_hardware(&encoder);
-        let effective_encode_threads = unsafe { (*encoder.as_ptr()).thread_count.max(0) as usize };
+        let used_hardware_video_encoder = encoder
+            .as_ref()
+            .is_some_and(opened_video_encoder_uses_hardware);
+        let video_time_base = encoder
+            .as_ref()
+            .map_or(video_time_base, |encoder| encoder.time_base());
+        let effective_encode_threads = encoder.as_ref().map_or(0, |encoder| {
+            // SAFETY: the encoder owns this live codec context.
+            unsafe { (*encoder.as_ptr()).thread_count.max(0) as usize }
+        });
         Ok(Self {
             format: config.format,
             loop_images: config.loop_animated_images,
@@ -1101,8 +1171,11 @@ impl StreamingEncoder {
             recovery: None,
             audio_output: None,
             output: Some(output),
-            encoder,
-            gif,
+            encoder: match gif {
+                Some(gif) => StreamingVideoEncoder::Gif(gif),
+                None => StreamingVideoEncoder::Ffmpeg(encoder.expect("non-GIF codec")),
+            },
+            video_time_base,
             gif_packet: None,
             stream_index,
             stream_time_base,
@@ -1134,7 +1207,7 @@ impl StreamingEncoder {
             final_path: config.output_path,
             report: StreamingEncoderReport {
                 requested_video_encoder,
-                video_encoder: video_codec.name().to_string(),
+                video_encoder,
                 pixel_format: format!("{pixel_format:?}"),
                 conversion_threads: 0,
                 conversion_backend: if gpu_enabled {
@@ -1203,9 +1276,10 @@ impl StreamingEncoder {
             )?)
         };
         self.report.conversion_threads = threads;
-        if unsafe { (*self.encoder.as_ptr()).colorspace }
-            == ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709
-            && let Some(converter) = self.frame_converter.as_mut()
+        if self.encoder.ffmpeg().is_some_and(|encoder| {
+            // SAFETY: the encoder owns this live codec context.
+            unsafe { (*encoder.as_ptr()).colorspace == ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT709 }
+        }) && let Some(converter) = self.frame_converter.as_mut()
         {
             converter.use_bt709()?;
         }
@@ -1665,10 +1739,10 @@ impl StreamingEncoder {
 
     /// The exact CPU transport pixel format accepted by this encoding backend.
     pub fn input_pixel_format(&self) -> ffmpeg::format::Pixel {
-        if self.gif.is_some() {
+        if matches!(self.encoder, StreamingVideoEncoder::Gif(_)) {
             ffmpeg::format::Pixel::RGB24
         } else {
-            self.encoder.format()
+            self.encoder.ffmpeg().expect("non-GIF codec").format()
         }
     }
 
@@ -1821,7 +1895,7 @@ impl StreamingEncoder {
         let send_started = std::time::Instant::now();
         #[cfg(feature = "bench-timing")]
         self.report.timings.submissions.push((pts, send_started));
-        if let Some(gif) = &mut self.gif {
+        if let Some(gif) = self.encoder.gif_mut() {
             let mut packet = gif.encode(frame)?;
             packet.set_pts(Some(pts));
             packet.set_dts(Some(pts));
@@ -1829,7 +1903,13 @@ impl StreamingEncoder {
         } else {
             retry_send(
                 self,
-                |state| state.encoder.send_frame(frame),
+                |state| {
+                    state
+                        .encoder
+                        .ffmpeg_mut()
+                        .expect("non-GIF codec")
+                        .send_frame(frame)
+                },
                 |state| state.drain_available_packets(),
             )?;
         }
@@ -1874,14 +1954,19 @@ impl StreamingEncoder {
             .as_mut()
             .ok_or_else(|| RecordingExportError::Encode("streaming output is closed".into()))?;
         loop {
-            let mut packet = if self.gif.is_some() {
+            let mut packet = if matches!(self.encoder, StreamingVideoEncoder::Gif(_)) {
                 match self.gif_packet.take() {
                     Some(packet) => packet,
                     None => return Ok(()),
                 }
             } else {
                 let mut packet = ffmpeg::Packet::empty();
-                match self.encoder.receive_packet(&mut packet) {
+                match self
+                    .encoder
+                    .ffmpeg_mut()
+                    .expect("non-GIF codec")
+                    .receive_packet(&mut packet)
+                {
                     Ok(()) => {}
                     Err(ffmpeg::Error::Eof) => return Ok(()),
                     Err(cause) if crate::ffmpeg_util::is_eagain(&cause) && !flushing => {
@@ -1910,7 +1995,7 @@ impl StreamingEncoder {
             #[cfg(feature = "bench-timing")]
             self.report.timings.packet(packet.pts());
             packet.set_stream(self.stream_index);
-            packet.rescale_ts(self.encoder.time_base(), self.stream_time_base);
+            packet.rescale_ts(self.video_time_base, self.stream_time_base);
             // AVI retains its fixed-rate grid. Rounding a sparse final hold to
             // the nearest tick would discard the last partial presentation slot.
             if let Some(duration_us) = self.final_duration_us
@@ -1932,7 +2017,7 @@ impl StreamingEncoder {
                     self.format,
                     (self.width, self.height),
                     self.fps,
-                    self.encoder.time_base(),
+                    self.video_time_base,
                     self.stream_time_base,
                     native_timing,
                     mux_timing,
@@ -2021,7 +2106,9 @@ impl StreamingEncoder {
                 let _ = audio.finish(output, &mut self.report, self.final_duration_us);
             }
         }
-        let _ = self.encoder.send_eof();
+        if let Some(encoder) = self.encoder.ffmpeg_mut() {
+            let _ = encoder.send_eof();
+        }
         let _ = self.drain_packets(true);
         if let Some(output) = self.output.as_mut() {
             let _ = output.write_trailer();
@@ -2235,11 +2322,19 @@ impl StreamingEncoder {
             })?;
             audio.finish(output, &mut self.report, self.final_duration_us)?;
         }
-        retry_send(
-            self,
-            |state| state.encoder.send_eof(),
-            |state| state.drain_available_packets(),
-        )?;
+        if self.encoder.ffmpeg().is_some() {
+            retry_send(
+                self,
+                |state| {
+                    state
+                        .encoder
+                        .ffmpeg_mut()
+                        .expect("non-GIF codec")
+                        .send_eof()
+                },
+                |state| state.drain_available_packets(),
+            )?;
+        }
         self.drain_packets(true)?;
         {
             let output = self.output.as_mut().ok_or_else(|| {
@@ -2380,13 +2475,15 @@ impl StreamingEncoder {
             .push((pending.pts, std::time::Instant::now()));
         #[cfg(feature = "bench-timing")]
         let send_started = std::time::Instant::now();
-        if let Some(gif) = &mut self.gif {
+        if let Some(gif) = self.encoder.gif_mut() {
             let mut packet = gif.encode(&self.encode_frame)?;
             packet.set_pts(Some(pending.pts));
             packet.set_dts(Some(pending.pts));
             self.gif_packet = Some(packet);
         } else {
             self.encoder
+                .ffmpeg_mut()
+                .expect("non-GIF codec")
                 .send_frame(&self.encode_frame)
                 .map_err(|error| {
                     RecordingExportError::Encode(format!(
@@ -3108,6 +3205,52 @@ mod tests {
         drop(packet);
         assert_eq!(releases.load(Ordering::SeqCst), 0);
         encoder
+    }
+
+    #[test]
+    fn gif_streaming_encodes_without_opening_an_ffmpeg_codec() {
+        for looping in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("direct.gif");
+            let mut config = encoder_config(path.clone(), ExportFormat::Gif);
+            config.loop_animated_images = looping;
+            let mut encoder = StreamingEncoder::create(config).unwrap();
+            assert!(matches!(encoder.encoder, StreamingVideoEncoder::Gif(_)));
+            assert_eq!(encoder.input_pixel_format(), ffmpeg::format::Pixel::RGB24);
+            assert_eq!(encoder.report.effective_encode_threads, 0);
+            let parameters = encoder
+                .output
+                .as_ref()
+                .unwrap()
+                .stream(0)
+                .unwrap()
+                .parameters();
+            assert_eq!(parameters.id(), ffmpeg::codec::Id::GIF);
+            assert_eq!(parameters.medium(), ffmpeg::media::Type::Video);
+            write_test_frames(&mut encoder);
+            let report = encoder.finish_at_pts(5).unwrap();
+            assert_eq!(report.encoded_frames, 3);
+            assert_eq!(report.video_packets, 3);
+            assert_eq!(report.video_encoder, "gif");
+            let mut decoder = gif::DecodeOptions::new()
+                .read_info(std::fs::File::open(&path).unwrap())
+                .unwrap();
+            assert_eq!((decoder.width(), decoder.height()), (16, 16));
+            assert_eq!(
+                decoder.repeat(),
+                if looping {
+                    gif::Repeat::Infinite
+                } else {
+                    gif::Repeat::Finite(0)
+                }
+            );
+            let mut delays = Vec::new();
+            while let Some(frame) = decoder.read_next_frame().unwrap() {
+                delays.push(frame.delay);
+            }
+            // The configured 10 Hz timeline retains its held final frame.
+            assert_eq!(delays, [10, 10, 30]);
+        }
     }
 
     #[test]
@@ -4441,8 +4584,8 @@ mod tests {
                 let mut config = encoder_config(
                     directory
                         .path()
-                        .join(format!("invalid-{borrowed}-{allocated}.avi")),
-                    ExportFormat::Avi,
+                        .join(format!("invalid-{borrowed}-{allocated}.mp4")),
+                    ExportFormat::Mp4,
                 );
                 config.height = 128;
                 let mut encoder = StreamingEncoder::create(config).unwrap();
@@ -4479,6 +4622,9 @@ mod tests {
             (ExportFormat::Gif, "gif"),
             (ExportFormat::Apng, "apng"),
         ] {
+            if format == ExportFormat::Avi && !crate::has_avi_compatibility() {
+                continue;
+            }
             let path = directory.path().join(format!("prepared.{extension}"));
             let mut encoder =
                 StreamingEncoder::create(encoder_config(path.clone(), format)).unwrap();
@@ -5215,7 +5361,7 @@ mod tests {
             assert!(
                 unsafe {
                     ffmpeg::ffi::av_opt_get_double(
-                        (*encoder.encoder.as_ptr()).priv_data,
+                        (*encoder.encoder.ffmpeg().unwrap().as_ptr()).priv_data,
                         c"crf".as_ptr(),
                         0,
                         &mut crf,
