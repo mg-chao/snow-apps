@@ -1833,6 +1833,20 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationIntegerRange{0, std::numeric_limits<int>::max(), 1}},
     {QStringLiteral("collage/background_color"), QStringLiteral("#FFFFFFFF"),
      ConfigurationValueKind::String},
+    {QStringLiteral("collage/pdf_stitching_method"),
+     QStringLiteral("page_based"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("page_based"), QStringLiteral("template_based")}},
+    {QStringLiteral("collage/pdf_template_type"),
+     QStringLiteral("two_images"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("two_images"), QStringLiteral("id_card"), QStringLiteral("three_images"),
+      QStringLiteral("four_images"), QStringLiteral("five_images"), QStringLiteral("six_images"),
+      QStringLiteral("seven_images"), QStringLiteral("eight_images"),
+      QStringLiteral("nine_images")}},
+    {QStringLiteral("collage/pdf_image_spacing_mm"), 5.0, ConfigurationValueKind::Structured},
     {QStringLiteral("collage/pdf_paper_size"),
      QStringLiteral("a4"),
      ConfigurationValueKind::String,
@@ -2847,7 +2861,8 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {normalized, true, normalized != value};
     }
     if (key.startsWith(QStringLiteral("collage/pdf_custom_")) ||
-        key.startsWith(QStringLiteral("collage/pdf_margin_"))) {
+        key.startsWith(QStringLiteral("collage/pdf_margin_")) ||
+        key == QStringLiteral("collage/pdf_image_spacing_mm")) {
         if (!value.isDouble() || !std::isfinite(value.toDouble()))
             return {};
         const bool customDimension = key.startsWith(QStringLiteral("collage/pdf_custom_"));

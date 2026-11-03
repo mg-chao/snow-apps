@@ -278,6 +278,71 @@ void imageSizeSelection() {
             "returning to a paper size restores the saved orientation and margin controls");
 }
 
+void templateSettingsAndImageSize() {
+    CollageDocument document;
+    document.append(image(), QStringLiteral("original"));
+    CollagePdfSettingsWidget widget(&document);
+    widget.resize(360, 1000);
+    widget.show();
+    refresh();
+    auto* method = control<AdSelect>(widget, "collagePdfStitchingMethod");
+    auto* templates = control<QWidget>(widget, "collagePdfTemplates");
+    auto* margin = control<AdLineEdit>(widget, "collagePdfMargin");
+    auto* spacing = control<AdLineEdit>(widget, "collagePdfImageSpacing");
+    auto* orientation = control<AdSegmented>(widget, "collagePdfOrientation");
+    auto* paper = control<AdSelect>(widget, "collagePdfPaperSize");
+    require(document.pdfSettings().stitchingMethod == CollagePdfStitchingMethod::PageBased &&
+                document.pdfSettings().templateType == CollagePdfTemplateType::TwoImages &&
+                document.pdfSettings().imageSpacingMm == 5 && !templates->isVisible() &&
+                !spacing->isVisible(),
+            "first use defaults to page stitching and remembers inactive template defaults");
+    QStringList edits;
+    QObject::connect(&widget, &CollagePdfSettingsWidget::settingsEdited, &widget,
+                     [&](const QString& field) { edits.append(field); });
+    method->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::TemplateBased));
+    control<AdButton>(widget, "collagePdfTemplateFiveImages")->click();
+    spacing->setText(QStringLiteral("6.125"));
+    refresh();
+    require(
+        templates->isVisible() && templates->findChildren<AdButton*>().size() == 9 &&
+            spacing->isVisible() &&
+            document.pdfSettings().templateType == CollagePdfTemplateType::FiveImages &&
+            control<AdButton>(widget, "collagePdfTemplateFiveImages")->isChecked() &&
+            !control<AdButton>(widget, "collagePdfTemplateTwoImages")->isChecked() &&
+            document.pdfSettings().imageSpacingMm == 6.125 &&
+            spacing->mapTo(&widget, QPoint{}).x() > margin->mapTo(&widget, QPoint{}).x() &&
+            spacing->mapTo(&widget, QPoint{}).y() == margin->mapTo(&widget, QPoint{}).y() &&
+            edits.contains(QStringLiteral("stitching_method")) &&
+            edits.contains(QStringLiteral("template_type")) &&
+            edits.contains(QStringLiteral("image_spacing_mm")),
+        "all nine templates are accessible and fractional millimeter spacing sits beside margin");
+    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::ImageSize));
+    orientation->setCurrentValue(static_cast<int>(CollagePdfOrientation::Landscape));
+    refresh();
+    const auto layout =
+        calculateCollagePdfComposedPage(document.items(), document.pdfSettings(), 0);
+    require(document.pdfSettings().paperSize == CollagePdfPaperSize::ImageSize &&
+                paper->currentValue().toInt() == static_cast<int>(CollagePdfPaperSize::ImageSize) &&
+                orientation->isVisible() && margin->isVisible() && spacing->isVisible() &&
+                layout.isValid() && layout.pageMillimeters == QSizeF(297, 210),
+            "template Image Size stays selected while A4 orientation, margins and spacing remain "
+            "active");
+    const auto valid = document.lastValidPdfSettings();
+    spacing->setText(QStringLiteral("unfinished"));
+    require(spacing->text() == QStringLiteral("unfinished") &&
+                spacing->status() == AdLineEdit::Status::Error &&
+                document.lastValidPdfSettings() == valid,
+            "invalid spacing retains its draft and the last valid composed layout");
+    spacing->setText(QStringLiteral("6.125"));
+    method->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::PageBased));
+    refresh();
+    require(!templates->isVisible() && !spacing->isVisible() && !orientation->isVisible() &&
+                !margin->isVisible() &&
+                document.pdfSettings().templateType == CollagePdfTemplateType::FiveImages &&
+                document.pdfSettings().imageSpacingMm == 6.125,
+            "page stitching hides inactive template controls without discarding their choices");
+}
+
 void invalidSelectionsHaveFieldErrors() {
     CollageDocument document;
     CollagePdfSettingsWidget widget(&document);
@@ -391,7 +456,7 @@ void sidebarModesAndSelectedTransforms() {
                 "PDF mode hides every static-only layout field");
     auto* toolbar = control<QWidget>(editor, "collagePdfImageToolbar");
     require(toolbar->parentWidget() == editor.pdfGrid() && toolbar->isVisible() &&
-                pdf->findChildren<AdButton*>().isEmpty() &&
+                pdf->findChildren<AdButton*>().size() == 9 &&
                 !pdf->findChild<AdForm*>()->field(QStringLiteral("transforms")),
             "selected-page actions float over the PDF grid and leave the settings sidebar");
     const std::array<const char*, 6> pdfActions{
@@ -509,6 +574,49 @@ void fieldEditsMergeAndRetranslate() {
     }
 }
 
+void templateSettingsPersistIndependently() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "create isolated template preferences");
+    storage::ConfigurationStore configuration(temporary.filePath(QStringLiteral("settings.json")),
+                                              true, true, 60000);
+    CollageSettingsStore store(configuration);
+    const auto defaults = store.readPdf();
+    require(defaults.stitchingMethod == CollagePdfStitchingMethod::PageBased &&
+                defaults.templateType == CollagePdfTemplateType::TwoImages &&
+                defaults.imageSpacingMm == 5,
+            "missing preferences use page-based stitching, two images and five millimeters");
+    auto first = defaults;
+    first.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    first.templateType = CollagePdfTemplateType::SevenImages;
+    first.imageSpacingMm = 7.25;
+    require(store.writePdf({QStringLiteral("stitching_method"), QStringLiteral("template_type"),
+                            QStringLiteral("image_spacing_mm")},
+                           first),
+            "template choices persist together");
+    auto second = defaults;
+    second.templateType = CollagePdfTemplateType::IdCard;
+    require(store.writePdf(QStringLiteral("template_type"), second),
+            "an older independent form can update only its edited template");
+    const auto restored = store.readPdf();
+    require(
+        restored.stitchingMethod == CollagePdfStitchingMethod::TemplateBased &&
+            restored.templateType == CollagePdfTemplateType::IdCard &&
+            restored.imageSpacingMm == 7.25 &&
+            configuration.value(QStringLiteral("collage/pdf_stitching_method")) ==
+                QJsonValue(QStringLiteral("template_based")) &&
+            configuration.value(QStringLiteral("collage/pdf_template_type")) ==
+                QJsonValue(QStringLiteral("id_card")),
+        "stable serialized values restore method, template and spacing without stale overwrites");
+    require(!configuration.setValue(QStringLiteral("collage/pdf_image_spacing_mm"), -1) &&
+                !configuration.setValue(QStringLiteral("collage/pdf_image_spacing_mm"),
+                                        std::numeric_limits<double>::infinity()) &&
+                !configuration.setValue(QStringLiteral("collage/pdf_template_type"),
+                                        QStringLiteral("unsupported")) &&
+                store.readPdf() == restored,
+            "invalid spacing and template preferences are rejected without replacing remembered "
+            "choices");
+}
+
 void renderPdfEditor(const QString& path) {
     CollageDocument document;
     document.setOutputType(CollageOutputType::PdfDocument);
@@ -589,10 +697,12 @@ int main(int argc, char** argv) {
         }
         validSettingsUpdateAndValidation();
         imageSizeSelection();
+        templateSettingsAndImageSize();
         invalidSelectionsHaveFieldErrors();
         rawInvalidDraftSurvivesRefresh();
         sidebarModesAndSelectedTransforms();
         fieldEditsMergeAndRetranslate();
+        templateSettingsPersistIndependently();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

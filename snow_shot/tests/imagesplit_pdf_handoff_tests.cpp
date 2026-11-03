@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/collagewindowcoordinator.h"
+#include "snow_shot/presentation/collagesettingsstore.h"
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/components/imagespliteditorwidget.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -175,6 +176,9 @@ void piecesAppendAsPdfAndOwnTheirSource() {
             collage->document()->append(image({3, 4}), QStringLiteral("existing"));
         auto pdfSettings = collage->document()->pdfSettings();
         pdfSettings.paperSize = CollagePdfPaperSize::Letter;
+        pdfSettings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+        pdfSettings.templateType = CollagePdfTemplateType::ThreeImages;
+        pdfSettings.imageSpacingMm = 6.25;
         collage->document()->setPdfSettings(pdfSettings);
         ImageSplitWindowServices services;
         services.stitchToPdf = [&](ImageSplitSnapshot value) {
@@ -210,6 +214,9 @@ void piecesAppendAsPdfAndOwnTheirSource() {
         const auto& items = collage->document()->items();
         require(items.size() == expected.outputCount() + 1 && items.first().id == existing,
                 "split pieces append after existing content");
+        require(collagePdfPageCount(items.size(), collage->document()->pdfSettings()) ==
+                    (items.size() + 2) / 3,
+                "split pieces paginate with the current template capacity and retained spacing");
         for (qint64 index = 0; index < expected.outputCount(); ++index) {
             const auto& actual = items.at(index + 1).image;
             require(actual == pixels.copy(expected.regionAt(index)) &&
@@ -221,6 +228,30 @@ void piecesAppendAsPdfAndOwnTheirSource() {
         coordinator.shutdown();
         flush();
     }
+}
+
+void newHandoffRestoresRememberedTemplate() {
+    CollageSettingsStore store(snow_shot::storage::ApplicationStorage::instance().configuration());
+    const auto previous = store.readPdf();
+    auto remembered = previous;
+    remembered.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    remembered.templateType = CollagePdfTemplateType::IdCard;
+    remembered.imageSpacingMm = 8.125;
+    const QStringList fields{QStringLiteral("stitching_method"), QStringLiteral("template_type"),
+                             QStringLiteral("image_spacing_mm")};
+    require(store.writePdf(fields, remembered), "remember the last template stitching choices");
+    CollageWindowCoordinator coordinator;
+    require(coordinator.presentSplitImagesAsPdf(snapshot(image({20, 12}))),
+            "handoff creates a new stitching window");
+    auto* window = coordinator.window();
+    until([&] { return !window->loading(); }, "remembered template handoff imports");
+    require(window->document()->outputType() == CollageOutputType::PdfDocument &&
+                window->document()->pdfSettings() == remembered &&
+                collagePdfPageCount(window->document()->items().size(), remembered) == 1,
+            "a fresh Stitch to PDF window restores the remembered method, template and spacing");
+    coordinator.shutdown();
+    flush();
+    require(store.writePdf(fields, previous), "restore the isolated preferences for later cases");
 }
 
 void queuedBatchesKeepRequestOrder() {
@@ -329,6 +360,7 @@ int main(int argc, char** argv) {
     require(LanguageManager::instance().setLanguage(QStringLiteral("en_US")), "initialize English");
     footerDraftsAndTranslations();
     piecesAppendAsPdfAndOwnTheirSource();
+    newHandoffRestoresRememberedTemplate();
     queuedBatchesKeepRequestOrder();
     busyExportRejectsWithoutChangingStitching();
     invalidSourcesLimitsAndCancellation();

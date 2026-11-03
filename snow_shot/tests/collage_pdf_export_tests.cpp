@@ -595,6 +595,100 @@ void positiveTinyPaperKeepsNonzeroGeometry(const QString& directory) {
                 bottom + imageHeight <= pageHeight * (1 + 1e-12),
             "tiny paper must retain proportional image placement inside its page");
 }
+void templateCompositionAndPublication(const QString& directory) {
+    CollageDocument document;
+    auto settings = document.pdfSettings();
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.imageSpacingMm = 7.5;
+    document.setPdfSettings(settings);
+    for (int index = 0; index < 7; ++index)
+        require(document.append(fixture({9 + index, 13}),
+                                QStringLiteral("source-%1.png").arg(index)) != 0,
+                "template sources must import");
+    const auto first = document.items().front().id;
+    require(document.setPdfPlacement(first, {{-30, 20}, 4.5}) && document.rotate(first, true),
+            "template fixture must preserve manual scale through rotation");
+    QVector<CollagePdfExportProgress> updates;
+    const auto combined =
+        exportCollagePdf(document.items(), settings,
+                         {QDir(directory).filePath(QStringLiteral("template-combined.pdf"))}, {},
+                         [&](const CollagePdfExportProgress& update) { updates.append(update); });
+    require(combined.succeeded() && combined.totalCount == 2 &&
+                combined.completedPages == QVector<qsizetype>({1, 2}),
+            "combined template export counts composed pages instead of input images");
+    const auto pdf = read(combined.paths.front());
+    structure(pdf, 2);
+    require(pdf.count(" re W n\n") == 7 && pdfImages(pdf).size() == 7,
+            "occupied cells have independent image clips and unused final cells remain blank");
+    constexpr qreal points = 72.0 / 25.4;
+    const auto number = [](qreal value) { return QByteArray::number(value, 'f', 8); };
+    for (qsizetype pageIndex = 0; pageIndex < 2; ++pageIndex) {
+        const auto page = calculateCollagePdfComposedPage(document.items(), settings, pageIndex);
+        require(page.isValid(), "export geometry must be available to the preview");
+        for (const auto& cell : page.cells) {
+            if (cell.itemIndex < 0)
+                continue;
+            const auto& clip = cell.clipMillimeters;
+            const QByteArray command =
+                number(clip.left() * points) + ' ' +
+                number((page.pageMillimeters.height() - clip.bottom()) * points) + ' ' +
+                number(clip.width() * points) + ' ' + number(clip.height() * points) + " re W n\n";
+            require(pdf.contains(command), "exported cell clip must match shared preview geometry");
+            const auto& image = cell.imageMillimeters;
+            if (cell.itemId != first) {
+                const auto pixels = transformedSize(document.items()[cell.itemIndex]);
+                const qreal scale =
+                    std::min(clip.width() / pixels.width(), clip.height() / pixels.height());
+                require(clip.adjusted(-0.000001, -0.000001, 0.000001, 0.000001).contains(image) &&
+                            std::abs(image.width() - pixels.width() * scale) < 0.000001 &&
+                            std::abs(image.height() - pixels.height() * scale) < 0.000001 &&
+                            (image.center() - clip.center()).manhattanLength() < 0.000001,
+                        "automatically placed PDF images must remain fully visible and centered");
+            }
+            const QByteArray matrix =
+                number(image.width() * points) + " 0 0 " + number(image.height() * points) + ' ' +
+                number(image.left() * points) + ' ' +
+                number((page.pageMillimeters.height() - image.bottom()) * points) + " cm\n";
+            require(pdf.contains(matrix),
+                    "exported image placement must match shared preview geometry");
+        }
+    }
+    require(!updates.isEmpty() && updates.back().completedPages == 2 &&
+                updates.back().totalPages == 2 && updates.back().pageFraction == 1 &&
+                std::all_of(updates.cbegin(), updates.cend(),
+                            [](const auto& update) {
+                                return update.totalPages == 2 && update.pageNumber >= 1 &&
+                                       update.pageNumber <= 2;
+                            }),
+            "all export progress must refer to composed pages");
+    settings.exportMode = CollagePdfExportMode::PerPage;
+    const auto separate = exportCollagePdf(
+        document.items(), settings, {QDir(directory).filePath(QStringLiteral("template-pages"))});
+    require(separate.succeeded() && separate.paths.size() == 2 &&
+                QFileInfo(separate.paths[0]).fileName() == QStringLiteral("001_page.pdf") &&
+                QFileInfo(separate.paths[1]).fileName() == QStringLiteral("002_page.pdf"),
+            "per-page template export creates one numbered PDF for every composed page");
+    for (qsizetype index = 0; index < separate.paths.size(); ++index) {
+        const auto bytes = read(separate.paths[index]);
+        structure(bytes, 1);
+        require(pdfImages(bytes).size() == (index == 0 ? 5 : 2),
+                "per-page files must contain every image assigned to that page");
+    }
+    bool cancelled = false;
+    const auto partial = exportCollagePdf(
+        document.items(), settings, {QDir(directory).filePath(QStringLiteral("template-partial"))},
+        [&] { return cancelled; },
+        [&](const auto& update) {
+            if (update.completedPages == 1)
+                cancelled = true;
+        });
+    require(partial.cancelled && partial.totalCount == 2 &&
+                partial.completedPages == QVector<qsizetype>({1}) && partial.paths.size() == 1 &&
+                QFileInfo::exists(partial.paths.front()),
+            "template cancellation retains complete pages and reports composed-page progress");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -618,6 +712,7 @@ int main(int argc, char** argv) {
         admittedLongImage(temporary.path());
         overwritePermissionBindsSelectedFilename(temporary.path());
         positiveTinyPaperKeepsNonzeroGeometry(temporary.path());
+        templateCompositionAndPublication(temporary.path());
         std::cout << "Collage PDF export tests passed\n";
         return 0;
     } catch (const std::exception& error) {

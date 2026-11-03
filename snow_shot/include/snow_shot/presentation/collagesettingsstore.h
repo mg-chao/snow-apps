@@ -90,6 +90,20 @@ class CollageSettingsStore final {
         const auto value = [&](const QString& field) {
             return m_configuration.value(QStringLiteral("collage/pdf_") + field);
         };
+        result.stitchingMethod =
+            value(QStringLiteral("stitching_method")).toString() == QStringLiteral("template_based")
+                ? CollagePdfStitchingMethod::TemplateBased
+                : CollagePdfStitchingMethod::PageBased;
+        const QString selectedTemplate = value(QStringLiteral("template_type")).toString();
+        const QStringList templates{QStringLiteral("two_images"),   QStringLiteral("id_card"),
+                                    QStringLiteral("three_images"), QStringLiteral("four_images"),
+                                    QStringLiteral("five_images"),  QStringLiteral("six_images"),
+                                    QStringLiteral("seven_images"), QStringLiteral("eight_images"),
+                                    QStringLiteral("nine_images")};
+        const auto templateIndex = templates.indexOf(selectedTemplate);
+        if (templateIndex >= 0)
+            result.templateType = static_cast<CollagePdfTemplateType>(templateIndex);
+        result.imageSpacingMm = value(QStringLiteral("image_spacing_mm")).toDouble(5);
         const QString paper = value(QStringLiteral("paper_size")).toString();
         if (paper == QStringLiteral("a3"))
             result.paperSize = CollagePdfPaperSize::A3;
@@ -167,7 +181,27 @@ class CollageSettingsStore final {
                 values.insert(QStringLiteral("collage/pdf_") + QString::fromLatin1(key), margin);
         } else {
             QJsonValue value;
-            if (field == QStringLiteral("paper_size")) {
+            if (field == QStringLiteral("stitching_method")) {
+                if (settings.stitchingMethod != CollagePdfStitchingMethod::PageBased &&
+                    settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+                    return {};
+                value = settings.stitchingMethod == CollagePdfStitchingMethod::PageBased
+                            ? QStringLiteral("page_based")
+                            : QStringLiteral("template_based");
+            } else if (field == QStringLiteral("template_type")) {
+                const QStringList templates{
+                    QStringLiteral("two_images"),   QStringLiteral("id_card"),
+                    QStringLiteral("three_images"), QStringLiteral("four_images"),
+                    QStringLiteral("five_images"),  QStringLiteral("six_images"),
+                    QStringLiteral("seven_images"), QStringLiteral("eight_images"),
+                    QStringLiteral("nine_images")};
+                const auto index = static_cast<int>(settings.templateType);
+                if (index < 0 || index >= templates.size())
+                    return {};
+                value = templates.at(index);
+            } else if (field == QStringLiteral("image_spacing_mm"))
+                value = settings.imageSpacingMm;
+            else if (field == QStringLiteral("paper_size")) {
                 switch (settings.paperSize) {
                 case CollagePdfPaperSize::A3:
                     value = QStringLiteral("a3");

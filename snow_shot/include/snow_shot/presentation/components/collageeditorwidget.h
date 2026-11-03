@@ -10,6 +10,7 @@
 
 namespace snow_shot::presentation::components {
 class CollagePdfPageGrid;
+class CollagePdfTemplateWidget;
 
 class CollagePreviewCanvas final : public QWidget {
     Q_OBJECT
@@ -55,6 +56,7 @@ class CollageEditorWidget final : public QWidget {
     void retranslateUi();
     [[nodiscard]] CollagePreviewCanvas* canvas() const;
     [[nodiscard]] CollagePdfPageGrid* pdfGrid() const;
+    [[nodiscard]] CollagePdfTemplateWidget* pdfTemplateWidget() const;
     [[nodiscard]] QWidget* outputDescriptionWidget() const;
 
   signals:
@@ -65,6 +67,7 @@ class CollageEditorWidget final : public QWidget {
     void settingsEdited(const QString& field);
 
   protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent*) override;
     void resizeEvent(QResizeEvent*) override;
     void hideEvent(QHideEvent*) override;

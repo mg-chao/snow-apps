@@ -1175,6 +1175,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ReplaceImage",
+      "name": "replace-image",
+      "source": "../src/presentation/components/icons/resources/replace-image.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Restart",
       "name": "restart",
       "source": "../src/presentation/components/icons/resources/restart.svg",
@@ -1186,6 +1194,14 @@
       "symbol": "RevealInFolder",
       "name": "reveal-in-folder",
       "source": "../src/presentation/components/icons/resources/reveal-in-folder.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ReverseOrder",
+      "name": "reverse-order",
+      "source": "../src/presentation/components/icons/resources/reverse-order.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

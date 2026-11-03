@@ -1271,12 +1271,14 @@ add_library(snow_shot_collage STATIC
     include/snow_shot/presentation/collagesettingsstore.h
     include/snow_shot/presentation/components/collageeditorwidget.h
     include/snow_shot/presentation/components/collagepdfpagegrid.h
+    include/snow_shot/presentation/components/collagepdftemplatewidget.h
     include/snow_shot/presentation/components/collagepdfsettingswidget.h
     include/snow_shot/presentation/collagepdfexport.h
     src/presentation/collage/collagewindow.cpp
     src/presentation/collage/collagewindowcoordinator.cpp
     src/presentation/collage/collageeditorwidget.cpp
     src/presentation/collage/collagepdfpagegrid.cpp
+    src/presentation/collage/collagepdftemplatewidget.cpp
     src/presentation/collage/collagepdfsettingswidget.cpp
     src/presentation/collage/collagepdfexport.cpp)
 target_include_directories(snow_shot_collage PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/image")
@@ -1357,7 +1359,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endforeach()
-    foreach(_collage_pdf_test IN ITEMS grid settings window)
+    foreach(_collage_pdf_test IN ITEMS grid settings window template)
         add_executable(snow-shot-collage-pdf-${_collage_pdf_test}-tests
             tests/collage_pdf_${_collage_pdf_test}_tests.cpp ${SNOW_SHOT_COLLAGE_EXPORT_TEST_SOURCES})
         target_include_directories(snow-shot-collage-pdf-${_collage_pdf_test}-tests PRIVATE

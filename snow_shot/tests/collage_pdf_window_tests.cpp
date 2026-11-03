@@ -507,6 +507,193 @@ void nativeDestinationDialog() {
     flush();
     window.shutdown();
 }
+
+void templatePreferencesReopenAndMerge() {
+    CollageSettingsStore store(storage::ApplicationStorage::instance().configuration());
+    const auto previous = store.readPdf();
+    CollageWindow first;
+    first.present();
+    control<AdSegmented>(first, "collageImageType")->setCurrentValue(QStringLiteral("pdf"));
+    control<AdSelect>(first, "collagePdfStitchingMethod")
+        ->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::TemplateBased));
+    control<AdButton>(first, "collagePdfTemplateFiveImages")->click();
+    control<AdLineEdit>(first, "collagePdfImageSpacing")->setText(QStringLiteral("6.375"));
+    CollageWindow reopened;
+    reopened.present();
+    require(reopened.document()->pdfSettings().stitchingMethod ==
+                    CollagePdfStitchingMethod::TemplateBased &&
+                reopened.document()->pdfSettings().templateType ==
+                    CollagePdfTemplateType::FiveImages &&
+                reopened.document()->pdfSettings().imageSpacingMm == 6.375,
+            "reopening restores the last stitching method, template and fractional spacing");
+    control<AdButton>(first, "collagePdfTemplateNineImages")->click();
+    control<AdLineEdit>(reopened, "collagePdfImageSpacing")->setText(QStringLiteral("3.125"));
+    const auto merged = store.readPdf();
+    require(merged.templateType == CollagePdfTemplateType::NineImages &&
+                merged.imageSpacingMm == 3.125 &&
+                first.document()->pdfSettings().imageSpacingMm == 6.375 &&
+                reopened.document()->pdfSettings().templateType ==
+                    CollagePdfTemplateType::FiveImages,
+            "independent windows merge only their changed template preference fields");
+    first.shutdown();
+    reopened.shutdown();
+    require(store.writePdf({QStringLiteral("stitching_method"), QStringLiteral("template_type"),
+                            QStringLiteral("image_spacing_mm")},
+                           previous),
+            "restore isolated window template preferences");
+}
+
+void templateChooserCancellationCountsComposedPages() {
+    int writes = 0;
+    int completions = 0;
+    CollageWindowServices::PdfChoice choice;
+    CollageWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto complete) {
+        choice = std::move(complete);
+    };
+    services.exportPdf = [&](const auto&, const auto&, const auto&, auto, auto) {
+        ++writes;
+        return CollagePdfExportResult{};
+    };
+    CollageWindow window(nullptr, services);
+    prepare(window);
+    for (int index = 0; index < 5; ++index)
+        require(window.document()->append(source(), QStringLiteral("extra-%1.png").arg(index)),
+                "template cancellation sources import");
+    auto settings = window.document()->pdfSettings();
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.imageSpacingMm = 6.75;
+    window.document()->setPdfSettings(settings);
+    const auto selected = window.document()->items().front().id;
+    const CollagePdfPlacement placement{{4.25, -3.5}, 0.375};
+    require(window.document()->setPdfPlacement(selected, placement),
+            "template cancellation fixture has a manual placement");
+    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
+        require(result.cancelled && result.totalCount == 2 && result.completedPages.isEmpty() &&
+                    result.paths.isEmpty(),
+                "chooser cancellation counts composed pages rather than seven input images");
+        ++completions;
+    });
+    window.save();
+    require(window.busy() && bool(choice), "template export opens its destination chooser");
+    const auto lateChoice = choice;
+    window.requestClose();
+    require(
+        !window.busy() && completions == 1 && writes == 0 &&
+            window.document()->items().front().pdfPlacement == placement,
+        "Cancel during template destination selection preserves edits and reports composed pages");
+    lateChoice(CollagePdfDestination{QStringLiteral("late-template.pdf"), false});
+    flush();
+    require(writes == 0 && completions == 1,
+            "late template destination callbacks cannot revive canceled exports");
+    window.save();
+    require(window.busy(), "template export can retry after chooser cancellation");
+    choice(std::nullopt);
+    require(!window.busy() && completions == 2 && writes == 0 && window.modal()->isOpen(),
+            "rejecting the template chooser reports one canceled composed-page result");
+    window.shutdown();
+}
+
+void templateExportUsesComposedSnapshot() {
+    struct Snapshot final {
+        QVector<CollageItem> items;
+        CollagePdfSettings settings;
+        std::atomic_bool received{false};
+        std::atomic_bool matches{false};
+        std::atomic_bool release{false};
+    };
+    const auto snapshot = std::make_shared<Snapshot>();
+    CollageWindowServices::PdfChoice choice;
+    CollageWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto complete) {
+        choice = std::move(complete);
+    };
+    services.exportPdf = [snapshot](const auto& items, const auto& settings,
+                                    const auto& destination, auto cancelled, auto progress) {
+        bool matches = settings == snapshot->settings && items.size() == snapshot->items.size() &&
+                       destination.path == QStringLiteral("/output/template-snapshot.pdf") &&
+                       collagePdfPageCount(items.size(), settings) == 2;
+        for (qsizetype index = 0; matches && index < items.size(); ++index) {
+            const auto& item = items[index];
+            const auto& expected = snapshot->items[index];
+            matches = item.id == expected.id && item.transform == expected.transform &&
+                      item.pdfPlacement == expected.pdfPlacement && item.label == expected.label &&
+                      item.image.constBits() == expected.image.constBits();
+        }
+        const auto page = calculateCollagePdfComposedPage(items, settings, 0);
+        const auto expectedPage =
+            calculateCollagePdfComposedPage(snapshot->items, snapshot->settings, 0);
+        matches =
+            matches && page.isValid() && page.pageMillimeters == QSizeF(297, 210) &&
+            page.cells.size() == 5 &&
+            page.cells.front().imageMillimeters == expectedPage.cells.front().imageMillimeters &&
+            page.cells.front().clipMillimeters == expectedPage.cells.front().clipMillimeters;
+        snapshot->matches.store(matches);
+        progress({1, 2, 2, .625});
+        snapshot->received.store(true);
+        while (!snapshot->release.load() && !cancelled())
+            QThread::msleep(1);
+        CollagePdfExportResult result;
+        result.totalCount = 2;
+        if (cancelled()) {
+            result.cancelled = true;
+        } else {
+            result.completedPages = {1, 2};
+            result.paths = {destination.path};
+        }
+        return result;
+    };
+    CollageWindow window(nullptr, services);
+    prepare(window);
+    for (int index = 0; index < 5; ++index)
+        require(window.document()->append(source(), QStringLiteral("extra-%1.png").arg(index)),
+                "template snapshot sources import");
+    auto settings = window.document()->pdfSettings();
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.imageSpacingMm = 7.25;
+    settings.paperSize = CollagePdfPaperSize::ImageSize;
+    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.marginTopMm = settings.marginBottomMm = settings.marginLeftMm =
+        settings.marginRightMm = 14.5;
+    window.document()->setPdfSettings(settings);
+    const auto first = window.document()->items().front().id;
+    require(window.document()->setPdfPlacement(first, {{4.25, -3.5}, 0.375}) &&
+                window.document()->rotate(first, true) && window.document()->flip(first, false),
+            "template snapshot includes position, scale, rotation and flip edits");
+    snapshot->items = window.document()->items();
+    snapshot->settings = settings;
+    int completions = 0;
+    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
+        require(result.succeeded() && result.totalCount == 2 &&
+                    result.completedPages == QVector<qsizetype>({1, 2}),
+                "template completion reports fully composed pages");
+        ++completions;
+    });
+    window.save();
+    require(window.busy() && bool(choice), "template snapshot is captured before choosing output");
+    // Direct document changes stress the immutable export snapshot while the normal UI is locked.
+    require(window.document()->setPdfPlacement(first, {{90, 80}, 1.25}) &&
+                window.document()->reverseItems(),
+            "later document edits differ from the pending snapshot");
+    settings.templateType = CollagePdfTemplateType::NineImages;
+    settings.imageSpacingMm = 3;
+    window.document()->setPdfSettings(settings);
+    require(collagePdfPageCount(window.document()->items().size(), settings) == 1,
+            "the live document now has a different composed page count");
+    choice(CollagePdfDestination{QStringLiteral("/output/template-snapshot.pdf"), false});
+    waitUntil([&] { return snapshot->received.load(); },
+              "template export worker receives its snapshot");
+    require(snapshot->matches.load(), "export receives the chosen template, spacing and every "
+                                      "original placement from its snapshot");
+    waitUntil([&] { return status(window).contains(QStringLiteral("page 2 of 2")); },
+              "template progress displays composed-page counts from the export snapshot");
+    snapshot->release.store(true);
+    waitUntil([&] { return !window.modal()->isOpen(); },
+              "successful template snapshot export closes");
+    require(completions == 1, "template snapshot export completes exactly once");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -529,6 +716,9 @@ int main(int argc, char* argv[]) {
         imageSizeFooterTracksSelectedPage();
         uniformMarginReachesPdfExport();
         nativeDestinationDialog();
+        templatePreferencesReopenAndMerge();
+        templateChooserCancellationCountsComposedPages();
+        templateExportUsesComposedSnapshot();
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
                   "window tests retire all workers");
         ScreenshotExportCoordinator::shared().shutdown();

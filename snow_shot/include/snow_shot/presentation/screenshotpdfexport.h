@@ -6,6 +6,7 @@
 #include <QTemporaryDir>
 #include <functional>
 #include <memory>
+#include <optional>
 
 class QIODevice;
 
@@ -46,11 +47,19 @@ using Progress = std::function<void(qreal)>;
 [[nodiscard]] std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int quality,
                                                QString* error, bool verifiedOpaque = false,
                                                const Progress& progress = {});
-// The producer is invoked once per page, immediately before writing that page. Its payload
-// retires before the next invocation, keeping document working memory independent of page count.
+struct Layer {
+    std::shared_ptr<const Payload> payload;
+    QRectF imagePoints;
+    // Top-left based, like imagePoints. A clip allows the image to extend beyond the page.
+    std::optional<QRectF> clipPoints;
+};
+// The producer is invoked once per page, immediately before writing that page. Its payloads
+// retire before the next invocation, keeping document working memory independent of page count.
 struct Page {
+    // Single-image producers can continue to use payload and geometry.imagePoints.
     std::shared_ptr<const Payload> payload;
     Layout geometry;
+    QList<Layer> layers;
 };
 using PageProducer = std::function<bool(qsizetype, Page*, QString*)>;
 using DocumentProgress = std::function<void(qsizetype, qreal)>;

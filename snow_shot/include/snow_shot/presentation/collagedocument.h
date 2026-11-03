@@ -8,6 +8,7 @@
 #include <QImage>
 #include <QMap>
 #include <QObject>
+#include <QPointF>
 #include <QRect>
 #include <QRectF>
 #include <QSizeF>
@@ -18,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace snow_shot::presentation {
 
@@ -27,8 +29,23 @@ enum class CollageOutputType { StaticImage, PdfDocument };
 enum class CollagePdfPaperSize { A3, A4, A5, B5, Letter, Legal, Custom, ImageSize };
 enum class CollagePdfOrientation { Portrait, Landscape };
 enum class CollagePdfExportMode { Combined, PerPage };
+enum class CollagePdfStitchingMethod { PageBased, TemplateBased };
+enum class CollagePdfTemplateType {
+    TwoImages,
+    IdCard,
+    ThreeImages,
+    FourImages,
+    FiveImages,
+    SixImages,
+    SevenImages,
+    EightImages,
+    NineImages
+};
 
 struct CollagePdfSettings final {
+    CollagePdfStitchingMethod stitchingMethod = CollagePdfStitchingMethod::PageBased;
+    CollagePdfTemplateType templateType = CollagePdfTemplateType::TwoImages;
+    qreal imageSpacingMm = 5;
     CollagePdfPaperSize paperSize = CollagePdfPaperSize::A4;
     CollagePdfOrientation orientation = CollagePdfOrientation::Portrait;
     qreal customWidthMm = 210;
@@ -79,6 +96,15 @@ struct CollageSettings final {
 
 struct CollageImageMetadata;
 
+struct CollagePdfPlacement final {
+    QPointF centerOffsetMillimeters;
+    // An unset scale fits the complete image inside its cell, centered and aspect-preserving.
+    // Resolve against full-resolution transformed pixels.
+    std::optional<qreal> millimetersPerPixel;
+
+    friend bool operator==(const CollagePdfPlacement&, const CollagePdfPlacement&) = default;
+};
+
 struct CollageItem final {
     quint64 id = 0;
     quint64 revision = 0;
@@ -89,7 +115,35 @@ struct CollageItem final {
     std::shared_ptr<void> resourceOwner;
     // Shared memoization belongs to the immutable original, independently of layout/transforms.
     std::shared_ptr<CollageImageMetadata> metadata;
+    CollagePdfPlacement pdfPlacement{};
 };
+
+struct CollagePdfCell final {
+    quint64 itemId = 0;
+    qsizetype itemIndex = -1;
+    QRectF clipMillimeters;
+    QRectF imageMillimeters;
+};
+
+struct CollagePdfComposedPage final {
+    QSizeF pageMillimeters;
+    QRectF contentMillimeters;
+    QVector<CollagePdfCell> cells;
+    QString error;
+
+    [[nodiscard]] bool isValid() const {
+        return pageMillimeters.isValid() && !pageMillimeters.isEmpty() &&
+               !contentMillimeters.isEmpty() && !cells.isEmpty() && error.isEmpty();
+    }
+};
+
+[[nodiscard]] int collagePdfTemplateCapacity(CollagePdfTemplateType type);
+[[nodiscard]] qsizetype collagePdfPageCount(qsizetype itemCount,
+                                            const CollagePdfSettings& settings);
+// Computes only the requested page (at most nine cells), without copying input rasters.
+[[nodiscard]] CollagePdfComposedPage
+calculateCollagePdfComposedPage(const QVector<CollageItem>& items,
+                                const CollagePdfSettings& settings, qsizetype pageIndex);
 
 struct CollageLayout final {
     QSize size;
@@ -114,6 +168,7 @@ class CollageDocument final : public QObject {
     ~CollageDocument() override;
 
     [[nodiscard]] const QVector<CollageItem>& items() const;
+    [[nodiscard]] int indexOf(quint64 id) const;
     // Changes only when the ordered image collection or one of its transforms changes.
     [[nodiscard]] quint64 contentRevision() const;
     [[nodiscard]] CollageSettings settings() const;
@@ -137,12 +192,14 @@ class CollageDocument final : public QObject {
     bool rotate(quint64 id, bool clockwise);
     bool flip(quint64 id, bool horizontal);
     bool resetTransform(quint64 id);
+    bool setPdfPlacement(quint64 id, const CollagePdfPlacement& placement);
     [[nodiscard]] quint64 selectedId() const;
     void select(quint64 id);
 
   signals:
     void changed();
     void selectionChanged();
+    void pdfPlacementChanged(quint64 id);
     void customGridAdjusted(const QStringList& fields);
 
   private:
