@@ -654,6 +654,11 @@ the CPU OCR helper. Other changed Rust crates should be linted individually.
 scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 ```
 
+Full and Mini DMGs use LZMA compression (`ULMO`) for the macOS 15+ deployment target.
+Compression changes the distribution image while preserving the signed app bundle.
+CPack signs and verifies each image before computing its SHA-256 checksum. Validate
+DMG mounting and app installation on the supported macOS versions before publishing.
+
 The release script builds and produces edition DMGs plus SHA-256 checksums under the
 preset's build directory. Pass `--parallel N` to control the build or
 `--skip-build` to package an already validated release cache. CPack installs only

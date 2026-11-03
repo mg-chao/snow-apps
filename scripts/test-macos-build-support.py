@@ -2199,6 +2199,8 @@ class MacOSBundle(unittest.TestCase):
             self.assertEqual(len(list(out.glob("*.dmg"))), 1)
             self.assertEqual(len(list(out.glob("*.dmg.sha256"))), 1)
             dmg = next(out.glob("*.dmg"))
+            image_info = plistlib.loads(run("hdiutil", "imageinfo", "-plist", str(dmg)).encode())
+            self.assertEqual(image_info["Format"], "ULMO")
             run("codesign", "--verify", "--strict", str(dmg))
             mount = Path(temp) / "mounted"
             mount.mkdir()

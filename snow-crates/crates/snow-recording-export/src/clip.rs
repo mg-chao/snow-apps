@@ -1113,6 +1113,43 @@ mod tests {
     }
 
     #[test]
+    fn legacy_matroska_input_remains_decodable_and_trimmable() {
+        // Legacy recordings use this input container. Creating Matroska during
+        // the test would require its intentionally omitted application muxer.
+        let bytes = include_bytes!("../tests/fixtures/legacy-matroska-h264.mkv");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.mkv");
+        std::fs::write(&path, bytes).unwrap();
+        let mut config = fixture(directory.path(), ExportFormat::Mp4);
+        config.width = 16;
+        config.height = 16;
+        let source = ClipSource::open(&path, Some(config.clone())).unwrap();
+        assert_eq!((source.config.width, source.config.height), (16, 16));
+        assert_eq!(source.frame_count(), 3);
+        let token = CancellationToken::default();
+        let mut reader = VideoReader::open(source.clone(), false).unwrap();
+        let mut pixels = Vec::new();
+        let mut last = 0;
+        for at in [0, 100_000, 200_000] {
+            reader.read(at, &token).unwrap();
+            reader.copy_rgba(&mut pixels).unwrap();
+            assert!(pixels[0] > last + 40, "legacy source picture at {at}");
+            last = pixels[0];
+        }
+        let destination = directory.path().join("trimmed.mp4");
+        source
+            .export(source.range(1, 3).unwrap(), &destination, &token, |_| {})
+            .unwrap();
+        let trimmed = ClipSource::open(&destination, Some(config)).unwrap();
+        assert_eq!(trimmed.frame_count(), 2);
+        let mut reader = VideoReader::open(trimmed, false).unwrap();
+        reader.read(0, &token).unwrap();
+        reader.copy_rgba(&mut pixels).unwrap();
+        assert!((105..=135).contains(&pixels[0]));
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
     fn clip_trim_preserves_frames_and_sources_in_every_recording_format() {
         for format in [
             ExportFormat::Mp4,
