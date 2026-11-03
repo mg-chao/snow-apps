@@ -996,6 +996,10 @@ Files:
     <context>
         <name>HistoryFileLocation</name>
         <message>
+            <source>Copy image path</source>
+            <translation>Copy image path</translation>
+        </message>
+        <message>
             <source>Open Containing Folder</source>
             <translation>Open Containing Folder</translation>
         </message>
@@ -1006,6 +1010,10 @@ Files:
         <message>
             <source>Reveal in Finder</source>
             <translation>Reveal in Finder</translation>
+        </message>
+        <message>
+            <source>Unable to copy this entry's image path.</source>
+            <translation>Unable to copy this entry's image path.</translation>
         </message>
         <message>
             <source>Unable to open this entry's file location.</source>

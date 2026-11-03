@@ -128,6 +128,12 @@ QString swatchAppearanceKey(const PinnedColorSwatchStyle& style) {
 
 class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSource {
   public:
+    std::optional<QString> imagePath(const QString& id) const override {
+        auto& applicationStorage = storage::ApplicationStorage::instance();
+        return applicationStorage.isInitialized() ? applicationStorage.pinnedWindows().imagePath(id)
+                                                  : std::nullopt;
+    }
+
     bool revealRecord(const QString& id) override {
         auto& applicationStorage = storage::ApplicationStorage::instance();
         if (!applicationStorage.isInitialized())
@@ -930,6 +936,16 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                     imageEditing->setToolTip(imageEditing->text());
                     connect(imageEditing, &QAction::triggered, row,
                             [this, id] { emit imageEditingRequested(id); });
+                    auto* copyImagePath = menu->addItem(history_page::copyImagePathActionText(),
+                                                        outlined_icons::Copy());
+                    copyImagePath->setObjectName(
+                        QStringLiteral("pinnedManagementEntryCopyImagePath"));
+                    copyImagePath->setToolTip(copyImagePath->text());
+                    copyImagePath->setEnabled(!row->property("pending").toBool());
+                    connect(copyImagePath, &QAction::triggered, row, [this, id] {
+                        const auto path = m_source ? m_source->imagePath(id) : std::nullopt;
+                        history_page::copyImagePath(path.value_or(QString()), this);
+                    });
                     const QString revealLabel = history_page::revealActionText();
                     auto* reveal = menu->addItem(
                         revealLabel, presentation::icons::custom::outlined::RevealInFolder());
@@ -1014,6 +1030,12 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         more->setToolTip(tr("More actions"));
         more->setAccessibleName(tr("More actions"));
         row->setProperty("pending", record.pending);
+        for (auto* copyImagePath :
+             row->findChildren<QAction*>(QStringLiteral("pinnedManagementEntryCopyImagePath"))) {
+            copyImagePath->setText(history_page::copyImagePathActionText());
+            copyImagePath->setToolTip(copyImagePath->text());
+            copyImagePath->setEnabled(!record.pending);
+        }
         for (auto* reveal :
              row->findChildren<QAction*>(QStringLiteral("pinnedManagementEntryReveal"))) {
             reveal->setText(history_page::revealActionText());

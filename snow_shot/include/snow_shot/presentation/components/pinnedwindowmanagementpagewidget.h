@@ -49,6 +49,9 @@ class PinnedWindowManagementDataSource : public QObject {
     [[nodiscard]] virtual bool revealRecord(const QString&) {
         return false;
     }
+    [[nodiscard]] virtual std::optional<QString> imagePath(const QString&) const {
+        return std::nullopt;
+    }
     virtual void removeRecords(const QVector<QString>& ids) = 0;
 
   signals:

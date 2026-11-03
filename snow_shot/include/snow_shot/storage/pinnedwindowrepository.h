@@ -89,6 +89,8 @@ class PinnedWindowRepository final {
     [[nodiscard]] PinnedSourceIdentity sourceIdentity(const QString& id) const;
     // Resolves only persisted managed content; never flushes a pending first save.
     [[nodiscard]] std::optional<QString> revealPath(const QString& id) const;
+    // Resolves a persisted image file without decoding it or falling back to a directory or text.
+    [[nodiscard]] std::optional<QString> imagePath(const QString& id) const;
     [[nodiscard]] quint64 revision() const;
     // Advances only when records enter, leave, close, restore, or change groups.
     [[nodiscard]] quint64 membershipRevision() const;

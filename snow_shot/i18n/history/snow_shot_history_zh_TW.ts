@@ -996,6 +996,10 @@ Files:
     <context>
         <name>HistoryFileLocation</name>
         <message>
+            <source>Copy image path</source>
+            <translation>複製影像路徑</translation>
+        </message>
+        <message>
             <source>Open Containing Folder</source>
             <translation>開啟所在資料夾</translation>
         </message>
@@ -1006,6 +1010,10 @@ Files:
         <message>
             <source>Reveal in Finder</source>
             <translation>在 Finder 中顯示</translation>
+        </message>
+        <message>
+            <source>Unable to copy this entry's image path.</source>
+            <translation>無法複製此記錄的影像路徑。</translation>
         </message>
         <message>
             <source>Unable to open this entry's file location.</source>
