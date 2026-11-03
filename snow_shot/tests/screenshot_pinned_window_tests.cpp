@@ -27468,6 +27468,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_color_swatch_window_tests.h"
 #include "screenshot_live_pinned_window_tests.h"
 #include "screenshot_live_pinned_window_native_tests.h"
+#include "pinned_clipboard_paste_tests.h"
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_live_window_performance_benchmark.h"
 #endif
@@ -28147,6 +28148,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--content-replacement-only"))) {
             pinnedContentReplacement();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--clipboard-paste-only"))) {
+            pinnedClipboardPasteTests();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--file-drop-only"))) {
