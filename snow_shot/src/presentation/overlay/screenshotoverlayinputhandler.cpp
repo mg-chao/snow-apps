@@ -244,7 +244,8 @@ bool ScreenshotOverlayInputHandler::beginSelectionResizeAtCanvasPosition(
     ScreenshotOverlayWindow* overlay =
         display != nullptr ? m_context.displaySession.overlayForDisplay(display) : nullptr;
     if (m_toolBeforeSelectionResize.has_value()) {
-        if (!m_context.actions.activateToolForSelectionResize(ScreenshotActiveTool::Move)) {
+        if (!m_context.actions.activateTool(ScreenshotActiveTool::Move,
+                                            ScreenshotToolActivationReason::SelectionResize)) {
             m_toolBeforeSelectionResize.reset();
             restoreScrollingCaptureAfterFailedResize();
             return false;
@@ -371,7 +372,8 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
             m_toolBeforeSelectionResize = activeTool;
         }
         if (m_toolBeforeSelectionResize.has_value()) {
-            if (!m_context.actions.activateToolForSelectionResize(ScreenshotActiveTool::Move)) {
+            if (!m_context.actions.activateTool(ScreenshotActiveTool::Move,
+                                                ScreenshotToolActivationReason::SelectionResize)) {
                 m_toolBeforeSelectionResize.reset();
                 restoreScrollingCaptureAfterFailedResize();
                 return;
@@ -803,21 +805,36 @@ ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay
         cancelCanvasColorSampling();
         return ScreenshotOverlayRightClickResult::Handled;
     }
-    if (recognitionTool(m_context.interaction.activeTool())) {
-        return ScreenshotOverlayRightClickResult::Handled;
-    }
     if (cancelRegionOperation()) {
         return ScreenshotOverlayRightClickResult::Handled;
     }
-    if (overlay != nullptr && overlay->canvas() != nullptr &&
+    const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
+    const ScreenshotActiveTool activeTool = m_context.interaction.activeTool();
+    const bool reselectWithTool = !m_context.interaction.moveToolActive();
+    if (reselectWithTool) {
+        if (!m_context.interaction.editing() || !m_context.selection.hasPixelSelection() ||
+            QRectF(m_context.selection.pixelSelection()).contains(virtualPosition)) {
+            return recognitionTool(activeTool) ? ScreenshotOverlayRightClickResult::Handled
+                                               : ScreenshotOverlayRightClickResult::Ignored;
+        }
+        // A canvas gesture keeps pointer ownership until it releases its grab.
+        if (overlay != nullptr && overlay->canvas() != nullptr &&
+            QWidget::mouseGrabber() == overlay->canvas()) {
+            return ScreenshotOverlayRightClickResult::Ignored;
+        }
+    }
+    if (!reselectWithTool && overlay != nullptr && overlay->canvas() != nullptr &&
         overlay->canvas()->hasQuickSelectionTargetAt(localPosition, Qt::RightButton)) {
         return ScreenshotOverlayRightClickResult::Ignored;
     }
-    if (!m_context.interaction.moveToolActive()) {
-        return ScreenshotOverlayRightClickResult::Ignored;
+    if (reselectWithTool) {
+        if (!m_context.actions.activateTool(ScreenshotActiveTool::Move,
+                                            ScreenshotToolActivationReason::Reselection)) {
+            return ScreenshotOverlayRightClickResult::Handled;
+        }
+        m_toolBeforeReselection = activeTool;
     }
 
-    const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
     const QPoint physicalPoint = physicalPositionForCanvasPoint(virtualPosition);
     if (m_context.interaction.preselectionActive(m_context.selection)) {
         return ScreenshotOverlayRightClickResult::CancelCapture;
@@ -826,6 +843,7 @@ ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay
     if (m_context.interaction.manualSelecting() || m_context.interaction.movingSelection()) {
         resetTransientShortcuts();
         if (m_context.actions.returnToCurrentScreenshot()) {
+            restoreToolAfterReselection();
             return ScreenshotOverlayRightClickResult::Handled;
         }
         m_context.actions.returnToIntelligentSelection(physicalPoint);
@@ -1263,6 +1281,7 @@ bool ScreenshotOverlayInputHandler::activateToolbarShortcutForSelection(
     // The requested command supersedes the tool being resized. Do not restore
     // that tool from resetTransientShortcuts() or from the later mouse release.
     m_toolBeforeSelectionResize.reset();
+    discardReselectionTool();
     const bool resumeScrolling = std::exchange(m_scrollingCaptureSelectionResize, false);
     resetTransientShortcuts();
     m_consumeRegionRelease = consumeRelease;
@@ -1279,6 +1298,10 @@ bool ScreenshotOverlayInputHandler::activateToolbarShortcutForSelection(
 
 void ScreenshotOverlayInputHandler::confirmSelection() {
     confirmSelection({});
+}
+
+void ScreenshotOverlayInputHandler::discardReselectionTool() {
+    m_toolBeforeReselection.reset();
 }
 
 bool ScreenshotOverlayInputHandler::restorePreviousSelection(
@@ -1350,6 +1373,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
             return;
         }
     }
+    restoreToolAfterReselection();
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
     m_context.actions.selectionConfirmed();
@@ -1540,9 +1564,26 @@ void ScreenshotOverlayInputHandler::restoreToolAfterSelectionResize() {
         !(m_context.interaction.movingSelection() || m_context.interaction.modifyingSelection())) {
         return;
     }
-    if (!m_context.actions.activateToolForSelectionResize(previousTool)) {
+    if (!m_context.actions.activateTool(previousTool,
+                                        ScreenshotToolActivationReason::SelectionResize)) {
         m_toolBeforeSelectionResize = previousTool;
     }
+}
+
+void ScreenshotOverlayInputHandler::restoreToolAfterReselection() {
+    if (!m_toolBeforeReselection.has_value()) {
+        return;
+    }
+    if (!m_context.interaction.moveToolActive()) {
+        m_toolBeforeReselection.reset();
+        return;
+    }
+    if (!m_context.interaction.movingSelection() || !m_context.selection.hasPixelSelection()) {
+        return;
+    }
+    const ScreenshotActiveTool tool = *std::exchange(m_toolBeforeReselection, std::nullopt);
+    static_cast<void>(
+        m_context.actions.activateTool(tool, ScreenshotToolActivationReason::Reselection));
 }
 
 void ScreenshotOverlayInputHandler::restoreScrollingCaptureAfterFailedResize() {
@@ -1579,6 +1620,7 @@ void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
 void ScreenshotOverlayInputHandler::endCaptureSession() {
     // Tool/scrolling restoration belongs to an interrupted gesture in a live capture.
     m_toolBeforeSelectionResize.reset();
+    m_toolBeforeReselection.reset();
     m_scrollingCaptureSelectionResize = false;
     resetTransientShortcuts();
     m_regionPreviewTimer.stop();

@@ -311,7 +311,9 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
 
     QVector<ScreenshotActiveTool> activated;
     ScreenshotOverlayInputActions actions;
-    actions.activateToolForSelectionResize = [&](ScreenshotActiveTool tool) {
+    actions.activateTool = [&](ScreenshotActiveTool tool, ScreenshotToolActivationReason reason) {
+        require(reason == ScreenshotToolActivationReason::SelectionResize,
+                "translation resize must preserve its recognition event receiver");
         activated.append(tool);
         if (tool == ScreenshotActiveTool::Move) {
             controller.deactivateForSelectionResize();

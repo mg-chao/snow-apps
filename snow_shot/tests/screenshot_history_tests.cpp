@@ -2345,8 +2345,10 @@ void nonMoveToolPermanentlySwitchesForSelectionResize() {
                                           ScreenshotSelectionDragMode dragMode) {
         cursors.push_back(dragMode);
     };
-    actions.activateToolForSelectionResize = [&interaction,
-                                              &activatedTools](ScreenshotActiveTool tool) {
+    actions.activateTool = [&interaction, &activatedTools](ScreenshotActiveTool tool,
+                                                           ScreenshotToolActivationReason reason) {
+        require(reason == ScreenshotToolActivationReason::SelectionResize,
+                "selection resize must use its gesture-specific activation reason");
         activatedTools.push_back(tool);
         if (tool == ScreenshotActiveTool::Move) {
             interaction.setMoveTool(true, false);
@@ -2420,16 +2422,19 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
                 "recognition tools must hide selection control points");
         QVector<ScreenshotActiveTool> activatedTools;
         ScreenshotOverlayInputActions actions;
-        actions.activateToolForSelectionResize =
-            [&interaction, &activatedTools](ScreenshotActiveTool activeTool) {
-                activatedTools.push_back(activeTool);
-                if (activeTool == ScreenshotActiveTool::Move) {
-                    interaction.setMoveTool(true, false);
-                } else {
-                    interaction.setCanvasTool(activeTool);
-                }
-                return true;
-            };
+        actions.activateTool = [&interaction,
+                                &activatedTools](ScreenshotActiveTool activeTool,
+                                                 ScreenshotToolActivationReason reason) {
+            require(reason == ScreenshotToolActivationReason::SelectionResize,
+                    "recognition resize must preserve the current gesture receiver");
+            activatedTools.push_back(activeTool);
+            if (activeTool == ScreenshotActiveTool::Move) {
+                interaction.setMoveTool(true, false);
+            } else {
+                interaction.setCanvasTool(activeTool);
+            }
+            return true;
+        };
         ScreenshotOverlayInputHandler handler({
             captureState,
             interaction,
@@ -4676,6 +4681,358 @@ void areaTypesExitFromPreselectionButKeepDraftCancellation() {
             "manual rectangle fallback must also exit from the initial selection phase");
 }
 
+struct RightClickReselectionFixture {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    bool smart = false;
+    bool returningFromHistory = false;
+    bool historyConfirmed = true;
+    bool historyHasSelection = true;
+    int reselections = 0;
+    int historyChecks = 0;
+    int confirmations = 0;
+    int cancellations = 0;
+    QVector<ScreenshotActiveTool> activatedTools;
+    ScreenshotOverlayInputHandler input{
+        {capture, interaction, selection, intelligent, geometry, displays, actions()}};
+
+    explicit RightClickReselectionFixture(ScreenshotActiveTool tool = ScreenshotActiveTool::Shape) {
+        displays.appendDisplay(display(QStringLiteral("right-click"), QStringLiteral("right-click"),
+                                       QRect(0, 0, 400, 300),
+                                       solidImage(QSize(400, 300), Qt::white)));
+        geometry.rebuild(displays);
+        selection.setSelectionRect(QRectF(40, 40, 120, 100));
+        intelligent.beginCaptureSession(snow_shot::SmartSelectionMode::WindowSubElement);
+        interaction.setCanvasTool(tool);
+        capture.sessionState = ScreenshotSessionState::Editing;
+    }
+
+    ScreenshotOverlayInputActions actions() {
+        ScreenshotOverlayInputActions result;
+        result.activateTool = [this](ScreenshotActiveTool tool,
+                                     ScreenshotToolActivationReason reason) {
+            require(reason == ScreenshotToolActivationReason::Reselection,
+                    "reselection must retire the previous tool's input surface");
+            activatedTools.append(tool);
+            if (tool == ScreenshotActiveTool::Move)
+                interaction.setMoveTool(selection.hasPixelSelection(), smart);
+            else
+                interaction.setCanvasTool(tool);
+            return true;
+        };
+        result.returnToIntelligentSelection = [this](const QPoint&) {
+            ++reselections;
+            selection.clearSelection();
+            intelligent.clearTransientState();
+            interaction.returnToSelectionMode(smart);
+            capture.sessionState = ScreenshotSessionState::OverlayVisible;
+            return true;
+        };
+        result.returnToCurrentScreenshot = [this] {
+            ++historyChecks;
+            if (!returningFromHistory)
+                return false;
+            selection.clearSelection();
+            if (historyHasSelection)
+                selection.setSelectionRect(QRectF(60, 50, 100, 80));
+            interaction.returnToSelectionMode(false);
+            if (historyConfirmed)
+                interaction.confirmSelection();
+            return true;
+        };
+        result.selectionConfirmed = [this] { ++confirmations; };
+        result.currentLogicalCursorPosition = [] { return QPoint(200, 150); };
+        result.cancelCapture = [this] {
+            ++cancellations;
+            input.endCaptureSession();
+            interaction.reset();
+            selection.reset();
+        };
+        return result;
+    }
+
+    void beginReselection() {
+        require(input.handleRightClick(nullptr, QPointF(250, 220)) ==
+                        ScreenshotOverlayRightClickResult::Handled &&
+                    interaction.moveToolActive(),
+                "outside right click must temporarily activate Edit selection");
+    }
+
+    void requireRestored(ScreenshotActiveTool tool) const {
+        require(interaction.activeTool() == tool && interaction.editing() &&
+                    activatedTools ==
+                        QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move, tool},
+                "confirmed reselection must restore the exact previous tool once");
+    }
+};
+
+void nonMoveToolsReselectOnlyOutsideCaptureBounds() {
+    const ScreenshotActiveTool tools[] = {
+        ScreenshotActiveTool::Select,
+        ScreenshotActiveTool::Shape,
+        ScreenshotActiveTool::Arrow,
+        ScreenshotActiveTool::Line,
+        ScreenshotActiveTool::FreeDraw,
+        ScreenshotActiveTool::RectangleHighlight,
+        ScreenshotActiveTool::PenHighlight,
+        ScreenshotActiveTool::Eraser,
+        ScreenshotActiveTool::RectangleFilter,
+        ScreenshotActiveTool::Watermark,
+        ScreenshotActiveTool::Text,
+        ScreenshotActiveTool::SerialNumber,
+        ScreenshotActiveTool::Ocr,
+        ScreenshotActiveTool::Table,
+        ScreenshotActiveTool::Qr,
+        ScreenshotActiveTool::PenFilter,
+        ScreenshotActiveTool::Spotlight,
+        ScreenshotActiveTool::Markdown,
+        ScreenshotActiveTool::Html,
+        ScreenshotActiveTool::AutoFilter,
+        ScreenshotActiveTool::Latex,
+        ScreenshotActiveTool::RectangleEraser,
+        ScreenshotActiveTool::BrushEraser,
+        ScreenshotActiveTool::TextTranslation,
+        ScreenshotActiveTool::Distance,
+        ScreenshotActiveTool::Angle,
+        ScreenshotActiveTool::Magnifier,
+        ScreenshotActiveTool::SpeechBubble,
+        ScreenshotActiveTool::Bracket,
+    };
+    for (const auto tool : tools) {
+        for (const auto point : {QPointF(80, 80), QPointF(40, 90), QPointF(160, 90),
+                                 QPointF(100, 40), QPointF(100, 140), QPointF(160, 140)}) {
+            RightClickReselectionFixture fixture(tool);
+            const auto original = fixture.selection.selectionRegion();
+            require(fixture.input.handleRightClick(nullptr, point) !=
+                            ScreenshotOverlayRightClickResult::CancelCapture &&
+                        fixture.interaction.activeTool() == tool &&
+                        fixture.selection.selectionRegion() == original &&
+                        fixture.activatedTools.isEmpty() && fixture.reselections == 0 &&
+                        fixture.historyChecks == 0,
+                    "inside and boundary right clicks must retain every non-Move tool");
+        }
+        for (const auto point :
+             {QPointF(39.99, 90), QPointF(160.01, 90), QPointF(100, 39.99), QPointF(100, 140.01)}) {
+            RightClickReselectionFixture fixture(tool);
+            require(fixture.input.handleRightClick(nullptr, point) ==
+                            ScreenshotOverlayRightClickResult::Handled &&
+                        fixture.interaction.manualSelecting() &&
+                        fixture.interaction.moveToolActive() &&
+                        !fixture.selection.hasPixelSelection() && fixture.reselections == 1 &&
+                        fixture.activatedTools ==
+                            QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move},
+                    "outside right click must enter reselection for every non-Move tool");
+            fixture.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+            fixture.input.confirmSelection();
+            fixture.requireRestored(tool);
+        }
+    }
+    for (const bool withHole : {false, true}) {
+        RightClickReselectionFixture fixture;
+        const QRegion region =
+            withHole ? QRegion(QRect(40, 40, 120, 100)).subtracted(QRect(70, 60, 40, 40))
+                     : QRegion(QRect(40, 40, 30, 100)).united(QRect(130, 40, 30, 100));
+        fixture.selection.setSelectionRegion(region);
+        require(!fixture.selection.selectionRegion().contains(QPointF(90, 80)),
+                "compound fixture must place the pointer in a hole or gap");
+        require(fixture.input.handleRightClick(nullptr, QPointF(90, 80)) !=
+                        ScreenshotOverlayRightClickResult::CancelCapture &&
+                    fixture.interaction.activeTool() == ScreenshotActiveTool::Shape &&
+                    fixture.reselections == 0 && fixture.activatedTools.isEmpty(),
+                "holes and gaps inside capture bounds must retain annotation interaction");
+    }
+}
+
+void rightClickReselectionRestoresAfterManualAndSmartConfirmation() {
+    for (const bool smart : {false, true}) {
+        RightClickReselectionFixture fixture(ScreenshotActiveTool::FreeDraw);
+        fixture.smart = smart;
+        fixture.beginReselection();
+        fixture.input.confirmSelection();
+        fixture.input.resetTransientShortcuts();
+        require(fixture.interaction.moveToolActive() && fixture.confirmations == 0 &&
+                    fixture.activatedTools.size() == 1,
+                "empty selection and transient shortcut reset must retain pending restoration");
+        if (smart) {
+            fixture.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+            require(fixture.intelligent.applyCanvasHitPath({QRectF(70, 60, 160, 140)},
+                                                           fixture.geometry.canvasBounds(), 1.0),
+                    "smart reselection fixture must accept a candidate");
+            fixture.input.handleMousePress(nullptr, QPointF(100, 100));
+            fixture.input.handleMouseRelease(nullptr, QPointF(100, 100));
+        } else {
+            fixture.input.handleMousePress(nullptr, QPointF(70, 60));
+            // Manual marquees include both pointer cells, unlike a smart candidate's extent.
+            fixture.input.handleMouseMove(nullptr, QPointF(229, 199));
+            fixture.input.handleMouseRelease(nullptr, QPointF(229, 199));
+        }
+        fixture.requireRestored(ScreenshotActiveTool::FreeDraw);
+        require(fixture.confirmations == 1 &&
+                    fixture.selection.pixelSelection() == QRect(70, 60, 160, 140),
+                "manual and smart reselection must confirm the replacement exactly once");
+        fixture.input.resetTransientShortcuts();
+        require(fixture.activatedTools.size() == 2,
+                "later shortcut cleanup must not repeat tool restoration");
+    }
+}
+
+void rightClickReselectionWaitsForCustomRegionCompletion() {
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve,
+                            ScreenshotRegionType::Freehand}) {
+        RightClickReselectionFixture fixture(ScreenshotActiveTool::Text);
+        fixture.selection.setRegionType(type);
+        fixture.beginReselection();
+        fixture.input.handleMousePress(nullptr, QPointF(30, 30));
+        if (type == ScreenshotRegionType::Freehand) {
+            fixture.input.handleMouseMove(nullptr, QPointF(180, 30));
+            fixture.input.handleMouseMove(nullptr, QPointF(180, 180));
+            fixture.input.handleMouseMove(nullptr, QPointF(30, 180));
+            fixture.input.confirmSelection();
+            require(fixture.selection.constructionActive() && fixture.confirmations == 0 &&
+                        fixture.activatedTools.size() == 1,
+                    "unfinished freehand selection must retain pending tool restoration");
+            fixture.input.handleMouseRelease(nullptr, QPointF(30, 30));
+        } else {
+            fixture.input.handleMouseRelease(nullptr, QPointF(30, 30));
+            fixture.input.handleMousePress(nullptr, QPointF(180, 30));
+            fixture.input.handleMouseRelease(nullptr, QPointF(180, 30));
+            fixture.input.confirmSelection();
+            require(fixture.input.handleRegionDoubleClick(nullptr, QPointF(180, 30)) &&
+                        fixture.selection.constructionActive() && fixture.confirmations == 0 &&
+                        fixture.activatedTools.size() == 1,
+                    "degenerate custom selection must retain pending tool restoration");
+            fixture.input.handleMouseRelease(nullptr, QPointF(180, 30));
+            fixture.input.handleMousePress(nullptr, QPointF(100, 180));
+            fixture.input.handleMouseRelease(nullptr, QPointF(100, 180));
+            require(fixture.input.handleRegionDoubleClick(nullptr, QPointF(100, 180)),
+                    "custom reselection must consume its closing double click");
+            fixture.input.handleMouseRelease(nullptr, QPointF(100, 180));
+        }
+        fixture.requireRestored(ScreenshotActiveTool::Text);
+        require(fixture.confirmations == 1 && !fixture.selection.constructionActive(),
+                "custom reselection must confirm and restore once after its outline closes");
+    }
+}
+
+void selectionShortcutsRestorePendingReselectionTool() {
+    for (const bool previousSelection : {false, true}) {
+        RightClickReselectionFixture fixture(ScreenshotActiveTool::PenHighlight);
+        fixture.beginReselection();
+        const QRect expected = previousSelection ? QRect(70, 60, 160, 140) : QRect(0, 0, 400, 300);
+        if (previousSelection) {
+            ScreenshotSelectionParams params;
+            params.selection = expected;
+            require(fixture.input.restorePreviousSelection(params),
+                    "previous-selection shortcut must confirm a pending reselection");
+        } else {
+            require(fixture.input.selectCurrentScreen(),
+                    "select-screen shortcut must confirm a pending reselection");
+        }
+        fixture.requireRestored(ScreenshotActiveTool::PenHighlight);
+        fixture.input.resetTransientShortcuts();
+        require(fixture.selection.pixelSelection() == expected && fixture.confirmations == 1 &&
+                    fixture.activatedTools.size() == 2,
+                "selection shortcuts must retain exact geometry and restore the prior tool once");
+    }
+}
+
+void rightClickReselectionCancellationAndSessionEndDiscardRestoration() {
+    for (const bool cancelViaRightClick : {false, true}) {
+        RightClickReselectionFixture fixture;
+        fixture.beginReselection();
+        if (cancelViaRightClick) {
+            require(fixture.input.handleRightClick(nullptr, QPointF(250, 220)) ==
+                            ScreenshotOverlayRightClickResult::CancelCapture &&
+                        fixture.cancellations == 0,
+                    "second preselection right press must defer screenshot cancellation");
+            fixture.input.completeRightClickCancellation();
+            require(fixture.cancellations == 1,
+                    "right button release must complete screenshot cancellation once");
+        } else {
+            fixture.input.endCaptureSession();
+            fixture.interaction.reset();
+            fixture.selection.reset();
+        }
+        ++fixture.capture.sessionId;
+        fixture.interaction.enterOverlayVisible(false);
+        fixture.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+        fixture.input.confirmSelection();
+        require(fixture.interaction.moveToolActive() && fixture.activatedTools.size() == 1,
+                "a new capture must never restore a terminated capture's annotation tool");
+    }
+}
+
+void explicitReselectionShortcutSupersedesPreviousTool() {
+    RightClickReselectionFixture fixture;
+    fixture.beginReselection();
+    fixture.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+    int commands = 0;
+    require(fixture.input.activateToolbarShortcutForSelection([&] {
+        ++commands;
+        fixture.interaction.setCanvasTool(ScreenshotActiveTool::Arrow);
+        return true;
+    }),
+            "a drawing shortcut must be able to confirm a pending reselection");
+    fixture.input.resetTransientShortcuts();
+    require(commands == 1 && fixture.interaction.activeTool() == ScreenshotActiveTool::Arrow &&
+                fixture.activatedTools.size() == 1,
+            "explicit drawing shortcut must supersede the previously active tool");
+    fixture.interaction.setMoveTool(true, false);
+    fixture.input.confirmSelection();
+    require(fixture.interaction.moveToolActive() && fixture.activatedTools.size() == 1,
+            "superseded tool restoration must not survive a later selection confirmation");
+
+    RightClickReselectionFixture explicitMove;
+    explicitMove.beginReselection();
+    explicitMove.input.discardReselectionTool();
+    explicitMove.interaction.setMoveTool(false, false);
+    explicitMove.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+    explicitMove.input.confirmSelection();
+    require(explicitMove.interaction.moveToolActive() && explicitMove.confirmations == 1 &&
+                explicitMove.activatedTools ==
+                    QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move},
+            "an explicit Move command must discard pending restoration before confirmation");
+}
+
+void historyReturnRestoresToolOnlyForConfirmedSelection() {
+    for (const bool confirmed : {false, true}) {
+        for (const bool hasSelection : {false, true}) {
+            RightClickReselectionFixture fixture(ScreenshotActiveTool::Angle);
+            fixture.returningFromHistory = true;
+            fixture.historyConfirmed = confirmed;
+            fixture.historyHasSelection = hasSelection;
+            require(fixture.input.handleRightClick(nullptr, QPointF(250, 220)) ==
+                            ScreenshotOverlayRightClickResult::Handled &&
+                        fixture.historyChecks == 1 && fixture.reselections == 0,
+                    "outside right click must preserve the existing history return path");
+            if (confirmed && hasSelection) {
+                fixture.requireRestored(ScreenshotActiveTool::Angle);
+            } else {
+                require(fixture.interaction.moveToolActive() && fixture.activatedTools.size() == 1,
+                        "empty or unconfirmed history return must defer tool restoration");
+                fixture.interaction.returnToSelectionMode(false);
+                fixture.selection.setSelectionRect(QRectF(70, 60, 160, 140));
+                fixture.input.confirmSelection();
+                fixture.requireRestored(ScreenshotActiveTool::Angle);
+            }
+        }
+    }
+}
+
+void rightClickReselectionTests() {
+    nonMoveToolsReselectOnlyOutsideCaptureBounds();
+    rightClickReselectionRestoresAfterManualAndSmartConfirmation();
+    rightClickReselectionWaitsForCustomRegionCompletion();
+    selectionShortcutsRestorePendingReselectionTool();
+    rightClickReselectionCancellationAndSessionEndDiscardRestoration();
+    explicitReselectionShortcutSupersedesPreviousTool();
+    historyReturnRestoresToolOnlyForConfirmedSelection();
+}
+
 void scrollingCaptureRoutesEveryToolbarShortcut() {
     const storage::ScreenshotShortcutSettings settings;
     const auto original = settings.allShortcuts();
@@ -5655,7 +6012,9 @@ void explicitToolbarCommandFinishesCanvasResize() {
     int confirmations = 0;
     int scrollingResumes = 0;
     ScreenshotOverlayInputActions actions;
-    actions.activateToolForSelectionResize = [&](ScreenshotActiveTool tool) {
+    actions.activateTool = [&](ScreenshotActiveTool tool, ScreenshotToolActivationReason reason) {
+        require(reason == ScreenshotToolActivationReason::SelectionResize,
+                "selection resize must retain its activation reason through shortcut cleanup");
         if (tool == ScreenshotActiveTool::Move)
             interaction.setMoveTool(true, false);
         else {
@@ -7715,6 +8074,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--right-click-reselection-only"))) {
+        rightClickReselectionTests();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(
             QStringLiteral("--global-screenshot-shortcuts-only"))) {
         globalScreenshotShortcutsUseCurrentSelection();
@@ -7916,6 +8280,7 @@ int main(int argc, char** argv) {
     moveToolModificationLeavesConfirmedStageUntilRelease();
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
+    rightClickReselectionTests();
     selectionResizeModeAdjustsGrabOffsetAtPress();
     eraserWheelUsesBrushCreationWidthOnly();
     smartSelectionWheelAccumulatesMovement();

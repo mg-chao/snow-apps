@@ -4772,6 +4772,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-exit-confirmation-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-right-click-reselection-tests
+        COMMAND snow-shot-screenshot-history-tests --right-click-reselection-only -platform offscreen)
+    set_tests_properties(snow-shot-right-click-reselection-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-intelligent-selection-cursor-shortcut-tests
         COMMAND snow-shot-screenshot-history-tests
@@ -11577,6 +11583,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-screenshot-controller-clipboard-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    snow_shot_offscreen_qpa_environment(_snow_controller_reselection_qpa_environment)
+    add_test(NAME snow-shot-controller-reselection-tests
+        COMMAND snow_shot --controller-reselection-tests)
+    set_tests_properties(snow-shot-controller-reselection-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
+        ENVIRONMENT "${_snow_controller_reselection_qpa_environment}")
+    unset(_snow_controller_reselection_qpa_environment)
     if(WIN32)
         add_test(NAME snow-shot-shell-file-startup-tests COMMAND snow_shot --shell-file-startup-tests)
         set_tests_properties(snow-shot-shell-file-startup-tests PROPERTIES

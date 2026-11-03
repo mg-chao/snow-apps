@@ -8583,11 +8583,34 @@ void overlayRightQuickSelection() {
     selection.setSelectionRect(QRectF(0, 0, 400, 300));
     interaction.confirmSelection();
     int fallbacks = 0;
+    int cancellations = 0;
+    int toolActivations = 0;
+    bool enterSelectionOnFallback = false;
+    QPoint lastFallbackPoint;
+    SnowCanvasWidget* activeCanvas = nullptr;
     ScreenshotOverlayInputActions actions;
-    actions.returnToIntelligentSelection = [&](const QPoint&) {
+    actions.returnToIntelligentSelection = [&](const QPoint& point) {
         ++fallbacks;
+        lastFallbackPoint = point;
+        if (enterSelectionOnFallback) {
+            selection.clearSelection();
+            interaction.returnToSelectionMode(true);
+        }
         return true;
     };
+    actions.activateTool = [&](ScreenshotActiveTool tool, ScreenshotToolActivationReason reason) {
+        require(reason == ScreenshotToolActivationReason::Reselection,
+                "outside right clicks must request reselection tool activation");
+        ++toolActivations;
+        if (tool == ScreenshotActiveTool::Move) {
+            interaction.setMoveTool(selection.hasPixelSelection(), false);
+            activeCanvas->setInteractionEnabled(false);
+        } else {
+            interaction.setCanvasTool(tool);
+        }
+        return true;
+    };
+    actions.cancelCapture = [&] { ++cancellations; };
     ScreenshotOverlayInputHandler handler(
         {capture, interaction, selection, intelligent, geometry, displays, actions});
     NoopOverlayEventSink sink;
@@ -8605,6 +8628,7 @@ void overlayRightQuickSelection() {
     overlay.show();
     QApplication::processEvents();
     auto* canvas = overlay.canvas();
+    activeCanvas = canvas;
     canvas->setInteractionEnabled(true);
     canvas_quick_selection_test::drawStroke(*canvas);
     canvas_quick_selection_test::selectAndDragStroke(*canvas);
@@ -8618,6 +8642,89 @@ void overlayRightQuickSelection() {
     require(handler.handleRightClick(&overlay, {120, 135}) ==
                 ScreenshotOverlayRightClickResult::Handled,
             "color sampling cancellation keeps priority over element selection");
+
+    CapturedDisplayModel display;
+    display.active = true;
+    display.logicalRect = QRect(-400, 150, 400, 300);
+    display.canvasRect = QRect(-800, 300, 800, 600);
+    display.physicalRect = QRect(-1600, 600, 800, 600);
+    display.logicalToPhysicalScale = 2.0;
+    displays.appendDisplay(display, &overlay);
+    selection.setSelectionRect(QRectF(-600, 420, 280, 280));
+    interaction.setCanvasTool(ScreenshotActiveTool::FreeDraw);
+    enterSelectionOnFallback = true;
+
+    require(canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {120, 135},
+                                               Qt::RightButton, Qt::RightButton),
+            "an annotation inside the capture remains available for right quick selection");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {120, 135},
+                                       Qt::RightButton, Qt::NoButton);
+    require(fallbacks == 1 && toolActivations == 0 &&
+                interaction.activeTool() == ScreenshotActiveTool::FreeDraw &&
+                canvas->canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedFreeDraw,
+            "inside annotation selection preserves the annotation tool and capture region");
+
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {130, 80},
+                                       Qt::RightButton, Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {130, 80},
+                                       Qt::RightButton, Qt::NoButton);
+    require(fallbacks == 1 && toolActivations == 0 &&
+                interaction.activeTool() == ScreenshotActiveTool::FreeDraw,
+            "empty space inside the capture must not reselect while an annotation tool is active");
+    for (const QPointF point : {QPointF(100, 60), QPointF(240, 200)}) {
+        require(handler.handleRightClick(&overlay, point) ==
+                        ScreenshotOverlayRightClickResult::Ignored &&
+                    fallbacks == 1 && toolActivations == 0,
+                "mapped capture boundaries count as inside for annotation-tool right clicks");
+    }
+
+    require(canvas->resetEditingState() && canvas->setCanvasTool(SnowCanvasTool::FreeDraw),
+            "clear annotation selection before beginning the pointer ownership fixture");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {280, 220},
+                                       Qt::LeftButton, Qt::LeftButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseMove, {300, 220}, Qt::NoButton,
+                                       Qt::LeftButton);
+    require(QWidget::mouseGrabber() == canvas,
+            "the active drawing gesture must own the canvas mouse grab");
+    require(handler.handleRightClick(&overlay, {300, 220}) ==
+                    ScreenshotOverlayRightClickResult::Ignored &&
+                QWidget::mouseGrabber() == canvas && fallbacks == 1 && toolActivations == 0 &&
+                interaction.activeTool() == ScreenshotActiveTool::FreeDraw,
+            "an outside right-click must preserve an active drawing gesture and its tool");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {320, 220},
+                                       Qt::LeftButton, Qt::NoButton);
+    require(QWidget::mouseGrabber() != canvas,
+            "releasing the drawing button must release canvas pointer ownership");
+
+    require(canvas->hasQuickSelectionTargetAt({80, 135}, Qt::RightButton),
+            "the outside capture fixture must overlap an existing annotation");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {80, 135},
+                                       Qt::RightButton, Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {80, 135},
+                                       Qt::RightButton, Qt::NoButton);
+    require(fallbacks == 2 && toolActivations == 1 && interaction.intelligentSelecting() &&
+                interaction.moveToolActive() && lastFallbackPoint == QPoint(-1440, 870),
+            "an outside annotation hit reselects using the mapped physical pointer position");
+
+    sink.cancel = [&] {
+        handler.completeRightClickCancellation();
+        overlay.hide();
+    };
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton,
+                                       Qt::RightButton);
+    QApplication::processEvents();
+    require(cancellations == 0 && overlay.isVisible(),
+            "right press during reselection must leave the screenshot open until release");
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(25, 40),
+                        overlay.mapToGlobal(QPointF(25, 40)), Qt::RightButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(&overlay, &release);
+    require(cancellations == 0 && overlay.isVisible(),
+            "reselection cancellation must wait until release dispatch finishes");
+    QApplication::processEvents();
+    require(cancellations == 1 && !overlay.isVisible(),
+            "a second right-click cancels the reselecting screenshot after release");
 }
 
 void overlayMagnifierWheelPreservesCreationStyle() {

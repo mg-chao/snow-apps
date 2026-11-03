@@ -273,7 +273,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool ensureRecordingFeature();
     [[nodiscard]] bool ensureExportFeature();
     [[nodiscard]] bool ensureCanvasSamplingUi();
-    void deactivateRecognition();
+    void deactivateRecognition(
+        ScreenshotToolActivationReason reason = ScreenshotToolActivationReason::Command);
     void invalidateRecognitionSession();
     void createSelectorWorkflow();
     void createToolCommandWorkflow();
@@ -330,8 +331,10 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool stopScrollingCapture(bool restoreScreenshotPresentation);
     void pauseScrollingCaptureForSelectionResize();
     void resumeScrollingCaptureAfterSelectionResize();
-    [[nodiscard]] bool activateToolForSelectionResize(ScreenshotActiveTool tool);
-    void activateRecognitionToolAfterSelectionResize(ScreenshotActiveTool tool);
+    void setMoveTool(ScreenshotToolActivationReason reason);
+    [[nodiscard]] bool activateTool(ScreenshotActiveTool tool,
+                                    ScreenshotToolActivationReason reason);
+    void activateRecognitionToolForSelection(ScreenshotActiveTool tool);
     [[nodiscard]] std::optional<quint64> beginImageExport();
     [[nodiscard]] bool imageExportCurrent(quint64 generation) const;
     [[nodiscard]] bool imageExportNotificationCurrent(quint64 generation) const;
@@ -640,6 +643,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotCanvasColorSampler m_canvasColorSampler;
     std::unique_ptr<ScreenshotToolbarPresenter> m_toolbarPresenter;
     std::unique_ptr<ScreenshotToolCommandWorkflow> m_toolCommandWorkflow;
+    quint64 m_selectionToolActivationGeneration = 0;
     ScreenshotOcrRecognitionService* m_ocrRecognition = nullptr;
     std::unique_ptr<ScreenshotOcrRecognitionService> m_ownedOcrRecognition;
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
@@ -1446,12 +1450,17 @@ bool ScreenshotController::Impl::ensureCanvasSamplingUi() {
     return m_canvasColorSampling != nullptr;
 }
 
-void ScreenshotController::Impl::deactivateRecognition() {
+void ScreenshotController::Impl::deactivateRecognition(ScreenshotToolActivationReason reason) {
+    ++m_selectionToolActivationGeneration;
     if (m_ocrController == nullptr) {
         return;
     }
     const bool wasActive = m_ocrController->active();
-    m_ocrController->deactivate();
+    if (reason == ScreenshotToolActivationReason::SelectionResize) {
+        m_ocrController->deactivateForSelectionResize();
+    } else {
+        m_ocrController->deactivate();
+    }
     if (wasActive) {
         restoreKeyboardOwnerQueued(nullptr);
     }
@@ -2049,7 +2058,9 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](const QPoint& direction) { return moveCursorOnePixel(direction); },
         [this]() { handleSelectionConfirmed(); },
         [this]() { return selectPreviousSelection(); },
-        [this](ScreenshotActiveTool tool) { return activateToolForSelectionResize(tool); },
+        [this](ScreenshotActiveTool tool, ScreenshotToolActivationReason reason) {
+            return activateTool(tool, reason);
+        },
         [this]() {
             if (m_canvasColorSampling)
                 m_canvasColorSampling->end();
@@ -2588,29 +2599,24 @@ void ScreenshotController::Impl::connectSelectorSignals() {
 }
 
 void ScreenshotController::Impl::setMoveTool() {
-    deactivateRecognition();
+    setMoveTool(ScreenshotToolActivationReason::Command);
+}
+
+void ScreenshotController::Impl::setMoveTool(ScreenshotToolActivationReason reason) {
+    deactivateRecognition(reason);
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     static_cast<void>(resetCanvasEditingState());
     m_toolCommandWorkflow->setMoveTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
-bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActiveTool tool) {
+bool ScreenshotController::Impl::activateTool(ScreenshotActiveTool tool,
+                                              ScreenshotToolActivationReason reason) {
+    ++m_selectionToolActivationGeneration;
     switch (tool) {
-    case ScreenshotActiveTool::Move: {
-        if (m_ocrController != nullptr) {
-            const bool wasActive = m_ocrController->active();
-            m_ocrController->deactivateForSelectionResize();
-            if (wasActive) {
-                restoreKeyboardOwnerQueued(nullptr);
-            }
-        }
-        const bool scrollingCaptureStopped = stopScrollingCapture(true);
-        static_cast<void>(resetCanvasEditingState());
-        m_toolCommandWorkflow->setMoveTool();
-        restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+    case ScreenshotActiveTool::Move:
+        setMoveTool(reason);
         break;
-    }
     case ScreenshotActiveTool::Select:
         setSelectTool();
         break;
@@ -2683,10 +2689,20 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     case ScreenshotActiveTool::Qr:
     case ScreenshotActiveTool::Latex:
     case ScreenshotActiveTool::Markdown:
-    case ScreenshotActiveTool::Html:
+    case ScreenshotActiveTool::Html: {
+        const quint64 sessionId = m_captureState.sessionId;
+        const quint64 selectionRevision = m_interaction.selectionModeRevision();
+        const quint64 activationGeneration = m_selectionToolActivationGeneration;
         QTimer::singleShot(0, &owner,
-                           [this, tool]() { activateRecognitionToolAfterSelectionResize(tool); });
+                           [this, tool, sessionId, selectionRevision, activationGeneration]() {
+                               if (m_captureState.sessionId == sessionId &&
+                                   m_interaction.selectionModeRevision() == selectionRevision &&
+                                   m_selectionToolActivationGeneration == activationGeneration) {
+                                   activateRecognitionToolForSelection(tool);
+                               }
+                           });
         break;
+    }
     }
 
     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
@@ -2695,15 +2711,15 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     return isScreenshotRecognitionTool(tool) || m_interaction.activeTool() == tool;
 }
 
-void ScreenshotController::Impl::activateRecognitionToolAfterSelectionResize(
-    ScreenshotActiveTool tool) {
+void ScreenshotController::Impl::activateRecognitionToolForSelection(ScreenshotActiveTool tool) {
     if (!m_interaction.moveToolActive() || m_interaction.dragging() ||
         !m_selection.hasPixelSelection()) {
         return;
     }
 
     if (tool == ScreenshotActiveTool::TextTranslation) {
-        // A new activation re-arms translation when recognition of the resized selection finishes.
+        // A new activation re-arms translation when recognition of the replacement selection
+        // finishes.
         setTextTranslationTool();
         return;
     }
@@ -6991,6 +7007,17 @@ void ScreenshotControllerTestAccess::prepareSelection(ScreenshotController& cont
 bool ScreenshotControllerTestAccess::exportActive(const ScreenshotController& controller) {
     return !controller.m_impl->m_activeImageExports.isEmpty();
 }
+
+ScreenshotOverlayWindow*
+ScreenshotControllerTestAccess::presentSelection(ScreenshotController& controller) {
+    auto& state = *controller.m_impl;
+    state.m_intelligentSelection.beginCaptureSession(snow_shot::SmartSelectionMode::Disabled);
+    state.m_overlayCoordinator->applyDisplayModels(state.m_displaySession);
+    state.m_presentationServices->updateOverlayState();
+    state.m_overlayCoordinator->showOverlayWindows(state.m_displaySession,
+                                                   ScreenshotOverlayShowMode::CapturedImage);
+    return state.m_displaySession.overlayAt(0);
+}
 #ifdef Q_OS_MACOS
 void ScreenshotControllerTestAccess::installSessionFocus(
     ScreenshotController& controller,
@@ -7353,7 +7380,9 @@ bool ScreenshotController::mcpSetTool(const QString& tool, QString* error) {
     Q_ASSERT(QThread::currentThread() == thread());
     for (const auto& entry : mcpTools) {
         if (tool == QLatin1String(entry.first)) {
-            const bool ok = m_impl->activateToolForSelectionResize(entry.second);
+            m_impl->m_overlayInputHandler->discardReselectionTool();
+            const bool ok =
+                m_impl->activateTool(entry.second, ScreenshotToolActivationReason::Command);
             emit mcpCanvasChanged();
             return ok;
         }
