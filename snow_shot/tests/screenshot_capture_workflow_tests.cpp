@@ -1034,11 +1034,23 @@ void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
         } else {
             runtime.deliverResult(result);
         }
+#ifdef Q_OS_MACOS
+        if (selectionFirst) {
+            require(runtime.showOverlayCalls == 0,
+                    "macOS must still wait for the captured image when selection resolves first");
+        } else {
+            require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1,
+                    "macOS must reveal the captured frame without waiting for Accessibility");
+        }
+#else
         require(runtime.showOverlayCalls == 0,
                 "neither the image nor the selection alone may show or warm the overlay");
+#endif
         workflow.handleInitialSmartSelectionResolved(state.sessionId + 1);
+#ifndef Q_OS_MACOS
         require(runtime.showOverlayCalls == 0,
                 "a different session's selection must not release the reveal gate");
+#endif
 
         if (selectionFirst) {
             runtime.deliverResult(result);
@@ -1047,7 +1059,7 @@ void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
         }
         require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1 &&
                     runtime.applyDisplayModelsCalls == 1,
-                "image and selection readiness must reveal the prepared overlay once");
+                "the captured image must reveal the prepared overlay once");
         workflow.handleInitialSmartSelectionResolved(state.sessionId);
         runtime.deliverResult(result);
         require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1,

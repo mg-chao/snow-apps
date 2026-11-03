@@ -596,10 +596,20 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
         !m_context.displaySession.hasActiveDisplays()) {
         return;
     }
+#ifndef Q_OS_MACOS
     if (m_initialSmartSelectionPendingSessionId == sessionId &&
         m_initialSmartSelectionResolvedSessionId != sessionId) {
         return;
     }
+#else
+    // macOS Accessibility hit testing is advisory during startup. On Intel
+    // systems, and especially on systems whose WindowServer/Accessibility
+    // stack is provided by a non-Apple configuration, the first AX query can
+    // take seconds even though the ScreenCaptureKit frame is already ready.
+    // Reveal the captured frame immediately and apply the smart-selection
+    // result when its queued callback arrives. This keeps capture responsive
+    // without changing the selection behavior after presentation.
+#endif
 
     if (QGuiApplication::instance() &&
         std::any_of(
@@ -620,9 +630,10 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.reveal_begin");
 
-    // The desktop frame and initial smart-selection result have both arrived.
-    // Reveal only this complete first frame, avoiding a visible selection jump
-    // while keeping capture and selection work fully asynchronous.
+    // The desktop frame has arrived. On platforms where the initial smart
+    // selection is part of the reveal gate, it has also resolved above. macOS
+    // intentionally treats that Accessibility result as advisory so a slow
+    // provider cannot delay the first visible frame.
     // A global-mouse drag is already in progress when this frame arrives, so
     // reveal it frame-paced: the first paint runs as a queued update instead of
     // a synchronous commit, letting paced drag updates interleave ahead of it.
