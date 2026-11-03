@@ -175,9 +175,10 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void setTextEditorEditingEnabled(bool enabled);
     void setTextEditorStreaming(bool streaming);
     void hideTextEditor();
-    void showLatexEditor(QTextDocument* document, std::function<QString()> source = {});
+    void showLatexEditor(QTextDocument* document, std::function<QString()> source = {},
+                         bool streaming = false);
     void showLatexEditor(std::shared_ptr<QTextDocument> document,
-                         std::function<QString()> source = {});
+                         std::function<QString()> source = {}, bool streaming = false);
     void setLatexPreviewEnabled(bool enabled);
     void clearLatexPreview();
 
@@ -215,10 +216,10 @@ class ScreenshotRecognitionWindow final : public QWidget {
   private:
     void showTextEditorWithOwner(QTextDocument* document,
                                  std::shared_ptr<QTextDocument> documentOwner, bool readOnly,
-                                 bool streaming);
+                                 bool streaming, bool preserveLatexPreview = false);
     void showLatexEditorWithOwner(QTextDocument* document,
                                   std::shared_ptr<QTextDocument> documentOwner,
-                                  std::function<QString()> source);
+                                  std::function<QString()> source, bool streaming);
     [[nodiscard]] QPointF canvasPositionForLocalPoint(const QPointF& localPosition) const;
     [[nodiscard]] QTransform canvasToLocalTransform() const;
     void registerWindowShortcuts();
@@ -277,6 +278,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
         }
     };
     bool m_latexPreviewEnabled = false;
+    bool m_latexStreaming = false;
     QPointer<QTextDocument> m_latexDocument;
     std::function<QString()> m_latexSource;
     QMetaObject::Connection m_latexDocumentConnection;

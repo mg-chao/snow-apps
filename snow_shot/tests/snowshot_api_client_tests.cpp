@@ -2161,6 +2161,103 @@ QByteArray contentFrame(const QString& text, bool crlf = false) {
     return frame;
 }
 
+void latexVisionProgressPreservesFinalContract() {
+    for (const bool custom : {false, true}) {
+        translation_tests::Server server;
+        SnowShotApiClient client(server.url());
+        QString model = QStringLiteral("vision");
+        if (custom) {
+            snow_shot::CustomAiModelConfiguration configuration{
+                QStringLiteral("11111111-2222-4333-8444-555555555555"),
+                QStringLiteral("Streaming formula fixture"),
+                server.url(),
+                {},
+                QStringLiteral("vision"),
+                true};
+            client.setCustomModels({configuration});
+            model = configuration.selectionId();
+            server.streamPath = "/chat/completions";
+        }
+        QImage image(40, 24, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QStringList chunks;
+        SnowShotLatexResult output;
+        int completions = 0;
+        require(client.extractLatexVision(
+                    image, model, &client,
+                    [&](SnowShotLatexResult result) {
+                        output = std::move(result);
+                        ++completions;
+                    },
+                    [&](const QString& chunk) { chunks.append(chunk); }) != 0,
+                "formula extraction accepts an optional progress callback");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "streaming formula request arrives");
+        server.send(0, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\"}}]}\n\n");
+        server.delta(0, QStringLiteral("```la"));
+        translation_tests::waitUntil([&] { return chunks.size() == 1; },
+                                     "formula chunks are delivered before completion");
+        const QString unicodeChunk = QStringLiteral("tex\n\\frac{α");
+        const QByteArray frame = contentFrame(unicodeChunk);
+        const qsizetype split = frame.indexOf(QStringLiteral("α").toUtf8()) + 1;
+        auto* reply = client.findChild<QNetworkAccessManager*>()->findChild<QNetworkReply*>();
+        require(reply != nullptr && split > 0, "fragmented formula fixture has a live reply");
+        int reads = 0;
+        QObject::connect(reply, &QIODevice::readyRead, &client, [&] { ++reads; });
+        server.send(0, frame.left(split));
+        translation_tests::waitUntil([&] { return reads > 0; },
+                                     "the first UTF-8 fragment reaches the parser");
+        require(chunks.size() == 1 && completions == 0,
+                "incomplete SSE events do not publish broken UTF-8 or final output");
+        server.send(0, frame.mid(split));
+        translation_tests::waitUntil([&] { return chunks.size() == 2; },
+                                     "the completed UTF-8 event publishes once");
+        server.delta(0, QStringLiteral("}{β}\n```"));
+        translation_tests::waitUntil([&] { return chunks.size() == 3; },
+                                     "subsequent formula chunks remain ordered");
+        require(completions == 0 && chunks == QStringList{QStringLiteral("```la"), unicodeChunk,
+                                                          QStringLiteral("}{β}\n```")},
+                "progress contains only ordered raw content while completion remains pending");
+        server.finish(0);
+        translation_tests::waitUntil([&] { return completions == 1; },
+                                     "streamed formula completes exactly once");
+        require(output.succeeded() && output.latex == QStringLiteral("\\frac{α}{β}"),
+                "progress does not change final fence normalization or formula validation");
+    }
+
+    for (int variant = 0; variant < 3; ++variant) {
+        translation_tests::Server server;
+        QPointer<SnowShotApiClient> client(new SnowShotApiClient(server.url()));
+        auto receiver = std::make_unique<QObject>();
+        QImage image(40, 24, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        SnowShotApiClient::RequestToken token = 0;
+        int chunks = 0;
+        int completions = 0;
+        token = client->extractLatexVision(
+            image, QStringLiteral("vision"), receiver.get(), [&](auto) { ++completions; },
+            [&](const QString&) {
+                ++chunks;
+                if (variant == 0)
+                    client->cancel(token);
+                else if (variant == 1)
+                    receiver.reset();
+                else
+                    delete client.data();
+            });
+        require(token != 0, "formula callback lifetime fixture starts");
+        translation_tests::waitUntil([&] { return server.streams.size() == 1; },
+                                     "formula callback lifetime fixture connects");
+        server.send(0, contentFrame(QStringLiteral("x")) + contentFrame(QStringLiteral("+1")) +
+                           "data: [DONE]\n\n");
+        translation_tests::waitUntil([&] { return chunks == 1; },
+                                     "formula progress may retire its own request or consumer");
+        translation_tests::flushEvents();
+        require(completions == 0, "retired formula progress never receives a stale completion");
+        delete client.data();
+    }
+}
+
 // Finish HTTP before queued parser batches run, independently of local socket timing.
 class FinishedChatBurstReply final : public QNetworkReply {
   public:
@@ -2914,6 +3011,7 @@ int main(int argc, char** argv) {
     }
 
     if (application.arguments().contains(QStringLiteral("--stream-lifetime-only"))) {
+        latexVisionProgressPreservesFinalContract();
         finishedChatStreamFailuresReleaseRepliesAndActivity();
         chatStreamsYieldBetweenBatchesAndCancelSafely();
         imageConversionUsesVisionAndRejectsIncompleteStreams();
@@ -2961,6 +3059,7 @@ int main(int argc, char** argv) {
     ensuredCatalogsAndFingerprintsFollowTheServer();
     obsoleteLocalesCannotReplaceTheCurrentCatalog();
     visionExtractionPreservesTypedOutputAndImageDetails();
+    latexVisionProgressPreservesFinalContract();
     finishedChatStreamFailuresReleaseRepliesAndActivity();
     chatStreamsYieldBetweenBatchesAndCancelSafely();
     largeFragmentedStreamEventsPublishExactlyOnce();

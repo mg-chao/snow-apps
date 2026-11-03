@@ -156,8 +156,10 @@ class SnowShotApiClient final : public QObject {
                                             LatexCompletion completion);
     [[nodiscard]] RequestToken extractTableVision(const QImage& image, const QString& model,
                                                   QObject* receiver, Completion completion);
+    // Optional progress receives raw content chunks; only completion publishes validated LaTeX.
     [[nodiscard]] RequestToken extractLatexVision(const QImage& image, const QString& model,
-                                                  QObject* receiver, LatexCompletion completion);
+                                                  QObject* receiver, LatexCompletion completion,
+                                                  TranslationDelta delta = {});
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     // Discovery reuses the cache unless refreshing. Concurrent subscribers, including normal
