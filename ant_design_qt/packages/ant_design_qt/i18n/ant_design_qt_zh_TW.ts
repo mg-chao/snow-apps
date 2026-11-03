@@ -525,7 +525,7 @@
     <message>
         <location filename="../../../examples/theme-demo/result_docs_page.cpp" line="262"/>
         <source>The account name is already in use.</source>
-        <translation>該帳戶名稱已被使用。</translation>
+        <translation>該帳號名稱已被使用。</translation>
     </message>
     <message>
         <location filename="../../../examples/theme-demo/result_docs_page.cpp" line="264"/>

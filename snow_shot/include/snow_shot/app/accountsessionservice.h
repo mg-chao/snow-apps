@@ -34,6 +34,12 @@ class AccountPurchaseCoordinator final : public QObject {
     [[nodiscard]] bool polling() const {
         return m_pollBusy;
     }
+    [[nodiscard]] bool queryingPlatform() const {
+        return m_pollBusy && m_queryPlatform;
+    }
+    [[nodiscard]] bool cancelling() const {
+        return m_cancelBusy;
+    }
     [[nodiscard]] bool registration() const {
         return m_registration;
     }
@@ -53,8 +59,11 @@ class AccountPurchaseCoordinator final : public QObject {
     QString m_proof;
     QString m_notice;
     QTimer m_poll;
+    quint64 m_generation = 0;
     bool m_registration = true;
     bool m_pollBusy = false;
+    bool m_queryPlatform = false;
+    bool m_cancelBusy = false;
     bool m_autoClaim = true;
     bool m_claimBusy = false;
     qint64 m_serverOffsetMs = 0;
@@ -99,7 +108,8 @@ class AccountSessionService final : public QObject {
     [[nodiscard]] AccountPurchaseCoordinator& purchase() {
         return m_purchase;
     }
-    [[nodiscard]] static QString formatMoney(const QString& nanos);
+    [[nodiscard]] static QString formatCredits(const QString& nanos);
+    [[nodiscard]] static QString formatCreditAmount(const QString& nanos);
 
     void signIn(const QString& username, const QString& password);
     void signOut();
@@ -108,6 +118,7 @@ class AccountSessionService final : public QObject {
                          const QString& confirmation, const QString& answer);
     void beginTopUp();
     void refreshPurchase(bool queryPlatform = false);
+    void cancelPurchase();
     void dismissPurchase();
     void refreshAccount();
     void loadTransactions(bool append = false);
@@ -135,6 +146,7 @@ class AccountSessionService final : public QObject {
     void refreshSession(std::function<void(bool)> completion);
     void acceptSession(const QJsonObject& session, bool sameAccountRefresh = false);
     void acceptPurchase(const QJsonObject& request, bool registration);
+    void clearPurchase();
     void claimRegistration();
     void resetOrigin();
     void persist();

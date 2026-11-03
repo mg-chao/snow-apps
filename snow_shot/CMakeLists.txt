@@ -9558,8 +9558,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_add_translations(snow-shot-account-tests)
     snow_shot_import_offscreen_platform(snow-shot-account-tests)
     add_test(NAME snow-shot-account-tests COMMAND snow-shot-account-tests -platform offscreen)
-    set_tests_properties(snow-shot-account-tests PROPERTIES LABELS "unit" TIMEOUT 45
+    add_test(NAME snow-shot-account-cancellation-tests
+        COMMAND snow-shot-account-tests -platform offscreen --top-up-cancellation-only)
+    set_tests_properties(snow-shot-account-tests snow-shot-account-cancellation-tests
+        PROPERTIES LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    set_tests_properties(snow-shot-account-tests PROPERTIES TIMEOUT 60)
+    set_tests_properties(snow-shot-account-cancellation-tests PROPERTIES TIMEOUT 45)
 
     add_executable(snow-shot-api-client-tests
         tests/snowshot_api_client_tests.cpp

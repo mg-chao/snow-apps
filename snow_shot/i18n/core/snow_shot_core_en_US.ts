@@ -250,6 +250,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Updates are managed by Microsoft Store.</translation>
         </message>
         <message>
+            <source>User agreement</source>
+            <translation>User agreement</translation>
+        </message>
+        <message>
             <source>Verifying update…</source>
             <translation>Verifying update…</translation>
         </message>

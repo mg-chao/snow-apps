@@ -6,11 +6,13 @@
 #include <QWidget>
 
 class QLabel;
+class QBoxLayout;
 class QVBoxLayout;
 class PageContainerWidget;
 namespace adqt::widgets {
 class AdAlert;
 class AdButton;
+class AdCheckbox;
 class AdForm;
 class AdFormItem;
 class AdLineEdit;
@@ -43,6 +45,8 @@ class AccountPageWidget final : public QWidget {
 
     QPointer<snow_shot::app::AccountSessionService> m_service;
     PageContainerWidget* m_container = nullptr;
+    QLabel* m_pageTitle = nullptr;
+    QLabel* m_pageDescription = nullptr;
     QPointer<adqt::widgets::AdMessageHandle> m_errorMessage;
     adqt::widgets::AdAlert* m_notice = nullptr;
     adqt::widgets::AdAlert* m_debt = nullptr;
@@ -60,14 +64,18 @@ class AccountPageWidget final : public QWidget {
     QLabel* m_captchaImage = nullptr;
     QWidget* m_captchaRow = nullptr;
     adqt::widgets::AdButton* m_captchaRefresh = nullptr;
+    QWidget* m_agreementRow = nullptr;
+    adqt::widgets::AdCheckbox* m_agreement = nullptr;
+    QLabel* m_agreementText = nullptr;
     adqt::widgets::AdButton* m_submit = nullptr;
     adqt::widgets::AdButton* m_switch = nullptr;
     QWidget* m_profile = nullptr;
+    QBoxLayout* m_identityLayout = nullptr;
+    QBoxLayout* m_balanceLayout = nullptr;
     QLabel* m_accountName = nullptr;
-    QLabel* m_membership = nullptr;
-    QLabel* m_creditLabel = nullptr;
+    QLabel* m_cumulativeRecharge = nullptr;
+    QLabel* m_creditIcon = nullptr;
     QLabel* m_credit = nullptr;
-    QLabel* m_permanent = nullptr;
     adqt::widgets::AdButton* m_topUp = nullptr;
     adqt::widgets::AdButton* m_signOut = nullptr;
     QWidget* m_payment = nullptr;
@@ -82,7 +90,12 @@ class AccountPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_signInInstead = nullptr;
     QWidget* m_history = nullptr;
     QLabel* m_historyTitle = nullptr;
+    QLabel* m_historyDescription = nullptr;
+    QWidget* m_transactionHeader = nullptr;
     QWidget* m_records = nullptr;
+    QPointer<QLabel> m_emptyIcon;
+    QPointer<QLabel> m_emptyTitle;
+    QPointer<QLabel> m_emptyDescription;
     adqt::widgets::AdButton* m_refresh = nullptr;
     adqt::widgets::AdButton* m_more = nullptr;
     QJsonArray m_renderedTransactions;

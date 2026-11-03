@@ -1,18 +1,22 @@
 #include "snow_shot/app/accountsessionservice.h"
+#include "snow_shot/app/distribution.h"
 #include "translation_test_support.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/components/accountpagewidget.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "widgets/scroll_area.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/accountsecretstore.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
 #include "widgets/alert.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/form.h"
 #include "widgets/message.h"
+#include "widgets/tag.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -22,6 +26,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QNetworkProxy>
 #include <QElapsedTimer>
 #include <QFontDatabase>
@@ -33,11 +38,13 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTranslator>
+#include <QTextDocument>
 #include <QScrollBar>
 
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <utility>
 
 using snow_shot::app::AccountSessionService;
 namespace settings = snow_shot::presentation::settings;
@@ -68,6 +75,9 @@ class Api {
     int claims = 0;
     int refreshes = 0;
     int registrations = 0;
+    int purchases = 0;
+    int cancellations = 0;
+    int captchas = 0;
     int logins = 0;
     bool manualQuery = false;
     bool proofSeen = false;
@@ -77,9 +87,14 @@ class Api {
     QString failureCode;
     int failureStatus = 400;
     bool abortRequest = false;
+    bool emptyTransactions = false;
+    bool holdPurchasePolls = false;
+    QList<std::function<void()>> heldPurchasePolls;
+    QString requestId = QStringLiteral("request1");
     QByteArray registrationBody;
     QString balance = QStringLiteral("9900000000");
     QString debt = QStringLiteral("0");
+    QString cumulativeRecharge = QStringLiteral("188000000000");
     int expirySeconds = 600;
     QString codeData;
     QString captchaData;
@@ -141,6 +156,7 @@ class Api {
                     QJsonObject data;
                     int responseStatus = 200;
                     if (path == "/api/v2/registration/captcha") {
+                        ++captchas;
                         data = {{QStringLiteral("captcha_id"), QStringLiteral("challenge")},
                                 {QStringLiteral("image_data_url"), captchaData}};
                     } else if (path == "/api/v2/registration/requests" && post) {
@@ -162,6 +178,24 @@ class Api {
                         manualQuery = manualQuery || (post && path.endsWith("/refresh"));
                         data = purchase();
                         data.insert(QStringLiteral("mini_program_code_data_url"), QJsonValue());
+                    } else if (path == "/api/v2/purchases/requests" && post) {
+                        requestId = QStringLiteral("purchase%1").arg(++purchases);
+                        data = purchase();
+                    } else if (path.startsWith("/api/v2/purchases/requests/") &&
+                               path.endsWith("/cancel") && post) {
+                        ++cancellations;
+                        officialAuthSeen = headers.contains("authorization: bearer desktop-access");
+                        data = purchase();
+                        if (state == u"awaiting_payment")
+                            data.insert(QStringLiteral("state"), QStringLiteral("failed"));
+                    } else if (path.startsWith("/api/v2/purchases/requests/")) {
+                        ++polls;
+                        if (rejectPolls)
+                            responseStatus = 503;
+                        officialAuthSeen = headers.contains("authorization: bearer desktop-access");
+                        manualQuery = manualQuery || (post && path.endsWith("/refresh"));
+                        data = purchase();
+                        data.insert(QStringLiteral("mini_program_code_data_url"), QJsonValue());
                     } else if (path == "/api/v2/auth/login") {
                         ++logins;
                         data = session();
@@ -170,12 +204,14 @@ class Api {
                         data = session();
                     } else if (path == "/api/v2/account") {
                         officialAuthSeen = headers.contains("authorization: bearer desktop-access");
-                        data = {{QStringLiteral("username"), username},
-                                {QStringLiteral("linked"), true},
-                                {QStringLiteral("membership_status"), QStringLiteral("active")},
-                                {QStringLiteral("available_credit_nano_yuan"), balance},
-                                {QStringLiteral("outstanding_balance_nano_yuan"), debt},
-                                {QStringLiteral("payments_available"), true}};
+                        data = {
+                            {QStringLiteral("username"), username},
+                            {QStringLiteral("linked"), true},
+                            {QStringLiteral("membership_status"), QStringLiteral("active")},
+                            {QStringLiteral("available_credit_nano_yuan"), balance},
+                            {QStringLiteral("outstanding_balance_nano_yuan"), debt},
+                            {QStringLiteral("cumulative_recharge_nano_yuan"), cumulativeRecharge},
+                            {QStringLiteral("payments_available"), true}};
                     } else if (path.startsWith("/api/v2/account/transactions")) {
                         data = {{QStringLiteral("items"),
                                  QJsonArray{QJsonObject{
@@ -204,7 +240,8 @@ class Api {
                             {QStringLiteral("order_id"), QStringLiteral("SS202611010001")},
                             {QStringLiteral("occurred_at"),
                              QStringLiteral("2026-11-01T10:00:00Z")}});
-                        data.insert(QStringLiteral("items"), items);
+                        data.insert(QStringLiteral("items"),
+                                    emptyTransactions ? QJsonArray() : items);
                     }
                     const bool rejected = path == failurePath.toUtf8();
                     if (rejected && abortRequest) {
@@ -219,11 +256,21 @@ class Api {
                                          rejected ? QJsonValue(failureCode) : QJsonValue(0)},
                                         {QStringLiteral("data"), data}})
                             .toJson();
-                    socket->write("HTTP/1.1 " + QByteArray::number(responseStatus) +
-                                  " OK\r\nContent-Type: "
-                                  "application/json\r\nConnection: close\r\nContent-Length: " +
-                                  QByteArray::number(response.size()) + "\r\n\r\n" + response);
-                    socket->disconnectFromHost();
+                    const auto respond = [socket = QPointer<QTcpSocket>(socket), response,
+                                          responseStatus] {
+                        if (!socket)
+                            return;
+                        socket->write("HTTP/1.1 " + QByteArray::number(responseStatus) +
+                                      " OK\r\nContent-Type: "
+                                      "application/json\r\nConnection: close\r\nContent-Length: " +
+                                      QByteArray::number(response.size()) + "\r\n\r\n" + response);
+                        socket->disconnectFromHost();
+                    };
+                    if (holdPurchasePolls && path.startsWith("/api/v2/purchases/requests/") &&
+                        !path.endsWith("/cancel"))
+                        heldPurchasePolls.append(respond);
+                    else
+                        respond();
                 });
                 QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
             }
@@ -238,7 +285,7 @@ class Api {
     }
     QJsonObject purchase() const {
         return {
-            {QStringLiteral("request_id"), QStringLiteral("request1")},
+            {QStringLiteral("request_id"), requestId},
             {QStringLiteral("username"), username},
             {QStringLiteral("state"), state},
             {QStringLiteral("completion_kind"), completionKind},
@@ -430,6 +477,489 @@ void uncertainPollingBacksOffAndManualRefreshRecovers() {
             "manual refresh bypasses backoff and successful queries reset it");
 }
 
+void paymentActionsStayInOneRowAndDetailsAreCentered() {
+    using namespace adqt::widgets;
+    Api api;
+    auto config = options();
+    config.pollIntervalMs = 60000;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.resize(900, 640);
+    page.show();
+    service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return !service.purchase().request().isEmpty(); });
+    auto* paid = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
+    require(paid->buttonStyle() == AdButton::ButtonStyle::Solid &&
+                paid->accentRole() == AdButton::AccentRole::Primary,
+            "payment confirmation remains the primary action");
+    auto* payment = paid->parentWidget();
+    AdButton* signIn = nullptr;
+    for (auto* button : payment->findChildren<AdButton*>())
+        if (button != paid && !button->isHidden())
+            signIn = button;
+    require(signIn && signIn->buttonStyle() == AdButton::ButtonStyle::Outline &&
+                signIn->accentRole() == AdButton::AccentRole::Neutral,
+            "existing-account sign-in uses a regular neutral outlined button");
+    const auto verifyLayout = [&] {
+        QApplication::sendPostedEvents();
+        QApplication::processEvents();
+        if (qAbs(paid->width() - signIn->width()) > 1)
+            std::cerr << "Unequal payment actions at page width " << page.width() << ": "
+                      << paid->width() << " / " << signIn->width() << '\n';
+        require(paid->geometry().top() == signIn->geometry().top() &&
+                    paid->geometry().right() < signIn->geometry().left() &&
+                    qAbs(paid->width() - signIn->width()) <= 1,
+                "payment and sign-in actions occupy two equal columns in one row");
+        require(payment->rect().contains(paid->geometry()) &&
+                    payment->rect().contains(signIn->geometry()),
+                "both payment actions fit inside the payment content");
+        auto* code = page.findChild<QLabel*>(QStringLiteral("accountMiniProgramCode"));
+        require(qAbs(code->geometry().center().x() - payment->rect().center().x()) <= 1,
+                "the Mini Program code is horizontally centered in the payment content");
+        for (auto* label : payment->findChildren<QLabel*>()) {
+            if (label->objectName() != u"accountPurchaseHeading")
+                require(label->alignment().testFlag(Qt::AlignHCenter),
+                        "payment status, expiry, and instructions are centered");
+        }
+    };
+    for (const int width : {900, 640, 400, 292, 260}) {
+        page.resize(width, 640);
+        verifyLayout();
+    }
+    for (const auto* locale : {"zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "load localized payment actions");
+        QApplication::installTranslator(&translator);
+        for (const int width : {900, 400, 260}) {
+            page.resize(width, 640);
+            verifyLayout();
+        }
+        QApplication::removeTranslator(&translator);
+    }
+    signIn->click();
+    require(page.findChild<QLineEdit*>(QStringLiteral("accountUsername"))->isVisibleTo(&page) &&
+                !service.purchase().request().isEmpty(),
+            "the regular sign-in action opens the existing-account form during payment");
+}
+
+void automaticPaymentPollingDoesNotShowButtonLoading() {
+    using namespace adqt::widgets;
+    Api api;
+    auto config = options();
+    config.pollIntervalMs = 100;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.resize(640, 640);
+    page.show();
+    auto* paid = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
+    int automaticPolls = 0;
+    bool manualQueryStarted = false;
+    QObject::connect(&service, &AccountSessionService::changed, &page, [&] {
+        if (service.purchase().polling() && !manualQueryStarted) {
+            ++automaticPolls;
+            require(!paid->busy(), "automatic payment polling never shows button loading");
+            require(paid->isEnabled(), "automatic polling keeps the payment action enabled");
+            require(paid->buttonStyle() == AdButton::ButtonStyle::Solid &&
+                        paid->accentRole() == AdButton::AccentRole::Primary,
+                    "automatic polling preserves the primary payment action");
+        }
+    });
+    service.registerAccount(QStringLiteral("TestUser"), QStringLiteral("long-password"),
+                            QStringLiteral("long-password"), QStringLiteral("abcd"));
+    await([&] { return automaticPolls > 0 && !service.purchase().polling(); });
+    require(!paid->busy() && paid->isEnabled(),
+            "the payment action is available after an automatic poll");
+    manualQueryStarted = true;
+    paid->click();
+    require(paid->busy() && !paid->isEnabled(),
+            "an explicit payment query shows loading and prevents duplicate clicks");
+    await([&] { return api.manualQuery && !service.purchase().polling(); });
+    require(!paid->busy() && paid->isEnabled(),
+            "manual payment query completion clears button loading");
+    const int previousPolls = api.polls;
+    api.manualQuery = false;
+    service.refreshPurchase();
+    require(!paid->busy() && paid->isEnabled(),
+            "starting another background query leaves the payment action unchanged");
+    paid->click();
+    require(paid->busy() && !paid->isEnabled(),
+            "clicking during a background query starts manual-query feedback");
+    paid->click();
+    await([&] { return api.manualQuery && !service.purchase().polling(); });
+    require(
+        api.polls == previousPolls + 2 && !paid->busy() && paid->isEnabled(),
+        "a background query serializes one requested manual query and ignores duplicate clicks");
+    api.rejectPolls = true;
+    paid->click();
+    require(paid->busy(), "a new manual payment query shows loading");
+    await([&] { return !service.purchase().polling(); });
+    require(!paid->busy() && paid->isEnabled() && service.purchase().pending(),
+            "a failed manual query clears loading while retaining the pending payment");
+}
+
+void topUpCanBeCancelledAndRestarted() {
+    using namespace adqt::widgets;
+    for (const bool failedPoll : {false, true}) {
+        Api api;
+        QTemporaryDir secrets;
+        auto config = options();
+        config.pollIntervalMs = 60000;
+        config.persistSecrets = true;
+        config.secretDirectory = secrets.path();
+        config.profileIdentity = secrets.path();
+        SnowShotApiClient client(api.origin());
+        AccountSessionService service(client, config);
+        AccountPageWidget page(&service);
+        page.resize(640, 640);
+        page.show();
+        service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+        await([&] { return !service.account().isEmpty(); });
+        auto* topUp = page.findChild<AdButton*>(QStringLiteral("accountTopUp"));
+        auto* cancel = page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"));
+        auto* paid = page.findChild<AdButton*>(QStringLiteral("accountRefreshPayment"));
+        auto* payment = page.findChild<QWidget*>(QStringLiteral("accountPaymentCard"));
+        topUp->click();
+        await([&] { return !service.purchase().request().isEmpty(); });
+        require(cancel->isVisibleTo(&page) && cancel->text() == u"Cancel payment",
+                "pending top-ups provide a cancel-payment action");
+        for (const int width : {640, 400, 260}) {
+            page.resize(width, 640);
+            QApplication::processEvents();
+            require(paid->geometry().top() == cancel->geometry().top() &&
+                        paid->geometry().right() < cancel->geometry().left() &&
+                        payment->rect().contains(cancel->geometry()),
+                    "payment and cancellation actions fit in one row at narrow widths");
+        }
+        api.holdPurchasePolls = true;
+        api.state = QStringLiteral("fulfilled");
+        api.rejectPolls = failedPoll;
+        service.refreshPurchase();
+        await([&] { return api.heldPurchasePolls.size() == 1; });
+        QPointer<QNetworkReply> oldPoll;
+        for (auto* reply : service.findChildren<QNetworkReply*>())
+            if (reply->url().path().endsWith(u"/purchase1"))
+                oldPoll = reply;
+        require(oldPoll, "hold the previous purchase's in-flight status response");
+        bool oldPollFinished = false;
+        QObject::connect(oldPoll.data(), &QNetworkReply::finished, &page,
+                         [&] { oldPollFinished = true; });
+        paid->click();
+        api.state = QStringLiteral("awaiting_payment");
+        api.rejectPolls = false;
+        cancel->click();
+        cancel->click();
+        service.cancelPurchase();
+        require(service.purchase().cancelling() && cancel->busy() && !cancel->isEnabled() &&
+                    !paid->isEnabled(),
+                "cancellation shows progress and prevents duplicate payment actions");
+        await([&] { return !service.purchase().cancelling(); });
+        require(api.cancellations == 1 && api.officialAuthSeen &&
+                    service.purchase().request().isEmpty() && !service.purchase().polling() &&
+                    !service.purchase().queryingPlatform() && payment->isHidden() &&
+                    topUp->isEnabled() && service.signedIn(),
+                "confirmed cancellation stops polling and returns to the signed-in account");
+        {
+            SnowShotApiClient restoredClient(api.origin());
+            AccountSessionService restored(restoredClient, config);
+            await([&] { return restored.signedIn(); });
+            require(restored.purchase().request().isEmpty(),
+                    "a canceled top-up is not restored after restarting");
+        }
+        topUp->click();
+        await([&] {
+            return service.purchase().request().value(QStringLiteral("request_id")).toString() ==
+                   u"purchase2";
+        });
+        service.refreshPurchase();
+        await([&] { return api.heldPurchasePolls.size() == 2; });
+        api.heldPurchasePolls.takeFirst()();
+        await([&] { return oldPollFinished; });
+        require(service.purchase().polling() && service.error().isEmpty() &&
+                    service.purchase().request().value(QStringLiteral("request_id")).toString() ==
+                        u"purchase2" &&
+                    service.purchase().request().value(QStringLiteral("state")).toString() ==
+                        u"awaiting_payment",
+                "late canceled-purchase responses cannot change the new purchase or its polling");
+        api.heldPurchasePolls.takeFirst()();
+        await([&] { return !service.purchase().polling(); });
+        cancel->click();
+        await([&] { return service.purchase().request().isEmpty(); });
+        require(api.cancellations == 2, "a replacement top-up can also be canceled");
+    }
+}
+
+void topUpCancellationPreservesUnconfirmedOrCompletedPayments() {
+    using namespace adqt::widgets;
+    for (const auto* result :
+         {"payment_pending", "reconciliation_required", "fulfilled", "request_failed"}) {
+        Api api;
+        auto config = options();
+        config.pollIntervalMs = 60000;
+        SnowShotApiClient client(api.origin());
+        AccountSessionService service(client, config);
+        AccountPageWidget page(&service);
+        page.resize(640, 640);
+        page.show();
+        service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+        await([&] { return !service.account().isEmpty() && !service.transactions().isEmpty(); });
+        service.beginTopUp();
+        await([&] { return !service.purchase().request().isEmpty(); });
+        const bool failed = QByteArray(result) == "request_failed";
+        if (failed) {
+            api.failurePath = QStringLiteral("/api/v2/purchases/requests/purchase1/cancel");
+            api.failureCode = QStringLiteral("request_failed");
+            api.failureStatus = 503;
+        } else {
+            api.state = QString::fromLatin1(result);
+        }
+        api.balance = QStringLiteral("188000000000");
+        auto* cancel = page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"));
+        cancel->click();
+        await([&] { return !service.purchase().cancelling(); });
+        require(!service.purchase().request().isEmpty() && !cancel->busy(),
+                "failed cancellation or an issued payment retains its purchase and clears loading");
+        if (failed) {
+            require(!service.error().isEmpty() && service.purchase().pending(),
+                    "a cancellation error keeps the code available for retry");
+            api.failurePath.clear();
+            cancel->click();
+            await([&] { return service.purchase().request().isEmpty(); });
+            continue;
+        }
+        if (api.state != u"fulfilled") {
+            require(service.purchase().pending() && !service.purchase().notice().isEmpty(),
+                    "issued uncertain payments retain polling and explain why cancellation failed");
+            service.beginTopUp();
+            require(api.purchases == 1, "uncertain payments cannot be replaced by another top-up");
+            api.state = QStringLiteral("fulfilled");
+            service.refreshPurchase(true);
+        }
+        await([&] {
+            return !service.purchase().pending() &&
+                   service.account().value(QStringLiteral("available_credit_nano_yuan")) ==
+                       api.balance;
+        });
+        require(cancel->text() == u"Continue",
+                "a completed payment remains visible until dismissed");
+        cancel->click();
+        require(service.purchase().request().isEmpty(), "completed purchases can be dismissed");
+    }
+}
+
+void registrationRequiresExplicitAgreement() {
+    using namespace adqt::widgets;
+    Api api;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    page.resize(400, 640);
+    page.show();
+    page.activateWindow();
+    auto* agreement = page.findChild<AdCheckbox*>(QStringLiteral("accountAgreement"));
+    auto* text = page.findChild<QLabel*>(QStringLiteral("accountAgreementText"));
+    auto* submit = page.findChild<AdButton*>(QStringLiteral("accountSubmit"));
+    auto* toggle = page.findChild<AdButton*>(QStringLiteral("accountSwitchForm"));
+    auto* username = page.findChild<QLineEdit*>(QStringLiteral("accountUsername"));
+    auto* password = page.findChild<QLineEdit*>(QStringLiteral("accountPassword"));
+    auto* confirmation = page.findChild<QLineEdit*>(QStringLiteral("accountPasswordConfirmation"));
+    auto* captcha = page.findChild<QLineEdit*>(QStringLiteral("accountCaptchaAnswer"));
+    require(agreement && text && !agreement->isVisibleTo(&page) && submit->isEnabled(),
+            "sign-in does not require registration consent");
+    toggle->click();
+    await([&] { return !service.captcha().isEmpty(); });
+    require(agreement->isVisibleTo(&page) && !agreement->isChecked() && !submit->isEnabled(),
+            "registration requires consent without preselecting the checkbox");
+    username->setText(QStringLiteral("TestUser"));
+    password->setText(QStringLiteral("long-password"));
+    confirmation->setText(QStringLiteral("long-password"));
+    captcha->setText(QStringLiteral("abcd"));
+    submit->click();
+    for (auto* editor : {username, password, confirmation, captcha}) {
+        require(QMetaObject::invokeMethod(editor, "returnPressed", Qt::DirectConnection),
+                "exercise every editor's keyboard submission path");
+        QApplication::processEvents();
+        require(!service.busy() && service.purchase().request().isEmpty() &&
+                    api.registrations == 0 && agreement->hasFocus(),
+                "Enter cannot bypass consent and focuses the agreement checkbox");
+    }
+    require(text->openExternalLinks() &&
+                text->textInteractionFlags().testFlag(Qt::LinksAccessibleByKeyboard) &&
+                text->textInteractionFlags().testFlag(Qt::LinksAccessibleByMouse),
+            "both agreement documents can be opened with the mouse or keyboard");
+    for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "load translated registration consent");
+        QApplication::installTranslator(&translator);
+        QApplication::processEvents();
+        const QString expected = AccountPageWidget::tr("I have read and agree to the %1 and %2.")
+                                     .arg(AccountPageWidget::tr("User agreement"),
+                                          AccountPageWidget::tr("Privacy policy"));
+        QTextDocument document;
+        document.setHtml(text->text());
+        require(
+            document.toPlainText() == expected && agreement->accessibleName() == expected &&
+                text->text().contains(QStringLiteral("href=\"https://snowshot.top/terms.html\"")) &&
+                text->text().contains(QStringLiteral("href=\"%1\"")
+                                          .arg(snow_shot::app::distribution::privacyPolicyUrl())),
+            "consent copy retranslates while both document destinations stay stable");
+        for (const int width : {400, 260}) {
+            page.resize(width, 640);
+            for (int index = 0; index < 5; ++index)
+                QApplication::processEvents();
+            require(text->height() >= text->heightForWidth(text->width()) &&
+                        page.findChild<PageContainerWidget*>()
+                                ->scrollArea()
+                                ->horizontalScrollBar()
+                                ->maximum() == 0,
+                    "translated consent wraps without clipping or horizontal scrolling");
+        }
+        QApplication::removeTranslator(&translator);
+    }
+    agreement->setFocus();
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    QCoreApplication::sendEvent(agreement, &press);
+    QCoreApplication::sendEvent(agreement, &release);
+    require(agreement->isChecked() && submit->isEnabled(),
+            "keyboard consent enables registration immediately");
+    agreement->setChecked(false);
+    require(!submit->isEnabled(), "withdrawing consent disables registration immediately");
+    agreement->setChecked(true);
+    toggle->click();
+    require(!agreement->isVisibleTo(&page) && submit->isEnabled(),
+            "switching to sign-in removes the registration consent requirement");
+    toggle->click();
+    require(!agreement->isChecked() && !submit->isEnabled(),
+            "a new registration form requires fresh consent");
+    password->setText(QStringLiteral("long-password"));
+    confirmation->setText(QStringLiteral("long-password"));
+    captcha->setText(QStringLiteral("abcd"));
+    agreement->setChecked(true);
+    submit->click();
+    require(!agreement->isEnabled() && !submit->isEnabled(),
+            "in-flight registration freezes consent and prevents duplicate submissions");
+    await([&] { return !service.purchase().request().isEmpty(); });
+    require(api.registrations == 1, "explicit consent permits exactly one registration request");
+}
+
+void registrationDraftSurvivesExpiredPurchase() {
+    using namespace adqt::widgets;
+    Api api;
+    api.expirySeconds = -120;
+    auto config = options();
+    config.pollIntervalMs = 60000;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, config);
+    AccountPageWidget page(&service);
+    page.resize(640, 640);
+    page.show();
+    auto* username = page.findChild<QLineEdit*>(QStringLiteral("accountUsername"));
+    auto* password = page.findChild<QLineEdit*>(QStringLiteral("accountPassword"));
+    auto* confirmation = page.findChild<QLineEdit*>(QStringLiteral("accountPasswordConfirmation"));
+    auto* captcha = page.findChild<QLineEdit*>(QStringLiteral("accountCaptchaAnswer"));
+    auto* submit = page.findChild<AdButton*>(QStringLiteral("accountSubmit"));
+    auto* dismiss = page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"));
+    auto* code = page.findChild<QLabel*>(QStringLiteral("accountMiniProgramCode"));
+    page.findChild<AdButton*>(QStringLiteral("accountSwitchForm"))->click();
+    await([&] { return !service.captcha().isEmpty(); });
+    username->setText(QStringLiteral("DraftUser"));
+    auto* agreement = page.findChild<AdCheckbox*>(QStringLiteral("accountAgreement"));
+    agreement->setChecked(true);
+    password->setText(QStringLiteral("long-password"));
+    confirmation->setText(QStringLiteral("long-password"));
+    captcha->setText(QStringLiteral("abcd"));
+    submit->click();
+    await([&] { return !service.purchase().request().isEmpty(); });
+    require(!username->isVisibleTo(&page) && code->isVisibleTo(&page),
+            "the payment code temporarily replaces the registration form");
+    require(username->text() == u"DraftUser" && password->text() == u"long-password" &&
+                confirmation->text() == u"long-password",
+            "showing the payment code preserves the registration credentials");
+    require(service.purchase().remainingSeconds() == 0 && dismiss->isHidden(),
+            "the local countdown alone cannot discard a pending registration");
+    api.state = QStringLiteral("payment_pending");
+    service.refreshPurchase();
+    await([&] { return !service.purchase().polling(); });
+    require(!username->isVisibleTo(&page) && dismiss->isHidden(),
+            "payment confirmation keeps the registration draft hidden beyond code expiry");
+    api.state = QStringLiteral("expired");
+    service.refreshPurchase();
+    await([&] { return !service.purchase().pending(); });
+    require(dismiss->isVisibleTo(&page) && !code->isVisibleTo(&page),
+            "confirmed expiry offers a return action and hides the expired code");
+    const int previousCaptchas = api.captchas;
+    dismiss->click();
+    await([&] { return api.captchas > previousCaptchas && !service.captcha().isEmpty(); });
+    require(service.purchase().request().isEmpty() && confirmation->isVisibleTo(&page) &&
+                captcha->isVisibleTo(&page) && submit->text() == u"Register and continue",
+            "returning from an expired code restores registration instead of sign-in");
+    require(username->text() == u"DraftUser" && password->text() == u"long-password" &&
+                confirmation->text() == u"long-password" && captcha->text().isEmpty(),
+            "registration retry retains credentials and requires only a fresh image code");
+    require(agreement->isChecked(), "retrying the same registration draft retains its consent");
+    captcha->setText(QStringLiteral("efgh"));
+    api.state = QStringLiteral("awaiting_payment");
+    submit->click();
+    await([&] { return api.registrations == 2 && !service.busy(); });
+    const auto submitted = QJsonDocument::fromJson(api.registrationBody).object();
+    require(submitted.value(QStringLiteral("username")).toString() == u"DraftUser" &&
+                submitted.value(QStringLiteral("password")).toString() == u"long-password" &&
+                submitted.value(QStringLiteral("password_confirmation")).toString() ==
+                    u"long-password" &&
+                submitted.value(QStringLiteral("captcha_answer")).toString() == u"efgh",
+            "registration can generate another code using the retained form values");
+    api.state = QStringLiteral("fulfilled");
+    service.refreshPurchase();
+    await([&] { return service.signedIn(); });
+    require(password->text().isEmpty() && confirmation->text().isEmpty() &&
+                captcha->text().isEmpty(),
+            "successful activation clears the registration secrets");
+    require(!agreement->isChecked(), "successful activation clears registration consent");
+}
+
+void reopenedRegistrationPurchaseReturnsToRegistration() {
+    using namespace adqt::widgets;
+    for (const bool alreadyExpired : {false, true}) {
+        Api api;
+        auto config = options();
+        config.pollIntervalMs = 60000;
+        SnowShotApiClient client(api.origin());
+        AccountSessionService service(client, config);
+        service.registerAccount(QStringLiteral("RecoveredUser"), QStringLiteral("long-password"),
+                                QStringLiteral("long-password"), QStringLiteral("abcd"));
+        await([&] { return !service.purchase().request().isEmpty(); });
+        if (alreadyExpired) {
+            api.state = QStringLiteral("expired");
+            service.refreshPurchase();
+            await([&] { return !service.purchase().pending(); });
+        }
+        AccountPageWidget page(&service);
+        page.resize(640, 640);
+        page.show();
+        if (!alreadyExpired) {
+            api.state = QStringLiteral("expired");
+            service.refreshPurchase();
+            await([&] { return !service.purchase().pending(); });
+        }
+        page.findChild<AdButton*>(QStringLiteral("accountDismissPurchase"))->click();
+        await([&] { return !service.captcha().isEmpty(); });
+        auto* username = page.findChild<QLineEdit*>(QStringLiteral("accountUsername"));
+        require(username->text() == u"RecoveredUser" &&
+                    page.findChild<QLineEdit*>(QStringLiteral("accountPasswordConfirmation"))
+                        ->isVisibleTo(&page) &&
+                    page.findChild<AdButton*>(QStringLiteral("accountSubmit"))->text() ==
+                        u"Register and continue",
+                "a reopened registration purchase returns to registration with its username");
+    }
+}
+
 void registrationProofSurvivesRestartAndDoesNotOverrideStoredSession() {
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     Api api;
@@ -535,7 +1065,7 @@ void accountRequestsFollowSystemProxyPreference() {
     await([&] { return !service.captcha().isEmpty(); });
 }
 
-void accountUiAndMoney() {
+void accountUiAndCredits() {
     const auto creditsError =
         SnowShotApiClient::formatFailure(402, QStringLiteral("insufficient_credits"), {});
     const auto debtError =
@@ -546,10 +1076,24 @@ void accountUiAndMoney() {
                 debtError.contains(QStringLiteral("outstanding balance")) &&
                 reservedError.contains(QStringLiteral("reserved by other calls")),
             "billing failures explain distinct insufficient funds, debt, and concurrent holds");
-    require(AccountSessionService::formatMoney(QStringLiteral("9900000000")) == u"CNY 9.90",
-            "money uses exact nano-yuan conversion");
-    require(AccountSessionService::formatMoney(QStringLiteral("-1234567")) == u"−CNY 0.001234567",
-            "small usage and refunds retain exact decimal precision");
+    require(AccountSessionService::formatCredits(QStringLiteral("9900000000")) == u"990 credits",
+            "credits use exactly 100 credits per yuan");
+    require(AccountSessionService::formatCredits(QStringLiteral("-1234567")) == u"0 credits",
+            "sub-credit debits display zero without a negative-zero sign");
+    require(AccountSessionService::formatCredits(QStringLiteral("1")) == u"0 credits",
+            "sub-credit amounts omit decimals");
+    require(AccountSessionService::formatCredits(QStringLiteral("-12500000")) == u"−1 credits" &&
+                AccountSessionService::formatCredits(QStringLiteral("19999999")) == u"1 credits" &&
+                AccountSessionService::formatCredits(QStringLiteral("-19999999")) == u"−1 credits",
+            "credit amounts discard fractions toward zero");
+    require(AccountSessionService::formatCredits(QStringLiteral("9223372036854775807")) ==
+                    u"922337203685 credits" &&
+                AccountSessionService::formatCredits(QStringLiteral("-9223372036854775808")) ==
+                    u"−922337203685 credits",
+            "credit conversion preserves both signed integer limits without overflow");
+    require(AccountSessionService::formatCredits(QString()) == u"0 credits" &&
+                AccountSessionService::formatCredits(QStringLiteral("invalid")) == u"0 credits",
+            "missing and invalid credit values display zero");
     Api api;
     api.debt = QStringLiteral("1000000000");
     api.balance = QStringLiteral("0");
@@ -563,19 +1107,299 @@ void accountUiAndMoney() {
     require(username && submit && !username->accessibleName().isEmpty(),
             "account inputs have stable names and accessible labels");
     service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
-    await([&] { return !service.transactions().isEmpty(); });
+    await([&] { return !service.account().isEmpty() && !service.transactions().isEmpty(); });
     QApplication::processEvents();
     auto* balance = page.findChild<QLabel*>(QStringLiteral("accountAvailableCredit"));
-    require(balance && balance->text() == u"CNY 0.00", "signed-in view displays backend balance");
-    require(!page.findChild<QWidget*>(QStringLiteral("accountOutstandingBalance"))->isHidden(),
+    require(balance && balance->text() == u"0" &&
+                balance->accessibleName() == u"Available credits" &&
+                balance->accessibleDescription() == u"0 credits" &&
+                balance->textInteractionFlags().testFlag(Qt::TextSelectableByMouse),
+            "balance displays selectable digits with an accessible credit unit");
+    const auto* coin = page.findChild<QLabel*>(QStringLiteral("accountCreditIcon"));
+    require(coin && coin->isVisible() && !coin->pixmap().isNull() &&
+                coin->parentWidget() == balance->parentWidget() &&
+                coin->geometry().right() < balance->geometry().left(),
+            "a rendered coin sits to the left of the available credit amount");
+    auto* cumulative = page.findChild<QLabel*>(QStringLiteral("accountCumulativeRecharge"));
+    require(
+        cumulative && cumulative->text() == u"Total top-ups: 18800 credits",
+        "cumulative recharge uses the account total independently of balance and transaction page");
+    auto* debt =
+        page.findChild<adqt::widgets::AdAlert*>(QStringLiteral("accountOutstandingBalance"));
+    require(debt && !debt->isHidden() && debt->text() == u"Outstanding balance: 100 credits",
             "outstanding balances show a paid-call warning");
+    for (const auto* label : page.findChildren<QLabel*>()) {
+        require(!label->text().contains(QStringLiteral("No expiration")) &&
+                    !label->text().contains(QStringLiteral("never expire")),
+                "account overview omits permanent membership and credit descriptions");
+    }
+    struct LocalizedCredits {
+        const char* locale;
+        const char16_t* balance;
+        const char16_t* cumulative;
+        const char16_t* debt;
+        const char16_t* refund;
+    };
+    for (const auto& expected : {
+             LocalizedCredits{"en_US", u"0 credits", u"Total top-ups: 18800 credits",
+                              u"Outstanding balance: 100 credits", u"−990 credits"},
+             LocalizedCredits{"zh_CN", u"0 积分", u"累计充值：18800 积分", u"待偿还欠款：100 积分",
+                              u"−990 积分"},
+             LocalizedCredits{"zh_TW", u"0 積分", u"累計儲值：18800 積分", u"待償還欠款：100 積分",
+                              u"−990 積分"},
+         }) {
+        QTranslator translator;
+        require(
+            translator.load(
+                QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(expected.locale))),
+            "load credit display translations");
+        QApplication::installTranslator(&translator);
+        QApplication::processEvents();
+        require(balance->text() == u"0" &&
+                    balance->accessibleDescription() == QStringView(expected.balance) &&
+                    balance->parentWidget()->toolTip() ==
+                        AccountPageWidget::tr("Available credits") &&
+                    cumulative->text() == QStringView(expected.cumulative) &&
+                    debt->text() == QStringView(expected.debt),
+                "language changes retranslate all account credit summaries");
+        const auto* refund = page.findChild<QWidget*>(QStringLiteral("accountTransaction-refund1"))
+                                 ->findChild<QLabel*>(QStringLiteral("accountTransactionAmount"));
+        require(refund && refund->text() == QStringView(expected.refund),
+                "transaction amounts use localized credit units");
+        QApplication::removeTranslator(&translator);
+        QApplication::processEvents();
+    }
     bool processing = false;
-    for (const auto* label : page.findChildren<QLabel*>())
-        processing = processing || label->text().contains(QStringLiteral("Processing"));
+    for (const auto* tag : page.findChildren<adqt::widgets::AdTag*>())
+        processing =
+            processing || (tag->text() == u"Processing" &&
+                           tag->colorScheme() == adqt::widgets::AdTag::ColorScheme::Processing);
     require(processing, "accepted refund is displayed as processing, never completed");
+    api.emptyTransactions = true;
+    service.loadTransactions();
+    await([&] { return service.transactions().isEmpty(); });
+    require(cumulative->text() == u"Total top-ups: 18800 credits",
+            "empty transaction history does not reset cumulative recharge");
+    api.cumulativeRecharge = QStringLiteral("88800000000");
+    service.refreshAccount();
+    await([&] { return cumulative->text() == u"Total top-ups: 8880 credits"; });
+    for (const auto& amount : {
+             std::pair{QStringLiteral("1"), QStringLiteral("0")},
+             std::pair{QStringLiteral("12500000"), QStringLiteral("1")},
+             std::pair{QStringLiteral("19999999"), QStringLiteral("1")},
+             std::pair{QStringLiteral("9223372036854775807"), QStringLiteral("922337203685")},
+         }) {
+        api.balance = amount.first;
+        service.refreshAccount();
+        await([&] {
+            return !service.busy() &&
+                   service.account().value(QStringLiteral("available_credit_nano_yuan")) ==
+                       amount.first &&
+                   balance->text() == amount.second;
+        });
+        require(balance->accessibleDescription() == amount.second + QStringLiteral(" credits"),
+                "balance refresh uses integer credits while retaining the exact account value");
+    }
     page.resize(256, 220);
     QApplication::processEvents();
     require(page.minimumSizeHint().width() <= 256, "account page supports narrow desktop content");
+}
+
+void accountTransactionsRemainReadableWhenResized() {
+    using namespace adqt::widgets;
+    namespace styles = snow_shot::presentation::styles;
+    Api api;
+    api.debt = QStringLiteral("1200000000");
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    page.resize(900, 640);
+    page.show();
+    service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+    await([&] { return service.transactions().size() == 3; });
+    const auto verify = [&] {
+        for (int index = 0; index < 5; ++index)
+            QApplication::processEvents();
+        auto* scroll = page.findChild<PageContainerWidget*>()->scrollArea();
+        require(scroll->horizontalScrollBar()->maximum() == 0,
+                "account details never require horizontal scrolling");
+        const auto* coin = page.findChild<QLabel*>(QStringLiteral("accountCreditIcon"));
+        const auto* balance = page.findChild<QLabel*>(QStringLiteral("accountAvailableCredit"));
+        require(coin && balance && !coin->pixmap().isNull() &&
+                    coin->pixmap().devicePixelRatio() == coin->devicePixelRatioF() &&
+                    coin->pixmap().size() ==
+                        QSize(qRound(coin->width() * coin->devicePixelRatioF()),
+                              qRound(coin->height() * coin->devicePixelRatioF())) &&
+                    coin->parentWidget()->rect().contains(coin->geometry()) &&
+                    balance->parentWidget()->rect().contains(balance->geometry()) &&
+                    coin->geometry().right() < balance->geometry().left(),
+                "the credit coin and amount stay sharp and separate across widths and font sizes");
+        const auto* debt = page.findChild<AdAlert*>(QStringLiteral("accountOutstandingBalance"));
+        for (const auto* label : debt->findChildren<QLabel*>()) {
+            if (!label->isHidden() && !label->text().isEmpty()) {
+                if (label->height() < label->heightForWidth(label->width()))
+                    std::cerr << "Warning text clipped at page " << page.width() << ", font "
+                              << label->font().pixelSize() << ", "
+                              << label->objectName().toStdString() << ": width=" << label->width()
+                              << " height=" << label->height()
+                              << " required=" << label->heightForWidth(label->width())
+                              << " alertHeight=" << debt->height()
+                              << " alertHfw=" << debt->heightForWidth(debt->width())
+                              << " hostHeight=" << label->parentWidget()->height() << " hostHfw="
+                              << label->parentWidget()->heightForWidth(label->width()) << '\n';
+                require(label->height() >= label->heightForWidth(label->width()),
+                        "outstanding balance warnings show their complete wrapped text");
+            }
+        }
+        auto* row = page.findChild<QWidget*>(QStringLiteral("accountTransaction-refund1"));
+        const auto widgets = row->findChildren<QWidget*>(Qt::FindDirectChildrenOnly);
+        for (const auto* child : widgets) {
+            if (child->isHidden())
+                continue;
+            require(row->rect().contains(child->geometry()),
+                    "transaction fields fit inside their row");
+            for (const auto* other : widgets)
+                if (child != other && !other->isHidden())
+                    require(!child->geometry().intersects(other->geometry()),
+                            "transaction details do not overlap at any content width");
+        }
+        const auto* amount = row->findChild<QLabel*>(QStringLiteral("accountTransactionAmount"));
+        require(amount &&
+                    amount->text() ==
+                        AccountSessionService::formatCredits(QStringLiteral("-9900000000")) &&
+                    amount->textInteractionFlags().testFlag(Qt::TextSelectableByMouse),
+                "responsive transactions retain exact, selectable amounts");
+        const auto* status = row->findChild<AdTag*>(QStringLiteral("accountTransactionStatus"));
+        require(status && status->colorScheme() == AdTag::ColorScheme::Processing &&
+                    status->focusPolicy() == Qt::NoFocus,
+                "transaction states remain informative without adding a keyboard stop");
+        require(row->findChild<QLabel*>(QStringLiteral("accountTransactionOrder"))
+                    ->text()
+                    .contains(QStringLiteral("order1")),
+                "transaction order identifiers remain available in compact layouts");
+    };
+    for (const int width : {900, 640, 400, 292, 260}) {
+        page.resize(width, 640);
+        verify();
+    }
+    for (const auto* locale : {"zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "load localized account transaction details");
+        QApplication::installTranslator(&translator);
+        for (const int width : {900, 260}) {
+            page.resize(width, 640);
+            verify();
+        }
+        QApplication::removeTranslator(&translator);
+    }
+    styles::ThemeStyleConfig normal;
+    normal.appFont = QApplication::font();
+    auto large = normal;
+    large.fontSize = 21;
+    large.appFont.setPixelSize(21);
+    styles::ThemeManager::instance().setThemeStyleConfig(large);
+    for (const int width : {900, 400, 260}) {
+        page.resize(width, 640);
+        verify();
+    }
+    styles::ThemeManager::instance().setThemeStyleConfig(normal);
+    api.emptyTransactions = true;
+    service.loadTransactions();
+    await([&] { return service.transactions().isEmpty(); });
+    QApplication::processEvents();
+    require(
+        page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmpty"))->isVisibleTo(&page) &&
+            page.findChild<QWidget*>(QStringLiteral("accountTransactionHeader"))->isHidden(),
+        "empty account history provides guidance without unused column headings");
+}
+
+void emptyAccountTransactionsMatchScreenshotHistory() {
+    namespace styles = snow_shot::presentation::styles;
+    Api api;
+    SnowShotApiClient client(api.origin());
+    AccountSessionService service(client, options());
+    AccountPageWidget page(&service);
+    ScreenshotHistoryPageWidget historyPage;
+    page.resize(900, 800);
+    page.show();
+    service.signIn(QStringLiteral("TestUser"), QStringLiteral("long-password"));
+    await([&] { return service.transactions().size() == 3; });
+    api.emptyTransactions = true;
+    service.loadTransactions();
+    await([&] { return service.transactions().isEmpty(); });
+    const auto verify = [&] {
+        for (int index = 0; index < 5; ++index)
+            QApplication::processEvents();
+        auto* icon = page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmptyIcon"));
+        auto* title = page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmpty"));
+        auto* description =
+            page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmptyDescription"));
+        require(icon && title && description && icon->isVisibleTo(&page) &&
+                    title->isVisibleTo(&page) && description->isVisibleTo(&page),
+                "empty account transactions show an icon, title, and description");
+        const auto* historyIcon =
+            historyPage.findChild<QLabel*>(QStringLiteral("screenshotHistoryEmptyIcon"));
+        const auto* historyTitle =
+            historyPage.findChild<QLabel*>(QStringLiteral("screenshotHistoryEmptyTitle"));
+        const auto* historyDescription =
+            historyPage.findChild<QLabel*>(QStringLiteral("screenshotHistoryEmptyDescription"));
+        require(!icon->pixmap().isNull() && icon->size() == historyIcon->size() &&
+                    icon->pixmap().toImage() == historyIcon->pixmap().toImage() &&
+                    title->font() == historyTitle->font() &&
+                    title->palette().color(QPalette::WindowText) ==
+                        historyTitle->palette().color(QPalette::WindowText) &&
+                    description->palette().color(QPalette::WindowText) ==
+                        historyDescription->palette().color(QPalette::WindowText),
+                "account empty states match screenshot history icons, titles, and colors");
+        require(icon->geometry().bottom() < title->geometry().top() &&
+                    title->geometry().bottom() < description->geometry().top(),
+                "empty account state content remains vertically separated");
+        for (const auto* label : {title, description})
+            require(label->alignment() == Qt::AlignCenter &&
+                        label->height() >= label->heightForWidth(label->width()),
+                    "empty account state text stays centered and wraps without clipping");
+        auto* scroll = page.findChild<PageContainerWidget*>()->scrollArea();
+        require(scroll->horizontalScrollBar()->maximum() == 0,
+                "empty account transactions fit narrow content without horizontal scrolling");
+        require(page.findChild<QWidget*>(QStringLiteral("accountTransactionHeader"))->isHidden(),
+                "empty account transactions hide unused column headings");
+    };
+    styles::ThemeStyleConfig normal;
+    normal.appFont = QApplication::font();
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        auto theme = normal;
+        theme.appearance = appearance;
+        styles::ThemeManager::instance().setThemeStyleConfig(theme);
+        historyPage.applyTheme(styles::ThemeManager::instance().themeColorScheme());
+        for (const int width : {900, 260}) {
+            page.resize(width, 800);
+            verify();
+        }
+    }
+    for (const auto* locale : {"zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "load localized empty account transaction guidance");
+        QApplication::installTranslator(&translator);
+        verify();
+        require(page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmpty"))->text() !=
+                        u"No transactions yet" &&
+                    page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmptyDescription"))
+                            ->text() != u"Top-ups, usage charges, and refunds appear here.",
+                "language changes retranslate both empty account state labels");
+        QApplication::removeTranslator(&translator);
+    }
+    styles::ThemeManager::instance().setThemeStyleConfig(normal);
+    api.emptyTransactions = false;
+    service.loadTransactions();
+    await([&] { return service.transactions().size() == 3; });
+    require(!page.findChild<QLabel*>(QStringLiteral("accountTransactionsEmptyIcon")) &&
+                page.findChild<QWidget*>(QStringLiteral("accountTransactions"))->minimumHeight() ==
+                    0,
+            "loaded transactions replace the complete empty state and release its space");
 }
 
 void languageChangeRetranslatesCachedErrors() {
@@ -692,6 +1516,7 @@ void accountFormValidationStaysWithFields() {
     await([&] { return !service.captcha().isEmpty(); });
     for (auto* item : form->items())
         require(item->helpText().isEmpty(), "switching forms clears old validation hints");
+    page.findChild<AdCheckbox*>(QStringLiteral("accountAgreement"))->setChecked(true);
     submit->click();
     require(!form->field(QStringLiteral("password_confirmation"))->helpText().isEmpty(),
             "registration requires password confirmation even when both password fields are empty");
@@ -750,6 +1575,7 @@ void accountServerValidationStaysWithFields() {
         if (rejection.path.contains(QStringLiteral("registration"))) {
             page.findChild<AdButton*>(QStringLiteral("accountSwitchForm"))->click();
             await([&] { return !service.captcha().isEmpty(); });
+            page.findChild<AdCheckbox*>(QStringLiteral("accountAgreement"))->setChecked(true);
         }
         page.findChild<QLineEdit*>(QStringLiteral("accountUsername"))
             ->setText(QStringLiteral("TestUser"));
@@ -1030,6 +1856,8 @@ void screenshots(const QString& directory) {
     styles::ThemeManager::instance().setThemeStyleConfig(theme);
     capture(QStringLiteral("registration-light"));
     narrow(QStringLiteral("registration"));
+    page.findChild<adqt::widgets::AdCheckbox*>(QStringLiteral("accountAgreement"))
+        ->setChecked(true);
     page.findChild<adqt::widgets::AdButton*>(QStringLiteral("accountSubmit"))->click();
     capture(QStringLiteral("registration-validation-light"));
     narrow(QStringLiteral("registration-validation"));
@@ -1049,6 +1877,52 @@ void screenshots(const QString& directory) {
     theme.appearance = styles::ThemeAppearance::Light;
     styles::ThemeManager::instance().setThemeStyleConfig(theme);
     capture(QStringLiteral("profile-light"));
+    api.state = QStringLiteral("awaiting_payment");
+    service.beginTopUp();
+    await([&] { return !service.purchase().request().isEmpty(); });
+    page.resize(900, 960);
+    capture(QStringLiteral("top-up-light"));
+    narrow(QStringLiteral("top-up"));
+    theme.appearance = styles::ThemeAppearance::Dark;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    page.resize(900, 960);
+    capture(QStringLiteral("top-up-dark"));
+    service.cancelPurchase();
+    await([&] { return service.purchase().request().isEmpty(); });
+    capture(QStringLiteral("top-up-canceled-dark"));
+    theme.appearance = styles::ThemeAppearance::Light;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    page.resize(900, 800);
+    capture(QStringLiteral("profile-overview-light"));
+    QTranslator overviewTranslator;
+    require(overviewTranslator.load(QStringLiteral(":/i18n/snow_shot_zh_CN.qm")),
+            "load Chinese account overview preview");
+    QApplication::installTranslator(&overviewTranslator);
+    capture(QStringLiteral("profile-overview-zh_CN"));
+    QApplication::removeTranslator(&overviewTranslator);
+    theme.appearance = styles::ThemeAppearance::Dark;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    capture(QStringLiteral("profile-overview-dark"));
+    theme.appearance = styles::ThemeAppearance::Light;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    api.emptyTransactions = true;
+    service.loadTransactions();
+    await([&] { return service.transactions().isEmpty(); });
+    capture(QStringLiteral("profile-empty"));
+    theme.appearance = styles::ThemeAppearance::Dark;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    capture(QStringLiteral("profile-empty-dark"));
+    theme.appearance = styles::ThemeAppearance::Light;
+    styles::ThemeManager::instance().setThemeStyleConfig(theme);
+    QApplication::installTranslator(&overviewTranslator);
+    capture(QStringLiteral("profile-empty-zh_CN"));
+    page.resize(260, 800);
+    capture(QStringLiteral("profile-empty-zh_CN-narrow"));
+    QApplication::removeTranslator(&overviewTranslator);
+    api.emptyTransactions = false;
+    service.loadTransactions();
+    await([&] { return service.transactions().size() == 3; });
+    page.resize(900, 640);
     api.balance = QStringLiteral("0");
     api.debt = QStringLiteral("1200000000");
     service.refreshAccount();
@@ -1069,6 +1943,8 @@ void screenshots(const QString& directory) {
     styles::ThemeManager::instance().setThemeStyleConfig(theme);
     page.resize(900, 640);
     capture(QStringLiteral("profile-debt-large-type"));
+    page.resize(260, 640);
+    capture(QStringLiteral("profile-debt-large-type-narrow"));
 }
 
 void secureStore() {
@@ -1122,6 +1998,28 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (arguments.contains(QStringLiteral("--top-up-cancellation-only"))) {
+        topUpCanBeCancelledAndRestarted();
+        topUpCancellationPreservesUnconfirmedOrCompletedPayments();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (arguments.contains(QStringLiteral("--payment-ui-only"))) {
+        automaticPaymentPollingDoesNotShowButtonLoading();
+        paymentActionsStayInOneRowAndDetailsAreCentered();
+        uncertainPollingBacksOffAndManualRefreshRecovers();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (arguments.contains(QStringLiteral("--account-layout-only"))) {
+        accountTransactionsRemainReadableWhenResized();
+        emptyAccountTransactionsMatchScreenshotHistory();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    registrationRequiresExplicitAgreement();
+    registrationDraftSurvivesExpiredPurchase();
+    reopenedRegistrationPurchaseReturnsToRegistration();
     accountFormsAdvanceOneEditorPerTab();
     captchaImageDprProcesses();
     accountNavigationIsStandaloneAndFollowsGeneral();
@@ -1130,11 +2028,15 @@ int main(int argc, char** argv) {
     registrationReconcilesBeyondExpiryAndClaims();
     temporaryAccountLinkClaimsWithoutPayment();
     explicitIdentityChoiceSuppressesAutomaticClaim();
+    automaticPaymentPollingDoesNotShowButtonLoading();
+    paymentActionsStayInOneRowAndDetailsAreCentered();
     uncertainPollingBacksOffAndManualRefreshRecovers();
     registrationProofSurvivesRestartAndDoesNotOverrideStoredSession();
     tokenRefreshPreservesQueuedOfficialCalls();
     accountRequestsFollowSystemProxyPreference();
-    accountUiAndMoney();
+    accountUiAndCredits();
+    accountTransactionsRemainReadableWhenResized();
+    emptyAccountTransactionsMatchScreenshotHistory();
     languageChangeRetranslatesCachedErrors();
     accountFormValidationStaysWithFields();
     accountServerValidationStaysWithFields();

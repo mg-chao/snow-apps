@@ -13,31 +13,35 @@
         </message>
         <message>
             <source>Account</source>
-            <translation>账户</translation>
+            <translation>账号</translation>
         </message>
         <message>
             <source>Account linked</source>
-            <translation>账户已绑定</translation>
+            <translation>账号已绑定</translation>
         </message>
         <message>
             <source>Account transactions</source>
-            <translation>账户明细</translation>
+            <translation>账号明细</translation>
         </message>
         <message>
             <source>Activate %1</source>
             <translation>激活 %1</translation>
         </message>
         <message>
-            <source>Active membership · No expiration</source>
-            <translation>已开通会员 · 永久有效</translation>
-        </message>
-        <message>
             <source>Already have an account? Sign in</source>
-            <translation>已有账户？登录</translation>
+            <translation>已有账号？登录</translation>
         </message>
         <message>
             <source>Available credits</source>
-            <translation>可用余额</translation>
+            <translation>可用积分</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Cancel payment</source>
+            <translation>取消支付</translation>
         </message>
         <message>
             <source>Code valid for %1:%2 · Valid until %3</source>
@@ -61,15 +65,27 @@
         </message>
         <message>
             <source>Create an account</source>
-            <translation>注册账户</translation>
+            <translation>注册账号</translation>
         </message>
         <message>
             <source>Create your account</source>
-            <translation>注册 Snow Shot 账户</translation>
+            <translation>注册 Snow Shot 账号</translation>
+        </message>
+        <message>
+            <source>Credits</source>
+            <translation>积分</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>日期</translation>
         </message>
         <message>
             <source>Failed</source>
             <translation>失败</translation>
+        </message>
+        <message>
+            <source>I have read and agree to the %1 and %2.</source>
+            <translation>我已阅读并同意%1和%2。</translation>
         </message>
         <message>
             <source>I've Paid</source>
@@ -84,12 +100,12 @@
             <translation>加载更多</translation>
         </message>
         <message>
-            <source>Membership and purchased credits never expire.</source>
-            <translation>会员资格和充值余额均永久有效。</translation>
+            <source>Manage and view account data</source>
+            <translation>管理、查看账号数据</translation>
         </message>
         <message>
-            <source>No transactions yet. Top-ups, usage charges, and refunds appear here.</source>
-            <translation>暂无账户明细。充值、消费和退款记录会显示在这里。</translation>
+            <source>No transactions yet</source>
+            <translation>暂无账号明细</translation>
         </message>
         <message>
             <source>Order ID: %1</source>
@@ -124,20 +140,24 @@
             <translation>待处理</translation>
         </message>
         <message>
+            <source>Privacy policy</source>
+            <translation>隐私政策</translation>
+        </message>
+        <message>
             <source>Processing</source>
             <translation>处理中</translation>
         </message>
         <message>
             <source>Purchase credits</source>
-            <translation>充值余额</translation>
+            <translation>充值积分</translation>
         </message>
         <message>
             <source>Purchase credits for %1</source>
-            <translation>为 %1 充值</translation>
+            <translation>为 %1 充值积分</translation>
         </message>
         <message>
             <source>Purchases are currently unavailable. Your account and transaction records are still available.</source>
-            <translation>充值暂不可用，账户信息和明细仍可查看。</translation>
+            <translation>充值暂不可用，账号信息和明细仍可查看。</translation>
         </message>
         <message>
             <source>Refresh</source>
@@ -169,7 +189,7 @@
         </message>
         <message>
             <source>Scan with your own WeChat account. An existing temporary account will be linked and signed in automatically using these desktop credentials. Otherwise, select a package and confirm your order. The WeChat link cannot be changed.</source>
-            <translation>请使用本人的微信扫码。已有临时账户将使用在电脑端填写的用户名和密码完成绑定并自动登录；否则，请选择套餐并确认购买。微信绑定后无法更换。</translation>
+            <translation>请使用本人的微信扫码。已有临时账号将使用在电脑端填写的用户名和密码完成绑定并自动登录；否则，请选择套餐并确认购买。微信绑定后无法更换。</translation>
         </message>
         <message>
             <source>Sign in</source>
@@ -181,15 +201,19 @@
         </message>
         <message>
             <source>Sign in to an existing account</source>
-            <translation>登录已有账户</translation>
+            <translation>登录已有账号</translation>
         </message>
         <message>
             <source>Sign out</source>
             <translation>退出登录</translation>
         </message>
         <message>
+            <source>Status</source>
+            <translation>状态</translation>
+        </message>
+        <message>
             <source>The account service is unavailable.</source>
-            <translation>账户服务暂不可用。</translation>
+            <translation>账号服务暂不可用。</translation>
         </message>
         <message>
             <source>The payment result is still being checked</source>
@@ -204,8 +228,28 @@
             <translation>充值</translation>
         </message>
         <message>
+            <source>Top-ups, usage charges, and refunds appear here.</source>
+            <translation>充值、消费和退款记录会显示在这里。</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds.</source>
+            <translation>查看充值、使用扣费和退款记录。</translation>
+        </message>
+        <message>
+            <source>Total top-ups: %1</source>
+            <translation>累计充值：%1</translation>
+        </message>
+        <message>
+            <source>Transaction</source>
+            <translation>交易类型</translation>
+        </message>
+        <message>
             <source>Usage</source>
             <translation>消费</translation>
+        </message>
+        <message>
+            <source>User agreement</source>
+            <translation>用户协议</translation>
         </message>
         <message>
             <source>Username</source>
@@ -220,7 +264,7 @@
         <name>AccountSessionService</name>
         <message>
             <source>Complete your first payment to activate this account.</source>
-            <translation>请完成首次支付以激活此账户。</translation>
+            <translation>请完成首次支付以激活此账号。</translation>
         </message>
         <message>
             <source>Payment has not been confirmed. We will keep checking.</source>
@@ -252,7 +296,7 @@
         </message>
         <message>
             <source>This purchase must use the WeChat account linked to your Snow Shot account.</source>
-            <translation>请使用与此 Snow Shot 账户绑定的微信账户支付。</translation>
+            <translation>请使用与此 Snow Shot 账号绑定的微信账号支付。</translation>
         </message>
         <message>
             <source>This username is already taken or temporarily reserved.</source>
@@ -1487,7 +1531,7 @@
         </message>
         <message>
             <source>Account</source>
-            <translation>账户</translation>
+            <translation>账号</translation>
         </message>
         <message>
             <source>Accuracy First</source>
@@ -3275,7 +3319,7 @@
         </message>
         <message>
             <source>Membership, credits and transactions</source>
-            <translation>会员、余额和账户明细</translation>
+            <translation>会员、余额和账号明细</translation>
         </message>
         <message>
             <source>Memory Optimization Policy</source>
@@ -5790,6 +5834,10 @@ Unavailable: %2</source>
     <context>
         <name>snow_shot::app::AccountSessionService</name>
         <message>
+            <source>%1 credits</source>
+            <translation>%1 积分</translation>
+        </message>
+        <message>
             <source>Confirm your password.</source>
             <translation>请确认密码。</translation>
         </message>
@@ -5806,6 +5854,10 @@ Unavailable: %2</source>
             <translation>请输入用户名。</translation>
         </message>
         <message>
+            <source>This payment is already being processed. We will keep checking its result.</source>
+            <translation>这笔支付正在处理中，我们将继续查询支付结果。</translation>
+        </message>
+        <message>
             <source>Use 3–32 letters, numbers, underscores, dots, or hyphens for your username.</source>
             <translation>用户名须为 3–32 个字母、数字、下划线、点或连字符。</translation>
         </message>
@@ -5815,7 +5867,7 @@ Unavailable: %2</source>
         </message>
         <message>
             <source>Your account is activated. Sign in with your username and password if automatic sign-in does not complete.</source>
-            <translation>账户已激活。如果未能自动登录，请使用用户名和密码登录。</translation>
+            <translation>账号已激活。如果未能自动登录，请使用用户名和密码登录。</translation>
         </message>
         <message>
             <source>Your session could not be saved securely. Keep this app open until payment is confirmed; you may need to sign in again after restarting.</source>

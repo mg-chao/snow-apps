@@ -28,16 +28,20 @@
             <translation>Activate %1</translation>
         </message>
         <message>
-            <source>Active membership · No expiration</source>
-            <translation>Active membership · No expiration</translation>
-        </message>
-        <message>
             <source>Already have an account? Sign in</source>
             <translation>Already have an account? Sign in</translation>
         </message>
         <message>
             <source>Available credits</source>
             <translation>Available credits</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Cancel payment</source>
+            <translation>Cancel payment</translation>
         </message>
         <message>
             <source>Code valid for %1:%2 · Valid until %3</source>
@@ -68,8 +72,20 @@
             <translation>Create your account</translation>
         </message>
         <message>
+            <source>Credits</source>
+            <translation>Credits</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>Date</translation>
+        </message>
+        <message>
             <source>Failed</source>
             <translation>Failed</translation>
+        </message>
+        <message>
+            <source>I have read and agree to the %1 and %2.</source>
+            <translation>I have read and agree to the %1 and %2.</translation>
         </message>
         <message>
             <source>I've Paid</source>
@@ -84,12 +100,12 @@
             <translation>Load more</translation>
         </message>
         <message>
-            <source>Membership and purchased credits never expire.</source>
-            <translation>Membership and purchased credits never expire.</translation>
+            <source>Manage and view account data</source>
+            <translation>Manage and view account data</translation>
         </message>
         <message>
-            <source>No transactions yet. Top-ups, usage charges, and refunds appear here.</source>
-            <translation>No transactions yet. Top-ups, usage charges, and refunds appear here.</translation>
+            <source>No transactions yet</source>
+            <translation>No transactions yet</translation>
         </message>
         <message>
             <source>Order ID: %1</source>
@@ -122,6 +138,10 @@
         <message>
             <source>Pending</source>
             <translation>Pending</translation>
+        </message>
+        <message>
+            <source>Privacy policy</source>
+            <translation>Privacy policy</translation>
         </message>
         <message>
             <source>Processing</source>
@@ -188,6 +208,10 @@
             <translation>Sign out</translation>
         </message>
         <message>
+            <source>Status</source>
+            <translation>Status</translation>
+        </message>
+        <message>
             <source>The account service is unavailable.</source>
             <translation>The account service is unavailable.</translation>
         </message>
@@ -204,8 +228,28 @@
             <translation>Top-up</translation>
         </message>
         <message>
+            <source>Top-ups, usage charges, and refunds appear here.</source>
+            <translation>Top-ups, usage charges, and refunds appear here.</translation>
+        </message>
+        <message>
+            <source>Top-ups, usage charges, and refunds.</source>
+            <translation>Top-ups, usage charges, and refunds.</translation>
+        </message>
+        <message>
+            <source>Total top-ups: %1</source>
+            <translation>Total top-ups: %1</translation>
+        </message>
+        <message>
+            <source>Transaction</source>
+            <translation>Transaction</translation>
+        </message>
+        <message>
             <source>Usage</source>
             <translation>Usage</translation>
+        </message>
+        <message>
+            <source>User agreement</source>
+            <translation>User agreement</translation>
         </message>
         <message>
             <source>Username</source>
@@ -5790,6 +5834,10 @@ Unavailable: %2</translation>
     <context>
         <name>snow_shot::app::AccountSessionService</name>
         <message>
+            <source>%1 credits</source>
+            <translation>%1 credits</translation>
+        </message>
+        <message>
             <source>Confirm your password.</source>
             <translation>Confirm your password.</translation>
         </message>
@@ -5804,6 +5852,10 @@ Unavailable: %2</translation>
         <message>
             <source>Enter your username.</source>
             <translation>Enter your username.</translation>
+        </message>
+        <message>
+            <source>This payment is already being processed. We will keep checking its result.</source>
+            <translation>This payment is already being processed. We will keep checking its result.</translation>
         </message>
         <message>
             <source>Use 3–32 letters, numbers, underscores, dots, or hyphens for your username.</source>

@@ -334,13 +334,14 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
             "the remaining QQ group spans the full project link row width");
     snapshot(page, QStringLiteral("about-actions"));
     const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
-    const std::array<std::pair<const char*, QUrl>, 6> links{{
+    const std::array<std::pair<const char*, QUrl>, 7> links{{
         {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
         {"aboutSourceCode", QUrl(project)},
         {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
         {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
         {"aboutQqGroup3", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_3_URL))},
         {"aboutPrivacyPolicy", QUrl(snow_shot::app::distribution::privacyPolicyUrl())},
+        {"aboutUserAgreement", QUrl(QStringLiteral("https://snowshot.top/terms.html"))},
     }};
     for (const auto& [name, url] : links) {
         auto* button = child<QAbstractButton>(page, name);
@@ -414,12 +415,16 @@ void largerTypeKeepsEveryActionReachable() {
     auto* scroll = child<adqt::widgets::AdScrollArea>(page, "pageScrollArea");
     require(scroll->horizontalScrollBar()->maximum() == 0,
             "larger fonts and a narrow page never require horizontal scrolling");
+    const auto agreementRect = child<QAbstractButton>(page, "aboutUserAgreement")->geometry();
+    const auto privacyRect = child<QAbstractButton>(page, "aboutPrivacyPolicy")->geometry();
+    require(agreementRect.top() == privacyRect.top() && agreementRect.right() < privacyRect.left(),
+            "legal links share one row without overlap even with larger fonts");
     auto* artwork = child<QWidget>(page, "aboutArtwork");
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
-    for (const char* name :
-         {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction", "aboutWebsite",
-          "aboutSourceCode", "aboutFeedback", "aboutQqGroup3", "aboutPrivacyPolicy"}) {
+    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
+                             "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup3",
+                             "aboutPrivacyPolicy", "aboutUserAgreement"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -985,6 +990,14 @@ void mainNavigationSearchThemesAndLanguages() {
                     .contains(expectedTranslation(translator, locale, "AboutPageWidget",
                                                   "GNU General Public License v3.0 or later")),
                 "license details retranslate");
+        require(child<adqt::widgets::AdButton>(*page, "aboutUserAgreement")->text() ==
+                    expectedTranslation(translator, locale, "AboutPageWidget", "User agreement"),
+                "the user agreement link retranslates immediately");
+        const auto agreementRect = child<QAbstractButton>(*page, "aboutUserAgreement")->geometry();
+        const auto privacyRect = child<QAbstractButton>(*page, "aboutPrivacyPolicy")->geometry();
+        require(agreementRect.top() == privacyRect.top() &&
+                    agreementRect.right() < privacyRect.left(),
+                "translated legal links share one row without overlap");
         require(
             child<QLabel>(*page, "aboutOpenSource")->text() ==
                     expectedTranslation(translator, locale, "AboutPageWidget",

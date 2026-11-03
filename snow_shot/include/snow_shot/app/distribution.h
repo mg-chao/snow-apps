@@ -81,6 +81,10 @@ struct Policy {
     return QString::fromUtf8(SNOW_SHOT_PRIVACY_POLICY_URL);
 }
 
+[[nodiscard]] inline QString userAgreementUrl() {
+    return QStringLiteral("https://snowshot.top/terms.html");
+}
+
 } // namespace snow_shot::app::distribution
 
 #endif // SNOW_SHOT_APP_DISTRIBUTION_H

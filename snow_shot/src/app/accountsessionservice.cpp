@@ -160,18 +160,19 @@ AccountSessionService* AccountSessionService::forClient(SnowShotApiClient* clien
     return new AccountSessionService(*client, std::move(options), client);
 }
 
-QString AccountSessionService::formatMoney(const QString& nanos) {
+QString AccountSessionService::formatCredits(const QString& nanos) {
+    return tr("%1 credits").arg(formatCreditAmount(nanos));
+}
+
+QString AccountSessionService::formatCreditAmount(const QString& nanos) {
     bool valid = false;
     const qint64 value = nanos.toLongLong(&valid);
     if (!valid)
-        return QStringLiteral("CNY 0.00");
-    const auto magnitude = value < 0 ? quint64(-(value + 1)) + 1 : quint64(value);
-    QString fraction = QString::number(magnitude % 1000000000).rightJustified(9, u'0');
-    while (fraction.size() > 2 && fraction.endsWith(u'0'))
-        fraction.chop(1);
-    return QStringLiteral("%1CNY %2.%3")
-        .arg(value < 0 ? QStringLiteral("−") : QString(), QString::number(magnitude / 1000000000),
-             fraction);
+        return QStringLiteral("0");
+    // Only the presentation drops fractional credits; account values remain in nano-yuan.
+    constexpr qint64 nanosPerCredit = 10000000;
+    const qint64 credits = value / nanosPerCredit;
+    return credits < 0 ? u'−' + QString::number(-credits) : QString::number(credits);
 }
 
 void AccountSessionService::send(const QByteArray& method, const QString& path,
@@ -250,10 +251,12 @@ void AccountSessionService::resetOrigin() {
     m_refreshWaiters.clear();
     m_refreshing = m_busy = m_accountBusy = m_transactionsBusy = false;
     m_purchase.m_poll.stop();
+    ++m_purchase.m_generation;
     m_purchase.m_request = {};
     m_purchase.m_proof.clear();
     m_purchase.m_notice.clear();
-    m_purchase.m_pollBusy = m_purchase.m_claimBusy = false;
+    m_purchase.m_pollBusy = m_purchase.m_queryPlatform = m_purchase.m_cancelBusy =
+        m_purchase.m_claimBusy = false;
     m_origin = m_client ? m_client->baseUrl() : QString();
     m_accessToken.clear();
     m_refreshToken.clear();
@@ -414,7 +417,8 @@ void AccountSessionService::signIn(const QString& username, const QString& passw
         reply->abort();
     m_refreshWaiters.clear();
     m_refreshing = m_accountBusy = m_transactionsBusy = false;
-    m_purchase.m_pollBusy = m_purchase.m_claimBusy = false;
+    m_purchase.m_pollBusy = m_purchase.m_queryPlatform = m_purchase.m_cancelBusy =
+        m_purchase.m_claimBusy = false;
     if (m_purchase.pending())
         m_purchase.m_poll.start(m_options.pollIntervalMs);
     m_error.clear();
@@ -443,7 +447,8 @@ void AccountSessionService::signOut() {
         reply->abort();
     m_refreshWaiters.clear();
     m_refreshing = m_busy = m_accountBusy = m_transactionsBusy = false;
-    m_purchase.m_pollBusy = m_purchase.m_claimBusy = false;
+    m_purchase.m_pollBusy = m_purchase.m_queryPlatform = m_purchase.m_cancelBusy =
+        m_purchase.m_claimBusy = false;
     suppressAutomaticSignIn();
     m_accountRefresh.stop();
     m_tokenRefresh.stop();
@@ -558,6 +563,10 @@ void AccountSessionService::beginTopUp() {
 }
 void AccountSessionService::acceptPurchase(const QJsonObject& request, bool registration) {
     m_purchase.m_poll.stop();
+    ++m_purchase.m_generation;
+    m_purchase.m_pollBusy = false;
+    m_purchase.m_queryPlatform = false;
+    m_purchase.m_cancelBusy = false;
     m_purchase.m_request = request;
     m_purchase.m_proof = request.value(QStringLiteral("registration_proof")).toString();
     m_purchase.m_request.remove(QStringLiteral("registration_proof"));
@@ -575,22 +584,32 @@ void AccountSessionService::acceptPurchase(const QJsonObject& request, bool regi
 }
 
 void AccountSessionService::refreshPurchase(bool queryPlatform) {
-    if (m_purchase.m_pollBusy || m_purchase.m_request.isEmpty())
+    if (m_purchase.m_request.isEmpty() || m_purchase.m_cancelBusy)
         return;
+    if (m_purchase.m_pollBusy) {
+        // Run a requested manual refresh after the current automatic poll finishes.
+        if (queryPlatform && !m_purchase.m_queryPlatform) {
+            m_purchase.m_queryPlatform = true;
+            emit changed();
+        }
+        return;
+    }
     m_purchase.m_poll.stop();
     if (queryPlatform)
         m_purchase.m_failures = 0;
     m_purchase.m_pollBusy = true;
+    m_purchase.m_queryPlatform = queryPlatform;
     emit changed();
     const QString id = m_purchase.m_request.value(QStringLiteral("request_id")).toString();
+    const quint64 purchaseGeneration = m_purchase.m_generation;
     const QString path = (m_purchase.m_registration ? QStringLiteral("/registration/requests/")
                                                     : QStringLiteral("/purchases/requests/")) +
                          id + (queryPlatform ? QStringLiteral("/refresh") : QString());
     send(
         queryPlatform ? "POST" : "GET", path, {},
-        [this, id](const QJsonObject& data, const RequestFailure& error) {
-            m_purchase.m_pollBusy = false;
-            if (m_purchase.m_request.value(QStringLiteral("request_id")).toString() != id)
+        [this, purchaseGeneration, queryPlatform](const QJsonObject& data,
+                                                  const RequestFailure& error) {
+            if (m_purchase.m_generation != purchaseGeneration)
                 return;
             if (!error.isEmpty()) {
                 fail(error);
@@ -616,6 +635,11 @@ void AccountSessionService::refreshPurchase(bool queryPlatform) {
                         loadTransactions();
                     }
                 }
+            }
+            m_purchase.m_pollBusy = false;
+            if (!queryPlatform && m_purchase.m_queryPlatform && m_purchase.pending()) {
+                refreshPurchase(true);
+                return;
             }
             if (m_purchase.pending())
                 m_purchase.m_poll.start(
@@ -658,13 +682,69 @@ void AccountSessionService::claimRegistration() {
         },
         false, m_purchase.m_proof);
 }
+void AccountSessionService::cancelPurchase() {
+    if (m_purchase.m_registration || !m_purchase.pending() || m_purchase.m_cancelBusy)
+        return;
+    m_purchase.m_poll.stop();
+    const quint64 purchaseGeneration = ++m_purchase.m_generation;
+    m_purchase.m_pollBusy = false;
+    m_purchase.m_queryPlatform = false;
+    m_purchase.m_cancelBusy = true;
+    m_purchase.m_notice.clear();
+    emit changed();
+    const QString id = m_purchase.m_request.value(QStringLiteral("request_id")).toString();
+    send(
+        "POST", QStringLiteral("/purchases/requests/") + id + QStringLiteral("/cancel"), {},
+        [this, purchaseGeneration](const QJsonObject& data, const RequestFailure& error) {
+            if (m_purchase.m_generation != purchaseGeneration)
+                return;
+            m_purchase.m_cancelBusy = false;
+            if (!error.isEmpty()) {
+                fail(error);
+            } else {
+                for (auto it = data.begin(); it != data.end(); ++it) {
+                    if (it.key() != u"mini_program_code_data_url" || !it.value().isNull())
+                        m_purchase.m_request.insert(it.key(), it.value());
+                }
+                const QString state =
+                    m_purchase.m_request.value(QStringLiteral("state")).toString();
+                if (state == u"failed" || state == u"expired") {
+                    clearPurchase();
+                    return;
+                }
+                if (state == u"fulfilled") {
+                    refreshAccount();
+                    loadTransactions();
+                } else if (m_purchase.pending()) {
+                    m_purchase.m_notice = QString::fromUtf8(
+                        QT_TRANSLATE_NOOP("snow_shot::app::AccountSessionService",
+                                          "This payment is already being processed. We will keep "
+                                          "checking its result."));
+                }
+                persist();
+            }
+            if (m_purchase.pending())
+                m_purchase.m_poll.start(m_options.pollIntervalMs);
+            emit changed();
+        },
+        true);
+}
 void AccountSessionService::dismissPurchase() {
     if (m_purchase.pending())
         return;
+    clearPurchase();
+}
+void AccountSessionService::clearPurchase() {
     m_purchase.m_poll.stop();
+    ++m_purchase.m_generation;
     m_purchase.m_request = {};
     m_purchase.m_proof.clear();
     m_purchase.m_notice.clear();
+    m_purchase.m_pollBusy = false;
+    m_purchase.m_queryPlatform = false;
+    m_purchase.m_cancelBusy = false;
+    m_purchase.m_autoClaim = false;
+    m_purchase.m_failures = 0;
     persist();
     emit changed();
 }
