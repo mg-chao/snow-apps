@@ -337,6 +337,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool finishImageExport(quint64 generation);
     void hideCapturePresentationImmediately();
     void detachCaptureForExport(ExportDetachMode mode = ExportDetachMode::Immediate);
+    void restorePreviousApplicationIfNeeded();
     void scheduleDeferredExportCleanup();
     void trackExportJob(const ScreenshotExportJobHandle& handle);
     void completeScrollingResultExport(quint64 generation);
@@ -667,6 +668,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
 #ifdef Q_OS_MACOS
     std::unique_ptr<snow_shot::platform::macos::RecaptureFocus> m_recaptureFocus;
     QPointer<ScreenshotOverlayWindow> m_recaptureKeyboardOwner;
+    std::unique_ptr<snow_shot::platform::macos::PreviousApplicationActivation>
+        m_previousApplicationActivation;
+    bool m_restorePreviousApplicationAfterCapture = false;
 #endif
     QVector<QPointer<QWidget>> m_recaptureHiddenWindows;
     QElapsedTimer m_recaptureHideTimer;
@@ -3129,6 +3133,19 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.detach_capture.exit");
 }
 
+void ScreenshotController::Impl::restorePreviousApplicationIfNeeded() {
+#ifdef Q_OS_MACOS
+    if (!m_restorePreviousApplicationAfterCapture) {
+        return;
+    }
+    m_restorePreviousApplicationAfterCapture = false;
+    if (m_previousApplicationActivation != nullptr) {
+        m_previousApplicationActivation->restore();
+        m_previousApplicationActivation.reset();
+    }
+#endif
+}
+
 void ScreenshotController::Impl::scheduleDeferredExportCleanup() {
     SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.schedule_deferred");
     const QPointer<ScreenshotController> receiver(&owner);
@@ -5162,6 +5179,7 @@ void ScreenshotController::Impl::completeFileSave(
         return;
     }
     m_exportJob = {};
+    restorePreviousApplicationIfNeeded();
     if (!result.succeeded() && notify) {
         m_messages->error(QString::fromLatin1(kSaveMessageKey),
                           QCoreApplication::translate("ScreenshotController",
@@ -5242,6 +5260,7 @@ void ScreenshotController::Impl::cancelCapture() {
         m_historyService->resetCaptureNavigation();
     }
     m_captureWorkflow->cancelCapture();
+    restorePreviousApplicationIfNeeded();
 }
 
 void ScreenshotController::Impl::copySelectionToClipboard() {
@@ -5621,6 +5640,7 @@ void ScreenshotController::Impl::completeCopyExport(
         return;
     }
     m_exportJob = {};
+    restorePreviousApplicationIfNeeded();
     if (success) {
         publishHistoryResult(std::move(historyCandidate), historySource, std::move(artifact));
     } else if (notify) {
@@ -6142,6 +6162,13 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
     if (!canBeginCapture() || !snow_shot::presentation::closeCaptureInputBlockers()) {
         return false;
     }
+
+#ifdef Q_OS_MACOS
+    m_previousApplicationActivation =
+        std::make_unique<snow_shot::platform::macos::PreviousApplicationActivation>();
+    m_restorePreviousApplicationAfterCapture =
+        action == PendingSelectionAction::Copy || action == PendingSelectionAction::QuickSave;
+#endif
 
     if (m_autoFilterController) {
         m_autoFilterController->resetSession();

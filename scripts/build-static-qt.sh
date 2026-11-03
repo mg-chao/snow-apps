@@ -161,7 +161,7 @@ mkdir -p "$build_dir"
         -DQT_FEATURE_designer=OFF -DQT_FEATURE_pixeltool=OFF \
         -DQT_FEATURE_qdbus=OFF -DQT_FEATURE_qtattributionsscanner=OFF \
         -DQT_FEATURE_qtdiag=OFF -DQT_FEATURE_qtplugininfo=OFF \
-        "${qt_apple_options[@]}"
+        "${qt_apple_options[@]:-}"
 )
 
 cache="$build_dir/CMakeCache.txt"

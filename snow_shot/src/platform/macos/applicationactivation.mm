@@ -52,8 +52,8 @@
                     hasVisibleWindows:(BOOL)hasVisibleWindows {
     if (snow_shot::platform::macos::isNativeLoginItemLaunch())
         return YES;
-    if ([m_forwardDelegate
-            respondsToSelector:@selector(applicationShouldHandleReopen:hasVisibleWindows:)]) {
+    if ([m_forwardDelegate respondsToSelector:@selector(applicationShouldHandleReopen:
+                                                                    hasVisibleWindows:)]) {
         [m_forwardDelegate applicationShouldHandleReopen:application
                                        hasVisibleWindows:hasVisibleWindows];
     }
@@ -141,6 +141,50 @@ void activateWindow(QWidget* window) {
         handle->requestActivate();
     }
     [nativeWindow makeKeyAndOrderFront:nil];
+}
+
+class PreviousApplicationActivation::Impl final {
+  public:
+    Impl() {
+        NSRunningApplication* frontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
+        if (frontmost == nil ||
+            frontmost.processIdentifier == NSProcessInfo.processInfo.processIdentifier) {
+            return;
+        }
+        application = [frontmost retain];
+    }
+
+    ~Impl() {
+        [application release];
+    }
+
+    NSRunningApplication* application = nil;
+    bool restored = false;
+};
+
+PreviousApplicationActivation::PreviousApplicationActivation() : m_impl(std::make_unique<Impl>()) {}
+
+PreviousApplicationActivation::~PreviousApplicationActivation() = default;
+
+PreviousApplicationActivation::PreviousApplicationActivation(
+    PreviousApplicationActivation&&) noexcept = default;
+
+PreviousApplicationActivation&
+PreviousApplicationActivation::operator=(PreviousApplicationActivation&&) noexcept = default;
+
+bool PreviousApplicationActivation::valid() const {
+    return m_impl != nullptr && m_impl->application != nil;
+}
+
+void PreviousApplicationActivation::restore() {
+    if (!valid() || m_impl->restored || m_impl->application.terminated ||
+        NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier !=
+            NSProcessInfo.processInfo.processIdentifier) {
+        return;
+    }
+    m_impl->restored = true;
+    [NSApp yieldActivationToApplication:m_impl->application];
+    [m_impl->application activateWithOptions:0];
 }
 
 class ApplicationReopenHandler::Impl final {
