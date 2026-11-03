@@ -1247,6 +1247,7 @@ void ScreenshotRecognitionWindow::setLatexPreviewEnabled(bool enabled) {
 
 void ScreenshotRecognitionWindow::clearLatexPreview() {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_latexStreaming = false;
     const bool enabled = std::exchange(m_latexPreviewEnabled, false);
     if (enabled && m_textEditor)
         m_textEditor->setAccessibleName({});
@@ -1273,27 +1274,46 @@ void ScreenshotRecognitionWindow::clearLatexPreview() {
 }
 
 void ScreenshotRecognitionWindow::showLatexEditor(QTextDocument* document,
-                                                  std::function<QString()> source) {
-    showLatexEditorWithOwner(document, {}, std::move(source));
+                                                  std::function<QString()> source, bool streaming) {
+    showLatexEditorWithOwner(document, {}, std::move(source), streaming);
 }
 
 void ScreenshotRecognitionWindow::showLatexEditor(std::shared_ptr<QTextDocument> document,
-                                                  std::function<QString()> source) {
+                                                  std::function<QString()> source, bool streaming) {
     auto* borrowedDocument = document.get();
-    showLatexEditorWithOwner(borrowedDocument, std::move(document), std::move(source));
+    showLatexEditorWithOwner(borrowedDocument, std::move(document), std::move(source), streaming);
 }
 
 void ScreenshotRecognitionWindow::showLatexEditorWithOwner(
     QTextDocument* document, std::shared_ptr<QTextDocument> documentOwner,
-    std::function<QString()> source) {
+    std::function<QString()> source, bool streaming) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     const QPointer<ScreenshotRecognitionWindow> lifetime(this);
-    showTextEditorWithOwner(document, std::move(documentOwner), false, false);
+    const bool completingStream = m_latexStreaming && !streaming && document && m_textEditor;
+    if (completingStream) {
+        // Rebind the validated editing baseline without dropping the passive companion or
+        // its last valid image. Retire work which still refers to the provisional document.
+        disconnect(m_latexDocumentConnection);
+        if (m_latexRenderer)
+            m_latexRenderer->cancel();
+        m_latexPreviewTimer->stop();
+        m_latexRequestToken = 0;
+        m_latexRenderPending = false;
+        m_latexFallbackPending = false;
+        m_latexPendingKey = {};
+        m_latexFallbackAttemptKey = {};
+        m_latexRequestedSource.clear();
+        m_latexRequestedSize = {};
+        m_latexPreviewError = 0;
+    }
+    showTextEditorWithOwner(document, std::move(documentOwner), streaming, streaming,
+                            completingStream);
     if (!lifetime)
         return;
     if (!document || !m_textEditor)
         return;
     m_textEditor->setAccessibleName(tr("LaTeX formula source"));
+    m_latexStreaming = streaming;
     m_latexDocument = document;
     m_latexSource = std::move(source);
     if (!m_latexPreviewTimer) {
@@ -1306,10 +1326,13 @@ void ScreenshotRecognitionWindow::showLatexEditorWithOwner(
     m_latexDocumentConnection = connect(document, &QTextDocument::contentsChanged, this,
                                         &ScreenshotRecognitionWindow::scheduleLatexPreview);
     setLatexPreviewEnabled(true);
+    if (completingStream)
+        refreshOriginalImagePreview();
 #else
     Q_UNUSED(document)
     Q_UNUSED(documentOwner)
     Q_UNUSED(source)
+    Q_UNUSED(streaming)
 #endif
 }
 
@@ -1345,6 +1368,12 @@ QString ScreenshotRecognitionWindow::currentLatexSource(int selectionStart,
 }
 
 void ScreenshotRecognitionWindow::scheduleLatexPreview() {
+    if (m_latexStreaming) {
+        // Throttle instead of debouncing: an uninterrupted token stream must still render.
+        if (!m_latexPreviewTimer->isActive())
+            m_latexPreviewTimer->start();
+        return;
+    }
     if (m_latexRenderPending && m_latexRenderer) {
         m_latexRenderer->cancel();
         m_latexRequestedSize = {};
@@ -1369,6 +1398,8 @@ void ScreenshotRecognitionWindow::scheduleLatexPreview() {
 
 QString ScreenshotRecognitionWindow::latexPreviewStatus() const {
     using Error = ScreenshotLatexRenderer::Error;
+    if (m_latexStreaming && static_cast<Error>(m_latexPreviewError) == Error::InvalidFormula)
+        return m_latexPreviewImage.isNull() ? tr("Rendering formula...") : QString{};
     switch (static_cast<Error>(m_latexPreviewError)) {
     case Error::InvalidFormula:
         return tr("Unable to preview this formula. Check the LaTeX source.");
@@ -1379,7 +1410,7 @@ QString ScreenshotRecognitionWindow::latexPreviewStatus() const {
     case Error::None:
         break;
     }
-    if (m_latexRenderPending)
+    if (m_latexRenderPending || (m_latexStreaming && m_latexPreviewImage.isNull()))
         return tr("Rendering formula...");
     if (currentLatexSource().trimmed().isEmpty())
         return tr("No formula to preview");
@@ -1402,6 +1433,7 @@ void ScreenshotRecognitionWindow::prepareLatexPreview(ScreenshotOriginalImagePre
     if (m_latexDocument) {
         const QString source = currentLatexSource();
         if (!source.trimmed().isEmpty() && !m_latexPreviewTimer->isActive() &&
+            (!m_latexStreaming || !m_latexRenderPending) &&
             (source != m_latexRequestedSource || renderSize != m_latexRequestedSize ||
              !qFuzzyCompare(dpr, m_latexRequestedDpr) ||
              theme.colorText != m_latexRequestedForeground)) {
@@ -1416,7 +1448,8 @@ void ScreenshotRecognitionWindow::prepareLatexPreview(ScreenshotOriginalImagePre
                             m_latexRenderPending = false;
                             if (!m_latexFallbackPending)
                                 m_latexPreviewError = static_cast<int>(error);
-                            if (error == ScreenshotLatexRenderer::Error::None) {
+                            if (error == ScreenshotLatexRenderer::Error::None &&
+                                (!m_latexStreaming || !image.isNull())) {
                                 m_latexPreviewImage = image;
                                 m_latexValidKey = m_latexPendingKey;
                                 if (!m_latexFallbackPending)
@@ -1454,7 +1487,10 @@ void ScreenshotRecognitionWindow::prepareLatexPreview(ScreenshotOriginalImagePre
         }
     }
     state.image = m_latexPreviewImage;
-    state.dimmed = m_latexPreviewError != 0;
+    state.dimmed =
+        m_latexPreviewError != 0 &&
+        !(m_latexStreaming &&
+          m_latexPreviewError == static_cast<int>(ScreenshotLatexRenderer::Error::InvalidFormula));
     state.status = latexPreviewStatus();
     const qreal viewScale = 1.0 / geometryScale;
     const QRectF logicalRect(QPointF(), logicalViewport);
@@ -1485,7 +1521,7 @@ void ScreenshotRecognitionWindow::showTextEditor(std::shared_ptr<QTextDocument> 
 
 void ScreenshotRecognitionWindow::showTextEditorWithOwner(
     QTextDocument* document, std::shared_ptr<QTextDocument> documentOwner, bool readOnly,
-    bool streaming) {
+    bool streaming, bool preserveLatexPreview) {
     if (document == nullptr) {
         clearLatexPreview();
         return;
@@ -1498,7 +1534,8 @@ void ScreenshotRecognitionWindow::showTextEditorWithOwner(
     // and the replacement owner for as long as the editor displays that document.
     [[maybe_unused]] const auto previousOwner =
         std::exchange(m_textEditorDocumentOwner, std::move(documentOwner));
-    clearLatexPreview();
+    if (!preserveLatexPreview)
+        clearLatexPreview();
     if (!lifetime)
         return;
     clearImageConversion();

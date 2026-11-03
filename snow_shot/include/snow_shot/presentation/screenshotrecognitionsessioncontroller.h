@@ -31,6 +31,7 @@
 class QUrl;
 class QMimeData;
 class QTextDocument;
+class QTimer;
 class QWidget;
 class ScreenshotOcrPresentation;
 class ScreenshotOcrTextEditingSession;
@@ -281,6 +282,10 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startTableRecognition();
     void startQrRecognition();
     void startLatexRecognition();
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    void flushLatexStream();
+    void clearLatexStream();
+#endif
     void loadRecognitionModels(bool refresh = false);
     bool migrateRecognitionModelPreferences();
     bool updateRecognitionModels() const;
@@ -376,6 +381,15 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QHash<QString, QStringList> m_qrCache;
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    struct LatexStreamState {
+        QString key;
+        quint64 generation = 0;
+        QString rawSource;
+        QString source;
+        std::shared_ptr<QTextDocument> document;
+    };
+    std::shared_ptr<LatexStreamState> m_latexStream;
+    QTimer* m_latexStreamTimer = nullptr;
     QHash<QString, SnowShotLatexResult> m_latexResults;
     QHash<QString, std::shared_ptr<ScreenshotOcrTextEditingSession>> m_latexCache;
     QHash<QString, ScreenshotLatexRecognitionEntry> m_latexEntries;

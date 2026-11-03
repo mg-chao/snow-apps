@@ -1293,16 +1293,19 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractTableVision(const QIma
         true);
 }
 
-SnowShotApiClient::RequestToken SnowShotApiClient::extractLatexVision(const QImage& image,
-                                                                      const QString& model,
-                                                                      QObject* receiver,
-                                                                      LatexCompletion completion) {
+SnowShotApiClient::RequestToken
+SnowShotApiClient::extractLatexVision(const QImage& image, const QString& model, QObject* receiver,
+                                      LatexCompletion completion, TranslationDelta delta) {
     if (!completion)
         return 0;
     const auto source = std::make_shared<QString>();
     return streamImageRequest(
         model, image, QStringLiteral("latex"), latexVisionPrompt(), receiver,
-        [source](const QString& delta) { *source += delta; },
+        [source, delta = std::move(delta)](const QString& chunk) {
+            *source += chunk;
+            if (delta)
+                delta(chunk);
+        },
         [source, completion = std::move(completion)](SnowShotTranslationResult result) {
             SnowShotLatexResult output;
             const bool succeeded = result.succeeded();

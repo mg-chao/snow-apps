@@ -3822,6 +3822,100 @@ void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
     flush();
 }
 
+void latexPreviewStreamsWithoutWaitingForPause() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "streaming preview fixture has a screen");
+    auto document = std::make_shared<QTextDocument>();
+    document->setPlainText(QStringLiteral("x"));
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    const QRect geometry(screen->availableGeometry().topLeft() + QPoint(320, 120), QSize(240, 140));
+    require(window.present({screen, nullptr, geometry, QRectF(0, 0, 240, 140)}),
+            "streaming formula preview presents");
+    window.showLatexEditor(document, {}, true);
+    const auto waitFor = [](const std::function<bool()>& predicate, const char* message) {
+        QEventLoop loop;
+        QTimer poll;
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+            if (predicate())
+                loop.quit();
+        });
+        QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+        poll.start(5);
+        deadline.start(10000);
+        if (!predicate())
+            loop.exec();
+        require(predicate(), message);
+    };
+    waitFor(
+        [&] {
+            auto* preview = window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+            return preview && preview->isVisible() && preview->accessibleDescription().isEmpty();
+        },
+        "the first streamed formula renders before completion");
+    auto* renderer = window.findChild<ScreenshotLatexRenderer*>();
+    require(renderer != nullptr, "streaming formula starts the asynchronous renderer");
+    int validRenders = 0;
+    int invalidRenders = 0;
+    QObject::connect(renderer, &ScreenshotLatexRenderer::rendered, &window,
+                     [&](quint64, const QImage& image, ScreenshotLatexRenderer::Error error) {
+                         if (error == ScreenshotLatexRenderer::Error::None && !image.isNull())
+                             ++validRenders;
+                         if (error == ScreenshotLatexRenderer::Error::InvalidFormula)
+                             ++invalidRenders;
+                     });
+    QPointer<ScreenshotOriginalImagePreviewWindow> preview =
+        window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    auto* spin = window.findChild<adqt::widgets::AdSpin*>();
+    require(preview && preview->isVisible() && editor && editor->isReadOnly() && spin &&
+                spin->spinning(),
+            "source and passive preview are visible while formula conversion remains busy");
+    const QImage initial = preview->grab().toImage();
+    document->setPlainText(QStringLiteral("x+\\frac{x}"));
+    waitFor([&] { return invalidRenders > 0; },
+            "an incomplete formula reaches the preview renderer");
+    require(preview->accessibleDescription().isEmpty() && preview->grab().toImage() == initial,
+            "an incomplete streamed formula retains the undimmed valid image without an error");
+    require(window.updateSelectionGeometry(QRect(geometry.topLeft(), QSize(280, 160)),
+                                           QRectF(0, 0, 280, 160)),
+            "resize the preview while formula source is incomplete");
+    waitFor([&] { return validRenders > 0; },
+            "an incomplete stream rerenders its retained formula at the new preview size");
+    require(preview->accessibleDescription().isEmpty(),
+            "resizing an incomplete streamed formula keeps syntax errors suppressed");
+
+    document->setPlainText(QStringLiteral("x"));
+    QTimer tokens;
+    int updates = 0;
+    QObject::connect(&tokens, &QTimer::timeout, &window, [&] {
+        ++updates;
+        QTextCursor cursor(document.get());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(QStringLiteral("+1"));
+    });
+    const int previousRenders = validRenders;
+    tokens.start(20);
+    waitFor([&] { return validRenders >= previousRenders + 3 && updates >= 6; },
+            "continuous source changes produce repeated previews without waiting for a pause");
+    require(tokens.isActive() && editor->isReadOnly(),
+            "preview updates do not complete the stream");
+    tokens.stop();
+    auto completed = std::make_shared<QTextDocument>();
+    completed->setPlainText(document->toPlainText());
+    const QPointer<QTextDocument> provisional = document.get();
+    window.showLatexEditor(completed);
+    document.reset();
+    require(preview == window.findChild<ScreenshotOriginalImagePreviewWindow*>() &&
+                preview->isVisible() && provisional.isNull() && !editor->isReadOnly() &&
+                !spin->spinning() && editor->document() == completed.get(),
+            "completion safely replaces the temporary document and retains the same companion");
+    window.hideTextEditor();
+    waitFor([&] { return preview.isNull(); },
+            "leaving the streamed formula cancels and releases its preview");
+}
+
 void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
@@ -4129,6 +4223,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--latex-preview-only"))) {
         latexPreviewUsesPassiveCompanionAndSurvivesEditing();
+        latexPreviewStreamsWithoutWaitingForPause();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--preview-window-only"))) {
