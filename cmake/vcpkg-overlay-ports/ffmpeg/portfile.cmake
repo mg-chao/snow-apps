@@ -23,6 +23,8 @@ vcpkg_from_github(
         0054-fix-shared-libwebp-animation-link.patch
         0055-release-amf-frames-on-abort.patch
         0056-release-gif-packet-on-abort.patch
+        0057-fix-videotoolbox-packet-timing.patch
+        0058-fix-videotoolbox-sparse-timing.patch
 )
 
 if(SOURCE_PATH MATCHES " ")
