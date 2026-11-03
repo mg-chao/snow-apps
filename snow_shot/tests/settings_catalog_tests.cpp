@@ -1281,16 +1281,23 @@ void builtInCatalogIsCompleteAndValid() {
         std::get<settings::SettingsSelectDefinition>(traySection.items.at(6).payload);
     require(leftTray.binding == settings::SettingsSelectBinding::TrayLeftClickAction &&
                 middleTray.binding == settings::SettingsSelectBinding::TrayMiddleClickAction &&
-                leftTray.options.size() == 6 && middleTray.options.size() == 6,
-            "tray selectors must expose independent bindings and six options");
+                leftTray.options.size() == 8 && middleTray.options.size() == 8,
+            "tray selectors must expose independent bindings and eight options");
     const QStringList trayActionValues{QStringLiteral("none"),
                                        QStringLiteral("screenshot"),
                                        QStringLiteral("show_main_window"),
                                        QStringLiteral("screenshot_copy"),
                                        QStringLiteral("screenshot_fixed"),
+                                       QStringLiteral("open_capture_history"),
+                                       QStringLiteral("open_pin_to_screen_management"),
                                        QStringLiteral("open_function_settings")};
     require(leftTray.options.constFirst().label.translated() == QStringLiteral("None"),
             "tray selectors must offer None as the first option");
+    require(leftTray.options.at(5).label.translated() ==
+                    QStringLiteral("Open Screenshot History") &&
+                leftTray.options.at(6).label.translated() ==
+                    QStringLiteral("Open Pin to Screen Management"),
+            "tray selectors must name the history and pin management destinations");
     for (int index = 0; index < trayActionValues.size(); ++index) {
         require(leftTray.options.at(index).value == trayActionValues.at(index) &&
                     middleTray.options.at(index).value == trayActionValues.at(index) &&

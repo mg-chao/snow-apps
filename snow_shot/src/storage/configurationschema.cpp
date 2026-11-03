@@ -1644,6 +1644,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
       QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+      QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
       QStringLiteral("open_function_settings")}},
     {QStringLiteral("tray/middle_click_action"),
      QStringLiteral("screenshot_fixed"),
@@ -1651,6 +1652,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
       QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+      QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
       QStringLiteral("open_function_settings")}},
     {QStringLiteral("tray/menu_options"),
      QJsonArray{

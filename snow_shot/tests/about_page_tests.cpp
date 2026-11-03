@@ -763,6 +763,7 @@ void traySettingsAndFunctionNavigation() {
     for (const auto& action :
          {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
           QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
           QStringLiteral("open_function_settings")}) {
         const auto previousMiddle = backend.selectValue(middle);
         require(backend.applySelectValue(left, action) && backend.selectValue(left) == action &&
@@ -1099,6 +1100,11 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(application);
     if (application.arguments().contains(QStringLiteral("--tray-icon-color-only"))) {
         traySystemIconColorSettings();
+        storage.shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--tray-click-settings-only"))) {
+        traySettingsAndFunctionNavigation();
         storage.shutdown();
         return 0;
     }

@@ -1170,10 +1170,12 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("tray/left_click_action"),
          {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
           QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
           QStringLiteral("open_function_settings")}},
         {QStringLiteral("tray/middle_click_action"),
          {QStringLiteral("none"), QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
           QStringLiteral("screenshot_copy"), QStringLiteral("screenshot_fixed"),
+          QStringLiteral("open_capture_history"), QStringLiteral("open_pin_to_screen_management"),
           QStringLiteral("open_function_settings")}},
     };
     for (auto it = allowedStringValues.cbegin(); it != allowedStringValues.cend(); ++it) {
@@ -3963,6 +3965,24 @@ void trayClickSettingsSurviveRestart() {
                                                   QStringLiteral("tray.restart-app"),
                                                   QStringLiteral("tray.exit")},
             "tray click choices and Restart App must survive storage restart");
+    for (const auto& action : {QStringLiteral("open_capture_history"),
+                               QStringLiteral("open_pin_to_screen_management")}) {
+        const auto previousMiddle = tray.middleClickAction();
+        require(tray.setLeftClickAction(action) && tray.middleClickAction() == previousMiddle &&
+                    applicationStorage.flushNow().success,
+                "new left-click actions must persist independently");
+        static_cast<void>(initialize(executable, temporary.path()));
+        require(tray.leftClickAction() == action && tray.middleClickAction() == previousMiddle,
+                "new left-click actions must survive storage restart");
+        require(tray.setMiddleClickAction(action) && tray.leftClickAction() == action &&
+                    applicationStorage.flushNow().success,
+                "new middle-click actions must persist independently");
+        static_cast<void>(initialize(executable, temporary.path()));
+        require(tray.leftClickAction() == action && tray.middleClickAction() == action,
+                "new middle-click actions must survive storage restart");
+    }
+    require(tray.setMiddleClickAction(QStringLiteral("open_function_settings")),
+            "restore the middle-click fixture before disabling actions");
     require(tray.setLeftClickAction(QStringLiteral("none")) &&
                 tray.middleClickAction() == QStringLiteral("open_function_settings") &&
                 applicationStorage.flushNow().success,
@@ -4315,6 +4335,12 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--tray-theme-icons-only"))) {
         trayDarkIconSettingsPersistAndValidate();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--tray-click-settings-only"))) {
+        settingsSchemaDefaultsAndValidationAreComplete();
+        invalidTrayClickSettingsUseIndependentDefaults();
+        trayClickSettingsSurviveRestart();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--translation-settings-only"))) {
