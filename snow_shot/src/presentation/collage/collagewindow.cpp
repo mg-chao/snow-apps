@@ -1053,7 +1053,8 @@ struct CollageWindow::Impl {
         if (choosingPdf) {
             // A chooser port may reply later; choosingPdf is cleared by the terminal completion.
             CollagePdfExportResult result;
-            result.totalCount = document->items().size();
+            result.totalCount =
+                collagePdfPageCount(document->items().size(), document->pdfSettings());
             result.cancelled = true;
             if (fileDialog)
                 fileDialog->reject();
@@ -1069,7 +1070,7 @@ struct CollageWindow::Impl {
                   CollagePdfDestination destination, quint64 token) {
         choosingPdf = false;
         auto result = std::make_shared<CollagePdfExportResult>();
-        result->totalCount = items.size();
+        result->totalCount = collagePdfPageCount(items.size(), settings);
         const auto cancellation = pdfCancellation;
         const auto progress = pdfProgress;
         const auto writer = services.exportPdf;
@@ -1128,7 +1129,7 @@ struct CollageWindow::Impl {
         pdfProgress = std::make_shared<PdfProgressState>();
         const auto items = document->items();
         const auto settings = document->pdfSettings();
-        pdfProgress->totalPages.store(items.size());
+        pdfProgress->totalPages.store(collagePdfPageCount(items.size(), settings));
         const auto token = ++generation;
         updateActions();
         const QPointer<CollageWindow> guard(&q);
@@ -1140,7 +1141,7 @@ struct CollageWindow::Impl {
                 return;
             if (!choice || choice->path.isEmpty()) {
                 CollagePdfExportResult result;
-                result.totalCount = items.size();
+                result.totalCount = collagePdfPageCount(items.size(), settings);
                 result.cancelled = true;
                 d.finishPdfExport(std::move(result));
                 return;

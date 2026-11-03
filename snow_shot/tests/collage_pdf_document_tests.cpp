@@ -123,7 +123,7 @@ void reversePageOrder() {
                          [&] { ++selectionChanges; });
         const bool reversed = count > 1;
         require(document.reverseItems() == reversed && changes == int(reversed) &&
-                    document.contentRevision() == revision + int(reversed),
+                    document.contentRevision() == revision + quint64(reversed),
                 "reversal publishes one content change only when at least two pages exist");
         const auto layout = document.layout();
         for (int index = 0; index < count; ++index) {
@@ -547,6 +547,308 @@ void inactiveDraftPersistence() {
     require(CollageSettingsStore(reopened).readPdf() == store.readPdf(),
             "only admitted PDF preferences survive a fresh configuration read");
 }
+
+void templateGeometryAndPagination() {
+    struct Template final {
+        CollagePdfTemplateType type;
+        int capacity;
+    };
+    constexpr std::array templates = {
+        Template{CollagePdfTemplateType::TwoImages, 2},
+        Template{CollagePdfTemplateType::IdCard, 2},
+        Template{CollagePdfTemplateType::ThreeImages, 3},
+        Template{CollagePdfTemplateType::FourImages, 4},
+        Template{CollagePdfTemplateType::FiveImages, 5},
+        Template{CollagePdfTemplateType::SixImages, 6},
+        Template{CollagePdfTemplateType::SevenImages, 7},
+        Template{CollagePdfTemplateType::EightImages, 8},
+        Template{CollagePdfTemplateType::NineImages, 9},
+    };
+    CollageDocument document;
+    constexpr std::array sourceSizes{QSize(80, 20), QSize(20, 80), QSize(1, 4096), QSize(4096, 1),
+                                     QSize(40, 40)};
+    for (int index = 0; index < 19; ++index)
+        require(document.append(fixture(sourceSizes[std::size_t(index) % sourceSizes.size()]),
+                                QString::number(index)),
+                "wide, tall, square and extreme-aspect template fixtures import");
+    CollagePdfSettings settings;
+    require(settings.stitchingMethod == CollagePdfStitchingMethod::PageBased &&
+                settings.templateType == CollagePdfTemplateType::TwoImages &&
+                settings.imageSpacingMm == 5 && collagePdfPageCount(19, settings) == 19,
+            "first use defaults to page-based stitching and five millimeter spacing");
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    for (const auto& item : templates) {
+        settings.templateType = item.type;
+        require(collagePdfTemplateCapacity(item.type) == item.capacity &&
+                    collagePdfPageCount(0, settings) == 0 &&
+                    collagePdfPageCount(item.capacity, settings) == 1 &&
+                    collagePdfPageCount(item.capacity + 1, settings) == 2,
+                "all template capacities produce composed page counts");
+        for (const auto orientation :
+             {CollagePdfOrientation::Portrait, CollagePdfOrientation::Landscape}) {
+            settings.orientation = orientation;
+            const auto page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+            require(page.isValid() && page.cells.size() == item.capacity,
+                    "all templates produce valid portrait and landscape cells");
+            const bool landscape = orientation == CollagePdfOrientation::Landscape;
+            require(page.pageMillimeters == (landscape ? QSizeF(297, 210) : QSizeF(210, 297)),
+                    "template orientation controls paper dimensions");
+            for (qsizetype index = 0; index < page.cells.size(); ++index) {
+                const auto& cell = page.cells[index];
+                require(
+                    cell.itemId == document.items()[index].id && cell.itemIndex == index &&
+                        page.contentMillimeters.adjusted(-0.000001, -0.000001, 0.000001, 0.000001)
+                            .contains(cell.clipMillimeters),
+                    "cell assignment follows input order and remains within margins");
+                require(
+                    near(cell.imageMillimeters.center().x(), cell.clipMillimeters.center().x()) &&
+                        near(cell.imageMillimeters.center().y(),
+                             cell.clipMillimeters.center().y()) &&
+                        cell.clipMillimeters.adjusted(-0.000001, -0.000001, 0.000001, 0.000001)
+                            .contains(cell.imageMillimeters) &&
+                        (near(cell.imageMillimeters.width(), cell.clipMillimeters.width()) ||
+                         near(cell.imageMillimeters.height(), cell.clipMillimeters.height())) &&
+                        near(cell.imageMillimeters.width() / cell.imageMillimeters.height(),
+                             qreal(document.items()[index].image.width()) /
+                                 document.items()[index].image.height()),
+                    "automatic placement fits the entire image inside its cell at the largest "
+                    "centered scale");
+                if (item.type == CollagePdfTemplateType::IdCard)
+                    require(near(cell.clipMillimeters.width() / cell.clipMillimeters.height(),
+                                 85.60 / 53.98) &&
+                                near(cell.clipMillimeters.width(), 210 * 0.41),
+                            "ID cards remain landscape and use the shorter-side width baseline");
+            }
+            const qsizetype last = collagePdfPageCount(document.items().size(), settings) - 1;
+            const auto finalPage =
+                calculateCollagePdfComposedPage(document.items(), settings, last);
+            require(finalPage.isValid() && finalPage.cells.size() == item.capacity,
+                    "the final page retains the complete selected template");
+            for (qsizetype index = 0; index < finalPage.cells.size(); ++index) {
+                const auto& cell = finalPage.cells[index];
+                const qsizetype source = last * item.capacity + index;
+                require(source < document.items().size()
+                            ? cell.itemId == document.items()[source].id && cell.itemIndex == source
+                            : cell.itemId == 0 && cell.itemIndex == -1 &&
+                                  cell.imageMillimeters.isEmpty(),
+                        "only unused final-page cells stay blank");
+            }
+        }
+    }
+    settings.templateType = CollagePdfTemplateType::FourImages;
+    settings.orientation = CollagePdfOrientation::Portrait;
+    auto page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[0].clipMillimeters == QRectF(10, 10, 92.5, 136) &&
+                page.cells[1].clipMillimeters == QRectF(107.5, 10, 92.5, 136) &&
+                page.cells[2].clipMillimeters == QRectF(10, 151, 92.5, 136),
+            "regular grids fill rows and deduct spacing before dividing sections evenly");
+    settings.templateType = CollagePdfTemplateType::FiveImages;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(
+        near(page.cells[0].clipMillimeters.height(), 136) &&
+            near(page.cells[1].clipMillimeters.height(), 89) &&
+            page.cells[2].clipMillimeters.left() == page.cells[0].clipMillimeters.left() &&
+            page.cells[3].clipMillimeters.left() == page.cells[1].clipMillimeters.left() &&
+            page.cells[4].clipMillimeters.left() == page.cells[1].clipMillimeters.left(),
+        "five-image order alternates left and right sections before filling the final right cell");
+    settings.orientation = CollagePdfOrientation::Landscape;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[0].clipMillimeters == QRectF(10, 10, 136, 92.5) &&
+                page.cells[1].clipMillimeters == QRectF(10, 107.5, 89, 92.5) &&
+                page.cells[2].clipMillimeters == QRectF(151, 10, 136, 92.5),
+            "landscape transposes both arrangements and alternating input order");
+    settings.templateType = CollagePdfTemplateType::SixImages;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[1].clipMillimeters.topLeft() == QPointF(104, 10) &&
+                page.cells[2].clipMillimeters.topLeft() == QPointF(198, 10) &&
+                page.cells[3].clipMillimeters.topLeft() == QPointF(10, 107.5),
+            "landscape six-image grid fills left to right before its second row");
+    settings.templateType = CollagePdfTemplateType::NineImages;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[1].clipMillimeters.topLeft() == QPointF(104, 10) &&
+                page.cells[2].clipMillimeters.topLeft() == QPointF(198, 10) &&
+                page.cells[3].clipMillimeters.topLeft() == QPointF(10, 75),
+            "landscape nine-image grid retains left-to-right top-to-bottom input order");
+    settings.templateType = CollagePdfTemplateType::SevenImages;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[0].clipMillimeters.topLeft() == QPointF(10, 10) &&
+                page.cells[1].clipMillimeters.topLeft() == QPointF(10, 107.5) &&
+                page.cells[2].clipMillimeters.topLeft() == QPointF(104, 10) &&
+                page.cells[6].clipMillimeters.topLeft() == QPointF(221.5, 107.5),
+            "landscape seven-image layout alternates top and bottom before its last bottom cell");
+    settings.paperSize = CollagePdfPaperSize::ImageSize;
+    require(calculateCollagePdfComposedPage(document.items(), settings, 0).pageMillimeters ==
+                    QSizeF(297, 210) &&
+                settings.paperSize == CollagePdfPaperSize::ImageSize,
+            "template Image Size uses oriented A4 without changing the preference");
+    settings.paperSize = CollagePdfPaperSize::Custom;
+    settings.customWidthMm = 50;
+    settings.customHeightMm = 70;
+    settings.marginLeftMm = settings.marginRightMm = settings.marginTopMm =
+        settings.marginBottomMm = 5;
+    settings.marginLeftMm = settings.marginRightMm = 20;
+    settings.templateType = CollagePdfTemplateType::IdCard;
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.isValid() && near(page.cells[0].clipMillimeters.width(), 12.5) &&
+                near(page.cells[0].clipMillimeters.width() / page.cells[0].clipMillimeters.height(),
+                     85.60 / 53.98),
+            "ID cards shrink within small assigned sections while preserving their aspect ratio");
+    settings.imageSpacingMm = 100;
+    require(validateCollagePdfSettings(settings).contains(QStringLiteral("image_spacing_mm")) &&
+                !calculateCollagePdfComposedPage(document.items(), settings, 0).isValid(),
+            "spacing that consumes assigned sections is invalid");
+    settings.imageSpacingMm = -1;
+    require(validateCollagePdfSettings(settings).contains(QStringLiteral("image_spacing_mm")),
+            "negative template spacing is invalid");
+    settings.imageSpacingMm = 5;
+    require(!calculateCollagePdfComposedPage(document.items(), settings, -1).isValid() &&
+                !calculateCollagePdfComposedPage(document.items(), settings, 100).isValid(),
+            "invalid page indices cannot produce compositions");
+    require(collagePdfPageCount(std::numeric_limits<qsizetype>::max(), settings) ==
+                std::numeric_limits<qsizetype>::max() / 2 + 1,
+            "page counting avoids overflow for large input counts");
+}
+
+void templatePlacementAndTransforms() {
+    CollageDocument document;
+    const auto first = document.append(fixture({80, 20}), QStringLiteral("wide"));
+    const auto second = document.append(fixture({20, 80}), QStringLiteral("tall"));
+    document.setOutputType(CollageOutputType::PdfDocument);
+    auto settings = document.pdfSettings();
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    document.setPdfSettings(settings);
+    auto page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    const qreal initialScale = page.cells[0].imageMillimeters.width() / 80;
+    const QPointF initialCenter = page.cells[0].imageMillimeters.center();
+    require(document.rotate(first, true), "rotate a centered-fit template image");
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(near(*document.items()[0].pdfPlacement.millimetersPerPixel, initialScale) &&
+                near(page.cells[0].imageMillimeters.width(), 20 * initialScale) &&
+                near(page.cells[0].imageMillimeters.height(), 80 * initialScale) &&
+                page.cells[0].imageMillimeters.center() == initialCenter,
+            "rotation freezes physical pixel scale and preserves the center rather than "
+            "automatically refitting");
+    const CollagePdfPlacement placement{{12.5, -8.25}, 0.25};
+    int contentChanges = 0;
+    int placementChanges = 0;
+    QObject::connect(&document, &CollageDocument::changed, &document, [&] { ++contentChanges; });
+    QObject::connect(&document, &CollageDocument::pdfPlacementChanged, &document, [&](quint64 id) {
+        require(id == first, "placement signal identifies its image");
+        ++placementChanges;
+    });
+    const auto revision = document.contentRevision();
+    const auto itemRevision = document.items()[0].revision;
+    require(
+        document.setPdfPlacement(first, placement) && placementChanges == 1 &&
+            contentChanges == 0 && document.contentRevision() == revision &&
+            document.items()[0].revision == itemRevision &&
+            !document.setPdfPlacement(first, placement),
+        "placement updates have their own notification without invalidating image content caches");
+    page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+    require(page.cells[0].imageMillimeters.size() == QSizeF(5, 20) &&
+                page.cells[0].imageMillimeters.center() ==
+                    page.cells[0].clipMillimeters.center() + placement.centerOffsetMillimeters,
+            "absolute scale and millimeter offsets allow whitespace within the cell");
+    const QRectF beforeFlip = page.cells[0].imageMillimeters;
+    require(document.flip(first, true) &&
+                calculateCollagePdfComposedPage(document.items(), settings, 0)
+                        .cells[0]
+                        .imageMillimeters == beforeFlip,
+            "flipping keeps physical position and scale");
+    require(
+        !document.setPdfPlacement(second, {{0, 0}, 0}) &&
+            !document.setPdfPlacement(second, {{0, 0}, std::numeric_limits<qreal>::infinity()}) &&
+            !document.setPdfPlacement(second, {{std::numeric_limits<qreal>::quiet_NaN(), 0}, 1}),
+        "invalid placement values are rejected");
+    const auto rotatedTransform = document.items()[0].transform;
+    settings.stitchingMethod = CollagePdfStitchingMethod::PageBased;
+    document.setPdfSettings(settings);
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    document.setPdfSettings(settings);
+    require(document.items()[0].pdfPlacement == placement,
+            "switching methods preserves template placement when effective paper geometry is "
+            "unchanged");
+    settings.exportMode = CollagePdfExportMode::PerPage;
+    document.setPdfSettings(settings);
+    require(document.items()[0].pdfPlacement == placement,
+            "changing export mode preserves placement");
+    auto invalid = settings;
+    invalid.imageSpacingMm = std::numeric_limits<qreal>::quiet_NaN();
+    document.setPdfSettings(invalid);
+    require(document.items()[0].pdfPlacement == placement &&
+                document.lastValidPdfSettings() == settings,
+            "incomplete settings drafts preserve the last valid placement and geometry");
+    settings.imageSpacingMm = 7.25;
+    document.setPdfSettings(settings);
+    require(document.items()[0].pdfPlacement == CollagePdfPlacement{} &&
+                document.items()[0].transform == rotatedTransform,
+            "valid geometry changes reset placement while preserving orientation");
+    require(document.resetTransform(first) && document.items()[0].transform.isIdentity(),
+            "reset restores original orientation");
+    require(document.setPdfPlacement(first, placement), "move an identity-oriented image");
+    const auto beforeReset = document.contentRevision();
+    require(document.resetTransform(first) &&
+                document.items()[0].pdfPlacement == CollagePdfPlacement{} &&
+                document.contentRevision() == beforeReset,
+            "reset restores centered fit even when orientation was already original");
+}
+
+void templateSequencePlacementReset() {
+    CollageDocument document;
+    QVector<quint64> ids;
+    for (int index = 0; index < 5; ++index)
+        ids.append(document.append(fixture({30, 20}), QString::number(index)));
+    auto settings = document.pdfSettings();
+    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
+    document.setPdfSettings(settings);
+    const CollagePdfPlacement placement{{3, 4}, 0.5};
+    const auto placeAll = [&] {
+        for (const auto id : ids)
+            if (document.indexOf(id) >= 0)
+                document.setPdfPlacement(id, placement);
+    };
+    const auto placementOf = [&](quint64 id) {
+        return document.items()[document.indexOf(id)].pdfPlacement;
+    };
+    placeAll();
+    require(document.swapItems(ids[0], ids[4]) && placementOf(ids[0]) == CollagePdfPlacement{} &&
+                placementOf(ids[4]) == CollagePdfPlacement{} && placementOf(ids[2]) == placement &&
+                document.indexOf(ids[0]) == 4 && document.indexOf(ids[4]) == 0,
+            "swapping resets only exchanged placements and updates indexed lookups");
+    placeAll();
+    require(document.reverseItems() && placementOf(ids[2]) == placement &&
+                placementOf(ids[0]) == CollagePdfPlacement{} &&
+                placementOf(ids[4]) == CollagePdfPlacement{},
+            "reversal retains only an unchanged middle image placement");
+    placeAll();
+    const auto firstId = document.items()[0].id;
+    const auto retainedId = document.items()[1].id;
+    const auto removedId = document.items()[2].id;
+    const auto shiftedId = document.items()[3].id;
+    document.select(shiftedId);
+    require(document.remove(removedId) && document.indexOf(removedId) == -1 &&
+                placementOf(firstId) == placement && placementOf(retainedId) == placement &&
+                placementOf(shiftedId) == CollagePdfPlacement{} &&
+                document.indexOf(shiftedId) == 2 && document.selectedId() == shiftedId,
+            "deleting compacts all following slots, resets their placements, and preserves "
+            "selection by ID");
+    placeAll();
+    require(document.moveItem(firstId, 2) && placementOf(firstId) == CollagePdfPlacement{} &&
+                placementOf(retainedId) == CollagePdfPlacement{} &&
+                placementOf(shiftedId) == CollagePdfPlacement{},
+            "moving resets the complete shifted interval");
+    placeAll();
+    const auto lastId = document.items().back().id;
+    require(document.append(fixture({10, 10}), QStringLiteral("append")) &&
+                placementOf(lastId) == placement,
+            "append preserves placement in existing slots");
+    require(document.replace(lastId, fixture({20, 10}), QStringLiteral("replacement")) &&
+                placementOf(lastId) == CollagePdfPlacement{},
+            "replacing an image restores centered fit in its existing slot");
+    document.clear();
+    require(document.indexOf(firstId) == -1 && document.indexOf(lastId) == -1,
+            "clear removes every indexed image ID");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -561,6 +863,9 @@ int main(int argc, char** argv) {
         settingsPersistence();
         imageSizePersistence();
         inactiveDraftPersistence();
+        templateGeometryAndPagination();
+        templatePlacementAndTransforms();
+        templateSequencePlacementReset();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

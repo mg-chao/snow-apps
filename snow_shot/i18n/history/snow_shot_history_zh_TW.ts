@@ -4,6 +4,10 @@
     <context>
         <name>CollageDocument</name>
         <message>
+            <source>Enter a nonnegative image spacing.</source>
+            <translation>請輸入非負的影像間距。</translation>
+        </message>
+        <message>
             <source>Enter a nonnegative page margin.</source>
             <translation>請輸入非負的頁面邊界。</translation>
         </message>
@@ -18,6 +22,14 @@
         <message>
             <source>Select a paper size.</source>
             <translation>請選擇紙張大小。</translation>
+        </message>
+        <message>
+            <source>Select a stitching method.</source>
+            <translation>請選擇拼接方式。</translation>
+        </message>
+        <message>
+            <source>Select a template.</source>
+            <translation>請選擇範本。</translation>
         </message>
         <message>
             <source>Select an export mode.</source>
@@ -46,6 +58,10 @@
         <message>
             <source>The collage layout settings are invalid.</source>
             <translation>圖片拼接版面設定無效。</translation>
+        </message>
+        <message>
+            <source>The image spacing must leave usable template cells.</source>
+            <translation>影像間距必須為範本區域留出可用空間。</translation>
         </message>
         <message>
             <source>The margins must leave a usable content area.</source>
@@ -253,6 +269,10 @@
         <message>
             <source>Reset transform</source>
             <translation>重設變換</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反轉影像順序</translation>
         </message>
         <message>
             <source>Rotate clockwise by 90°</source>
@@ -468,16 +488,36 @@
             <translation>自訂紙張寬度</translation>
         </message>
         <message>
+            <source>Eight images</source>
+            <translation>八張影像</translation>
+        </message>
+        <message>
             <source>Export mode</source>
             <translation>匯出模式</translation>
+        </message>
+        <message>
+            <source>Five images</source>
+            <translation>五張影像</translation>
+        </message>
+        <message>
+            <source>Four images</source>
+            <translation>四張影像</translation>
         </message>
         <message>
             <source>Height</source>
             <translation>高度</translation>
         </message>
         <message>
+            <source>ID card</source>
+            <translation>身分證</translation>
+        </message>
+        <message>
             <source>Image Size</source>
             <translation>圖像大小</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>影像間距</translation>
         </message>
         <message>
             <source>Landscape</source>
@@ -492,8 +532,16 @@
             <translation>Letter</translation>
         </message>
         <message>
+            <source>Nine images</source>
+            <translation>九張影像</translation>
+        </message>
+        <message>
             <source>Page margin</source>
             <translation>頁邊距</translation>
+        </message>
+        <message>
+            <source>Page-based stitching</source>
+            <translation>分頁拼接</translation>
         </message>
         <message>
             <source>Paper orientation</source>
@@ -512,12 +560,139 @@
             <translation>直向</translation>
         </message>
         <message>
+            <source>Seven images</source>
+            <translation>七張影像</translation>
+        </message>
+        <message>
+            <source>Six images</source>
+            <translation>六張影像</translation>
+        </message>
+        <message>
+            <source>Stitching method</source>
+            <translation>拼接方式</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>範本</translation>
+        </message>
+        <message>
+            <source>Template-based stitching</source>
+            <translation>範本拼接</translation>
+        </message>
+        <message>
+            <source>Three images</source>
+            <translation>三張影像</translation>
+        </message>
+        <message>
+            <source>Two images</source>
+            <translation>兩張影像</translation>
+        </message>
+        <message>
             <source>Width</source>
             <translation>寬度</translation>
         </message>
         <message>
             <source>mm</source>
             <translation>公釐</translation>
+        </message>
+    </context>
+    <context>
+        <name>CollagePdfTemplateWidget</name>
+        <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>新增影像以建立 PDF 文件</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>刪除影像</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
+            <translation>拖曳影像可移動或交換位置；拖曳選取框控點可繞中心等比例縮放</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻轉</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻轉</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>影像 %1：%2</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled.</source>
+            <translation>影像預覽已取消。</translation>
+        </message>
+        <message>
+            <source>Input images</source>
+            <translation>輸入影像</translation>
+        </message>
+        <message>
+            <source>Next page</source>
+            <translation>下一頁</translation>
+        </message>
+        <message>
+            <source>No pages</source>
+            <translation>尚無頁面</translation>
+        </message>
+        <message>
+            <source>Page %1 of %2</source>
+            <translation>第 %1 頁，共 %2 頁</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>預覽原始影像</translation>
+        </message>
+        <message>
+            <source>Previous page</source>
+            <translation>上一頁</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>取代影像</translation>
+        </message>
+        <message>
+            <source>Reset image</source>
+            <translation>重設影像</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反轉影像順序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>順時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆時針旋轉 90°</translation>
+        </message>
+        <message>
+            <source>Select to show this image's page; drag onto another image to swap</source>
+            <translation>按一下以顯示此影像所在頁面；拖曳至另一張影像可交換位置</translation>
+        </message>
+        <message>
+            <source>Template stitching preview</source>
+            <translation>範本拼接預覽</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable.</source>
+            <translation>原始影像無法使用。</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings.</source>
+            <translation>頁面預覽使用上一次有效的設定。</translation>
         </message>
     </context>
     <context>

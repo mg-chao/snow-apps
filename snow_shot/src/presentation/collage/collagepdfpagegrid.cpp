@@ -1086,7 +1086,9 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
     layout->addWidget(d.scroll);
     d.toolbar = new CanvasActionToolbar(this);
     d.toolbar->setObjectName(QStringLiteral("collagePdfCanvasToolbar"));
-    d.reverse = d.toolbar->addAction(icons::Swap(), "collagePdfReversePageOrder");
+    d.reverse =
+        d.toolbar->addAction(snow_shot::presentation::icons::custom::outlined::ReverseOrder(),
+                             "collagePdfReversePageOrder");
     d.add = d.toolbar->addAction(icons::Plus(), "collagePdfAddImages");
     d.toolbar->addSeparator();
     d.clear = d.toolbar->addAction(icons::IconDelete(), "collagePdfClear");
@@ -1100,7 +1102,7 @@ CollagePdfPageGrid::CollagePdfPageGrid(CollageDocument* document, QWidget* paren
         snow_shot::presentation::icons::custom::outlined::FlipHorizontal(),
         snow_shot::presentation::icons::custom::outlined::FlipVertical(),
         icons::Reload(),
-        icons::Edit(),
+        snow_shot::presentation::icons::custom::outlined::ReplaceImage(),
         icons::Eye(),
         icons::IconDelete()};
     constexpr std::array<const char*, 8> names{

@@ -8,6 +8,7 @@
 
 #include <QColorSpace>
 #include <QCoreApplication>
+#include <QHash>
 #include <QPainter>
 
 #include <algorithm>
@@ -116,14 +117,6 @@ QStringList normalizeCustomGrid(CollageSettings& settings, qsizetype imageCount)
             fields.append(QStringLiteral("columns"));
     }
     return fields;
-}
-
-int itemIndex(const QVector<CollageItem>& items, quint64 id) {
-    for (qsizetype index = 0; index < items.size(); ++index) {
-        if (items[index].id == id)
-            return static_cast<int>(index);
-    }
-    return -1;
 }
 
 QImage boundedPreview(const QImage& original, const QImage& supplied = {}) {
@@ -532,7 +525,10 @@ bool operator==(const CollagePdfSettings& first, const CollagePdfSettings& secon
     const auto equalNumber = [](qreal a, qreal b) {
         return a == b || (std::isnan(a) && std::isnan(b));
     };
-    return first.paperSize == second.paperSize && first.orientation == second.orientation &&
+    return first.stitchingMethod == second.stitchingMethod &&
+           first.templateType == second.templateType &&
+           equalNumber(first.imageSpacingMm, second.imageSpacingMm) &&
+           first.paperSize == second.paperSize && first.orientation == second.orientation &&
            first.exportMode == second.exportMode &&
            equalNumber(first.customWidthMm, second.customWidthMm) &&
            equalNumber(first.customHeightMm, second.customHeightMm) &&
@@ -569,6 +565,11 @@ QSizeF pdfPaperMillimeters(const CollagePdfSettings& settings) {
     case CollagePdfPaperSize::Custom:
         page = {settings.customWidthMm, settings.customHeightMm};
         break;
+    case CollagePdfPaperSize::ImageSize:
+        if (settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+            return {};
+        page = {210, 297};
+        break;
     default:
         return {};
     }
@@ -576,7 +577,144 @@ QSizeF pdfPaperMillimeters(const CollagePdfSettings& settings) {
         page.transpose();
     return page;
 }
+
+QRectF pdfContentMillimeters(const CollagePdfSettings& settings) {
+    const QSizeF page = pdfPaperMillimeters(settings);
+    return {settings.marginLeftMm, settings.marginTopMm,
+            page.width() - settings.marginLeftMm - settings.marginRightMm,
+            page.height() - settings.marginTopMm - settings.marginBottomMm};
+}
+
+QVector<QRectF> pdfTemplateCells(const CollagePdfSettings& settings) {
+    QVector<int> rows;
+    switch (settings.templateType) {
+    case CollagePdfTemplateType::TwoImages:
+    case CollagePdfTemplateType::IdCard:
+        rows = {2};
+        break;
+    case CollagePdfTemplateType::ThreeImages:
+        rows = {3};
+        break;
+    case CollagePdfTemplateType::FourImages:
+        rows = {2, 2};
+        break;
+    case CollagePdfTemplateType::FiveImages:
+        rows = {2, 3};
+        break;
+    case CollagePdfTemplateType::SixImages:
+        rows = {3, 3};
+        break;
+    case CollagePdfTemplateType::SevenImages:
+        rows = {3, 4};
+        break;
+    case CollagePdfTemplateType::EightImages:
+        rows = {4, 4};
+        break;
+    case CollagePdfTemplateType::NineImages:
+        rows = {3, 3, 3};
+        break;
+    default:
+        return {};
+    }
+    const QRectF content = pdfContentMillimeters(settings);
+    const bool landscape = settings.orientation == CollagePdfOrientation::Landscape;
+    const QSizeF portrait = landscape ? QSizeF(content.height(), content.width()) : content.size();
+    const qreal gap = settings.imageSpacingMm;
+    const qreal columns = static_cast<qreal>(rows.size());
+    const qreal width = (portrait.width() - (columns - 1) * gap) / columns;
+    QVector<QRectF> result;
+    result.reserve(collagePdfTemplateCapacity(settings.templateType));
+    const int maximumRows = *std::max_element(rows.cbegin(), rows.cend());
+    for (int row = 0; row < maximumRows; ++row) {
+        for (qsizetype column = 0; column < rows.size(); ++column) {
+            if (row >= rows[column])
+                continue;
+            const qreal height = (portrait.height() - (rows[column] - 1) * gap) / rows[column];
+            QRectF cell(static_cast<qreal>(column) * (width + gap), row * (height + gap), width,
+                        height);
+            if (landscape)
+                cell = QRectF(cell.y(), cell.x(), cell.height(), cell.width());
+            cell.translate(content.topLeft());
+            if (settings.templateType == CollagePdfTemplateType::IdCard) {
+                constexpr qreal cardRatio = 85.60 / 53.98;
+                const QSizeF paper = pdfPaperMillimeters(settings);
+                const qreal cardWidth =
+                    std::min({qreal{0.41} * std::min(paper.width(), paper.height()), cell.width(),
+                              cell.height() * cardRatio});
+                const QSizeF card(cardWidth, cardWidth / cardRatio);
+                cell = QRectF(cell.center() - QPointF(card.width() / 2, card.height() / 2), card);
+            }
+            result.append(cell);
+        }
+    }
+    if (landscape && settings.templateType != CollagePdfTemplateType::FiveImages &&
+        settings.templateType != CollagePdfTemplateType::SevenImages) {
+        std::sort(result.begin(), result.end(), [](const QRectF& first, const QRectF& second) {
+            return first.top() == second.top() ? first.left() < second.left()
+                                               : first.top() < second.top();
+        });
+    }
+    return result;
+}
+
+bool finiteRectangle(const QRectF& rectangle) {
+    return std::isfinite(rectangle.left()) && std::isfinite(rectangle.top()) &&
+           std::isfinite(rectangle.right()) && std::isfinite(rectangle.bottom()) &&
+           rectangle.width() > 0 && rectangle.height() > 0;
+}
+
+bool validPlacement(const CollagePdfPlacement& placement) {
+    return std::isfinite(placement.centerOffsetMillimeters.x()) &&
+           std::isfinite(placement.centerOffsetMillimeters.y()) &&
+           (!placement.millimetersPerPixel ||
+            (std::isfinite(*placement.millimetersPerPixel) && *placement.millimetersPerPixel > 0));
+}
+
+bool pdfGeometryChanged(const CollagePdfSettings& previous, const CollagePdfSettings& next) {
+    return previous.templateType != next.templateType || previous.paperSize != next.paperSize ||
+           previous.orientation != next.orientation ||
+           pdfPaperMillimeters(previous) != pdfPaperMillimeters(next) ||
+           previous.marginTopMm != next.marginTopMm ||
+           previous.marginBottomMm != next.marginBottomMm ||
+           previous.marginLeftMm != next.marginLeftMm ||
+           previous.marginRightMm != next.marginRightMm ||
+           previous.imageSpacingMm != next.imageSpacingMm;
+}
 } // namespace
+
+int collagePdfTemplateCapacity(CollagePdfTemplateType type) {
+    switch (type) {
+    case CollagePdfTemplateType::TwoImages:
+    case CollagePdfTemplateType::IdCard:
+        return 2;
+    case CollagePdfTemplateType::ThreeImages:
+        return 3;
+    case CollagePdfTemplateType::FourImages:
+        return 4;
+    case CollagePdfTemplateType::FiveImages:
+        return 5;
+    case CollagePdfTemplateType::SixImages:
+        return 6;
+    case CollagePdfTemplateType::SevenImages:
+        return 7;
+    case CollagePdfTemplateType::EightImages:
+        return 8;
+    case CollagePdfTemplateType::NineImages:
+        return 9;
+    }
+    return 0;
+}
+
+qsizetype collagePdfPageCount(qsizetype itemCount, const CollagePdfSettings& settings) {
+    if (itemCount <= 0)
+        return 0;
+    if (settings.stitchingMethod == CollagePdfStitchingMethod::PageBased)
+        return itemCount;
+    if (settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+        return 0;
+    const int capacity = collagePdfTemplateCapacity(settings.templateType);
+    return capacity > 0 ? itemCount / capacity + (itemCount % capacity != 0 ? 1 : 0) : 0;
+}
 
 QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& settings) {
     QMap<QString, QString> errors;
@@ -596,11 +734,23 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
             errors.insert(key, QCoreApplication::translate("CollageDocument",
                                                            "Enter a nonnegative page margin."));
     };
+    if (settings.stitchingMethod != CollagePdfStitchingMethod::PageBased &&
+        settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+        errors.insert(QStringLiteral("stitching_method"),
+                      QCoreApplication::translate("CollageDocument", "Select a stitching method."));
+    if (collagePdfTemplateCapacity(settings.templateType) == 0)
+        errors.insert(QStringLiteral("template_type"),
+                      QCoreApplication::translate("CollageDocument", "Select a template."));
+    const bool templateBased = settings.stitchingMethod == CollagePdfStitchingMethod::TemplateBased;
+    if (templateBased && (!std::isfinite(settings.imageSpacingMm) || settings.imageSpacingMm < 0))
+        errors.insert(
+            QStringLiteral("image_spacing_mm"),
+            QCoreApplication::translate("CollageDocument", "Enter a nonnegative image spacing."));
     if (settings.paperSize < CollagePdfPaperSize::A3 ||
         settings.paperSize > CollagePdfPaperSize::ImageSize)
         errors.insert(QStringLiteral("paper_size"),
                       QCoreApplication::translate("CollageDocument", "Select a paper size."));
-    if (settings.paperSize != CollagePdfPaperSize::ImageSize &&
+    if ((settings.paperSize != CollagePdfPaperSize::ImageSize || templateBased) &&
         settings.orientation != CollagePdfOrientation::Portrait &&
         settings.orientation != CollagePdfOrientation::Landscape)
         errors.insert(
@@ -610,7 +760,7 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
         settings.exportMode != CollagePdfExportMode::PerPage)
         errors.insert(QStringLiteral("export_mode"),
                       QCoreApplication::translate("CollageDocument", "Select an export mode."));
-    if (settings.paperSize == CollagePdfPaperSize::ImageSize)
+    if (settings.paperSize == CollagePdfPaperSize::ImageSize && !templateBased)
         return errors;
     if (settings.paperSize == CollagePdfPaperSize::Custom) {
         positiveDimension(QStringLiteral("custom_width_mm"), settings.customWidthMm);
@@ -638,6 +788,16 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
                     QStringLiteral("margin_left_mm"), QStringLiteral("margin_right_mm"));
     usableDimension(page.height(), settings.marginTopMm, settings.marginBottomMm,
                     QStringLiteral("margin_top_mm"), QStringLiteral("margin_bottom_mm"));
+    if (templateBased && errors.isEmpty()) {
+        const auto cells = pdfTemplateCells(settings);
+        if (cells.isEmpty() || std::any_of(cells.cbegin(), cells.cend(), [](const QRectF& cell) {
+                return !finiteRectangle(cell);
+            }))
+            errors.insert(
+                QStringLiteral("image_spacing_mm"),
+                QCoreApplication::translate("CollageDocument",
+                                            "The image spacing must leave usable template cells."));
+    }
     return errors;
 }
 
@@ -654,7 +814,8 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
         layout.error = preparationError();
         return layout;
     }
-    if (settings.paperSize == CollagePdfPaperSize::ImageSize) {
+    if (settings.paperSize == CollagePdfPaperSize::ImageSize &&
+        settings.stitchingMethod == CollagePdfStitchingMethod::PageBased) {
         layout.pageMillimeters = QSizeF(transformedPixels) * (25.4 / 96.0);
         if (layout.pageMillimeters.width() > maximumPdfDimensionMm ||
             layout.pageMillimeters.height() > maximumPdfDimensionMm) {
@@ -684,6 +845,60 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
         layout.error =
             QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid.");
     return layout;
+}
+
+CollagePdfComposedPage calculateCollagePdfComposedPage(const QVector<CollageItem>& items,
+                                                       const CollagePdfSettings& settings,
+                                                       qsizetype pageIndex) {
+    CollagePdfComposedPage page;
+    const auto invalid = [&] {
+        page.error =
+            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid.");
+        return page;
+    };
+    if (pageIndex < 0 || pageIndex >= collagePdfPageCount(items.size(), settings) ||
+        !validateCollagePdfSettings(settings).isEmpty())
+        return invalid();
+    if (settings.stitchingMethod == CollagePdfStitchingMethod::PageBased) {
+        const auto& item = items[pageIndex];
+        const auto layout = calculateCollagePdfPageLayout(transformedSize(item), settings);
+        if (!layout.isValid())
+            return invalid();
+        page.pageMillimeters = layout.pageMillimeters;
+        page.contentMillimeters = layout.contentMillimeters;
+        page.cells.append({item.id, pageIndex, layout.contentMillimeters, layout.imageMillimeters});
+        return page;
+    }
+    page.pageMillimeters = pdfPaperMillimeters(settings);
+    page.contentMillimeters = pdfContentMillimeters(settings);
+    const auto cells = pdfTemplateCells(settings);
+    const qsizetype first = pageIndex * cells.size();
+    page.cells.reserve(cells.size());
+    for (qsizetype index = 0; index < cells.size(); ++index) {
+        CollagePdfCell cell;
+        cell.clipMillimeters = cells[index];
+        const qsizetype itemIndex = first + index;
+        if (itemIndex < items.size()) {
+            const auto& item = items[itemIndex];
+            const QSize pixels = transformedSize(item);
+            if (pixels.isEmpty() || !validPlacement(item.pdfPlacement))
+                return invalid();
+            cell.itemId = item.id;
+            cell.itemIndex = itemIndex;
+            const qreal scale = item.pdfPlacement.millimetersPerPixel.value_or(
+                std::min(cell.clipMillimeters.width() / pixels.width(),
+                         cell.clipMillimeters.height() / pixels.height()));
+            const QSizeF size(pixels.width() * scale, pixels.height() * scale);
+            const QPointF center =
+                cell.clipMillimeters.center() + item.pdfPlacement.centerOffsetMillimeters;
+            cell.imageMillimeters =
+                QRectF(center - QPointF(size.width() / 2, size.height() / 2), size);
+            if (!finiteRectangle(cell.imageMillimeters))
+                return invalid();
+        }
+        page.cells.append(cell);
+    }
+    return page;
 }
 
 QSize transformedSize(const CollageItem& item) {
@@ -780,6 +995,7 @@ CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
 
 struct CollageDocument::Impl final {
     QVector<CollageItem> items;
+    QHash<quint64, int> indices;
     CollageSettings settings;
     CollageOutputType outputType = CollageOutputType::StaticImage;
     CollagePdfSettings pdfSettings;
@@ -792,6 +1008,33 @@ struct CollageDocument::Impl final {
     qint64 previewBytes = 0;
     mutable bool layoutDirty = true;
     mutable CollageLayout cachedLayout;
+
+    void rebuildIndices() {
+        indices.clear();
+        indices.reserve(items.size());
+        for (qsizetype index = 0; index < items.size(); ++index)
+            indices.insert(items[index].id, static_cast<int>(index));
+    }
+
+    void resetPlacements(qsizetype first, qsizetype end) {
+        for (qsizetype index = first; index < end; ++index)
+            items[index].pdfPlacement = {};
+    }
+
+    void freezePdfScale(int index) {
+        if (lastValidPdfSettings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased ||
+            items[index].pdfPlacement.millimetersPerPixel)
+            return;
+        const int capacity = collagePdfTemplateCapacity(lastValidPdfSettings.templateType);
+        const auto page =
+            calculateCollagePdfComposedPage(items, lastValidPdfSettings, index / capacity);
+        if (!page.isValid())
+            return;
+        const auto& cell = page.cells[index % capacity];
+        const QSize pixels = transformedSize(items[index]);
+        items[index].pdfPlacement.millimetersPerPixel =
+            cell.imageMillimeters.width() / pixels.width();
+    }
 
     bool admit(qint64 sources, qint64 previews) {
         if (sources < 0 || sources > collage_detail::maximumRasterBytes || previews < 0 ||
@@ -812,6 +1055,10 @@ CollageDocument::~CollageDocument() = default;
 
 const QVector<CollageItem>& CollageDocument::items() const {
     return m_impl->items;
+}
+
+int CollageDocument::indexOf(quint64 id) const {
+    return m_impl->indices.value(id, -1);
 }
 
 quint64 CollageDocument::contentRevision() const {
@@ -856,8 +1103,11 @@ void CollageDocument::setPdfSettings(const CollagePdfSettings& settings) {
     if (settings == m_impl->pdfSettings)
         return;
     m_impl->pdfSettings = settings;
-    if (validateCollagePdfSettings(settings).isEmpty())
+    if (validateCollagePdfSettings(settings).isEmpty()) {
+        if (pdfGeometryChanged(m_impl->lastValidPdfSettings, settings))
+            m_impl->resetPlacements(0, m_impl->items.size());
         m_impl->lastValidPdfSettings = settings;
+    }
     emit changed();
 }
 
@@ -914,7 +1164,9 @@ quint64 CollageDocument::append(QImage image, QString label, QImage preview) {
                           {},
                           std::move(label),
                           std::move(owner),
-                          std::move(metadata)});
+                          std::move(metadata),
+                          {}});
+    m_impl->indices.insert(id, static_cast<int>(m_impl->items.size() - 1));
     ++m_impl->contentRevision;
     const QStringList adjustedFields = normalizeCustomGrid(m_impl->settings, m_impl->items.size());
     const bool selectFirst = m_impl->selected == 0;
@@ -930,7 +1182,7 @@ quint64 CollageDocument::append(QImage image, QString label, QImage preview) {
 }
 
 bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage preview) {
-    const int index = itemIndex(m_impl->items, id);
+    const int index = indexOf(id);
     if (index < 0 || image.isNull()) {
         m_impl->error = preparationError();
         return false;
@@ -954,6 +1206,7 @@ bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage pr
     item.metadata = owner->metadata;
     item.resourceOwner = std::move(owner);
     item.transform = {};
+    item.pdfPlacement = {};
     ++item.revision;
     ++m_impl->contentRevision;
     m_impl->layoutDirty = true;
@@ -962,13 +1215,15 @@ bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage pr
 }
 
 bool CollageDocument::remove(quint64 id) {
-    const int index = itemIndex(m_impl->items, id);
+    const int index = indexOf(id);
     if (index < 0)
         return false;
     const auto& item = m_impl->items[index];
     static_cast<void>(m_impl->admit(m_impl->sourceBytes - item.image.sizeInBytes(),
                                     m_impl->previewBytes - item.preview.sizeInBytes()));
     m_impl->items.removeAt(index);
+    m_impl->resetPlacements(index, m_impl->items.size());
+    m_impl->rebuildIndices();
     ++m_impl->contentRevision;
     const bool selectionRemoved = m_impl->selected == id;
     if (selectionRemoved)
@@ -986,6 +1241,7 @@ void CollageDocument::clear() {
     if (m_impl->items.isEmpty())
         return;
     m_impl->items.clear();
+    m_impl->indices.clear();
     ++m_impl->contentRevision;
     m_impl->selected = 0;
     static_cast<void>(m_impl->admit(0, 0));
@@ -998,6 +1254,10 @@ bool CollageDocument::reverseItems() {
     if (m_impl->items.size() < 2)
         return false;
     std::reverse(m_impl->items.begin(), m_impl->items.end());
+    const qsizetype middle = m_impl->items.size() / 2;
+    m_impl->resetPlacements(0, middle);
+    m_impl->resetPlacements(middle + m_impl->items.size() % 2, m_impl->items.size());
+    m_impl->rebuildIndices();
     ++m_impl->contentRevision;
     m_impl->layoutDirty = true;
     emit changed();
@@ -1005,11 +1265,15 @@ bool CollageDocument::reverseItems() {
 }
 
 bool CollageDocument::swapItems(quint64 first, quint64 second) {
-    const int a = itemIndex(m_impl->items, first);
-    const int b = itemIndex(m_impl->items, second);
+    const int a = indexOf(first);
+    const int b = indexOf(second);
     if (a < 0 || b < 0 || a == b)
         return false;
     std::swap(m_impl->items[a], m_impl->items[b]);
+    m_impl->items[a].pdfPlacement = {};
+    m_impl->items[b].pdfPlacement = {};
+    m_impl->indices.insert(first, b);
+    m_impl->indices.insert(second, a);
     ++m_impl->contentRevision;
     m_impl->layoutDirty = true;
     emit changed();
@@ -1017,11 +1281,14 @@ bool CollageDocument::swapItems(quint64 first, quint64 second) {
 }
 
 bool CollageDocument::moveItem(quint64 id, int finalIndex) {
-    const int sourceIndex = itemIndex(m_impl->items, id);
+    const int sourceIndex = indexOf(id);
     if (sourceIndex < 0 || finalIndex < 0 || finalIndex >= m_impl->items.size() ||
         sourceIndex == finalIndex)
         return false;
     m_impl->items.move(sourceIndex, finalIndex);
+    m_impl->resetPlacements(std::min(sourceIndex, finalIndex),
+                            std::max(sourceIndex, finalIndex) + 1);
+    m_impl->rebuildIndices();
     ++m_impl->contentRevision;
     m_impl->layoutDirty = true;
     emit changed();
@@ -1029,9 +1296,10 @@ bool CollageDocument::moveItem(quint64 id, int finalIndex) {
 }
 
 bool CollageDocument::rotate(quint64 id, bool clockwise) {
-    const int index = itemIndex(m_impl->items, id);
+    const int index = indexOf(id);
     if (index < 0)
         return false;
+    m_impl->freezePdfScale(index);
     auto& item = m_impl->items[index];
     const QTransform operation =
         clockwise ? QTransform(0, 1, -1, 0, 0, 0) : QTransform(0, -1, 1, 0, 0, 0);
@@ -1044,9 +1312,10 @@ bool CollageDocument::rotate(quint64 id, bool clockwise) {
 }
 
 bool CollageDocument::flip(quint64 id, bool horizontal) {
-    const int index = itemIndex(m_impl->items, id);
+    const int index = indexOf(id);
     if (index < 0)
         return false;
+    m_impl->freezePdfScale(index);
     auto& item = m_impl->items[index];
     item.transform = canonicalTransform(
         item.transform * QTransform(horizontal ? -1 : 1, 0, 0, horizontal ? 1 : -1, 0, 0));
@@ -1058,17 +1327,42 @@ bool CollageDocument::flip(quint64 id, bool horizontal) {
 }
 
 bool CollageDocument::resetTransform(quint64 id) {
-    const int index = itemIndex(m_impl->items, id);
+    const int index = indexOf(id);
     if (index < 0)
         return false;
     auto& item = m_impl->items[index];
-    if (item.transform.isIdentity())
+    const bool orientationChanged = !item.transform.isIdentity();
+    const bool placementChanged = item.pdfPlacement != CollagePdfPlacement{};
+    if (!orientationChanged && !placementChanged)
         return true;
     item.transform = {};
-    ++item.revision;
-    ++m_impl->contentRevision;
-    m_impl->layoutDirty = true;
-    emit changed();
+    item.pdfPlacement = {};
+    if (orientationChanged) {
+        ++item.revision;
+        ++m_impl->contentRevision;
+        m_impl->layoutDirty = true;
+        emit changed();
+    } else {
+        emit pdfPlacementChanged(id);
+    }
+    return true;
+}
+
+bool CollageDocument::setPdfPlacement(quint64 id, const CollagePdfPlacement& placement) {
+    const int index = indexOf(id);
+    if (index < 0 || !validPlacement(placement))
+        return false;
+    auto& item = m_impl->items[index];
+    if (item.pdfPlacement == placement)
+        return false;
+    if (placement.millimetersPerPixel) {
+        const QSize pixels = transformedSize(item);
+        if (!std::isfinite(pixels.width() * *placement.millimetersPerPixel) ||
+            !std::isfinite(pixels.height() * *placement.millimetersPerPixel))
+            return false;
+    }
+    item.pdfPlacement = placement;
+    emit pdfPlacementChanged(id);
     return true;
 }
 
@@ -1077,7 +1371,7 @@ quint64 CollageDocument::selectedId() const {
 }
 
 void CollageDocument::select(quint64 id) {
-    const quint64 selected = itemIndex(m_impl->items, id) >= 0 ? id : 0;
+    const quint64 selected = indexOf(id) >= 0 ? id : 0;
     if (selected == m_impl->selected)
         return;
     m_impl->selected = selected;

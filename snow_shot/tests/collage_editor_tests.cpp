@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/components/overlaycontrolbutton.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/storage/applicationstorage.h"
 #include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
@@ -26,6 +27,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QThread>
+#include <QTemporaryDir>
 #include <QTranslator>
 #include <QWheelEvent>
 #include <QUrl>
@@ -49,6 +51,24 @@ void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error(message);
 }
+
+class TemporaryApplicationStorage final {
+  public:
+    TemporaryApplicationStorage() {
+        require(m_directory.isValid() &&
+                    snow_shot::storage::ApplicationStorage::instance()
+                        .initialize({m_directory.path(), m_directory.path(), 60000})
+                        .success,
+                "initialize isolated editor test storage without accessing user settings");
+    }
+    ~TemporaryApplicationStorage() {
+        ScreenshotExportCoordinator::shared().shutdown();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+    }
+
+  private:
+    QTemporaryDir m_directory;
+};
 QImage image(QSize size, QColor color = Qt::red) {
     QImage result(size, QImage::Format_ARGB32_Premultiplied);
     result.fill(color);
@@ -580,6 +600,97 @@ void thumbnailActionsUseTranslucentOverlays() {
     }
     themes.setConfig(originalConfig);
 }
+
+void floatingBottomToolbarControlsCollection() {
+    CollageDocument document;
+    CollageEditorWidget editor(&document);
+    editor.resize(1000, 650);
+    editor.show();
+    pump();
+    auto* toolbar = editor.findChild<QWidget*>(QStringLiteral("collageCanvasToolbar"));
+    auto* row = editor.findChild<QWidget*>(QStringLiteral("collageThumbnailRow"));
+    auto* strip = editor.findChild<QWidget*>(QStringLiteral("collageThumbnailStrip"));
+    auto* empty = editor.findChild<QWidget*>(QStringLiteral("collageEmptyState"));
+    auto* add = button(&editor, "collageAddImages");
+    auto* clear = button(&editor, "collageClearAll");
+    auto* reverse = button(&editor, "collageReverseImages");
+    require(
+        toolbar && row && strip && empty && toolbar->isVisible() &&
+            add->parentWidget() == toolbar && clear->parentWidget() == toolbar &&
+            reverse->parentWidget() == toolbar && !row->isAncestorOf(add) &&
+            !row->isAncestorOf(clear) && row->layout()->count() == 1 &&
+            row->layout()->itemAt(0)->widget() == strip,
+        "all collection actions float over the preview and leave the thumbnail row to its strip");
+    const auto anchoredTo = [&](QWidget* preview) {
+        const QRect previewRect(preview->mapTo(&editor, QPoint{}), preview->size());
+        const QRect toolbarRect(toolbar->mapTo(&editor, QPoint{}), toolbar->size());
+        require(previewRect.contains(toolbarRect) &&
+                    std::abs(toolbarRect.center().x() - previewRect.center().x()) <= 1 &&
+                    previewRect.bottom() - toolbarRect.bottom() == 12,
+                "collection toolbar stays centered twelve pixels above the preview bottom");
+    };
+    anchoredTo(empty);
+    require(add->isEnabled() && !add->busy() && !clear->isEnabled() && !reverse->isEnabled(),
+            "empty collection enables addition while clearing and reversing stay disabled");
+    for (auto* action : {add, clear, reverse})
+        require(
+            action->text().isEmpty() && !action->toolTip().isEmpty() &&
+                action->accessibleName() == action->toolTip(),
+            "floating collection icons expose translated names to keyboard and assistive input");
+    int additions = 0;
+    int clears = 0;
+    QObject::connect(&editor, &CollageEditorWidget::addImagesRequested, &editor,
+                     [&] { ++additions; });
+    QObject::connect(&editor, &CollageEditorWidget::clearRequested, &editor, [&] { ++clears; });
+    add->click();
+    require(additions == 1, "the floating add action requests import");
+    QVector<quint64> ids;
+    for (int index = 0; index < 12; ++index)
+        ids.append(document.append(image({120, 80}), QStringLiteral("Image %1").arg(index + 1)));
+    document.select(ids[4]);
+    pump();
+    require(editor.canvas()->isVisible() && strip->isVisible() && add->isEnabled() &&
+                clear->isEnabled() && reverse->isEnabled(),
+            "populating the collection enables clear and reverse without adding thumbnail-side "
+            "buttons");
+    anchoredTo(editor.canvas());
+    reverse->click();
+    for (qsizetype index = 0; index < ids.size(); ++index)
+        require(document.items().at(index).id == ids.at(ids.size() - index - 1),
+                "reverse changes the entire input order, including images outside the thumbnail "
+                "viewport");
+    require(document.selectedId() == ids[4],
+            "reversing keeps selection attached to the same image");
+    clear->click();
+    require(clears == 1 && document.items().size() == ids.size(),
+            "floating clear requests confirmation before changing the collection");
+    editor.resize(1150, 760);
+    pump();
+    anchoredTo(editor.canvas());
+    editor.setLoading(true);
+    require(!add->isEnabled() && add->busy() && !reverse->isEnabled() && clear->isEnabled(),
+            "loading marks addition busy, blocks reversal and keeps clearing available");
+    reverse->click();
+    require(document.items().first().id == ids.last(),
+            "loading cannot reverse pending input order");
+    editor.setLoading(false);
+    editor.setExportBusy(true);
+    require(toolbar->isVisible() && !add->isEnabled() && !add->busy() && !reverse->isEnabled() &&
+                !clear->isEnabled(),
+            "export preserves the floating toolbar while disabling collection mutations");
+    editor.setExportBusy(false);
+    require(add->isEnabled() && clear->isEnabled() && reverse->isEnabled(),
+            "collection actions recover after export");
+    document.setOutputType(CollageOutputType::PdfDocument);
+    require(!toolbar->isVisible(), "PDF previews use their own floating collection toolbar");
+    document.setOutputType(CollageOutputType::StaticImage);
+    require(toolbar->isVisible(), "returning to static output restores its floating toolbar");
+    document.clear();
+    pump();
+    require(add->isEnabled() && !clear->isEnabled() && !reverse->isEnabled(),
+            "clearing restores the initial collection action states");
+    anchoredTo(empty);
+}
 void floatingFitToCanvasFollowsViewport() {
     CollageDocument document;
     CollageEditorWidget editor(&document);
@@ -1004,9 +1115,11 @@ void controlsEmptyBusyAndPresets() {
     require(empty && prompt && strip, "empty state and thumbnail strip must exist");
     const auto requireEmpty = [&] {
         require(empty->isVisible() && prompt->isVisible() && !editor.canvas()->isVisible() &&
-                    !strip->isVisible() && !button(&editor, "collageAddImages")->isVisible() &&
-                    !button(&editor, "collageClearAll")->isVisible(),
-                "empty state must replace the canvas, thumbnails and duplicate image actions");
+                    !strip->isVisible() && button(&editor, "collageAddImages")->isVisible() &&
+                    button(&editor, "collageClearAll")->isVisible() &&
+                    !button(&editor, "collageClearAll")->isEnabled(),
+                "empty state replaces the canvas and thumbnails while keeping floating actions "
+                "available");
         auto* guide = button(&editor, "collageEmptyAddImages");
         require(empty->isAncestorOf(guide) && empty->isAncestorOf(prompt) &&
                     prompt->geometry().bottom() < guide->geometry().top() &&
@@ -1799,7 +1912,8 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     pump();
     const auto localized = QCoreApplication::translate("CollageEditorWidget", "Add images");
     require(localized != QStringLiteral("Add images") &&
-                button(&editor, "collageAddImages")->text() == localized,
+                button(&editor, "collageAddImages")->toolTip() == localized &&
+                button(&editor, "collageAddImages")->accessibleName() == localized,
             "language change must refresh cached editor labels");
     auto* prompt = editor.findChild<QLabel*>(QStringLiteral("collageEmptyPrompt"));
     auto* guide = button(&editor, "collageEmptyAddImages");
@@ -1858,7 +1972,7 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     require(document.settings() == settings, "language change must not edit layout settings");
     QApplication::removeTranslator(&translator);
     pump();
-    require(button(&editor, "collageAddImages")->text() == QStringLiteral("Add images"),
+    require(button(&editor, "collageAddImages")->toolTip() == QStringLiteral("Add images"),
             "return to source language must refresh cached labels");
 }
 
@@ -1979,11 +2093,13 @@ int main(int argc, char** argv) {
     adqt::theme::ThemeManager::instance().applyTo(application);
     const auto arguments = QApplication::arguments();
     const auto preview = arguments.indexOf(QStringLiteral("--preview"));
-    if (preview >= 0 && preview + 1 < arguments.size())
-        return renderPreview(arguments[preview + 1], arguments.contains(QStringLiteral("--dark")),
-                             arguments.contains(QStringLiteral("--percentage")),
-                             arguments.contains(QStringLiteral("--empty")));
     try {
+        TemporaryApplicationStorage temporaryStorage;
+        if (preview >= 0 && preview + 1 < arguments.size())
+            return renderPreview(arguments[preview + 1],
+                                 arguments.contains(QStringLiteral("--dark")),
+                                 arguments.contains(QStringLiteral("--percentage")),
+                                 arguments.contains(QStringLiteral("--empty")));
         if (arguments.contains(QStringLiteral("--drag-drop-only"))) {
             externalImageDrops();
             releaseOnlySwapAndCrossWindowIsolation();
@@ -2034,8 +2150,15 @@ int main(int argc, char** argv) {
         }
         if (arguments.contains(QStringLiteral("--thumbnail-actions-only"))) {
             thumbnailActionsUseTranslucentOverlays();
+            floatingBottomToolbarControlsCollection();
             ScreenshotExportCoordinator::shared().shutdown();
             std::cout << "Collage thumbnail action tests passed\n";
+            return 0;
+        }
+        if (arguments.contains(QStringLiteral("--floating-toolbar-only"))) {
+            floatingBottomToolbarControlsCollection();
+            ScreenshotExportCoordinator::shared().shutdown();
+            std::cout << "Collage floating bottom toolbar tests passed\n";
             return 0;
         }
         if (arguments.contains(QStringLiteral("--fit-control-only"))) {
@@ -2053,6 +2176,7 @@ int main(int argc, char** argv) {
         replacementHighlightMatchesDrawEngineMarquee();
         thumbnailScrollBarOverlaysTheList();
         thumbnailActionsUseTranslucentOverlays();
+        floatingBottomToolbarControlsCollection();
         floatingFitToCanvasFollowsViewport();
         arrangementChangesFitToCanvas();
         fitPanZoomAndNavigation();

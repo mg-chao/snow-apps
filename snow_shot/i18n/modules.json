@@ -125,6 +125,7 @@
     "CollagePdfExport",
     "CollagePdfPageGrid",
     "CollagePdfSettingsWidget",
+    "CollagePdfTemplateWidget",
     "CollageWindow",
     "HistoryEntryWidget",
     "HistoryFileLocation",

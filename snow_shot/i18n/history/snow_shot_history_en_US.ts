@@ -4,6 +4,10 @@
     <context>
         <name>CollageDocument</name>
         <message>
+            <source>Enter a nonnegative image spacing.</source>
+            <translation>Enter a nonnegative image spacing.</translation>
+        </message>
+        <message>
             <source>Enter a nonnegative page margin.</source>
             <translation>Enter a nonnegative page margin.</translation>
         </message>
@@ -18,6 +22,14 @@
         <message>
             <source>Select a paper size.</source>
             <translation>Select a paper size.</translation>
+        </message>
+        <message>
+            <source>Select a stitching method.</source>
+            <translation>Select a stitching method.</translation>
+        </message>
+        <message>
+            <source>Select a template.</source>
+            <translation>Select a template.</translation>
         </message>
         <message>
             <source>Select an export mode.</source>
@@ -46,6 +58,10 @@
         <message>
             <source>The collage layout settings are invalid.</source>
             <translation>The collage layout settings are invalid.</translation>
+        </message>
+        <message>
+            <source>The image spacing must leave usable template cells.</source>
+            <translation>The image spacing must leave usable template cells.</translation>
         </message>
         <message>
             <source>The margins must leave a usable content area.</source>
@@ -253,6 +269,10 @@
         <message>
             <source>Reset transform</source>
             <translation>Reset transform</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>Reverse image order</translation>
         </message>
         <message>
             <source>Rotate clockwise by 90°</source>
@@ -468,16 +488,36 @@
             <translation>Custom paper width</translation>
         </message>
         <message>
+            <source>Eight images</source>
+            <translation>Eight images</translation>
+        </message>
+        <message>
             <source>Export mode</source>
             <translation>Export mode</translation>
+        </message>
+        <message>
+            <source>Five images</source>
+            <translation>Five images</translation>
+        </message>
+        <message>
+            <source>Four images</source>
+            <translation>Four images</translation>
         </message>
         <message>
             <source>Height</source>
             <translation>Height</translation>
         </message>
         <message>
+            <source>ID card</source>
+            <translation>ID card</translation>
+        </message>
+        <message>
             <source>Image Size</source>
             <translation>Image Size</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>Image spacing</translation>
         </message>
         <message>
             <source>Landscape</source>
@@ -492,8 +532,16 @@
             <translation>Letter</translation>
         </message>
         <message>
+            <source>Nine images</source>
+            <translation>Nine images</translation>
+        </message>
+        <message>
             <source>Page margin</source>
             <translation>Page margin</translation>
+        </message>
+        <message>
+            <source>Page-based stitching</source>
+            <translation>Page-based stitching</translation>
         </message>
         <message>
             <source>Paper orientation</source>
@@ -512,12 +560,139 @@
             <translation>Portrait</translation>
         </message>
         <message>
+            <source>Seven images</source>
+            <translation>Seven images</translation>
+        </message>
+        <message>
+            <source>Six images</source>
+            <translation>Six images</translation>
+        </message>
+        <message>
+            <source>Stitching method</source>
+            <translation>Stitching method</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>Template</translation>
+        </message>
+        <message>
+            <source>Template-based stitching</source>
+            <translation>Template-based stitching</translation>
+        </message>
+        <message>
+            <source>Three images</source>
+            <translation>Three images</translation>
+        </message>
+        <message>
+            <source>Two images</source>
+            <translation>Two images</translation>
+        </message>
+        <message>
             <source>Width</source>
             <translation>Width</translation>
         </message>
         <message>
             <source>mm</source>
             <translation>mm</translation>
+        </message>
+    </context>
+    <context>
+        <name>CollagePdfTemplateWidget</name>
+        <message>
+            <source>Add images</source>
+            <translation>Add images</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>Add images to create a PDF document</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>Clear all</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>Delete image</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
+            <translation>Drag an image to move or swap it; drag its selection handles to scale around its center</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>Flip horizontally</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>Flip vertically</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>Image %1: %2</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled.</source>
+            <translation>Image preview was cancelled.</translation>
+        </message>
+        <message>
+            <source>Input images</source>
+            <translation>Input images</translation>
+        </message>
+        <message>
+            <source>Next page</source>
+            <translation>Next page</translation>
+        </message>
+        <message>
+            <source>No pages</source>
+            <translation>No pages</translation>
+        </message>
+        <message>
+            <source>Page %1 of %2</source>
+            <translation>Page %1 of %2</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>Preview original image</translation>
+        </message>
+        <message>
+            <source>Previous page</source>
+            <translation>Previous page</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>Replace image</translation>
+        </message>
+        <message>
+            <source>Reset image</source>
+            <translation>Reset image</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>Reverse image order</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>Rotate clockwise by 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>Rotate counterclockwise by 90°</translation>
+        </message>
+        <message>
+            <source>Select to show this image's page; drag onto another image to swap</source>
+            <translation>Select to show this image's page; drag onto another image to swap</translation>
+        </message>
+        <message>
+            <source>Template stitching preview</source>
+            <translation>Template stitching preview</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable.</source>
+            <translation>The original image is unavailable.</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings.</source>
+            <translation>The page preview shows the last valid settings.</translation>
         </message>
     </context>
     <context>
