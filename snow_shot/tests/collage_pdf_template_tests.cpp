@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/image.h"
 #include "widgets/scroll_area.h"
@@ -19,6 +20,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPalette>
 #include <QScrollBar>
 #include <QThread>
 #include <QTranslator>
@@ -198,6 +200,113 @@ void sharedSelectionMetricsAndDpi() {
         require(surface.pixelColor(outside) == QColor(230, 230, 230),
                 "eight-pixel visual handles must not grow to their twelve-pixel hit areas");
     }
+}
+
+void requireSolidCellBorder(const QImage& surface, const QRectF& bounds, const QColor& stroke) {
+    for (int edge = 0; edge < 4; ++edge) {
+        const bool vertical = edge < 2;
+        const int across = qRound(vertical ? (edge == 0 ? bounds.left() : bounds.right())
+                                           : (edge == 2 ? bounds.top() : bounds.bottom()));
+        const int start = qCeil(vertical ? bounds.top() : bounds.left()) + 8;
+        const int end = qFloor(vertical ? bounds.bottom() : bounds.right()) - 8;
+        const auto thicknessAt = [&](int along) {
+            int count = 0;
+            for (int pixel = across - 4; pixel <= across + 4; ++pixel) {
+                const QPoint sample = vertical ? QPoint(pixel, along) : QPoint(along, pixel);
+                if (surface.pixelColor(sample) == stroke)
+                    ++count;
+            }
+            return count;
+        };
+        for (int along = start; along <= end; ++along)
+            require(thicknessAt(along) > 0,
+                    "every occupied and empty cell edge must be a continuous #F0F0F0 line");
+        const int thickness = thicknessAt(qRound(start + (end - start) * .37));
+        require(thickness == qRound(surface.devicePixelRatio()),
+                qPrintable(QStringLiteral("Cell edge %1 at DPR %2 has thickness %3; expected %4 "
+                                          "(bounds %5,%6 %7x%8)")
+                               .arg(edge)
+                               .arg(surface.devicePixelRatio())
+                               .arg(thickness)
+                               .arg(qRound(surface.devicePixelRatio()))
+                               .arg(bounds.x())
+                               .arg(bounds.y())
+                               .arg(bounds.width())
+                               .arg(bounds.height())));
+    }
+}
+
+void solidCellBordersAtEveryDpi() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themes.config();
+    CollageDocument document;
+    configure(document);
+    CollagePdfTemplateCanvas canvas(&document);
+    // Distinguish border coverage from the surrounding canvas in both themes.
+    auto palette = canvas.palette();
+    palette.setColor(QPalette::Window, QColor(32, 48, 64));
+    canvas.setPalette(palette);
+    canvas.setAutoFillBackground(true);
+    show(canvas, {803, 727});
+    canvas.setExportBusy(true);
+    for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themes.setPreset(scheme);
+        auto seed = themes.seed();
+        seed.primary =
+            scheme == adqt::theme::ThemeScheme::Light ? QColor("#c41d7f") : QColor("#13c2c2");
+        themes.setSeed(seed);
+        const QColor stroke(QStringLiteral("#F0F0F0"));
+        for (const auto type :
+             {CollagePdfTemplateType::TwoImages, CollagePdfTemplateType::IdCard,
+              CollagePdfTemplateType::ThreeImages, CollagePdfTemplateType::FourImages,
+              CollagePdfTemplateType::FiveImages, CollagePdfTemplateType::SixImages,
+              CollagePdfTemplateType::SevenImages, CollagePdfTemplateType::EightImages,
+              CollagePdfTemplateType::NineImages}) {
+            document.clear();
+            configure(document, type);
+            // Leave the final cell empty; occupied cells cover their clips right up to the guides.
+            for (int index = 1; index < collagePdfTemplateCapacity(type); ++index) {
+                const auto id =
+                    document.append(image({64, 48}, QColor(240, 220, 180)), QString::number(index));
+                setManualCoverPlacement(document, id);
+            }
+            document.select(0);
+            for (const qreal spacing : {qreal{0}, qreal{5}}) {
+                auto settings = document.pdfSettings();
+                settings.imageSpacingMm = spacing;
+                settings.marginLeftMm = settings.marginTopMm = spacing == 0 ? 0 : 10;
+                settings.marginRightMm = settings.marginBottomMm = spacing == 0 ? 0 : 10;
+                document.setPdfSettings(settings);
+                for (const auto& item : document.items())
+                    setManualCoverPlacement(document, item.id);
+                const auto page = calculateCollagePdfComposedPage(document.items(), settings, 0);
+                const auto paper = canvas.pageViewportRect();
+                const qreal viewScale = paper.width() / page.pageMillimeters.width();
+                for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+                    for (const QPoint offset : {QPoint{}, QPoint{3, 5}}) {
+                        QImage surface(QSize(qCeil((canvas.width() + 6) * dpr),
+                                             qCeil((canvas.height() + 10) * dpr)),
+                                       QImage::Format_ARGB32_Premultiplied);
+                        surface.setDevicePixelRatio(dpr);
+                        surface.fill(Qt::transparent);
+                        {
+                            QPainter painter(&surface);
+                            canvas.render(&painter, offset, {}, QWidget::DrawWindowBackground);
+                        }
+                        for (const auto& cell : page.cells) {
+                            const QRectF bounds((paper.topLeft() +
+                                                 cell.clipMillimeters.topLeft() * viewScale +
+                                                 offset) *
+                                                    dpr,
+                                                cell.clipMillimeters.size() * viewScale * dpr);
+                            requireSolidCellBorder(surface, bounds, stroke);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    themes.setConfig(originalConfig);
 }
 
 void paginationThumbnailsAndSwaps() {
@@ -696,6 +805,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     try {
         sharedSelectionMetricsAndDpi();
+        solidCellBordersAtEveryDpi();
         paginationThumbnailsAndSwaps();
         centeredResizeMoveResetAndCancellation();
         automaticContainmentAcrossTemplatesAndLayoutChanges();
