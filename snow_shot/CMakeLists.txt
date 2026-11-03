@@ -9155,6 +9155,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-window-tests --context-menu-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-context-menu-tests PROPERTIES
         LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recognition-selection-resize-tests
+        COMMAND snow-shot-recognition-window-tests --selection-resize-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-selection-resize-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-recognition-double-click-tests
         COMMAND snow-shot-recognition-window-tests --ocr-double-click-only -platform offscreen)
     add_test(NAME snow-shot-recognition-box-selection-tests

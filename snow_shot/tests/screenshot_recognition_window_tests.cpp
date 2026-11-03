@@ -1510,15 +1510,15 @@ void ocrDoubleClickPreservesEditorsAndResizeHandles() {
     bool resizing = false;
     int completedResizes = 0;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [&](const QPointF& point) {
+    actions.selectionResizeDragModeAtGlobalPosition = [&](const QPointF& point) {
         return resizeEnabled && point.y() < 40 ? ScreenshotSelectionDragMode::Top
                                                : ScreenshotSelectionDragMode::None;
     };
-    actions.beginSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         resizing = true;
         return true;
     };
-    actions.finishSelectionResize = [&](const QPointF&) {
+    actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         resizing = false;
         ++completedResizes;
     };
@@ -2978,9 +2978,10 @@ void defaultSelectionResizeActionsDeclineInteraction() {
     for (const auto& actions : {ScreenshotRecognitionWindowActions{},
                                 ScreenshotRecognitionWindowActions{.handleCancel = []() {}}}) {
         for (const QPointF& point : {QPointF(), QPointF(19.5, -42.0)}) {
-            require(actions.selectionResizeDragMode(point) == ScreenshotSelectionDragMode::None,
+            require(actions.selectionResizeDragModeAtGlobalPosition(point) ==
+                        ScreenshotSelectionDragMode::None,
                     "an unwired recognition surface must expose no resize handle");
-            require(!actions.beginSelectionResize(point),
+            require(!actions.beginSelectionResizeAtGlobalPosition(point),
                     "an unwired recognition surface must decline selection resizing");
         }
     }
@@ -2990,11 +2991,11 @@ void selectionResizeCompletionCanReplaceWindow() {
     QPointer<ScreenshotRecognitionWindow> window;
     bool finished = false;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [](const QPointF&) {
+    actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
         return ScreenshotSelectionDragMode::Right;
     };
-    actions.beginSelectionResize = [](const QPointF&) { return true; };
-    actions.finishSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [](const QPointF&) { return true; };
+    actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         require(QWidget::mouseGrabber() != window.data(),
                 "completion must release capture before deleting the recognition window");
         delete window.data();
@@ -3022,10 +3023,10 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
             int updates = 0;
             int finishes = 0;
             ScreenshotRecognitionWindowActions actions;
-            actions.selectionResizeDragMode = [](const QPointF&) {
+            actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
                 return ScreenshotSelectionDragMode::Right;
             };
-            actions.beginSelectionResize = [&](const QPointF&) {
+            actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
                 require(
                     QWidget::mouseGrabber() == surface,
                     "resize must own mouse capture before recognition clears the pressed child");
@@ -3035,8 +3036,8 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
                 }
                 return acceptResize;
             };
-            actions.updateSelectionResize = [&](const QPointF&) { ++updates; };
-            actions.finishSelectionResize = [&](const QPointF&) {
+            actions.updateSelectionResizeAtGlobalPosition = [&](const QPointF&) { ++updates; };
+            actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF&) {
                 require(QWidget::mouseGrabber() != surface,
                         "resize must release capture before completion can replace its window");
                 ++finishes;
@@ -3078,6 +3079,69 @@ void selectionResizeKeepsMouseCaptureWhenContentIsCleared() {
             QApplication::sendEvent(&window, &hover);
             require(updates == (acceptResize ? 1 : 0),
                     "mouse movement after release must not continue resizing");
+        }
+    }
+}
+
+void selectionResizeUsesGlobalPointerAcrossGeometryChanges() {
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        for (const bool table : {false, true}) {
+            QWidget host;
+            host.setGeometry(-400, -200, 500, 300);
+            QVector<QPointF> presses;
+            QVector<QPointF> moves;
+            QVector<QPointF> releases;
+            ScreenshotRecognitionWindowActions actions;
+            actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
+                return ScreenshotSelectionDragMode::TopLeft;
+            };
+            actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                presses.append(point);
+                return true;
+            };
+            actions.updateSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                moves.append(point);
+            };
+            actions.finishSelectionResizeAtGlobalPosition = [&](const QPointF& point) {
+                releases.append(point);
+            };
+            ScreenshotRecognitionWindow window(std::move(actions), &host, mode);
+            require(window.present({QGuiApplication::primaryScreen(), nullptr,
+                                    QRect(-300, -100, 240, 120), QRectF(400, 300, 480, 240), mode}),
+                    "global pointer fixture presents at a different origin and scale");
+            if (table) {
+                window.setTableSession(std::make_shared<ScreenshotTableEditingSession>(
+                    ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD"))));
+            } else {
+                window.showQrContents({QStringLiteral("https://example.com")});
+            }
+            QApplication::processEvents();
+            QWidget* viewport = table ? window.findChild<ScreenshotTableEditor*>()->viewport()
+                                      : window.findChild<QTextBrowser*>()->viewport();
+            const QPointF local(2.25, 2.75);
+            const QPointF global = viewport->mapToGlobal(local);
+            QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(viewport, &press);
+            require(presses == QVector<QPointF>{global},
+                    "child resize presses must retain fractional global coordinates");
+            const QPointF queuedLocal = window.mapFromGlobal(global);
+            require(window.updateSelectionGeometry(QRect(-280, -70, 260, 140),
+                                                   QRectF(420, 330, 520, 280)),
+                    "the recognition surface follows the changed selection");
+            for (int sample = 0; sample < 3; ++sample) {
+                QMouseEvent move(QEvent::MouseMove, queuedLocal, global, Qt::NoButton,
+                                 Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(&window, &move);
+            }
+            QMouseEvent release(QEvent::MouseButtonRelease, queuedLocal, global, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&window, &release);
+            require(moves == QVector<QPointF>{global, global, global} &&
+                        releases == QVector<QPointF>{global},
+                    "moving recognition surfaces must preserve queued screen positions through "
+                    "release");
         }
     }
 }
@@ -4279,6 +4343,7 @@ int main(int argc, char** argv) {
     defaultSelectionResizeActionsDeclineInteraction();
     selectionResizeKeepsMouseCaptureWhenContentIsCleared();
     selectionResizeCompletionCanReplaceWindow();
+    selectionResizeUsesGlobalPointerAcrossGeometryChanges();
     if (application.arguments().contains(QStringLiteral("--selection-resize-only"))) {
         return 0;
     }

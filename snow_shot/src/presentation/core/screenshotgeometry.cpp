@@ -653,6 +653,20 @@ ScreenshotGeometryMapper::displayForLogicalPoint(const ScreenshotDisplaySession&
     return found;
 }
 
+QPointF ScreenshotGeometryMapper::canvasPositionForLogicalPoint(
+    const ScreenshotDisplaySession& displaySession, const QPointF& point) const {
+    const auto* display = displayForLogicalPoint(displaySession, point);
+    if (display == nullptr) {
+        display = nearestDisplayForPoint(
+            displaySession, point,
+            [](const CapturedDisplayModel& candidate) { return candidate.logicalRect; });
+    }
+    // Keep fractional and out-of-display positions intact. The selection gesture owns clamping.
+    return display != nullptr ? DisplayCoordinateTransform(*display).overlayLocalToCanvas(
+                                    point - QPointF(display->logicalRect.topLeft()))
+                              : point;
+}
+
 QPointF
 ScreenshotGeometryMapper::canvasPositionForPhysicalPoint(const CapturedDisplayModel& display,
                                                          const QPointF& point) const {

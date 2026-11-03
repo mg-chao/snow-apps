@@ -936,18 +936,24 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
             [this](const QUrl& url) { handleQrLinkActivated(url); },
             [this]() { undoTextEdit(); },
             [this]() { redoTextEdit(); },
-            [this](const QPointF& canvasPosition) {
-                return m_context.selectionResizeDragMode(canvasPosition);
+            [this](const QPointF& globalPosition) {
+                return m_context.selectionResizeDragMode(
+                    m_context.geometry.canvasPositionForLogicalPoint(m_context.displaySession,
+                                                                     globalPosition));
             },
-            [this](const QPointF& canvasPosition) {
-                return m_context.beginSelectionResize(canvasPosition);
+            [this](const QPointF& globalPosition) {
+                return m_context.beginSelectionResize(
+                    m_context.geometry.canvasPositionForLogicalPoint(m_context.displaySession,
+                                                                     globalPosition));
             },
-            [this](const QPointF& canvasPosition) {
-                m_context.updateSelectionResize(canvasPosition);
+            [this](const QPointF& globalPosition) {
+                m_context.updateSelectionResize(m_context.geometry.canvasPositionForLogicalPoint(
+                    m_context.displaySession, globalPosition));
                 updateRecognitionWindowGeometry();
             },
-            [this](const QPointF& canvasPosition) {
-                m_context.finishSelectionResize(canvasPosition);
+            [this](const QPointF& globalPosition) {
+                m_context.finishSelectionResize(m_context.geometry.canvasPositionForLogicalPoint(
+                    m_context.displaySession, globalPosition));
                 updateRecognitionWindowGeometry();
             },
             []() {},
