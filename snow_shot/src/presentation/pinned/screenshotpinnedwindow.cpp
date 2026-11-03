@@ -1404,6 +1404,21 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("copy_original_content"),
                                     m_shortcutManager->addBinding(this, std::move(copyOriginal)));
 
+    ShortcutManager::Binding paste;
+    paste.id = QStringLiteral("pinned.paste");
+    paste.keyCombinations = standardKeyCombinations(QKeySequence::Paste);
+    paste.priority = ShortcutManager::StandardPriority::WindowCommand;
+    paste.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return !isLiveWindow() && m_firstContentFramePublished && !m_originalImage.isNull() &&
+               (context.event == nullptr || !context.event->isAutoRepeat()) &&
+               QApplication::activeModalWidget() == nullptr && localCommandsAllowed(context);
+    };
+    paste.activate = [this](const auto&) {
+        loadClipboardContent();
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(paste)));
+
     ShortcutManager::Binding print;
     print.id = QStringLiteral("pinned.print");
     print.priority = ShortcutManager::StandardPriority::WindowCommand;
