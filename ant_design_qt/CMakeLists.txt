@@ -342,6 +342,15 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-focus-interaction-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+    add_executable(adqt-interaction-overlay-tests tests/interaction_overlay_tests.cpp)
+    target_link_libraries(adqt-interaction-overlay-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-interaction-overlay-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-interaction-overlay-tests COMMAND adqt-interaction-overlay-tests)
+    set_tests_properties(adqt-interaction-overlay-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
     add_executable(adqt-text-edit-accessibility-tests tests/text_edit_accessibility_tests.cpp)
     target_link_libraries(adqt-text-edit-accessibility-tests PRIVATE adqt::widgets Qt6::Widgets)
     get_target_property(_adqt_text_edit_qt_core_type Qt6::Core TYPE)
