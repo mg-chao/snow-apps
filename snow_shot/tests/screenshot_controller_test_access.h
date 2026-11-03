@@ -7,6 +7,7 @@
 #endif
 
 class ScreenshotController;
+class ScreenshotOverlayWindow;
 class ScreenshotToolbarCommandSink;
 struct ScreenshotSelectionParams;
 
@@ -15,6 +16,7 @@ class ScreenshotControllerTestAccess {
   public:
     static void prepareSelection(ScreenshotController& controller, QImage image,
                                  const ScreenshotSelectionParams& selection);
+    static ScreenshotOverlayWindow* presentSelection(ScreenshotController& controller);
     [[nodiscard]] static bool exportActive(const ScreenshotController& controller);
 #ifdef Q_OS_MACOS
     static void
