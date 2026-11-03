@@ -308,6 +308,10 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
             [this](const QString& value) { m_commands.applyTextPunctuation(value); });
     connect(&toolPalette, &ScreenshotToolPalette::textTargetLanguageRequested, this,
             [this](const QString& language) { m_commands.applyTextTargetLanguage(language); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslationServicesRequested, this,
+            [this] { m_commands.requestTextTranslationServices(); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslationServiceRequested, this,
+            [this](const QString& service) { m_commands.applyTextTranslationService(service); });
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     connect(&toolPalette, &ScreenshotToolPalette::tableMergeRequested, this,
             [this]() { m_commands.mergeTableSelection(); });

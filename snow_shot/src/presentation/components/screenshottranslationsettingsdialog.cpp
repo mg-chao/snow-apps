@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "snow_shot/presentation/components/formfields.h"
+#include "snow_shot/presentation/components/translationserviceoptions.h"
 
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/translation/translationlanguages.h"
@@ -194,10 +195,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     };
     const auto sync = [=, &service] {
         const QScopedValueRollback guard(draft->applying, true);
-        QVector<AdSelect::Option> options;
-        for (const auto& model : service.models())
-            options.append(
-                {model.id, model.name, false, translation::translationModelGroup(model)});
+        const auto options = translationServiceOptions(service.models());
         QString selected =
             draft->modelEdited ? models->currentValue().toString() : service.preferences().modelId;
         if (selected.isEmpty())

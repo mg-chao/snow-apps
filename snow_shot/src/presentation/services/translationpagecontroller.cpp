@@ -133,7 +133,8 @@ void TranslationPageController::retry() {
         return;
     invalidateTranslation();
     m_retryRequired = false;
-    if (m_service->models().isEmpty())
+    if (std::none_of(m_service->models().cbegin(), m_service->models().cend(),
+                     [this](const auto& model) { return model.id == preferences().modelId; }))
         m_service->refreshModels(true);
     m_requestDue = !m_source.trimmed().isEmpty();
     startTranslation();

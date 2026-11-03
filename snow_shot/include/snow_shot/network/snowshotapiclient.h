@@ -269,6 +269,7 @@ class SnowShotApiClient final : public QObject {
     void appendLocalModels(QVector<SnowShotChatModel>& models) const;
     const snow_shot::CustomAiModelConfiguration* customModel(const QString& id) const;
     QString m_baseUrl;
+    QString m_freeTranslationBaseUrl;
     quint64 m_serverGeneration = 0;
     quint64 m_chatModelsLocaleGeneration = 0;
     QString m_requestedChatModelsLocale;

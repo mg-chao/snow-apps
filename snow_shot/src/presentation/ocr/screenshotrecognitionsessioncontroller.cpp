@@ -291,10 +291,14 @@ void ScreenshotRecognitionSessionController::setProviders(
         m_translationService = &TranslationService::forClient(
             *tableRecognition, snow_shot::storage::ApplicationStorage::instance().configuration(),
             snow_shot::presentation::LanguageManager::instance().currentLocale());
+        connect(m_translationService, &TranslationService::catalogChanged, this,
+                [this] { updateTextState(); });
         connect(m_translationService, &TranslationService::preferencesChanged, this,
                 [this](TranslationService::ChangeReason reason) {
-                    if (reason != TranslationService::ChangeReason::UserPreferences)
+                    if (reason != TranslationService::ChangeReason::UserPreferences) {
+                        updateTextState();
                         return;
+                    }
                     QTimer::singleShot(0, this, [this] {
                         const auto entry = m_textCache.constFind(m_translationKey);
                         if (entry != m_textCache.cend() && entry->hasTranslationConfiguration &&
@@ -2205,6 +2209,34 @@ void ScreenshotRecognitionSessionController::applyTextTargetLanguage(const QStri
 #endif
 }
 
+void ScreenshotRecognitionSessionController::requestTextTranslationServices() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_translationService != nullptr)
+        m_translationService->refreshModels();
+#endif
+}
+
+void ScreenshotRecognitionSessionController::applyTextTranslationService(const QString& service) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
+    if (m_translationService == nullptr)
+        return;
+    auto preferences = m_translationService->preferences();
+    if (preferences.modelId != service) {
+        preferences.modelId = service;
+        const bool saved = m_translationService->savePreferences(preferences);
+        if (!lifetime || !m_translationService)
+            return;
+        if (!saved)
+            if (!showStatus(m_translationService->errorText(), true))
+                return;
+    }
+    updateTextState();
+#else
+    Q_UNUSED(service);
+#endif
+}
+
 void ScreenshotRecognitionSessionController::openTranslationSettings() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     const QPointer<ScreenshotRecognitionSessionController> lifetime(this);
@@ -3873,6 +3905,14 @@ bool ScreenshotRecognitionSessionController::updateTextState() const {
     const bool available = hasTextResult() && m_active && m_mode == Mode::Text;
     const auto entry = m_textCache.value(m_editingKey);
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_actions.setTextTranslationServices)
+        if (!notifyCallback(m_actions.setTextTranslationServices,
+                            m_translationService ? m_translationService->models()
+                                                 : QVector<SnowShotChatModel>{},
+                            m_translationService ? m_translationService->preferences().modelId
+                                                 : QString{},
+                            m_translationService && m_translationService->loadingModels()))
+            return false;
     if (m_translationService != nullptr && m_actions.setTextTargetLanguage)
         if (!notifyCallback(m_actions.setTextTargetLanguage,
                             m_translationService->preferences().targetLanguage))

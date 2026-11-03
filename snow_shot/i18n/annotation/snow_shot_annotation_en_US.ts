@@ -1508,6 +1508,10 @@
             <translation>Thought Bubble</translation>
         </message>
         <message>
+            <source>Translation service</source>
+            <translation>Translation service</translation>
+        </message>
+        <message>
             <source>Translation settings</source>
             <translation>Translation settings</translation>
         </message>

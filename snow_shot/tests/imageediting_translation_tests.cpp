@@ -6,7 +6,11 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/translation/freetranslation.h"
+#include "translation_test_support.h"
+#include "widgets/select.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -160,6 +164,97 @@ void independentFreshTranslationKeepsTextPresentation() {
             "a fresh independent translation keeps text editing even with image mode enabled");
 }
 
+void quickServicePickerDiscoversModelsWithoutATranslationJob() {
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const auto original = settings.configuration();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setConfiguration(original)); });
+    auto configuration = original;
+    configuration.modelId = snow_shot::translation::freeTranslationId;
+    require(settings.setConfiguration(configuration), "select the default free service");
+    for (const bool rejectFirst : {false, true}) {
+        translation_tests::Server server;
+        server.holdModels = true;
+        server.rejectModels = rejectFirst;
+        SnowShotApiClient api(server.url());
+        ImageEditingWindow editor(
+            {[&] { return ScreenshotPinnedRecognitionProviders{nullptr, nullptr, &api}; }});
+        ImageEditingSource source;
+        source.image = QImage(100, 60, QImage::Format_ARGB32_Premultiplied);
+        source.image.fill(Qt::white);
+        source.canvasRect = QRectF(0, 0, 100, 60);
+        source.recognition = recognitionFixture();
+        editor.present(std::move(source));
+        editor.palette()->textTranslationRequested();
+        QApplication::processEvents();
+        auto* session = editor.recognition();
+        auto* select = editor.palette()->findChild<adqt::widgets::AdSelect*>(
+            QStringLiteral("screenshotTranslationQuickServiceSelect"));
+        auto& service = snow_shot::translation::TranslationService::forClient(
+            api, snow_shot::storage::ApplicationStorage::instance().configuration(),
+            QLocale::English);
+        require(session && select && session->translating() && select->options().size() == 1 &&
+                    select->currentValue() == configuration.modelId && server.modelRequests == 0 &&
+                    session->findChildren<snow_shot::translation::TranslationJob*>().isEmpty(),
+                "a fresh free-service picker starts with usable local options and cached text");
+        select->setPopupVisible(true);
+        awaitCondition([&] { return server.modelRequests == 1; },
+                       "opening the quick picker discovers built-in services without a job");
+        require(select->popupVisible() && select->isEnabled() && service.loadingModels() &&
+                    select->currentValue() == configuration.modelId,
+                "local services stay usable while catalog discovery is pending");
+        select->setPopupVisible(false);
+        select->setPopupVisible(true);
+        QApplication::processEvents();
+        require(server.modelRequests == 1, "reopening shares the pending catalog request");
+        select->setSearchText(QStringLiteral("AI"));
+        server.respondModels();
+        awaitCondition([&] { return !service.loadingModels(); }, "catalog discovery settles");
+        if (rejectFirst) {
+            require(select->isEnabled() && select->options().size() == 1 &&
+                        select->currentValue() == configuration.modelId &&
+                        service.errorText().isEmpty(),
+                    "catalog failure preserves the selected local service");
+            select->setPopupVisible(false);
+            select->setPopupVisible(true);
+            awaitCondition([&] { return server.modelRequests == 2; },
+                           "reopening retries a failed catalog request");
+            select->setSearchText(QStringLiteral("AI"));
+            server.rejectModels = false;
+            server.respondModels();
+            awaitCondition([&] { return !service.loadingModels(); }, "catalog retry settles");
+        }
+        require(select->popupVisible() && select->options().size() == 4 &&
+                    select->searchText() == QStringLiteral("AI") &&
+                    select->currentValue() == configuration.modelId &&
+                    session->textDraft() == QStringLiteral("Translated text") &&
+                    session->findChildren<snow_shot::translation::TranslationJob*>().isEmpty() &&
+                    server.streams.isEmpty(),
+                "discovery preserves the open picker's search, selection, and cached text");
+        select->setPopupVisible(false);
+        select->setPopupVisible(true);
+        awaitCondition([&] { return !service.loadingModels(); }, "cached catalog is republished");
+        require(server.modelRequests == (rejectFirst ? 2 : 1),
+                "reopening a loaded picker reuses the catalog cache");
+        select->setPopupVisible(false);
+        select->setCurrentValue(QStringLiteral("general"));
+        awaitCondition([&] { return server.streams.size() == 1; },
+                       "the newly discovered service translates the original text");
+        const auto body = server.streams.first().body;
+        const auto content = body.value(QStringLiteral("messages")).toArray().last().toObject();
+        require(body.value(QStringLiteral("model")) == QStringLiteral("general") &&
+                    content.value(QStringLiteral("content")) == QStringLiteral("Original text"),
+                "switching services sends the original source to the selected model");
+        server.delta(0, QStringLiteral("Server translation"));
+        server.finish(0);
+        awaitCondition([&] { return session->textDraft() == QStringLiteral("Server translation"); },
+                       "the selected service publishes its translation");
+        editor.shutdown();
+        require(settings.setConfiguration(configuration),
+                "restore the free service for the next host");
+    }
+}
+
 void independentModeAfterSeedingKeepsCapturedText() {
     const auto cached = recognitionFixture();
     QImage image(100, 60, QImage::Format_ARGB32_Premultiplied);
@@ -203,6 +298,7 @@ void runImageEditingTranslationTests() {
     require(settings.setOriginalImageTranslationEnabled(true),
             "translation regression selects image translation for ordinary hosts");
     liveAndPersistedTranslationImports();
+    quickServicePickerDiscoversModelsWithoutATranslationJob();
     independentModeAfterSeedingKeepsCapturedText();
     independentFreshTranslationKeepsTextPresentation();
     ordinaryHostsKeepCapturedOverlay();

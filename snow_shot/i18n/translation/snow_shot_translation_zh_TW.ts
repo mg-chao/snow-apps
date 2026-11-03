@@ -2,6 +2,13 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>FreeTranslation</name>
+        <message>
+            <source>The free translation service may no longer be available. Please update the app or report the issue.</source>
+            <translation>免費翻譯服務可能已無法使用。請更新應用程式或回報此問題。</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotTranslationSettingsDialog</name>
         <message>
             <source>%</source>
@@ -252,6 +259,10 @@
     </context>
     <context>
         <name>snow_shot::translation::TranslationService</name>
+        <message>
+            <source>Free Translation</source>
+            <translation>免費翻譯</translation>
+        </message>
         <message>
             <source>Model configuration changed. Retry to use the updated settings.</source>
             <translation>模型設定已變更。請重試以使用更新後的設定。</translation>

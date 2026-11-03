@@ -470,6 +470,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void applyTextFormatting(const QString& value) override;
     void applyTextPunctuation(const QString& value) override;
     void applyTextTargetLanguage(const QString& language) override;
+    void requestTextTranslationServices() override;
+    void applyTextTranslationService(const QString& service) override;
     void startScrollingScreenshot() override;
     void restartScrollingScreenshot() override;
     void splitScrollingScreenshot() override;
@@ -3032,6 +3034,16 @@ void ScreenshotController::Impl::applyTextFormatting(const QString& value) {
 void ScreenshotController::Impl::applyTextTargetLanguage(const QString& language) {
     if (m_ocrController != nullptr)
         m_ocrController->applyTextTargetLanguage(language);
+}
+
+void ScreenshotController::Impl::requestTextTranslationServices() {
+    if (m_ocrController != nullptr)
+        m_ocrController->requestTextTranslationServices();
+}
+
+void ScreenshotController::Impl::applyTextTranslationService(const QString& service) {
+    if (m_ocrController != nullptr)
+        m_ocrController->applyTextTranslationService(service);
 }
 
 void ScreenshotController::Impl::applyTextPunctuation(const QString& value) {

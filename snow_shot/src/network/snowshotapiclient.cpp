@@ -9,6 +9,8 @@
 #include <QHttp1Configuration>
 #include "boundednetworkresponse.h"
 #include "texttranslationprotocol.h"
+#include "freetranslationprotocol.h"
+#include "snow_shot/translation/freetranslation.h"
 #include <QUuid>
 
 #include "snowimageqtcodec.h"
@@ -569,6 +571,7 @@ struct SnowShotApiClient::Request {
     QByteArray pendingBody;
     bool custom = false;
     bool builtInChat = false;
+    bool freeTranslation = false;
     int chatAttempts = 0;
     bool textTranslation = false;
     SnowShotTranslationRequest translationInput;
@@ -586,7 +589,9 @@ QString SnowShotApiClient::configuredBaseUrl(const QString& savedUrl) {
 }
 
 SnowShotApiClient::SnowShotApiClient(QString baseUrl, QObject* parent)
-    : QObject(parent), m_baseUrl(normalizedBaseUrl(std::move(baseUrl))) {
+    : QObject(parent), m_baseUrl(normalizedBaseUrl(std::move(baseUrl))),
+      m_freeTranslationBaseUrl(
+          normalizedBaseUrl(QStringLiteral(SNOW_SHOT_FREE_TRANSLATION_API_BASE_URL))) {
     m_builtinChatClock.start();
     m_builtinChatTimer = new QTimer(this);
     m_builtinChatTimer->setSingleShot(true);
@@ -896,6 +901,15 @@ bool SnowShotApiClient::hasBuiltInModels(const QString& locale) const {
     return !m_cachedChatModels.isEmpty() && m_cachedChatModelsLocale == locale;
 }
 QString SnowShotApiClient::modelFingerprint(const QString& id) const {
+    if (id == snow_shot::translation::freeTranslationId) {
+        return QString::fromLatin1(
+            QCryptographicHash::hash(
+                QJsonDocument(
+                    QJsonArray{m_freeTranslationBaseUrl, snow_shot::network::freeTranslationModel})
+                    .toJson(QJsonDocument::Compact),
+                QCryptographicHash::Sha256)
+                .toHex());
+    }
     if (const auto* config = textTranslation(id)) {
         auto copy = *config;
         copy.name.clear();
@@ -1147,6 +1161,7 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                         parsed.translationMode = QStringLiteral("default");
                     }
                     if (!parsed.id.isEmpty() && !parsed.name.isEmpty() &&
+                        parsed.id != snow_shot::translation::freeTranslationId &&
                         !parsed.id.startsWith(QStringLiteral("custom:")) &&
                         !parsed.id.startsWith(QStringLiteral("translation:"))) {
                         result.models.push_back(std::move(parsed));
@@ -1200,15 +1215,17 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     if (input.model.startsWith(QStringLiteral("translation:")))
         return enqueueTextTranslation(input, receiver, std::move(delta), std::move(completion));
     const auto* custom = customModel(input.model);
+    const bool freeTranslation = input.model == snow_shot::translation::freeTranslationId;
     if ((input.model.startsWith(QStringLiteral("custom:")) && custom == nullptr) ||
         receiver == nullptr || !delta || !completion ||
-        (custom == nullptr && m_baseUrl.isEmpty()) || input.model.trimmed().isEmpty() ||
-        input.text.isEmpty()) {
+        (custom == nullptr &&
+         (freeTranslation ? m_freeTranslationBaseUrl.isEmpty() : m_baseUrl.isEmpty())) ||
+        input.model.trimmed().isEmpty() || input.text.isEmpty()) {
         return 0;
     }
     std::optional<QString> qwenSourceLanguage;
     std::optional<QString> qwenTargetLanguage;
-    if (input.translationMode == QStringLiteral("qwen-mt")) {
+    if (!freeTranslation && input.translationMode == QStringLiteral("qwen-mt")) {
         qwenSourceLanguage = qwenMtLanguage(input.sourceLanguage);
         qwenTargetLanguage = qwenMtLanguage(input.targetLanguage);
         if (!qwenSourceLanguage || !qwenTargetLanguage ||
@@ -1219,7 +1236,9 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     QJsonObject body{{QStringLiteral("model"), custom != nullptr ? custom->model : input.model},
                      {QStringLiteral("temperature"), 0},
                      {QStringLiteral("max_tokens"), 4096}};
-    if (input.translationMode == QStringLiteral("qwen-mt")) {
+    if (freeTranslation) {
+        body = snow_shot::network::freeTranslationBody(input);
+    } else if (input.translationMode == QStringLiteral("qwen-mt")) {
         body.insert(QStringLiteral("messages"),
                     QJsonArray{
                         QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
@@ -1252,7 +1271,10 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     auto* state = new Request(Request::Kind::Translation);
     state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     state->model = input.model;
-    if (custom != nullptr) {
+    state->freeTranslation = freeTranslation;
+    if (freeTranslation) {
+        state->endpoint = m_freeTranslationBaseUrl + QStringLiteral("/chat/completions");
+    } else if (custom != nullptr) {
         state->custom = true;
         state->endpoint = custom->baseUrl + QStringLiteral("/chat/completions");
         state->apiKey = custom->apiKey.toUtf8();
@@ -1588,8 +1610,8 @@ void SnowShotApiClient::pumpBuiltInChatStreams() {
 
 bool SnowShotApiClient::retryBuiltInTranslation(RequestToken token, const QJsonObject& problem) {
     auto* request = m_requests.value(token);
-    if (!request || !request->builtInChat || request->kind != Request::Kind::Translation ||
-        !request->reply || request->hasContent ||
+    if (!request || !request->builtInChat || request->freeTranslation ||
+        request->kind != Request::Kind::Translation || !request->reply || request->hasContent ||
         request->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 429)
         return false;
     const QString code = problem.value(QStringLiteral("code")).toString();
@@ -1660,7 +1682,7 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     QHttp1Configuration http1;
     http1.setNumberOfConnectionsPerHost(state->custom ? 16 : 8);
     request.setHttp1Configuration(http1);
-    if (state->custom) {
+    if (state->custom || state->freeTranslation) {
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::SameOriginRedirectPolicy);
         if (!state->apiKey.isEmpty()) {
@@ -1669,6 +1691,8 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     }
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("Accept", "text/event-stream");
+    if (state->freeTranslation)
+        request.setRawHeader("User-Agent", "Index-Translate-Client/1.0");
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(kTranslationTimeoutMs);
@@ -1763,7 +1787,9 @@ void SnowShotApiClient::drainChatStream(RequestToken token) {
         QJsonParseError error{};
         const QJsonDocument document = QJsonDocument::fromJson(data, &error);
         const QJsonObject object = document.isObject() ? document.object() : QJsonObject{};
-        if (eventName == "error" || object.value(QStringLiteral("error")).isObject()) {
+        if (eventName == "error" || object.value(QStringLiteral("error")).isObject() ||
+            (current->freeTranslation && object.contains(QStringLiteral("error")) &&
+             !object.value(QStringLiteral("error")).isNull())) {
             current->streamFailed = true;
             SnowShotTranslationResult result;
             result.error = problemDetail(object);
@@ -1787,11 +1813,32 @@ void SnowShotApiClient::drainChatStream(RequestToken token) {
             finishTranslation(token, std::move(result));
             return;
         }
+        const auto choices = object.value(QStringLiteral("choices"));
+        if (current->freeTranslation && !choices.isUndefined() && !choices.isNull() &&
+            !choices.isArray()) {
+            SnowShotTranslationResult result;
+            result.error = tr("Invalid translation stream response");
+            finishTranslation(token, std::move(result));
+            return;
+        }
         QString content;
-        for (const QJsonValue& choice : object.value(QStringLiteral("choices")).toArray()) {
+        for (const QJsonValue& choice : choices.toArray()) {
+            const auto deltaObject = choice.toObject().value(QStringLiteral("delta"));
+            const auto deltaContent = deltaObject.toObject().value(QStringLiteral("content"));
+            if (current->freeTranslation &&
+                (!choice.isObject() ||
+                 (!deltaObject.isUndefined() && !deltaObject.isNull() && !deltaObject.isObject()) ||
+                 (!deltaContent.isUndefined() && !deltaContent.isNull() &&
+                  !deltaContent.isString()))) {
+                SnowShotTranslationResult result;
+                result.error = tr("Invalid translation stream response");
+                finishTranslation(token, std::move(result));
+                return;
+            }
             const QString reason =
                 choice.toObject().value(QStringLiteral("finish_reason")).toString();
-            if (current->imageResponse && !reason.isEmpty() && reason != QStringLiteral("stop")) {
+            if ((current->imageResponse || current->freeTranslation) && !reason.isEmpty() &&
+                reason != QStringLiteral("stop")) {
                 SnowShotTranslationResult result;
                 result.error = current->absoluteDeadline
                                    ? tr("Image recognition is incomplete. Try a smaller area.")
@@ -1865,9 +1912,10 @@ void SnowShotApiClient::completeChatStream(RequestToken token) {
         result.error = current->absoluteDeadline ? tr("Image recognition stream ended unexpectedly")
                        : current->imageResponse  ? tr("Image conversion stream ended unexpectedly")
                                                  : tr("Translation stream ended unexpectedly");
-    } else if (current->absoluteDeadline && !current->streamBuffer.trimmed().isEmpty()) {
+    } else if ((current->absoluteDeadline || current->freeTranslation) &&
+               !current->streamBuffer.trimmed().isEmpty()) {
         result.error = tr("Invalid model stream response");
-    } else if (current->imageResponse && !current->hasContent &&
+    } else if ((current->imageResponse || current->freeTranslation) && !current->hasContent &&
                current->kind != Request::Kind::TableVisionExtract) {
         result.error = tr("The model returned no content");
     }
@@ -2017,6 +2065,8 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
         result.error = tr("Image recognition timed out. Try a smaller area.");
         result.code = QStringLiteral("recognition_timeout");
     }
+    if (request->freeTranslation && !result.cancelled && !result.succeeded())
+        result.error = snow_shot::translation::freeTranslationErrorText();
     request->report(result.cancelled     ? QStringLiteral("cancelled")
                     : result.succeeded() ? QStringLiteral("succeeded")
                                          : QStringLiteral("failed"),

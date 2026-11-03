@@ -959,7 +959,7 @@ int main(int argc, char** argv) {
                     translation.configuration().targetLanguage.isEmpty() &&
                     translation.configuration().secondaryTargetLanguage == QStringLiteral("en") &&
                     translation.configuration().languageDetectionConfidenceThreshold == 60 &&
-                    translation.configuration().modelId.isEmpty() &&
+                    translation.configuration().modelId == QStringLiteral("free-translation") &&
                     translation.configuration().layoutProcessing == QStringLiteral("smart_merge"),
                 "reset Translation restores all seven settings");
 
