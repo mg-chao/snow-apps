@@ -268,6 +268,8 @@ class AdModal final : public QObject {
   bool closeOnEscape() const;
   void setCloseOnEscape(bool value);
 
+  // Plain modals show the close button by default; message/confirmation presets hide it.
+  // An explicit choice is retained across preset changes.
   bool closeButtonVisible() const;
   void setCloseButtonVisible(bool value);
 
@@ -499,7 +501,7 @@ class AdModal final : public QObject {
   bool maskVisible_ = true;
   bool closeOnMaskClick_ = true;
   bool closeOnEscape_ = true;
-  bool closeButtonVisible_ = true;
+  std::optional<bool> closeButtonVisible_;
   bool footerVisible_ = true;
   StandardButtons standardButtons_ = StandardButtons(StandardButton::Ok) | StandardButton::Cancel;
   bool acceptButtonBusy_ = false;

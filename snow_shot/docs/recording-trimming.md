@@ -68,6 +68,12 @@ quality control. Software encoders retain the selected CRF and speed preset. Liv
 recording sources retain bounded buffering; the offline policy rejects live GPU surface pools and
 segmented recovery. Encoder draining and duration finalization include the offline buffered tail.
 
+The FFmpeg overlay backports VideoToolbox's two-frame H.264 reorder-depth correction and
+CMTime rescaling. For reordered H.264/HEVC it also derives decode timestamps from the submitted
+presentation timeline delayed by frames, rather than subtracting a fixed time offset. This keeps
+`PTS >= DTS` for both regular output and sparse trims with changing frame intervals, while
+preserving hardware encoding, B-frames, original presentation times, and the final hold.
+
 Cropped Copy exports and Save suggestions expand the configured video filename format at export
 time, keeping the original output directory and extension. They share normal recording exports'
 `_1`, `_2`, and subsequent collision suffixes. Repeated Copy reuses the cached clip and its filename.
@@ -132,6 +138,9 @@ cargo test -p snow-recording-export --lib codec::tests
 cargo test -p snow-recording-export --lib software_presets_buffer_reorder_and_flush_variable_duration_frames
 # Optional native encoder validation; no screen capture or audio output.
 cargo test -p snow-recording-export --lib offline_hardware_sparse_frames_preserve_timestamps_and_endpoint -- --ignored
+# macOS VideoToolbox packet ordering, sparse holds, short clips and decoding.
+# Requires FFmpeg rebuilt with the repository overlay; no capture or audio output.
+cargo test -p snow-recording-export --test videotoolbox_timing -- --ignored
 # Optional AMD AMF single-picture drain regression; no capture or audio output.
 cargo test -p snow-recording-export --lib offline_amf_single_picture_drains_without_a_successor -- --ignored
 cargo test -p snow-recording-export --test retimed_av_sync
