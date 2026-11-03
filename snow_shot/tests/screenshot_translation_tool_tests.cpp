@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotocrcontroller.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
@@ -20,6 +21,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -246,9 +248,11 @@ void copyAfterRecognitionOwnsCompletion() {
     }
 }
 
-void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool cancelResize) {
+void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool cancelResize,
+                                                bool moveWithSpace = false, qreal scale = 1.0,
+                                                bool topLeft = false) {
     ScreenshotCaptureState capture;
-    capture.presentationSuppressed = true;
+    capture.presentationSuppressed = !moveWithSpace;
     ScreenshotInteractionState interaction;
     ScreenshotSelectionModel selection;
     selection.setSelectionRect(QRectF(10, 10, 80, 60));
@@ -261,7 +265,8 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
     CapturedDisplayModel display;
     display.stableId = QStringLiteral("translation-resize");
     display.logicalRect = overlay.geometry();
-    display.physicalRect = display.logicalRect;
+    display.physicalRect = QRect(0, 0, qRound(200 * scale), qRound(160 * scale));
+    display.logicalToPhysicalScale = scale;
     display.active = true;
     display.geometryResolved = true;
     display.image = QImage(display.physicalRect.size(), QImage::Format_RGB32);
@@ -275,8 +280,16 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
     coordinator.setToolbarCommandSinks(commands, commands);
     coordinator.attachToolbarToOverlay(&overlay);
     Recognition recognition;
+    ScreenshotOverlayInputHandler* input = nullptr;
     ScreenshotOcrController controller(
-        {capture, interaction, selection, displays, geometry, coordinator, recognition});
+        {capture, interaction, selection, displays, geometry, coordinator, recognition, nullptr,
+         nullptr, [] {}, [] {},
+         [&](const QPointF& point) {
+             return input->selectionResizeDragModeAtCanvasPosition(point);
+         },
+         [&](const QPointF& point) { return input->beginSelectionResizeAtCanvasPosition(point); },
+         [&](const QPointF& point) { input->updateSelectionResizeAtCanvasPosition(point); },
+         [&](const QPointF& point) { input->finishSelectionResizeAtCanvasPosition(point); }});
 
     controller.activateTextTranslation();
     const auto requireTranslation = [&] {
@@ -318,8 +331,69 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
     };
     ScreenshotOverlayInputHandler handler(
         {capture, interaction, selection, intelligent, geometry, displays, std::move(actions)});
-    require(handler.beginSelectionResizeAtCanvasPosition(QPointF(90, 40)),
-            "translation should allow selection border resizing");
+    input = &handler;
+    if (moveWithSpace) {
+        ScreenshotRecognitionWindow* window = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* recognitionWindow = qobject_cast<ScreenshotRecognitionWindow*>(widget))
+                window = recognitionWindow;
+        }
+        require(window != nullptr, "translation must present its recognition window");
+        const auto globalPoint = [&](const QPointF& point) {
+            return geometry.logicalPositionForCanvasPoint(
+                *geometry.displayForOverlay(displays, &overlay), point);
+        };
+        const auto localPoint = [&](const QPointF& point) {
+            return window->mapFromGlobal(globalPoint(point));
+        };
+        const auto send = [&](QEvent::Type type, const QPointF& local, const QPointF& global) {
+            const bool move = type == QEvent::MouseMove;
+            QMouseEvent event(type, local, global, move ? Qt::NoButton : Qt::LeftButton,
+                              type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(window, &event);
+        };
+        const QPointF pressPoint = topLeft ? QPointF(10, 10) : QPointF(90, 40);
+        const QPointF resizePoint = topLeft ? QPointF(5, 5) : QPointF(110, 40);
+        const QRect resized = topLeft ? QRect(5, 5, 85, 65) : QRect(10, 10, 100, 60);
+        send(QEvent::MouseButtonPress, localPoint(pressPoint), globalPoint(pressPoint));
+        const QPointF resizeLocal = localPoint(resizePoint);
+        send(QEvent::MouseMove, resizeLocal, globalPoint(resizePoint));
+        require(selection.pixelSelection() == resized,
+                "translation border drag must resize before Space is held");
+        send(QEvent::MouseMove, resizeLocal, globalPoint(resizePoint));
+        require(selection.pixelSelection() == resized,
+                "border resizing alone must not feed surface geometry back into pointer input");
+        require(handler.activateMoveEntireSelectionShortcut(),
+                "Space must temporarily move the resized translation selection");
+        // Queued mouse samples can retain local coordinates from before the window moves.
+        const QPointF movePoint = resizePoint + QPointF(10, 10);
+        const QPointF nextGlobal = globalPoint(movePoint);
+        const QRect moved = resized.translated(10, 10);
+        const QPointF queuedLocal = window->mapFromGlobal(nextGlobal);
+        send(QEvent::MouseMove, queuedLocal, nextGlobal);
+        require(selection.pixelSelection() == moved,
+                "Space movement must follow the screen pointer delta");
+        for (int sample = 0; sample < 4; ++sample) {
+            send(QEvent::MouseMove, queuedLocal, nextGlobal);
+            require(selection.pixelSelection() == moved,
+                    "a stationary screen pointer must not feed window movement back into the "
+                    "translation selection");
+        }
+        require(handler.releaseMoveEntireSelectionShortcut(), "Space release resumes resizing");
+        const QPointF resumePoint = movePoint + QPointF(10, 5);
+        send(QEvent::MouseMove, localPoint(resumePoint), globalPoint(resumePoint));
+        require(selection.pixelSelection() ==
+                    (topLeft ? QRect(25, 20, 75, 60) : QRect(20, 20, 110, 60)),
+                "resizing must resume from the translated selection without jumping");
+        const QPointF releasePoint = resumePoint + QPointF(5, 5);
+        const QPointF releaseLocal = localPoint(releasePoint);
+        send(QEvent::MouseMove, releaseLocal, globalPoint(releasePoint));
+        send(QEvent::MouseButtonRelease, releaseLocal, globalPoint(releasePoint));
+    } else {
+        require(handler.beginSelectionResizeAtCanvasPosition(QPointF(90, 40)),
+                "translation should allow selection border resizing");
+    }
     require(!controller.active() && interaction.moveToolActive(),
             "resizing should temporarily leave the recognition tool");
     if (cancelResize) {
@@ -327,7 +401,7 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
         interaction.cancelDrag();
         require(selection.pixelSelection() == QRect(10, 10, 80, 60),
                 "canceling an unmodified resize must retain the original selection");
-    } else {
+    } else if (!moveWithSpace) {
         handler.updateSelectionResizeAtCanvasPosition(QPointF(110, 40));
         handler.finishSelectionResizeAtCanvasPosition(QPointF(110, 40));
     }
@@ -337,9 +411,11 @@ void translationIdentitySurvivesSelectionResize(bool completeBeforeResize, bool 
             "finishing or canceling resize must restore translation rather than OCR");
     requireTranslation();
     if (!cancelResize) {
-        require(selection.pixelSelection() == QRect(10, 10, 100, 60) &&
-                    recognition.requests.size() == 2 &&
-                    recognition.requests.constLast().canvasRect == QRectF(10, 10, 100, 60),
+        const QRect expected = moveWithSpace
+                                   ? (topLeft ? QRect(30, 25, 70, 55) : QRect(20, 20, 115, 60))
+                                   : QRect(10, 10, 100, 60);
+        require(selection.pixelSelection() == expected && recognition.requests.size() == 2 &&
+                    recognition.requests.constLast().canvasRect == QRectF(expected),
                 "restored translation must recognize the modified selection");
         if (!completeBeforeResize) {
             recognition.complete(0);
@@ -379,6 +455,10 @@ int main(int argc, char* argv[]) {
         for (const bool cancelResize : {false, true}) {
             translationIdentitySurvivesSelectionResize(completeBeforeResize, cancelResize);
         }
+    }
+    for (const qreal scale : {1.0, 1.25, 1.5, 2.0}) {
+        for (const bool topLeft : {false, true})
+            translationIdentitySurvivesSelectionResize(true, false, true, scale, topLeft);
     }
     copyAfterRecognitionOwnsCompletion();
     storage.shutdown();

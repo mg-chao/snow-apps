@@ -2290,9 +2290,8 @@ void ScreenshotRecognitionWindow::focusOutEvent(QFocusEvent* event) {
 
 ScreenshotSelectionDragMode ScreenshotRecognitionWindow::selectionResizeDragModeAtLocalPoint(
     const QPointF& localPosition) const {
-    const auto callback = m_actions.selectionResizeDragMode;
-    const QPointF canvasPosition = canvasPositionForLocalPoint(localPosition);
-    return callback(canvasPosition);
+    const auto callback = m_actions.selectionResizeDragModeAtGlobalPosition;
+    return callback(mapToGlobal(localPosition));
 }
 
 Qt::CursorShape
@@ -2356,12 +2355,8 @@ bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, Q
     }
 
     auto* mouseEvent = static_cast<QMouseEvent*>(event);
-    QPointF localPosition = mouseEvent->position();
-    if (auto* watchedWidget = qobject_cast<QWidget*>(watched);
-        watchedWidget != nullptr && watchedWidget != this) {
-        localPosition = QPointF(watchedWidget->mapTo(this, mouseEvent->position().toPoint()));
-    }
-    const QPointF canvasPosition = canvasPositionForLocalPoint(localPosition);
+    const QPointF globalPosition = mouseEvent->globalPosition();
+    const QPointF localPosition = mapFromGlobal(globalPosition);
     const QPointer<ScreenshotRecognitionWindow> lifetime(this);
     const QPointer<QObject> watchedLifetime(watched);
     const bool wasAccepted = mouseEvent->isAccepted();
@@ -2371,19 +2366,19 @@ bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, Q
     const auto survived = [&] { return lifetime && (watched == nullptr || watchedLifetime); };
 
     if (event->type() == QEvent::MouseButtonPress && mouseEvent->button() == Qt::LeftButton) {
-        const ScreenshotSelectionDragMode dragMode =
-            selectionResizeDragModeAtLocalPoint(localPosition);
+        const auto hitTest = m_actions.selectionResizeDragModeAtGlobalPosition;
+        const ScreenshotSelectionDragMode dragMode = hitTest(globalPosition);
         if (!survived())
             return true;
         if (dragMode == ScreenshotSelectionDragMode::None) {
             mouseEvent->setAccepted(wasAccepted);
             return false;
         }
-        const auto callback = m_actions.beginSelectionResize;
+        const auto callback = m_actions.beginSelectionResizeAtGlobalPosition;
         // Beginning a resize clears recognition content and can delete the pressed viewport.
         // Keep the entire mouse gesture on the surviving window before invoking that callback.
         grabMouse();
-        const bool started = callback(canvasPosition);
+        const bool started = callback(globalPosition);
         if (!lifetime)
             return true;
         if (!started) {
@@ -2401,8 +2396,8 @@ bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, Q
 
     if (event->type() == QEvent::MouseMove) {
         if (m_selectionResizeActive) {
-            const auto callback = m_actions.updateSelectionResize;
-            callback(canvasPosition);
+            const auto callback = m_actions.updateSelectionResizeAtGlobalPosition;
+            callback(globalPosition);
             return true;
         }
         updateSelectionResizeCursor(localPosition);
@@ -2425,10 +2420,10 @@ bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, Q
         unsetCursor();
         // Restoring recognition can replace this window. Finish all local state changes and
         // copy callbacks before handing control back to the selection controller.
-        const auto finishSelectionResize = m_actions.finishSelectionResize;
+        const auto finishSelectionResize = m_actions.finishSelectionResizeAtGlobalPosition;
         const auto selectionResizeFinished = m_actions.selectionResizeFinished;
         mouseEvent->accept();
-        finishSelectionResize(canvasPosition);
+        finishSelectionResize(globalPosition);
         selectionResizeFinished();
         return true;
     }

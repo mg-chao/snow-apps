@@ -881,10 +881,10 @@ void recognitionResizeConsumesRetiredEditorInput() {
     ScreenshotRecognitionWindow* window = nullptr;
     QMouseEvent* activePress = nullptr;
     ScreenshotRecognitionWindowActions actions;
-    actions.selectionResizeDragMode = [](const QPointF&) {
+    actions.selectionResizeDragModeAtGlobalPosition = [](const QPointF&) {
         return ScreenshotSelectionDragMode::All;
     };
-    actions.beginSelectionResize = [&](const QPointF&) {
+    actions.beginSelectionResizeAtGlobalPosition = [&](const QPointF&) {
         require(activePress && activePress->isAccepted(),
                 "selection resize accepts input before entering the retirement callback");
         window->hideTextEditor();

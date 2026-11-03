@@ -1213,6 +1213,29 @@ void globalMouseDesktopPointsMapAcrossMixedScaleDisplays() {
         "cross-display global drags must preserve capture pixel endpoints and negative origins");
     require(geometry.physicalPositionForLogicalPoint(displays, QPoint(0, 50)) == QPoint(0, 50),
             "the logical shared edge belongs to the adjacent display without double scaling");
+    require(
+        geometry.canvasPositionForLogicalPoint(displays, QPointF(-1100.25, -100.25)) ==
+                QPointF(199.5, 199.5) &&
+            geometry.canvasPositionForLogicalPoint(displays, QPointF(300.25, 200.25)) ==
+                QPointF(2700.25, 600.25),
+        "recognition drags must map fractional global positions directly across display scales");
+    require(geometry.canvasPositionForLogicalPoint(displays, QPointF(0, 50)) == QPointF(2400, 450),
+            "recognition drags must use the adjacent display at a shared logical edge");
+    require(geometry.canvasPositionForLogicalPoint(displays, QPointF(-1300.25, -200)) ==
+                QPointF(-200.5, 0),
+            "out-of-display drags must retain their delta until the selection applies its bounds");
+    ScreenshotDisplaySession fractional;
+    left.logicalToPhysicalScale = 1.5;
+    fractional.appendDisplay(left);
+    require(
+        geometry.canvasPositionForLogicalPoint(fractional, QPointF(-1100.25, -100.25)) ==
+            QPointF(149.625, 149.625),
+        "recognition drags must use the captured device scale rather than rounded window sizes");
+    const QPointF canvasPoint(149.625, 149.625);
+    require(geometry.canvasPositionForLogicalPoint(
+                fractional, geometry.logicalPositionForCanvasPoint(left, canvasPoint)) ==
+                canvasPoint,
+            "global drag mapping must invert display presentation without quantizing the pointer");
     snow_shot::capture_detail::ScrollingSelectionMovement movement;
     require(movement.begin(ScreenshotScrollingRecognitionMode::Horizontal,
                            ScreenshotScrollingRecognitionMode::Horizontal,
@@ -1223,6 +1246,9 @@ void globalMouseDesktopPointsMapAcrossMixedScaleDisplays() {
     ScreenshotDisplaySession empty;
     require(geometry.physicalPositionForLogicalPoint(empty, QPoint(-10, 20)) == QPoint(-10, 20),
             "coordinate conversion must have a stable fallback before display capture is ready");
+    require(geometry.canvasPositionForLogicalPoint(empty, QPointF(-10.25, 20.5)) ==
+                QPointF(-10.25, 20.5),
+            "logical canvas mapping must preserve fractions before display capture is ready");
 }
 
 void physicalPointMappingUsesHalfOpenMonitorBounds() {

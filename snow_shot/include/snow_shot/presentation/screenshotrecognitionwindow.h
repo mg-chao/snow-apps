@@ -75,11 +75,13 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void(const QUrl&)> handleLinkActivated = ignoreLink;
     std::function<void()> handleUndoTextEdit = noAction;
     std::function<void()> handleRedoTextEdit = noAction;
-    std::function<ScreenshotSelectionDragMode(const QPointF&)> selectionResizeDragMode =
-        noResizeHandle;
-    std::function<bool(const QPointF&)> beginSelectionResize = declineResize;
-    std::function<void(const QPointF&)> updateSelectionResize = ignoreResize;
-    std::function<void(const QPointF&)> finishSelectionResize = ignoreResize;
+    // Selection gestures use global logical positions: this surface moves and resizes with
+    // the selection, so its local coordinates and rendered bounds cannot define drag input.
+    std::function<ScreenshotSelectionDragMode(const QPointF&)>
+        selectionResizeDragModeAtGlobalPosition = noResizeHandle;
+    std::function<bool(const QPointF&)> beginSelectionResizeAtGlobalPosition = declineResize;
+    std::function<void(const QPointF&)> updateSelectionResizeAtGlobalPosition = ignoreResize;
+    std::function<void(const QPointF&)> finishSelectionResizeAtGlobalPosition = ignoreResize;
     std::function<void()> selectionResizeFinished = noAction;
     std::function<void()> handleCopy = noAction;
 };
