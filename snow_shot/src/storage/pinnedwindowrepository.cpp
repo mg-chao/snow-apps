@@ -2017,6 +2017,26 @@ std::optional<QString> PinnedWindowRepository::revealPath(const QString& id) con
     return directory.absolutePath();
 }
 
+std::optional<QString> PinnedWindowRepository::imagePath(const QString& id) const {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended || !m_impl || !safeId(id))
+        return std::nullopt;
+    std::lock_guard locker(m_impl->mutex);
+    const auto found = m_impl->records.constFind(id);
+    if (found == m_impl->records.cend())
+        return std::nullopt;
+    const auto& payloads = found->payloads;
+    const QString name =
+        payloads
+            .value(payloads.contains(QStringLiteral("animation")) ? QStringLiteral("animation")
+                                                                  : QStringLiteral("image"))
+            .toString();
+    if (!safeFileName(name))
+        return std::nullopt;
+    const QFileInfo file(QDir(payloadDirectory(m_impl->root, id)).filePath(name));
+    return file.isFile() ? std::optional<QString>(file.absoluteFilePath()) : std::nullopt;
+}
+
 PinnedSourceIdentity PinnedWindowRepository::sourceIdentity(const QString& id) const {
     std::lock_guard access(m_accessMutex);
     if (!m_impl)

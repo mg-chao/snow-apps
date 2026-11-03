@@ -121,9 +121,10 @@ class MutableHistoryDataSource : public ScreenshotHistoryPageDataSource {
     }
 
     std::optional<storage::CaptureHistoryAssetSet>
-    displayAssets(const storage::CaptureHistoryRecord&) const override {
+    displayAssets(const storage::CaptureHistoryRecord& record) const override {
         ++displayAssetRequests;
-        return std::nullopt;
+        const auto found = assets.constFind(record.id);
+        return found != assets.cend() ? std::optional(*found) : std::nullopt;
     }
 
     void remove(const QString& id) override {
@@ -145,6 +146,7 @@ class MutableHistoryDataSource : public ScreenshotHistoryPageDataSource {
     }
     int readFailures = 0;
     mutable int displayAssetRequests = 0;
+    QHash<QString, storage::CaptureHistoryAssetSet> assets;
     QVector<QVector<QString>> removedBatches;
     bool acceptRemoval = true;
     bool requestClear() override {
@@ -1345,11 +1347,21 @@ void entrySplitActionUsesOnlyItsRecord() {
 
 void moreMenuOffersPinStitchAndDelete() {
     MutableHistoryDataSource dataSource;
+    QTemporaryDir imageDirectory;
+    const QString imagePath = imageDirectory.filePath(QString::fromUtf8("result image 路径.png"));
+    QImage image(32, 18, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    require(image.save(imagePath), "write the resulting history image path fixture");
     QVector<storage::CaptureHistoryRecord> records = historyRecords(2);
     storage::CaptureHistoryResultRecord result;
     result.imageSize = QSize(32, 18);
     result.encodedBytes = 256;
     records[0].result = result;
+    dataSource.assets.insert(records[0].id,
+                             {records[0].id,
+                              storage::CaptureHistoryResultAsset{records[0].id, image.size(),
+                                                                 QUrl::fromLocalFile(imagePath)},
+                              {}});
     dataSource.setRecords(records);
 
     ScreenshotHistoryPageWidget page(&dataSource, nullptr);
@@ -1405,13 +1417,19 @@ void moreMenuOffersPinStitchAndDelete() {
     hover(more);
     flushEvents();
     QPointer<adqt::widgets::AdContextMenu> menu = visibleMenu(pinnableEntry);
-    require(menu != nullptr && menu->actions().size() == 6 && !menu->nativeMenuEnabled(),
+    require(menu != nullptr && menu->actions().size() == 7 && !menu->nativeMenuEnabled(),
             "hovering More must show the shared widget action menu");
     QAction* pin = menu->actions().at(0);
     QAction* stitch = menu->actions().at(1);
     QAction* split = menu->actions().at(2);
-    QAction* reveal = menu->actions().at(4);
-    QAction* remove = menu->actions().at(5);
+    QAction* copyImagePath = menu->actions().at(4);
+    QAction* reveal = menu->actions().at(5);
+    QAction* remove = menu->actions().at(6);
+    require(copyImagePath->objectName() == QStringLiteral("screenshotHistoryEntryCopyImagePath") &&
+                copyImagePath->text() == QStringLiteral("Copy image path") &&
+                copyImagePath->toolTip() == copyImagePath->text() && copyImagePath->isEnabled() &&
+                !copyImagePath->icon().isNull(),
+            "Copy image path sits immediately above the reveal action");
     auto* imageEditing =
         menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntryImageEditing"));
     require(imageEditing && menu->actions().at(3) == imageEditing && imageEditing->isEnabled() &&
@@ -1423,7 +1441,7 @@ void moreMenuOffersPinStitchAndDelete() {
                     snow_shot::presentation::components::history_page::revealActionText() &&
                 reveal->toolTip() == reveal->text() && reveal->isEnabled() &&
                 !reveal->icon().isNull(),
-            "the platform reveal action sits between image editing and Delete with its icon");
+            "the platform reveal action follows Copy image path and precedes Delete");
     require(pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
                 stitch->text() == QStringLiteral("Stitch Image") && stitch->isEnabled() &&
                 split->text() == QStringLiteral("Image Splitting") && split->isEnabled() &&
@@ -1457,6 +1475,19 @@ void moreMenuOffersPinStitchAndDelete() {
     require(editorRecord == records[0] && dataSource.removedIds.isEmpty(),
             "Image Editing dispatches the source record without altering history");
 
+    more->click();
+    flushEvents();
+    menu = visibleMenu(pinnableEntry);
+    require(menu, "reopen More for Copy image path");
+    activateMenuAction(menu, menu->actions().at(4));
+    flushEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!menu && QApplication::clipboard()->text() == QDir::toNativeSeparators(imagePath) &&
+                !QApplication::clipboard()->mimeData()->hasUrls() &&
+                !QApplication::clipboard()->mimeData()->hasImage() &&
+                dataSource.revealedIds.isEmpty() && dataSource.removedIds.isEmpty(),
+            "Copy image path copies the full native path as plain text and retires the menu");
+
     auto* plainMore = plainEntry->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotHistoryEntryMore"));
     require(plainMore != nullptr, "every history entry must expose More");
@@ -1467,9 +1498,11 @@ void moreMenuOffersPinStitchAndDelete() {
                 plainMenu->actions().at(0)->toolTip() ==
                     QStringLiteral("This screenshot cannot be pinned"),
             "Pin to screen must stay unavailable when the history entry has no image");
-    require(plainMenu->actions().at(4)->isEnabled(),
+    require(!plainMenu->actions().at(4)->isEnabled(),
+            "a missing result keeps Copy image path visible and disabled");
+    require(plainMenu->actions().at(5)->isEnabled(),
             "resultless history still supports revealing its stored source or directory");
-    activateMenuAction(plainMenu, plainMenu->actions().at(4));
+    activateMenuAction(plainMenu, plainMenu->actions().at(5));
     flushEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(dataSource.revealedIds == QStringList{QStringLiteral("record-1")},
@@ -1488,14 +1521,18 @@ void moreMenuOffersPinStitchAndDelete() {
         QCoreApplication::installTranslator(&translator);
         QApplication::sendEvent(pinnableEntry, &languageChange);
         const QString label = snow_shot::presentation::components::history_page::revealActionText();
-        require(menu && menu->actions().at(4)->text() == label &&
-                    menu->actions().at(4)->toolTip() == label &&
+        const QString copyLabel = translator.translate("HistoryFileLocation", "Copy image path");
+        require(!copyLabel.isEmpty() && menu->actions().at(4)->text() == copyLabel &&
+                    menu->actions().at(4)->toolTip() == copyLabel,
+                "open history menus translate Copy image path and its tooltip");
+        require(menu && menu->actions().at(5)->text() == label &&
+                    menu->actions().at(5)->toolTip() == label &&
                     !translator.translate("HistoryFileLocation", "Open in Explorer").isEmpty() &&
                     !translator.translate("HistoryFileLocation", "Reveal in Finder").isEmpty(),
                 "open history menus translate their reveal label and tooltip");
         QCoreApplication::removeTranslator(&translator);
     }
-    activateMenuAction(menu, menu->actions().at(4));
+    activateMenuAction(menu, menu->actions().at(5));
     flushEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(!menu && selected->isChecked() &&
@@ -1509,12 +1546,30 @@ void moreMenuOffersPinStitchAndDelete() {
     QObject::connect(
         messages, &adqt::widgets::AdMessage::messageOpened, &page,
         [&](adqt::widgets::AdMessageHandle* handle) { failureMessage = handle->content(); });
+    for (const QString& unavailablePath :
+         {imageDirectory.path(), imagePath + QStringLiteral(".missing")}) {
+        dataSource.assets[records[0].id].result->localFileUrl =
+            QUrl::fromLocalFile(unavailablePath);
+        more->click();
+        flushEvents();
+        menu = visibleMenu(pinnableEntry);
+        require(menu, "reopen Copy image path failure fixture menu");
+        activateMenuAction(menu, menu->actions().at(4));
+        flushEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!menu &&
+                    failureMessage == QStringLiteral("Unable to copy this entry's image path.") &&
+                    QApplication::clipboard()->text() == QDir::toNativeSeparators(imagePath) &&
+                    dataSource.readFailures == 0 && selected->isChecked(),
+                "missing image files and directories preserve the clipboard and selection");
+        adqt::widgets::AdMessageService::destroyAll(&page);
+    }
     more->click();
     flushEvents();
     menu = visibleMenu(pinnableEntry);
     require(menu, "reopen reveal failure fixture menu");
     // Exercise keyboard dispatch as well as the successful mouse activations above.
-    menu->setActiveAction(menu->actions().at(4));
+    menu->setActiveAction(menu->actions().at(5));
     QKeyEvent revealKey(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
     QApplication::sendEvent(menu, &revealKey);
     flushEvents();

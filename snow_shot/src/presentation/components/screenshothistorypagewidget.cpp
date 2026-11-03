@@ -749,6 +749,7 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                        std::function<void()> pinRequested, std::function<void()> stitchRequested,
                        std::function<void()> splitRequested,
                        std::function<void()> imageEditingRequested,
+                       std::function<void()> copyImagePathRequested,
                        std::function<void()> revealRequested, std::function<void()> deleteRequested,
                        QWidget* parent = nullptr)
         : HistoryEntryCard(parent), m_record(record), m_assets(assets),
@@ -757,6 +758,7 @@ class HistoryEntryWidget final : public HistoryEntryCard {
           m_pinRequested(std::move(pinRequested)), m_stitchRequested(std::move(stitchRequested)),
           m_splitRequested(std::move(splitRequested)),
           m_imageEditingRequested(std::move(imageEditingRequested)),
+          m_copyImagePathRequested(std::move(copyImagePathRequested)),
           m_revealRequested(std::move(revealRequested)),
           m_deleteRequested(std::move(deleteRequested)) {
         setObjectName(QStringLiteral("screenshotHistoryEntry-%1").arg(record.id));
@@ -1010,6 +1012,10 @@ class HistoryEntryWidget final : public HistoryEntryCard {
 
   private:
     void retranslateMoreActions() {
+        if (m_copyImagePathAction != nullptr) {
+            m_copyImagePathAction->setText(history_page::copyImagePathActionText());
+            m_copyImagePathAction->setToolTip(m_copyImagePathAction->text());
+        }
         if (m_revealAction != nullptr) {
             m_revealAction->setText(history_page::revealActionText());
             m_revealAction->setToolTip(m_revealAction->text());
@@ -1064,6 +1070,13 @@ class HistoryEntryWidget final : public HistoryEntryCard {
             if (m_imageEditingRequested)
                 m_imageEditingRequested();
         });
+        m_copyImagePathAction = menu->addItem(QString(), outlined_icons::Copy());
+        m_copyImagePathAction->setObjectName(QStringLiteral("screenshotHistoryEntryCopyImagePath"));
+        m_copyImagePathAction->setEnabled(m_record.result.has_value());
+        connect(m_copyImagePathAction, &QAction::triggered, this, [this] {
+            if (m_copyImagePathRequested)
+                m_copyImagePathRequested();
+        });
         auto* reveal = menu->addItem(QString(), custom_outlined_icons::RevealInFolder());
         reveal->setObjectName(QStringLiteral("screenshotHistoryEntryReveal"));
         m_revealAction = reveal;
@@ -1111,6 +1124,8 @@ class HistoryEntryWidget final : public HistoryEntryCard {
     std::function<void()> m_splitRequested;
     std::function<void()> m_imageEditingRequested;
     QPointer<QAction> m_imageEditingAction;
+    std::function<void()> m_copyImagePathRequested;
+    QPointer<QAction> m_copyImagePathAction;
     std::function<void()> m_revealRequested;
     std::function<void()> m_deleteRequested;
     adqt::widgets::AdCheckbox* m_selectionCheckbox = nullptr;
@@ -1653,6 +1668,15 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 [this, record]() { emit collageRequested({record}); },
                 [this, record]() { emit splitRequested(record); },
                 [this, record]() { emit imageEditingRequested(record); },
+                [this, record]() {
+                    const auto resolvedAssets =
+                        m_dataSource ? m_dataSource->displayAssets(record) : std::nullopt;
+                    history_page::copyImagePath(
+                        resolvedAssets && resolvedAssets->result
+                            ? resolvedAssets->result->localFileUrl.toLocalFile()
+                            : QString(),
+                        this);
+                },
                 [this, id = record.id]() {
                     if (!m_dataSource || !m_dataSource->revealRecord(id))
                         history_page::showRevealFailure(this);

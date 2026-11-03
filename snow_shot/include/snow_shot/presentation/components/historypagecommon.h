@@ -53,6 +53,8 @@ struct TextControls {
 void configureSourceFilter(adqt::widgets::AdSelect* filter);
 [[nodiscard]] QString revealActionText();
 void showRevealFailure(QWidget* parent);
+[[nodiscard]] QString copyImagePathActionText();
+void copyImagePath(const QString& path, QWidget* parent);
 void configureDateFilter(adqt::widgets::AdDateRangePicker* filter);
 void configurePagination(adqt::widgets::AdPagination* pagination, int pageSize);
 void configureSelectionAction(adqt::widgets::AdButton* button, bool destructive);

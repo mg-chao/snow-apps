@@ -8,8 +8,12 @@
 #include "widgets/message.h"
 
 #include <QBoxLayout>
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QFont>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QPalette>
 #include <QWidget>
@@ -34,6 +38,23 @@ void showRevealFailure(QWidget* parent) {
     request.key = QStringLiteral("historyRevealFailure");
     request.content = QCoreApplication::translate("HistoryFileLocation",
                                                   "Unable to open this entry's file location.");
+    adqt::widgets::AdMessageService::error(std::move(request), parent->window());
+}
+
+QString copyImagePathActionText() {
+    return QCoreApplication::translate("HistoryFileLocation", "Copy image path");
+}
+
+void copyImagePath(const QString& path, QWidget* parent) {
+    const QFileInfo file(path);
+    if (!path.isEmpty() && file.isFile()) {
+        QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file.absoluteFilePath()));
+        return;
+    }
+    adqt::widgets::AdMessage::Request request;
+    request.key = QStringLiteral("historyCopyImagePathFailure");
+    request.content = QCoreApplication::translate("HistoryFileLocation",
+                                                  "Unable to copy this entry's image path.");
     adqt::widgets::AdMessageService::error(std::move(request), parent->window());
 }
 
