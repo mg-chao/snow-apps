@@ -171,5 +171,37 @@ int main(int argc, char** argv) {
     }
     require(mergeOcrLayout(touchingTable).size() == 12,
             "STranslate medians ignore zero gaps when recognizing touching table rows");
+    QVector<QVector<int>> indices;
+    const auto withProvenance = mergeOcrLayout(mixed, {}, &indices);
+    require(withProvenance.size() == preserved.size() &&
+                indices == QVector<QVector<int>>{{0, 1}, {2}, {3}, {4}, {5}},
+            "merged and preserved units retain their original OCR line indices");
+    const QVector<ScreenshotOcrLine> splitSource{
+        box(QStringLiteral("1. First\ncontinuation\n2. Second\n3. Third"), 0, 0, 200, 80)};
+    const auto split = mergeOcrLayout(splitSource, {}, &indices);
+    require(split.size() == 3 && indices == QVector<QVector<int>>{{0}, {0}, {0}},
+            "every split list item inherits its original block's font baseline provenance");
+    ScreenshotOcrPresentation source;
+    source.selection = QRect(0, 0, 200, 80);
+    source.lines = splitSource;
+    ScreenshotOcrPresentation translation = source;
+    translation.lines = split;
+    for (auto& line : translation.lines)
+        line.text = QStringLiteral("translated");
+    require(snow_shot::presentation::ocrTranslationSourceIndices(translation, source) == indices,
+            "restoration reconstructs captured Smart Merge provenance without translated text");
+    translation.lines = source.lines;
+    translation.lines[0].text = QStringLiteral("short");
+    require(snow_shot::presentation::ocrTranslationSourceIndices(translation, source) ==
+                QVector<QVector<int>>{{0}},
+            "restoration also matches the original unmerged layout");
+    translation.lines[0].quad.translate(10, 0);
+    require(!snow_shot::presentation::ocrTranslationSourceIndices(translation, source),
+            "unrelated geometry must not inherit another source's font cap");
+    static_cast<void>(mergeOcrLayout(
+        {box(QStringLiteral("Hello"), 0, 0, 50), box(QStringLiteral("world"), 56, 0, 50)}, {},
+        &indices));
+    require(indices == QVector<QVector<int>>{{0, 1}},
+            "same-row fragments contribute their separate original baselines");
     return EXIT_SUCCESS;
 }

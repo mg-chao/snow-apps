@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotocrtexteditingsession.h"
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
+#include "snow_shot/presentation/screenshotocrtextlayout.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
@@ -28,6 +29,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QCoreApplication>
+#include <QApplication>
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QThreadPool>
@@ -113,34 +115,6 @@ copyTextPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentat
     copy->prepareForRendering();
     return copy;
 }
-
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-bool translationMatchesSource(const ScreenshotOcrPresentation& translation,
-                              const ScreenshotOcrPresentation& source) {
-    if (translation.selection != source.selection) {
-        return false;
-    }
-    const auto matchesLayout = [&translation](const QVector<ScreenshotOcrLine>& lines) {
-        if (translation.lines.size() != lines.size()) {
-            return false;
-        }
-        for (int index = 0; index < lines.size(); ++index) {
-            const auto& translated = translation.lines[index];
-            const auto& original = lines[index];
-            if (translated.quad != original.quad || translated.direction != original.direction ||
-                translated.paragraph != original.paragraph ||
-                translated.sourceLineQuads != original.sourceLineQuads) {
-                return false;
-            }
-        }
-        return true;
-    };
-    // A captured pin retains the layout used at translation time, regardless of current settings.
-    return matchesLayout(source.lines) || matchesLayout(snow_shot::presentation::mergeOcrLayout(
-                                              source.lines, source.selection.topLeft()));
-}
-
-#endif
 
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 using snow_shot::translation::TranslationJob;
@@ -619,9 +593,15 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
         entry.presentation = results.text->presentation;
         entry.editingSession = std::move(editingSession);
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
-        if (results.translatedText != nullptr &&
-            translationMatchesSource(*results.translatedText, *entry.presentation)) {
+        const auto sourceIndices = results.translatedText
+                                       ? snow_shot::presentation::ocrTranslationSourceIndices(
+                                             *results.translatedText, *entry.presentation)
+                                       : std::nullopt;
+        if (sourceIndices) {
             entry.overlayTranslation.presentation = copyTextPresentation(results.translatedText);
+            setScreenshotOcrTranslationFontCaps(entry.overlayTranslation.presentation->lines,
+                                                entry.presentation->lines, *sourceIndices,
+                                                QApplication::font());
             entry.overlayTranslation.status = TextCacheEntry::TranslationStatus::Completed;
             entry.overlayTranslation.captured = true;
             entry.translationConfiguration =
@@ -2405,12 +2385,18 @@ void ScreenshotRecognitionSessionController::prepareOverlayTranslation(TextCache
     }
     overlay.presentation = std::make_shared<ScreenshotOcrPresentation>();
     overlay.presentation->selection = entry.presentation->selection;
-    overlay.presentation->lines =
-        snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing() ==
-                QStringLiteral("original")
-            ? entry.presentation->lines
-            : snow_shot::presentation::mergeOcrLayout(entry.presentation->lines,
-                                                      entry.presentation->selection.topLeft());
+    QVector<QVector<int>> sourceIndices;
+    if (snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing() ==
+        QStringLiteral("original")) {
+        overlay.presentation->lines = entry.presentation->lines;
+        for (int index = 0; index < entry.presentation->lines.size(); ++index)
+            sourceIndices.push_back({index});
+    } else {
+        overlay.presentation->lines = snow_shot::presentation::mergeOcrLayout(
+            entry.presentation->lines, entry.presentation->selection.topLeft(), &sourceIndices);
+    }
+    setScreenshotOcrTranslationFontCaps(overlay.presentation->lines, entry.presentation->lines,
+                                        sourceIndices, QApplication::font());
     overlay.presentation->prepareForRendering();
 #else
     Q_UNUSED(entry)
