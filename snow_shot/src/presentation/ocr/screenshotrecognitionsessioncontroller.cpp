@@ -20,6 +20,7 @@
 #endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 #include "snow_shot/presentation/screenshottabledocument.h"
+#include "snow_shot/presentation/screenshottableconversioncontroller.h"
 #endif
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -1106,6 +1107,8 @@ void ScreenshotRecognitionSessionController::cancelModelRecognition(Mode mode) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (mode == Mode::Table) {
         ++m_tableGeneration;
+        if (m_tableConversion)
+            m_tableConversion->cancel();
         if (m_tableParsingCancellation)
             m_tableParsingCancellation->store(true, std::memory_order_relaxed);
         m_tableParsingCancellation.reset();
@@ -1731,6 +1734,7 @@ bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
     case Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         return m_tableRequestToken != 0 || m_tableParsing ||
+               (m_tableConversion && m_tableConversion->busy()) ||
                (m_active && m_mode == mode && m_recognitionAwaitingModel &&
                 m_recognitionModelsLoading);
 #else
@@ -3038,7 +3042,8 @@ void ScreenshotRecognitionSessionController::startTextRender() {
 
 void ScreenshotRecognitionSessionController::startTableRecognition() {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-    if (!hasTarget() || m_tableRequestToken || m_tableParsing)
+    if (!hasTarget() || m_tableRequestToken || m_tableParsing ||
+        (m_tableConversion && m_tableConversion->busy()))
         return;
     if (!m_tableRecognition) {
         if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
@@ -3060,6 +3065,41 @@ void ScreenshotRecognitionSessionController::startTableRecognition() {
         return;
     if (content())
         content()->clearRecognitionError();
+    if (model != screenshotDedicatedRecognitionModelId()) {
+        if (!m_tableConversion)
+            m_tableConversion = new ScreenshotTableConversionController(this);
+        disconnect(m_tableConversion, nullptr, this, nullptr);
+        connect(m_tableConversion, &ScreenshotTableConversionController::changed, this,
+                [this, generation, key] {
+                    if (generation != m_tableGeneration ||
+                        key != recognitionCacheKey(Mode::Table) || !m_active ||
+                        m_mode != Mode::Table)
+                        return;
+                    if (!notify(&ScreenshotRecognitionSessionController::ensureContent))
+                        return;
+                    const QPointer<ScreenshotRecognitionSessionController> guard(this);
+                    const auto preview = m_tableConversion->preview();
+                    if (content())
+                        content()->showTablePreview(preview);
+                    if (!guard)
+                        return;
+                    updateBusyState();
+                });
+        connect(m_tableConversion, &ScreenshotTableConversionController::completed, this,
+                [this, generation, key](ScreenshotTableDocument document, const QString& error) {
+                    if (generation != m_tableGeneration || key != recognitionCacheKey(Mode::Table))
+                        return;
+                    SnowShotTableResult result;
+                    result.error = error;
+                    if (error.isEmpty())
+                        result.html = document.toHtml();
+                    handleTableOutput(
+                        generation, key, std::move(result),
+                        std::make_shared<ScreenshotTableDocument>(std::move(document)));
+                });
+        m_tableConversion->start(m_tableRecognition, m_target.image, model);
+        return;
+    }
     const auto callbackCompleted = std::make_shared<bool>(false);
     const auto completion = [this, generation, key, callbackCompleted](SnowShotTableResult result) {
         *callbackCompleted = true;
@@ -3067,10 +3107,7 @@ void ScreenshotRecognitionSessionController::startTableRecognition() {
             m_tableRequestToken = 0;
         handleTableOutput(generation, key, std::move(result));
     };
-    m_tableRequestToken =
-        model == screenshotDedicatedRecognitionModelId()
-            ? m_tableRecognition->extractTable(m_target.image, this, completion)
-            : m_tableRecognition->extractTableVision(m_target.image, model, this, completion);
+    m_tableRequestToken = m_tableRecognition->extractTable(m_target.image, this, completion);
     if (*callbackCompleted)
         m_tableRequestToken = 0;
     if (!updateBusyState())
@@ -3306,9 +3343,9 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     notify(&ScreenshotRecognitionSessionController::recognitionResultsChanged);
 }
 
-void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generation,
-                                                               const QString& key,
-                                                               SnowShotTableResult result) {
+void ScreenshotRecognitionSessionController::handleTableOutput(
+    quint64 generation, const QString& key, SnowShotTableResult result,
+    std::shared_ptr<ScreenshotTableDocument> prepared) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (generation != m_tableGeneration || key != recognitionCacheKey(Mode::Table))
         return;
@@ -3322,17 +3359,18 @@ void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generatio
     entry.model = resolvedRecognitionModel(Mode::Table);
     entry.modelFingerprint = m_tableRecognition->modelFingerprint(entry.model);
     entry.result = std::move(result);
-    materializeTableEntry(generation, key, std::move(entry), false);
+    materializeTableEntry(generation, key, std::move(entry), false, std::move(prepared));
 #else
     Q_UNUSED(generation)
     Q_UNUSED(key)
     Q_UNUSED(result)
+    Q_UNUSED(prepared)
 #endif
 }
 
 void ScreenshotRecognitionSessionController::materializeTableEntry(
     quint64 generation, const QString& key, ScreenshotTableRecognitionEntry entry,
-    bool allowSynchronous) {
+    bool allowSynchronous, std::shared_ptr<ScreenshotTableDocument> prepared) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (m_tableParsing || generation != m_tableGeneration)
         return;
@@ -3405,6 +3443,10 @@ void ScreenshotRecognitionSessionController::materializeTableEntry(
             return;
         guard->notify(&ScreenshotRecognitionSessionController::recognitionResultsChanged);
     };
+    if (prepared) {
+        complete({std::move(*prepared), std::nullopt});
+        return;
+    }
     constexpr qsizetype synchronousSourceBytes = 32 * 1024;
     const qsizetype sourceBytes =
         (entry.result.html.size() + (entry.draftHtml ? entry.draftHtml->size() : 0)) *
@@ -3436,6 +3478,7 @@ void ScreenshotRecognitionSessionController::materializeTableEntry(
     Q_UNUSED(key)
     Q_UNUSED(entry)
     Q_UNUSED(allowSynchronous)
+    Q_UNUSED(prepared)
 #endif
 }
 
@@ -4100,7 +4143,10 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         break;
     case Mode::Table:
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
-        requestWasPending = m_tableRequestToken != 0 || m_tableParsing;
+        requestWasPending = m_tableRequestToken != 0 || m_tableParsing ||
+                            (m_tableConversion && m_tableConversion->busy());
+        if (m_tableConversion)
+            m_tableConversion->cancel();
         m_tableRequestToken = 0;
         if (m_tableParsingCancellation)
             m_tableParsingCancellation->store(true, std::memory_order_relaxed);

@@ -69,6 +69,13 @@ void mathematicalAndUnicodeRendering() {
     ScreenshotLatexRenderer renderer;
     for (const auto& source : {QStringLiteral("\\frac{a+b}{\\sqrt{x^2+1}}"),
                                QStringLiteral("\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}"),
+                               QStringLiteral("\\begin{aligned}a&=b+c\\\\d&=e\\end{aligned}"),
+                               QStringLiteral("\\begin{gathered}x^2\\\\y_1\\end{gathered}"),
+                               QStringLiteral("f(x)=\\begin{cases}x&\\text{if }x>0\\\\"
+                                              "0&\\text{otherwise}\\end{cases}\\quad\\text{(1)}"),
+                               QStringLiteral("\\hat{x}+\\vec{v}+\\mathbf{u}\\in\\mathbb{R}^3"),
+                               QStringLiteral("\\frac{x}{\\text{[illegible]}}+\\text{50\\%}"),
+                               QStringLiteral("\\left(x+1\\right."),
                                QStringLiteral("α + \\beta + \\text{Ελληνικά русский 中文}"),
                                QStringLiteral("$$\\sum_{n=0}^{\\infty} \\frac{x^n}{n!}$$")}) {
         const auto result = render(renderer, source);

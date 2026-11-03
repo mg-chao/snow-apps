@@ -360,6 +360,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotTableConversionController</name>
+        <message>
+            <source>No table cells were recognized</source>
+            <translation>No table cells were recognized</translation>
+        </message>
+        <message>
+            <source>Table recognition failed</source>
+            <translation>Table recognition failed</translation>
+        </message>
+        <message>
+            <source>Table recognition request could not be prepared</source>
+            <translation>Table recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>Table recognition service is unavailable</source>
+            <translation>Table recognition service is unavailable</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table after correction</source>
+            <translation>The model returned no usable table after correction</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotTableEditor</name>
         <message>
             <source>Clear cell contents</source>

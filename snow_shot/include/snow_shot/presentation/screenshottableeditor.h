@@ -69,6 +69,11 @@ class ScreenshotTableEditor final : public QTableView {
 
     void setSession(std::shared_ptr<ScreenshotTableEditingSession> session);
     void clearSession();
+    void setPreview(const ScreenshotTableDocument& document);
+    void setPreviewOnly(bool preview);
+    [[nodiscard]] bool previewOnly() const {
+        return m_previewOnly;
+    }
     [[nodiscard]] ScreenshotTableCommandState commandState() const;
     [[nodiscard]] ScreenshotTableRange selectedRange() const;
     [[nodiscard]] bool isEditingCell() const;
@@ -143,6 +148,8 @@ class ScreenshotTableEditor final : public QTableView {
     QPoint m_pressPosition;
     QModelIndex m_pressedIndex;
     bool m_pointerDragged = false;
+    bool m_previewOnly = false;
+    int m_previewColumns = 0;
     bool m_normalizingSelection = false;
     int m_tablePadding = 0;
     std::optional<PendingCellEdit> m_pendingCellEdit;

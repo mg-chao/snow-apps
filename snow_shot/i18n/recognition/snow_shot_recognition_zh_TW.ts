@@ -360,6 +360,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotTableConversionController</name>
+        <message>
+            <source>No table cells were recognized</source>
+            <translation>未辨識到表格儲存格</translation>
+        </message>
+        <message>
+            <source>Table recognition failed</source>
+            <translation>表格辨識失敗</translation>
+        </message>
+        <message>
+            <source>Table recognition request could not be prepared</source>
+            <translation>無法準備表格辨識請求</translation>
+        </message>
+        <message>
+            <source>Table recognition service is unavailable</source>
+            <translation>表格辨識服務無法使用</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table after correction</source>
+            <translation>修正後模型仍未傳回可用的表格</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotTableEditor</name>
         <message>
             <source>Clear cell contents</source>

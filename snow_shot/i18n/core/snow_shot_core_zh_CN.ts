@@ -772,10 +772,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>模型未返回可用的公式</translation>
         </message>
         <message>
-            <source>The model returned no usable table</source>
-            <translation>模型未返回可用的表格</translation>
-        </message>
-        <message>
             <source>The model service changed. Retry to load its models.</source>
             <translation>模型服务已更改。请重试以加载其模型。</translation>
         </message>
