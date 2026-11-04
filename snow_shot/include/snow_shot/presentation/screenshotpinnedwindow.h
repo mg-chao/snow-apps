@@ -542,6 +542,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     viewportArtifact(ViewportExportMode mode = ViewportExportMode::Complete);
     [[nodiscard]] ScreenshotExportSource
     cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request);
+    [[nodiscard]] std::optional<QByteArray> exportDocumentSnapshot() const;
     void quickSave();
     void invalidatePendingCopy();
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);

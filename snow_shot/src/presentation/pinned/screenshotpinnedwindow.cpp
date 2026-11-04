@@ -6543,6 +6543,19 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     return true;
 }
 
+std::optional<QByteArray> ScreenshotPinnedWindow::exportDocumentSnapshot() const {
+    if (animatedImage() || !m_runtime.hasDocumentContent())
+        return QByteArray{};
+    // Pixel exports need committed content only. Restoring undo/redo history can fail
+    // independently of that content, and accumulated edits can exceed the session limit.
+    auto document = m_runtime.serializeDocumentSnapshot();
+    if (document.isEmpty()) {
+        qWarning("Pinned image export preparation failed: stage=document_snapshot");
+        return std::nullopt;
+    }
+    return document;
+}
+
 ScreenshotExportSource
 ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request) {
     if (m_cropRect)
@@ -6569,9 +6582,10 @@ ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportS
         entries.erase(found);
         entries.push_back(std::move(entry));
     } else {
-        request.documentSession = !animatedImage() && m_runtime.hasDocumentContent()
-                                      ? m_runtime.serializeDocumentSession()
-                                      : QByteArray{};
+        auto document = exportDocumentSnapshot();
+        if (!document)
+            return {};
+        request.documentSession = std::move(*document);
         auto renderRequest = request;
         renderRequest.clipboardPlacement.reset();
         renderRequest.clipboardAppearance.reset();
@@ -7095,10 +7109,14 @@ ScreenshotPinnedImageSnapshot ScreenshotPinnedWindow::processedImageSnapshot(boo
             snapshot.source = ScreenshotExportSource::fromPinnedViewport(std::move(source));
         }
     } else {
+        auto document = exportDocumentSnapshot();
+        if (!document) {
+            snapshot.error = QCoreApplication::translate(
+                "ImageEditingWindow", "The editing content could not be prepared for export.");
+            return snapshot;
+        }
         ScreenshotPinnedViewportExportSource source{
-            !animatedImage() && m_runtime.hasDocumentContent()
-                ? m_runtime.serializeDocumentSession()
-                : QByteArray{},
+            std::move(*document),
             m_transformedImage,
             backgroundRect,
             contentSize,

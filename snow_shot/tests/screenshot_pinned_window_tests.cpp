@@ -815,6 +815,9 @@ class ScreenshotPinnedWindowTestAccess {
     static QByteArray drawingHistory(const ScreenshotPinnedWindow& window) {
         return window.m_runtime.serializeDocumentHistory();
     }
+    static SnowCanvasRuntime& drawingRuntime(ScreenshotPinnedWindow& window) {
+        return window.m_runtime;
+    }
     static ScreenshotCanvasRenderer& renderer(ScreenshotPinnedWindow& window) {
         return *window.m_screenshotRenderer;
     }
@@ -27489,6 +27492,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_shake_window_tests.h"
 #include "screenshot_pinned_crop_tests.h"
 #include "screenshot_pinned_menu_lifetime_tests.h"
+#include "pinned_export_snapshot_tests.h"
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_pinned_crop_performance_benchmark.h"
 #endif
@@ -27714,6 +27718,11 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--stitching-snapshot-only"))) {
             pinnedImageStitchingSnapshots();
             pinnedImageStitchingTextAndDeferredContent();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--export-snapshot-only"))) {
+            pinnedExportsIgnoreAnnotationHistory();
+            pinnedExportsRejectUnavailableDocumentSnapshots();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--batch-actions-only"))) {
