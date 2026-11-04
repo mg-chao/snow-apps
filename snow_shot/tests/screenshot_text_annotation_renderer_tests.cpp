@@ -203,7 +203,8 @@ void largeAnnotationsRetainOnlyActiveGeometry() {
     const auto wider = renderer.formattedSnapshot(annotations, *document);
     diagnostics = renderer.diagnostics();
     require(diagnostics.fragmentBuilds == initial.fragmentBuilds &&
-                diagnostics.strokePreparations == initial.strokePreparations + initial.strokes &&
+                diagnostics.strokePreparations ==
+                    initial.strokePreparations + quint64(initial.strokes) &&
                 diagnostics.strokes == initial.strokes &&
                 wider.items.front().coverage() != original.items.front().coverage(),
             "width changes replace active strokes without retaining obsolete widths or reshaping");

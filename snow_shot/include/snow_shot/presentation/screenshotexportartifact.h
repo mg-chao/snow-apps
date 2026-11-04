@@ -36,7 +36,7 @@ struct ScreenshotPinnedViewportExportSource final {
     QList<SnowCanvasBaseImageSource> samplingSources = {};
     // Optional output clip in the unchanged document coordinate system.
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
-    ScreenshotTextAnnotationRenderSnapshot textAnnotations;
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations = {};
 };
 
 // Render the immutable source on the calling export worker, without scheduling or retaining it.

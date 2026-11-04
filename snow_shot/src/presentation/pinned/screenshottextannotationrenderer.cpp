@@ -383,7 +383,7 @@ struct ScreenshotTextAnnotationPaintCache::Private {
         QPainterPath canvas;
         QTransform transform;
         qsizetype bytes() const {
-            return sizeof(Entry) + sizeof(ScreenshotTextAnnotationStroke) +
+            return qsizetype(sizeof(Entry) + sizeof(ScreenshotTextAnnotationStroke)) +
                    (source.capacity() + (transform.isIdentity() ? 0 : canvas.capacity())) *
                        qsizetype(sizeof(QPainterPath::Element));
         }
@@ -458,8 +458,8 @@ ScreenshotTextAnnotationRenderer::diagnostics() const {
     result.strokes = d->geometry.strokes.size();
     for (const auto& stroke : d->geometry.strokes)
         result.geometryBytes +=
-            sizeof(ScreenshotTextAnnotationStroke) +
-            qint64(stroke->projectiveCoverage.capacity()) * sizeof(QPainterPath::Element);
+            qint64(sizeof(ScreenshotTextAnnotationStroke)) +
+            qint64(stroke->projectiveCoverage.capacity()) * qint64(sizeof(QPainterPath::Element));
     return result;
 }
 
