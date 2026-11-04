@@ -1161,6 +1161,12 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
         return placement.occupiedContentRect.isEmpty() ? placement.mainToolbarContentRect
                                                        : placement.occupiedContentRect;
     };
+    const auto constrainHorizontally = [&bounds](const QPoint& position, const QRect& occupied) {
+        // A display-edge correction must not disqualify an otherwise usable
+        // vertical anchor. Leave Y unchanged until the bottom/top choice is made;
+        // clamping it here would make a toolbar overlapping the selection fit.
+        return QPoint(clampContentPositionToRect(position, occupied, bounds).x(), position.y());
+    };
 
     QPoint bottomPosition;
     QRect bottomOccupied;
@@ -1169,6 +1175,7 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
         bottomPosition = contentPositionForAnchor(bottomRightAnchor,
                                                   bottomPlacement.mainToolbarContentRect, false);
         bottomOccupied = occupiedRectFor(bottomPlacement);
+        bottomPosition = constrainHorizontally(bottomPosition, bottomOccupied);
         bottomFits = fullyVisible(bottomOccupied, bottomPosition);
     }
     if (bottomFits) {
@@ -1183,6 +1190,7 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
         topPosition =
             contentPositionForAnchor(topRightAnchor, topPlacement.mainToolbarContentRect, true);
         topOccupied = occupiedRectFor(topPlacement);
+        topPosition = constrainHorizontally(topPosition, topOccupied);
         topFits = fullyVisible(topOccupied, topPosition);
     }
     if (topFits) {
