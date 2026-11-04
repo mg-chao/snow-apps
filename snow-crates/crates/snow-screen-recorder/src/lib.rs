@@ -17,10 +17,11 @@ pub use snow_recording_model::{
 pub use snow_recording_runtime::{
     AudioChannels, CaptureBackendKind, DeferredRecordingOptions, DeferredRecordingSession,
     DeferredRecordingSource, DeferredRenderProgress, DeferredRenderState, DeferredRenderTask,
-    DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession, KeyboardOverlayConfig,
-    KeyboardOverlayFont, MediaPermission, MonitorSelector, RecordingAudioConfig,
-    RecordingAudioMode, RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig,
-    RecordingRegion, RecordingState, RecordingTarget, ScreenRecorderError, WindowId,
+    DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession, KeyboardFilterConfig,
+    KeyboardOverlayConfig, KeyboardOverlayFont, MediaPermission, MonitorSelector,
+    RecordingAudioConfig, RecordingAudioMode, RecordingAudioTrackConfig, RecordingAudioTrackSource,
+    RecordingConfig, RecordingRegion, RecordingState, RecordingTarget, ScreenRecorderError,
+    WindowId,
 };
 
 #[cfg(target_os = "macos")]

@@ -558,6 +558,14 @@ class RecordingSettings final {
     bool setWebcamOrientation(int orientation) const;
     [[nodiscard]] bool showKeyboard() const;
     bool setShowKeyboard(bool show) const;
+    [[nodiscard]] bool recordNumberKeys() const;
+    bool setRecordNumberKeys(bool enabled) const;
+    [[nodiscard]] bool recordLettersAndSymbols() const;
+    bool setRecordLettersAndSymbols(bool enabled) const;
+    [[nodiscard]] bool recordControlKeys() const;
+    bool setRecordControlKeys(bool enabled) const;
+    [[nodiscard]] bool preserveKeyboardShortcuts() const;
+    bool setPreserveKeyboardShortcuts(bool enabled) const;
     [[nodiscard]] bool mouseHighlightEnabled() const;
     bool setMouseHighlightEnabled(bool enabled) const;
     [[nodiscard]] bool recordMouseClicks() const;

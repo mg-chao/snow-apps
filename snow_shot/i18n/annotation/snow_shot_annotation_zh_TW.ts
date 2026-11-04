@@ -311,6 +311,10 @@
             <translation>連接類型</translation>
         </message>
         <message>
+            <source>Control keys</source>
+            <translation>控制鍵</translation>
+        </message>
+        <message>
             <source>Convert to HTML</source>
             <translation>轉換為 HTML</translation>
         </message>
@@ -807,6 +811,10 @@
             <translation>引導線箭頭樣式</translation>
         </message>
         <message>
+            <source>Letters and symbols</source>
+            <translation>字母與符號</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直線</translation>
         </message>
@@ -939,6 +947,10 @@
             <translation>無</translation>
         </message>
         <message>
+            <source>Number keys</source>
+            <translation>數字鍵</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
         </message>
@@ -1029,6 +1041,10 @@
         <message>
             <source>Post-processing effects</source>
             <translation>後製效果</translation>
+        </message>
+        <message>
+            <source>Preserve keyboard shortcuts</source>
+            <translation>保留鍵盤快速鍵</translation>
         </message>
         <message>
             <source>Pressure-sensitive brush</source>

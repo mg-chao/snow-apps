@@ -402,6 +402,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         config.generation = laserGeneration;
         // The native API validates these dimensions even with their effects disabled.
         config.keyboard_size = 64;
+        config.record_number_keys = 1;
+        config.record_letters_and_symbols = 1;
+        config.record_control_keys = 1;
+        config.preserve_keyboard_shortcuts = 1;
         config.highlight_radius = 41;
         QString error;
         const bool success = laserRunning ? laserSource->configure(config, error)

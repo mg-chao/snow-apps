@@ -131,6 +131,7 @@ pub(crate) fn run() -> Result<()> {
         _ => bail!("audio must be none, system, mixed, or separate"),
     };
     let config = DirectRecordingConfig {
+        keyboard_filter: Default::default(),
         webcam: None,
         loop_animated_images: false,
         region,

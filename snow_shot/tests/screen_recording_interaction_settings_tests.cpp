@@ -32,6 +32,21 @@ int main(int argc, char** argv) {
                 .success,
             "isolated storage must initialize");
     storage::RecordingSettings recording;
+    const QStringList keyboardKeys{QStringLiteral("screen_recording/record_number_keys"),
+                                   QStringLiteral("screen_recording/record_letters_and_symbols"),
+                                   QStringLiteral("screen_recording/record_control_keys"),
+                                   QStringLiteral("screen_recording/preserve_keyboard_shortcuts")};
+    for (const auto& keyboardKey : keyboardKeys) {
+        require(storage::ConfigurationSchema::defaultValue(keyboardKey).toBool() &&
+                    applicationStorage.configuration().value(keyboardKey).toBool(),
+                "keyboard categories and shortcut preservation must default to enabled");
+        require(!applicationStorage.configuration().setValue(keyboardKey, QStringLiteral("false")),
+                "keyboard filters reject non-boolean settings");
+    }
+    require(recording.setRecordNumberKeys(false) && recording.setRecordLettersAndSymbols(false) &&
+                recording.setRecordControlKeys(false) &&
+                recording.setPreserveKeyboardShortcuts(false),
+            "keyboard category preferences must persist");
     require(!recording.webcamEnabled() && recording.webcamSize() == 150 &&
                 recording.webcamShape() == QStringLiteral("square") &&
                 recording.webcamOffsetLeft() == 48 && recording.webcamOffsetBottom() == 48 &&
@@ -123,6 +138,10 @@ int main(int argc, char** argv) {
                 reloaded.value(QStringLiteral("screen_recording/webcam_orientation")).toInt() == 7,
             "webcam values survive a configuration reload");
     require(reloaded.value(key).toBool(), "recording auto-exit must survive configuration reload");
+    for (const auto& keyboardKey : keyboardKeys) {
+        require(!reloaded.value(keyboardKey).toBool(),
+                "unchecked keyboard options must survive configuration reload");
+    }
     require(reloaded.value(autoHideKey).toBool(),
             "recording toolbar auto-hide must survive configuration reload");
     require(!reloaded.value(promptsKey).toBool(),
@@ -138,6 +157,9 @@ int main(int argc, char** argv) {
                 backend.switchValue(binding) && backend.switchValue(notifyBinding) &&
                 backend.switchValue(deleteBinding) && backend.switchValue(autoHideBinding),
             "Action Toolbar reset must preserve the Interaction preference");
+    require(recording.recordNumberKeys() && recording.recordLettersAndSymbols() &&
+                recording.recordControlKeys() && recording.preserveKeyboardShortcuts(),
+            "Action Toolbar reset must restore all keyboard options to checked");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
                 backend.switchValue(autoHideBinding) && !backend.switchValue(promptsBinding),
             "recording capture reset must preserve toolbar auto-hide");
@@ -160,7 +182,13 @@ int main(int argc, char** argv) {
                 storage::RecordingSettings().setAutoHideToolbar(false) &&
                 !backend.switchValue(autoHideBinding),
             "external toolbar auto-hide writes must be reflected by the settings backend");
+    require(recording.setRecordNumberKeys(false) && recording.setRecordLettersAndSymbols(false) &&
+                recording.setRecordControlKeys(false) &&
+                recording.setPreserveKeyboardShortcuts(false),
+            "prepare unchecked filters before resetting recording settings");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                recording.recordNumberKeys() && recording.recordLettersAndSymbols() &&
+                recording.recordControlKeys() && recording.preserveKeyboardShortcuts() &&
                 storage::RecordingSettings().mouseHighlightRadius() == 41,
             "recording settings reset must restore the original highlight radius");
     require(!recording.webcamEnabled() && recording.webcamSize() == 150 &&

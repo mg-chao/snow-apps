@@ -370,6 +370,7 @@ mod tests {
                 let mut effects = InputEffectsState::new(lifetime);
                 let mut preview = EffectsPreview::new(
                     PreviewConfig {
+                        keyboard_filter: Default::default(),
                         webcam: None,
                         region: (0, 0, SIZE.0, SIZE.1),
                         canvas: SIZE,

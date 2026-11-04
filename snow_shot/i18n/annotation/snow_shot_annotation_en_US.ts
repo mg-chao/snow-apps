@@ -311,6 +311,10 @@
             <translation>Connection type</translation>
         </message>
         <message>
+            <source>Control keys</source>
+            <translation>Control keys</translation>
+        </message>
+        <message>
             <source>Convert to HTML</source>
             <translation>Convert to HTML</translation>
         </message>
@@ -807,6 +811,10 @@
             <translation>Leader line arrowhead</translation>
         </message>
         <message>
+            <source>Letters and symbols</source>
+            <translation>Letters and symbols</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>
@@ -939,6 +947,10 @@
             <translation>None</translation>
         </message>
         <message>
+            <source>Number keys</source>
+            <translation>Number keys</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>Opacity</translation>
         </message>
@@ -1029,6 +1041,10 @@
         <message>
             <source>Post-processing effects</source>
             <translation>Post-processing effects</translation>
+        </message>
+        <message>
+            <source>Preserve keyboard shortcuts</source>
+            <translation>Preserve keyboard shortcuts</translation>
         </message>
         <message>
             <source>Pressure-sensitive brush</source>

@@ -7,6 +7,7 @@ use snow_media::{
 };
 use snow_recording_effects::{
     InputEffectsState,
+    keyboard_filter::{KeyboardFilter, KeyboardFilterConfig},
     keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig},
     mouse_effects::RenderClick,
     mouse_hook::ObservedMouseButton,
@@ -25,6 +26,7 @@ pub struct NativeEffectsConfig {
     pub clicks: bool,
     pub trail: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
+    pub keyboard_filter: KeyboardFilterConfig,
     pub show_keyboard: bool,
     pub record_mouse_clicks: bool,
     pub record_mouse_scrolling: bool,
@@ -34,6 +36,7 @@ pub struct NativeEffectsConfig {
 impl Default for NativeEffectsConfig {
     fn default() -> Self {
         Self {
+            keyboard_filter: Default::default(),
             click_rgba: [64, 160, 255, 220],
             trail_rgba: [255, 64, 80, 230],
             trail_duration_ms: 500,
@@ -59,6 +62,7 @@ pub(crate) struct Effects {
     pending_input: VecDeque<InputEvent>,
     show_cursor: bool,
     input_effects: InputEffectsState,
+    keyboard_filter: KeyboardFilter,
     trail: FrameTrail,
     generation: u64,
     status: InputStatus,
@@ -180,6 +184,7 @@ impl Effects {
         Self {
             input,
             cursor,
+            keyboard_filter: KeyboardFilter::default(),
             trail: FrameTrail::new(),
             input_effects: InputEffectsState {
                 keyboard,
@@ -214,11 +219,27 @@ impl Effects {
             rendered: RenderedEffects::default(),
         }
     }
+    fn key_event(&mut self, event: snow_recording_effects::keyboard_overlay::KeyEvent) {
+        if self.input_effects.pending_keys.len() == snow_recording_effects::state::MAX_PENDING_KEYS
+        {
+            self.keyboard_filter.reset();
+            self.input_effects.reset_keyboard(event.at_ms);
+        }
+        if let Some(event) = self
+            .keyboard_filter
+            .event(self.config.keyboard_filter, event)
+        {
+            self.input_effects.queue_key(event);
+            self.dirty = true;
+        }
+    }
+
     pub fn reset(&mut self, now: u64) {
         self.held_buttons = [false; 5];
         self.pending_input.clear();
         self.highlight.clear();
         self.trail.clear();
+        self.keyboard_filter.reset();
         self.input_effects.reset_inputs(now);
         self.dirty = true;
         if let Some(input) = &self.input {
@@ -260,6 +281,7 @@ impl Effects {
                 if self.pending_input.len() == 256 {
                     self.pending_input.clear();
                     self.held_buttons = [false; 5];
+                    self.keyboard_filter.reset();
                     self.input_effects.reset_keyboard(now);
                     self.dirty = true;
                 }
@@ -323,7 +345,7 @@ impl Effects {
                     modifiers: [false; 8],
                 };
                 let key = observation.event(at_ms, style, false);
-                self.input_effects.queue_key(key);
+                self.key_event(key);
             }
             if self.config.record_mouse_clicks {
                 let button = match event.kind {
@@ -354,11 +376,15 @@ impl Effects {
                                             event.modifiers,
                                         ),
                                 };
-                            self.input_effects.queue_key(observation.event(
-                                at_ms,
-                                style,
-                                self.config.show_keyboard,
-                            ));
+                            self.key_event(
+                                observation.event(
+                                    at_ms,
+                                    style,
+                                    self.config
+                                        .keyboard_filter
+                                        .include_mouse_modifiers(self.config.show_keyboard),
+                                ),
+                            );
                             self.dirty = true;
                         }
                     }
@@ -376,8 +402,7 @@ impl Effects {
                         self.generation,
                     )
             {
-                self.input_effects.queue_key(event.event(at_ms, style));
-                self.dirty = true;
+                self.key_event(event.event(at_ms, style));
             }
         }
         let cursor_shape = if let Some(cursor) = &mut self.cursor {

@@ -963,6 +963,7 @@ mod tests {
         };
         let mut live = EffectsPreview::new(
             PreviewConfig {
+                keyboard_filter: Default::default(),
                 webcam: None,
                 region: (0, 0, size.0, size.1),
                 canvas: size,

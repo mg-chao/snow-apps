@@ -2073,6 +2073,39 @@ bool RecordingSettings::setWebcamShape(const QString& shape) const {
     return cache().setValue(QStringLiteral("screen_recording/webcam_shape"), shape);
 }
 
+bool RecordingSettings::recordNumberKeys() const {
+    return cache().value(QStringLiteral("screen_recording/record_number_keys")).toBool();
+}
+
+bool RecordingSettings::setRecordNumberKeys(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/record_number_keys"), enabled);
+}
+
+bool RecordingSettings::recordLettersAndSymbols() const {
+    return cache().value(QStringLiteral("screen_recording/record_letters_and_symbols")).toBool();
+}
+
+bool RecordingSettings::setRecordLettersAndSymbols(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/record_letters_and_symbols"), enabled);
+}
+
+bool RecordingSettings::recordControlKeys() const {
+    return cache().value(QStringLiteral("screen_recording/record_control_keys")).toBool();
+}
+
+bool RecordingSettings::setRecordControlKeys(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/record_control_keys"), enabled);
+}
+
+bool RecordingSettings::preserveKeyboardShortcuts() const {
+    return cache().value(QStringLiteral("screen_recording/preserve_keyboard_shortcuts")).toBool();
+}
+
+bool RecordingSettings::setPreserveKeyboardShortcuts(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/preserve_keyboard_shortcuts"),
+                            enabled);
+}
+
 bool RecordingSettings::showKeyboard() const {
     return cache().value(QStringLiteral("screen_recording/show_keyboard")).toBool();
 }

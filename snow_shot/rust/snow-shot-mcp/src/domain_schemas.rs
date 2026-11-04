@@ -401,6 +401,10 @@ recording_options! {
     progress_bar_color: String,
     show_cursor: bool,
     show_keyboard: bool,
+    record_number_keys: bool,
+    record_letters_and_symbols: bool,
+    record_control_keys: bool,
+    preserve_keyboard_shortcuts: bool,
     mouse_highlight: bool,
     webcam: bool,
     webcam_size: WebcamSize,
@@ -1563,6 +1567,54 @@ mod audio_gain_tests {
                 )
                 .is_err()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod keyboard_filter_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn recording_keyboard_filters_accept_only_supplied_boolean_values() {
+        let omitted: RecordingOptions = serde_json::from_value(json!({})).unwrap();
+        assert!(omitted.record_number_keys.0.is_none());
+        assert!(omitted.record_letters_and_symbols.0.is_none());
+        assert!(omitted.record_control_keys.0.is_none());
+        assert!(omitted.preserve_keyboard_shortcuts.0.is_none());
+        let published = model::<RecordingOptions>(None).unwrap();
+        for key in [
+            "record_number_keys",
+            "record_letters_and_symbols",
+            "record_control_keys",
+            "preserve_keyboard_shortcuts",
+        ] {
+            assert_eq!(published["properties"][key]["type"], "boolean", "{key}");
+            for value in [json!(true), json!(false)] {
+                let options = Value::Object(Map::from_iter([(key.into(), value)]));
+                assert!(serde_json::from_value::<RecordingOptions>(options.clone()).is_ok());
+                assert!(
+                    schema(
+                        "snow_shot_recording_start",
+                        Some(json!({"region": [0, 0, 320, 240], "options": options}))
+                    )
+                    .is_ok(),
+                    "{key}"
+                );
+            }
+            for value in [json!(1), json!("true"), Value::Null, json!([]), json!({})] {
+                let options = Value::Object(Map::from_iter([(key.into(), value)]));
+                assert!(serde_json::from_value::<RecordingOptions>(options.clone()).is_err());
+                assert!(
+                    schema(
+                        "snow_shot_recording_start",
+                        Some(json!({"region": [0, 0, 320, 240], "options": options}))
+                    )
+                    .is_err(),
+                    "{key}"
+                );
+            }
         }
     }
 }

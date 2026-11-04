@@ -377,6 +377,18 @@
           "show_keyboard": {
             "type": "boolean"
           },
+          "record_number_keys": {
+            "type": "boolean"
+          },
+          "record_letters_and_symbols": {
+            "type": "boolean"
+          },
+          "record_control_keys": {
+            "type": "boolean"
+          },
+          "preserve_keyboard_shortcuts": {
+            "type": "boolean"
+          },
           "webcam": {
             "type": "boolean"
           },
