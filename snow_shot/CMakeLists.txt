@@ -13070,6 +13070,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-pinned-window-tests --stitching-snapshot-only -platform offscreen)
         set_tests_properties(snow-shot-pinned-stitching-snapshot-tests PROPERTIES
             LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+        add_test(NAME snow-shot-pinned-export-snapshot-tests
+            COMMAND snow-shot-pinned-window-tests --export-snapshot-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-export-snapshot-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 120)
         add_test(NAME snow-shot-pinned-multi-selection-tests
             COMMAND snow-shot-pinned-window-tests --multi-selection-only -platform offscreen)
         set_tests_properties(snow-shot-pinned-multi-selection-tests PROPERTIES
