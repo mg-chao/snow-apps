@@ -260,6 +260,39 @@ fn arrowhead_and_text_outline_keep_color_alpha() {
 }
 
 #[test]
+fn arrow_outline_serializer_rejects_lossy_vectors_and_preserves_plain_arrows() {
+    let mut vectors = VectorContext::default();
+    let mut arrow = ArrowDisplayItem {
+        stroke_width: 2.0,
+        arrow_outline_width: 8.0,
+        arrow_outline_color: ColorRgba8 {
+            r: 20,
+            g: 40,
+            b: 60,
+            a: 128,
+        },
+        ..Default::default()
+    };
+    assert!(matches!(
+        vectors.export_svg_content(&SceneDisplayItem::Arrow(arrow.clone()), 0),
+        Err(CanvasError::Unsupported(_))
+    ));
+    arrow.arrow_outline_color.a = 0;
+    assert!(
+        vectors
+            .export_svg_content(&SceneDisplayItem::Arrow(arrow.clone()), 0)
+            .is_ok()
+    );
+    arrow.arrow_outline_color.a = 128;
+    arrow.arrow_outline_width = 0.0;
+    assert!(
+        vectors
+            .export_svg_content(&SceneDisplayItem::Arrow(arrow), 0)
+            .is_ok()
+    );
+}
+
+#[test]
 fn wrapping_preserves_long_unicode_input_and_respects_grapheme_boundaries() {
     let mut cache = VectorContext::default();
     let mut document = crate::CanvasDocument::default();

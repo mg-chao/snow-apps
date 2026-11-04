@@ -77,6 +77,7 @@ float4 effect_pixel(VertexOutput input) : SV_Target {
     float2 uv = pixel * sample_mapping.xy + sample_mapping.zw;
     float4 sampled = source_image.SampleLevel(linear_sampler, uv, 0);
     uint operation = (uint)effect.x;
+    if ((operation == 0 || operation == 1) && pixel.x >= gap.x && pixel.y >= gap.y && pixel.x < gap.z && pixel.y < gap.w) discard;
     if (operation == 0) return sampled * effect.w;
     if (operation == 1) {
         float4 destination = backdrop_image.Load(int3(pixel, 0));

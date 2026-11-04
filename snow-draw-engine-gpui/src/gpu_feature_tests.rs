@@ -1,6 +1,166 @@
 use super::*;
 
 #[test]
+fn arrow_outline_preserves_alpha_label_gaps_and_tile_edges() -> Result<()> {
+    let arrow = ArrowDisplayItem {
+        path_commands: vec![
+            PathCommand::MoveTo {
+                point: [32.0, 256.0],
+            },
+            PathCommand::LineTo {
+                point: [480.0, 256.0],
+            },
+        ],
+        stroke: ColorRgba8 {
+            r: 200,
+            g: 40,
+            b: 20,
+            a: 0,
+        },
+        stroke_width: 12.0,
+        arrow_outline_color: ColorRgba8 {
+            r: 20,
+            g: 180,
+            b: 40,
+            a: 128,
+        },
+        arrow_outline_width: 8.0,
+        opacity: 0.5,
+        bound_text_id: Some(DisplayItemId {
+            index: 99,
+            generation: 1,
+        }),
+        label_bounds: Some(DrawRect::new(240.0, 250.0, 272.0, 262.0)),
+        ..Default::default()
+    };
+    let mut device = Device::new()?;
+    for scale in [1.0, 1.5, 2.0] {
+        let scene = scene(
+            view(512, 512),
+            vec![node(
+                0,
+                1,
+                SceneDisplayItem::Arrow(arrow.clone()),
+                [20.0, 244.0, 492.0, 268.0],
+            )],
+        );
+        let (_, image) = device.render(&scene, None, scale, &Default::default())?;
+        let at = |x: f32, y: f32| image.get_pixel((x * scale) as u32, (y * scale) as u32).0;
+        close(at(128.0, 248.0), [5, 45, 10, 64], 1);
+        close(at(128.0, 264.0), [5, 45, 10, 64], 1);
+        close(at(128.0, 256.0), [0; 4], 0);
+        close(at(256.0, 264.0), [0; 4], 0);
+        close(at(128.0, 270.0), [0; 4], 0);
+    }
+    for style in [
+        StrokeRenderingStyle::Artist,
+        StrokeRenderingStyle::Cartoonist,
+    ] {
+        let mut rough = arrow.clone();
+        rough.stroke_rendering_style = style;
+        rough.stroke_rendering_seed = 37;
+        let scene = scene(
+            view(512, 512),
+            vec![node(
+                0,
+                1,
+                SceneDisplayItem::Arrow(rough),
+                [16.0, 238.0, 496.0, 274.0],
+            )],
+        );
+        let (_, first) = device.render(&scene, None, 1.5, &Default::default())?;
+        for x in 353..414 {
+            for y in 368..400 {
+                assert_eq!(
+                    first.get_pixel(x, y).0,
+                    [0; 4],
+                    "rough outline leaked into its label"
+                );
+            }
+        }
+        device.canvas.clear();
+        let (_, second) = device.render(&scene, None, 1.5, &Default::default())?;
+        assert_eq!(first, second, "rough outline changed after cache eviction");
+    }
+    Ok(())
+}
+
+#[test]
+fn arrow_outline_edits_damage_old_tiles_and_survive_undo_redo_and_persistence() -> Result<()> {
+    let mut document = CanvasDocument::default();
+    let mut session = CanvasSession::new(&mut document)?;
+    session.set_surface(&mut document, 512, 512)?;
+    session.set_camera(
+        &mut document,
+        Camera {
+            center: Point::new(256.0, 256.0),
+            zoom: 1.0,
+        },
+    )?;
+    document.command(|engine| engine.apply_annotation_json(br#"{"version":1,"operations":[{"type":"arrow","points":[[32,256],[480,256]],"style":{"stroke":[200,40,20,255],"stroke_width":8,"arrow_outline_width":8,"arrow_outline_color":[20,180,40,255]}}]}"#))?;
+    session.flush(&document)?;
+    let id = session.scene().order_ids()[0].element;
+    session.mutate(&mut document, |engine, viewport| {
+        engine.select_element_with_viewport_changes(
+            viewport,
+            ElementId {
+                index: id.index,
+                generation: id.generation,
+            },
+        )
+    })?;
+    let mut device = Device::new()?;
+    let (_, original) = device.render(session.scene(), None, 1.0, &Default::default())?;
+    assert_eq!(original.get_pixel(128, 263).0, [20, 180, 40, 255]);
+    let mut style = document
+        .engine()
+        .viewport_style_toolbar_state(session.viewport())
+        .map_err(CanvasError::from)?
+        .shape_style;
+    style.arrow_outline_width = 0.0;
+    session.mutate(&mut document, |engine, viewport| {
+        engine.set_viewport_shape_style_patch(
+            viewport,
+            ShapeStylePatch {
+                kind: ShapeKind::Arrow,
+                style,
+                properties: snow_draw_engine_editor::SHAPE_STYLE_PROPERTY_ARROW_OUTLINE_WIDTH,
+            },
+        )
+    })?;
+    session.flush(&document)?;
+    let (_, removed) = device.render(session.scene(), None, 1.0, &Default::default())?;
+    assert_eq!(
+        removed.get_pixel(128, 263).0,
+        [255; 4],
+        "old outline pixels survived material damage"
+    );
+    document.command(Engine::undo)?;
+    session.flush(&document)?;
+    let (_, undone) = device.render(session.scene(), None, 1.0, &Default::default())?;
+    assert_eq!(original, undone);
+    let bytes = document.serialize()?;
+    document.command(Engine::redo)?;
+    session.flush(&document)?;
+    let (_, redone) = device.render(session.scene(), None, 1.0, &Default::default())?;
+    assert_eq!(removed, redone);
+    let mut restored = CanvasDocument::deserialize(&bytes)?;
+    let mut session = CanvasSession::new(&mut restored)?;
+    session.set_surface(&mut restored, 512, 512)?;
+    session.set_camera(
+        &mut restored,
+        Camera {
+            center: Point::new(256.0, 256.0),
+            zoom: 1.0,
+        },
+    )?;
+    device.canvas.clear();
+    let (_, restored) = device.render(session.scene(), None, 1.0, &Default::default())?;
+    assert_eq!(original, restored);
+    Ok(())
+}
+
+#[test]
 fn host_coverage_mask_restores_backdrop_and_tracks_presentation_changes() -> Result<()> {
     let source = SourceImage::new(RgbaImage::from_pixel(64, 48, Rgba([20, 80, 180, 255])))?;
     let mask = SourceImage::new(RgbaImage::from_fn(64, 48, |x, y| {

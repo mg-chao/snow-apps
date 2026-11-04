@@ -2,6 +2,7 @@
 // Included after screenshot_live_pinned_window_tests.h and the shared native helpers.
 #include "widgets/tooltip.h"
 #ifdef Q_OS_WIN
+#include "../src/platform/windows/livewindowpresentation.h"
 namespace live_pinned_native_tests {
 using Access = ScreenshotLivePinnedWindowTestAccess;
 using Source = snow_shot::presentation::LiveWindowSource;
@@ -67,6 +68,124 @@ bool hostOpacity(HWND host, int percent) {
     DWORD flags = 0;
     return GetLayeredWindowAttributes(host, nullptr, &alpha, &flags) && (flags & LWA_ALPHA) &&
            std::abs(int(alpha) - qRound(percent * 255. / 100.)) <= 1;
+}
+
+void diagnoseNativeHost(const ScreenshotPinnedWindow& window, HWND captured, const char* stage) {
+    using Binding = snow_shot::presentation::LocalWindowSurfaceOwnerBinding;
+    const HWND currentShell = shell(window);
+    const HWND currentHost = owner(currentShell);
+    const auto surface = [&](const char* name, HWND handle) {
+        BYTE alpha = 0;
+        DWORD flags = 0;
+        const bool alphaRead = GetLayeredWindowAttributes(handle, nullptr, &alpha, &flags) != FALSE;
+        const auto registered = Binding::ownerForSurface(reinterpret_cast<WId>(handle));
+        std::cerr << ' ' << name << '=' << reinterpret_cast<quintptr>(handle)
+                  << " valid=" << bool(IsWindow(handle)) << " dwm=" << isDwmHost(handle)
+                  << " topmost=" << topmost(handle) << " alphaRead=" << alphaRead
+                  << " alpha=" << int(alpha) << " flags=" << flags << " registeredOwner="
+                  << (registered ? reinterpret_cast<quintptr>(registered->data()) : 0);
+    };
+    std::cerr << "Native host settlement failure: " << stage << " modelTopmost="
+              << window.automationState().value(QStringLiteral("always_on_top")).toBool();
+    surface("shell", currentShell);
+    surface("capturedHost", captured);
+    surface("currentHost", currentHost);
+    std::cerr << '\n';
+}
+
+void waitForNativeHost(ScreenshotPinnedWindow& window, HWND& host, bool enabled,
+                       std::optional<int> opacity, const char* message) {
+    using Binding = snow_shot::presentation::LocalWindowSurfaceOwnerBinding;
+    const HWND previousHost = host;
+    try {
+        live_pinned_tests::wait(
+            [&] {
+                const HWND currentShell = shell(window);
+                const HWND currentHost = owner(currentShell);
+                const auto registered =
+                    Binding::ownerForSurface(reinterpret_cast<WId>(currentHost));
+                return IsWindow(currentShell) && isDwmHost(currentHost) && registered &&
+                       registered->data() == &window &&
+                       window.automationState().value(QStringLiteral("always_on_top")).toBool() ==
+                           enabled &&
+                       topmost(currentShell) == enabled && topmost(currentHost) == enabled &&
+                       (!opacity || hostOpacity(currentHost, *opacity));
+            },
+            message);
+    } catch (...) {
+        diagnoseNativeHost(window, previousHost, message);
+        throw;
+    }
+    host = owner(shell(window));
+    if (host != previousHost) {
+        require(!Binding::ownerForSurface(reinterpret_cast<WId>(previousHost)),
+                "native host recreation retires the replaced surface owner binding");
+    }
+}
+
+void toggleThroughNativeHost(ScreenshotPinnedWindow& window, HWND& host, bool enabled) {
+    using namespace snow_shot::platform::windows;
+    using Binding = snow_shot::presentation::LocalWindowSurfaceOwnerBinding;
+    waitForNativeHost(window, host, !enabled, std::nullopt,
+                      "raw-host dispatch starts from a settled current native owner");
+    const WId id = reinterpret_cast<WId>(host);
+    const auto registered = Binding::ownerForSurface(id);
+    require(QWidget::find(id) == nullptr && registered && registered->data() == &window,
+            "raw DWM host explicitly resolves to its live pin owner");
+    const WindowAlwaysOnTopAccess access{[] { return std::optional<QPoint>(QPoint()); },
+                                         [id](const QPoint&) { return id; },
+                                         [](WId hit) { return hit; },
+                                         [](WId) { return true; },
+                                         {},
+                                         {}};
+    require(toggleWindowUnderCursorAlwaysOnTop(
+                access, &ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface) ==
+                WindowAlwaysOnTopResult::ChangeRequested,
+            "global raw-host dispatch uses the pin model without native fallback");
+    require(window.automationState().value(QStringLiteral("always_on_top")).toBool() == enabled,
+            "global raw-host dispatch immediately updates the live pin's model policy");
+    waitForNativeHost(window, host, enabled, std::nullopt,
+                      "global raw-host dispatch synchronizes the pin model, shell and DWM host");
+    materializePinnedMenuTree(window);
+    const auto* menu = Access::currentContextMenu(window);
+    const auto* action =
+        menu ? menu->findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"))
+             : nullptr;
+    if (!action || action->isChecked() != enabled)
+        std::cerr << "Native owner menu mismatch: expected=" << enabled << " menu=" << bool(menu)
+                  << " action=" << bool(action) << " checked=" << (action && action->isChecked())
+                  << '\n';
+    require(action && action->isChecked() == enabled,
+            "global raw-host dispatch updates the live pin's checked menu policy");
+}
+
+void failedAttachmentRetiresHost(ScreenshotPinnedWindow& window, HWND host) {
+    const auto hosts = [] {
+        QSet<HWND> result;
+        EnumThreadWindows(
+            GetCurrentThreadId(),
+            [](HWND candidate, LPARAM data) -> BOOL {
+                if (isDwmHost(candidate))
+                    reinterpret_cast<QSet<HWND>*>(data)->insert(candidate);
+                return TRUE;
+            },
+            reinterpret_cast<LPARAM>(&result));
+        return result;
+    };
+    const auto before = hosts();
+    QWidget shellOwner(nullptr, Qt::Tool);
+    const HWND failureShell = reinterpret_cast<HWND>(shellOwner.winId());
+    const HWND originalOwner = owner(failureShell);
+    snow_shot::presentation::LiveWindowPresentation presentation;
+    presentation.owner = &shellOwner;
+    snow_shot::presentation::LiveWindowPresentationSurface failed(nullptr);
+    require(!failed.present(presentation, QRectF(0, 0, 16, 16), QRect(0, 0, 16, 16)) &&
+                !failed.presenting() && owner(failureShell) == originalOwner && hosts() == before,
+            "failed native attachment releases its temporary host and preserves shell ownership");
+    const auto active = snow_shot::presentation::LocalWindowSurfaceOwnerBinding::ownerForSurface(
+        reinterpret_cast<WId>(host));
+    require(active && active->data() == &window,
+            "failed attachment cleanup preserves another live pin's native owner binding");
 }
 
 bool colorMatches(const QImage& image, const QColor& color, int alpha = 255) {
@@ -414,7 +533,7 @@ void run() {
     QObject::connect(source.get(), &Source::stopped, [&] { ++stopped; });
     ScreenshotPinnedWindow window;
     present(window, source);
-    const HWND initialShell = shell(window);
+    HWND initialShell = shell(window);
     HWND host = owner(initialShell);
     require(topmost(initialShell) && topmost(host) &&
                 nativeGeometry(host) == Access::contentGeometry(window),
@@ -449,6 +568,19 @@ void run() {
                         "live native content alignment");
     ScreenshotPinnedWindowTestAccess::shadowState(window, false, false);
     QCoreApplication::processEvents();
+    // Opacity changes show a transient status readout. Exercise owner policy after
+    // comparing pristine source pixels so that readout cannot contaminate the capture.
+    failedAttachmentRetiresHost(window, host);
+    toggleThroughNativeHost(window, host, false);
+    Access::opacity(window, 99);
+    waitForNativeHost(
+        window, host, false, 99,
+        "a later presentation refresh preserves the raw-host command's ordinary band");
+    Access::opacity(window, 100);
+    toggleThroughNativeHost(window, host, true);
+    waitForNativeHost(window, host, true, 100,
+                      "the owner regression restores full native host opacity");
+    initialShell = shell(window);
     resizeHitRegions(window);
     fixture.marker = false;
 
@@ -572,6 +704,9 @@ void run() {
         "rotating the actual pin switches DWM display to continuous WGC frames");
     const HWND originalOwner = owner(shell(window));
     require(!IsWindow(host), "rotation releases the old DWM host");
+    require(!snow_shot::presentation::LocalWindowSurfaceOwnerBinding::ownerForSurface(
+                reinterpret_cast<WId>(host)),
+            "switching to raster presentation retires the old native host binding");
     fixture.paintColor(QColor(192, 96, 32));
     live_pinned_tests::wait(
         [&] {
@@ -603,20 +738,17 @@ void run() {
                 window.currentNativeGeometry().size() == originalGeometry.size() &&
                 window.currentNativeGeometry().topLeft() == movedGeometry.topLeft(),
             "actual transform reset restores the original displayed orientation and dimensions");
+    toggleThroughNativeHost(window, host, false);
+    toggleThroughNativeHost(window, host, true);
 
     Access::appearance(window);
-    live_pinned_tests::wait(
-        [&] {
-            return !topmost(shell(window)) && !topmost(owner(shell(window))) &&
-                   hostOpacity(owner(shell(window)), 70);
-        },
-        "native DWM and Qt shell synchronize always-on-top and opacity changes");
+    waitForNativeHost(window, host, false, 70,
+                      "native DWM and Qt shell synchronize always-on-top and opacity changes");
     Access::alwaysOnTop(window, true);
-    live_pinned_tests::wait([&] { return topmost(shell(window)) && topmost(host); },
-                            "re-enable always-on-top for both native surfaces");
+    waitForNativeHost(window, host, true, 70, "re-enable always-on-top for both native surfaces");
     Access::alwaysOnTop(window, false);
-    live_pinned_tests::wait([&] { return !topmost(shell(window)) && !topmost(host); },
-                            "return both native surfaces to the ordinary window band");
+    waitForNativeHost(window, host, false, 70,
+                      "return both native surfaces to the ordinary window band");
     auto* decoration = ScreenshotPinnedWindowTestAccess::decoration(window);
     require(decoration && !decoration->property("showBorder").toBool() &&
                 decoration->property("showShadow").toBool(),
@@ -653,6 +785,9 @@ void run() {
             owner(conversionShell) == originalOwner && !IsWindow(conversionHost) && stopped == 1 &&
             !source->usesNativePresentation() && window.isVisible(),
         "actual conversion preserves HWND and geometry while releasing native capture ownership");
+    require(!snow_shot::presentation::LocalWindowSurfaceOwnerBinding::ownerForSurface(
+                reinterpret_cast<WId>(conversionHost)),
+            "conversion retires the native host's stateful command binding");
     for (const auto& key :
          {QStringLiteral("always_on_top"), QStringLiteral("show_border"),
           QStringLiteral("show_shadow"), QStringLiteral("click_through"), QStringLiteral("locked"),
@@ -684,6 +819,9 @@ void run() {
     peer.closeLiveWindow();
     require(!peer.isVisible() && peerStopped == 1 && !IsWindow(peerHost) && fixture.isVisible(),
             "closing an actual live pin releases only its own DWM and capture resources");
+    require(!snow_shot::presentation::LocalWindowSurfaceOwnerBinding::ownerForSurface(
+                reinterpret_cast<WId>(peerHost)),
+            "closing a live pin retires its native surface owner before handle reuse");
     require(IsWindow(sourceHwnd) && stopped == 1,
             "pin conversion and closure leave the original source window open");
 }

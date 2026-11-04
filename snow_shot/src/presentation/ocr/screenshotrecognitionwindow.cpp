@@ -835,10 +835,43 @@ ScreenshotRecognitionImageSnapshot ScreenshotRecognitionWindow::ocrImageSnapshot
     return snapshot;
 }
 
-void ScreenshotRecognitionWindow::setTranslationClipboardProvider(
-    std::function<bool()> active, std::function<std::unique_ptr<QMimeData>()> provider) {
-    m_translationCopyActive = std::move(active);
-    m_translationClipboardProvider = std::move(provider);
+ScreenshotRecognitionWindow::AttachmentToken
+ScreenshotRecognitionWindow::attachSession(QObject* owner, SessionCallbacks callbacks) {
+    ++m_attachmentToken;
+    m_sessionOwner = owner;
+    m_sessionAttached = true;
+    m_sessionCallbacks = std::move(callbacks);
+    return m_attachmentToken;
+}
+
+bool ScreenshotRecognitionWindow::ownsAttachment(const QObject* owner,
+                                                 AttachmentToken token) const {
+    return m_sessionAttached && owner && m_sessionOwner == owner && token != 0 &&
+           token == m_attachmentToken;
+}
+
+bool ScreenshotRecognitionWindow::commandAttachmentMatches(const QObject* owner,
+                                                           AttachmentToken token) const {
+    return token == m_attachmentToken && m_sessionOwner == owner &&
+           (!m_sessionAttached || !m_sessionOwner.isNull());
+}
+
+void ScreenshotRecognitionWindow::detachSession(const QObject* owner, AttachmentToken token) {
+    if (!ownsAttachment(owner, token))
+        return;
+    ++m_attachmentToken;
+    m_sessionOwner.clear();
+    m_sessionAttached = false;
+    m_sessionCallbacks = {};
+}
+
+bool ScreenshotRecognitionWindow::translationCopyActive() const {
+    const QPointer<const ScreenshotRecognitionWindow> lifetime(this);
+    const auto owner = m_sessionOwner;
+    const auto token = m_attachmentToken;
+    const auto active = m_sessionCallbacks.translationActive;
+    const bool result = owner && active && active();
+    return lifetime && lifetime->ownsAttachment(owner, token) && result;
 }
 
 QImage ScreenshotRecognitionWindow::translationDocumentImage() const {
@@ -1304,7 +1337,11 @@ void ScreenshotRecognitionWindow::setTableSession(
             // copy method. Defer capture teardown until that call has
             // returned, otherwise the editor can be destroyed
             // re-entrantly while it is still unwinding.
-            QTimer::singleShot(0, this, [this]() {
+            const auto owner = m_sessionOwner;
+            const auto token = m_attachmentToken;
+            QTimer::singleShot(0, this, [this, owner, token]() {
+                if (!commandAttachmentMatches(owner, token))
+                    return;
                 const auto callback = m_actions.handleCopy;
                 callback();
             });
@@ -1987,9 +2024,13 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     copy.canActivate = copyCommandsAllowed;
     copy.activate = [this](const auto&) {
         const QPointer<ScreenshotRecognitionWindow> lifetime(this);
+        const auto owner = m_sessionOwner;
+        const auto token = m_attachmentToken;
         const auto callback = m_actions.handleCopy;
         const bool copied = copyVisibleContentToClipboard();
         if (!lifetime)
+            return true;
+        if (!commandAttachmentMatches(owner, token))
             return true;
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
         if (m_latexDocument)
@@ -2281,6 +2322,8 @@ void ScreenshotRecognitionWindow::clearRecognitionError() {
 }
 
 bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
+    if (!commandAttachmentMatches(m_sessionOwner, m_attachmentToken))
+        return false;
     if (m_recognitionErrorPage)
         return false;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
@@ -2293,9 +2336,19 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
         return false;
     }
 
-    if (m_translationCopyActive && m_translationCopyActive() && m_translationClipboardProvider) {
-        auto mime = m_translationClipboardProvider();
-        if (!mime)
+    const QPointer<ScreenshotRecognitionWindow> lifetime(this);
+    const auto owner = m_sessionOwner;
+    const auto token = m_attachmentToken;
+    const auto active = m_sessionCallbacks.translationActive;
+    const auto provider = m_sessionCallbacks.translationClipboard;
+    const bool translating = owner && active && active();
+    if (!lifetime || !lifetime->commandAttachmentMatches(owner, token))
+        return false;
+    if (translating) {
+        if (!provider)
+            return false;
+        auto mime = provider();
+        if (!lifetime || !lifetime->ownsAttachment(owner, token) || !mime)
             return false;
         clipboard->setMimeData(mime.release());
         return true;
@@ -2373,14 +2426,27 @@ void ScreenshotRecognitionWindow::showOcrContextMenu(const QPoint& globalPositio
         return;
     }
     adqt::widgets::AdContextMenu menu(this);
+    populateOcrContextMenu(menu);
+    menu.execAt(globalPosition);
+}
+
+void ScreenshotRecognitionWindow::populateOcrContextMenu(adqt::widgets::AdContextMenu& menu) {
+    if (!m_ocrPresentation)
+        return;
     menu.setObjectName(QStringLiteral("screenshotOcrContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    copy->setObjectName(QStringLiteral("screenshotOcrCopyAction"));
     QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    const auto owner = m_sessionOwner;
+    const auto token = m_attachmentToken;
+    copy->setEnabled(commandAttachmentMatches(owner, token));
     selectAll->setEnabled(!m_ocrPresentation->lines.isEmpty());
-    connect(copy, &QAction::triggered, this,
-            [this]() { static_cast<void>(copyVisibleContentToClipboard()); });
-    connect(selectAll, &QAction::triggered, this, [this]() {
-        if (m_ocrPresentation == nullptr) {
+    connect(copy, &QAction::triggered, this, [this, owner, token] {
+        if (commandAttachmentMatches(owner, token))
+            static_cast<void>(copyVisibleContentToClipboard());
+    });
+    connect(selectAll, &QAction::triggered, this, [this, owner, token]() {
+        if (!commandAttachmentMatches(owner, token) || m_ocrPresentation == nullptr) {
             return;
         }
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
@@ -2389,7 +2455,6 @@ void ScreenshotRecognitionWindow::showOcrContextMenu(const QPoint& globalPositio
             updateOcrSelection();
         }
     });
-    menu.execAt(globalPosition);
 }
 
 void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition) {
@@ -2401,9 +2466,14 @@ void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition
     menu.setObjectName(QStringLiteral("screenshotQrContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
     QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    const auto owner = m_sessionOwner;
+    const auto token = m_attachmentToken;
+    copy->setEnabled(commandAttachmentMatches(owner, token));
     selectAll->setEnabled(!m_qrBrowser->document()->isEmpty());
-    connect(copy, &QAction::triggered, this,
-            [this]() { static_cast<void>(copyVisibleContentToClipboard()); });
+    connect(copy, &QAction::triggered, this, [this, owner, token] {
+        if (commandAttachmentMatches(owner, token))
+            static_cast<void>(copyVisibleContentToClipboard());
+    });
     connect(selectAll, &QAction::triggered, m_qrBrowser, &QTextBrowser::selectAll);
     menu.execAt(globalPosition);
 #else
@@ -2416,25 +2486,46 @@ void ScreenshotRecognitionWindow::showTextEditorContextMenu(const QPoint& global
         return;
     }
     adqt::widgets::AdContextMenu menu(this);
+    populateTextEditorContextMenu(menu);
+    menu.execAt(globalPosition);
+}
+
+void ScreenshotRecognitionWindow::populateTextEditorContextMenu(
+    adqt::widgets::AdContextMenu& menu) {
+    if (!m_textEditor)
+        return;
     menu.setObjectName(QStringLiteral("screenshotTextEditorContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
+    copy->setObjectName(QStringLiteral("screenshotRecognitionCopyAction"));
+    copy->setEnabled(false);
     QAction* cut = menu.addItem(tr("Cut"), adqt::icons::antd::outlined::Scissor());
     QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
     QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
     menu.addSeparator();
     QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
 
+    const QPointer<ScreenshotRecognitionWindow> lifetime(this);
+    const auto owner = m_sessionOwner;
+    const auto token = m_attachmentToken;
     const bool hasSelection = m_textEditor->textCursor().hasSelection();
     const bool writable = !m_textEditor->isReadOnly();
-    const bool translationCopy = m_translationCopyActive && m_translationCopyActive();
+    const bool translationCopy = translationCopyActive();
+    if (!lifetime || !commandAttachmentMatches(owner, token))
+        return;
     copy->setEnabled(hasSelection || (translationCopy && !m_textEditor->document()->isEmpty()));
     cut->setEnabled(writable && hasSelection);
     paste->setEnabled(writable && m_textEditor->canPaste());
     remove->setEnabled(writable && hasSelection);
     selectAll->setEnabled(!m_textEditor->document()->isEmpty());
 
-    connect(copy, &QAction::triggered, m_textEditor, [this]() {
-        if (m_translationCopyActive && m_translationCopyActive()) {
+    connect(copy, &QAction::triggered, m_textEditor, [this, owner, token]() {
+        if (!commandAttachmentMatches(owner, token))
+            return;
+        const QPointer<ScreenshotRecognitionWindow> lifetime(this);
+        const bool translating = translationCopyActive();
+        if (!lifetime || !commandAttachmentMatches(owner, token))
+            return;
+        if (translating) {
             static_cast<void>(copyVisibleContentToClipboard());
             return;
         }
@@ -2459,7 +2550,6 @@ void ScreenshotRecognitionWindow::showTextEditorContextMenu(const QPoint& global
         }
     });
     connect(selectAll, &QAction::triggered, m_textEditor, &QTextEdit::selectAll);
-    menu.execAt(globalPosition);
 }
 
 void ScreenshotRecognitionWindow::focusOutEvent(QFocusEvent* event) {

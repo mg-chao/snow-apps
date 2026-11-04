@@ -755,6 +755,8 @@ struct ImageEditingWindow::Impl {
                 continue;
             }
             const auto retired = it->controller;
+            if (retired)
+                retired->retireContentAttachment();
             it = sessions.erase(it);
             if (retired) {
                 if (session == retired)
@@ -787,13 +789,13 @@ ScreenshotRecognitionWindow* ImageEditingWindow::Impl::ensureRecognitionView() {
         actions.handleCancel = [this] { drawing(ImageEditingCanvas::Mode::Pan); };
         actions.handleCopy = [this] { exportContent(ExportOperation::Copy); };
         actions.handleTextEdited = [this](const QString& text) {
-            if (session)
+            if (session && session->ownsContentAttachment())
                 session->setTextDraft(text);
         };
         actions.handleUndoTextEdit = [this] { undo(false); };
         actions.handleRedoTextEdit = [this] { undo(true); };
         actions.handleTableCommandStateChanged = [this](const auto& state) {
-            if (session)
+            if (session && session->ownsContentAttachment())
                 session->handleTableCommandState(state);
         };
         recognitionView = new ScreenshotRecognitionWindow(
@@ -827,11 +829,14 @@ Session* ImageEditingWindow::Impl::ensureSession() {
         return session;
     }
     ScreenshotRecognitionSessionActions actions;
+    const auto owner = std::make_shared<QPointer<Session>>();
+    actions.isCurrentSession = [this, owner] { return *owner && session == *owner; };
     actions.ensureContent = [this] { return ensureRecognitionView(); };
     actions.applyOcrPresentation = [](auto) {};
     actions.applyOcrBackground = [](auto) {};
     actions.applyFormattedText = [this](auto doc) {
-        ensureRecognitionView()->showFormattedText(std::move(doc));
+        if (recognitionView && session && session->ownsContentAttachment())
+            recognitionView->showFormattedText(std::move(doc));
     };
     actions.clearOcrBackground = [] {};
     actions.setRecognitionVisualState = [this](bool active) {
@@ -912,6 +917,7 @@ Session* ImageEditingWindow::Impl::ensureSession() {
     };
     session = new Session(providers.recognition, providers.qrRecognition,
                           providers.tableRecognition, std::move(actions), &q);
+    *owner = session;
     session->setIndependentEditing(true);
     session->setTarget(
         {QStringLiteral("image-editing:%1:%2").arg(quintptr(&q)).arg(document.baseState()),

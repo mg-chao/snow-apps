@@ -9332,6 +9332,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recognition-attachment-tests
+        COMMAND snow-shot-recognition-session-controller-tests --content-attachment-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-attachment-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recognition-asset-prompts-tests
+        COMMAND snow-shot-recognition-session-controller-tests --asset-prompts-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-asset-prompts-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-image-conversion-tests
         COMMAND snow-shot-recognition-session-controller-tests --image-conversion-only -platform offscreen)
     set_tests_properties(snow-shot-image-conversion-tests PROPERTIES TIMEOUT 60

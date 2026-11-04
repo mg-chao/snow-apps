@@ -1,5 +1,293 @@
 use super::*;
 
+fn outlined_arrow() -> ArrowDisplayItem {
+    ArrowDisplayItem {
+        path_commands: vec![
+            PathCommand::MoveTo {
+                point: [10.0, 32.0],
+            },
+            PathCommand::LineTo {
+                point: [90.0, 32.0],
+            },
+        ],
+        stroke: white(),
+        stroke_width: 8.0,
+        arrow_outline_color: ColorRgba8 {
+            r: 20,
+            g: 180,
+            b: 40,
+            a: 128,
+        },
+        arrow_outline_width: 4.0,
+        ..Default::default()
+    }
+}
+
+fn mesh_covers(mesh: &Mesh, x: f32, y: f32) -> bool {
+    let p = point(x, y);
+    mesh.indices.as_chunks::<3>().0.iter().any(|indices| {
+        let [a, b, c] = [indices[0], indices[1], indices[2]].map(|i| {
+            let [x, y] = mesh.vertices[i as usize];
+            point(x, y)
+        });
+        let signs = [
+            (b - a).cross(p - a),
+            (c - b).cross(p - b),
+            (a - c).cross(p - c),
+        ];
+        signs.iter().all(|value| *value >= -0.0001) || signs.iter().all(|value| *value <= 0.0001)
+    })
+}
+
+#[test]
+fn arrow_outline_is_a_boundary_band_and_reuses_geometry_for_color_edits() {
+    let mut cache = GpuGeometryCache::default();
+    let mut arrow = outlined_arrow();
+    arrow.stroke.a = 0;
+    let first = cache
+        .item(&SceneDisplayItem::Arrow(arrow.clone()), 1.0, white())
+        .unwrap();
+    assert_eq!(first.parts.len(), 1, "transparent ink retains its outline");
+    let outline = &first.parts[0];
+    assert_eq!(outline.color.a, 128);
+    assert_eq!(
+        outline.coverage_group, 2,
+        "overlapping contour strokes receive alpha once"
+    );
+    assert!(mesh_covers(&outline.mesh, 40.0, 5.0));
+    assert!(
+        !mesh_covers(&outline.mesh, 40.0, 0.0),
+        "outline must not fill the ink interior"
+    );
+    assert!(outline.mesh.bounds[0] <= -5.9 && outline.mesh.bounds[2] >= 85.9);
+    let builds = cache.builds;
+    arrow.arrow_outline_color.r = 210;
+    let next = cache
+        .item(&SceneDisplayItem::Arrow(arrow.clone()), 1.0, white())
+        .unwrap();
+    assert_eq!(builds, cache.builds);
+    assert!(Arc::ptr_eq(&outline.mesh, &next.parts[0].mesh));
+    arrow.arrow_outline_width = 8.0;
+    let widened = cache
+        .item(&SceneDisplayItem::Arrow(arrow), 1.0, white())
+        .unwrap();
+    assert!(widened.parts[0].mesh.bounds[3] > outline.mesh.bounds[3] + 1.9);
+}
+
+#[test]
+fn arrow_outline_unions_heads_and_preserves_hollow_head_interiors() {
+    let mut cache = GpuGeometryCache::default();
+    let mut arrow = outlined_arrow();
+    arrow.arrowhead_primitives.push(ArrowheadDisplayPrimitive {
+        kind: ArrowheadDisplayPrimitiveKind::Polygon,
+        points: vec![[70.0, 20.0], [90.0, 32.0], [70.0, 44.0]],
+        fill_mode: ArrowheadDisplayFillMode::Stroke,
+        dash_mode: ArrowheadDisplayDashMode::Solid,
+        center: [0.0, 0.0],
+        diameter: 0.0,
+        roughness_cap: None,
+    });
+    let geometry = cache
+        .item(&SceneDisplayItem::Arrow(arrow.clone()), 1.0, white())
+        .unwrap();
+    assert!(
+        !mesh_covers(&geometry.parts[0].mesh, 60.0, 0.0),
+        "the shaft/head overlap is not a boundary"
+    );
+    arrow.arrowhead_primitives[0] = ArrowheadDisplayPrimitive {
+        kind: ArrowheadDisplayPrimitiveKind::Circle,
+        center: [80.0, 32.0],
+        diameter: 24.0,
+        fill_mode: ArrowheadDisplayFillMode::Background,
+        dash_mode: ArrowheadDisplayDashMode::Solid,
+        points: Vec::new(),
+        roughness_cap: None,
+    };
+    let geometry = cache
+        .item(&SceneDisplayItem::Arrow(arrow), 2.0, white())
+        .unwrap();
+    assert!(!mesh_covers(&geometry.parts[0].mesh, 70.0, 0.0));
+    assert!(
+        mesh_covers(&geometry.parts[0].mesh, 70.0, 7.0),
+        "the inner head boundary retains an outline"
+    );
+}
+
+#[test]
+fn arrow_outline_eligibility_and_rough_metadata_follow_the_arrow() {
+    let mut cache = GpuGeometryCache::default();
+    let mut arrow = outlined_arrow();
+    arrow.stroke_rendering_style = StrokeRenderingStyle::Artist;
+    arrow.stroke_rendering_seed = 172;
+    let geometry = cache
+        .item(&SceneDisplayItem::Arrow(arrow.clone()), 1.0, white())
+        .unwrap();
+    assert_eq!(geometry.parts[0].rough_style, StrokeRenderingStyle::Artist);
+    assert_eq!(geometry.parts[0].rough_seed, 172);
+    for suppressed in 0..4 {
+        let mut value = arrow.clone();
+        match suppressed {
+            0 => value.is_free_draw = true,
+            1 => value.arrow_outline_width = 0.0,
+            2 => value.arrow_outline_color.a = 0,
+            _ => value.stroke_width = 0.0,
+        }
+        assert!(!arrow_outline_visible(&value));
+        let geometry = cache
+            .item(&SceneDisplayItem::Arrow(value), 1.0, white())
+            .unwrap();
+        assert!(geometry.parts.iter().all(|part| part.coverage_group != 2));
+    }
+}
+
+#[test]
+fn arrow_outline_heads_share_local_coordinates_and_reuse_meshes_after_translation() {
+    let mut cache = GpuGeometryCache::default();
+    for fill_mode in [
+        ArrowheadDisplayFillMode::Stroke,
+        ArrowheadDisplayFillMode::Background,
+    ] {
+        let mut arrow = outlined_arrow();
+        arrow.arrowhead_primitives.push(ArrowheadDisplayPrimitive {
+            kind: ArrowheadDisplayPrimitiveKind::Polygon,
+            points: vec![[70.0, 20.0], [90.0, 32.0], [70.0, 44.0]],
+            fill_mode,
+            dash_mode: ArrowheadDisplayDashMode::Solid,
+            center: [0.0; 2],
+            diameter: 0.0,
+            roughness_cap: None,
+        });
+        let normal = cache
+            .item(&SceneDisplayItem::Arrow(arrow.clone()), 2.0, white())
+            .unwrap();
+        let offset = [1.0e9 + 0.125, -1.0e9 + 0.25];
+        for command in &mut arrow.path_commands {
+            match command {
+                PathCommand::MoveTo { point } | PathCommand::LineTo { point } => {
+                    point[0] += offset[0];
+                    point[1] += offset[1];
+                }
+                _ => unreachable!(),
+            }
+        }
+        for p in &mut arrow.arrowhead_primitives[0].points {
+            p[0] += offset[0];
+            p[1] += offset[1];
+        }
+        let distant = cache
+            .item(&SceneDisplayItem::Arrow(arrow), 2.0, white())
+            .unwrap();
+        assert_eq!(normal.parts.len(), distant.parts.len());
+        for (a, b) in normal.parts.iter().zip(&distant.parts) {
+            assert!(
+                Arc::ptr_eq(&a.mesh, &b.mesh),
+                "translation rebuilt local head/outline geometry"
+            );
+            assert_eq!(
+                [
+                    b.transform[4] - a.transform[4],
+                    b.transform[5] - a.transform[5]
+                ],
+                offset
+            );
+        }
+    }
+}
+
+#[test]
+fn arrow_outline_handles_curves_elbows_tapered_ribbons_and_dash_gaps() {
+    let mut cache = GpuGeometryCache::default();
+    for stroke_style in [StrokeStyle::Solid, StrokeStyle::Dashed, StrokeStyle::Dotted] {
+        for width in [2.0, 8.0, 72.0] {
+            for shape in 0..4 {
+                let mut arrow = outlined_arrow();
+                arrow.stroke_style = stroke_style;
+                arrow.arrow_outline_width = width;
+                match shape {
+                    0 => (),
+                    1 => {
+                        arrow.arrow_type = snow_draw_engine_core::arrow::ArrowType::Curve;
+                        arrow.path_commands = vec![
+                            PathCommand::MoveTo {
+                                point: [10.0, 32.0],
+                            },
+                            PathCommand::CubicTo {
+                                control_1: [30.0, -20.0],
+                                control_2: [70.0, 84.0],
+                                end: [90.0, 32.0],
+                            },
+                        ];
+                    }
+                    2 => {
+                        arrow.arrow_type = snow_draw_engine_core::arrow::ArrowType::Elbow;
+                        arrow.path_commands = vec![
+                            PathCommand::MoveTo {
+                                point: [10.0, 32.0],
+                            },
+                            PathCommand::LineTo {
+                                point: [50.0, 32.0],
+                            },
+                            PathCommand::LineTo {
+                                point: [50.0, 60.0],
+                            },
+                            PathCommand::LineTo {
+                                point: [90.0, 60.0],
+                            },
+                        ];
+                    }
+                    _ => {
+                        arrow.arrow_shaft_type =
+                            snow_draw_engine_core::arrow::ArrowShaftType::Tapered;
+                        arrow.geometry =
+                            Arc::new(snow_draw_engine_core::PathGeometry::from_commands(
+                                1,
+                                vec![
+                                    PathCommand::MoveTo {
+                                        point: [10.0, 32.0],
+                                    },
+                                    PathCommand::LineTo {
+                                        point: [80.0, 24.0],
+                                    },
+                                    PathCommand::LineTo {
+                                        point: [90.0, 32.0],
+                                    },
+                                    PathCommand::LineTo {
+                                        point: [80.0, 40.0],
+                                    },
+                                ],
+                                true,
+                            ));
+                    }
+                }
+                let geometry = cache
+                    .item(&SceneDisplayItem::Arrow(arrow), 1.5, white())
+                    .unwrap();
+                assert_eq!(geometry.parts[0].coverage_group, 2);
+                assert!(!geometry.parts[0].mesh.indices.is_empty());
+                assert!(
+                    geometry.parts[0]
+                        .mesh
+                        .vertices
+                        .iter()
+                        .flatten()
+                        .all(|v| v.is_finite())
+                );
+            }
+        }
+    }
+    for (style, gap) in [(StrokeStyle::Dashed, 52.0), (StrokeStyle::Dotted, 10.0)] {
+        let mut arrow = outlined_arrow();
+        arrow.stroke_style = style;
+        let geometry = cache
+            .item(&SceneDisplayItem::Arrow(arrow), 1.0, white())
+            .unwrap();
+        assert!(
+            !mesh_covers(&geometry.parts[0].mesh, gap, 0.0),
+            "outline must preserve dash gaps"
+        );
+    }
+}
+
 fn rectangle() -> RectangleDisplayItem {
     RectangleDisplayItem {
         center_x: 20.0,

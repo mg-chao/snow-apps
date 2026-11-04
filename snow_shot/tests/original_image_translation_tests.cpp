@@ -1825,41 +1825,47 @@ void runPinnedOriginalImageTranslationTests() {
         restored->close();
         waitUntil([&]() { return restoredGuard.isNull(); }, "close restored translation pin");
     }
-    for (const int invalidTranslation : {0, 1, 2}) {
-        config.recognitionResults = partialResults;
-        config.recognitionResults.translatedText.reset();
-        if (invalidTranslation == 1) {
-            config.recognitionResults.translatedText =
-                std::make_shared<ScreenshotOcrPresentation>();
-        } else if (invalidTranslation == 2) {
-            config.recognitionResults.translatedText =
-                std::make_shared<ScreenshotOcrPresentation>();
-            config.recognitionResults.translatedText->selection =
-                partialResults.translatedText->selection;
-            config.recognitionResults.translatedText->lines = partialResults.translatedText->lines;
-            config.recognitionResults.translatedText->lines[0].quad.translate(10, 10);
+    for (const bool overlay : {false, true}) {
+        configureTranslation(overlay);
+        for (const int invalidTranslation : {0, 1, 2}) {
+            config.recognitionResults = partialResults;
+            config.recognitionResults.translatedText.reset();
+            if (invalidTranslation == 1) {
+                config.recognitionResults.translatedText =
+                    std::make_shared<ScreenshotOcrPresentation>();
+            } else if (invalidTranslation == 2) {
+                config.recognitionResults.translatedText =
+                    std::make_shared<ScreenshotOcrPresentation>();
+                config.recognitionResults.translatedText->selection =
+                    partialResults.translatedText->selection;
+                config.recognitionResults.translatedText->lines =
+                    partialResults.translatedText->lines;
+                config.recognitionResults.translatedText->lines[0].quad.translate(10, 10);
+            }
+            config.restorePersistentState = false;
+            config.persistedRecognitionResults.clear();
+            config.recognitionVisible = true;
+            config.translationVisible = true;
+            auto* fallback = new ScreenshotPinnedWindow;
+            QPointer<ScreenshotPinnedWindow> fallbackGuard(fallback);
+            require(fallback->present(config), "present a pin without valid translation data");
+            auto* session = fallback->findChild<ScreenshotRecognitionSessionController*>();
+            waitUntil([&]() { return session->active(); }, "display the valid source OCR fallback");
+            require(session->translating() &&
+                        session->originalImageTranslationActive() == overlay &&
+                        session->cachedRecognitionResults().text->presentation->lines[0].text ==
+                            QStringLiteral("source 0") &&
+                        session->cachedRecognitionResults().text->presentation->lines[1].text ==
+                            QStringLiteral("source 1") &&
+                        fallback->persistenceSnapshot().recognitionVisible == overlay &&
+                        fallback->persistenceSnapshot().textType ==
+                            snow_shot::storage::PinnedTextType::TranslationResults,
+                    "missing or invalid cached translation starts translation while retaining "
+                    "source OCR");
+            fallback->close();
+            waitUntil([&]() { return fallbackGuard.isNull(); },
+                      "close the translation fallback pin");
         }
-        config.restorePersistentState = false;
-        config.persistedRecognitionResults.clear();
-        config.recognitionVisible = true;
-        config.translationVisible = true;
-        auto* fallback = new ScreenshotPinnedWindow;
-        QPointer<ScreenshotPinnedWindow> fallbackGuard(fallback);
-        require(fallback->present(config), "present a pin without valid translation data");
-        auto* session = fallback->findChild<ScreenshotRecognitionSessionController*>();
-        waitUntil([&]() { return session->active(); }, "display the valid source OCR fallback");
-        require(
-            session->translating() &&
-                session->cachedRecognitionResults().text->presentation->lines[0].text ==
-                    QStringLiteral("source 0") &&
-                session->cachedRecognitionResults().text->presentation->lines[1].text ==
-                    QStringLiteral("source 1") &&
-                fallback->persistenceSnapshot().recognitionVisible &&
-                fallback->persistenceSnapshot().textType ==
-                    snow_shot::storage::PinnedTextType::TranslationResults,
-            "missing or invalid cached translation starts translation while retaining source OCR");
-        fallback->close();
-        waitUntil([&]() { return fallbackGuard.isNull(); }, "close the translation fallback pin");
     }
 }
 #endif

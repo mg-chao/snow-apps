@@ -22,6 +22,7 @@
 #include "snow_shot/presentation/livewindowsource.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #ifdef Q_OS_WIN
+#include "../../platform/windows/localwindowsurfaceowner.h"
 #include <qt_windows.h>
 #endif
 #include "snow_shot/presentation/screenshotprintservice.h"
@@ -8910,7 +8911,19 @@ void ScreenshotPinnedWindow::toggleClickThrough() {
 }
 
 std::optional<bool> ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(WId id) {
-    auto* widget = QWidget::find(id);
+    QWidget* widget = nullptr;
+    bool ownedNativeSurface = false;
+#ifdef Q_OS_WIN
+    if (const auto owner =
+            snow_shot::presentation::LocalWindowSurfaceOwnerBinding::ownerForSurface(id)) {
+        ownedNativeSurface = true;
+        widget = owner->data();
+        if (!widget)
+            return false;
+    }
+#endif
+    if (!ownedNativeSurface)
+        widget = QWidget::find(id);
     if (widget == nullptr)
         return std::nullopt;
 
@@ -8921,11 +8934,13 @@ std::optional<bool> ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(WId id) 
          surface != nullptr && !visited.contains(surface); surface = surface->transientParent()) {
         visited.insert(surface);
         if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(QWidget::find(surface->winId()))) {
+            if (pin->m_closing)
+                return false;
             pin->toggleAlwaysOnTop();
             return true;
         }
     }
-    return std::nullopt;
+    return ownedNativeSurface ? std::optional<bool>(false) : std::nullopt;
 }
 
 void ScreenshotPinnedWindow::setAlwaysOnTop(bool enabled) {

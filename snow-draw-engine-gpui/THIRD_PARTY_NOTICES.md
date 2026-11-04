@@ -9,6 +9,7 @@ It is independently expressed in Rust and links neither Qt nor OpenCV.
 Direct dependencies include the [GPUI fork](https://github.com/mg-chao/gpui)
 at revision `2c0bf70b54c018f99419f386d1cf1105dca57661` (`gpui` 0.2.2 and
 `gpui_platform` / `gpui_windows` 0.1.0, Apache-2.0), Lyon (MIT OR Apache-2.0),
+i_overlay 9.0.0 (MIT OR Apache-2.0) for robust arrow ink union and difference,
 the Windows Rust bindings (`windows`, `windows-core` and `windows-numerics`,
 MIT OR Apache-2.0),
 usvg 0.45.1 (Apache-2.0 OR MIT) for fonts and vector path types,
@@ -20,11 +21,11 @@ unicode-segmentation (MIT OR Apache-2.0), and unicode-bidi (MIT OR Apache-2.0).
 GPUI also resolves its own resvg/usvg 0.46.0. The full resolved graph and the
 original license texts, rather than this summary, control redistribution.
 
-The repository collector was run against the current Windows dependency graph on 2026-10-24 with `--locked --offline` graph resolution. Its scoped output is:
+The repository collector was run against the current Windows dependency graph on 2026-11-04 with `--locked --offline` graph resolution. Its scoped output is:
 
-`../artifacts/snow-draw-gpui-git-final-licenses/third-party/INDEX.md`
+`../build/arrow-outline-license-audit/third-party/INDEX.md`
 
-It collected 506 notice files covering 280 external Rust packages, 21 vcpkg
+It collected 512 notice files covering 285 external Rust packages, 21 vcpkg
 packages and repository attribution notices. The collector is shared with Snow Shot and its
 index retains its generic Snow Media title and superset vcpkg/project entries;
 this GPUI binary does not link Qt or that vcpkg package set.
@@ -36,6 +37,9 @@ The new `taffy-0.15.0` text was retrieved from the exact upstream revision recor
 by its published `.cargo_vcs_info.json`,
 `eb6450694f33e2b7413e40677f230ff63f0fc194`. `seahash`'s provenance explicitly
 records the later upstream license revision.
+The `i_key_sort-0.11.0` MIT text was retrieved from the exact upstream revision
+recorded by its published `.cargo_vcs_info.json`,
+`d8c914dc29afd4d4824dacd2c134dbc16168e78c`; its `SOURCE.md` records the URL.
 A canonical Apache-2.0 text supports dual-licensed archives that omit a notice.
 No license files or package cache contents were changed in the reference checkout.
 

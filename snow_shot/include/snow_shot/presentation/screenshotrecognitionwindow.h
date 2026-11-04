@@ -51,6 +51,7 @@ namespace adqt::widgets {
 class AdSpin;
 class AdButton;
 class AdAlert;
+class AdContextMenu;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
 class WindowShortcutManager;
@@ -148,8 +149,14 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void refreshOriginalImagePreview();
     void syncOriginalImagePreviewStacking(bool staysOnTop);
     void setOcrCopyDefaultsEnabled(bool enabled);
-    void setTranslationClipboardProvider(std::function<bool()> active,
-                                         std::function<std::unique_ptr<QMimeData>()> provider);
+    using AttachmentToken = quint64;
+    struct SessionCallbacks {
+        std::function<bool()> translationActive;
+        std::function<std::unique_ptr<QMimeData>()> translationClipboard;
+    };
+    [[nodiscard]] AttachmentToken attachSession(QObject* owner, SessionCallbacks callbacks);
+    [[nodiscard]] bool ownsAttachment(const QObject* owner, AttachmentToken token) const;
+    void detachSession(const QObject* owner, AttachmentToken token);
     [[nodiscard]] QImage translationDocumentImage() const;
     void setTextHighlighting(bool enabled, const QColor& maskColor);
     void setOcrPresentation(
@@ -243,6 +250,11 @@ class ScreenshotRecognitionWindow final : public QWidget {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    friend struct ScreenshotRecognitionWindowTestAccess;
+    void populateOcrContextMenu(adqt::widgets::AdContextMenu& menu);
+    void populateTextEditorContextMenu(adqt::widgets::AdContextMenu& menu);
+    [[nodiscard]] bool commandAttachmentMatches(const QObject* owner, AttachmentToken token) const;
+    [[nodiscard]] bool translationCopyActive() const;
     [[nodiscard]] ScreenshotRecognitionImageSnapshot ocrImageSnapshot() const;
     void showTextEditorWithOwner(QTextDocument* document,
                                  std::shared_ptr<QTextDocument> documentOwner, bool readOnly,
@@ -343,8 +355,10 @@ class ScreenshotRecognitionWindow final : public QWidget {
     QTextEdit* m_textEditor = nullptr;
     bool m_textEditorEditingEnabled = true;
     bool m_textEditorStreaming = false;
-    std::function<bool()> m_translationCopyActive;
-    std::function<std::unique_ptr<QMimeData>()> m_translationClipboardProvider;
+    QPointer<QObject> m_sessionOwner;
+    bool m_sessionAttached = false;
+    AttachmentToken m_attachmentToken = 0;
+    SessionCallbacks m_sessionCallbacks;
     std::shared_ptr<QTextDocument> m_textEditorDocumentOwner;
     adqt::widgets::AdSpin* m_textEditorSpin = nullptr;
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION

@@ -47,6 +47,7 @@ int macLivePinnedWindowTests();
 #include "snow_shot/presentation/screenshotquicktextannotationtoolbar.h"
 #ifdef Q_OS_WIN
 #include "snow_shot/platform/windows/windowalwaysontop.h"
+#include "../src/platform/windows/localwindowsurfaceowner.h"
 #endif
 #include "snow_shot/presentation/collagedocument.h"
 #include "../src/presentation/collage/collageresourcebudget_p.h"
@@ -13098,6 +13099,74 @@ void pinnedAlwaysOnTopOffscreen() {
             waitForUi(20);
             requireStacking(true);
         }
+#ifdef Q_OS_WIN
+        {
+            using Binding = snow_shot::presentation::LocalWindowSurfaceOwnerBinding;
+            constexpr WId nativeSurface = 0x7fffffff;
+            require(QWidget::find(nativeSurface) == nullptr &&
+                        !Binding::ownerForSurface(nativeSurface),
+                    "native ownership fixture starts without a QWidget or registered owner");
+            const auto dispatchNativeSurface = [&] {
+                using namespace snow_shot::platform::windows;
+                const WindowAlwaysOnTopAccess access{[] { return std::optional<QPoint>(QPoint()); },
+                                                     [](const QPoint&) { return nativeSurface; },
+                                                     [](WId id) { return id; },
+                                                     [](WId) { return true; },
+                                                     {},
+                                                     {}};
+                return toggleWindowUnderCursorAlwaysOnTop(
+                    access, &ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface);
+            };
+            {
+                Binding original;
+                original.bind(nativeSurface, &window);
+                original.bind(nativeSurface, &window);
+                require(dispatchNativeSurface() ==
+                            snow_shot::platform::windows::WindowAlwaysOnTopResult::ChangeRequested,
+                        "raw native content routes through its stateful owner without fallback");
+                requireStacking(false);
+                waitForUi(300);
+                require(!lastPersisted.alwaysOnTop,
+                        "raw native content dispatch persists the pin's state");
+                Binding replacement;
+                replacement.bind(nativeSurface, &window);
+                original.reset();
+                require(dispatchNativeSurface() ==
+                            snow_shot::platform::windows::WindowAlwaysOnTopResult::ChangeRequested,
+                        "retiring an old registration preserves the replacement owner");
+                requireStacking(true);
+            }
+            require(!Binding::ownerForSurface(nativeSurface) &&
+                        !ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(nativeSurface),
+                    "scoped retirement releases raw surfaces to unrelated-window routing");
+            {
+                Binding expired;
+                auto owner = std::make_unique<QWidget>();
+                expired.bind(nativeSurface, owner.get());
+                owner.reset();
+                const auto retained = Binding::ownerForSurface(nativeSurface);
+                require(retained && retained->isNull() &&
+                            dispatchNativeSurface() ==
+                                snow_shot::platform::windows::WindowAlwaysOnTopResult::Failed,
+                        "an expired local owner cannot fall through to native state changes");
+            }
+            {
+                ScreenshotPinnedWindow closing;
+                closing.setAttribute(Qt::WA_DeleteOnClose, false);
+                Access::restoreOffscreen(closing, config);
+                closing.show();
+                closing.close();
+                Binding retired;
+                retired.bind(nativeSurface, &closing);
+                require(Access::closing(closing) &&
+                            ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(nativeSurface) ==
+                                false,
+                        "a closing native surface owner rejects further stateful commands");
+            }
+            require(!Binding::ownerForSurface(nativeSurface),
+                    "owner teardown leaves no registration for reused native handles");
+        }
+#endif
         QWidget unrelated;
         require(!ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(unrelated.winId()) &&
                     !ScreenshotPinnedWindow::toggleAlwaysOnTopForSurface(0),

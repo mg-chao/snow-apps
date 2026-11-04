@@ -9,6 +9,20 @@ impl Engine {
         }
     }
 
+    /// Host resource tokens reachable through the current undo/redo history.
+    /// Excluding redo returns the existing tokens retained by a new commit,
+    /// allowing hosts to preflight resource admission without discarding redo.
+    /// Tokens are sorted, unique and runtime-only; the engine owns no host assets.
+    pub fn host_history_states(&self, include_redo: bool) -> Vec<u64> {
+        self.history.host_history_states(include_redo)
+    }
+
+    /// A runtime token for detecting history mutations without enumerating its states.
+    /// Empty/restored histories use zero; committed mutations receive unique tokens.
+    pub fn host_history_generation(&self) -> u64 {
+        self.history.mutation_generation()
+    }
+
     pub fn commit_host_history_state(&mut self, state: u64) -> Result<MutationResult, ErrorCode> {
         if state == self.history.host_state() {
             return Err(ErrorCode::InvalidArgument);
