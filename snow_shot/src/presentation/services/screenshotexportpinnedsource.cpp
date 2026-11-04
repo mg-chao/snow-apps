@@ -7,7 +7,6 @@
 #include "snow_shot/image/screenshotlayoutcompaction.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
-#include "snow_draw_engine_qt/snow_canvas_image.h"
 
 #include <QList>
 #include <QColorSpace>
@@ -27,8 +26,39 @@ struct PinnedPixels final {
     QImage image;
 };
 
-QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
-                            const ScreenshotExportCancellation& cancellation) {
+QImage renderPinnedBackground(const ScreenshotPinnedViewportExportSource& source,
+                              const QRectF& outputRect, const QSize& outputSize,
+                              const std::function<bool()>& cancelled) {
+    // An unchanged native backdrop can be read directly by the canvas exporter.
+    if (!source.documentSession.isEmpty() && source.textAnnotations.empty() &&
+        outputRect == source.backgroundCanvasRect && outputSize == source.backgroundImage.size())
+        return source.backgroundImage;
+    QImage background = SnowCanvasRuntime::renderImageSourcesToImage(
+        outputRect, outputSize, {{source.backgroundImage, source.backgroundCanvasRect}});
+    if (background.isNull())
+        return background;
+    background.setColorSpace(source.backgroundImage.colorSpace());
+    if (source.textAnnotations.empty())
+        return background;
+    // Project first: a small crop must never detach or annotate the full source raster.
+    QPainter painter(&background);
+    if (!painter.isActive())
+        return {};
+    painter.setClipRect(background.rect());
+    const QTransform toPixels(outputSize.width() / outputRect.width(), 0, 0,
+                              outputSize.height() / outputRect.height(),
+                              -outputRect.x() * outputSize.width() / outputRect.width(),
+                              -outputRect.y() * outputSize.height() / outputRect.height());
+    if (!paintScreenshotTextAnnotations(painter, source.textAnnotations, toPixels, nullptr,
+                                        cancelled))
+        return {};
+    return background;
+}
+} // namespace
+
+QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
+                                      const std::function<bool()>& cancelled) {
+    const auto stopped = [&] { return cancelled && cancelled(); };
     const auto releaseCaches = qScopeGuard([&] {
         ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
         resetScreenshotLayoutCompactionCache();
@@ -37,7 +67,7 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
     });
     if (source.backgroundImage.isNull() || !source.backgroundCanvasRect.isValid() ||
         source.backgroundCanvasRect.isEmpty() || !source.contentPixelSize.isValid() ||
-        source.contentPixelSize.isEmpty()) {
+        source.contentPixelSize.isEmpty() || stopped()) {
         return {};
     }
     if (source.visibleCanvasRect) {
@@ -54,7 +84,7 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
             source.resultStyle.effectWidth() > 0) {
             auto full = source;
             full.visibleCanvasRect.reset();
-            const QImage image = renderPinnedViewport(full, cancellation);
+            const QImage image = renderScreenshotPinnedViewport(full, cancelled);
             const auto layout = ScreenshotResultCompositor::layoutForContent(
                 source.contentPixelSize, source.resultStyle);
             const QPoint offset(qRound((visible.x() - source.backgroundCanvasRect.x()) * sx) -
@@ -63,99 +93,81 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
                                     layout.outputRect.y());
             return image.isNull() ? QImage() : image.copy(QRect(offset, output));
         }
-        QList<SnowCanvasBaseImageSource> sampling = source.samplingSources;
-        if (sampling.isEmpty())
-            sampling.append({source.backgroundImage, source.backgroundCanvasRect});
-        QList<CanvasExportSource> sources;
-        for (const auto& item : sampling)
-            sources.append({item.image, item.canvasRect, item.coverage});
-        QImage result;
-        if (source.documentSession.isEmpty()) {
-            result = SnowCanvasRuntime::renderImageSourcesToImage(visible, output, sources);
-        } else {
-            SnowCanvasRuntime runtime(
-                SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
-            if (!runtime.isValid() || !runtime.restoreDocumentSession(source.documentSession) ||
-                !runtime.prepareSmartEraseForExport(source.smartErase, sampling, visible, [&] {
-                    return cancellation.isCancellationRequested();
-                }))
-                return {};
-            result = runtime.renderToImage(visible, output, sources);
-        }
-        if (result.isNull() || cancellation.isCancellationRequested())
+    }
+    const QRectF outputRect = source.visibleCanvasRect.value_or(source.backgroundCanvasRect);
+    const QSize outputSize =
+        source.visibleCanvasRect
+            ? QSize(std::max(1, qRound(outputRect.width() * source.contentPixelSize.width() /
+                                       source.backgroundCanvasRect.width())),
+                    std::max(1, qRound(outputRect.height() * source.contentPixelSize.height() /
+                                       source.backgroundCanvasRect.height())))
+            : source.contentPixelSize;
+    // Sampling and reconstruction always retain pristine donors, independently of the backdrop.
+    QList<SnowCanvasBaseImageSource> sampling = source.samplingSources;
+    if (sampling.isEmpty())
+        sampling.append({source.backgroundImage, source.backgroundCanvasRect});
+    QList<CanvasExportSource> sources;
+    sources.reserve(sampling.size());
+    for (const auto& item : sampling)
+        sources.append({item.image, item.canvasRect, item.coverage});
+    const bool samplingMatchesBackground =
+        sampling.size() == 1 &&
+        sampling.front().image.cacheKey() == source.backgroundImage.cacheKey() &&
+        sampling.front().canvasRect == source.backgroundCanvasRect &&
+        sampling.front().coverage.isEmpty();
+    const bool needsBackground = source.documentSession.isEmpty() || !samplingMatchesBackground ||
+                                 source.resultStyle.region.has_value();
+    QImage background;
+    if (needsBackground) {
+        background = renderPinnedBackground(source, outputRect, outputSize, cancelled);
+        if (background.isNull() || stopped())
             return {};
-        result.setColorSpace(source.backgroundImage.colorSpace());
-        return ScreenshotResultCompositor::compose(result, {}, 1.0, source.outputOpacity);
     }
     QImage content;
     if (source.documentSession.isEmpty()) {
-        // An empty document needs only the source projection. Match the canvas
-        // export surface and painter hints without constructing a runtime.
-        content =
-            snowCanvasAllocateImage(source.contentPixelSize, QImage::Format_ARGB32_Premultiplied);
-        if (content.isNull())
-            return {};
-        content.fill(Qt::transparent);
-        QPainter painter(&content);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        painter.drawImage(QRectF(QPointF(), QSizeF(source.contentPixelSize)),
-                          source.backgroundImage);
+        content = std::move(background);
     } else {
         // Imported document and reconstruction pixels belong to this export.
         SnowCanvasRuntime runtime(
             SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
         if (!runtime.isValid() || !runtime.restoreDocumentSession(source.documentSession) ||
-            cancellation.isCancellationRequested())
+            stopped())
             return {};
-        QList<SnowCanvasBaseImageSource> samplingSources = source.samplingSources;
-        if (samplingSources.isEmpty())
-            samplingSources.append({source.backgroundImage, source.backgroundCanvasRect});
-        if (!runtime.prepareSmartEraseForExport(
-                source.smartErase, samplingSources, source.backgroundCanvasRect,
-                [&cancellation] { return cancellation.isCancellationRequested(); }))
+        if (!runtime.prepareSmartEraseForExport(source.smartErase, sampling, outputRect, cancelled))
             return {};
-        QList<CanvasExportSource> sources;
-        sources.reserve(samplingSources.size());
-        for (const auto& sampling : samplingSources)
-            sources.append({sampling.image, sampling.canvasRect, sampling.coverage});
-        QImage background = source.backgroundImage;
-        if (background.size() != source.contentPixelSize) {
-            background = snowCanvasAllocateImage(source.contentPixelSize,
-                                                 QImage::Format_ARGB32_Premultiplied);
-            if (background.isNull() || cancellation.isCancellationRequested())
-                return {};
-            background.fill(Qt::transparent);
-            QPainter painter(&background);
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setRenderHint(QPainter::SmoothPixmapTransform);
-            painter.drawImage(QRectF(QPointF(), QSizeF(source.contentPixelSize)),
-                              source.backgroundImage);
-        }
-        if (cancellation.isCancellationRequested())
+        if (stopped())
             return {};
         if (source.resultStyle.region) {
             auto result = ScreenshotResultCompositor::compose(background, source.resultStyle);
             const auto layout = ScreenshotResultCompositor::layoutForContent(
                 source.contentPixelSize, source.resultStyle);
-            result = renderScreenshotSelectionAnnotations(runtime, source.backgroundCanvasRect,
-                                                          source.contentPixelSize, sources,
+            result = renderScreenshotSelectionAnnotations(runtime, outputRect, outputSize, sources,
                                                           std::move(result), layout);
-            return cancellation.isCancellationRequested()
+            return stopped()
                        ? QImage{}
                        : ScreenshotResultCompositor::compose(result, {}, 1.0, source.outputOpacity);
         }
-        content = runtime.renderToImage(source.backgroundCanvasRect, source.contentPixelSize,
-                                        sources, background);
+        // The runtime can place text marks between the pristine backdrop and drawing without
+        // another output-sized raster. Effectful scenes materialize a backdrop only if needed.
+        SnowCanvasExportBackgroundOverlay overlay;
+        if (!needsBackground && !source.textAnnotations.empty()) {
+            overlay = [&](QPainter& painter, const QTransform& mapping) {
+                return paintScreenshotTextAnnotations(painter, source.textAnnotations, mapping,
+                                                      nullptr, cancelled);
+            };
+        }
+        content = runtime.renderToImage(outputRect, outputSize, sources, background, overlay);
     }
-    if (cancellation.isCancellationRequested())
+    if (stopped())
         return {};
     content.setColorSpace(source.backgroundImage.colorSpace());
-    return content.isNull() ? QImage{}
-                            : ScreenshotResultCompositor::compose(content, source.resultStyle, 1.0,
-                                                                  source.outputOpacity);
+    return content.isNull()
+               ? QImage{}
+               : ScreenshotResultCompositor::compose(
+                     content,
+                     source.visibleCanvasRect ? ScreenshotResultStyle{} : source.resultStyle, 1.0,
+                     source.outputOpacity);
 }
-} // namespace
 
 ScreenshotExportSource
 ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource source) {
@@ -169,7 +181,8 @@ ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource 
                 return QImage{};
             if (!pixels->image.isNull())
                 return pixels->image;
-            QImage image = renderPinnedViewport(*pixels->source, cancellation);
+            QImage image = renderScreenshotPinnedViewport(
+                *pixels->source, [&] { return cancellation.isCancellationRequested(); });
             if (!image.isNull()) {
                 pixels->image = image;
                 // Copies of this source share the immutable rendered pixels. Once

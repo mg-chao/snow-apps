@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshottextannotationrenderer.h"
 #include <QFont>
 #include <QImage>
 #include <functional>
@@ -23,7 +24,15 @@ struct ScreenshotRecognitionImageSnapshot final {
     qreal outputOpacity = 1.0;
     QList<CanvasExportSource> backgroundSources;
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations;
 };
+
+// Paints filtered pixels, recognized text and persistent marks, in that order, over an
+// existing backdrop. The caller owns clipping, output opacity and result appearance.
+// canvasToPainter maps into the painter's current logical coordinates (before its transform).
+[[nodiscard]] bool paintScreenshotRecognitionOverlay(
+    QPainter& painter, const ScreenshotRecognitionImageSnapshot& snapshot,
+    const QTransform& canvasToPainter, const std::function<bool()>& cancelled = {});
 
 [[nodiscard]] QImage
 renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot& snapshot,

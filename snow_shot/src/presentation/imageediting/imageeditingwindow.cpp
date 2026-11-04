@@ -1111,6 +1111,30 @@ void ImageEditingWindow::present(ImageEditingSource source) {
         if (d.loadJob.isValid())
             return;
     }
+    if (!source.textAnnotations.empty() && source.error.isEmpty()) {
+        d.setLoading(true);
+        auto result = std::make_shared<ImageEditingSource>(std::move(source));
+        d.loadJob = ScreenshotExportCoordinator::shared().submit(
+            this, ScreenshotExportCoordinator::Priority::Foreground,
+            [result](const auto& cancel) {
+                if (!cancel.isCancellationRequested()) {
+                    result->image = renderScreenshotTextAnnotations(
+                        result->image, result->canvasRect, result->textAnnotations);
+                    if (result->image.isNull())
+                        result->error = ImageEditingWindow::tr("The image could not be loaded.");
+                    result->textAnnotations = {};
+                }
+                return ScreenshotExportTaskResult{};
+            },
+            [this, result, generation](auto) {
+                if (!m_impl->closing && m_impl->loadGeneration == generation)
+                    present(std::move(*result));
+            });
+        if (d.loadJob.isValid())
+            return;
+        source = std::move(*result);
+        source.error = tr("The image could not be loaded.");
+    }
     if (source.resultStyle && source.error.isEmpty()) {
         d.setLoading(true);
         d.loadArtifact =

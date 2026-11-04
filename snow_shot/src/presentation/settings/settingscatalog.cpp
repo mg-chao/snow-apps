@@ -2082,6 +2082,16 @@ SettingsItemDefinition pinDuplicateContentItem() {
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Repeat Action"))}});
 }
 
+SettingsItemDefinition pinQuickTextAnnotationItem() {
+    return switchItem(
+        QStringLiteral("pin-to-screen.quick-annotation-for-selected-text"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Quick annotation for selected text"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Annotate selected canvas text when text selection is set to Always."),
+        QStringLiteral("pin_to_screen/quick_annotation_for_selected_text"),
+        SettingsSwitchBinding::PinQuickAnnotationForSelectedText);
+}
+
 SettingsItemDefinition pinWheelOpacityStepItem() {
     return {QStringLiteral("pin-to-screen.mouse-wheel-opacity-step"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Mouse wheel opacity step")),
@@ -3670,8 +3680,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                 "Pinned screenshot window appearance settings")),
                  SettingsSectionReset::PinToScreenBehavior,
                  {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
-                  pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem(),
-                  pinDuplicateContentItem(), pinShakeWindowToHideOthersItem(),
+                  pinAutomaticOcrItem(), pinTextSelectionItem(), pinQuickTextAnnotationItem(),
+                  pinAutoResizeItem(), pinDuplicateContentItem(), pinShakeWindowToHideOthersItem(),
                   pinWheelOpacityStepItem(), pinWheelZoomStepItem(), pinShowWindowButtonsItem(),
                   pinExitAnnotationModeBeforeClosingItem(), pinConfirmBeforeClosingWindowItem(),
                   pinConfirmBeforeDestroyingWindowItem()},
@@ -5371,6 +5381,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinAutomaticTextRecognition:
                         expectedKey = QStringLiteral("pin_to_screen/automatic_text_recognition");
+                        break;
+                    case SettingsSwitchBinding::PinQuickAnnotationForSelectedText:
+                        expectedKey =
+                            QStringLiteral("pin_to_screen/quick_annotation_for_selected_text");
                         break;
                     case SettingsSwitchBinding::PinAutoResizeWindow:
                         expectedKey = QStringLiteral("pin_to_screen/auto_resize_window");

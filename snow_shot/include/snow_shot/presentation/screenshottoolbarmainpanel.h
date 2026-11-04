@@ -37,6 +37,7 @@ inline constexpr int HorizontalMargin = 12;
 inline constexpr int VerticalMargin = 4;
 inline constexpr int PanelHeight = ControlSize + 2 * VerticalMargin;
 inline constexpr int PanelRadius = 8;
+inline constexpr int RowSpacing = 6;
 } // namespace screenshot_action_toolbar
 
 // Surface, shadow and separators shared by main and secondary toolbar rows.

@@ -2,6 +2,25 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>ScreenshotQuickTextAnnotationToolbar</name>
+        <message>
+            <source>Highlight</source>
+            <translation>Highlight</translation>
+        </message>
+        <message>
+            <source>Strikethrough</source>
+            <translation>Strikethrough</translation>
+        </message>
+        <message>
+            <source>Underline</source>
+            <translation>Underline</translation>
+        </message>
+        <message>
+            <source>Wavy Underline</source>
+            <translation>Wavy Underline</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolPalette</name>
         <message>
             <source>%1 (unavailable)</source>

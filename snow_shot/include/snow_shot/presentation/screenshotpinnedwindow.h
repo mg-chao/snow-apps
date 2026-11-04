@@ -17,6 +17,8 @@
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/pinnedwindowplacement.h"
+#include "snow_shot/presentation/screenshottextannotation.h"
+#include "snow_shot/presentation/screenshottextannotationrenderer.h"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -78,6 +80,7 @@ class QDragLeaveEvent;
 class QDropEvent;
 class QKeyEvent;
 class QMouseEvent;
+class ScreenshotQuickTextAnnotationToolbar;
 class QMoveEvent;
 class QResizeEvent;
 class QScreen;
@@ -225,6 +228,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         snow_shot::storage::PinnedWindowPlacement persistedPreThumbnailPlacement;
         QByteArray persistedCanvasSession;
         QByteArray persistedRecognitionResults;
+        QByteArray persistedTextAnnotations;
         std::optional<snow_shot::storage::PinnedTextType> persistedTextType;
         bool persistedRecognitionVisible = false;
         bool persistedTranslationVisible = false;
@@ -477,6 +481,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void configureRecognitionSession();
     ScreenshotRecognitionWindow* ensureRecognitionContent();
     void synchronizeHiddenTextSelection();
+    void synchronizeTextAnnotations(bool bindEmptySource = false);
+    void synchronizeQuickTextAnnotationToolbar();
+    void destroyQuickTextAnnotationToolbar();
+    void clearTextAnnotations();
+    void textAnnotationsChanged();
+    [[nodiscard]] ScreenshotTextAnnotationRenderSnapshot textAnnotationSnapshot() const;
     [[nodiscard]] bool copyHiddenTextSelection();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
@@ -527,8 +537,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void uploadToCloud();
     void cancelCloudUpload();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
+    enum class ViewportExportMode { Complete, RecognitionBackground };
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
-    viewportArtifact(bool applyWindowOpacity = true);
+    viewportArtifact(ViewportExportMode mode = ViewportExportMode::Complete);
     [[nodiscard]] ScreenshotExportSource
     cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request);
     void quickSave();
@@ -827,6 +838,26 @@ class ScreenshotPinnedWindow final : public QWidget {
 #endif
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
+    ScreenshotTextAnnotationDocument m_textAnnotations;
+    ScreenshotTextAnnotationRenderer m_textAnnotationRenderer;
+    ScreenshotTextAnnotationRenderSnapshot m_textAnnotationSnapshot;
+    ScreenshotQuickTextAnnotationToolbar* m_quickTextAnnotationToolbar = nullptr;
+    QVector<ScreenshotTextSelectionRange> m_quickTextAnnotationSelection;
+    quint64 m_quickTextAnnotationSelectionRevision = 0;
+    quint64 m_quickTextAnnotationModelRevision = ~quint64(0);
+    bool m_quickTextAnnotationSelectionSuperseded = false;
+    bool m_synchronizingQuickTextAnnotation = false;
+    const void* m_hiddenTextSelectionSource = nullptr;
+    bool m_hiddenTextSelectionFormatted = false;
+    QTransform m_hiddenTextSelectionSourceTransform;
+    quint64 m_textAnnotationRenderedRevision = ~quint64(0);
+    QTransform m_textAnnotationRenderedTransform;
+    const ScreenshotOcrPresentation* m_textAnnotationSourceOcr = nullptr;
+    const QTextDocument* m_textAnnotationSourceDocument = nullptr;
+    int m_textAnnotationSourceDocumentRevision = -1;
+    bool m_textAnnotationSourceAvailable = false;
+    QPointer<QTextDocument> m_textAnnotationObservedDocument;
+    QMetaObject::Connection m_textAnnotationDocumentConnection;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
     std::optional<bool> m_recognitionEmptyViewportVisibility;
     // Scale is 100 * current content width / oriented initial content width.

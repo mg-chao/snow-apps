@@ -6,6 +6,7 @@
 #include "snow_canvas_viewport.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 
 #include <QApplication>
 #include <QDir>
@@ -125,6 +126,34 @@ QImage render(const SnowCanvasSceneItem& item, double zoom = 1, double dpr = 1) 
     info.camera_zoom = zoom;
     paint(image, item, info, QRegion(QRect(QPoint(), size)));
     return image;
+}
+
+void publicStrokeCoverageMatchesCanvasLines() {
+    QPainterPath path;
+    path.moveTo(-100, 0);
+    path.lineTo(100, 0);
+    for (const auto style :
+         {SnowCanvasStrokeRenderingStyle::Architect, SnowCanvasStrokeRenderingStyle::Artist,
+          SnowCanvasStrokeRenderingStyle::Cartoonist}) {
+        for (const auto pattern : {SnowCanvasStrokeStyle::Solid, SnowCanvasStrokeStyle::Dashed,
+                                   SnowCanvasStrokeStyle::Dotted}) {
+            auto item = arrow(static_cast<SnowStrokeRenderingStyle>(style),
+                              SNOW_ARROW_TYPE_STRAIGHT, SNOW_ARROWHEAD_NONE);
+            item.arrow_stroke_style = static_cast<SnowStrokeStyle>(pattern);
+            const auto coverage = snowCanvasStrokeCoverage(path, item.stroke_width, pattern, style,
+                                                           item.stroke_rendering_seed);
+            require(!coverage.isEmpty() &&
+                        coverage == snow_canvas_stroke_rendering::geometry(item).ink,
+                    "public stroke coverage shares canvas dash and seeded rendering geometry");
+            require(snowCanvasStrokeCoverage(path, item.stroke_width, pattern, style,
+                                             item.stroke_rendering_seed) == coverage,
+                    "public stroke coverage is deterministic without a runtime or viewport");
+        }
+    }
+    require(snowCanvasStrokeCoverage(path, 0, SnowCanvasStrokeStyle::Solid,
+                                     SnowCanvasStrokeRenderingStyle::Artist, 0)
+                .isEmpty(),
+            "zero-width public strokes contain no ink");
 }
 
 void arrowOutlinesCoverGeometryAndPreserveDisabledPixels() {
@@ -1146,6 +1175,11 @@ void writeMatrix(const QString& output, double dpr = 1, bool transparent = false
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf"));
+    if (application.arguments().contains(QStringLiteral("--public-coverage-only"))) {
+        publicStrokeCoverageMatchesCanvasLines();
+        return 0;
+    }
+    publicStrokeCoverageMatchesCanvasLines();
     if (application.arguments().contains(QStringLiteral("--arrow-outline-only"))) {
         arrowOutlinesCoverGeometryAndPreserveDisabledPixels();
         runtimeArrowRecolourAndOpacityRetainInk();

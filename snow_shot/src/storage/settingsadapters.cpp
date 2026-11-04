@@ -2722,6 +2722,17 @@ bool PinToScreenSettings::automaticTextRecognition() const {
     return cache().value(QStringLiteral("pin_to_screen/automatic_text_recognition")).toBool();
 }
 
+bool PinToScreenSettings::quickAnnotationForSelectedText() const {
+    return cache()
+        .value(QStringLiteral("pin_to_screen/quick_annotation_for_selected_text"))
+        .toBool();
+}
+
+bool PinToScreenSettings::setQuickAnnotationForSelectedText(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/quick_annotation_for_selected_text"),
+                            enabled);
+}
+
 bool PinToScreenSettings::setAutomaticTextRecognition(bool enabled) const {
     return cache().setValue(QStringLiteral("pin_to_screen/automatic_text_recognition"), enabled);
 }

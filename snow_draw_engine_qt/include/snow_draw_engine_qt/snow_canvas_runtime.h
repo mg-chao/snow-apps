@@ -92,6 +92,9 @@ class SnowCanvasRuntime {
     // remain available to magnifiers and background restoration.
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                          const QList<CanvasExportSource>& sources, const QImage& background = {});
+    QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
+                         const QList<CanvasExportSource>& sources, const QImage& background,
+                         const SnowCanvasExportBackgroundOverlay& backgroundOverlay);
     // Reuse one synchronized scene and the original coordinate frame while painting
     // disjoint pixel rectangles into a compact destination. Filtering uses bounded halos.
     QImage renderTilesToImage(const QRectF& sourceFrame, const QSize& sourcePixelSize,

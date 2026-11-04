@@ -20312,6 +20312,8 @@ void layoutCompactionToolbar() {
     }
 }
 
+void runScreenshotQuickTextAnnotationToolbarTests();
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -20357,6 +20359,10 @@ int main(int argc, char** argv) {
         application.setFont(previewFont);
     }
 #endif
+    if (application.arguments().contains(QStringLiteral("--quick-text-annotation-only"))) {
+        runScreenshotQuickTextAnnotationToolbarTests();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--custom-color-presets-only"))) {
         customColorPresetSettingsPersistAndValidate(
             {executableDirectory, storageDirectory.path(), 60000});

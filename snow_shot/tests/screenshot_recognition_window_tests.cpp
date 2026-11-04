@@ -2933,6 +2933,88 @@ void originalImageOverrideHidesEveryContentPage() {
     }
 }
 
+void recognitionViewportExportsComposeTextAnnotationsOnce() {
+    ScreenshotRecognitionWindow window({});
+    const QRectF canvasRect(640, 360, 320, 180);
+    require(window.present(
+                {QGuiApplication::primaryScreen(), nullptr, QRect(20, 20, 320, 180), canvasRect}),
+            "present the recognition annotation export fixture");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = canvasRect.toRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Annotated OCR text");
+    line.quad = {{660, 380}, {920, 380}, {920, 420}, {660, 420}};
+    presentation->lines.append(line);
+    presentation->prepareForRendering();
+    window.setOcrPresentation(presentation);
+    QApplication::processEvents();
+    QImage source(320, 180, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::white);
+    QPainterPath highlight;
+    highlight.addRect(QRectF(650, 370, 280, 60));
+    QPainterPath underline;
+    underline.addRect(QRectF(650, 430, 280, 3));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    marks.items = {{highlight, QColor(255, 0, 0, 128), true},
+                   {underline, QColor(0, 0, 255, 128), false}};
+    marks.bounds = highlight.boundingRect().united(underline.boundingRect());
+    for (const int filter : {0, 1, 2}) {
+        const QRectF filteredRect = filter == 1 ? canvasRect : QRectF(800, 360, 160, 180);
+        QImage filtered;
+        if (filter != 0) {
+            filtered = QImage(filteredRect.size().toSize(), source.format());
+            filtered.fill(QColor(200, 220, 240));
+        }
+        for (const int scale : {1, 2}) {
+            for (const qreal opacity : {1.0, 0.6}) {
+                const QSize output = source.size() * scale;
+                auto reference = window.imageSnapshot(source.scaled(output), canvasRect, filtered,
+                                                      filteredRect, {});
+                require(reference.has_value(), "capture the file export reference");
+                // The two paths size OCR fonts in their respective coordinate spaces. Compare
+                // each with its own text raster, followed by exactly one annotation pass.
+                QImage expectedFile = renderScreenshotRecognitionImage(*reference);
+                QImage expectedViewport = window.printViewportSnapshot(source, canvasRect, filtered,
+                                                                       filteredRect, 1.0, output);
+                const QTransform mapping(scale, 0, 0, scale, -canvasRect.x() * scale,
+                                         -canvasRect.y() * scale);
+                for (QImage* expected : {&expectedFile, &expectedViewport}) {
+                    {
+                        QPainter painter(expected);
+                        paintScreenshotTextAnnotations(painter, marks, mapping);
+                    }
+                    *expected = ScreenshotResultCompositor::compose(*expected, {}, 1.0, opacity);
+                }
+                const auto image = window.printViewportSnapshot(
+                    source, canvasRect, filtered, filteredRect, opacity, output, marks);
+                reference->textAnnotations = marks;
+                reference->outputOpacity = opacity;
+                const auto file = renderScreenshotRecognitionImage(*reference);
+                require(!image.isNull() && image == expectedViewport && file == expectedFile,
+                        "viewport and file exports each compose text marks once after OCR text at "
+                        "every backing scale and opacity");
+                const auto sample = image.pixelColor(15 * scale, 15 * scale);
+                const QColor expectedColor =
+                    filter == 1 ? QColor(200, 110, 120) : QColor(255, 127, 127);
+                require(
+                    std::abs(sample.red() - expectedColor.red()) <= 1 &&
+                        std::abs(sample.green() - expectedColor.green()) <= 1 &&
+                        std::abs(sample.blue() - expectedColor.blue()) <= 1 &&
+                        sample.alpha() == qRound(255 * opacity),
+                    "a translucent highlight is applied once after filtering and before opacity");
+            }
+        }
+    }
+    require(source.pixelColor(15, 15) == QColor(Qt::white),
+            "recognition export does not bake marks into its source");
+    auto draft = std::make_shared<QTextDocument>();
+    draft->setPlainText(QStringLiteral("An unrelated recognition editor"));
+    window.showTextEditor(std::move(draft));
+    require(window.printViewportSnapshot({}, {}, {}, {}, 1.0, {}, marks) ==
+                window.printViewportSnapshot(),
+            "canvas text annotations never spill onto an unrelated editor page");
+}
+
 void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
     ScreenshotRecognitionWindow window({});
     QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
@@ -4179,6 +4261,166 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
             "retranslation and text reuse preserve the editable draft");
 }
 
+void textSelectionNotificationsAreSynchronous() {
+    QWidget host;
+    host.resize(360, 160);
+    host.show();
+    // The top-level recognition surface owns its standard command bindings. Embedded
+    // surfaces delegate Select All to their actual host (the pinned-window fixtures cover it).
+    ScreenshotRecognitionWindow window(
+        {}, nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow);
+    require(
+        window.present({QGuiApplication::primaryScreen(), &host, host.rect(), QRectF(host.rect()),
+                        ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow, 1.0, false}),
+        "present the text-selection notification fixture");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = host.rect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Selectable annotation text");
+    line.quad = ocrQuad(QRectF(20, 20, 300, 40));
+    presentation->lines.push_back(line);
+    presentation->prepareForRendering();
+    window.setOcrPresentation(presentation, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly,
+                              false);
+    QApplication::processEvents();
+    int changes = 0;
+    ScreenshotTextSelectionSnapshot notified;
+    QObject::connect(&window, &ScreenshotRecognitionWindow::textSelectionChanged, &window, [&] {
+        ++changes;
+        notified = window.textSelectionSnapshot();
+    });
+    const auto pointer = [](QWidget& receiver, QEvent::Type type, QPoint point,
+                            Qt::MouseButton changed, Qt::MouseButtons held) {
+        QMouseEvent event(type, QPointF(point), QPointF(receiver.mapToGlobal(point)), changed, held,
+                          Qt::NoModifier);
+        QApplication::sendEvent(&receiver, &event);
+    };
+    pointer(window, QEvent::MouseButtonPress, {50, 40}, Qt::LeftButton, Qt::LeftButton);
+    pointer(window, QEvent::MouseMove, {230, 40}, Qt::NoButton, Qt::LeftButton);
+    require(changes > 0 && !notified.empty() && !notified.canvasBounds.isEmpty() &&
+                notified.inProgress && presentation->textSelectionActive(),
+            "OCR drag selection must expose its in-progress state and bounds");
+    const auto deferredOcr = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(deferredOcr.inProgress && deferredOcr.empty() && deferredOcr.canvasBounds.isEmpty(),
+            "completed-only OCR snapshots defer ranges and geometry during pointer selection");
+    const int beforeRelease = changes;
+    const auto draggedRanges = notified.ranges;
+    pointer(window, QEvent::MouseButtonRelease, {230, 40}, Qt::LeftButton, Qt::NoButton);
+    require(changes > beforeRelease && !notified.inProgress && notified.ranges == draggedRanges,
+            "OCR mouse release must notify completion even when its selected range is unchanged");
+    const auto completedOcr = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(!completedOcr.inProgress && completedOcr.ranges == notified.ranges &&
+                completedOcr.canvasBounds == notified.canvasBounds,
+            "completed-only OCR snapshots expose final geometry immediately on release");
+    window.clearTextSelection();
+    require(notified.empty(), "clearing an OCR selection must synchronously notify its owner");
+    doubleClickWidget(window, {130, 40});
+    require(!notified.empty() && notified.ranges.front().start == 0 &&
+                notified.ranges.front().end == line.text.size(),
+            "OCR double-click must synchronously publish the selected line");
+    window.clearTextSelection();
+    PhysicalKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(&window, &selectAll);
+    require(!notified.empty() && !notified.inProgress &&
+                notified.ranges.front().end == line.text.size(),
+            "OCR Select All must publish a selection without pointer movement");
+    window.setTextSelectionFocusPreserver([](QWidget*) { return true; });
+    QFocusEvent keepSelection(QEvent::FocusOut, Qt::OtherFocusReason);
+    QApplication::sendEvent(&window, &keepSelection);
+    require(presentation->hasTextSelection(),
+            "focus transfer to a selection toolbar must retain the OCR selection");
+    window.setTextSelectionFocusPreserver({});
+
+    auto document = std::make_shared<QTextDocument>();
+    document->setDocumentMargin(0);
+    document->setPlainText(QStringLiteral("Selectable formatted annotation text"));
+    document->setTextWidth(350);
+    window.showFormattedText(document, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
+    QApplication::processEvents();
+    auto* layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    auto* item = formattedTextItem(layer);
+    require(layer && item, "formatted notification fixture requires the native text item");
+    const auto block = document->firstBlock();
+    const auto textLine = block.layout()->lineAt(0);
+    const auto point = [&](int character) {
+        return layer->mapFromScene(item->mapToScene(
+            block.layout()->position() +
+            QPointF(textLine.cursorToX(character), textLine.y() + textLine.height() / 2)));
+    };
+    changes = 0;
+    pointer(*layer->viewport(), QEvent::MouseButtonPress, point(1), Qt::LeftButton, Qt::LeftButton);
+    pointer(*layer->viewport(), QEvent::MouseMove, point(7), Qt::NoButton, Qt::LeftButton);
+    require(changes > 0 && !notified.empty() &&
+                notified.source == ScreenshotTextAnnotationSource::Formatted &&
+                !notified.canvasBounds.isEmpty() && notified.inProgress &&
+                item->textCursor().hasSelection(),
+            "native formatted dragging must notify with its in-progress state");
+    const auto deferredFormatted = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(deferredFormatted.inProgress && deferredFormatted.empty() &&
+                deferredFormatted.canvasBounds.isEmpty() &&
+                deferredFormatted.source == ScreenshotTextAnnotationSource::Formatted,
+            "completed-only formatted snapshots defer ranges and geometry while dragging");
+    const int beforeFormattedRelease = changes;
+    const auto formattedRanges = notified.ranges;
+    pointer(*layer->viewport(), QEvent::MouseButtonRelease, point(7), Qt::LeftButton, Qt::NoButton);
+    require(changes > beforeFormattedRelease && !notified.inProgress &&
+                notified.ranges == formattedRanges,
+            "formatted release must notify completion even when its selected range is unchanged");
+    const auto completedFormatted = window.textSelectionSnapshot(
+        ScreenshotRecognitionWindow::TextSelectionSnapshotMode::CompletedOnly);
+    require(!completedFormatted.inProgress && completedFormatted.ranges == notified.ranges &&
+                completedFormatted.canvasBounds == notified.canvasBounds,
+            "completed-only formatted snapshots publish geometry inside the release notification");
+    window.clearTextSelection();
+    require(notified.empty(), "clearing formatted selection must notify synchronously");
+    layer->setFocus();
+    PhysicalKeyEvent selectDocument(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(layer, &selectDocument);
+    require(!notified.empty() && !notified.inProgress && notified.ranges.front().start == 0 &&
+                notified.ranges.front().end == document->characterCount() - 1,
+            "native formatted Select All must publish its complete document range");
+    window.clearTextSelection();
+    require(doubleClickWidget(*layer->viewport(), point(4)) && !notified.empty(),
+            "native formatted double-click must synchronously publish its selected word");
+
+    auto structural = std::make_shared<QTextDocument>();
+    structural->setPlainText(QStringLiteral("First line\n\nLast line"));
+    window.showFormattedText(structural, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly,
+                             false);
+    layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    item = formattedTextItem(layer);
+    QTextCursor cursor(structural.get());
+    cursor.setPosition(11);
+    item->setTextCursor(cursor);
+    layer->setFocus();
+    item->setFocus();
+    PhysicalKeyEvent selectParagraph(QEvent::KeyPress, Qt::Key_Right, Qt::ShiftModifier);
+    QApplication::sendEvent(layer, &selectParagraph);
+    require(!notified.empty() && !notified.canvasBounds.isEmpty() &&
+                notified.ranges.front().start == 11 && notified.ranges.front().end == 12,
+            "selecting an empty paragraph must publish nonempty popover geometry immediately");
+
+    auto clusters = std::make_shared<QTextDocument>();
+    clusters->setPlainText(QStringLiteral("A e\u0301 \U0001f600 Z"));
+    window.showFormattedText(clusters, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
+    layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    item = formattedTextItem(layer);
+    for (const auto& positions : {QPair<int, int>(2, 4), QPair<int, int>(5, 7)}) {
+        QTextCursor partial(clusters.get());
+        partial.setPosition(positions.first + 1);
+        partial.setPosition(positions.second, QTextCursor::KeepAnchor);
+        item->setTextCursor(partial);
+        const auto snapshot = window.textSelectionSnapshot();
+        require(!snapshot.empty() && !snapshot.canvasBounds.isEmpty() &&
+                    snapshot.ranges.front().start == positions.first &&
+                    snapshot.ranges.front().end == positions.second,
+                "formatted annotation ranges must normalize native cursor endpoints to clusters");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
@@ -4191,6 +4433,26 @@ int main(int argc, char** argv) {
                 .success,
             "recognition test storage must initialize");
     const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--text-annotation-exports-only"))) {
+#ifdef Q_OS_WIN
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load the offscreen annotation export font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+        recognitionViewportExportsComposeTextAnnotationsOnce();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--text-selection-notifications-only"))) {
+#ifdef Q_OS_WIN
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load the offscreen text-selection fixture font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+        textSelectionNotificationsAreSynchronous();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-editor-history-only"))) {
         textEditorHistoryShortcutsRespectReadOnlyState();
         return 0;

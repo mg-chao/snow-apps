@@ -1320,6 +1320,10 @@
             <translation>Animated images</translation>
         </message>
         <message>
+            <source>Annotate selected canvas text when text selection is set to Always.</source>
+            <translation>Annotate selected canvas text when text selection is set to Always.</translation>
+        </message>
+        <message>
             <source>Annotation</source>
             <translation>Annotation</translation>
         </message>
@@ -3474,6 +3478,10 @@
         <message>
             <source>Quick Selection Modification</source>
             <translation>Quick Selection Modification</translation>
+        </message>
+        <message>
+            <source>Quick annotation for selected text</source>
+            <translation>Quick annotation for selected text</translation>
         </message>
         <message>
             <source>Quick save</source>

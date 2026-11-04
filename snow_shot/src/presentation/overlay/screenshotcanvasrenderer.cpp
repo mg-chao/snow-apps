@@ -3024,6 +3024,37 @@ void ScreenshotCanvasRenderer::setOcrVisible(bool visible) {
     m_canvas.update();
 }
 
+void ScreenshotCanvasRenderer::setTextAnnotations(ScreenshotTextAnnotationRenderSnapshot snapshot) {
+    if (m_textAnnotations.empty() && snapshot.empty())
+        return;
+    const QRectF damage = screenshotTextAnnotationDamage(m_textAnnotations, snapshot);
+    m_textAnnotations = std::move(snapshot);
+    if (m_textAnnotations.empty())
+        m_textAnnotationPaintCache.clear();
+    if (damage.isEmpty())
+        return;
+    invalidateCachedContent(false);
+    if (!damage.isEmpty())
+        m_canvas.update(m_canvas.canvasToViewTransform()
+                            .mapRect(damage)
+                            .adjusted(-2, -2, 2, 2)
+                            .toAlignedRect());
+}
+
+void ScreenshotCanvasRenderer::setTextAnnotationsVisible(bool visible) {
+    if (m_textAnnotationsVisible == visible)
+        return;
+    m_textAnnotationsVisible = visible;
+    if (m_textAnnotations.empty())
+        return;
+    invalidateCachedContent(false);
+    if (!m_textAnnotations.bounds.isEmpty())
+        m_canvas.update(m_canvas.canvasToViewTransform()
+                            .mapRect(m_textAnnotations.bounds)
+                            .adjusted(-2, -2, 2, 2)
+                            .toAlignedRect());
+}
+
 void ScreenshotCanvasRenderer::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation, OcrPresentationMode mode) {
     const bool presentationChanged = m_ocrPresentation != presentation;
@@ -3151,6 +3182,8 @@ void ScreenshotCanvasRenderer::reset() {
     // Pinned/export snapshots can share geometry with the ending capture.
     // Release only derived data, leaving those snapshots fully usable.
     clearRenderState();
+    setTextAnnotations({});
+    m_textAnnotationsVisible = true;
     setOcrVisible(true);
     const bool hadCachedContent =
         m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
@@ -3391,6 +3424,21 @@ ScreenshotOcrTextLayer* ScreenshotCanvasRenderer::ensureOcrTextLayer() {
 void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
     paintBackground(painter, context, false);
+    if (!m_textAnnotations.empty() &&
+        (m_textAnnotationsVisible ||
+         context.purpose == SnowCanvasRenderContext::Purpose::ContentSnapshot)) {
+        painter.save();
+        painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+        if (m_renderMode == RenderMode::PinnedResult) {
+            painter.setClipRect(pinnedViewportForContext(context), Qt::IntersectClip);
+            if (m_pinnedContentClip)
+                painter.setClipRect(context.canvasToViewTransform.mapRect(*m_pinnedContentClip),
+                                    Qt::IntersectClip);
+        }
+        paintScreenshotTextAnnotations(painter, m_textAnnotations, context.canvasToViewTransform,
+                                       &m_textAnnotationPaintCache);
+        painter.restore();
+    }
     if (context.purpose == SnowCanvasRenderContext::Purpose::ContentSnapshot)
         return;
     if (m_renderMode == RenderMode::PinnedResult && m_pinnedResultStyle.region) {

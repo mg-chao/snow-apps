@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotimagerowsource.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshottextannotationrenderer.h"
 #include "snow_shot/storage/preparedpngimage.h"
 
 #include <QImage>
@@ -35,7 +36,13 @@ struct ScreenshotPinnedViewportExportSource final {
     QList<SnowCanvasBaseImageSource> samplingSources = {};
     // Optional output clip in the unchanged document coordinate system.
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations;
 };
+
+// Render the immutable source on the calling export worker, without scheduling or retaining it.
+[[nodiscard]] QImage
+renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
+                               const std::function<bool()>& cancelled = {});
 
 struct ScreenshotExportImageResult final {
     QImage image;
