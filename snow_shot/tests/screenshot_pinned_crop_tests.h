@@ -78,7 +78,14 @@ void geometry() {
 
 void cornerOutlines() {
     ScreenshotPinnedWindow window;
-    Access::prepareReplacement(window, config());
+    auto setup = config();
+    // Keep the logical crop extent large enough for the rounded rim's straight edges
+    // at every backing scale, including the wide elliptical corner below.
+    setup.nativeGeometry.setSize(
+        (QSizeF(setup.nativeGeometry.size()) *
+         snow_shot::presentation::pinnedGeometryScale(window.devicePixelRatioF()))
+            .toSize());
+    Access::prepareReplacement(window, setup);
     window.show();
     require(Access::crop(window, {110, 210, 80, 60}), "corner outline crop fixture");
     auto* border = Access::decoration(window);
@@ -343,21 +350,20 @@ void staticWindow() {
     require(process && menu->actions().indexOf(apply) == menu->actions().indexOf(process) + 1,
             "Apply Crop follows Process image");
     const auto saved = exportImage(window, Access::cropSave(window));
-    require(saved.size() == QSize(30, 20) && saved.pixelColor(5, 5) == original.pixelColor(15, 15),
-            "saving uses original-resolution crop pixels");
+    require(saved.size() == QSize(60, 40), "saving uses the cropped image at the chosen zoom");
     for (const auto& snapshot : {window.splittingSnapshot(), window.stitchingSnapshot()}) {
         const auto output =
             exportImage(window, std::make_shared<ScreenshotExportArtifact>(snapshot.source));
-        require(snapshot.outputSize == QSize(30, 20) && output == saved,
+        require(snapshot.outputSize == QSize(60, 40) && output == saved,
                 "splitting and stitching use the same visible source region");
     }
     const auto viewport = exportImage(window, Access::viewportExport(window));
-    require(viewport.size() == QSize(60, 40),
-            "current view retains its existing zoom resolution policy");
+    require(viewport == saved, "clipboard and saving share crop pixels and zoom resolution");
     QImage filter;
     window.requestAutoFilterSource([&](QImage image) { filter = std::move(image); });
     translation_tests::waitUntil([&] { return !filter.isNull(); }, "crop filter source ready");
-    require(filter == saved && window.autoFilterSourceBounds() == QRectF(110, 210, 30, 20),
+    require(filter == original.copy(QRect(10, 10, 30, 20)) &&
+                window.autoFilterSourceBounds() == QRectF(110, 210, 30, 20),
             "automatic filters receive visible pixels with the correct canvas origin");
     ScreenshotCanvasColorSampler sampler;
     require(sampler.ensureContentSnapshot(*window.findChild<SnowCanvasWidget*>(),
@@ -370,9 +376,10 @@ void staticWindow() {
     require(qAbs(actual.red() - expected.red()) <= 2 &&
                 qAbs(actual.green() - expected.green()) <= 2,
             "color sampler maps screen coordinates through the cropped camera");
-    const auto editor = window.imageEditingSnapshot();
-    require(editor.image.size() == QSize(30, 20) && editor.canvasRect == QRectF(110, 210, 30, 20),
-            "editor receives cropped base and unchanged document coordinate origin");
+    const auto editor = pinnedRenderedEditingSource(window);
+    require(editor.image == saved && editor.canvasRect == QRectF(0, 0, 60, 40) &&
+                editor.canvasSession.isEmpty(),
+            "editor receives the shared rendered crop as a fresh zero-origin raster");
     LiveAccess::scale(window, 10);
     require(LiveAccess::contentGeometry(window).size() == QSize(3, 2) &&
                 window.persistenceSnapshot().cropRect == QRectF(10, 10, 30, 20),
@@ -517,7 +524,10 @@ void inlineAnnotations() {
     SnowCanvasTextStyle style;
     style.fontSize = 10;
     require(canvas->setCanvasTextStyle(style), "crop text style");
-    const QPointF position = canvas->canvasToViewTransform().map(bounds->topLeft() + QPointF(5, 5));
+    const QPointF position =
+        canvas->canvasToViewTransform().map(bounds->topLeft() + QPointF(15, 15));
+    require(!Access::decorationResizeHandle(window, canvas->mapTo(&window, position)),
+            "inline text starts beyond the native resize bands at every backing scale");
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, position, Qt::LeftButton,
                                        Qt::LeftButton);
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, position,
@@ -533,9 +543,10 @@ void inlineAnnotations() {
     require(canvas->hasActiveTextEditing(), "applying crop preserves the active inline editor");
     require(Access::drawingHistory(window) == history,
             "applying crop preserves editable annotation history");
-    require(canvas->resetEditingStatePreservingTool(), "commit crop text annotation");
-    require(!window.imageEditingSnapshot().canvasSession.isEmpty(),
-            "editor import retains the separate annotation document");
+    const auto editor = pinnedRenderedEditingSource(window);
+    require(!canvas->hasActiveTextEditing() && editor.canvasSession.isEmpty() &&
+                editor.image == exportImage(window, Access::cropSave(window)),
+            "shared snapshot commits pending inline text and bakes it into the rendered image");
     window.hide();
 }
 
@@ -595,8 +606,10 @@ void styledAndTransformedApply() {
             setup.contentCanvasRect = setup.canvasSourceRect;
             setup.surfaceCanvasRect = setup.canvasSourceRect.adjusted(-6, -6, 6, 6);
             setup.initialWindowSize = setup.surfaceCanvasRect.size().toSize();
-            setup.nativeGeometry.setSize(setup.initialWindowSize * 2);
         }
+        // Compare applying a crop at native resolution. Zoomed exports separately verify
+        // the common renderer; truncating the source changes interpolation at crop edges.
+        setup.nativeGeometry.setSize(setup.initialWindowSize);
         window.setAttribute(Qt::WA_DeleteOnClose, false);
         require(window.present(setup), "present styled crop fixture");
         translation_tests::waitUntil([&] { return Access::shakeContentReady(window); },
@@ -606,16 +619,37 @@ void styledAndTransformedApply() {
         const QRectF crop(full.x(), full.y(), 30, 40);
         require(Access::crop(window, crop), "crop transformed styled image");
         const auto expected = exportImage(window, Access::cropSave(window));
-        const auto editor = window.imageEditingSnapshot();
-        require(!editor.resultStyle && editor.image == expected && editor.canvasRect == crop,
-                "editor crop bakes only base styling and preserves the document coordinate frame");
+        const auto editor = pinnedRenderedEditingSource(window);
+        require(!editor.resultStyle && editor.image == expected &&
+                    editor.canvasRect == QRectF(QPointF(), QSizeF(expected.size())),
+                "editor crop bakes styling into the shared zero-origin raster");
         const auto landmark = Access::cropScreenPoint(window, crop.center());
         const auto geometry = LiveAccess::contentGeometry(window);
         Access::applyCrop(window);
+        const auto applied = exportImage(window, Access::cropSave(window));
+        const auto appliedGeometry = LiveAccess::contentGeometry(window);
+        const qreal landmarkDistance =
+            QLineF(landmark, Access::cropScreenPoint(window, crop.center())).length();
+        if (applied != expected || appliedGeometry != geometry || landmarkDistance >= .01) {
+            QPoint first(-1, -1);
+            qsizetype different = 0;
+            for (int y = 0; y < std::min(applied.height(), expected.height()); ++y)
+                for (int x = 0; x < std::min(applied.width(), expected.width()); ++x)
+                    if (applied.pixel(x, y) != expected.pixel(x, y)) {
+                        if (different == 0)
+                            first = {x, y};
+                        ++different;
+                    }
+            qWarning() << "Applied crop mismatch" << "styled" << styled << "before"
+                       << expected.size() << "after" << applied.size() << "pixelsEqual"
+                       << (applied == expected) << "geometry" << geometry << appliedGeometry
+                       << "landmarkDistance" << landmarkDistance << "different" << different
+                       << "first" << first << "actualPixel"
+                       << (first.x() < 0 ? QColor() : applied.pixelColor(first)) << "expectedPixel"
+                       << (first.x() < 0 ? QColor() : expected.pixelColor(first));
+        }
         require(
-            exportImage(window, Access::cropSave(window)) == expected &&
-                LiveAccess::contentGeometry(window) == geometry &&
-                QLineF(landmark, Access::cropScreenPoint(window, crop.center())).length() < .01,
+            applied == expected && appliedGeometry == geometry && landmarkDistance < .01,
             "applying rotation and styling preserves visible pixels and source-to-screen mapping");
         window.hide();
     }
@@ -841,7 +875,7 @@ void liveConversion() {
                         record.surfaceCanvasRect == canvas &&
                         Access::visibleCrop(window) == canvas && record.scalePercent == 100,
                     "converted snapshot owns a new canvas and a one-hundred-percent baseline");
-            const auto editor = window.imageEditingSnapshot();
+            const auto editor = pinnedRenderedEditingSource(window);
             require(editor.image == expected && editor.canvasRect == canvas,
                     "editing receives the complete converted snapshot");
             auto* border = Access::decoration(window);

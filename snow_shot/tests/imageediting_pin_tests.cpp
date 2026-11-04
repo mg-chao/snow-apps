@@ -379,7 +379,10 @@ void sourceRecordsRemainIndependent() {
     const auto before = firstPin->persistenceSnapshot();
     requirePixels(before.image, expected, "live pin presentation");
 
-    window.present(firstPin->imageEditingSnapshot());
+    firstPin->requestRenderedImageSnapshot([&](ScreenshotPinnedImageSnapshot snapshot) {
+        require(snapshot.error.isEmpty(), "live pin prepares its shared editing raster");
+        window.presentSource(std::move(snapshot.source));
+    });
     awaitCondition([&] { return loads == 2; }, "load the pin working copy");
     require(window.document()->crop(Axis::Columns, 5, 11), "edit the pin working copy");
     window.palette()->pinRequested();

@@ -261,7 +261,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
-    [[nodiscard]] snow_shot::presentation::ImageEditingSource imageEditingSnapshot() const;
+    void requestRenderedImageSnapshot(std::function<void(ScreenshotPinnedImageSnapshot)> ready);
     void checkpointStorage();
     [[nodiscard]] ScreenshotPinnedImageSnapshot stitchingSnapshot();
     [[nodiscard]] ScreenshotPinnedImageSnapshot splittingSnapshot();
@@ -319,6 +319,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     static void setRuntimeTrayEnabled(bool enabled);
 
   signals:
+    void renderedImageSnapshotInvalidated();
     void automationWorkflowStateChanged() const;
     void showMainWindowRequested();
     void splitRequested(const ScreenshotPinnedImageSnapshot& snapshot);
@@ -538,10 +539,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     void cancelCloudUpload();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     enum class ViewportExportMode { Complete, RecognitionBackground };
+    [[nodiscard]] ScreenshotPinnedImageSnapshot
+    renderedImageSnapshot(ViewportExportMode mode = ViewportExportMode::Complete);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
     viewportArtifact(ViewportExportMode mode = ViewportExportMode::Complete);
     [[nodiscard]] ScreenshotExportSource
-    cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request);
+    cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request,
+                             ScreenshotPinnedImageSnapshot& snapshot);
     [[nodiscard]] std::optional<QByteArray> exportDocumentSnapshot() const;
     void quickSave();
     void invalidatePendingCopy();

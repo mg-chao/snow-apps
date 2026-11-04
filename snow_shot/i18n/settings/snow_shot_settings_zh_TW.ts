@@ -2752,8 +2752,8 @@
             <translation>在設定封存檔中包含已儲存的標註樣式</translation>
         </message>
         <message>
-            <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
-            <translation>儲存圖片時包含目前顯示的文字辨識或原圖翻譯結果。</translation>
+            <source>Include the displayed text recognition or original-image translation result when saving a screenshot selection.</source>
+            <translation>儲存截圖選取範圍時包含目前顯示的文字辨識或原圖翻譯結果。</translation>
         </message>
         <message>
             <source>Include the pointer and capture controls in screenshots</source>

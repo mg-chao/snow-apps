@@ -138,14 +138,37 @@ void liveAndPersistedTranslationImports() {
     require(pin.present(config, [&](bool success, QImage) { published = success; }),
             "translation source pin presents");
     awaitCondition([&] { return published; }, "translation source pin publishes its image");
-    const auto live = pin.imageEditingSnapshot();
+    ImageEditingSource cached;
+    cached.image = image;
+    cached.canvasRect = config.canvasSourceRect;
+    cached.recognition = recognitionFixture();
+    editCachedTranslation(cached);
+    auto* session = pin.findChild<Session*>();
+    awaitCondition([&] { return session && session->hasTextResult(); },
+                   "the pinned source seeds its cached text presentation");
+    session->activate(Session::Mode::Text);
+    session->beginTextTranslation();
+    require(session->originalImageTranslationActive(),
+            "the source pin displays its cached translated image content");
+    ImageEditingWindow live;
+    bool loaded = false;
+    QObject::connect(&live, &ImageEditingWindow::loaded, &live, [&](bool success) {
+        require(success, "live translated raster loads into independent editing");
+        loaded = true;
+    });
+    pin.requestRenderedImageSnapshot([&](ScreenshotPinnedImageSnapshot snapshot) {
+        require(snapshot.error.isEmpty(), "translated pin prepares its shared rendered source");
+        live.presentSource(std::move(snapshot.source));
+    });
+    awaitCondition([&] { return loaded; }, "the live translated render completes");
     const auto persisted = snow_shot::presentation::readImageEditingPinned(
-        pin.persistenceSnapshot(), captureScreenshotPinnedTextPreparation());
-    require(live.recognition.translatedText && persisted.recognition.translatedText,
-            "live and persisted pins retain captured translation content for import");
-    editCachedTranslation(live);
+        pin.persistenceSnapshot(), captureScreenshotPinnedRenderPreparation());
+    require(persisted.error.isEmpty() && persisted.recognition.isEmpty() &&
+                !live.document()->runtime().hasDocumentContent() &&
+                persisted.image == live.document()->image() && persisted.image != image,
+            "live and persisted translated pins import the same rendered image without stale OCR");
+    live.shutdown();
     pin.hide();
-    editCachedTranslation(persisted);
 }
 
 void independentFreshTranslationKeepsTextPresentation() {

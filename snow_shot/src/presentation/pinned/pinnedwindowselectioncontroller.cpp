@@ -249,11 +249,37 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
     connect(stitching, &QAction::triggered, this, [this, targets, valid] {
         if (!valid())
             return;
-        QVector<ScreenshotPinnedImageSnapshot> snapshots;
-        snapshots.reserve(targets.size());
-        for (const auto& window : targets)
-            snapshots.append(window->stitchingSnapshot());
-        emit imageStitchingRequested(snapshots);
+        struct Capture {
+            QVector<ScreenshotPinnedImageSnapshot> snapshots;
+            qsizetype remaining;
+        };
+        auto capture = std::make_shared<Capture>(
+            Capture{QVector<ScreenshotPinnedImageSnapshot>(targets.size()), targets.size()});
+        for (qsizetype index = 0; index < targets.size(); ++index)
+            capture->snapshots[index].label = targets[index]->persistenceId();
+        const QPointer<PinnedWindowSelectionController> guard(this);
+        for (qsizetype index = 0; index < targets.size(); ++index) {
+            if (!guard)
+                return;
+            const auto complete = [guard, capture, index](ScreenshotPinnedImageSnapshot snapshot) {
+                if (!guard)
+                    return;
+                if (snapshot.label.isEmpty())
+                    snapshot.label = capture->snapshots[index].label;
+                capture->snapshots[index] = std::move(snapshot);
+                if (--capture->remaining == 0)
+                    emit guard->imageStitchingRequested(capture->snapshots);
+            };
+            if (!targets[index] ||
+                targets[index]->persistenceId() != capture->snapshots[index].label) {
+                auto failed = capture->snapshots[index];
+                failed.error = QCoreApplication::translate(
+                    "ScreenshotPinnedWindow", "The pinned image could not be prepared");
+                complete(std::move(failed));
+            } else {
+                targets[index]->requestRenderedImageSnapshot(complete);
+            }
+        }
     });
     menu->addSeparator();
     auto* closeOthers =

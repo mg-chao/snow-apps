@@ -98,13 +98,32 @@ void menuSelectionAndModes() {
             menu->actionDanger(&action(first, "DestroyAction")) &&
             !menu->actionDanger(&action(first, "CloseAction")),
         "old action is replaced; count is read-only and only Destroy has danger styling");
-    select.trigger();
+    action(first, "SelectAllAction").trigger();
+    if (fixture.selection.selectedCount() != 2 || !fixture.selection.isSelected(&first) ||
+        !fixture.selection.isSelected(&second) || !second.persistenceSnapshot().lockedMode ||
+        !thumbnail.persistenceSnapshot().thumbnailMode || !top.active() ||
+        !clickThrough.persistenceSnapshot().clickThroughMode)
+        qWarning() << "Batch selection mismatch" << "count" << fixture.selection.selectedCount()
+                   << "actionEnabled" << select.isEnabled() << "eligible"
+                   << fixture.selection.isSelectable(&first)
+                   << fixture.selection.isSelectable(&second) << "first"
+                   << fixture.selection.isSelected(&first) << first.isVisible()
+                   << first.isMinimized() << Access::shakeContentReady(first) << first.groupId()
+                   << "second" << fixture.selection.isSelected(&second) << second.isVisible()
+                   << second.isMinimized() << Access::shakeContentReady(second) << second.groupId()
+                   << "thumbnail" << fixture.selection.isSelected(&thumbnail) << "tab"
+                   << fixture.selection.isSelected(&tab) << "clickThrough"
+                   << fixture.selection.isSelected(&clickThrough) << "activeGroup"
+                   << fixture.groups.activeGroupId() << "modes"
+                   << second.persistenceSnapshot().lockedMode
+                   << thumbnail.persistenceSnapshot().thumbnailMode << top.active()
+                   << clickThrough.persistenceSnapshot().clickThroughMode;
     require(fixture.selection.selectedCount() == 2 && fixture.selection.isSelected(&first) &&
                 fixture.selection.isSelected(&second) && second.persistenceSnapshot().lockedMode &&
                 thumbnail.persistenceSnapshot().thumbnailMode && top.active() &&
                 clickThrough.persistenceSnapshot().clickThroughMode,
             "Select All includes locked normal pins without changing special modes");
-    select.trigger();
+    action(first, "SelectAllAction").trigger();
     require(fixture.selection.selectedCount() == 2, "Select All is idempotent");
 
     action(first, "EnableLockAction").trigger();

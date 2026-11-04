@@ -1163,12 +1163,27 @@ void runImageEditingTests() {
                 "annotate the persisted formatted text source");
         record.textAnnotations = annotations.serialize();
         record.canvasSession = original.canvasSession;
+        record.canvasSourceRect = record.contentCanvasRect =
+            QRectF(QPointF(100, 200), rendered->image.size());
+        record.initialWindowSize = rendered->image.size();
+        record.nativeGeometry = QRect(QPoint(), rendered->image.size());
         auto restored = readImageEditingPinned(record, preparation);
-        require(restored.error.isEmpty() && !restored.textAnnotations.empty() &&
-                    restored.canvasSession == record.canvasSession,
-                "closed-pin import restores quick marks alongside its ordinary drawing document");
-        const auto expectedStored = renderScreenshotTextAnnotations(
-            restored.image, restored.canvasRect, restored.textAnnotations);
+        require(restored.error.isEmpty() && restored.textAnnotations.empty() &&
+                    restored.canvasSession.isEmpty() && restored.flattened,
+                "closed-pin import bakes quick marks and drawing into the shared rendered base");
+        QTransform toCanvas;
+        toCanvas.translate(100, 200);
+        const auto marks = screenshotFormattedTextAnnotationSnapshot(
+            annotations, *rendered->formattedDocument, QTransform::fromScale(1.5, 1.5) * toCanvas);
+        ScreenshotPinnedViewportExportSource expectedSource{
+            original.canvasSession,
+            ScreenshotResultCompositor::normalizeImage(rendered->image),
+            record.contentCanvasRect,
+            rendered->image.size(),
+            {},
+            {}};
+        expectedSource.textAnnotations = marks;
+        const auto expectedStored = renderScreenshotPinnedViewport(expectedSource);
         loaded = false;
         ImageEditingWindow storedWindow;
         QObject::connect(&storedWindow, &ImageEditingWindow::loaded, &storedWindow,
@@ -1179,7 +1194,7 @@ void runImageEditingTests() {
         storedWindow.present(restored);
         awaitCondition([&] { return loaded; }, "complete closed pin annotation import");
         require(storedWindow.document()->image() == expectedStored &&
-                    storedWindow.document()->runtime().hasDocumentContent() &&
+                    !storedWindow.document()->runtime().hasDocumentContent() &&
                     record.originalText == QStringLiteral("Preserved source text"),
                 "closed-pin marks survive editing transfer while source text remains unchanged");
         storedWindow.shutdown();
@@ -1903,18 +1918,32 @@ void runImageEditingTests() {
     pinRecord.canvasSession = saved.serializeDocumentSession();
     pinRecord.imageTransform.rotate(90);
     pinRecord.imageTransform.scale(-1, 1);
+    pinRecord.quarterTurns = 1;
+    pinRecord.canvasSourceRect = original.canvasRect;
     pinRecord.contentCanvasRect = QRectF(-20, 15, 5, 6);
-    const auto textPreparation = captureScreenshotPinnedTextPreparation();
-    auto rotated = readImageEditingPinned(pinRecord, textPreparation);
-    require(rotated.image == snowCanvasTransformImage(original.image, pinRecord.imageTransform,
-                                                      Qt::SmoothTransformation) &&
-                rotated.canvasSession == pinRecord.canvasSession,
-            "pinned transform preserves annotation mapping");
+    pinRecord.initialWindowSize = QSize(6, 5);
+    pinRecord.nativeGeometry = QRect(0, 0, 10, 12);
+    const auto renderPreparation = captureScreenshotPinnedRenderPreparation();
+    const auto textPreparation = renderPreparation.text;
+    auto rotated = readImageEditingPinned(pinRecord, renderPreparation);
+    const auto transformed = ScreenshotResultCompositor::normalizeImage(snowCanvasTransformImage(
+        original.image, pinRecord.imageTransform, Qt::SmoothTransformation));
+    const qreal pinScale =
+        screenshotPinnedRenderScale(200, transformed.size(), pinRecord.contentCanvasRect);
+    const QSize pinPixels(qRound(pinRecord.contentCanvasRect.width() * pinScale),
+                          qRound(pinRecord.contentCanvasRect.height() * pinScale));
+    ScreenshotPinnedViewportExportSource expectedPin{
+        pinRecord.canvasSession, transformed, pinRecord.contentCanvasRect, pinPixels, {}, {}};
+    require(rotated.image == renderScreenshotPinnedViewport(expectedPin) &&
+                rotated.canvasSession.isEmpty() && rotated.flattened,
+            "pinned transform and annotations bake into the shared rendering output");
     auto animation = std::make_shared<ScreenshotAnimationSource>();
     animation->firstFrame = original.image;
     pinRecord.animationSource = animation;
     pinRecord.image.fill(Qt::black);
-    require(readImageEditingPinned(pinRecord, textPreparation).image == rotated.image,
+    expectedPin.documentSession.clear();
+    require(readImageEditingPinned(pinRecord, renderPreparation).image ==
+                renderScreenshotPinnedViewport(expectedPin),
             "closed animation uses first frame");
     pinRecord = {};
     pinRecord.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;

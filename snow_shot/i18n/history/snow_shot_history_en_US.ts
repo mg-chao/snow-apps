@@ -2185,10 +2185,6 @@ Files:
             <translation>The image could not be saved automatically: %1</translation>
         </message>
         <message>
-            <source>The live window requires a current frame snapshot.</source>
-            <translation>The live window requires a current frame snapshot.</translation>
-        </message>
-        <message>
             <source>The new content could not be loaded</source>
             <translation>The new content could not be loaded</translation>
         </message>

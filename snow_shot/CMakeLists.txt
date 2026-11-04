@@ -13853,6 +13853,46 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
 endif()
+# Compile pinned-source adapters with each consumer's edition and fixture definitions.
+# Imports from storage and live pins use the same rendering and recognition implementation.
+set_source_files_properties(
+    src/presentation/services/screenshotpinnedimagerecord.cpp
+    src/presentation/services/screenshotpinnedrecognition.cpp
+    src/presentation/services/screenshotexportpinnedsource.cpp
+    src/presentation/ocr/screenshotrecognitionimage.cpp
+    src/presentation/ocr/screenshotocrvisuals.cpp
+    src/presentation/ocr/screenshotocrtexttransform.cpp
+    src/presentation/ocr/screenshotocrlayout.cpp
+    src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+get_property(_pinned_render_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target IN LISTS _pinned_render_targets)
+    get_target_property(_sources ${_target} SOURCES)
+    set(_pinned_render_sources)
+    if("src/presentation/services/imageimportsourcereader_p.cpp" IN_LIST _sources OR
+            "src/presentation/imageediting/imageeditingsource.cpp" IN_LIST _sources)
+        list(APPEND _pinned_render_sources
+            src/presentation/services/screenshotpinnedimagerecord.cpp
+            src/presentation/services/screenshotexportpinnedsource.cpp
+            src/presentation/ocr/screenshotrecognitionimage.cpp
+            src/presentation/ocr/screenshotocrvisuals.cpp
+            src/presentation/ocr/screenshotocrtexttransform.cpp
+            src/presentation/ocr/screenshotocrlayout.cpp
+            src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
+    endif()
+    if(_pinned_render_sources OR
+            "src/presentation/pinned/screenshotpinnedwindow.cpp" IN_LIST _sources)
+        list(APPEND _pinned_render_sources
+            src/presentation/services/screenshotpinnedrecognition.cpp)
+    endif()
+    foreach(_source IN LISTS _pinned_render_sources)
+        if(NOT _source IN_LIST _sources)
+            target_sources(${_target} PRIVATE ${_source})
+        endif()
+    endforeach()
+endforeach()
+snow_shot_source_requires(text_annotations SOURCES
+    src/presentation/services/screenshotpinnedimagerecord.cpp)
 snow_shot_resolve_source_dependencies()
 
 if(SNOW_SHOT_BUILD_TESTS)

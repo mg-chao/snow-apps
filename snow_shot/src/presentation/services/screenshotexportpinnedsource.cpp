@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include "screenshotpinnedrenderbytes_p.h"
 
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
@@ -16,6 +17,9 @@
 #include <QScopeGuard>
 
 #include <utility>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace {
 struct PinnedPixels final {
@@ -26,19 +30,111 @@ struct PinnedPixels final {
     QImage image;
 };
 
+std::optional<int> roundedPixel(qreal value) {
+    const auto rounded = std::round(value);
+    if (!std::isfinite(rounded) || rounded < std::numeric_limits<int>::min() ||
+        rounded > std::numeric_limits<int>::max())
+        return std::nullopt;
+    return static_cast<int>(rounded);
+}
+
+bool finiteRect(const QRectF& rect) {
+    return rect.isValid() && !rect.isEmpty() && std::isfinite(rect.left()) &&
+           std::isfinite(rect.top()) && std::isfinite(rect.right()) && std::isfinite(rect.bottom());
+}
+
+std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource& source,
+                                     const ScreenshotPinnedViewportRenderPlan& plan) {
+    using namespace screenshot_pinned_render;
+    const auto content = rasterBytes(plan.renderPixelSize);
+    const auto composed = rasterBytes(plan.resultLayout.outputRect.size());
+    const auto output = rasterBytes(plan.outputSize());
+    const auto mask = rasterBytes(plan.resultLayout.outputRect.size(), 8);
+    if (!content || !composed || !output || !mask)
+        return std::nullopt;
+    qint64 bytes = *content;
+    const bool document = !source.documentSession.isEmpty();
+    // Drawing can coexist with a prepared backdrop and canvas compositor scratch.
+    if (document)
+        for (int index = 0; index < 3; ++index)
+            if (!addBytes(bytes, *content))
+                return std::nullopt;
+    const auto style = ScreenshotResultCompositor::normalizedStyle(source.resultStyle);
+    const bool composition = style.region || style.cornerRadius > 0 || style.effectWidth() > 0;
+    if (composition) {
+        if (!addBytes(bytes, *composed))
+            return std::nullopt;
+        if (style.region && style.borderType == ScreenshotSelectionBorderType::Shadow) {
+            if (style.effectWidth() > 0) {
+                // Region shadows use bounded cores with a finite blur halo. Sparse small
+                // regions may use one untiled raster of at most one million pixels.
+                const qint64 effect = plan.resultLayout.effectInsets.left();
+                const qint64 side = std::max(qint64(512), effect * 8) + effect * 2 + 4;
+                const auto size = plan.resultLayout.outputRect.size();
+                const qint64 pixels =
+                    std::min(*composed / 4, std::max(qint64(1024) * 1024,
+                                                     std::min(side, qint64(size.width())) *
+                                                         std::min(side, qint64(size.height()))));
+                for (int index = 0; index < 3; ++index)
+                    if (!addBytes(bytes, pixels * 4))
+                        return std::nullopt;
+                if (!addBytes(bytes, qint64(size.width()) * 4))
+                    return std::nullopt;
+            } else if (!addBytes(bytes, *composed)) {
+                return std::nullopt;
+            }
+            if (!addBytes(bytes, *mask))
+                return std::nullopt;
+            // Export masks/shadows can stay cached while annotations are rendered.
+            if (document && !addBytes(bytes, std::min(qint64(16) * 1024 * 1024, *composed)))
+                return std::nullopt;
+        } else {
+            qint64 scratch = style.region || style.cornerRadius > 0 ? *mask : 0;
+            if (style.borderType == ScreenshotSelectionBorderType::Shadow &&
+                style.effectWidth() > 0) {
+                const qint64 radius = qRound(std::min(
+                    qreal(style.cornerRadius),
+                    std::min(plan.renderPixelSize.width(), plan.renderPixelSize.height()) / 2.0));
+                const qint64 side = 2 * (radius + style.effectWidth()) + 1;
+                if (side > std::numeric_limits<int>::max())
+                    return std::nullopt;
+                const auto asset =
+                    rasterBytes(QSize(static_cast<int>(side), static_cast<int>(side)));
+                if (!asset)
+                    return std::nullopt;
+                scratch = std::max(scratch, *asset);
+            }
+            if (!addBytes(bytes, scratch))
+                return std::nullopt;
+        }
+        if (document && style.region && source.outputOpacity < 1 && !addBytes(bytes, *composed))
+            return std::nullopt;
+    } else if (source.outputOpacity < 1 && !addBytes(bytes, *content)) {
+        return std::nullopt;
+    }
+    if (plan.cropAfterRender && !addBytes(bytes, *output))
+        return std::nullopt;
+    return bytes;
+}
+
 QImage renderPinnedBackground(const ScreenshotPinnedViewportExportSource& source,
                               const QRectF& outputRect, const QSize& outputSize,
                               const std::function<bool()>& cancelled) {
     // An unchanged native backdrop can be read directly by the canvas exporter.
     if (!source.documentSession.isEmpty() && source.textAnnotations.empty() &&
+        !source.recognitionOverlay && source.presentationImage.isNull() &&
         outputRect == source.backgroundCanvasRect && outputSize == source.backgroundImage.size())
         return source.backgroundImage;
-    QImage background = SnowCanvasRuntime::renderImageSourcesToImage(
-        outputRect, outputSize, {{source.backgroundImage, source.backgroundCanvasRect}});
+    const QImage& backdrop =
+        source.presentationImage.isNull() ? source.backgroundImage : source.presentationImage;
+    const QRectF backdropRect = source.presentationImage.isNull() ? source.backgroundCanvasRect
+                                                                  : source.presentationCanvasRect;
+    QImage background = SnowCanvasRuntime::renderImageSourcesToImage(outputRect, outputSize,
+                                                                     {{backdrop, backdropRect}});
     if (background.isNull())
         return background;
     background.setColorSpace(source.backgroundImage.colorSpace());
-    if (source.textAnnotations.empty())
+    if (source.textAnnotations.empty() && !source.recognitionOverlay)
         return background;
     // Project first: a small crop must never detach or annotate the full source raster.
     QPainter painter(&background);
@@ -49,6 +145,9 @@ QImage renderPinnedBackground(const ScreenshotPinnedViewportExportSource& source
                               outputSize.height() / outputRect.height(),
                               -outputRect.x() * outputSize.width() / outputRect.width(),
                               -outputRect.y() * outputSize.height() / outputRect.height());
+    if (source.recognitionOverlay && !paintScreenshotRecognitionOverlay(
+                                         painter, *source.recognitionOverlay, toPixels, cancelled))
+        return {};
     if (!paintScreenshotTextAnnotations(painter, source.textAnnotations, toPixels, nullptr,
                                         cancelled))
         return {};
@@ -56,52 +155,62 @@ QImage renderPinnedBackground(const ScreenshotPinnedViewportExportSource& source
 }
 } // namespace
 
-QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
-                                      const std::function<bool()>& cancelled) {
-    const auto stopped = [&] { return cancelled && cancelled(); };
-    const auto releaseCaches = qScopeGuard([&] {
-        ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
-        resetScreenshotLayoutCompactionCache();
-        if (source.resultStyle.region)
-            source.resultStyle.region->clearDerivedCache();
-    });
-    if (source.backgroundImage.isNull() || !source.backgroundCanvasRect.isValid() ||
-        source.backgroundCanvasRect.isEmpty() || !source.contentPixelSize.isValid() ||
-        source.contentPixelSize.isEmpty() || stopped()) {
-        return {};
-    }
+std::optional<ScreenshotPinnedViewportRenderPlan>
+screenshotPinnedViewportRenderPlan(const ScreenshotPinnedViewportExportSource& source) {
+    if (source.backgroundImage.isNull() || !finiteRect(source.backgroundCanvasRect) ||
+        source.contentPixelSize.isEmpty())
+        return std::nullopt;
+    ScreenshotPinnedViewportRenderPlan plan;
+    plan.renderCanvasRect = source.backgroundCanvasRect;
+    plan.renderPixelSize = source.contentPixelSize;
+    plan.resultLayout =
+        ScreenshotResultCompositor::layoutForContent(source.contentPixelSize, source.resultStyle);
+    if (!plan.resultLayout.isValid())
+        return std::nullopt;
+    plan.outputPixelRect = plan.resultLayout.outputRect;
     if (source.visibleCanvasRect) {
         const QRectF visible = *source.visibleCanvasRect;
-        if (!visible.isValid() || visible.isEmpty())
-            return {};
+        if (!finiteRect(visible))
+            return std::nullopt;
         const qreal sx = source.contentPixelSize.width() / source.backgroundCanvasRect.width();
         const qreal sy = source.contentPixelSize.height() / source.backgroundCanvasRect.height();
-        const QSize output(std::max(1, qRound(visible.width() * sx)),
-                           std::max(1, qRound(visible.height() * sy)));
-        // Complex selection masks retain their full-source shape and effect origin.
-        // Ordinary rectangular pins render just the requested region below.
-        if (source.resultStyle.region || source.resultStyle.cornerRadius > 0 ||
-            source.resultStyle.effectWidth() > 0) {
-            auto full = source;
-            full.visibleCanvasRect.reset();
-            const QImage image = renderScreenshotPinnedViewport(full, cancelled);
-            const auto layout = ScreenshotResultCompositor::layoutForContent(
-                source.contentPixelSize, source.resultStyle);
-            const QPoint offset(qRound((visible.x() - source.backgroundCanvasRect.x()) * sx) -
-                                    layout.outputRect.x(),
-                                qRound((visible.y() - source.backgroundCanvasRect.y()) * sy) -
-                                    layout.outputRect.y());
-            return image.isNull() ? QImage() : image.copy(QRect(offset, output));
+        const auto width = roundedPixel(visible.width() * sx);
+        const auto height = roundedPixel(visible.height() * sy);
+        if (!width || !height)
+            return std::nullopt;
+        const QSize output(std::max(1, *width), std::max(1, *height));
+        plan.cropAfterRender = source.resultStyle.region || source.resultStyle.cornerRadius > 0 ||
+                               source.resultStyle.effectWidth() > 0;
+        if (plan.cropAfterRender) {
+            const auto x = roundedPixel((visible.x() - source.backgroundCanvasRect.x()) * sx -
+                                        plan.resultLayout.outputRect.x());
+            const auto y = roundedPixel((visible.y() - source.backgroundCanvasRect.y()) * sy -
+                                        plan.resultLayout.outputRect.y());
+            if (!x || !y || qint64(*x) + output.width() - 1 > std::numeric_limits<int>::max() ||
+                qint64(*y) + output.height() - 1 > std::numeric_limits<int>::max())
+                return std::nullopt;
+            plan.outputPixelRect = QRect(QPoint(*x, *y), output);
+        } else {
+            plan.renderCanvasRect = visible;
+            plan.renderPixelSize = output;
+            plan.resultLayout = ScreenshotResultCompositor::layoutForContent(output, {});
+            plan.outputPixelRect = plan.resultLayout.outputRect;
         }
     }
-    const QRectF outputRect = source.visibleCanvasRect.value_or(source.backgroundCanvasRect);
-    const QSize outputSize =
-        source.visibleCanvasRect
-            ? QSize(std::max(1, qRound(outputRect.width() * source.contentPixelSize.width() /
-                                       source.backgroundCanvasRect.width())),
-                    std::max(1, qRound(outputRect.height() * source.contentPixelSize.height() /
-                                       source.backgroundCanvasRect.height())))
-            : source.contentPixelSize;
+    const auto bytes = renderingBytes(source, plan);
+    if (!bytes)
+        return std::nullopt;
+    plan.workingBytes = *bytes;
+    return plan;
+}
+
+namespace {
+QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
+                            const ScreenshotPinnedViewportRenderPlan& plan,
+                            const std::function<bool()>& cancelled) {
+    const auto stopped = [&] { return cancelled && cancelled(); };
+    const auto& outputRect = plan.renderCanvasRect;
+    const auto& outputSize = plan.renderPixelSize;
     // Sampling and reconstruction always retain pristine donors, independently of the backdrop.
     QList<SnowCanvasBaseImageSource> sampling = source.samplingSources;
     if (sampling.isEmpty())
@@ -116,7 +225,9 @@ QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource
         sampling.front().canvasRect == source.backgroundCanvasRect &&
         sampling.front().coverage.isEmpty();
     const bool needsBackground = source.documentSession.isEmpty() || !samplingMatchesBackground ||
-                                 source.resultStyle.region.has_value();
+                                 source.resultStyle.region.has_value() ||
+                                 source.recognitionOverlay.has_value() ||
+                                 !source.presentationImage.isNull();
     QImage background;
     if (needsBackground) {
         background = renderPinnedBackground(source, outputRect, outputSize, cancelled);
@@ -139,10 +250,8 @@ QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource
             return {};
         if (source.resultStyle.region) {
             auto result = ScreenshotResultCompositor::compose(background, source.resultStyle);
-            const auto layout = ScreenshotResultCompositor::layoutForContent(
-                source.contentPixelSize, source.resultStyle);
             result = renderScreenshotSelectionAnnotations(runtime, outputRect, outputSize, sources,
-                                                          std::move(result), layout);
+                                                          std::move(result), plan.resultLayout);
             return stopped()
                        ? QImage{}
                        : ScreenshotResultCompositor::compose(result, {}, 1.0, source.outputOpacity);
@@ -165,8 +274,29 @@ QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource
                ? QImage{}
                : ScreenshotResultCompositor::compose(
                      content,
-                     source.visibleCanvasRect ? ScreenshotResultStyle{} : source.resultStyle, 1.0,
-                     source.outputOpacity);
+                     source.visibleCanvasRect && !plan.cropAfterRender ? ScreenshotResultStyle{}
+                                                                       : source.resultStyle,
+                     1.0, source.outputOpacity);
+}
+} // namespace
+
+QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
+                                      const std::function<bool()>& cancelled) {
+    const auto releaseCaches = qScopeGuard([&] {
+        ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+        resetScreenshotLayoutCompactionCache();
+        if (source.resultStyle.region)
+            source.resultStyle.region->clearDerivedCache();
+    });
+    if (cancelled && cancelled())
+        return {};
+    const auto plan = screenshotPinnedViewportRenderPlan(source);
+    if (!plan)
+        return {};
+    QImage image = renderPinnedViewport(source, *plan, cancelled);
+    if (image.isNull() || (cancelled && cancelled()))
+        return {};
+    return plan->cropAfterRender ? snowCanvasCopyImage(image, plan->outputPixelRect) : image;
 }
 
 ScreenshotExportSource

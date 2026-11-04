@@ -690,7 +690,8 @@ struct CollageWindow::Impl {
             fail(error);
             return;
         }
-        decoded->reservation = reserveCollageImport(bytes, &error);
+        decoded->reservation =
+            reserveCollageImport(std::max(bytes, snapshot.renderingBytes), &error);
         if (!decoded->reservation) {
             fail(error);
             return;
@@ -838,10 +839,33 @@ struct CollageWindow::Impl {
             importLive(request, decoded, token);
             return;
         }
+        if (!request.pinnedId.isEmpty() && services.requestPinnedSnapshot) {
+            const QPointer<CollageWindow> guard(&q);
+            const QString id = request.pinnedId;
+            services.requestPinnedSnapshot(
+                id, [guard, request = std::move(request), decoded,
+                     token](std::optional<ScreenshotPinnedImageSnapshot> snapshot) mutable {
+                    if (!guard || guard->m_impl->closing || token != guard->m_impl->generation)
+                        return;
+                    if (snapshot) {
+                        request.live = std::move(snapshot);
+                        guard->m_impl->importLive(request, decoded, token);
+                    } else {
+                        guard->m_impl->importStored(request, decoded, token);
+                    }
+                });
+            return;
+        }
+        importStored(request, decoded, token);
+    }
+
+    void importStored(const ImportItem& request, const std::shared_ptr<ImportedImage>& decoded,
+                      quint64 token) {
         const auto historyReader = services.readHistory;
         job = ScreenshotExportCoordinator::shared().submit(
             &q, ScreenshotExportCoordinator::Priority::Background,
-            [request, decoded, historyReader, swatchStyle = capturePinnedColorSwatchStyle()](
+            [request, decoded, historyReader,
+             preparation = captureScreenshotPinnedRenderPreparation()](
                 const ScreenshotExportCancellation& cancellation) {
                 QString error;
                 decoded->reservation =
@@ -887,13 +911,15 @@ struct CollageWindow::Impl {
                     if (result)
                         image = *result;
                 } else if (!request.pinnedId.isEmpty()) {
-                    image = readImageImportPinnedRecord(
-                                request.pinnedId, cancelled,
-                                [decoded, &error](qint64 bytes) {
-                                    return decoded->reservation->resize(bytes, &error);
-                                },
-                                swatchStyle)
-                                .image;
+                    auto source = readImageImportPinnedRecord(
+                        request.pinnedId, cancelled,
+                        [decoded, &error](qint64 bytes) {
+                            return decoded->reservation->resize(bytes, &error);
+                        },
+                        preparation);
+                    image = std::move(source.image);
+                    if (!source.error.isEmpty())
+                        error = std::move(source.error);
                 } else {
                     image = readImageImportFile(
                         request.path, request.file, cancelled, [decoded, &error](qint64 bytes) {

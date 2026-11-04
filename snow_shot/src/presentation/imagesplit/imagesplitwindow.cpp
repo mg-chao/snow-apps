@@ -118,7 +118,8 @@ struct ExportProgress final {
 QString imageMemoryError() {
     return splitText("The image is too large or there is not enough memory to load it.");
 }
-bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64 nativeBytes = 0) {
+bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64 nativeBytes = 0,
+                  qint64 renderingBytes = 0) {
     auto bytes = collageImageImportBytes(size);
     if (bytes == 0)
         return false;
@@ -132,6 +133,7 @@ bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64
             return false;
         bytes = std::max(bytes, nativeBytes + previewBytes);
     }
+    bytes = std::max(bytes, renderingBytes);
     if (!loaded->reservation)
         loaded->reservation = reserveCollageImport(bytes);
     else if (!loaded->reservation->resize(bytes))
@@ -722,10 +724,34 @@ void ImageSplitWindow::presentPinnedRecord(const QString& recordId) {
     d.present();
     d.beginLoading();
     const auto token = d.generation;
+    if (d.services.requestPinnedSnapshot) {
+        const QPointer<ImageSplitWindow> guard(this);
+        d.services.requestPinnedSnapshot(
+            recordId,
+            [guard, recordId, token](std::optional<ScreenshotPinnedImageSnapshot> snapshot) {
+                if (!guard || guard->m_impl->closing || token != guard->m_impl->generation)
+                    return;
+                if (snapshot) {
+                    guard->loadSource({std::move(snapshot->source),
+                                       std::move(snapshot->originalFileName), snapshot->createdUtc,
+                                       std::move(snapshot->error), snapshot->outputSize,
+                                       std::nullopt, snapshot->renderingBytes},
+                                      token);
+                } else {
+                    guard->loadPinnedRecord(recordId, token);
+                }
+            });
+        return;
+    }
+    loadPinnedRecord(recordId, token);
+}
+
+void ImageSplitWindow::loadPinnedRecord(const QString& recordId, quint64 token) {
+    auto& d = *m_impl;
     auto loaded = std::make_shared<LoadedImage>();
     d.job = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Background,
-        [recordId, loaded, swatchStyle = capturePinnedColorSwatchStyle()](
+        [recordId, loaded, preparation = captureScreenshotPinnedRenderPreparation()](
             const ScreenshotExportCancellation& cancellation) {
             const auto cancelled = [&cancellation] {
                 return cancellation.isCancellationRequested();
@@ -742,12 +768,15 @@ void ImageSplitWindow::presentPinnedRecord(const QString& recordId) {
                         "The image is too large or there is not enough memory to load it.";
                 return loaded->reservation != nullptr;
             };
-            auto source = readImageImportPinnedRecord(recordId, cancelled, allocate, swatchStyle);
+            auto source = readImageImportPinnedRecord(recordId, cancelled, allocate, preparation);
             loaded->originalFileName = std::move(source.originalFileName);
             loaded->createdUtc = source.createdUtc;
             if (loaded->errorSource)
                 return loadingFailure(loaded, ScreenshotExportFailureStage::Source,
                                       loaded->errorSource);
+            if (!source.error.isEmpty())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Source,
+                                                           std::move(source.error));
             return prepareImage(std::move(source.image), loaded, cancellation);
         },
         [this, loaded, token](ScreenshotExportTaskResult result) {
@@ -767,6 +796,11 @@ void ImageSplitWindow::presentSource(ImageSplitSource source) {
     d.present();
     d.beginLoading();
     const auto token = d.generation;
+    loadSource(std::move(source), token);
+}
+
+void ImageSplitWindow::loadSource(ImageSplitSource source, quint64 token) {
+    auto& d = *m_impl;
     auto loaded = std::make_shared<LoadedImage>();
     loaded->initialDirection = source.initialDirection;
     if (!source.error.isEmpty() || !source.source.isValid()) {
@@ -778,7 +812,8 @@ void ImageSplitWindow::presentSource(ImageSplitSource source) {
                                                             source.error));
         return;
     }
-    if (!source.outputSize.isEmpty() && !reserveImage(source.outputSize, loaded)) {
+    if (!source.outputSize.isEmpty() &&
+        !reserveImage(source.outputSize, loaded, 0, source.renderingBytes)) {
         d.finishLoading(
             loaded, source.originalFileName, source.createdUtc, false, token,
             loadingFailure(loaded, ScreenshotExportFailureStage::Source,

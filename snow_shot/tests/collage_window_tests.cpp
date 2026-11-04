@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/screenshotmanualsave.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -419,6 +420,9 @@ void singletonImportsAppendMixedSourcesInRequestOrder() {
     pin.initialWindowSize = pin.image.size();
     require(repository.upsert(pin).success && repository.flush().success,
             "persist a pin for singleton mixed-source imports");
+    const auto expectedPin =
+        renderScreenshotPinnedImageRecord(pin, captureScreenshotPinnedRenderPreparation());
+    require(expectedPin.succeeded(), "render the stored singleton pin reference");
 
     Ports ports;
     const auto started = std::make_shared<std::atomic_bool>(false);
@@ -468,7 +472,7 @@ void singletonImportsAppendMixedSourcesInRequestOrder() {
     waitUntil([&] { return !window->loading(); }, "queued singleton imports complete");
     const auto& items = document->items();
     require(items.size() == 5 && items[0].image.pixelColor(0, 0) == QColor(Qt::red) &&
-                items[1].image == blue && items[2].image == pin.image &&
+                items[1].image == blue && items[2].image == expectedPin.image &&
                 items[3].image.pixelColor(0, 0) == QColor(Qt::red) && items[4].image == blue &&
                 items[0].id != items[3].id && items[1].id != items[4].id && reads->load() == 3,
             "mixed requests append in submission order and retain independent duplicate images");
@@ -1055,8 +1059,8 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
     pixels.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     pixels.image = image({540, 270}, Qt::cyan);
     setGeometry(pixels, pixels.image.size());
-    pixels.canvasSession = QByteArrayLiteral("saved canvas is not a stitching input");
-    pixels.recognitionResults = QByteArrayLiteral("saved recognition is not a stitching input");
+    pixels.nativeGeometry.setSize(QSize(270, 135));
+    pixels.opacityPercent = 60;
     require(repository.upsert(pixels).success, "save an image pin for stitching");
     storage::PinnedWindowRecord file;
     file.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1083,7 +1087,13 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
     const auto rendered =
         ScreenshotClipboardContentReader::renderOriginalText(original, text.firstCreationTextDpi);
     require(rendered.has_value(), "render the text pin reference");
-    const QImage expectedText = rendered ? rendered->image : QImage{};
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    const auto expectedPixels = renderScreenshotPinnedImageRecord(pixels, preparation);
+    const auto expectedText = renderScreenshotPinnedImageRecord(text, preparation);
+    require(expectedPixels.succeeded() && expectedText.succeeded() &&
+                expectedPixels.image.size() == QSize(270, 135) &&
+                expectedPixels.image.pixelColor(0, 0).alpha() < 255,
+            "saved pin reference includes zoom and opacity");
     const QString missing = QUuid::createUuid().toString(QUuid::WithoutBraces);
     Ports ports;
     CollageWindow window(nullptr, ports.services());
@@ -1100,10 +1110,8 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
     const auto& items = window.document()->items();
     require(items.size() == 3 && items[0].image.size() == file.image.size() &&
                 items[0].image.pixelColor(0, 0) == QColor(Qt::blue) &&
-                items[1].image.size() == pixels.image.size() &&
-                items[1].image.pixelColor(0, 0) == QColor(Qt::cyan) &&
-                items[2].image == expectedText,
-            "saved file, image, and text pins retain full-resolution pixels and input order");
+                items[1].image == expectedPixels.image && items[2].image == expectedText.image,
+            "saved file, image, and text pins use shared rendered pixels in input order");
     require(items[1].preview.size() == QSize(256, 128) && ports.reads.isEmpty(),
             "pinned imports use bounded previews independently of screenshot history");
     require(failures.size() == 1 && failures.first().contains(missing) &&
@@ -1127,6 +1135,64 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
     unavailable.shutdown();
     require(repository.removeMany({pixels.id, file.id, text.id}).success,
             "remove isolated stitching fixtures");
+}
+
+void pinnedRecordsPreferCurrentSnapshots() {
+    resetSettings();
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    QVector<QString> ids;
+    for (int index = 0; index < 3; ++index) {
+        storage::PinnedWindowRecord record;
+        record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        record.image = image({80, 60}, Qt::blue);
+        record.initialWindowSize = record.image.size();
+        record.nativeGeometry = record.image.rect();
+        record.canvasSourceRect = record.image.rect();
+        record.contentCanvasRect = record.canvasSourceRect;
+        record.surfaceCanvasRect = record.canvasSourceRect;
+        require(repository.upsert(record).success, "persist a stale management-page donor");
+        ids.append(record.id);
+    }
+    using Completion = std::function<void(std::optional<ScreenshotPinnedImageSnapshot>)>;
+    QVector<Completion> pending;
+    QStringList requested;
+    CollageWindowServices services;
+    services.requestPinnedSnapshot = [&](const QString& id, Completion complete) {
+        requested.append(id);
+        pending.append(std::move(complete));
+    };
+    CollageWindow window(nullptr, services);
+    window.presentPinnedRecords({ids[0], ids[1], ids[2]});
+    require(window.loading() && requested == QStringList{ids[0]},
+            "management imports wait for each current pin snapshot");
+    const QImage current = image({47, 29}, Qt::yellow);
+    ScreenshotPinnedImageSnapshot snapshot;
+    snapshot.source = ScreenshotExportSource::fromImage(current);
+    snapshot.outputSize = current.size();
+    pending.takeFirst()(snapshot);
+    waitUntil([&] { return requested.size() == 2; }, "current snapshot imports before next lookup");
+    ScreenshotPinnedImageSnapshot failed;
+    failed.error = QStringLiteral("current pin preparation failed");
+    pending.takeFirst()(failed);
+    waitUntil([&] { return requested.size() == 3; },
+              "failed live source advances the ordered queue");
+    pending.takeFirst()(std::nullopt);
+    waitUntil([&] { return !window.loading(); }, "absent live pin falls back to its saved state");
+    const auto& items = window.document()->items();
+    require(items.size() == 2 && items[0].image == current &&
+                items[1].image.pixelColor(0, 0) == QColor(Qt::blue) &&
+                requested == QStringList{ids[0], ids[1], ids[2]} &&
+                messageError(window).contains(failed.error),
+            "current pixels win, failed live pins never use stale donors, and order is preserved");
+    window.shutdown();
+    CollageWindow abandoned(nullptr, services);
+    abandoned.presentPinnedRecords({ids[0]});
+    require(pending.size() == 1, "hold a live snapshot beyond workflow shutdown");
+    abandoned.shutdown();
+    pending.takeFirst()(snapshot);
+    flushEvents();
+    require(abandoned.document()->items().isEmpty(), "shutdown rejects late live snapshots");
+    require(repository.removeMany(ids).success, "remove current snapshot fixtures");
 }
 
 void importFeedbackUsesMessagesWithoutLayoutChanges() {
@@ -1315,6 +1381,47 @@ void livePinnedImportsCancelAndRespectMemoryBudget() {
     require(failures.size() == 1 && window.document()->items().isEmpty() && renders->load() == 0,
             "live import rejects an oversized raster before rendering");
     window.shutdown();
+}
+
+void livePinnedImportsAdmitRenderingWorkingSet() {
+    resetSettings();
+    const auto baseline = collageResourceUsage();
+    const auto renders = std::make_shared<std::atomic_int>(0);
+    {
+        CollageWindow window;
+        ScreenshotPinnedImageSnapshot rejected;
+        rejected.source = ScreenshotExportSource::fromProducer([renders](const auto&) {
+            ++*renders;
+            return image();
+        });
+        rejected.outputSize = QSize(3, 2);
+        rejected.label = QStringLiteral("styled crop");
+        rejected.renderingBytes = baseline.limitBytes + 1;
+        const QImage accepted = image({2, 3}, Qt::green);
+        ScreenshotPinnedImageSnapshot next;
+        next.source = ScreenshotExportSource::fromImage(accepted);
+        next.outputSize = accepted.size();
+        next.label = QStringLiteral("next");
+        QStringList failures;
+        int completions = 0;
+        QObject::connect(&window, &CollageWindow::importFinished, &window, [&](const auto& errors) {
+            failures = errors;
+            ++completions;
+        });
+        window.presentPinnedWindows({rejected, next});
+        waitUntil([&] { return completions == 1; },
+                  "render admission advances the live import queue");
+        require(!window.loading() && renders->load() == 0 && failures.size() == 1 &&
+                    failures.first().contains(rejected.label) &&
+                    window.document()->items().size() == 1 &&
+                    window.document()->items().first().image == accepted &&
+                    button(window, "collageAddImages")->isEnabled(),
+                "small styled crops admit their full render memory before rendering and leave "
+                "later imports usable");
+        window.shutdown();
+    }
+    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline.reservedBytes; },
+              "render admission failures and completed imports release their reservations");
 }
 
 void livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation() {
@@ -2449,6 +2556,7 @@ int main(int argc, char* argv[]) {
     if (arguments.contains(QStringLiteral("--live-pinned-import-only"))) {
         timed("Owned live pin imports", livePinnedImportsPreserveOrderAndFailures);
         timed("Live pin cancellation and memory", livePinnedImportsCancelAndRespectMemoryBudget);
+        timed("Live pin rendering memory", livePinnedImportsAdmitRenderingWorkingSet);
         timed("Live pin queued raster ownership",
               livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation);
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
@@ -2460,6 +2568,7 @@ int main(int argc, char* argv[]) {
     if (arguments.contains(QStringLiteral("--pinned-import-only"))) {
         timed("Pinned record imports",
               [&] { pinnedRecordsImportSavedPixelsAndText(directory.path()); });
+        timed("Current pinned record snapshots", pinnedRecordsPreferCurrentSnapshots);
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
                   "pinned import tests drain export jobs");
         ScreenshotExportCoordinator::shared().shutdown();
@@ -2535,10 +2644,12 @@ int main(int argc, char* argv[]) {
     timed("Dropped file imports", droppedFilesUseCollageImporter);
     timed("Owned live pin imports", livePinnedImportsPreserveOrderAndFailures);
     timed("Live pin cancellation and memory", livePinnedImportsCancelAndRespectMemoryBudget);
+    timed("Live pin rendering memory", livePinnedImportsAdmitRenderingWorkingSet);
     timed("Live pin queued raster ownership",
           livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation);
     timed("Pinned record imports",
           [&] { pinnedRecordsImportSavedPixelsAndText(directory.path()); });
+    timed("Current pinned record snapshots", pinnedRecordsPreferCurrentSnapshots);
     timed("Remembered settings", [&] {
         rememberedSettingsMergeWithoutChangingOpenWindows(
             QDir(storage.configurationDirectory()).filePath(QStringLiteral("config.json")));
