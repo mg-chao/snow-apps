@@ -1890,6 +1890,20 @@ Files:
             <source>Convert to Image</source>
             <translation>转换为图片</translation>
         </message>
+        <message numerus="yes">
+            <source>Copied %n file(s)</source>
+            <translation>
+            <numerusform>已复制 %n 个文件</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Copied: %1; failed: %2</source>
+            <translation>已复制：%1；失败：%2</translation>
+        </message>
+        <message>
+            <source>Copy Files to Clipboard</source>
+            <translation>复制文件到剪贴板</translation>
+        </message>
         <message>
             <source>Copy original content</source>
             <translation>复制原始内容</translation>
@@ -1997,6 +2011,10 @@ Files:
         <message>
             <source>Image Editing</source>
             <translation>图片编辑</translation>
+        </message>
+        <message>
+            <source>Image Stitching</source>
+            <translation>图片拼接</translation>
         </message>
         <message>
             <source>Image file</source>
@@ -2121,6 +2139,10 @@ Files:
         <message>
             <source>Save displayed windows</source>
             <translation>保存已显示的窗口</translation>
+        </message>
+        <message>
+            <source>Save selected windows</source>
+            <translation>保存选中的窗口</translation>
         </message>
         <message numerus="yes">
             <source>Saved %n window(s)</source>
@@ -2463,6 +2485,10 @@ Files:
             <translation>关闭其他窗口</translation>
         </message>
         <message>
+            <source>Copy Files to Clipboard</source>
+            <translation>复制文件到剪贴板</translation>
+        </message>
+        <message>
             <source>Delete Empty Groups</source>
             <translation>删除空分组</translation>
         </message>
@@ -2517,6 +2543,10 @@ Files:
         <message>
             <source>New Group</source>
             <translation>新建分组</translation>
+        </message>
+        <message>
+            <source>Save as File</source>
+            <translation>保存为文件</translation>
         </message>
         <message>
             <source>The displayed windows could not be destroyed</source>

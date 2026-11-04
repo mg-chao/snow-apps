@@ -55,6 +55,11 @@ int main(int argc, char** argv) {
                 screenshotBefore.value(QStringLiteral("print")) ==
                     defaults.value(QStringLiteral("print")),
             "screenshot and pin print shortcuts must default to Ctrl+P");
+    require(defaults.value(QStringLiteral("batch_image_stitching")) ==
+                    snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+J")} &&
+                defaults.value(QStringLiteral("batch_copy_files_to_clipboard")) ==
+                    snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+C")},
+            "batch stitching and file copying must expose their default shortcuts");
     {
         snow_shot::presentation::GlobalShortcutManager globalShortcuts;
         settings::BuiltInSettingsBackend backend(globalShortcuts);
@@ -97,22 +102,23 @@ int main(int argc, char** argv) {
                 "reset must restore defaults after Enter assignments");
         for (const QString& id : {QStringLiteral("always_on_top"), QStringLiteral("show_border"),
                                   QStringLiteral("show_shadow"), QStringLiteral("toggle_lock"),
-                                  QStringLiteral("print")}) {
+                                  QStringLiteral("print"), QStringLiteral("batch_image_stitching"),
+                                  QStringLiteral("batch_copy_files_to_clipboard")}) {
             require(session.localShortcuts(scope, id) == defaults.value(id),
-                    "settings must expose default window management shortcuts");
+                    "settings must expose default pinned shortcuts");
             require(
                 session.applyLocalShortcuts(scope, id, {QStringLiteral("Ctrl+Alt+F12")}) &&
                     pinned.shortcuts(id) ==
                         snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F12")},
-                "settings must accept custom window management shortcuts");
+                "settings must accept custom pinned shortcuts");
             const QString other = id == QStringLiteral("always_on_top")
                                       ? QStringLiteral("show_border")
                                       : QStringLiteral("always_on_top");
             require(!session.applyLocalShortcuts(scope, other, {QStringLiteral("Ctrl+Alt+F12")}) &&
                         pinned.shortcuts(other) == defaults.value(other),
-                    "window management shortcuts must reject conflicting keys");
+                    "pinned shortcuts must reject conflicting keys");
             require(session.applyLocalShortcuts(scope, id, {}) && pinned.shortcuts(id).isEmpty(),
-                    "settings must support disabling window management shortcuts");
+                    "settings must support disabling pinned shortcuts");
             require(
                 session.reset(settings::SettingsSectionReset::PinToScreenShortcuts) &&
                     pinned.allShortcuts() == defaults &&
@@ -174,8 +180,13 @@ int main(int argc, char** argv) {
                                             {QStringLiteral("Ctrl+Alt+T")}) &&
                     session.applyLocalShortcuts(scope, QStringLiteral("show_shadow"),
                                                 {QStringLiteral("Ctrl+Alt+Y")}) &&
+                    session.applyLocalShortcuts(scope, QStringLiteral("batch_image_stitching"),
+                                                {QStringLiteral("Ctrl+Alt+F9")}) &&
+                    session.applyLocalShortcuts(scope,
+                                                QStringLiteral("batch_copy_files_to_clipboard"),
+                                                {QStringLiteral("Ctrl+Alt+F10")}) &&
                     session.applyLocalShortcuts(scope, QStringLiteral("show_border"), {}),
-                "prepare custom and disabled window management shortcuts");
+                "prepare custom and disabled pinned shortcuts");
     }
     require(applicationStorage.flushNow().success, "save pinned shortcut configuration");
     applicationStorage.shutdown();
@@ -184,6 +195,10 @@ int main(int argc, char** argv) {
                     snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+T")} &&
                 pinned.shortcuts(QStringLiteral("show_shadow")) ==
                     snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+Y")} &&
+                pinned.shortcuts(QStringLiteral("batch_image_stitching")) ==
+                    snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F9")} &&
+                pinned.shortcuts(QStringLiteral("batch_copy_files_to_clipboard")) ==
+                    snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F10")} &&
                 pinned.shortcuts(QStringLiteral("show_border")).isEmpty() &&
                 storage::PinToScreenSettings().lockedBorderColor() == QColor(160, 100, 30) &&
                 !storage::PinToScreenSettings().showBorderByDefault() &&
@@ -191,7 +206,7 @@ int main(int argc, char** argv) {
                 storage::PinToScreenSettings().shadowColor() == QColor(30, 40, 50, 60) &&
                 storage::PinToScreenSettings().shadowActiveColor() == QColor(70, 80, 90, 100) &&
                 storage::PinToScreenSettings().lockedShadowColor() == QColor(110, 120, 130, 140),
-            "custom and disabled window management shortcuts must survive restart");
+            "custom and disabled pinned shortcuts must survive restart");
     applicationStorage.shutdown();
     return 0;
 }

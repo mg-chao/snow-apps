@@ -1893,10 +1893,14 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 drawingShortcuts->items.at(2).payload)
                     .scope == settings::SettingsLocalShortcutScope::Drawing &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 38 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 40 &&
             pinToScreenShortcuts->items.at(36).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/batch_select_all") &&
             pinToScreenShortcuts->items.at(37).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/batch_image_stitching") &&
+            pinToScreenShortcuts->items.at(38).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/batch_copy_files_to_clipboard") &&
+            pinToScreenShortcuts->items.at(39).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/batch_save_as_file") &&
             playbackShortcutContractsMatch &&
             pinToScreenShortcuts->itemLayout ==
@@ -4084,10 +4088,12 @@ int main(int argc, char** argv) {
         require(catalog.validationErrors().isEmpty(), "batch shortcuts preserve catalog validity");
         const auto* section = catalog.section(QStringLiteral("shortcuts-mouse"),
                                               QStringLiteral("pin-to-screen-shortcuts"));
-        require(section && section->items.size() == 38,
-                "pinned shortcuts expose the two batch additions");
+        require(section && section->items.size() == 40,
+                "pinned shortcuts expose all four batch commands");
         for (const auto& id :
-             {QStringLiteral("batch_select_all"), QStringLiteral("batch_save_as_file")}) {
+             {QStringLiteral("batch_select_all"), QStringLiteral("batch_image_stitching"),
+              QStringLiteral("batch_copy_files_to_clipboard"),
+              QStringLiteral("batch_save_as_file")}) {
             const auto* item = catalog.item({QStringLiteral("shortcuts-mouse"),
                                              QStringLiteral("pin-to-screen-shortcuts"),
                                              QStringLiteral("pin-to-screen-shortcut.") + id});

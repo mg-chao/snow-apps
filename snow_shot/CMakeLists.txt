@@ -3474,6 +3474,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-pin-to-screen-shortcut-settings-tests
         tests/pin_to_screen_shortcut_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        src/presentation/services/screenshotexportcoordinator.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     )
     target_link_libraries(snow-shot-pin-to-screen-shortcut-settings-tests PRIVATE
         snow_shot_settings
@@ -5568,6 +5572,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-batch-actions-tests
         COMMAND snow-shot-pinned-window-tests --batch-actions-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-batch-actions-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
+    add_test(NAME snow-shot-pinned-copy-ordering-tests
+        COMMAND snow-shot-pinned-window-tests --copy-ordering-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-copy-ordering-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
     add_test(NAME snow-shot-pinned-hide-to-top-tests
         COMMAND snow-shot-pinned-window-tests --hide-to-top-only -platform offscreen)

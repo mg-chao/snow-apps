@@ -110,9 +110,10 @@ std::atomic<quint64> g_latestPublicationId{0};
 struct ClipboardPublishAttempt final {
     ScreenshotClipboardCommitFailure failure = ScreenshotClipboardCommitFailure::None;
     quint32 nativeError = 0;
+    bool superseded = false;
 
     [[nodiscard]] bool succeeded() const {
-        return failure == ScreenshotClipboardCommitFailure::None;
+        return failure == ScreenshotClipboardCommitFailure::None && !superseded;
     }
 };
 
@@ -160,6 +161,13 @@ class ClipboardCommitOperation final : public QObject {
         if (guardedOperation.isNull() || m_finished) {
             return;
         }
+        if (attempt.superseded) {
+            ScreenshotClipboardCommitResult result;
+            result.attempts = m_attempts;
+            result.superseded = true;
+            finish(result, true);
+            return;
+        }
         if (attempt.succeeded()) {
             ScreenshotClipboardCommitResult result;
             result.attempts = m_attempts;
@@ -201,6 +209,7 @@ class ClipboardCommitOperation final : public QObject {
         const bool cancelled = !notify ||
                                !m_state->completionEnabled.load(std::memory_order_acquire) ||
                                result.failure == ScreenshotClipboardCommitFailure::Cancelled;
+        const bool superseded = result.superseded;
         snow_shot::diagnostics::logEvent(
             QStringLiteral("snow_shot.clipboard"), QStringLiteral("clipboard.finished"),
             {{QStringLiteral("operation"), m_operation},
@@ -208,9 +217,10 @@ class ClipboardCommitOperation final : public QObject {
              {QStringLiteral("count"), result.attempts},
              {QStringLiteral("code"), static_cast<qint64>(result.nativeError)},
              {QStringLiteral("outcome"), cancelled            ? QStringLiteral("cancelled")
-                                         : result.succeeded() ? QStringLiteral("succeeded")
-                                                              : QStringLiteral("failed")}},
-            cancelled || result.succeeded() ? QtInfoMsg : QtWarningMsg);
+                                         : superseded           ? QStringLiteral("superseded")
+                                         : result.succeeded()   ? QStringLiteral("succeeded")
+                                                                : QStringLiteral("failed")}},
+            cancelled || superseded || result.succeeded() ? QtInfoMsg : QtWarningMsg);
         auto completion = std::move(m_completion);
         if (notify && m_state->completionEnabled.load(std::memory_order_acquire) &&
             !m_receiver.isNull() && completion) {
@@ -895,7 +905,7 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
     Q_UNUSED(clipboard);
     auto attempt = [sharedPayload, publicationId]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
-            return ClipboardPublishAttempt{};
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::None, 0, true};
         }
         if (!sharedPayload->isValid())
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
@@ -908,7 +918,7 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
     const QPointer<QClipboard> guardedClipboard(clipboard);
     auto attempt = [guardedClipboard, sharedPayload, publicationId]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
-            return ClipboardPublishAttempt{};
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::None, 0, true};
         }
         if (guardedClipboard.isNull()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::ClipboardUnavailable,
@@ -981,7 +991,7 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
                     placementBytes, appearanceFormat, appearanceBytes,
                     nativeFilePublication = std::move(nativeFilePublication)]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
-            return ClipboardPublishAttempt{};
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::None, 0, true};
         }
         if (guardedClipboard.isNull()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::ClipboardUnavailable,

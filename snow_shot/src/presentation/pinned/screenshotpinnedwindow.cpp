@@ -189,8 +189,10 @@ QTransform imagePixelsToCanvasTransform(const QTransform& imageTransform,
     return imageTransform * pixelsToCanvas;
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 constexpr quint32 kTextTranslationPayloadMarker = 0x53535452;
 constexpr quint8 kTextTranslationPayloadVersion = 2;
+#endif
 
 QList<QKeyCombination> standardKeyCombinations(QKeySequence::StandardKey standardKey) {
     QList<QKeyCombination> combinations;
@@ -1241,7 +1243,8 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
                                     m_shortcutManager->addBinding(this, std::move(save)));
 
     for (const auto& id :
-         {QStringLiteral("batch_select_all"), QStringLiteral("batch_save_as_file")}) {
+         {QStringLiteral("batch_select_all"), QStringLiteral("batch_image_stitching"),
+          QStringLiteral("batch_copy_files_to_clipboard"), QStringLiteral("batch_save_as_file")}) {
         ShortcutManager::Binding batch;
         batch.id = QStringLiteral("pinned.") + id;
         batch.priority = ShortcutManager::StandardPriority::WindowCommand;
@@ -1249,12 +1252,18 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
             return localCommandsAllowed(context) && m_firstContentFramePublished &&
                    QApplication::activeModalWidget() == nullptr &&
                    (context.event == nullptr || !context.event->isAutoRepeat()) &&
-                   (id == QStringLiteral("batch_select_all") ? bool(m_selectionController)
-                                                             : !batchSavePending());
+                   ((id == QStringLiteral("batch_select_all") ||
+                     id == QStringLiteral("batch_image_stitching"))
+                        ? bool(m_selectionController)
+                        : !batchSavePending());
         };
         batch.activate = [this, id](const auto&) {
             if (id == QStringLiteral("batch_select_all"))
                 selectAllDisplayedPinnedWindows();
+            else if (id == QStringLiteral("batch_image_stitching"))
+                stitchDisplayedPinnedWindows();
+            else if (id == QStringLiteral("batch_copy_files_to_clipboard"))
+                copyPinnedWindowFiles(displayedPinnedWindows());
             else
                 saveDisplayedPinnedWindows();
             return true;
@@ -1550,6 +1559,8 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
         {"batch_select_all", "screenshotPinnedBatchSelectAllAction"},
+        {"batch_image_stitching", "screenshotPinnedBatchImageStitchingAction"},
+        {"batch_copy_files_to_clipboard", "screenshotPinnedBatchCopyFilesToClipboardAction"},
         {"batch_save_as_file", "screenshotPinnedBatchSaveAsFileAction"},
         {"upload_to_cloud", nullptr},
         {"print", nullptr},
@@ -6273,7 +6284,7 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
         copyCurrentViewport();
         return;
     }
-    invalidatePendingCopy();
+    const auto publicationId = beginCopyRequest();
     if (m_recognitionSession->tableModeActive() && m_recognitionContent != nullptr) {
         m_recognitionContent->commitActiveTableEdit();
     }
@@ -6288,7 +6299,8 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
             true);
         return;
     }
-    clipboard->setMimeData(mimeData.release(), QClipboard::Clipboard);
+    if (m_copyPublicationId == publicationId)
+        clipboard->setMimeData(mimeData.release(), QClipboard::Clipboard);
 }
 
 bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
@@ -6299,7 +6311,7 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     if (!mime) {
         return false;
     }
-    invalidatePendingCopy();
+    static_cast<void>(beginCopyRequest());
     if (QClipboard* clipboard = QApplication::clipboard()) {
         clipboard->setMimeData(mime.release());
     }
@@ -6658,30 +6670,36 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
 void ScreenshotPinnedWindow::copyCurrentViewportWithOptions(CopyOutputOptions output) {
     if (m_closing)
         return;
+    const auto publicationId = beginCopyRequest();
     const QPointer<ScreenshotPinnedWindow> receiver(this);
-    requestRenderedImageSnapshot([receiver, output](ScreenshotPinnedImageSnapshot snapshot) {
-        if (!receiver || receiver->m_closing)
-            return;
-        if (!snapshot.source.isValid() || !snapshot.error.isEmpty()) {
-            showPinnedRecognitionMessage(
-                receiver, translatePinnedText("The pinned image could not be prepared"), true);
-            return;
-        }
-        receiver->copyRenderedImage(
-            std::make_shared<ScreenshotExportArtifact>(std::move(snapshot.source)), output);
-    });
+    requestRenderedImageSnapshot(
+        [receiver, output, publicationId](ScreenshotPinnedImageSnapshot snapshot) {
+            if (!receiver || receiver->m_closing || receiver->m_copyPublicationId != publicationId)
+                return;
+            if (!snapshot.source.isValid() || !snapshot.error.isEmpty()) {
+                showPinnedRecognitionMessage(
+                    receiver, translatePinnedText("The pinned image could not be prepared"), true);
+                return;
+            }
+            receiver->copyRenderedImage(
+                std::make_shared<ScreenshotExportArtifact>(std::move(snapshot.source)), output,
+                publicationId);
+        });
 }
 
 void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact) {
-    copyRenderedImage(std::move(artifact),
-                      CopyOutputOptions(snow_shot::storage::ScreenshotSettings()));
-}
-
-void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact,
-                                               const CopyOutputOptions& output) {
     if (m_closing || !artifact)
         return;
-    invalidatePendingCopy();
+    const CopyOutputOptions output{snow_shot::storage::ScreenshotSettings()};
+    const auto publicationId = beginCopyRequest();
+    copyRenderedImage(std::move(artifact), output, publicationId);
+}
+
+void ScreenshotPinnedWindow::copyRenderedImage(
+    std::shared_ptr<ScreenshotExportArtifact> artifact, const CopyOutputOptions& output,
+    ScreenshotClipboardService::PublicationId publicationId) {
+    if (m_closing || !artifact || m_copyPublicationId != publicationId)
+        return;
     m_exportArtifact = artifact;
     const bool copyFile = output.copyFile;
     const bool autoSave = output.autoSave;
@@ -6736,48 +6754,27 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
                                             "The screenshot export queue is full")));
         }
     }
-    if (copyFile) {
-        if (!artifact->requestClipboardFile(
-                this, format, filenameFormat, encoding,
-                [this, current, finish, copyError,
-                 committed](ScreenshotExportClipboardResult prepared) {
-                    if (!current())
-                        return;
-                    if (!prepared.succeeded()) {
-                        copyError(prepared.error);
-                        finish();
-                        return;
-                    }
-                    m_clipboardCommit = ScreenshotClipboardService::commit(
-                        QApplication::clipboard(), this, std::move(prepared.payload), committed);
-                    if (!m_clipboardCommit.isValid()) {
-                        copyError(
-                            translatePinnedText("The pinned image copy could not be started"));
-                        finish();
-                    }
-                },
-                pdf, output.requestedAt)) {
+    const auto prepared = [this, current, finish, copyError, committed,
+                           publicationId](ScreenshotExportClipboardResult result) {
+        if (!current())
+            return;
+        if (!result.succeeded()) {
+            copyError(result.error);
+            finish();
+            return;
+        }
+        m_clipboardCommit = ScreenshotClipboardService::commit(
+            QApplication::clipboard(), this, std::move(result.payload), publicationId, committed);
+        if (!m_clipboardCommit.isValid()) {
             copyError(translatePinnedText("The pinned image copy could not be started"));
             finish();
         }
-        return;
-    }
-    if (!artifact->requestClipboard(this, [this, current, finish, copyError,
-                                           committed](ScreenshotExportClipboardResult result) {
-            if (!current())
-                return;
-            if (!result.succeeded()) {
-                copyError(result.error);
-                finish();
-                return;
-            }
-            m_clipboardCommit = ScreenshotClipboardService::commit(
-                QApplication::clipboard(), this, std::move(result.payload), committed);
-            if (!m_clipboardCommit.isValid()) {
-                copyError(translatePinnedText("The pinned image copy could not be started"));
-                finish();
-            }
-        })) {
+    };
+    const bool started =
+        copyFile ? artifact->requestClipboardFile(this, format, filenameFormat, encoding, prepared,
+                                                  pdf, output.requestedAt)
+                 : artifact->requestClipboard(this, prepared);
+    if (!started) {
         copyError(translatePinnedText("The pinned image copy could not be started"));
         finish();
     }
@@ -6804,10 +6801,10 @@ void ScreenshotPinnedWindow::activateTextTranslation() {
 }
 
 void ScreenshotPinnedWindow::copyOriginalContent() {
-    if (isLiveWindow())
+    if (isLiveWindow() || m_closing)
         return;
+    const auto publicationId = beginCopyRequest();
     if (!m_originalClipboardContent.isEmpty()) {
-        invalidatePendingCopy();
         auto mimeData = std::make_unique<QMimeData>();
         if (!m_originalClipboardContent.html.isEmpty()) {
             mimeData->setHtml(m_originalClipboardContent.html);
@@ -6821,31 +6818,40 @@ void ScreenshotPinnedWindow::copyOriginalContent() {
         m_clipboard->setMimeData(std::move(mimeData));
         return;
     }
-    if (!m_originalClipboardContent.localFilePath.isEmpty()) {
-        auto mimeData = std::make_unique<QMimeData>();
-        mimeData->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
-        m_clipboard->setMimeData(std::move(mimeData));
+    copyOriginalImage(publicationId);
+}
+
+void ScreenshotPinnedWindow::copyOriginalImage(
+    ScreenshotClipboardService::PublicationId publicationId) {
+    if (m_closing || m_copyPublicationId != publicationId)
         return;
-    }
     if (m_originalImage.isNull()) {
-        requestMaterializedImage([this](bool succeeded) {
-            if (succeeded && !m_closing) {
-                copyOriginalContent();
-            } else if (!succeeded) {
+        const QPointer<ScreenshotPinnedWindow> receiver(this);
+        const auto generation = m_presentationGeneration;
+        const auto replacement = m_contentReplacementGeneration;
+        requestMaterializedImage([receiver, generation, replacement,
+                                  publicationId](bool succeeded) {
+            if (!receiver || receiver->m_closing ||
+                receiver->m_presentationGeneration != generation ||
+                receiver->m_contentReplacementGeneration != replacement ||
+                receiver->m_copyPublicationId != publicationId)
+                return;
+            if (succeeded) {
+                receiver->copyOriginalImage(publicationId);
+            } else {
                 showPinnedRecognitionMessage(
-                    this, translatePinnedText("The pinned image could not be prepared"), true);
+                    receiver, translatePinnedText("The pinned image could not be prepared"), true);
             }
         });
         return;
     }
-    invalidatePendingCopy();
     auto artifact = std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromImage(m_originalImage));
     m_exportArtifact = artifact;
     if (!artifact->requestClipboard(
-            this, [this, artifact](ScreenshotExportClipboardResult result) mutable {
+            this, [this, artifact, publicationId](ScreenshotExportClipboardResult result) mutable {
                 if (m_exportArtifact == artifact && !m_closing) {
-                    commitClipboardPayload(std::move(result.payload));
+                    commitClipboardPayload(std::move(result.payload), publicationId);
                     m_exportArtifact.reset();
                 }
             })) {
@@ -6869,11 +6875,14 @@ void ScreenshotPinnedWindow::requestRenderedImageSnapshot(
     auto pending = std::make_shared<Pending>();
     pending->ready = std::move(ready);
     const auto finish = [pending](ScreenshotPinnedImageSnapshot snapshot) {
-        if (!pending->ready)
+        // Disconnecting can release the slot that owns this closure. Keep the state alive and
+        // clear its completion before disconnecting or invoking code that can reenter us.
+        const auto state = pending;
+        auto callback = std::exchange(state->ready, {});
+        if (!callback)
             return;
-        QObject::disconnect(pending->invalidated);
-        QObject::disconnect(pending->destroyed);
-        auto callback = std::move(pending->ready);
+        QObject::disconnect(state->invalidated);
+        QObject::disconnect(state->destroyed);
         callback(std::move(snapshot));
     };
     const auto fail = [finish] {
@@ -7545,7 +7554,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -7917,10 +7926,11 @@ void ScreenshotPinnedWindow::saveAsFile() {
     }
 }
 
-void ScreenshotPinnedWindow::commitClipboardPayload(ScreenshotClipboardPayload payload) {
+void ScreenshotPinnedWindow::commitClipboardPayload(
+    ScreenshotClipboardPayload payload, ScreenshotClipboardService::PublicationId publicationId) {
     m_clipboardCommit.cancel();
     m_clipboardCommit = ScreenshotClipboardService::commit(
-        QApplication::clipboard(), this, std::move(payload),
+        QApplication::clipboard(), this, std::move(payload), publicationId,
         [this](ScreenshotClipboardCommitResult result) {
             if (!result.succeeded()) {
                 showPinnedRecognitionMessage(
@@ -7945,6 +7955,14 @@ void ScreenshotPinnedWindow::invalidatePendingCopy() {
     }
     m_clipboardCommit.cancel();
     m_clipboardCommit = {};
+}
+
+ScreenshotClipboardService::PublicationId ScreenshotPinnedWindow::beginCopyRequest() {
+    // Export invalidation also runs while committing canvas edits for a snapshot. Only a new
+    // clipboard request supersedes older preparation, including requests owned by other pins.
+    invalidatePendingCopy();
+    m_copyPublicationId = ScreenshotClipboardService::reservePublication();
+    return m_copyPublicationId;
 }
 
 void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
@@ -9391,6 +9409,11 @@ void ScreenshotPinnedWindow::selectAllDisplayedPinnedWindows() {
         m_selectionController->selectAll(displayedPinnedWindows());
 }
 
+void ScreenshotPinnedWindow::stitchDisplayedPinnedWindows() {
+    if (m_selectionController)
+        m_selectionController->stitchWindows(displayedPinnedWindows());
+}
+
 void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu* menu) {
     m_batchActionsMenu = menu;
     menu->setObjectName(QStringLiteral("screenshotPinnedBatchActionsMenu"));
@@ -9404,6 +9427,11 @@ void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu
     };
     add(tr("Select All"), "Select All", "screenshotPinnedBatchSelectAllAction",
         [this] { selectAllDisplayedPinnedWindows(); });
+    add(tr("Image Stitching"), "Image Stitching", "screenshotPinnedBatchImageStitchingAction",
+        [this] { stitchDisplayedPinnedWindows(); });
+    add(tr("Copy Files to Clipboard"), "Copy Files to Clipboard",
+        "screenshotPinnedBatchCopyFilesToClipboardAction",
+        [this] { copyPinnedWindowFiles(displayedPinnedWindows()); });
     add(tr("Save as File"), "Save as File", "screenshotPinnedBatchSaveAsFileAction",
         [this] { saveDisplayedPinnedWindows(); });
     menu->addSeparator();
@@ -9476,7 +9504,10 @@ void ScreenshotPinnedWindow::refreshBatchActionsMenu() {
                           });
             if (name == QStringLiteral("screenshotPinnedBatchDestroyAction"))
                 enabled = enabled && m_selectionController;
-            if (name == QStringLiteral("screenshotPinnedBatchSaveAsFileAction"))
+            if (name == QStringLiteral("screenshotPinnedBatchImageStitchingAction"))
+                enabled = enabled && m_selectionController;
+            if (name == QStringLiteral("screenshotPinnedBatchSaveAsFileAction") ||
+                name == QStringLiteral("screenshotPinnedBatchCopyFilesToClipboardAction"))
                 enabled = enabled && !batchSavePending();
             action->setEnabled(enabled);
         }

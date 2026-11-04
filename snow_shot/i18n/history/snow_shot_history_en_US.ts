@@ -1897,6 +1897,21 @@ Files:
             <source>Convert to Image</source>
             <translation>Convert to Image</translation>
         </message>
+        <message numerus="yes">
+            <source>Copied %n file(s)</source>
+            <translation>
+            <numerusform>Copied %n file</numerusform>
+            <numerusform>Copied %n files</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Copied: %1; failed: %2</source>
+            <translation>Copied: %1; failed: %2</translation>
+        </message>
+        <message>
+            <source>Copy Files to Clipboard</source>
+            <translation>Copy Files to Clipboard</translation>
+        </message>
         <message>
             <source>Copy original content</source>
             <translation>Copy original content</translation>
@@ -2004,6 +2019,10 @@ Files:
         <message>
             <source>Image Editing</source>
             <translation>Image Editing</translation>
+        </message>
+        <message>
+            <source>Image Stitching</source>
+            <translation>Image Stitching</translation>
         </message>
         <message>
             <source>Image file</source>
@@ -2128,6 +2147,10 @@ Files:
         <message>
             <source>Save displayed windows</source>
             <translation>Save displayed windows</translation>
+        </message>
+        <message>
+            <source>Save selected windows</source>
+            <translation>Save selected windows</translation>
         </message>
         <message numerus="yes">
             <source>Saved %n window(s)</source>
@@ -2472,6 +2495,10 @@ Files:
             <translation>Close Other Windows</translation>
         </message>
         <message>
+            <source>Copy Files to Clipboard</source>
+            <translation>Copy Files to Clipboard</translation>
+        </message>
+        <message>
             <source>Delete Empty Groups</source>
             <translation>Delete Empty Groups</translation>
         </message>
@@ -2528,6 +2555,10 @@ Files:
         <message>
             <source>New Group</source>
             <translation>New Group</translation>
+        </message>
+        <message>
+            <source>Save as File</source>
+            <translation>Save as File</translation>
         </message>
         <message>
             <source>The displayed windows could not be destroyed</source>

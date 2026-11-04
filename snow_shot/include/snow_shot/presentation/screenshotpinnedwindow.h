@@ -477,7 +477,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void scheduleDeferredPresentationSetup();
     void finishDeferredPresentationSetup(quint64 generation);
     void finishPresentation(bool succeeded, QImage image = {});
-    void commitClipboardPayload(ScreenshotClipboardPayload payload);
+    void commitClipboardPayload(ScreenshotClipboardPayload payload,
+                                ScreenshotClipboardService::PublicationId publicationId);
     void ensureEditController();
     void configureEditToolbar(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
     void setEditMode(bool enabled);
@@ -523,6 +524,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     struct CopyOutputOptions;
     void copyCurrentViewportWithOptions(CopyOutputOptions output);
     void copyOriginalContent();
+    void copyOriginalImage(ScreenshotClipboardService::PublicationId publicationId);
     void loadImageFile();
     void loadClipboardContent();
     void requestContentReplacement(QStringList paths,
@@ -537,6 +539,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void saveAsFile();
     void saveDisplayedPinnedWindows();
     void saveDisplayedPinnedWindowsToDirectory(const QString& directory);
+    void savePinnedWindows(const QList<QPointer<ScreenshotPinnedWindow>>& targets, bool selected);
+    void copyPinnedWindowFiles(const QList<QPointer<ScreenshotPinnedWindow>>& targets);
+    void stitchDisplayedPinnedWindows();
     [[nodiscard]] static bool batchSavePending();
     void uploadToCloud();
     void cancelCloudUpload();
@@ -552,9 +557,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] std::optional<QByteArray> exportDocumentSnapshot() const;
     void quickSave();
     void invalidatePendingCopy();
+    [[nodiscard]] ScreenshotClipboardService::PublicationId beginCopyRequest();
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact,
-                           const CopyOutputOptions& output);
+                           const CopyOutputOptions& output,
+                           ScreenshotClipboardService::PublicationId publicationId);
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
     void applyImageTransform(const QTransform& transform, int quarterTurns);
@@ -715,6 +722,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QMap<QString, quint64> m_pinnedShortcutBindings;
     QHash<QString, QString> m_pinnedShortcutDisplays;
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
+    ScreenshotClipboardService::PublicationId m_copyPublicationId = 0;
     struct PinnedRenderCache;
     std::unique_ptr<PinnedRenderCache> m_pinnedRenderCache;
     std::shared_ptr<ScreenshotExportArtifact> m_nativeExportArtifact;

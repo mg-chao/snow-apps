@@ -1516,6 +1516,14 @@
             <translation>Barcode recognition</translation>
         </message>
         <message>
+            <source>Batch Actions: Copy Files to Clipboard</source>
+            <translation>Batch Actions: Copy Files to Clipboard</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Image Stitching</source>
+            <translation>Batch Actions: Image Stitching</translation>
+        </message>
+        <message>
             <source>Batch Actions: Save as File</source>
             <translation>Batch Actions: Save as File</translation>
         </message>

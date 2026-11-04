@@ -1516,6 +1516,14 @@
             <translation>条码识别</translation>
         </message>
         <message>
+            <source>Batch Actions: Copy Files to Clipboard</source>
+            <translation>批量操作：复制文件到剪贴板</translation>
+        </message>
+        <message>
+            <source>Batch Actions: Image Stitching</source>
+            <translation>批量操作：图片拼接</translation>
+        </message>
+        <message>
             <source>Batch Actions: Save as File</source>
             <translation>批量操作：保存为文件</translation>
         </message>
