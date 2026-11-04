@@ -44,6 +44,7 @@ class PinnedWindowSelectionController final : public QObject {
     void deselectWindow(ScreenshotPinnedWindow* window);
     void clearSelection();
     void selectAll(const QList<QPointer<ScreenshotPinnedWindow>>& targets);
+    void stitchWindows(const QList<QPointer<ScreenshotPinnedWindow>>& targets);
     void destroyWindows(ScreenshotPinnedWindow* owner,
                         const QList<QPointer<ScreenshotPinnedWindow>>& targets);
     // Returns true when selection routing owns this context menu event.

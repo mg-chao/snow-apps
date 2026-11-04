@@ -81,7 +81,10 @@ struct ScreenshotClipboardCommitResult final {
     ScreenshotClipboardCommitFailure failure = ScreenshotClipboardCommitFailure::None;
     quint32 nativeError = 0;
     int attempts = 0;
+    // A newer request took precedence before this publication reached the clipboard.
+    bool superseded = false;
 
+    // Supersession is a successful no-op; inspect superseded when actual publication matters.
     [[nodiscard]] bool succeeded() const {
         return failure == ScreenshotClipboardCommitFailure::None;
     }
@@ -109,6 +112,8 @@ class ScreenshotClipboardService final {
     using PublicationId = quint64;
     using CommitCompletion = std::function<void(ScreenshotClipboardCommitResult)>;
 
+    // Reserve before asynchronous preparation and carry the ID through commit so request order
+    // wins over completion order.
     [[nodiscard]] static PublicationId reservePublication();
 
     // Callers snapshot image export settings before scheduling asynchronous preparation.

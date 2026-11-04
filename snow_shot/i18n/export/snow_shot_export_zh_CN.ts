@@ -144,6 +144,10 @@
             <translation>保存已取消</translation>
         </message>
         <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>截图文件名格式无效</translation>
+        </message>
+        <message>
             <source>WebP image (*.webp)</source>
             <translation>WebP 图像 (*.webp)</translation>
         </message>

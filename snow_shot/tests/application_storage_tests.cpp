@@ -1975,7 +1975,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 38 &&
+        defaults.size() == 40 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
@@ -2032,9 +2032,13 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose thirty-eight stable actions and defaults");
+        "pinned-window shortcut adapter must expose forty stable actions and defaults");
     require(portable(defaults.value(QStringLiteral("batch_select_all"))) ==
                     QStringList{QStringLiteral("Ctrl+Alt+A")} &&
+                portable(defaults.value(QStringLiteral("batch_image_stitching"))) ==
+                    QStringList{QStringLiteral("Ctrl+Alt+J")} &&
+                portable(defaults.value(QStringLiteral("batch_copy_files_to_clipboard"))) ==
+                    QStringList{QStringLiteral("Ctrl+Alt+C")} &&
                 portable(defaults.value(QStringLiteral("batch_save_as_file"))) ==
                     QStringList{QStringLiteral("Ctrl+Alt+S")},
             "batch shortcut defaults must be exposed by the typed adapter");

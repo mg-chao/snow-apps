@@ -1186,6 +1186,10 @@ class ScreenshotPinnedWindowTestAccess {
     static void batchSave(ScreenshotPinnedWindow& window, const QString& directory) {
         window.saveDisplayedPinnedWindowsToDirectory(directory);
     }
+    static void batchCopy(ScreenshotPinnedWindow& window,
+                          const QList<QPointer<ScreenshotPinnedWindow>>& targets) {
+        window.copyPinnedWindowFiles(targets);
+    }
     static bool batchSaving() {
         return ScreenshotPinnedWindow::batchSavePending();
     }
@@ -24115,6 +24119,14 @@ void pinnedImageStitchingSnapshots() {
     requireColorNear(
         original.pixelColor(40, 40), QColor(42, 84, 126, 128), 1,
         "snapshots retain content opacity while excluding later edits and window decorations");
+    fixture.selection.clearSelection();
+    fixture.selection.stitchWindows({});
+    require(requests == 1, "an empty target list does not open stitching");
+    fixture.selection.stitchWindows({&first, nullptr});
+    require(requests == 2 && snapshots.size() == 2 && snapshots[0].label == first.persistenceId() &&
+                snapshots[0].source.isValid() && !snapshots[1].source.isValid() &&
+                !snapshots[1].error.isEmpty() && fixture.selection.selectedCount() == 0,
+            "explicit stitching targets preserve order and failures independently of selection");
 }
 
 void pinnedImageStitchingTextAndDeferredContent() {
@@ -24230,26 +24242,33 @@ void pinnedMultiSelectionMenuAndLocks() {
         require(first.grab().save(screenshotPath),
                 "save selected pin screenshot for visual inspection");
     require(
-        actions.size() == 11 &&
+        actions.size() == 13 &&
             actions.at(0)->objectName() ==
                 QStringLiteral("screenshotPinnedSelectionImageStitching") &&
             actions.at(0)->text() == QStringLiteral("Image Stitching") &&
-            !actions.at(0)->icon().isNull() && actions.at(1)->isSeparator() &&
-            actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSelectionCloseOthers") &&
-            actions.at(3)->menu() && actions.at(3)->text() == QStringLiteral("Align Position") &&
-            actions.at(4)->menu() && actions.at(4)->text() == QStringLiteral("Group") &&
-            actions.at(5)->objectName() == QStringLiteral("screenshotPinnedSelectionLock") &&
-            actions.at(6)->isSeparator() &&
-            actions.at(7)->objectName() == QStringLiteral("screenshotPinnedSelectionClose") &&
-            actions.at(8)->objectName() == QStringLiteral("screenshotPinnedSelectionDestroy") &&
-            !menu.actionDanger(actions.at(7)) && menu.actionDanger(actions.at(8)) &&
-            actions.at(9)->isSeparator() &&
-            actions.at(10)->objectName() == QStringLiteral("screenshotPinnedSelectionCount") &&
-            !actions.at(10)->isEnabled() && actions.at(10)->text().contains(QStringLiteral("2")),
-        "multi-selection exposes stitching first followed by a separator and eleven rows with the "
+            !actions.at(0)->icon().isNull() &&
+            actions.at(1)->objectName() ==
+                QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard") &&
+            actions.at(1)->text() == QStringLiteral("Copy Files to Clipboard") &&
+            !actions.at(1)->icon().isNull() &&
+            actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSelectionSaveAsFile") &&
+            actions.at(2)->text() == QStringLiteral("Save as File") &&
+            !actions.at(2)->icon().isNull() && actions.at(3)->isSeparator() &&
+            actions.at(4)->objectName() == QStringLiteral("screenshotPinnedSelectionCloseOthers") &&
+            actions.at(5)->menu() && actions.at(5)->text() == QStringLiteral("Align Position") &&
+            actions.at(6)->menu() && actions.at(6)->text() == QStringLiteral("Group") &&
+            actions.at(7)->objectName() == QStringLiteral("screenshotPinnedSelectionLock") &&
+            actions.at(8)->isSeparator() &&
+            actions.at(9)->objectName() == QStringLiteral("screenshotPinnedSelectionClose") &&
+            actions.at(10)->objectName() == QStringLiteral("screenshotPinnedSelectionDestroy") &&
+            !menu.actionDanger(actions.at(9)) && menu.actionDanger(actions.at(10)) &&
+            actions.at(11)->isSeparator() &&
+            actions.at(12)->objectName() == QStringLiteral("screenshotPinnedSelectionCount") &&
+            !actions.at(12)->isEnabled() && actions.at(12)->text().contains(QStringLiteral("2")),
+        "multi-selection exposes stitching, copy files and save before the separator, with the "
         "disabled selection count at the bottom");
-    auto* alignment = actions.at(3)->menu();
-    auto* groupMenu = qobject_cast<adqt::widgets::AdContextMenu*>(actions.at(4)->menu());
+    auto* alignment = actions.at(5)->menu();
+    auto* groupMenu = qobject_cast<adqt::widgets::AdContextMenu*>(actions.at(6)->menu());
     require(groupMenu != nullptr, "multi-selection owns a group context submenu");
     auto& defaultGroup =
         pinnedSelectionAction(*groupMenu, QStringLiteral("screenshotPinnedSelectionGroup-default"));
@@ -24274,7 +24293,7 @@ void pinnedMultiSelectionMenuAndLocks() {
     }
     fixture.selection.toggleSelection(&third);
     auto& threeMenu = fixture.menu(first);
-    auto* threeAlign = threeMenu.actions().at(3)->menu();
+    auto* threeAlign = threeMenu.actions().at(5)->menu();
     require(pinnedSelectionAction(*threeAlign, operationName(Alignment::DistributeHorizontally))
                     .isEnabled() &&
                 pinnedSelectionAction(*threeAlign, operationName(Alignment::DistributeVertically))
@@ -24284,7 +24303,7 @@ void pinnedMultiSelectionMenuAndLocks() {
     auto& mixedMenu = fixture.menu(first);
     auto& mixedLock =
         pinnedSelectionAction(mixedMenu, QStringLiteral("screenshotPinnedSelectionLock"));
-    require(!mixedLock.isChecked() && !mixedMenu.actions().at(3)->isEnabled(),
+    require(!mixedLock.isChecked() && !mixedMenu.actions().at(5)->isEnabled(),
             "mixed lock states keep a uniform lock action and disable alignment");
     mixedLock.trigger();
     require(
@@ -24309,6 +24328,100 @@ void pinnedMultiSelectionMenuAndLocks() {
     require(first.sourcePinAvailable() && second.sourcePinAvailable() && third.sourcePinAvailable(),
             "actions from a stale selection revision cannot close a changed selection");
     fixture.selection.clearSelection();
+}
+
+void pinnedMultiSelectionFileExports() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const snow_shot::storage::ScreenshotSettings settings;
+    const auto previousFormat = settings.imageFormat();
+    const auto previousAutoName = settings.autoSaveFilenameFormat();
+    const auto previousManualFormat = settings.lastManualSaveFormat();
+    const auto previousManualName = settings.manualSaveFilenameFormat();
+    const auto previousDirectory = settings.lastManualSaveDirectory();
+    const bool nativeDialogsDisabled = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+    const auto restore = qScopeGuard([&] {
+        settings.setImageFormat(previousFormat);
+        settings.setAutoSaveFilenameFormat(previousAutoName);
+        settings.setLastManualSaveFormat(previousManualFormat);
+        settings.setManualSaveFilenameFormat(previousManualName);
+        settings.setLastManualSaveDirectory(previousDirectory);
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, nativeDialogsDisabled);
+    });
+    require(settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("SelectedCopy")) &&
+                settings.setLastManualSaveFormat(QStringLiteral("png")) &&
+                settings.setManualSaveFilenameFormat(QStringLiteral("Selected")),
+            "selected export uses deterministic image formats and filenames");
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    PinnedSelectionFixture fixture;
+    auto& first = fixture.add({40, 60}, {120, 80});
+    auto& second = fixture.add({230, 160}, {90, 60});
+    fixture.add({420, 260}, {150, 100});
+    fixture.selection.toggleSelection(&second);
+    fixture.selection.toggleSelection(&first);
+    auto& copyMenu = fixture.menu(first);
+    pinnedSelectionAction(copyMenu, QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"))
+        .trigger();
+    pinned_batch_test::waitForSave();
+    const auto urls = exportedClipboardUrls();
+    require(urls.size() == 2 && QImage(urls[0].toLocalFile()).size() == QSize(90, 60) &&
+                QImage(urls[1].toLocalFile()).size() == QSize(120, 80) &&
+                fixture.selection.selectedCount() == 2,
+            "selected file copy publishes only the selected pins in selection order");
+
+    QTemporaryDir output;
+    require(output.isValid(), "selected save has an isolated destination");
+    bool folderPrompted = false;
+    QTimer accept;
+    accept.setInterval(10);
+    QObject::connect(&accept, &QTimer::timeout, &first, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                folderPrompted =
+                    dialog->fileMode() == QFileDialog::Directory &&
+                    dialog->windowTitle() == ScreenshotPinnedWindow::tr("Save selected windows");
+                dialog->setDirectory(output.path());
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+            }
+        }
+    });
+    auto& saveMenu = fixture.menu(first);
+    accept.start();
+    pinnedSelectionAction(saveMenu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"))
+        .trigger();
+    accept.stop();
+    pinned_batch_test::waitForSave();
+    require(folderPrompted && QDir(output.path()).entryList(QDir::Files).size() == 2 &&
+                QImage(output.filePath(QStringLiteral("Selected_1.png"))).size() == QSize(90, 60) &&
+                QImage(output.filePath(QStringLiteral("Selected_2.png"))).size() == QSize(120, 80),
+            "selected save prompts for a folder and exports only selected pins in selection order");
+
+    QTemporaryDir concurrent;
+    Access::batchSave(first, concurrent.path());
+    auto& busyMenu = fixture.menu(first);
+    require(
+        !pinnedSelectionAction(busyMenu,
+                               QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"))
+                .isEnabled() &&
+            !pinnedSelectionAction(busyMenu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"))
+                 .isEnabled(),
+        "selected file exports are disabled while another batch export is pending");
+    pinned_batch_test::waitForSave();
+    QMetaObject::invokeMethod(&busyMenu, "aboutToShow", Qt::DirectConnection);
+    auto& staleCopy = pinnedSelectionAction(
+        busyMenu, QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"));
+    auto& staleSave =
+        pinnedSelectionAction(busyMenu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"));
+    require(staleCopy.isEnabled() && staleSave.isEnabled(),
+            "reopening the menu enables selected file exports after a pending batch completes");
+    fixture.selection.deselectWindow(&first);
+    folderPrompted = false;
+    accept.start();
+    staleCopy.trigger();
+    staleSave.trigger();
+    accept.stop();
+    require(!Access::batchSaving() && exportedClipboardUrls() == urls && !folderPrompted,
+            "stale selected file-export actions cannot copy files or open a save dialog");
 }
 
 void pinnedMultiSelectionCloseAndGroups() {
@@ -24349,7 +24462,7 @@ void pinnedMultiSelectionCloseAndGroups() {
         fixture.selection.toggleSelection(&first);
         fixture.selection.toggleSelection(&second);
         auto& menu = fixture.menu(first);
-        auto* group = menu.actions().at(4)->menu();
+        auto* group = menu.actions().at(6)->menu();
         pinnedSelectionAction(*group,
                               QStringLiteral("screenshotPinnedSelectionGroup-%1").arg(*destination))
             .trigger();
@@ -24371,7 +24484,7 @@ void pinnedMultiSelectionCloseAndGroups() {
         fixture.selection.toggleSelection(&first);
         fixture.selection.toggleSelection(&second);
         auto& menu = fixture.menu(first);
-        auto* group = menu.actions().at(4)->menu();
+        auto* group = menu.actions().at(6)->menu();
         pinnedSelectionAction(*group, QStringLiteral("screenshotPinnedSelectionNewGroup"))
             .trigger();
         auto* modal = first.findChild<adqt::widgets::AdModal*>(
@@ -24725,6 +24838,11 @@ void pinnedMultiSelectionLiveLanguageAndTheme() {
                 QStringLiteral("Translated Lock") &&
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionImageStitching"))
                     .text() == QStringLiteral("Translated Image Stitching") &&
+            pinnedSelectionAction(menu,
+                                  QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"))
+                    .text() == QStringLiteral("Translated Copy Files to Clipboard") &&
+            pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"))
+                    .text() == QStringLiteral("Translated Save as File") &&
             modal->windowTitle() == QStringLiteral("Translated Destroy selected windows") &&
             modal->text() == QStringLiteral("Translated confirmation 2") &&
             modal->acceptText() == QStringLiteral("Translated Destroy") &&
@@ -27603,6 +27721,7 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "screenshot_pinned_crop_tests.h"
 #include "screenshot_pinned_menu_lifetime_tests.h"
 #include "pinned_export_snapshot_tests.h"
+#include "pinned_copy_ordering_tests.h"
 #ifdef SNOW_SHOT_LIVE_WINDOW_BENCHMARK
 #include "screenshot_pinned_crop_performance_benchmark.h"
 #endif
@@ -27627,6 +27746,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--copy-ordering-only"))) {
+            pinned_copy_ordering_tests::run();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--quick-text-annotation-only"))) {
             pinned_quick_text_annotation_tests::run();
             return 0;
@@ -27859,6 +27982,7 @@ int main(int argc, char* argv[]) {
             pinnedMultiSelectionCaptureLoss();
             pinnedMultiSelectionDeferredPersistence();
             pinnedMultiSelectionMenuAndLocks();
+            pinnedMultiSelectionFileExports();
             pinnedMultiSelectionCloseAndGroups();
             pinnedMultiSelectionCloseConfirmation();
             pinnedMultiSelectionDestroyConfirmation();

@@ -69,6 +69,8 @@ void menuSelectionAndModes() {
     auto* menu = first.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedBatchActionsMenu"));
     const QStringList names = {QStringLiteral("SelectAllAction"),
+                               QStringLiteral("ImageStitchingAction"),
+                               QStringLiteral("CopyFilesToClipboardAction"),
                                QStringLiteral("SaveAsFileAction"),
                                {},
                                QStringLiteral("EnableThumbnailAction"),
@@ -98,6 +100,21 @@ void menuSelectionAndModes() {
             menu->actionDanger(&action(first, "DestroyAction")) &&
             !menu->actionDanger(&action(first, "CloseAction")),
         "old action is replaced; count is read-only and only Destroy has danger styling");
+    QVector<ScreenshotPinnedImageSnapshot> stitched;
+    const auto stitching = QObject::connect(
+        &fixture.selection, &PinnedSelectionFixture::Controller::imageStitchingRequested, &first,
+        [&](const auto& snapshots) { stitched = snapshots; });
+    action(first, "ImageStitchingAction").trigger();
+    QElapsedTimer timer;
+    timer.start();
+    while (stitched.isEmpty() && timer.elapsed() < 10000)
+        waitForUi(5);
+    require(stitched.size() == targets.size(), "batch stitching includes every displayed mode");
+    for (qsizetype i = 0; i < stitched.size(); ++i)
+        require(stitched.at(i).label == targets.at(i)->persistenceId() &&
+                    stitched.at(i).error.isEmpty() && stitched.at(i).source.isValid(),
+                "batch stitching preserves displayed order and rendered snapshots");
+    QObject::disconnect(stitching);
     action(first, "SelectAllAction").trigger();
     if (fixture.selection.selectedCount() != 2 || !fixture.selection.isSelected(&first) ||
         !fixture.selection.isSelected(&second) || !second.persistenceSnapshot().lockedMode ||
@@ -172,6 +189,12 @@ void menuSelectionAndModes() {
     QCoreApplication::sendEvent(&first, &language);
     require(action(first, "EnableLockAction").text() ==
                     QStringLiteral("Translated Enable Lock Mode") &&
+                action(first, "ImageStitchingAction")
+                    .text()
+                    .startsWith(QStringLiteral("Translated Image Stitching")) &&
+                action(first, "CopyFilesToClipboardAction")
+                    .text()
+                    .startsWith(QStringLiteral("Translated Copy Files to Clipboard")) &&
                 action(first, "DisplayedCount").text() == QStringLiteral("Displayed translation 5"),
             "materialized batch menus and count retranslate live");
     second.hide();
@@ -185,8 +208,13 @@ void shortcuts() {
     fixture.add({230, 160});
     const snow_shot::storage::PinToScreenShortcutSettings settings;
     const auto previous = settings.shortcuts(QStringLiteral("batch_select_all"));
-    const auto restore =
-        qScopeGuard([&] { settings.setShortcuts(QStringLiteral("batch_select_all"), previous); });
+    const auto previousCopy = settings.shortcuts(QStringLiteral("batch_copy_files_to_clipboard"));
+    const auto previousStitching = settings.shortcuts(QStringLiteral("batch_image_stitching"));
+    const auto restore = qScopeGuard([&] {
+        settings.setShortcuts(QStringLiteral("batch_select_all"), previous);
+        settings.setShortcuts(QStringLiteral("batch_copy_files_to_clipboard"), previousCopy);
+        settings.setShortcuts(QStringLiteral("batch_image_stitching"), previousStitching);
+    });
     const auto configured =
         snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("Ctrl+Alt+F12")});
     require(settings.setShortcuts(QStringLiteral("batch_select_all"), configured),
@@ -204,11 +232,40 @@ void shortcuts() {
     require(fixture.selection.selectedCount() == 2,
             "configured Select All invokes the batch command");
     fixture.selection.clearSelection();
+    fixture.selection.toggleSelection(&first);
+    require(settings.setShortcuts(
+                QStringLiteral("batch_image_stitching"),
+                snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("Ctrl+Alt+J")})),
+            "configure the default batch stitching binding");
+    QVector<ScreenshotPinnedImageSnapshot> stitched;
+    QObject::connect(&fixture.selection,
+                     &PinnedSelectionFixture::Controller::imageStitchingRequested, &first,
+                     [&](const auto& snapshots) { stitched = snapshots; });
+    sendShortcut(first, Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
+    require(stitched.size() == 2 && fixture.selection.selectedCount() == 1,
+            "Ctrl+Alt+J stitches all displayed pins independently of window selection");
+    fixture.selection.clearSelection();
+    const auto copyBinding =
+        snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("Ctrl+Alt+F11")});
+    require(settings.setShortcuts(QStringLiteral("batch_copy_files_to_clipboard"), copyBinding),
+            "batch file-copy shortcut is configurable");
+    const QString copyLegend =
+        QStringLiteral("\t") + snow_shot::shortcuts::formatShortcutListDisplayText(copyBinding);
+    require(action(first, "CopyFilesToClipboardAction").text().endsWith(copyLegend),
+            "batch file-copy menu displays its configured shortcut");
+    sendShortcut(first, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+    waitForSave();
+    const auto copied = exportedClipboardUrls();
+    require(copied.size() == 2, "configured copy shortcut copies all displayed image files");
     QLineEdit input(&first);
     input.show();
     input.setFocus();
     sendShortcut(input, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+    sendShortcut(input, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+    sendShortcut(input, Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
     require(fixture.selection.selectedCount() == 0, "batch shortcuts preserve editable input");
+    require(!Access::batchSaving() && exportedClipboardUrls() == copied,
+            "editable input suppresses batch file-copy shortcuts");
     input.hide();
     first.setFocus();
     QDialog modal(&first);
@@ -216,7 +273,11 @@ void shortcuts() {
     modal.show();
     waitForUi(5);
     sendShortcut(first, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+    sendShortcut(first, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+    sendShortcut(first, Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
     require(fixture.selection.selectedCount() == 0, "modal dialogs suppress batch commands");
+    require(!Access::batchSaving() && exportedClipboardUrls() == copied,
+            "modal dialogs suppress batch file-copy shortcuts");
     modal.close();
 }
 
@@ -392,6 +453,194 @@ void saving() {
             "destroying the initiating window cancels the pending batch");
 }
 
+void copying() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    const auto oldName = settings.autoSaveFilenameFormat();
+    const auto oldFormat = settings.imageFormat();
+    const auto oldDirectory = settings.lastManualSaveDirectory();
+    const auto oldCopyFiles = settings.copyImageFileToClipboard();
+    const auto restore = qScopeGuard([&] {
+        settings.setAutoSaveFilenameFormat(oldName);
+        settings.setImageFormat(oldFormat);
+        settings.setCopyImageFileToClipboard(oldCopyFiles);
+    });
+    require(settings.setAutoSaveFilenameFormat(QStringLiteral("BatchCopy")) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setCopyImageFileToClipboard(false),
+            "explicit batch file copying uses copy output settings independently of copy mode");
+    PinnedSelectionFixture fixture;
+    auto& first = fixture.add({40, 60}, {120, 80});
+    auto& second = fixture.add({230, 160}, {90, 70});
+    auto& hidden = fixture.add({420, 160});
+    hidden.hide();
+    fixture.selection.toggleSelection(&second);
+    auto* clipboard = QApplication::clipboard();
+    clipboard->setText(QStringLiteral("before batch"));
+    action(first, "CopyFilesToClipboardAction").trigger();
+    require(Access::batchSaving() && !action(second, "SaveAsFileAction").isEnabled() &&
+                !action(second, "CopyFilesToClipboardAction").isEnabled(),
+            "copy and save share one admission guard across all pins");
+    QTemporaryDir blocked;
+    Access::batchSave(second, blocked.path());
+    waitForSave();
+    const auto urls = clipboard->mimeData()->urls();
+    require(urls.size() == 2 && QDir(blocked.path()).entryList(QDir::Files).isEmpty(),
+            "displayed copy ignores selection, excludes hidden pins, and blocks another batch");
+    const QString firstPath = urls.at(0).toLocalFile();
+    const QString secondPath = urls.at(1).toLocalFile();
+    require(QFileInfo(firstPath).fileName() == QStringLiteral("BatchCopy_1.png") &&
+                QFileInfo(secondPath).fileName() == QStringLiteral("BatchCopy_2.png") &&
+                QFileInfo(firstPath).absolutePath() == QFileInfo(secondPath).absolutePath() &&
+                QImage(firstPath).size() == QSize(120, 80) &&
+                QImage(secondPath).size() == QSize(90, 70) &&
+                QImage(firstPath).pixelColor(60, 40) == QColor(42, 84, 126) &&
+                settings.lastManualSaveDirectory() == oldDirectory,
+            "batch file URLs preserve order, rendered pixels, unique names and manual settings");
+    clipboard->setText(QStringLiteral("replacement"));
+    require(QFileInfo::exists(firstPath) && QFileInfo::exists(secondPath),
+            "completed batch files outlive the session and clipboard replacement");
+
+    require(settings.setImageFormat(QStringLiteral("bmp")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("Frozen")),
+            "configure batch clipboard export options");
+    Access::batchCopy(first, {&second, &first});
+    settings.setImageFormat(QStringLiteral("png"));
+    settings.setAutoSaveFilenameFormat(QStringLiteral("Later"));
+    waitForSave();
+    const auto frozen = clipboard->mimeData()->urls();
+    require(frozen.size() == 2 &&
+                QFileInfo(frozen.at(0).toLocalFile()).fileName() ==
+                    QStringLiteral("Frozen_1.bmp") &&
+                read(frozen.at(0).toLocalFile()).startsWith("BM") &&
+                QImage(frozen.at(0).toLocalFile()).size() == QSize(90, 70),
+            "copy freezes settings at invocation and honors explicit target order and format");
+
+    Access::batchCopy(first, {&second, &first});
+    Access::changeBatchIdentity(second);
+    waitForSave();
+    const auto partial = clipboard->mimeData()->urls();
+    require(partial.size() == 1 && QImage(partial.first().toLocalFile()).size() == QSize(120, 80),
+            "a recycled target fails while successfully exported files still reach the clipboard");
+
+    clipboard->setText(QStringLiteral("all failed"));
+    Access::batchCopy(first, {&second});
+    Access::changeBatchIdentity(second);
+    waitForSave();
+    require(clipboard->text() == QStringLiteral("all failed"),
+            "an entirely failed batch leaves the clipboard unchanged");
+    require(settings.setAutoSaveFilenameFormat(emptyExportFilenameFormat()),
+            "configure an invalid clipboard filename");
+    Access::batchCopy(first, {&first});
+    waitForSave();
+    require(clipboard->text() == QStringLiteral("all failed"),
+            "invalid filenames never publish empty or incomplete clipboard files");
+    settings.setAutoSaveFilenameFormat(QStringLiteral("Cancelled"));
+    Access::batchCopy(first, {&first});
+    Access::changeBatchIdentity(first);
+    waitForSave();
+    require(clipboard->text() == QStringLiteral("all failed"),
+            "recycling the initiating window cancels the batch without clipboard publication");
+
+    settings.setImageFormat(QStringLiteral("pdf"));
+    Access::batchCopy(first, {&first});
+    waitForSave();
+    const auto pdf = clipboard->mimeData()->urls();
+    require(pdf.size() == 1 && read(pdf.first().toLocalFile()).startsWith("%PDF-"),
+            "batch file copying supports the existing clipboard PDF format");
+    clipboard->setText(QStringLiteral("newer publication"));
+    Access::batchCopy(first, {&first});
+    static_cast<void>(ScreenshotClipboardService::reservePublication());
+    waitForSave();
+    require(clipboard->text() == QStringLiteral("newer publication"),
+            "an older pending batch cannot replace a newer clipboard publication");
+
+    {
+        auto owner = std::make_unique<ScreenshotPinnedWindow>();
+        Access::restoreOffscreen(*owner, cachedOcrPinConfig(nullptr));
+        owner->show();
+        Access::batchCopy(*owner, {owner.get()});
+    }
+    waitForSave();
+    require(clipboard->text() == QStringLiteral("newer publication"),
+            "destroying the initiating window cancels pending file exports");
+}
+
+void newerBatchCopyCancelsSingleCopy() {
+    const snow_shot::storage::ScreenshotSettings settings;
+    const auto oldActions = settings.autoSaveAfterExecutionActions();
+    const auto oldName = settings.autoSaveFilenameFormat();
+    const auto oldFormat = settings.imageFormat();
+    const auto oldCopyFiles = settings.copyImageFileToClipboard();
+    const auto restore = qScopeGuard([&] {
+        settings.setAutoSaveAfterExecutionActions(oldActions);
+        settings.setAutoSaveFilenameFormat(oldName);
+        settings.setImageFormat(oldFormat);
+        settings.setCopyImageFileToClipboard(oldCopyFiles);
+    });
+    require(settings.setAutoSaveAfterExecutionActions({}) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("SupersedingBatch")) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setCopyImageFileToClipboard(true),
+            "configure single-copy cancellation without automatic saving");
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    PinnedSelectionFixture fixture;
+    auto& owner = fixture.add({40, 60}, {120, 80});
+    auto& target = fixture.add({230, 160}, {90, 70});
+    Access::copyCurrentViewport(owner);
+    require(Access::exportArtifact(owner) != nullptr,
+            "the earlier single-image copy is preparing an export artifact");
+    Access::batchCopy(owner, {&target});
+    require(Access::exportArtifact(owner) == nullptr,
+            "starting a batch cancels the initiating pin's earlier export artifact");
+    waitForSave();
+    const auto prepared = exportedClipboardUrls();
+    require(prepared.size() == 1 && QImage(prepared.first().toLocalFile()).size() == QSize(90, 70),
+            "the batch target replaces an already-preparing single-image copy");
+
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults = {};
+    config.recognitionVisible = false;
+    config.enableEditing = false;
+    ScreenshotImageLoadCallback deliver;
+    config.imageLoader = [&deliver](QObject*, ScreenshotImageLoadCallback ready) {
+        deliver = std::move(ready);
+    };
+    ScreenshotPinnedWindow lazy;
+    lazy.setAttribute(Qt::WA_DeleteOnClose, false);
+    const auto closeLazy = qScopeGuard([&] { lazy.close(); });
+    require(lazy.present(config), "present a pin whose initial image is still loading");
+    wait([&] { return static_cast<bool>(deliver); }, "the delayed image loader starts");
+    require(Access::originalImage(lazy).isNull(),
+            "the single-image copy starts before the first content frame");
+    Access::copyCurrentViewport(lazy);
+    Access::batchCopy(lazy, {&target});
+    waitForSave();
+    const auto newer = exportedClipboardUrls();
+    require(newer.size() == 1 && QImage(newer.first().toLocalFile()).size() == QSize(90, 70),
+            "the new batch copies its target while the earlier single-image snapshot is pending");
+    bool snapshotReady = false;
+    lazy.requestRenderedImageSnapshot([&](ScreenshotPinnedImageSnapshot snapshot) {
+        require(snapshot.source.isValid() && snapshot.error.isEmpty(),
+                "the delayed image can still produce a rendered snapshot");
+        snapshotReady = true;
+    });
+    deliver(config.imageSource.materializedImage);
+    wait(
+        [&] {
+            return snapshotReady && !Access::exportArtifact(lazy) &&
+                   ScreenshotExportCoordinator::shared().pendingJobCount() == 0;
+        },
+        "materialization and any superseded single-copy work finish");
+    require(exportedClipboardUrls() == newer,
+            "an older lazy single-image copy cannot overwrite the completed batch clipboard");
+}
+
 void recognitionSaving() {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     const snow_shot::storage::ScreenshotSettings settings;
@@ -444,5 +693,7 @@ void pinnedBatchActionsTests() {
     pinned_batch_test::shortcuts();
     pinned_batch_test::lifecycle();
     pinned_batch_test::saving();
+    pinned_batch_test::copying();
+    pinned_batch_test::newerBatchCopyCancelsSingleCopy();
     pinned_batch_test::recognitionSaving();
 }

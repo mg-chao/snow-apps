@@ -144,6 +144,10 @@
             <translation>The save was cancelled</translation>
         </message>
         <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>The screenshot filename format is invalid</translation>
+        </message>
+        <message>
             <source>WebP image (*.webp)</source>
             <translation>WebP image (*.webp)</translation>
         </message>

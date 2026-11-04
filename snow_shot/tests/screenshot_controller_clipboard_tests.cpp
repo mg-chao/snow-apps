@@ -165,8 +165,11 @@ void sendMouse(QWidget& target, QEvent::Type type, const QPointF& point, Qt::Mou
 
 void recognitionWindowsFollowSelectionTransitions(const QString& directory) {
     const snow_shot::storage::ScreenshotSettings settings;
-    require(settings.setAutoRecognizeQrCode(false) &&
-                settings.setAutoExecuteAfterTextRecognition(QStringLiteral("no_action")),
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+    require(settings.setAutoRecognizeQrCode(false),
+            "recognition transition tests must not run automatic QR recognition");
+#endif
+    require(settings.setAutoExecuteAfterTextRecognition(QStringLiteral("no_action")),
             "recognition transition tests must not run automatic follow-up commands");
     for (const QString& tool : {QStringLiteral("ocr"), QStringLiteral("text_translation")}) {
         for (const bool resize : {false, true}) {
