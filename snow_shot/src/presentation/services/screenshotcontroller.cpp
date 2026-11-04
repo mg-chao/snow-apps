@@ -1583,7 +1583,7 @@ bool ScreenshotController::Impl::ensureExportFeature() {
             if (controller)
                 emit controller->imageSplittingRequested(
                     {snapshot.source, snapshot.originalFileName, snapshot.createdUtc,
-                     snapshot.error, snapshot.outputSize});
+                     snapshot.error, snapshot.outputSize, std::nullopt, snapshot.renderingBytes});
         },
         [controller = QPointer<ScreenshotController>(&owner)](const QString& id) {
             if (controller)

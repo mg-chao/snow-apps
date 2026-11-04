@@ -1884,7 +1884,7 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 screenshotShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
-            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 19 &&
+            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 20 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             drawingShortcuts->items.at(2).id == QStringLiteral("drawing-shortcut.speech_bubble") &&
             drawingShortcuts->items.at(2).title.translated() == QStringLiteral("Speech Bubble") &&
@@ -1980,33 +1980,38 @@ void builtInCatalogIsCompleteAndValid() {
             otherShortcutSection->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             otherShortcutSection->title.translated() == QStringLiteral("Image Recognition") &&
-            drawingShortcuts->items.at(9).id == QStringLiteral("drawing-shortcut.magnifier") &&
-            drawingShortcuts->items.at(9).title.translated() == QStringLiteral("Magnifier") &&
-            drawingShortcuts->items.at(9).configurationKey ==
+            drawingShortcuts->items.at(10).id == QStringLiteral("drawing-shortcut.magnifier") &&
+            drawingShortcuts->items.at(10).title.translated() == QStringLiteral("Magnifier") &&
+            drawingShortcuts->items.at(10).configurationKey ==
                 QStringLiteral("drawing_shortcuts/magnifier") &&
-            drawingShortcuts->items.at(15).id == QStringLiteral("drawing-shortcut.reset_canvas") &&
-            drawingShortcuts->items.at(15).title.translated() == QStringLiteral("Reset canvas") &&
-            drawingShortcuts->items.at(15).configurationKey ==
+            drawingShortcuts->items.at(16).id == QStringLiteral("drawing-shortcut.reset_canvas") &&
+            drawingShortcuts->items.at(16).title.translated() == QStringLiteral("Reset canvas") &&
+            drawingShortcuts->items.at(16).configurationKey ==
                 QStringLiteral("drawing_shortcuts/reset_canvas") &&
-            drawingShortcuts->items.at(17).id == QStringLiteral("screenshot-shortcut.undo") &&
-            drawingShortcuts->items.at(18).id == QStringLiteral("screenshot-shortcut.redo") &&
+            drawingShortcuts->items.at(18).id == QStringLiteral("screenshot-shortcut.undo") &&
+            drawingShortcuts->items.at(19).id == QStringLiteral("screenshot-shortcut.redo") &&
             drawingShortcuts->items.at(4).configurationKey ==
                 QStringLiteral("drawing_shortcuts/distance") &&
-            drawingShortcuts->items.at(5).id == QStringLiteral("drawing-shortcut.angle") &&
+            drawingShortcuts->items.at(5).id == QStringLiteral("drawing-shortcut.bracket") &&
             drawingShortcuts->items.at(5).title.translated() ==
-                QStringLiteral("Angle annotation") &&
+                QStringLiteral("Bracket annotation") &&
             drawingShortcuts->items.at(5).configurationKey ==
+                QStringLiteral("drawing_shortcuts/bracket") &&
+            drawingShortcuts->items.at(6).id == QStringLiteral("drawing-shortcut.angle") &&
+            drawingShortcuts->items.at(6).title.translated() ==
+                QStringLiteral("Angle annotation") &&
+            drawingShortcuts->items.at(6).configurationKey ==
                 QStringLiteral("drawing_shortcuts/angle") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                drawingShortcuts->items.at(5).payload)
+                drawingShortcuts->items.at(6).payload)
                     .scope == settings::SettingsLocalShortcutScope::Drawing &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                drawingShortcuts->items.at(5).payload)
+                drawingShortcuts->items.at(6).payload)
                     .iconFactory() ==
                 snow_shot::presentation::icons::custom::outlined::AngleAnnotation() &&
-            drawingShortcuts->items.at(6).configurationKey ==
+            drawingShortcuts->items.at(7).configurationKey ==
                 QStringLiteral("drawing_shortcuts/line") &&
-            drawingShortcuts->items.at(10).configurationKey ==
+            drawingShortcuts->items.at(11).configurationKey ==
                 QStringLiteral("drawing_shortcuts/spotlight") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),
@@ -2255,7 +2260,7 @@ void builtInCatalogIsCompleteAndValid() {
         pinPage != nullptr && pinPage->sections.size() == 4 &&
             pinPage->sections.at(0).id == QStringLiteral("pin-to-screen-settings") &&
             pinPage->sections.at(0).title.translated() == QStringLiteral("Interaction") &&
-            pinPage->sections.at(0).items.size() == 14 &&
+            pinPage->sections.at(0).items.size() == 15 &&
             pinPage->sections.at(1).id == pinSection.id &&
             pinSection.title.translated() == QStringLiteral("Window interface") &&
             pinPage->sections.at(3).id == QStringLiteral("pin-to-screen-toolbar") &&

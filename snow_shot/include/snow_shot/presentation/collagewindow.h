@@ -33,6 +33,7 @@ struct CollageWindowServices final {
     Export save;
     std::function<void(QWidget*, bool clear, std::function<void(bool)>)> confirm;
     std::function<std::optional<QImage>(const storage::CaptureHistoryRecord&)> readHistory;
+    ScreenshotPinnedImageSnapshotRequest requestPinnedSnapshot;
     using PdfChoice = std::function<void(std::optional<CollagePdfDestination>)>;
     std::function<void(QWidget*, CollagePdfExportMode, PdfChoice)> choosePdfDestination;
     std::function<CollagePdfExportResult(const QVector<CollageItem>&, const CollagePdfSettings&,

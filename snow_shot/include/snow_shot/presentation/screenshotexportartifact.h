@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshottextannotationrenderer.h"
+#include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include "snow_shot/storage/preparedpngimage.h"
 
 #include <QImage>
@@ -37,7 +38,28 @@ struct ScreenshotPinnedViewportExportSource final {
     // Optional output clip in the unchanged document coordinate system.
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
     ScreenshotTextAnnotationRenderSnapshot textAnnotations = {};
+    std::optional<ScreenshotRecognitionImageSnapshot> recognitionOverlay = std::nullopt;
+    QImage presentationImage = {};
+    QRectF presentationCanvasRect = {};
 };
+
+// A styled crop retains the full composition domain and its original pixel phase.
+// Admission and rendering must use this same plan, including intermediate rasters.
+struct ScreenshotPinnedViewportRenderPlan final {
+    QRectF renderCanvasRect;
+    QSize renderPixelSize;
+    ScreenshotResultLayout resultLayout;
+    QRect outputPixelRect;
+    bool cropAfterRender = false;
+    qint64 workingBytes = 0;
+
+    [[nodiscard]] QSize outputSize() const {
+        return outputPixelRect.size();
+    }
+};
+
+[[nodiscard]] std::optional<ScreenshotPinnedViewportRenderPlan>
+screenshotPinnedViewportRenderPlan(const ScreenshotPinnedViewportExportSource& source);
 
 // Render the immutable source on the calling export worker, without scheduling or retaining it.
 [[nodiscard]] QImage

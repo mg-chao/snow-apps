@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotpinnedtextpreparation.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include <QObject>
@@ -36,6 +37,8 @@ ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& re
                                            const storage::CaptureHistoryRecord& record);
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedTextPreparation& preparation);
+ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
+                                          const ScreenshotPinnedRenderPreparation& preparation);
 // Restrict the base raster, baking pending text marks before a pin appearance.
 // Retain the drawing document and its canvas origin.
 void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visible);

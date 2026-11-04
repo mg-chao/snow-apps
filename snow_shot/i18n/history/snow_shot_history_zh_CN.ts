@@ -2181,10 +2181,6 @@ Files:
             <translation>无法自动保存图像：%1</translation>
         </message>
         <message>
-            <source>The live window requires a current frame snapshot</source>
-            <translation>实时窗口需要获取当前帧快照</translation>
-        </message>
-        <message>
             <source>The new content could not be loaded</source>
             <translation>无法加载新内容</translation>
         </message>

@@ -391,9 +391,10 @@ void settingsRenderingAndPersistence() {
     require(widgetBackground(fixture.window) == applied,
             "leaving annotation mode restores selected-text annotation visibility");
     const auto record = fixture.window.persistenceSnapshot();
-    require(record.textAnnotations == payload &&
-                !fixture.window.imageEditingSnapshot().textAnnotations.empty(),
-            "pin persistence and image-editing transfer preserve the annotation layer");
+    const auto editingSource = pinnedRenderedEditingSource(fixture.window);
+    require(record.textAnnotations == payload && editingSource.textAnnotations.empty() &&
+                editingSource.image == exported,
+            "pin persistence retains text marks and editing consumes their rendered pixels");
     auto restoredConfig = fixture.config;
     restoredConfig.restorePersistentState = true;
     restoredConfig.persistedTextAnnotations = record.textAnnotations;
@@ -542,7 +543,9 @@ void nativeExportsPreserveTextAnnotations() {
                           : QStringLiteral("screenshotClipboardText"));
             require(view && view->isVisible() && canvas,
                     "native annotation export uses the visible canvas text page");
-            const auto source = fixture.window.imageEditingSnapshot();
+            snow_shot::presentation::ImageEditingSource source;
+            source.image = Access::displayImage(fixture.window);
+            source.canvasRect = fixture.window.persistenceSnapshot().contentCanvasRect;
             const auto marks = Access::quickTextSnapshot(fixture.window);
             require(!source.image.isNull() && !marks.empty(),
                     "native export retains the pristine image and separate text marks");
@@ -635,7 +638,7 @@ void croppedMasksSurviveImageEditingTransfer() {
                 "the cropped pin export retains its excluded left half");
         const auto record = fixture.window.persistenceSnapshot();
         for (const bool open : {true, false}) {
-            const auto source = open ? fixture.window.imageEditingSnapshot()
+            const auto source = open ? pinnedRenderedEditingSource(fixture.window)
                                      : readImageEditingPinned(record, preparation);
             ImageEditingWindow editor;
             bool loaded = false;
@@ -651,10 +654,9 @@ void croppedMasksSurviveImageEditingTransfer() {
                     expected.convertToFormat(QImage::Format_ARGB32_Premultiplied),
                 "open and stored cropped pins preserve text marks inside their mask exactly once");
             require(source.textAnnotations.empty() && !source.resultStyle &&
-                        !source.samplingSources.isEmpty() &&
-                        source.samplingSources.front().image ==
-                            fixture.config.imageSource.materializedImage,
-                    "masked imports consume baked text marks and retain pristine sampling donors");
+                        source.samplingSources.isEmpty() && source.canvasSession.isEmpty() &&
+                        source.canvasRect == QRectF(QPointF(), QSizeF(expected.size())),
+                    "masked imports consume one rendered raster without old annotation donors");
             editor.shutdown();
         }
         require(fixture.window.persistenceSnapshot().textAnnotations == record.textAnnotations,

@@ -31,6 +31,7 @@
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
 #include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
 #include <QNativeGestureEvent>
+#include <QDebug>
 #include <QTabletEvent>
 #ifdef Q_OS_MACOS
 #include <CoreGraphics/CoreGraphics.h>
@@ -42,6 +43,7 @@ int macLivePinnedWindowTests();
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/screenshotquicktextannotationtoolbar.h"
 #ifdef Q_OS_WIN
 #include "snow_shot/platform/windows/windowalwaysontop.h"
@@ -204,6 +206,7 @@ int macLivePinnedWindowTests();
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
+#include <shellapi.h>
 #include <dwmapi.h>
 #include <commctrl.h>
 #endif
@@ -760,6 +763,9 @@ class ScreenshotPinnedWindowTestAccess {
     static void setFractionalScale(ScreenshotPinnedWindow& window, double percent) {
         window.setEffectiveScale(percent, false);
     }
+    static void applyFractionalScale(ScreenshotPinnedWindow& window, double percent) {
+        window.applyWheelScale(percent, window.authoritativeContentNativeGeometry().bottomRight());
+    }
     static int opacity(const ScreenshotPinnedWindow& window) {
         return window.m_opacityPercent;
     }
@@ -1049,6 +1055,11 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_mouseWheelZoomMode = config.mouseWheelZoomMode;
         window.m_originalImage = config.imageSource.materializedImage;
         window.m_originalPixelSize = window.m_originalImage.size();
+        window.m_originalClipboardContent = config.originalClipboardContent;
+        window.m_firstCreationTextDpi =
+            config.restorePersistentState  ? config.persistedFirstCreationTextDpi
+            : config.formattedTextDocument ? config.formattedTextDevicePixelRatio
+                                           : 1.0;
         window.m_ocrSupported = screenshotOcrImageWithinPixelLimit(window.m_originalPixelSize);
         window.initializeTextType(config);
         window.m_transformedImage = window.m_originalImage;
@@ -1066,6 +1077,15 @@ class ScreenshotPinnedWindowTestAccess {
                                                                                 : window.screen()));
         window.m_platformPlacement = window.m_platform->placement();
         window.m_presented = true;
+        window.m_firstContentFramePublished = true;
+        const QSize expanded =
+            window.m_thumbnailMode && config.persistedPreThumbnailNativeGeometry.isValid()
+                ? config.persistedPreThumbnailNativeGeometry.size()
+                : config.nativeGeometry.size();
+        window.m_scalePercent = screenshotPinnedRestoredScalePercent(
+            window.scaleReferenceSize(), expanded, config.persistedScalePercent,
+            config.restorePersistentState &&
+                (window.m_cropRect || !window.m_exactInitialWindowSize.isEmpty()));
         window.updateCanvasViewport();
     }
 
@@ -1366,6 +1386,49 @@ void waitForUi(int milliseconds) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
         QThread::msleep(1);
     }
+}
+
+ScreenshotPinnedImageSnapshot pinnedRenderedSnapshot(ScreenshotPinnedWindow& window) {
+    ScreenshotPinnedImageSnapshot snapshot;
+    bool complete = false;
+    window.requestRenderedImageSnapshot([&](ScreenshotPinnedImageSnapshot value) {
+        snapshot = std::move(value);
+        complete = true;
+    });
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!complete && deadline.elapsed() < 10000)
+        waitForUi(1);
+    require(complete && snapshot.error.isEmpty() && snapshot.source.isValid(),
+            "capture the shared rendered pin snapshot");
+    return snapshot;
+}
+
+snow_shot::presentation::ImageEditingSource
+pinnedRenderedEditingSource(ScreenshotPinnedWindow& window) {
+    const auto snapshot = pinnedRenderedSnapshot(window);
+    auto artifact = std::make_shared<ScreenshotExportArtifact>(snapshot.source);
+    snow_shot::presentation::ImageEditingSource source;
+    bool complete = false;
+    require(artifact->requestImage(&window,
+                                   [&](ScreenshotExportImageResult result) {
+                                       source.image = std::move(result.image);
+                                       source.error = std::move(result.error);
+                                       complete = true;
+                                   }),
+            "start rendering the pin editor baseline");
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!complete && deadline.elapsed() < 10000)
+        waitForUi(1);
+    require(complete && !source.image.isNull() && source.error.isEmpty() &&
+                source.image.size() == snapshot.outputSize,
+            "render the complete pin editor baseline");
+    source.pixelSize = source.image.size();
+    source.canvasRect = QRectF(QPointF(), QSizeF(source.pixelSize));
+    source.originalFileName = snapshot.originalFileName;
+    source.flattened = true;
+    return source;
 }
 
 void releaseCloseGesture(QWidget& receiver, Qt::MouseButton button) {
@@ -13358,12 +13421,14 @@ void pinnedAnnotationsIgnoreSelectionShape() {
             const QImage saved = pixels(target, Access::fileSave(target));
             const QImage viewport = pixels(target, Access::viewportExport(target));
             for (const QPoint point : {QPoint(200, 200), QPoint(32, 32)}) {
-                require(saved.pixelColor(point) == QColor(Qt::magenta),
+                require(saved.pixelColor(point * scalePercent / 100) == QColor(Qt::magenta),
                         "file exports retain pinned annotations outside the selection");
                 require(viewport.pixelColor(point * scalePercent / 100) == QColor(Qt::magenta),
                         "viewport exports retain pinned annotations outside the selection");
             }
-            require(saved.pixelColor(4, 4) == source.pixelColor(4, 4),
+            require(saved == viewport &&
+                        saved.pixelColor(4 * scalePercent / 100, 4 * scalePercent / 100) ==
+                            source.pixelColor(4, 4),
                     "annotations leave untouched source transparency unchanged");
         };
         verify(window, 100);
@@ -14206,19 +14271,14 @@ void restoredThumbnailStateOffscreen(const QString& scenario) {
         while (copied.isNull() && deadline.elapsed() < 5000) {
             waitForUi(10);
         }
-        const qreal rasterScale =
-            snow_shot::presentation::kPinnedGeometryUnits ==
-                    snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
-                ? window.devicePixelRatioF()
-                : 1.;
-        const QSize expectedPixels(qRound(120 * rasterScale), qRound(60 * rasterScale));
+        const QSize expectedPixels(200, 100);
         if (copied.size() != expectedPixels) {
             std::cerr << "thumbnail copy size=" << copied.width() << 'x' << copied.height()
                       << " widget=" << window.width() << 'x' << window.height()
                       << " dpr=" << window.devicePixelRatioF() << '\n';
         }
         require(copied.size() == expectedPixels,
-                "thumbnail copy must use the displayed physical pixels at the current DPI");
+                "thumbnail copy must use the saved expanded zoom independently of display DPI");
     }
 }
 
@@ -16389,10 +16449,15 @@ void pinnedRecognitionEffectsScaleOnce() {
             timer.start();
             while (rendered.isNull() && timer.elapsed() < 10000)
                 waitForUi(5);
-            require(rendered.size() == QSize(832, 552),
-                    "pinned recognition applies the 2x backing scale to effects exactly once");
+            const int backing = snow_shot::presentation::kPinnedGeometryUnits ==
+                                        snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
+                                    ? 2
+                                    : 1;
+            require(rendered.size() == QSize(416, 276) * backing,
+                    "pinned recognition applies clipboard zoom and effect scale exactly once");
             if (shaped)
-                require(rendered.pixelColor(96 + 400, 96 + 240).alpha() == 0,
+                require(rendered.pixelColor((48 + 200) * backing, (48 + 120) * backing).alpha() ==
+                            0,
                         "pinned recognition scales selection geometry exactly once");
             window.close();
         }
@@ -16455,6 +16520,12 @@ void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
     };
     const QImage recognized = pixels(ScreenshotPinnedWindowTestAccess::fileSave(window));
     require(recognized != config.imageSource.materializedImage, "OCR text appears in saved image");
+    for (const auto& artifact :
+         {ScreenshotPinnedWindowTestAccess::viewportExport(window),
+          std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source),
+          std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source)})
+        require(pixels(artifact) == recognized,
+                "clipboard, stitching, splitting and saving share active recognition pixels");
     const auto clipboardPng = [&](std::shared_ptr<ScreenshotExportArtifact> artifact) {
         QByteArray png;
         bool complete = false;
@@ -16499,21 +16570,26 @@ void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
             "disabling show original image restores pinned OCR export");
     require(settings.setSaveRecognitionResultAsImage(false),
             "disable recognition saving on open pin");
-    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==
-                config.imageSource.materializedImage,
-            "disabled option preserves ordinary image export");
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) == recognized,
+            "pinned image rendering includes active recognition independently of capture settings");
     require(settings.setSaveRecognitionResultAsImage(true), "reenable recognition saving");
     require(session->activateCachedTextTranslation(), "activate cached original-image translation");
     auto frozen = ScreenshotPinnedWindowTestAccess::fileSave(window);
     const QImage translated = pixels(frozen);
     require(translated != recognized, "current translation replaces source OCR text");
+    for (const auto& artifact :
+         {ScreenshotPinnedWindowTestAccess::viewportExport(window),
+          std::make_shared<ScreenshotExportArtifact>(window.stitchingSnapshot().source),
+          std::make_shared<ScreenshotExportArtifact>(window.splittingSnapshot().source)})
+        require(pixels(artifact) == translated,
+                "all image workflows share the current translated presentation");
     session->endTextEditing();
     require(pixels(frozen) == translated,
             "later display changes cannot alter prepared save artifact");
     session->beginTextEditing();
-    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) !=
                 config.imageSource.materializedImage,
-            "text-only editor preserves ordinary image export");
+            "active text editor exports its current recognition presentation");
     session->endTextEditing();
     const auto waitFile = [&](const QString& path, const QImage& expected) {
         QElapsedTimer timer;
@@ -16866,44 +16942,84 @@ QImage exportedClipboardImage() {
 #endif
 }
 
+#ifdef Q_OS_WIN
+bool openExportedClipboard() {
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        if (OpenClipboard(nullptr))
+            return true;
+        waitForUi(5);
+    }
+    return false;
+}
+
+// The caller holds the clipboard lock while reading the native file list.
+QList<QUrl> nativeClipboardFileUrls() {
+    QList<QUrl> urls;
+    const auto drop = static_cast<HDROP>(GetClipboardData(CF_HDROP));
+    if (!drop)
+        return urls;
+    const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+    for (UINT index = 0; index < count; ++index) {
+        const UINT length = DragQueryFileW(drop, index, nullptr, 0);
+        QString path;
+        path.resize(static_cast<qsizetype>(length) + 1);
+        DragQueryFileW(drop, index, reinterpret_cast<LPWSTR>(path.data()), length + 1);
+        path.resize(length);
+        urls.append(QUrl::fromLocalFile(path));
+    }
+    return urls;
+}
+#endif
+
+QList<QUrl> exportedClipboardUrls() {
+#ifdef Q_OS_WIN
+    if (!openExportedClipboard())
+        return {};
+    const auto close = qScopeGuard([] { CloseClipboard(); });
+    return nativeClipboardFileUrls();
+#else
+    return QApplication::clipboard()->mimeData()->urls();
+#endif
+}
+
 std::optional<ScreenshotClipboardContentSnapshot> exportedClipboardSnapshot(bool fileCopy) {
 #ifdef Q_OS_WIN
-    if (!fileCopy) {
-        // The image service publishes to Win32 while the offscreen Qt clipboard is separate.
-        bool opened = false;
-        for (int attempt = 0; attempt < 20 && !opened; ++attempt) {
-            opened = OpenClipboard(nullptr) != FALSE;
-            if (!opened)
-                waitForUi(5);
-        }
-        if (!opened)
-            return {};
-        const auto close = qScopeGuard([] { CloseClipboard(); });
-        const auto bytes = [](LPCWSTR format) {
-            const auto handle =
-                static_cast<HGLOBAL>(GetClipboardData(RegisterClipboardFormatW(format)));
-            const auto* data = handle ? static_cast<const char*>(GlobalLock(handle)) : nullptr;
-            if (!data)
-                return QByteArray{};
-            QByteArray result(data, static_cast<qsizetype>(GlobalSize(handle)));
-            GlobalUnlock(handle);
-            return result;
-        };
-        ScreenshotClipboardContentSnapshot snapshot;
-        QByteArray png = bytes(L"PNG");
-        if (png.isEmpty())
-            return {};
-        snapshot.encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
-        snapshot.placement =
-            decodeScreenshotClipboardPlacement(bytes(L"SnowShotScreenshotPlacement"));
-        snapshot.appearance =
-            decodeScreenshotClipboardAppearance(bytes(L"SnowShotScreenshotAppearance"));
-        return snapshot;
+    // Both image and file exports publish to Win32, separate from Qt's offscreen clipboard.
+    if (!openExportedClipboard())
+        return {};
+    const auto close = qScopeGuard([] { CloseClipboard(); });
+    const auto bytes = [](LPCWSTR format) {
+        const auto handle =
+            static_cast<HGLOBAL>(GetClipboardData(RegisterClipboardFormatW(format)));
+        const auto* data = handle ? static_cast<const char*>(GlobalLock(handle)) : nullptr;
+        if (!data)
+            return QByteArray{};
+        QByteArray result(data, static_cast<qsizetype>(GlobalSize(handle)));
+        GlobalUnlock(handle);
+        return result;
+    };
+    QByteArray png = bytes(L"PNG");
+    if (png.isEmpty())
+        return {};
+    const auto placement = bytes(L"SnowShotScreenshotPlacement");
+    const auto appearance = bytes(L"SnowShotScreenshotAppearance");
+    if (fileCopy) {
+        QMimeData mime;
+        mime.setUrls(nativeClipboardFileUrls());
+        mime.setData(QStringLiteral("image/png"), std::move(png));
+        mime.setData(screenshotClipboardPlacementNativeMimeType(), placement);
+        mime.setData(screenshotClipboardAppearanceNativeMimeType(), appearance);
+        return ScreenshotClipboardContentReader::snapshotMimeData(&mime, 1, Qt::white);
     }
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
+    snapshot.placement = decodeScreenshotClipboardPlacement(placement);
+    snapshot.appearance = decodeScreenshotClipboardAppearance(appearance);
+    return snapshot;
 #else
     Q_UNUSED(fileCopy);
-#endif
     return ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+#endif
 }
 
 void pinnedDragFileRetention() {
@@ -18373,7 +18489,7 @@ void pinnedLazyCopyOptionsSnapshotOffscreen() {
                    !ScreenshotPinnedWindowTestAccess::exportArtifact(window);
         },
         "lazy pinned copy retains invocation auto-save selection");
-    const auto urls = QApplication::clipboard()->mimeData()->urls();
+    const auto urls = exportedClipboardUrls();
     require(urls.size() == 1 && urls.front().isLocalFile() &&
                 QFileInfo(urls.front().toLocalFile()).fileName() ==
                     QStringLiteral("lazy-snapshot.bmp") &&
@@ -18532,7 +18648,7 @@ void pinnedSharedImageExportOffscreen() {
             require(copied->placement->windowRect == Access::contentGeometry(window),
                     "viewport image or file copy retains its content window geometry");
             if (copyFile) {
-                const auto urls = QApplication::clipboard()->mimeData()->urls();
+                const auto urls = exportedClipboardUrls();
                 require(urls.size() == 1 && urls.front().isLocalFile(),
                         "file copy publishes one local file URL");
                 const QString temporaryPath = urls.front().toLocalFile();
@@ -18616,7 +18732,7 @@ void pinnedSharedImageExportOffscreen() {
     wait([&] { return !Access::exportArtifact(window); }, "snapshot copy completes");
     const QString snapshotPath = directory.filePath(QStringLiteral("snapshot.bmp"));
     QFile snapshotFile(snapshotPath);
-    const auto snapshotUrls = QApplication::clipboard()->mimeData()->urls();
+    const auto snapshotUrls = exportedClipboardUrls();
     require(snapshotUrls.size() == 1, "deferred file copy publishes one URL");
     const QString temporarySnapshotPath = snapshotUrls.front().toLocalFile();
     QFile temporarySnapshot(temporarySnapshotPath);
@@ -18747,8 +18863,8 @@ void pinnedOpacityAppliesToRenderedExportsOffscreen() {
     const auto frozenRecognition = Access::fileSave(window);
     Access::setGeneralOpacity(window, 80);
     const QImage recognized = render(frozenRecognition);
-    require(recognized != ordinaryRecognitionMode && qAbs(centerAlpha(recognized) - 153) <= 1,
-            "recognition exports must render their captured configured opacity");
+    require(recognized == ordinaryRecognitionMode && qAbs(centerAlpha(recognized) - 153) <= 1,
+            "recognition exports retain captured opacity independently of capture-only settings");
 }
 
 void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
@@ -23776,9 +23892,11 @@ void pinnedImageEditingPreservesAppearance() {
     const auto preparation = captureScreenshotPinnedTextPreparation();
     for (const bool live : {true, false}) {
         const auto source =
-            live ? pin.imageEditingSnapshot()
+            live ? pinnedRenderedEditingSource(pin)
                  : snow_shot::presentation::readImageEditingPinned(before, preparation);
-        require(source.resultStyle.has_value(), "pin editing retains its pending result style");
+        require(!source.resultStyle && source.canvasSession.isEmpty() &&
+                    source.textAnnotations.empty() && source.samplingSources.isEmpty(),
+                "pin editing consumes one rendered raster without pending style or annotations");
         snow_shot::presentation::ImageEditingWindow editor;
         bool completed = false, succeeded = false;
         QObject::connect(&editor, &snow_shot::presentation::ImageEditingWindow::loaded, &editor,
@@ -23823,9 +23941,9 @@ void pinnedImageSplittingSnapshots() {
     Access::transformReplacement(window);
     Access::setFractionalScale(window, 50);
     require(Access::selectFirstAnnotation(window), "split fixture selects an existing annotation");
-    const auto selected = Access::selectedAnnotationIds(window);
-    require(!selected.isEmpty(), "split source keeps an active annotation selection");
-    const QByteArray session = Access::dragDocument(window);
+    require(!Access::selectedAnnotationIds(window).isEmpty(),
+            "split source starts with an active annotation selection");
+    const QByteArray document = Access::drawingRuntime(window).documentCheckpoint();
     const QByteArray history = Access::drawingHistory(window);
     const auto before = window.persistenceSnapshot();
     const QImage original = Access::originalImage(window);
@@ -23890,49 +24008,38 @@ void pinnedImageSplittingSnapshots() {
     require(editingRequests == 1, "Image Editing dispatches exactly one live pin request");
     require(editors.windows().size() == 1, "pinned editing opens one editor");
     auto* editor = editors.windows().first().data();
-    const auto source = window.imageEditingSnapshot();
+    const auto source = pinnedRenderedEditingSource(window);
     QElapsedTimer loading;
     loading.start();
     while (editor->document()->image().isNull() && loading.elapsed() < 10000)
         waitForUi(1);
-    auto expectedDocument = QJsonDocument::fromJson(source.canvasSession)
-                                .object()
-                                .value(QStringLiteral("document"))
-                                .toObject();
-    auto importedDocument =
-        QJsonDocument::fromJson(editor->document()->runtime().serializeDocumentSession())
-            .object()
-            .value(QStringLiteral("document"))
-            .toObject();
-    expectedDocument.remove(QStringLiteral("revision"));
-    importedDocument.remove(QStringLiteral("revision"));
     require(editor->document()->image() == source.image &&
                 editor->document()->bounds() == source.canvasRect &&
-                importedDocument == expectedDocument && window.isVisible(),
-            "pinned editor imports live transformed pixels and editable annotations independently");
+                !editor->document()->runtime().hasDocumentContent() && window.isVisible(),
+            "pinned editor imports rendered pixels into an independent empty annotation document");
     editors.shutdown();
     split->trigger();
-    require(requests == 1 && snapshot.source.isValid() && snapshot.outputSize == QSize(80, 120) &&
+    require(requests == 1 && snapshot.source.isValid() && snapshot.outputSize == QSize(40, 60) &&
                 snapshot.originalFileName == QStringLiteral("section.reference.png") &&
                 snapshot.createdUtc == window.sourceCreatedUtc(),
             "splitting dispatches the current processed source with original naming metadata");
     const auto after = window.persistenceSnapshot();
-    require(Access::dragDocument(window) == session && Access::drawingHistory(window) == history &&
-                Access::selectedAnnotationIds(window) == selected &&
+    require(Access::drawingRuntime(window).documentCheckpoint() == document &&
+                Access::drawingHistory(window) == history &&
                 Access::originalImage(window) == original &&
                 window.currentNativeGeometry() == geometry &&
                 after.imageTransform == before.imageTransform &&
-                after.quarterTurns == before.quarterTurns &&
-                after.canvasSession == before.canvasSession,
-            "splitting preserves source pixels, transforms, annotations, selection and history");
+                after.quarterTurns == before.quarterTurns,
+            "splitting commits editing while preserving source pixels, transforms, content and "
+            "history");
     fixture.windows.clear();
     const QImage processed = pinnedStitchingPixels(snapshot, fixture.selection);
     bool magenta = false;
     for (int y = 0; y < processed.height(); ++y)
         for (int x = 0; x < processed.width(); ++x)
             magenta |= processed.pixelColor(x, y) == QColor(Qt::magenta);
-    require(magenta && processed.size() == QSize(80, 120),
-            "owned split snapshot includes rotated and flipped annotations at full resolution");
+    require(magenta && processed.size() == QSize(40, 60),
+            "owned split snapshot includes rotated and flipped annotations at the chosen zoom");
     ScreenshotPinnedWindow unavailable;
     materializePinnedMenuTree(unavailable);
     auto* unavailableSplit =
@@ -24094,12 +24201,16 @@ void pinnedImageStitchingTextAndDeferredContent() {
     const QImage after = pinnedStitchingPixels(text.stitchingSnapshot(), fixture.selection);
     require(before != after && pinnedStitchingPixels(frozen, fixture.selection) == before,
             "stitching captures rendered text edits without retaining a mutable document");
+    Access::recognition(text)->deactivate();
     Access::scaleBorderFixture(text, 50);
+    Access::recognition(text)->activate(ScreenshotRecognitionSessionController::Mode::Text);
     waitForUi(20);
     const auto reduced = text.stitchingSnapshot();
-    require(reduced.outputSize == decoded->image.size() &&
-                pinnedStitchingPixels(reduced, fixture.selection).size() == decoded->image.size(),
-            "text stitching retains source resolution independently of the pinned window zoom");
+    const QSize reducedSize(std::max(1, qRound(decoded->image.width() * 0.5)),
+                            std::max(1, qRound(decoded->image.height() * 0.5)));
+    require(reduced.outputSize == reducedSize &&
+                pinnedStitchingPixels(reduced, fixture.selection).size() == reducedSize,
+            "text stitching uses the same chosen zoom as clipboard rendering");
     text.close();
 }
 
@@ -26605,7 +26716,7 @@ void pinnedAnimationTransformRollback() {
         const auto adoptedRaster = Access::originalPreviewSource(window).materializedImage;
         const auto historyBeforeSnapshot = Access::drawingHistory(window);
         const auto tokenBeforeSnapshot = Access::pendingAnimationToken(window);
-        const auto frozen = window.imageEditingSnapshot();
+        const auto frozen = pinnedRenderedEditingSource(window);
         require(frozen.image == ScreenshotResultCompositor::normalizeImage(paintedImage) &&
                     frozen.canvasRect.size() == QSizeF(animation->canvasSize),
                 "independent editing freezes the published animation frame with its matching "
@@ -27726,6 +27837,12 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--export-snapshot-only"))) {
+            pinnedSnapshotMemoryMetadataTracksCachedDocument();
+            pinnedCapturedPresentationReplacesDonor();
+            pinnedAsyncSnapshotsMaterializeAndCancel();
+            pinnedExportsShareRenderedPixels();
+            pinnedPersistedExportsPreserveTextMarks();
+            pinnedRecognitionExportsIncludePersistentAnnotations();
             pinnedExportsIgnoreAnnotationHistory();
             pinnedExportsRejectUnavailableDocumentSnapshots();
             return 0;

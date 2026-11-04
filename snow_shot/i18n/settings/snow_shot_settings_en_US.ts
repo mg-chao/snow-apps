@@ -2752,8 +2752,8 @@
             <translation>Include saved annotation styles in the configuration archive</translation>
         </message>
         <message>
-            <source>Include the displayed text recognition or original-image translation result when saving an image</source>
-            <translation>Include the displayed text recognition or original-image translation result when saving an image</translation>
+            <source>Include the displayed text recognition or original-image translation result when saving a screenshot selection</source>
+            <translation>Include the displayed text recognition or original-image translation result when saving a screenshot selection</translation>
         </message>
         <message>
             <source>Include the pointer and capture controls in screenshots</source>

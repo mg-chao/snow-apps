@@ -25,7 +25,7 @@ class ImageEditingWindow final : public QObject {
     explicit ImageEditingWindow(ImageEditingServices services = {}, QObject* parent = nullptr);
     ~ImageEditingWindow() override;
     void present(ImageEditingSource source);
-    void presentSource(ScreenshotExportSource source);
+    void presentSource(ScreenshotExportSource source, QString originalFileName = {});
     void presentHistory(storage::CaptureHistoryRecord record);
     void presentPinnedRecord(QString id);
     void requestClose();

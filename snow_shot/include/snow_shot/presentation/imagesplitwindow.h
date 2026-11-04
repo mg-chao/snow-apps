@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/imagesplitdocument.h"
 #include "snow_shot/platform/selectedfiles.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotpinnedimagesnapshot.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 
 #include <QDateTime>
@@ -30,6 +31,7 @@ struct ImageSplitSource final {
     QString error;
     QSize outputSize;
     std::optional<ImageSplitDirection> initialDirection = std::nullopt;
+    qint64 renderingBytes = 0;
 };
 
 // UI choices are asynchronous; readers and the batch writer run on an export worker.
@@ -40,6 +42,7 @@ struct ImageSplitWindowServices final {
     std::function<void(QWidget*, Choice)> chooseDirectory;
     std::function<void(QWidget*, bool replacing, std::function<void(bool)>)> confirm;
     std::function<std::optional<QImage>(const storage::CaptureHistoryRecord&)> readHistory;
+    ScreenshotPinnedImageSnapshotRequest requestPinnedSnapshot;
     std::function<std::optional<QImage>(const QString&, Cancellation)> readFile;
     std::function<ImageSplitExportResult(const QImage&, const ImageSplitLayout&, const QString&,
                                          const QString&, Cancellation,
@@ -81,6 +84,8 @@ class ImageSplitWindow final : public QObject {
 
   private:
     friend class ImageSplitWindowCoordinator;
+    void loadPinnedRecord(const QString& recordId, quint64 token);
+    void loadSource(ImageSplitSource source, quint64 token);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

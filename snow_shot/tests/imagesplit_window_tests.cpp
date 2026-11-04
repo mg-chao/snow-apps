@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitwindow.h"
+#include "snow_shot/presentation/collagedocument.h"
 #include "snow_shot/image/imageimportlimits.h"
 #include "snow_shot/presentation/components/imagespliteditorwidget.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -370,8 +372,12 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
     pixels.image = image({540, 270}, Qt::cyan);
     pixels.createdUtc = QDateTime::fromString(QStringLiteral("2026-10-14T00:00:00Z"), Qt::ISODate);
     pixels.ignored = true;
-    pixels.canvasSession = QByteArrayLiteral("saved canvas is not a split input");
     setGeometry(pixels, pixels.image.size());
+    pixels.thumbnailMode = true;
+    pixels.preThumbnailNativeGeometry = QRect(QPoint(), QSize(270, 135));
+    pixels.nativeGeometry.setSize(QSize(60, 30));
+    pixels.scalePercent = 50;
+    pixels.opacityPercent = 55;
     require(repository.upsert(pixels).success, "save closed image pin for splitting");
     snow_shot::storage::PinnedWindowRecord file;
     file.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -418,6 +424,13 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
     require(rendered.has_value(), "render saved text reference");
     require(!styledText || (legacyRendered && legacyRendered->image != rendered->image),
             "styled split fixture must differ from legacy text rendering");
+    const auto preparation = captureScreenshotPinnedRenderPreparation();
+    const auto expectedPixels = renderScreenshotPinnedImageRecord(pixels, preparation);
+    const auto expectedText = renderScreenshotPinnedImageRecord(text, preparation);
+    require(expectedPixels.succeeded() && expectedText.succeeded() &&
+                expectedPixels.image.size() == QSize(270, 135) &&
+                expectedPixels.image.pixelColor(0, 0).alpha() < 255,
+            "saved thumbnail reference uses expansion zoom and opacity");
 
     ImageSplitWindowCoordinator coordinator;
     for (const auto& id : {pixels.id, file.id, text.id})
@@ -433,10 +446,10 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
                std::equal(expected.constBits(), expected.constBits() + expected.sizeInBytes(),
                           rgba.constBits());
     };
-    require(samePixels(windows[0]->document()->image(), pixels.image) &&
+    require(samePixels(windows[0]->document()->image(), expectedPixels.image) &&
                 samePixels(windows[1]->document()->image(), file.image) &&
-                samePixels(windows[2]->document()->image(), rendered->image),
-            "saved image, file, and text pins preserve full-resolution pixels");
+                samePixels(windows[2]->document()->image(), expectedText.image),
+            "saved image, file, and text pins split their shared rendered pixels");
     require(windows[0]->imageName() == QStringLiteral("Screenshot_%1")
                                            .arg(pixels.createdUtc.toLocalTime().toString(
                                                QStringLiteral("yyyyMMdd-HHmmss"))) &&
@@ -465,6 +478,112 @@ void savedPinsOpenIndependentSplitWindows(const QString& directory, bool styledT
     require(coordinator.windows().isEmpty(), "shutdown rejects new saved pin split windows");
     require(repository.removeMany({pixels.id, file.id, text.id}).success,
             "remove saved pin split fixtures");
+}
+
+void savedPinsPreferCurrentSnapshots() {
+    auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+    snow_shot::storage::PinnedWindowRecord record;
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.image = image({80, 60}, Qt::blue);
+    record.initialWindowSize = record.image.size();
+    record.nativeGeometry = record.image.rect();
+    record.canvasSourceRect = record.image.rect();
+    record.contentCanvasRect = record.canvasSourceRect;
+    record.surfaceCanvasRect = record.canvasSourceRect;
+    require(repository.upsert(record).success, "persist a stale split donor");
+    using Completion = std::function<void(std::optional<ScreenshotPinnedImageSnapshot>)>;
+    QVector<Completion> pending;
+    ImageSplitWindowServices ports;
+    ports.requestPinnedSnapshot = [&](const QString& id, Completion complete) {
+        require(id == record.id, "current split lookup keeps its requested identity");
+        pending.append(std::move(complete));
+    };
+    const QImage current = image({47, 29}, Qt::yellow);
+    ScreenshotPinnedImageSnapshot snapshot;
+    snapshot.source = ScreenshotExportSource::fromImage(current);
+    snapshot.outputSize = current.size();
+    snapshot.originalFileName = QStringLiteral("current-rendered.png");
+    ImageSplitWindow currentWindow(nullptr, ports);
+    currentWindow.presentPinnedRecord(record.id);
+    require(currentWindow.loading() && pending.size() == 1,
+            "split waits for a current snapshot before reading saved pixels");
+    pending.takeFirst()(snapshot);
+    loaded(currentWindow);
+    require(currentWindow.document()->image().size() == current.size() &&
+                currentWindow.document()->image().pixelColor(0, 0) == QColor(Qt::yellow) &&
+                currentWindow.imageName() == QStringLiteral("current-rendered"),
+            "split uses current rendered pixels and filename instead of a stale saved donor");
+
+    ImageSplitWindow failedWindow(nullptr, ports);
+    failedWindow.presentPinnedRecord(record.id);
+    ScreenshotPinnedImageSnapshot failed;
+    failed.error = QStringLiteral("current split preparation failed");
+    pending.takeFirst()(failed);
+    require(!failedWindow.loading() && failedWindow.document()->image().isNull() &&
+                failedWindow.lastError() == failed.error,
+            "failed current split snapshots never fall back to stale saved pixels");
+
+    ImageSplitWindow storedWindow(nullptr, ports);
+    storedWindow.presentPinnedRecord(record.id);
+    pending.takeFirst()(std::nullopt);
+    loaded(storedWindow);
+    require(storedWindow.document()->image().pixelColor(0, 0) == QColor(Qt::blue),
+            "absent live split sources restore their saved state");
+
+    ImageSplitWindow abandoned(nullptr, ports);
+    abandoned.presentPinnedRecord(record.id);
+    require(pending.size() == 1, "hold a split snapshot beyond shutdown");
+    abandoned.shutdown();
+    pending.takeFirst()(snapshot);
+    flush();
+    require(abandoned.document()->image().isNull(), "shutdown rejects late split snapshots");
+    currentWindow.shutdown();
+    failedWindow.shutdown();
+    storedWindow.shutdown();
+    require(repository.remove(record.id).success, "remove current split fixture");
+}
+
+void currentPinRenderingMemoryIsAdmittedBeforeLoading() {
+    const auto baseline = collageResourceUsage();
+    const auto renders = std::make_shared<std::atomic_int>(0);
+    const QImage accepted = image({3, 2}, Qt::green);
+    {
+        ImageSplitWindowServices ports;
+        ports.requestPinnedSnapshot = [&](const QString& id, auto complete) {
+            ScreenshotPinnedImageSnapshot snapshot;
+            snapshot.outputSize = accepted.size();
+            if (id == QStringLiteral("styled crop")) {
+                snapshot.source = ScreenshotExportSource::fromProducer([renders](const auto&) {
+                    ++*renders;
+                    return image({3, 2});
+                });
+                snapshot.renderingBytes = baseline.limitBytes + 1;
+            } else {
+                snapshot.source = ScreenshotExportSource::fromImage(accepted);
+            }
+            complete(std::move(snapshot));
+        };
+        ImageSplitWindow window(nullptr, ports);
+        int failures = 0;
+        int successes = 0;
+        QObject::connect(&window, &ImageSplitWindow::imageLoaded, &window,
+                         [&](bool success) { success ? ++successes : ++failures; });
+        window.presentPinnedRecord(QStringLiteral("styled crop"));
+        waitUntil([&] { return !window.loading(); },
+                  "small styled crop render admission completes");
+        require(renders->load() == 0 && failures == 1 && successes == 0 &&
+                    window.document()->image().isNull() && !window.lastError().isEmpty() &&
+                    window.modal()->isOpen(),
+                "small styled crops reject excessive full rendering memory before loading pixels");
+        window.presentPinnedRecord(QStringLiteral("accepted"));
+        loaded(window);
+        require(failures == 1 && successes == 1 && window.lastError().isEmpty() &&
+                    window.document()->image() == accepted && !window.busy(),
+                "a rejected render leaves image loading usable for the next pin");
+        window.shutdown();
+    }
+    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline.reservedBytes; },
+              "split render admission releases failed and completed import reservations");
 }
 
 void saveCommitsVisibleDraft() {
@@ -1014,6 +1133,8 @@ int main(int argc, char** argv) {
         independentHistoryAndSourceWindows();
         savedPinsOpenIndependentSplitWindows(directory.path(), false);
         savedPinsOpenIndependentSplitWindows(directory.path(), true);
+        savedPinsPreferCurrentSnapshots();
+        currentPinRenderingMemoryIsAdmittedBeforeLoading();
         nativeHistoryPixelsAreShared();
         realAnimatedFilesKeepTheirInitialCanvas(directory.path());
         admissionAndLateCallbacks();
@@ -1035,6 +1156,8 @@ int main(int argc, char** argv) {
         selectedFileQueriesCancelWithWindowLifecycle();
         savedPinsOpenIndependentSplitWindows(directory.path(), false);
         savedPinsOpenIndependentSplitWindows(directory.path(), true);
+        savedPinsPreferCurrentSnapshots();
+        currentPinRenderingMemoryIsAdmittedBeforeLoading();
         nativeHistoryPixelsAreShared();
         realAnimatedFilesKeepTheirInitialCanvas(directory.path());
         saveCommitsVisibleDraft();

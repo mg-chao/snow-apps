@@ -1,16 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "../pinned/screenshotpinnedcropgeometry.h"
 #include "snow_shot/presentation/imageeditingdocument.h"
-#include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
-#include "snow_shot/presentation/screenshotpinnedwindow.h"
-#include "snow_shot/presentation/screenshotocrpresentation.h"
-#include "snow_shot/presentation/screenshottextannotationgeometry.h"
-#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include <QColorSpace>
 #include <QCoreApplication>
-#include <QTextDocument>
 #include <algorithm>
 
 namespace snow_shot::presentation {
@@ -169,98 +162,23 @@ ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& re
     return result;
 }
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
-                                          const ScreenshotPinnedTextPreparation& preparation) {
+                                          const ScreenshotPinnedRenderPreparation& preparation) {
+    const auto name = record.originalFileName;
+    auto rendered = renderScreenshotPinnedImageRecord(std::move(record), preparation);
     ImageEditingSource result;
-    std::shared_ptr<QTextDocument> formattedDocument;
-    qreal formattedDpi = 1;
-    const auto style = decodeScreenshotResultStyle(record.resultStyle);
-    if (!style) {
-        result.error = loadError();
-        return result;
-    }
-    if (style->region || style->cornerRadius != 0 || style->effectWidth() != 0)
-        result.resultStyle = *style;
-    if (record.sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
-        ScreenshotClipboardOriginalContent original;
-        original.html = record.originalHtml;
-        original.text = record.originalText;
-        original.textStyle = record.textStyle;
-        original.textFormat = record.textFormat;
-        const auto rendered =
-            prepareScreenshotPinnedText(original, record.firstCreationTextDpi, preparation);
-        if (!rendered) {
-            result.error = loadError();
-            return result;
-        }
-        record.image = rendered->image;
-        formattedDocument = rendered->formattedDocument;
-        formattedDpi = rendered->formattedTextDevicePixelRatio;
-    } else if (record.animationSource)
-        record.image = record.animationSource->firstFrame;
-    result.image =
-        snowCanvasTransformImage(record.image, record.imageTransform, Qt::SmoothTransformation);
-    result.canvasRect = record.contentCanvasRect;
-    if (!result.canvasRect.isValid())
-        result.canvasRect = QRectF(QPointF(), QSizeF(result.image.size()));
-    result.canvasSession = record.canvasSession;
-    result.recognition =
-        ScreenshotPinnedWindow::decodeRecognitionSnapshot(record.recognitionResults);
-    result.originalFileName = record.originalFileName;
-    ScreenshotTextAnnotationDocument textAnnotations;
-    if (!result.image.isNull() && !record.textAnnotations.isEmpty() &&
-        textAnnotations.restore(record.textAnnotations)) {
-        QVector<int> sourceLengths;
-        if (textAnnotations.source() == ScreenshotTextAnnotationSource::Formatted &&
-            formattedDocument) {
-            sourceLengths.append(formattedDocument->characterCount() - 1);
-        } else if (textAnnotations.source() == ScreenshotTextAnnotationSource::Ocr &&
-                   result.recognition.text && result.recognition.text->presentation) {
-            for (const auto& line : result.recognition.text->presentation->lines)
-                sourceLengths.append(static_cast<int>(line.text.size()));
-        }
-        if (!textAnnotations.validForSource(sourceLengths))
-            textAnnotations.clear();
-        QTransform pixelsToCanvas;
-        pixelsToCanvas.translate(result.canvasRect.left(), result.canvasRect.top());
-        pixelsToCanvas.scale(result.canvasRect.width() / result.image.width(),
-                             result.canvasRect.height() / result.image.height());
-        const QTransform orientedPixels =
-            QImage::trueMatrix(record.imageTransform, record.image.width(), record.image.height()) *
-            pixelsToCanvas;
-        if (textAnnotations.source() == ScreenshotTextAnnotationSource::Formatted &&
-            formattedDocument &&
-            textAnnotations.fingerprint() ==
-                screenshotFormattedTextAnnotationFingerprint(*formattedDocument)) {
-            result.textAnnotations = screenshotFormattedTextAnnotationSnapshot(
-                textAnnotations, *formattedDocument,
-                QTransform::fromScale(formattedDpi, formattedDpi) * orientedPixels);
-        } else if (textAnnotations.source() == ScreenshotTextAnnotationSource::Ocr &&
-                   result.recognition.text && result.recognition.text->presentation &&
-                   textAnnotations.fingerprint() == screenshotOcrTextAnnotationFingerprint(
-                                                        *result.recognition.text->presentation) &&
-                   !record.canvasSourceRect.isEmpty()) {
-            QTransform sourceToPixels;
-            sourceToPixels.scale(record.image.width() / record.canvasSourceRect.width(),
-                                 record.image.height() / record.canvasSourceRect.height());
-            sourceToPixels.translate(-record.canvasSourceRect.left(),
-                                     -record.canvasSourceRect.top());
-            result.textAnnotations = screenshotOcrTextAnnotationSnapshot(
-                textAnnotations, *result.recognition.text->presentation,
-                sourceToPixels * orientedPixels);
-        }
-    }
-    if (record.cropRect && !result.image.isNull() &&
-        screenshot_pinned_crop_geometry::valid(*record.cropRect) &&
-        QRectF(record.image.rect()).contains(*record.cropRect)) {
-        const auto full = result.canvasRect;
-        const auto visible = screenshot_pinned_crop_geometry::sourceToCanvas(
-                                 record.image.size(), record.imageTransform, full)
-                                 .mapRect(*record.cropRect);
-        restrictImageEditingSource(result, visible);
-    }
-    if (result.image.isNull())
-        result.error = loadError();
-    return result;
+    result.originalFileName = name;
+    result.error = std::move(rendered.error);
+    return completeImageEditingComposite(std::move(result), std::move(rendered.image));
+}
+
+ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
+                                          const ScreenshotPinnedTextPreparation& preparation) {
+    ScreenshotPinnedRenderPreparation rendering;
+    rendering.text = preparation;
+    rendering.font = QFont();
+    rendering.textColor = Qt::black;
+    rendering.backgroundColor = preparation.baseColor;
+    return readImageEditingPinned(std::move(record), rendering);
 }
 
 ScreenshotExportSource imageEditingCompositeSource(const ImageEditingSource& source) {

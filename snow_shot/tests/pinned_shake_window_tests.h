@@ -435,6 +435,20 @@ void peerContentAndWindowModesSurviveHidingAndRestoring() {
                     "enter hide-to-top before hiding a peer");
             controller.animation().setCurrentTime(controller.animation().duration());
         }
+        ScreenshotPinnedImageSnapshot frozen;
+        QImage rendered;
+        if (kind == u"image") {
+            require(
+                !Access::applyAnnotationTransaction(
+                     peer,
+                     R"({"version":1,"operations":[{"type":"rectangle","bounds":[660,380,12,12],"style":{"stroke":[0,255,0,255],"fill":[0,255,0,255]}}]})")
+                     .isEmpty(),
+                "annotate the peer before hiding and restoring it");
+            frozen = pinnedRenderedSnapshot(peer);
+            rendered = pinnedStitchingPixels(frozen, peer);
+            require(!rendered.isNull() && rendered != Access::displayImage(peer),
+                    "the rendered peer includes its annotation");
+        }
         const auto before = peer.persistenceSnapshot();
         present(source, config());
         require(Access::beginShakeDrag(source), "begin mode preservation shake");
@@ -449,6 +463,9 @@ void peerContentAndWindowModesSurviveHidingAndRestoring() {
                     hidden->hideToTopMode == before.hideToTopMode,
                 "shaking must preserve every peer's content, placement and presentation mode");
         Access::finishShakeDrag(source);
+        if (!rendered.isNull())
+            require(pinnedStitchingPixels(frozen, source) == rendered,
+                    "the frozen rendered snapshot survives hiding its source pin");
         require(repository.upsert(*hidden).success &&
                     repository.setRecordsHidden({hidden->id}, true).success,
                 "persist the hidden peer for restoration");
@@ -479,6 +496,21 @@ void peerContentAndWindowModesSurviveHidingAndRestoring() {
                 (!before.animationSource ||
                  restored.animationSource->encoded == before.animationSource->encoded),
             "restored peers retain their documents, geometry, animation and presentation modes");
+        if (!rendered.isNull()) {
+            for (const auto& snapshot :
+                 {pinnedRenderedSnapshot(*restoredPeer), restoredPeer->stitchingSnapshot(),
+                  restoredPeer->splittingSnapshot(), frozen}) {
+                auto pixels =
+                    pinnedStitchingPixels(snapshot, source).convertToFormat(rendered.format());
+                // Persistence can tag previously untagged pixels as sRGB without changing them.
+                pixels.setColorSpace(rendered.colorSpace());
+                if (pixels != rendered)
+                    qWarning() << "Restored pin render mismatch" << pixels.size() << rendered.size()
+                               << "scale" << before.scalePercent << restored.scalePercent;
+                require(pixels == rendered,
+                        "restored annotated peers preserve unified rendering across workflows");
+            }
+        }
         service.destroyRecords({hidden->id});
         translation_tests::flushEvents();
         source.close();

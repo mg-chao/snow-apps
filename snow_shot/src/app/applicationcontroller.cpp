@@ -2067,6 +2067,19 @@ class ApplicationController::Impl {
         }
     }
 
+    ScreenshotPinnedImageSnapshotRequest pinnedImageSnapshotRequest() {
+        return [this](const QString& id, auto complete) {
+            if (auto* pin = groupManager.liveWindow(id)) {
+                pin->requestRenderedImageSnapshot(
+                    [complete = std::move(complete)](ScreenshotPinnedImageSnapshot snapshot) {
+                        complete(std::move(snapshot));
+                    });
+            } else {
+                complete(std::nullopt);
+            }
+        };
+    }
+
     presentation::ImageEditingWindowCoordinator& ensureImageEditingWindowCoordinator() {
         if (!imageEditingWindowCoordinator) {
             presentation::ImageEditingServices services;
@@ -2095,6 +2108,7 @@ class ApplicationController::Impl {
     presentation::ImageSplitWindowCoordinator& ensureImageSplitWindowCoordinator() {
         if (!imageSplitWindowCoordinator) {
             presentation::ImageSplitWindowServices services;
+            services.requestPinnedSnapshot = pinnedImageSnapshotRequest();
             services.stitchToPdf = [this](presentation::ImageSplitSnapshot snapshot) {
                 return ensureCollageWindowCoordinator().presentSplitImagesAsPdf(
                     std::move(snapshot));
@@ -2111,7 +2125,10 @@ class ApplicationController::Impl {
 
     presentation::CollageWindowCoordinator& ensureCollageWindowCoordinator() {
         if (!collageWindowCoordinator) {
-            collageWindowCoordinator = std::make_unique<presentation::CollageWindowCoordinator>(&q);
+            presentation::CollageWindowServices services;
+            services.requestPinnedSnapshot = pinnedImageSnapshotRequest();
+            collageWindowCoordinator =
+                std::make_unique<presentation::CollageWindowCoordinator>(&q, std::move(services));
             QObject::connect(&app, &QCoreApplication::aboutToQuit, collageWindowCoordinator.get(),
                              &presentation::CollageWindowCoordinator::shutdown);
         }
