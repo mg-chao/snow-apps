@@ -105,7 +105,7 @@ ScreenshotMcpResponse failure(const QString& id, const QString& code) {
     r.requestId = id;
     r.errorCode = code;
     r.errorMessage =
-        QCoreApplication::translate("ScreenshotMcpServer", "MCP request failed (%1).").arg(code);
+        QCoreApplication::translate("ScreenshotMcpServer", "MCP request failed (%1)").arg(code);
     return r;
 }
 QByteArray frame(const QJsonObject& o, const QByteArray& attachment) {
@@ -534,19 +534,19 @@ bool ScreenshotMcpServer::start(QString* error) {
         return true;
     if (m_runtimeDirectory.isEmpty() || !QFileInfo(m_descriptorPath).isAbsolute()) {
         if (error)
-            *error = tr("Could not secure the MCP runtime directory.");
+            *error = tr("Could not secure the MCP runtime directory");
         return false;
     }
     if (!privateDirectory(m_runtimeDirectory)) {
         if (error)
-            *error = tr("Could not secure the MCP runtime directory.");
+            *error = tr("Could not secure the MCP runtime directory");
         return false;
     }
     m_lock = std::make_unique<QLockFile>(
         QDir(m_runtimeDirectory).filePath(QStringLiteral("endpoint.lock")));
     if (!m_lock->tryLock(0)) {
         if (error)
-            *error = tr("Another Snow Shot instance owns the MCP endpoint.");
+            *error = tr("Another Snow Shot instance owns the MCP endpoint");
         m_lock.reset();
         return false;
     }
@@ -564,7 +564,7 @@ bool ScreenshotMcpServer::start(QString* error) {
         QStringLiteral("-XXXXXX"));
     if (!m_socketDirectory->isValid()) {
         if (error)
-            *error = tr("Could not secure the MCP runtime directory.");
+            *error = tr("Could not secure the MCP runtime directory");
         m_socketDirectory.reset();
         m_lock.reset();
         return false;
@@ -613,7 +613,7 @@ bool ScreenshotMcpServer::start(QString* error) {
                               Qt::BlockingQueuedConnection);
     if (!listenError.isEmpty() || !writeDescriptor(error)) {
         if (error && !listenError.isEmpty())
-            *error = tr("Could not open the local MCP endpoint.");
+            *error = tr("Could not open the local MCP endpoint");
         stop();
         return false;
     }
@@ -773,7 +773,7 @@ bool ScreenshotMcpServer::writeDescriptor(QString* error) {
     if (!file.open(QIODevice::WriteOnly) ||
         !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
         if (error)
-            *error = tr("Could not write the private MCP descriptor.");
+            *error = tr("Could not write the private MCP descriptor");
         return false;
     }
     const QJsonObject object{
@@ -787,7 +787,7 @@ bool ScreenshotMcpServer::writeDescriptor(QString* error) {
     const QByteArray bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     if (file.write(bytes) != bytes.size() || !file.commit()) {
         if (error)
-            *error = tr("Could not write the private MCP descriptor.");
+            *error = tr("Could not write the private MCP descriptor");
         return false;
     }
     return true;

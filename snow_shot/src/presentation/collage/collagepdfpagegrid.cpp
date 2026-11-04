@@ -72,7 +72,7 @@ QString imageName(const QString& label) {
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "PDF document pages"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid",
                       "Drag pages to reorder. Use the arrow keys to select a page and Enter to "
-                      "preview the original image."),
+                      "preview the original image"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Page %1: %2"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Page %1"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Replace image"),
@@ -90,9 +90,9 @@ QString imageName(const QString& label) {
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drag image files here, or choose Add images"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drop images to add pages"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add multiple image files at once"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The original image is unavailable."),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Image preview was cancelled."),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The page preview shows the last valid settings."),
+    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The original image is unavailable"),
+    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Image preview was cancelled"),
+    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The page preview shows the last valid settings"),
 };
 
 quint64 draggedId(const QMimeData* mime, const CollageDocument* document) {
@@ -128,7 +128,7 @@ class MemoryImageReply final : public adqt::widgets::AdImageReply {
             if (isFinished())
                 return;
             if (m_image.isNull())
-                fail(gridText("The original image is unavailable."));
+                fail(gridText("The original image is unavailable"));
             else
                 succeed(m_image);
         });
@@ -136,7 +136,7 @@ class MemoryImageReply final : public adqt::widgets::AdImageReply {
 
     void abort() override {
         if (!isFinished())
-            fail(gridText("Image preview was cancelled."));
+            fail(gridText("Image preview was cancelled"));
     }
 
   private:
@@ -406,7 +406,7 @@ class PdfPageCard final : public QWidget {
         m_number->setAccessibleName(gridText("Page %1").arg(m_ordinal));
         setAccessibleDescription(gridText(
             "Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the "
-            "original image."));
+            "original image"));
     }
 
   protected:
@@ -1254,10 +1254,10 @@ void CollagePdfPageGrid::setExportBusy(bool busy) {
 void CollagePdfPageGrid::retranslateUi() {
     auto& d = *m_impl;
     setAccessibleName(gridText("PDF document pages"));
-    d.validationNotice->setText(gridText("The page preview shows the last valid settings."));
+    d.validationNotice->setText(gridText("The page preview shows the last valid settings"));
     setAccessibleDescription(gridText(
         "Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the "
-        "original image."));
+        "original image"));
     d.reverse->setToolTip(gridText("Reverse page order"));
     d.add->setToolTip(gridText("Add images"));
     d.clear->setToolTip(gridText("Clear"));

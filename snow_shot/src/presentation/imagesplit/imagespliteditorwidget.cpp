@@ -87,8 +87,8 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Percentage"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", " px"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Split size unit"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter a positive integer."),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter an integer of at least 16 pixels."),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter a positive integer"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter an integer of at least 16 pixels"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Undo"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Redo"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Fit to Canvas"),
@@ -100,14 +100,14 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select Image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to replace the current image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image file at a time."),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image file at a time"),
 };
 [[maybe_unused]] constexpr std::array kCanvasTranslations{
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "Image splitting preview"),
     QT_TRANSLATE_NOOP(
         "ImageSplitPreviewCanvas",
         "Click a ruler to add a split line; drag a line to move it. Select a line and press Delete "
-        "to remove it. Drag with the middle mouse button to pan; scroll to zoom."),
+        "to remove it. Drag with the middle mouse button to pan; scroll to zoom"),
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "X: %1 px"),
     QT_TRANSLATE_NOOP("ImageSplitPreviewCanvas", "Y: %1 px"),
 };
@@ -414,7 +414,7 @@ void ImageSplitPreviewCanvas::retranslateUi() {
     setAccessibleName(canvasText("Image splitting preview"));
     setAccessibleDescription(canvasText(
         "Click a ruler to add a split line; drag a line to move it. Select a line and press Delete "
-        "to remove it. Drag with the middle mouse button to pan; scroll to zoom."));
+        "to remove it. Drag with the middle mouse button to pan; scroll to zoom"));
     if (m_impl->automaticFit)
         fitToCanvas();
     update();
@@ -895,8 +895,8 @@ struct ImageSplitEditorWidget::Impl {
             if (!pattern.match(draft).hasMatch() || !ok || value < minimum ||
                 value > std::numeric_limits<int>::max()) {
                 errors.insert(key, minimum == 16
-                                       ? editorText("Enter an integer of at least 16 pixels.")
-                                       : editorText("Enter a positive integer."));
+                                       ? editorText("Enter an integer of at least 16 pixels")
+                                       : editorText("Enter a positive integer"));
             } else {
                 destination = static_cast<int>(value);
             }
@@ -1389,7 +1389,7 @@ void ImageSplitEditorWidget::retranslateUi() {
     d.emptyState->setAccessibleDescription(d.emptyState->description->text());
     d.emptySelect->setText(editorText("Select Image"));
     d.emptySelect->setAccessibleName(d.emptySelect->text());
-    d.dropHint->description->setText(editorText("Drop one image file at a time."));
+    d.dropHint->description->setText(editorText("Drop one image file at a time"));
     d.dropHint->setAccessibleDescription(d.dropHint->description->text());
     d.canvas->retranslateUi();
     d.refresh();

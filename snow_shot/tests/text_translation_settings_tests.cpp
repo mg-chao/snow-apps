@@ -269,7 +269,7 @@ void contracts(QApplication& app) {
             }
             require(tokenField && tokenField->item()->label() == QStringLiteral("API Key") &&
                         tokenField->metadata().description.translated() ==
-                            QStringLiteral("Optional access token sent as a Bearer token."),
+                            QStringLiteral("Optional access token sent as a Bearer token"),
                     "DeepLX explains optional Bearer authentication");
             deepLXSecret->setText(QStringLiteral("access-token"));
             for (const auto& language :
@@ -287,7 +287,7 @@ void contracts(QApplication& app) {
                             QStringLiteral("Bearer")) &&
                             (language == QStringLiteral("en_US") ||
                              tokenField->metadata().description.translated() !=
-                                 QStringLiteral("Optional access token sent as a Bearer token.")),
+                                 QStringLiteral("Optional access token sent as a Bearer token")),
                         "DeepLX Bearer help is translated in each language");
             }
             deepLXModal->acceptButton()->click();

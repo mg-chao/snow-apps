@@ -74,7 +74,7 @@ StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function
         if (!flush || !flush()) {
             service.reportBlocked(QCoreApplication::translate(
                 "snow_shot::app::ApplicationController",
-                "Your settings could not be saved. Please retry before updating."));
+                "Your settings could not be saved. Please retry before updating"));
             return;
         }
         service.setRelaunchArguments(

@@ -471,7 +471,7 @@ struct ImageEditingWindow::Impl {
             message(ImageEditingWindow::tr("Loading image…"), AdMessage::Type::Loading);
             break;
         case Notice::LoadError:
-            message(ImageEditingWindow::tr("The image could not be loaded."));
+            message(ImageEditingWindow::tr("The image could not be loaded"));
             break;
         case Notice::Exporting:
             message(ImageEditingWindow::tr("Exporting…"), AdMessage::Type::Loading);
@@ -775,7 +775,7 @@ struct ImageEditingWindow::Impl {
     void exportContent(ExportOperation operation);
     void translateConfirmation() {
         confirmation->setWindowTitle(ImageEditingWindow::tr("Discard Changes?"));
-        confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes."));
+        confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes"));
         confirmation->setAcceptText(ImageEditingWindow::tr("Discard Changes"));
         confirmation->setRejectText(ImageEditingWindow::tr("Continue Editing"));
     }
@@ -1045,7 +1045,7 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
     if (recognition && operation == ExportOperation::Copy) {
         auto mime = recognition->recognitionClipboardMimeData();
         if (!mime) {
-            finish(false, ImageEditingWindow::tr("No recognition result is available to export."));
+            finish(false, ImageEditingWindow::tr("No recognition result is available to export"));
             return;
         }
         content = std::move(mime);
@@ -1062,7 +1062,7 @@ void ImageEditingWindow::Impl::exportContent(ExportOperation operation) {
 #endif
             {
                 finish(false,
-                       ImageEditingWindow::tr("No recognition result is available to export."));
+                       ImageEditingWindow::tr("No recognition result is available to export"));
                 return;
             }
         }
@@ -1128,7 +1128,7 @@ void ImageEditingWindow::present(ImageEditingSource source) {
                     result->image = renderScreenshotTextAnnotations(
                         result->image, result->canvasRect, result->textAnnotations);
                     if (result->image.isNull())
-                        result->error = ImageEditingWindow::tr("The image could not be loaded.");
+                        result->error = ImageEditingWindow::tr("The image could not be loaded");
                     result->textAnnotations = {};
                 }
                 return ScreenshotExportTaskResult{};
@@ -1140,7 +1140,7 @@ void ImageEditingWindow::present(ImageEditingSource source) {
         if (d.loadJob.isValid())
             return;
         source = std::move(*result);
-        source.error = tr("The image could not be loaded.");
+        source.error = tr("The image could not be loaded");
     }
     if (source.resultStyle && source.error.isEmpty()) {
         d.setLoading(true);
@@ -1154,14 +1154,14 @@ void ImageEditingWindow::present(ImageEditingSource source) {
                 present(completeImageEditingComposite(std::move(source), std::move(result.image)));
             }))
             return;
-        source.error = tr("The image could not be loaded.");
+        source.error = tr("The image could not be loaded");
     }
     d.setLoading(false);
     d.show();
     if (!source.error.isEmpty() || !d.document.load(source)) {
-        if (source.error.isEmpty() || source.error == tr("The image could not be loaded.") ||
+        if (source.error.isEmpty() || source.error == tr("The image could not be loaded") ||
             source.error ==
-                QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded."))
+                QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded"))
             d.showNotice(Impl::Notice::LoadError);
         else
             d.message(source.error);
@@ -1197,11 +1197,11 @@ void ImageEditingWindow::presentSource(ScreenshotExportSource source, QString or
                 editingSource.originalFileName = originalFileName;
                 editingSource.flattened = true;
                 if (editingSource.image.isNull())
-                    editingSource.error = tr("The image could not be loaded.");
+                    editingSource.error = tr("The image could not be loaded");
                 present(std::move(editingSource));
             })) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }
@@ -1227,7 +1227,7 @@ void ImageEditingWindow::presentHistory(storage::CaptureHistoryRecord record) {
         });
     if (!d.loadJob.isValid()) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }
@@ -1248,7 +1248,7 @@ void ImageEditingWindow::presentPinnedRecord(QString id) {
                 if (!snapshot.error.isEmpty() || !snapshot.source.isValid()) {
                     ImageEditingSource failure;
                     failure.error = snapshot.error.isEmpty()
-                                        ? ImageEditingWindow::tr("The image could not be loaded.")
+                                        ? ImageEditingWindow::tr("The image could not be loaded")
                                         : std::move(snapshot.error);
                     guard->present(std::move(failure));
                     return;
@@ -1277,7 +1277,7 @@ void ImageEditingWindow::presentPinnedRecord(QString id) {
         });
     if (!d.loadJob.isValid()) {
         ImageEditingSource failure;
-        failure.error = tr("The image could not be loaded.");
+        failure.error = tr("The image could not be loaded");
         present(std::move(failure));
     }
 }

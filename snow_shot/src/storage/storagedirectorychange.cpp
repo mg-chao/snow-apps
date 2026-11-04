@@ -59,7 +59,7 @@ StorageResult writeObject(const QString& path, const QJsonObject& object) {
     const auto bytes = QJsonDocument(object).toJson();
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
         return StorageResult::failure(message(QT_TRANSLATE_NOOP(
-            "StorageDirectoryChange", "Could not save the storage directory selection.")));
+            "StorageDirectoryChange", "Could not save the storage directory selection")));
     return StorageResult::ok();
 }
 QJsonObject readObject(const QString& path) {
@@ -143,10 +143,10 @@ QString savedStorageDirectory(const QString& directory, const QString& executabl
         *recoveryWarning = message(
             QT_TRANSLATE_NOOP("StorageDirectoryChange",
                               "An interrupted storage migration was detected. The last committed "
-                              "directory is in use; remaining copies have been preserved."));
+                              "directory is in use; remaining copies have been preserved"));
     if (recoveryWarning && QFileInfo::exists(path) && object.isEmpty())
         *recoveryWarning = message(QT_TRANSLATE_NOOP(
-            "StorageDirectoryChange", "The saved storage directory selection could not be read."));
+            "StorageDirectoryChange", "The saved storage directory selection could not be read"));
     const QString selected = object.value(QStringLiteral("directory")).toString();
     return QDir::isAbsolutePath(selected) ? selected : QString();
 }
@@ -155,7 +155,7 @@ StorageResult validateStorageDirectory(const QString& source, const QString& des
     if (destination.trimmed().isEmpty() || !QDir::isAbsolutePath(destination) || source.isEmpty() ||
         !QDir::isAbsolutePath(source))
         return StorageResult::failure(message(QT_TRANSLATE_NOOP(
-            "StorageDirectoryChange", "Choose an absolute storage directory path.")));
+            "StorageDirectoryChange", "Choose an absolute storage directory path")));
 #ifdef Q_OS_WIN
     const auto windowsPath = QDir::fromNativeSeparators(destination);
     const bool drivePath = windowsPath.size() >= 3 && windowsPath.at(0).isLetter() &&
@@ -164,24 +164,24 @@ StorageResult validateStorageDirectory(const QString& source, const QString& des
                              !windowsPath.startsWith(u"//./");
     if (!drivePath && !networkPath)
         return StorageResult::failure(message(QT_TRANSLATE_NOOP(
-            "StorageDirectoryChange", "Choose an absolute storage directory path.")));
+            "StorageDirectoryChange", "Choose an absolute storage directory path")));
 #endif
     const auto components = QDir::fromNativeSeparators(destination).split(u'/');
     for (const auto& component : components) {
         if (component != u"." && component != u".." &&
             (component.endsWith(u'.') || component.endsWith(u' ')))
             return StorageResult::failure(message(QT_TRANSLATE_NOOP(
-                "StorageDirectoryChange", "Choose an absolute storage directory path.")));
+                "StorageDirectoryChange", "Choose an absolute storage directory path")));
     }
     if (contains(resolvedPath(source), resolvedPath(destination)) ||
         contains(resolvedPath(destination), resolvedPath(source)))
         return StorageResult::failure(message(QT_TRANSLATE_NOOP(
             "StorageDirectoryChange",
-            "The new directory must be separate from the current storage directory.")));
+            "The new directory must be separate from the current storage directory")));
     if (linkedPath(source) || linkedPath(destination))
         return StorageResult::failure(message(QT_TRANSLATE_NOOP(
             "StorageDirectoryChange",
-            "Storage directory paths must not contain symbolic links or junctions.")));
+            "Storage directory paths must not contain symbolic links or junctions")));
     const QFileInfo target(destination);
     if (target.exists() &&
         (!target.isDir() ||
@@ -189,7 +189,7 @@ StorageResult validateStorageDirectory(const QString& source, const QString& des
               .entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System)
               .isEmpty()))
         return StorageResult::failure(message(
-            QT_TRANSLATE_NOOP("StorageDirectoryChange", "Choose a new or empty directory.")));
+            QT_TRANSLATE_NOOP("StorageDirectoryChange", "Choose a new or empty directory")));
     return StorageResult::ok();
 }
 
@@ -214,20 +214,20 @@ StorageDirectoryChangeResult changeStorageDirectory(const StorageDirectoryChange
     if (!QDir().mkpath(o.bootstrapDirectory) || !QDir().mkpath(o.destination))
         return {false,
                 message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                          "Could not create the storage directory.")),
+                                          "Could not create the storage directory")),
                 {}};
     const QString bootstrap = storageBootstrapPath(o.bootstrapDirectory, o.executableDirectory);
     QLockFile lock(bootstrap + QStringLiteral(".lock"));
     if (!lock.tryLock(0))
         return {false,
                 message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                          "Another storage migration is in progress.")),
+                                          "Another storage migration is in progress")),
                 {}};
     QTemporaryFile probe(QDir(o.destination).filePath(QStringLiteral(".snow-shot-write-XXXXXX")));
     if (!probe.open())
         return {false,
                 message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                          "The storage directory is not writable.")),
+                                          "The storage directory is not writable")),
                 {}};
     probe.close();
     probe.remove();
@@ -240,7 +240,7 @@ StorageDirectoryChangeResult changeStorageDirectory(const StorageDirectoryChange
         return {
             false,
             message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                      "The destination does not have enough writable disk space.")),
+                                      "The destination does not have enough writable disk space")),
             {}};
 
     const bool previousExists = QFileInfo::exists(bootstrap);
@@ -271,19 +271,19 @@ StorageDirectoryChangeResult changeStorageDirectory(const StorageDirectoryChange
             if (contains(o.destination, path) && !linkedPath(path))
                 QDir().rmdir(path);
         }
-        const auto restored =
-            previousExists ? writeObject(bootstrap, previous)
-                           : (QFile::remove(bootstrap)
-                                  ? StorageResult::ok()
-                                  : StorageResult::failure(message(QT_TRANSLATE_NOOP(
-                                        "StorageDirectoryChange",
-                                        "Could not save the storage directory selection."))));
+        const auto restored = previousExists
+                                  ? writeObject(bootstrap, previous)
+                                  : (QFile::remove(bootstrap)
+                                         ? StorageResult::ok()
+                                         : StorageResult::failure(message(QT_TRANSLATE_NOOP(
+                                               "StorageDirectoryChange",
+                                               "Could not save the storage directory selection"))));
         return {false, error, restored.success ? QString() : restored.error};
     };
     for (const auto& dir : directories) {
         if (!QDir().mkpath(QDir(o.destination).filePath(dir)))
             return fail(message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                                  "Could not create the storage directory.")));
+                                                  "Could not create the storage directory")));
     }
     QHash<QString, qint64> totals, completed;
     for (const auto& entry : entries)
@@ -297,7 +297,7 @@ StorageDirectoryChangeResult changeStorageDirectory(const StorageDirectoryChange
         const auto group = category(entry.relative);
         report(StorageDirectoryProgress::Stage::Copying, group, completed[group], totals[group]);
         if (linkedPath(from) || linkedPath(to) || !QFile::copy(from, to))
-            return fail(message(QT_TRANSLATE_NOOP("StorageDirectoryChange", "Could not copy %1."))
+            return fail(message(QT_TRANSLATE_NOOP("StorageDirectoryChange", "Could not copy %1"))
                             .arg(from));
         copied.append(entry.relative);
         report(StorageDirectoryProgress::Stage::Verifying, group, completed[group], totals[group]);
@@ -305,7 +305,7 @@ StorageDirectoryChangeResult changeStorageDirectory(const StorageDirectoryChange
         result = checkpoint(QStringLiteral("verify"));
         if (!result.success || entry.hash.isEmpty() || entry.hash != digest(to))
             return fail(result.success ? message(QT_TRANSLATE_NOOP("StorageDirectoryChange",
-                                                                   "Verification failed for %1."))
+                                                                   "Verification failed for %1"))
                                              .arg(from)
                                        : result.error);
         report(StorageDirectoryProgress::Stage::Copying, group, ++completed[group], totals[group]);

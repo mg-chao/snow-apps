@@ -325,7 +325,7 @@ void RecordingTrimSession::exportClip(bool save) {
             if (reportError)
                 reportError(trimText(QT_TRANSLATE_NOOP(
                     "RecordingTrimSession",
-                    "Choose a different file to preserve the original recording.")));
+                    "Choose a different file to preserve the original recording")));
             return;
         }
     }

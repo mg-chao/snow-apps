@@ -121,8 +121,7 @@ ScreenshotMcpResponse failure(const ScreenshotMcpRequest& request, const QString
     response.requestId = request.requestId;
     response.errorCode = code;
     response.errorMessage =
-        QCoreApplication::translate("McpDocumentService", "Document request failed (%1).")
-            .arg(code);
+        QCoreApplication::translate("McpDocumentService", "Document request failed (%1)").arg(code);
     if (!field.isEmpty())
         response.errorDetails.insert(QStringLiteral("field"), field);
     return response;

@@ -402,7 +402,7 @@ void cancellationDuringEncodingRetainsCompletedPrefix() {
         [&] { return completed == 1 && ++secondOutputPolls >= 64; },
         [&](qint64 count, qint64) { completed = count; });
     require(!result.succeeded() && result.savedCount == 1 && secondOutputPolls >= 64 &&
-                result.errorSource == QStringLiteral("Export was canceled.") &&
+                result.errorSource == QStringLiteral("Export was canceled") &&
                 QDir(result.directory).entryList(QDir::Files | QDir::Hidden) ==
                     QStringList{QStringLiteral("1.png")},
             "cancellation inside the second encoder preserves only its completed prefix");
@@ -419,7 +419,7 @@ void failuresRetranslate() {
     const auto layout = calculateImageSplitLayout(image.size(), {});
     const auto canceled = exportSplitImages(image, layout, temporary.path(),
                                             QStringLiteral("language"), [] { return true; });
-    require(canceled.errorSource == QStringLiteral("Export was canceled.") &&
+    require(canceled.errorSource == QStringLiteral("Export was canceled") &&
                 canceled.errorArguments.isEmpty() && canceled.errorMessage() == canceled.error,
             "helper failures retain their original translation key and initial display message");
     ImageSplitExportResult indexed;
@@ -432,7 +432,7 @@ void failuresRetranslate() {
                 "export failures require complete Chinese translation catalogs");
         QCoreApplication::installTranslator(&translator);
         const QString expected =
-            QCoreApplication::translate("ImageSplitExport", "Export was canceled.");
+            QCoreApplication::translate("ImageSplitExport", "Export was canceled");
         require(canceled.errorMessage() == expected && canceled.errorMessage() != canceled.error,
                 "cached export failures retranslate when the runtime language changes");
         require(

@@ -241,7 +241,7 @@ QString captureError() {
         return QCoreApplication::translate(
                    "ScreenRecordingController",
                    "The recording could not be finalized. Recoverable media and its timeline "
-                   "were saved in:\n%1\n\nKeep this folder to recover the recording.")
+                   "were saved in:\n%1\n\nKeep this folder to recover the recording")
             .arg(message.section(recoveryMarker, 1).trimmed());
     }
     if (message.contains(QStringLiteral("keyboard recording:"))) {
@@ -1771,7 +1771,7 @@ struct ScreenRecordingController::Impl {
         auto* notice =
             new QMessageBox(QMessageBox::Information, tr("Recording recovery"),
                             tr("A recording was interrupted when Windows ended the "
-                               "session. Recover the saved recording or open its folder."),
+                               "session. Recover the saved recording or open its folder"),
                             QMessageBox::NoButton, QApplication::activeWindow());
         notice->setAttribute(Qt::WA_DeleteOnClose);
         QStringList details{record->sourcePath, record->outputPath, folder};
@@ -2315,7 +2315,7 @@ struct ScreenRecordingController::Impl {
                 snow_webcam_create(static_cast<uint32_t>(webcamSize), 30), snow_webcam_destroy);
             if (!webcam) {
                 webcamFailed = true;
-                notifyWebcamError(tr("The webcam could not be initialized."));
+                notifyWebcamError(tr("The webcam could not be initialized"));
                 return;
             }
         }

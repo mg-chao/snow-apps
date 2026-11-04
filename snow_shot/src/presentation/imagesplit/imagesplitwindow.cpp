@@ -48,7 +48,7 @@ QString splitText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Save All"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Stitch to PDF"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Stitching is busy. Try again when it finishes."),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Stitching is busy. Try again when it finishes"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Cancel"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Images"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Select Image"),
@@ -56,20 +56,20 @@ QString splitText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Replace Image"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Replacing the image will discard the current edits"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Discard these image splits?"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "The image and current split edits will be discarded."),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "The image and current split edits will be discarded"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Discard"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Loading image…"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Saving images: %1 of %2"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Saved %1 images to %2"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Saved %1 of %2 images to %3. %4"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Drop one image file at a time."),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "The image could not be read or is no longer available."),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image loading could not be started. Try again."),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Export could not be started. Try again."),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image processing failed. Try again."),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "The images could not be exported. Try again."),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Drop one image file at a time"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "The image could not be read or is no longer available"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image loading could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Export could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image processing failed. Try again"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "The images could not be exported. Try again"),
     QT_TRANSLATE_NOOP("ImageSplitWindow",
-                      "The image is too large or there is not enough memory to load it."),
+                      "The image is too large or there is not enough memory to load it"),
 };
 
 QString imageFilter() {
@@ -84,18 +84,18 @@ const char* selectedFileErrorSource(platform::SelectedFileError error) {
     case platform::SelectedFileError::PermissionDenied:
         return QT_TRANSLATE_NOOP("ImageSplitWindow",
                                  "Allow Snow Shot to access Finder in System Settings > Privacy & "
-                                 "Security > Automation, then try again.");
+                                 "Security > Automation, then try again");
     case platform::SelectedFileError::Timeout:
         return QT_TRANSLATE_NOOP("ImageSplitWindow",
                                  "The file manager took too long to return the selected files. "
-                                 "Please try again.");
+                                 "Please try again");
     case platform::SelectedFileError::Unavailable:
         return QT_TRANSLATE_NOOP("ImageSplitWindow",
-                                 "The file manager is unavailable. Open it and try again.");
+                                 "The file manager is unavailable. Open it and try again");
     case platform::SelectedFileError::QueryFailed:
     case platform::SelectedFileError::None:
         return QT_TRANSLATE_NOOP("ImageSplitWindow",
-                                 "Could not read the selected image files. Please try again.");
+                                 "Could not read the selected image files. Please try again");
     }
     return nullptr;
 }
@@ -116,7 +116,7 @@ struct ExportProgress final {
 };
 
 QString imageMemoryError() {
-    return splitText("The image is too large or there is not enough memory to load it.");
+    return splitText("The image is too large or there is not enough memory to load it");
 }
 bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64 nativeBytes = 0,
                   qint64 renderingBytes = 0) {
@@ -153,10 +153,10 @@ ScreenshotExportTaskResult prepareImage(QImage image, const std::shared_ptr<Load
         return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled, {});
     if (image.isNull())
         return loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                              "The image could not be read or is no longer available.");
+                              "The image could not be read or is no longer available");
     if (!reserveImage(image.size(), loaded, image.sizeInBytes()))
         return loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                              "The image is too large or there is not enough memory to load it.");
+                              "The image is too large or there is not enough memory to load it");
     // The document and canvas use physical pixel coordinates. Retain native pixels and metadata;
     // format/color conversion belongs to the bounded preview and export readers.
     loaded->preview = imageSplitPreview(
@@ -165,7 +165,7 @@ ScreenshotExportTaskResult prepareImage(QImage image, const std::shared_ptr<Load
         return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled, {});
     if (loaded->preview.isNull())
         return loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                              "The image could not be read or is no longer available.");
+                              "The image could not be read or is no longer available");
     loaded->image = std::move(image);
     const qint64 retained =
         loaded->image.sizeInBytes() + (loaded->preview.constBits() == loaded->image.constBits()
@@ -173,7 +173,7 @@ ScreenshotExportTaskResult prepareImage(QImage image, const std::shared_ptr<Load
                                            : loaded->preview.sizeInBytes());
     if (!loaded->reservation->resize(retained))
         return loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                              "The image is too large or there is not enough memory to load it.");
+                              "The image is too large or there is not enough memory to load it");
     return {};
 }
 } // namespace
@@ -339,7 +339,7 @@ struct ImageSplitWindow::Impl final {
         if (status == Status::LoadError && loadingErrorSource)
             error = splitText(loadingErrorSource);
         if (status == Status::StitchError)
-            error = splitText("Image Stitching is busy. Try again when it finishes.");
+            error = splitText("Image Stitching is busy. Try again when it finishes");
         if (status == Status::ExportError) {
             exportResult.error = windowExportErrorSource ? splitText(windowExportErrorSource)
                                                          : exportResult.errorMessage();
@@ -374,7 +374,7 @@ struct ImageSplitWindow::Impl final {
                                 .arg(exportResult.directory, exportResult.error);
             break;
         case Status::DropError:
-            content = splitText("Drop one image file at a time.");
+            content = splitText("Drop one image file at a time");
             break;
         case Status::None:
             break;
@@ -418,7 +418,7 @@ struct ImageSplitWindow::Impl final {
                                                : splitText("Discard these image splits?"));
         confirmation->setText(
             replacing ? splitText("Replacing the image will discard the current edits")
-                      : splitText("The image and current split edits will be discarded."));
+                      : splitText("The image and current split edits will be discarded"));
         confirmation->setAcceptText(replacing ? splitText("Replace Image") : splitText("Discard"));
         confirmation->setRejectText(splitText("Cancel"));
     }
@@ -512,10 +512,10 @@ struct ImageSplitWindow::Impl final {
         status = Status::None;
         if (!result.succeeded()) {
             loadingErrorSource = result.failureStage == ScreenshotExportFailureStage::Internal
-                                     ? "Image processing failed. Try again."
+                                     ? "Image processing failed. Try again"
                                      : loaded->errorSource;
             if (!loadingErrorSource && result.error.isEmpty())
-                loadingErrorSource = "The image could not be read or is no longer available.";
+                loadingErrorSource = "The image could not be read or is no longer available";
             error = loadingErrorSource ? splitText(loadingErrorSource) : result.error;
             status = Status::LoadError;
             showStatus();
@@ -643,10 +643,10 @@ struct ImageSplitWindow::Impl final {
                 exporting = false;
                 if (!task.succeeded() && result->error.isEmpty())
                     result->error = task.failureStage == ScreenshotExportFailureStage::Internal
-                                        ? splitText("The images could not be exported. Try again.")
+                                        ? splitText("The images could not be exported. Try again")
                                         : task.error;
                 if (task.failureStage == ScreenshotExportFailureStage::Internal)
-                    windowExportErrorSource = "The images could not be exported. Try again.";
+                    windowExportErrorSource = "The images could not be exported. Try again";
                 exportResult = *result;
                 exportResult.error = result->errorMessage();
                 error = exportResult.error;
@@ -666,8 +666,8 @@ struct ImageSplitWindow::Impl final {
             progress.reset();
             exporting = false;
             exportResult = {};
-            exportResult.error = splitText("Export could not be started. Try again.");
-            windowExportErrorSource = "Export could not be started. Try again.";
+            exportResult.error = splitText("Export could not be started. Try again");
+            windowExportErrorSource = "Export could not be started. Try again";
             error = exportResult.error;
             status = Status::ExportError;
             updateActions();
@@ -701,7 +701,7 @@ void ImageSplitWindow::presentHistory(const storage::CaptureHistoryRecord& recor
             if (record.result && !reserveImage(record.result->imageSize, loaded))
                 return loadingFailure(
                     loaded, ScreenshotExportFailureStage::Source,
-                    "The image is too large or there is not enough memory to load it.");
+                    "The image is too large or there is not enough memory to load it");
             const auto image = reader ? reader(record)
                                       : storage::ApplicationStorage::instance()
                                             .captureHistory()
@@ -714,7 +714,7 @@ void ImageSplitWindow::presentHistory(const storage::CaptureHistoryRecord& recor
     if (!d.job.isValid())
         d.finishLoading(loaded, {}, record.createdUtc, false, token,
                         loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                                       "Image loading could not be started. Try again."));
+                                       "Image loading could not be started. Try again"));
 }
 
 void ImageSplitWindow::presentPinnedRecord(const QString& recordId) {
@@ -765,7 +765,7 @@ void ImageSplitWindow::loadPinnedRecord(const QString& recordId, quint64 token) 
                     loaded->reservation.reset();
                 if (!loaded->reservation)
                     loaded->errorSource =
-                        "The image is too large or there is not enough memory to load it.";
+                        "The image is too large or there is not enough memory to load it";
                 return loaded->reservation != nullptr;
             };
             auto source = readImageImportPinnedRecord(recordId, cancelled, allocate, preparation);
@@ -786,7 +786,7 @@ void ImageSplitWindow::loadPinnedRecord(const QString& recordId, quint64 token) 
     if (!d.job.isValid())
         d.finishLoading(loaded, {}, {}, false, token,
                         loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                                       "Image loading could not be started. Try again."));
+                                       "Image loading could not be started. Try again"));
 }
 
 void ImageSplitWindow::presentSource(ImageSplitSource source) {
@@ -805,8 +805,7 @@ void ImageSplitWindow::loadSource(ImageSplitSource source, quint64 token) {
     loaded->initialDirection = source.initialDirection;
     if (!source.error.isEmpty() || !source.source.isValid()) {
         if (source.error == imageMemoryError())
-            loaded->errorSource =
-                "The image is too large or there is not enough memory to load it.";
+            loaded->errorSource = "The image is too large or there is not enough memory to load it";
         d.finishLoading(loaded, source.originalFileName, source.createdUtc, false, token,
                         ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Source,
                                                             source.error));
@@ -817,7 +816,7 @@ void ImageSplitWindow::loadSource(ImageSplitSource source, quint64 token) {
         d.finishLoading(
             loaded, source.originalFileName, source.createdUtc, false, token,
             loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                           "The image is too large or there is not enough memory to load it."));
+                           "The image is too large or there is not enough memory to load it"));
         return;
     }
     d.artifact = std::make_shared<ScreenshotExportArtifact>(source.source);
@@ -842,14 +841,13 @@ void ImageSplitWindow::loadSource(ImageSplitSource source, quint64 token) {
                                           token, std::move(result));
                 });
             if (!impl.job.isValid())
-                impl.finishLoading(
-                    loaded, source.originalFileName, source.createdUtc, false, token,
-                    loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                                   "Image loading could not be started. Try again."));
+                impl.finishLoading(loaded, source.originalFileName, source.createdUtc, false, token,
+                                   loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
+                                                  "Image loading could not be started. Try again"));
         }))
         d.finishLoading(loaded, source.originalFileName, source.createdUtc, false, token,
                         loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                                       "Image loading could not be started. Try again."));
+                                       "Image loading could not be started. Try again"));
 }
 
 void ImageSplitWindow::presentImage(QImage image, QString originalFileName, QDateTime createdUtc) {
@@ -891,7 +889,7 @@ void ImageSplitWindow::replaceFile(const QString& path) {
                 if (image.isNull() && !error.isEmpty())
                     return loadingFailure(
                         loaded, ScreenshotExportFailureStage::Source,
-                        "The image is too large or there is not enough memory to load it.");
+                        "The image is too large or there is not enough memory to load it");
             }
             return prepareImage(std::move(image), loaded, cancellation);
         },
@@ -902,7 +900,7 @@ void ImageSplitWindow::replaceFile(const QString& path) {
     if (!d.job.isValid())
         d.finishLoading(loaded, {}, {}, true, token,
                         loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                                       "Image loading could not be started. Try again."));
+                                       "Image loading could not be started. Try again"));
 }
 void ImageSplitWindow::dropFiles(const QStringList& paths) {
     if (m_impl->unavailable())
@@ -941,7 +939,7 @@ void ImageSplitWindow::paste() {
     };
     if (rejected) {
         fail(loadingFailure(loaded, ScreenshotExportFailureStage::Source,
-                            "The image is too large or there is not enough memory to load it."));
+                            "The image is too large or there is not enough memory to load it"));
         return;
     }
     d.job = ScreenshotExportCoordinator::shared().submit(
@@ -954,7 +952,7 @@ void ImageSplitWindow::paste() {
                     if (loaded->reservation->resize(bytes))
                         return true;
                     loaded->errorSource =
-                        "The image is too large or there is not enough memory to load it.";
+                        "The image is too large or there is not enough memory to load it";
                     return false;
                 });
             if (loaded->errorSource)
@@ -965,7 +963,7 @@ void ImageSplitWindow::paste() {
         fail);
     if (!d.job.isValid())
         fail(loadingFailure(loaded, ScreenshotExportFailureStage::Queue,
-                            "Image loading could not be started. Try again."));
+                            "Image loading could not be started. Try again"));
 }
 void ImageSplitWindow::saveAll() {
     if (!m_impl->unavailable() && m_impl->editor->commitPendingSettings())
@@ -981,7 +979,7 @@ void ImageSplitWindow::stitchToPdf() {
         d.error.clear();
         d.status = Impl::Status::None;
     } else {
-        d.error = splitText("Image Stitching is busy. Try again when it finishes.");
+        d.error = splitText("Image Stitching is busy. Try again when it finishes");
         d.status = Impl::Status::StitchError;
     }
     d.showStatus();
@@ -1121,7 +1119,7 @@ void ImageSplitWindowCoordinator::presentSelectedFiles(
         auto failed = std::make_shared<LoadedImage>();
         d.finishLoading(failed, {}, {}, false, token,
                         loadingFailure(failed, ScreenshotExportFailureStage::Queue,
-                                       "Image loading could not be started. Try again."));
+                                       "Image loading could not be started. Try again"));
     }
 }
 void ImageSplitWindowCoordinator::presentPinnedRecord(const QString& recordId) {

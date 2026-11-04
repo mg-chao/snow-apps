@@ -730,7 +730,7 @@ void disabledStatusPreservesKeysAndRetranslates() {
             if (QByteArray(source) ==
                 QByteArrayLiteral("This shortcut is temporarily disabled and released for use by "
                                   "other applications. It will be restored when global hotkeys are "
-                                  "enabled and the focused window allows them.")) {
+                                  "enabled and the focused window allows them")) {
                 return QStringLiteral("Localized disabled explanation");
             }
             return {};

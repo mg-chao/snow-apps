@@ -306,7 +306,7 @@ void emptyAndFailedSelectionsRemainUsable() {
                             window->lastError() ==
                                 QCoreApplication::translate(
                                     "ImageSplitWindow",
-                                    "Could not read the selected image files. Please try again."),
+                                    "Could not read the selected image files. Please try again"),
                         "selected-file errors follow runtime language changes");
             }
             require(languages.setLanguage(QStringLiteral("en_US")), "restore English");
@@ -771,7 +771,7 @@ void exportAndRuntimeLanguage(const QString& directory) {
     flush();
     require(saveButton(window)->text() == QString::fromUtf8("全部保存") &&
                 window.modal()->windowTitle() == QString::fromUtf8("图片分割") &&
-                window.lastError() == QString::fromUtf8("无法创建输出文件夹。"),
+                window.lastError() == QString::fromUtf8("无法创建输出文件夹"),
             "open split window retranslates at runtime");
     require(languages.setLanguage(QStringLiteral("zh_TW")), "switch to traditional Chinese");
     flush();
@@ -782,7 +782,7 @@ void exportAndRuntimeLanguage(const QString& directory) {
     require(saveButton(window)->text() == QStringLiteral("Save All") &&
                 window.modal()->windowTitle() == QStringLiteral("Image Splitting"),
             "English source copy restored");
-    require(window.lastError() == QStringLiteral("The output folder could not be created."),
+    require(window.lastError() == QStringLiteral("The output folder could not be created"),
             "existing error messages retranslate at runtime");
     window.shutdown();
 }
@@ -1100,7 +1100,7 @@ void loadingErrorsFollowLanguageAcrossQueuedCompletion() {
     require(languages.setLanguage(QStringLiteral("zh_CN")),
             "switch language before queued load failure delivery");
     waitUntil([&] { return !window.loading(); }, "queued load failure reaches the window");
-    const char* source = "The image could not be read or is no longer available.";
+    const char* source = "The image could not be read or is no longer available";
     const auto translated = QCoreApplication::translate("ImageSplitWindow", source);
     require(translated != QString::fromUtf8(source) && window.lastError() == translated &&
                 window.document()->state() == before,

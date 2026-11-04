@@ -23,15 +23,15 @@
     <context>
         <name>ScreenshotAutoFilterController</name>
         <message>
-            <source>Region identification failed. Try Auto Filter again.</source>
-            <translation>區域識別失敗。請再次嘗試自動濾鏡。</translation>
+            <source>Region identification failed. Try Auto Filter again</source>
+            <translation>區域識別失敗。請再次嘗試自動濾鏡</translation>
         </message>
     </context>
     <context>
         <name>ScreenshotController</name>
         <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次。</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次</translation>
         </message>
         <message>
             <source>Automatic screenshot saving failed: %1</source>
@@ -50,8 +50,8 @@
             <translation>無法開啟所選檔案：%1</translation>
         </message>
         <message>
-            <source>Could not read the selected files from Finder. Please try again.</source>
-            <translation>無法讀取 Finder 中所選的檔案，請再試一次。</translation>
+            <source>Could not read the selected files from Finder. Please try again</source>
+            <translation>無法讀取 Finder 中所選的檔案，請再試一次</translation>
         </message>
         <message>
             <source>Could not recapture the screen</source>
@@ -66,20 +66,20 @@
             <translation>結束截圖？</translation>
         </message>
         <message>
-            <source>Finder is unavailable. Open Finder and try again.</source>
-            <translation>Finder 無法使用，請開啟 Finder 後再試一次。</translation>
+            <source>Finder is unavailable. Open Finder and try again</source>
+            <translation>Finder 無法使用，請開啟 Finder 後再試一次</translation>
         </message>
         <message>
-            <source>Finder took too long to return the selected files. Please try again.</source>
-            <translation>讀取 Finder 中所選檔案的要求逾時，請再試一次。</translation>
+            <source>Finder took too long to return the selected files. Please try again</source>
+            <translation>讀取 Finder 中所選檔案的要求逾時，請再試一次</translation>
         </message>
         <message>
-            <source>Live window display could not be initialized.</source>
-            <translation>無法初始化視窗即時顯示。</translation>
+            <source>Live window display could not be initialized</source>
+            <translation>無法初始化視窗即時顯示</translation>
         </message>
         <message>
-            <source>No capturable window was found in the selection.</source>
-            <translation>選取範圍內找不到可擷取的視窗。</translation>
+            <source>No capturable window was found in the selection</source>
+            <translation>選取範圍內找不到可擷取的視窗</translation>
         </message>
         <message>
             <source>No recognized result is available to copy</source>
@@ -98,16 +98,16 @@
             <translation>儲存截圖</translation>
         </message>
         <message>
-            <source>Scrolling capture stopped because the display configuration changed. Select the region again.</source>
-            <translation>顯示器設定已變更，捲動截圖已停止。請重新選取區域。</translation>
+            <source>Scrolling capture stopped because the display configuration changed. Select the region again</source>
+            <translation>顯示器設定已變更，捲動截圖已停止。請重新選取區域</translation>
         </message>
         <message>
-            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again.</source>
-            <translation>捲動截圖已停止。請檢查螢幕錄製權限和顯示器設定，然後重試。</translation>
+            <source>Scrolling capture stopped. Check screen permissions and display settings, then try again</source>
+            <translation>捲動截圖已停止。請檢查螢幕錄製權限和顯示器設定，然後重試</translation>
         </message>
         <message>
-            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements.</source>
-            <translation>智慧選取正在使用視窗模式。請在螢幕擷取設定中啟用輔助使用權限，以選取視窗元素。</translation>
+            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements</source>
+            <translation>智慧選取正在使用視窗模式。請在螢幕擷取設定中啟用輔助使用權限，以選取視窗元素</translation>
         </message>
         <message>
             <source>The clipboard content could not be pinned</source>
@@ -194,23 +194,23 @@
             <translation>此截圖無法固定到螢幕</translation>
         </message>
         <message>
-            <source>Uploaded to cloud. Link copied to clipboard.</source>
-            <translation>已上傳至雲端，連結已複製到剪貼簿。</translation>
+            <source>Uploaded to cloud. Link copied to clipboard</source>
+            <translation>已上傳至雲端，連結已複製到剪貼簿</translation>
         </message>
         <message>
             <source>Uploading to cloud... %1%</source>
             <translation>正在上傳至雲端… %1%</translation>
         </message>
         <message>
-            <source>Your current screenshot will be discarded.</source>
-            <translation>目前的截圖將被捨棄。</translation>
+            <source>Your current screenshot will be discarded</source>
+            <translation>目前的截圖將被捨棄</translation>
         </message>
     </context>
     <context>
         <name>ScreenshotMcpServer</name>
         <message>
-            <source>MCP request failed (%1).</source>
-            <translation>MCP 請求失敗（%1）。</translation>
+            <source>MCP request failed (%1)</source>
+            <translation>MCP 請求失敗（%1）</translation>
         </message>
     </context>
     <context>
@@ -573,34 +573,34 @@
     <context>
         <name>SnowImageQtCodec</name>
         <message>
-            <source>Could not decode animated image.</source>
-            <translation>無法解碼動畫圖片。</translation>
+            <source>Could not decode animated image</source>
+            <translation>無法解碼動畫圖片</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::app::mcp::ScreenshotMcpServer</name>
         <message>
-            <source>Another Snow Shot instance owns the MCP endpoint.</source>
-            <translation>另一個 Snow Shot 執行個體正在使用 MCP 端點。</translation>
+            <source>Another Snow Shot instance owns the MCP endpoint</source>
+            <translation>另一個 Snow Shot 執行個體正在使用 MCP 端點</translation>
         </message>
         <message>
-            <source>Could not open the local MCP endpoint.</source>
-            <translation>無法開啟本機 MCP 端點。</translation>
+            <source>Could not open the local MCP endpoint</source>
+            <translation>無法開啟本機 MCP 端點</translation>
         </message>
         <message>
-            <source>Could not secure the MCP runtime directory.</source>
-            <translation>無法設定 MCP 執行目錄的安全權限。</translation>
+            <source>Could not secure the MCP runtime directory</source>
+            <translation>無法設定 MCP 執行目錄的安全權限</translation>
         </message>
         <message>
-            <source>Could not write the private MCP descriptor.</source>
-            <translation>無法寫入私有 MCP 描述檔。</translation>
+            <source>Could not write the private MCP descriptor</source>
+            <translation>無法寫入私有 MCP 描述檔</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::app::mcp::ScreenshotMcpSession</name>
         <message>
-            <source>MCP request failed (%1).</source>
-            <translation>MCP 請求失敗（%1）。</translation>
+            <source>MCP request failed (%1)</source>
+            <translation>MCP 請求失敗（%1）</translation>
         </message>
     </context>
     <context>

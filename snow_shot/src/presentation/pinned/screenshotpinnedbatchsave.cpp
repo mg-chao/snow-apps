@@ -173,8 +173,8 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             adqt::widgets::AdMessage::Request message;
             message.key = QStringLiteral("pinned-batch-save");
             message.content =
-                m_failed == 0 ? ScreenshotPinnedWindow::tr("Saved %n window(s).", nullptr, m_saved)
-                              : ScreenshotPinnedWindow::tr("Saved: %1; failed: %2.")
+                m_failed == 0 ? ScreenshotPinnedWindow::tr("Saved %n window(s)", nullptr, m_saved)
+                              : ScreenshotPinnedWindow::tr("Saved: %1; failed: %2")
                                     .arg(m_saved)
                                     .arg(m_failed);
             if (!m_lastError.isEmpty())
@@ -199,7 +199,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             target.window->property("saveDialogOpen").toBool()) {
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Source,
-                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save.")));
+                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save")));
             return;
         }
         const QPointer<ScreenshotPinnedBatchSaveSession> lifetime(this);
@@ -214,7 +214,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
         if (!target.valid()) {
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Source,
-                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save.")));
+                ScreenshotPinnedWindow::tr("A pinned window is no longer available to save")));
             return;
         }
         if (recognition) {
@@ -266,7 +266,7 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
                         complete(ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Source,
                             ScreenshotPinnedWindow::tr(
-                                "A pinned window is no longer available to save.")));
+                                "A pinned window is no longer available to save")));
                     else if (result.succeeded())
                         submitPublication({path});
                     else

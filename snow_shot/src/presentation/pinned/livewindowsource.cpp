@@ -26,12 +26,11 @@ QString liveText(const char* text) {
 }
 QString messageFor(LiveWindowState state, const QString& error = {}) {
     if (state == LiveWindowState::Minimized)
-        return liveText(
-            QT_TRANSLATE_NOOP("LiveWindowSource",
-                              "The window is minimized. The latest content cannot be displayed."));
+        return liveText(QT_TRANSLATE_NOOP(
+            "LiveWindowSource", "The window is minimized. The latest content cannot be displayed"));
     if (state == LiveWindowState::Closed)
         return liveText(QT_TRANSLATE_NOOP(
-            "LiveWindowSource", "The window is closed. The latest content cannot be displayed."));
+            "LiveWindowSource", "The window is closed. The latest content cannot be displayed"));
     if (state == LiveWindowState::Unavailable)
         return error.isEmpty() ? liveText(QT_TRANSLATE_NOOP(
                                      "LiveWindowSource",
@@ -450,9 +449,9 @@ class LiveCaptureWorker final : public std::enable_shared_from_this<LiveCaptureW
                         m_continuous = false;
                     }
                     capture.reset();
-                    postFailure(liveText(QT_TRANSLATE_NOOP(
-                        "LiveWindowSource",
-                        "The selection does not intersect the selected window.")));
+                    postFailure(liveText(
+                        QT_TRANSLATE_NOOP("LiveWindowSource",
+                                          "The selection does not intersect the selected window")));
                     continue;
                 }
                 initialRegion = intersection.toAlignedRect();
@@ -556,11 +555,11 @@ class CapturedLiveWindowSource final
     void initialize(InitializationCompletion completion) override {
         if (m_initialized || m_initializing || m_stopped) {
             const bool initialized = m_initialized && !m_stopped;
-            completion(initialized,
-                       initialized ? QString()
-                                   : liveText(QT_TRANSLATE_NOOP(
-                                         "LiveWindowSource",
-                                         "The live window display could not be initialized.")));
+            completion(initialized, initialized
+                                        ? QString()
+                                        : liveText(QT_TRANSLATE_NOOP(
+                                              "LiveWindowSource",
+                                              "The live window display could not be initialized")));
             return;
         }
         if (m_worker)
@@ -687,11 +686,11 @@ class CapturedLiveWindowSource final
         const auto pending = std::exchange(m_pendingFrames, {});
         for (const auto& pendingFrame : pending)
             pendingFrame.second(
-                {}, liveText(QT_TRANSLATE_NOOP("LiveWindowSource", "The live window was closed.")));
+                {}, liveText(QT_TRANSLATE_NOOP("LiveWindowSource", "The live window was closed")));
         if (m_initializationCompletion) {
             const auto completion = std::exchange(m_initializationCompletion, {});
             completion(false, liveText(QT_TRANSLATE_NOOP("LiveWindowSource",
-                                                         "The live window was closed.")));
+                                                         "The live window was closed")));
         }
         emit stopped();
     }
@@ -831,7 +830,7 @@ class CapturedLiveWindowSource final
             m_initialFrame = frame.image;
             if (m_initialFrame.isNull()) {
                 failCapture(liveText(QT_TRANSLATE_NOOP(
-                    "LiveWindowSource", "The live window display could not be initialized.")));
+                    "LiveWindowSource", "The live window display could not be initialized")));
                 return;
             }
             m_initialized = true;
@@ -878,7 +877,7 @@ class CapturedLiveWindowSource final
         for (const auto& request : pending) {
             if (m_stopped)
                 request.second({}, liveText(QT_TRANSLATE_NOOP("LiveWindowSource",
-                                                              "The live window was closed.")));
+                                                              "The live window was closed")));
             else if (!image.isNull() && request.first <= frame.requestGeneration)
                 request.second(image, {});
             else

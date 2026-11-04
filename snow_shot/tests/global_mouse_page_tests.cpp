@@ -272,7 +272,7 @@ class GlobalMouseTranslator final : public QTranslator {
                       int) const override {
         if (QString::fromLatin1(context) ==
                 QStringLiteral("snow_shot::presentation::GlobalMouseManager") &&
-            QString::fromUtf8(sourceText) == QStringLiteral("Global mouse gestures are ready.")) {
+            QString::fromUtf8(sourceText) == QStringLiteral("Global mouse gestures are ready")) {
             return QStringLiteral("Globale Mausgesten sind bereit.");
         }
         if (QString::fromLatin1(context) != QStringLiteral("GlobalMouseRow")) {

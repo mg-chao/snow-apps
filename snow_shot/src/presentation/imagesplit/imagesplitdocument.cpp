@@ -563,15 +563,15 @@ ImageSplitLines::const_iterator::operator-=(difference_type offset) {
 
 namespace {
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide or high."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a percentage from 5% to 100%."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "The image is unavailable."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split type."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split direction."),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "The split lines require too much memory."),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide or high"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a percentage from 5% to 100%"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "The image is unavailable"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split type"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose a split direction"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "The split lines require too much memory"),
 };
 QString splitText(const char* value) {
     return QCoreApplication::translate("ImageSplitDocument", value);
@@ -670,12 +670,12 @@ std::optional<int> percentageBoundary(const DecimalPercentage& percentage, int d
 bool equalLines(int dimension, int count, const QString& field, ImageSplitLayout& layout,
                 ImageSplitLines& destination) {
     if (count <= 0) {
-        layout.errors.insert(field, splitText("Enter a positive whole number."));
+        layout.errors.insert(field, splitText("Enter a positive whole number"));
         return false;
     }
     if (count > dimension) {
         layout.errors.insert(field,
-                             splitText("Each image must be at least one pixel wide or high."));
+                             splitText("Each image must be at least one pixel wide or high"));
         return false;
     }
     if (count == 1)
@@ -695,7 +695,7 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
                   ImageSplitLines& destination) {
     if (settings.unit == ImageSplitUnit::Pixels) {
         if (settings.pixels < 16) {
-            layout.errors.insert(QStringLiteral("pixels"), splitText("Enter at least 16 pixels."));
+            layout.errors.insert(QStringLiteral("pixels"), splitText("Enter at least 16 pixels"));
             return false;
         }
         return destination.appendArithmetic(settings.pixels, settings.pixels,
@@ -703,19 +703,19 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
     }
     if (settings.unit != ImageSplitUnit::Percentage) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Choose pixels or percentage."));
+                             splitText("Choose pixels or percentage"));
         return false;
     }
     const auto percentage = parsePercentage(settings.percentage);
     if (!percentage) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Enter a percentage from 5% to 100%."));
+                             splitText("Enter a percentage from 5% to 100%"));
         return false;
     }
     const QString denominator = percentage->denominator();
     if (compareDigits(multiplyDigits(percentage->digits, quint64(dimension)), denominator) < 0) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Each image must be at least one pixel wide or high."));
+                             splitText("Each image must be at least one pixel wide or high"));
         return false;
     }
     for (int multiple = 1; multiple <= 20; ++multiple) {
@@ -724,13 +724,13 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
         const auto boundary = percentageBoundary(*percentage, dimension, multiple);
         if (!boundary || *boundary >= dimension) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high."));
+                                 splitText("Each image must be at least one pixel wide or high"));
             return false;
         }
         const int coordinate = *boundary;
         if (coordinate <= 0 || (!destination.isEmpty() && coordinate <= destination.last())) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high."));
+                                 splitText("Each image must be at least one pixel wide or high"));
             return false;
         }
         destination.append(coordinate);
@@ -775,7 +775,7 @@ ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings&
     ImageSplitLayout layout;
     layout.size = size;
     if (size.isEmpty()) {
-        layout.errors.insert(QStringLiteral("image"), splitText("The image is unavailable."));
+        layout.errors.insert(QStringLiteral("image"), splitText("The image is unavailable"));
         return layout;
     }
     try {
@@ -794,16 +794,16 @@ ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings&
             else if (settings.type == ImageSplitType::Precise)
                 preciseLines(dimension, settings, layout, lines);
             else
-                layout.errors.insert(QStringLiteral("type"), splitText("Choose a split type."));
+                layout.errors.insert(QStringLiteral("type"), splitText("Choose a split type"));
         } else {
             layout.errors.insert(QStringLiteral("direction"),
-                                 splitText("Choose a split direction."));
+                                 splitText("Choose a split direction"));
         }
     } catch (const std::bad_alloc&) {
         layout.verticalLines = {};
         layout.horizontalLines = {};
         layout.errors.insert(QStringLiteral("image"),
-                             splitText("The split lines require too much memory."));
+                             splitText("The split lines require too much memory"));
     }
     return layout;
 }

@@ -859,13 +859,13 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
 #ifndef Q_OS_WIN
     Q_UNUSED(directory);
     Q_UNUSED(migrate);
-    return StorageResult::failure(tr("Custom storage directories are only supported on Windows."));
+    return StorageResult::failure(tr("Custom storage directories are only supported on Windows"));
 #else
     if (!m_initialized || !m_status.writeAvailable || m_status.directoryChanging ||
         m_status.historyClearing || m_status.cacheClearing || m_status.pinnedClearing ||
         m_status.historyPolicyUpdating || m_status.pinnedPolicyUpdating)
         return StorageResult::failure(
-            tr("Storage is busy or unavailable. Try again when current operations finish."));
+            tr("Storage is busy or unavailable. Try again when current operations finish"));
     const QString destination = QDir::cleanPath(QDir::fromNativeSeparators(directory.trimmed()));
     const auto validation = validateStorageDirectory(m_status.effectiveDirectory, destination);
     if (!validation.success)
@@ -955,7 +955,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                     actualPins.insert(pin.id);
                 if (actualPins != expectedPins)
                     return StorageResult::failure(
-                        tr("Some pinned windows could not be prepared in the new directory."));
+                        tr("Some pinned windows could not be prepared in the new directory"));
                 return prepared->flush();
             };
             options.activate = [&](const QString& root) {
@@ -990,7 +990,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                     }
                 }
                 if (!diagnostics.initialize(next))
-                    outcome.warning += tr("File logging could not be restarted.");
+                    outcome.warning += tr("File logging could not be restarted");
             }
             return outcome;
         }));

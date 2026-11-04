@@ -37,7 +37,7 @@ void showRevealFailure(QWidget* parent) {
     adqt::widgets::AdMessage::Request request;
     request.key = QStringLiteral("historyRevealFailure");
     request.content = QCoreApplication::translate("HistoryFileLocation",
-                                                  "Unable to open this entry's file location.");
+                                                  "Unable to open this entry's file location");
     adqt::widgets::AdMessageService::error(std::move(request), parent->window());
 }
 
@@ -54,7 +54,7 @@ void copyImagePath(const QString& path, QWidget* parent) {
     adqt::widgets::AdMessage::Request request;
     request.key = QStringLiteral("historyCopyImagePathFailure");
     request.content = QCoreApplication::translate("HistoryFileLocation",
-                                                  "Unable to copy this entry's image path.");
+                                                  "Unable to copy this entry's image path");
     adqt::widgets::AdMessageService::error(std::move(request), parent->window());
 }
 

@@ -723,7 +723,7 @@ void batchPinRequiresSingleGroup() {
         require(pin->toolTip() ==
                     translator.translate(
                         "PinnedWindowManagementPageWidget",
-                        "Select pinned windows from the same group to pin them to the screen."),
+                        "Select pinned windows from the same group to pin them to the screen"),
                 "the open menu retranslates its mixed-group explanation");
         QCoreApplication::removeTranslator(&translator);
     }
@@ -1034,7 +1034,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
         QStringLiteral("pinnedManagementEntryMoreMenu"));
     require(menu, "reopen More for missing image path");
     activatePinnedMenuAction(menu, menu->actions().at(3));
-    require(!menu && failureMessage == QStringLiteral("Unable to copy this entry's image path.") &&
+    require(!menu && failureMessage == QStringLiteral("Unable to copy this entry's image path") &&
                 QApplication::clipboard()->text() == clipboardBeforeFailure &&
                 fixture.removed.isEmpty() && fixture.shown.isEmpty() && selection->isChecked(),
             "unavailable pin image paths report a non-modal error without changing the clipboard");
@@ -1047,7 +1047,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
     require(menu, "reopen More for failure fixture");
     activatePinnedMenuAction(menu, menu->actions().at(4));
     require(!menu &&
-                failureMessage == QStringLiteral("Unable to open this entry's file location.") &&
+                failureMessage == QStringLiteral("Unable to open this entry's file location") &&
                 QApplication::activeModalWidget() == nullptr && fixture.removed.isEmpty() &&
                 fixture.shown.isEmpty() && selection->isChecked(),
             "failed pin reveal reports a non-modal error and preserves pins and selection");

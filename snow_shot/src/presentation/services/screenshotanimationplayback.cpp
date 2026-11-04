@@ -464,7 +464,7 @@ startImagePreparation(QObject* context, QImage original, const QTransform& trans
                     transformed = prepareImagePixels(original, transform, cancelled);
                 if (transformed.isNull() && !cancelled->load())
                     error = QCoreApplication::translate("SnowImageQtCodec",
-                                                        "Could not decode animated image.");
+                                                        "Could not decode animated image");
             }
             if (cancelled->load())
                 return;
@@ -519,9 +519,9 @@ struct AnimationDecodeWorker final {
         const auto outputBytes = ImagePreparationReservation::transformedRasterBytes(
             request.source->firstFrame, request.transform);
         if (!outputBytes) {
-            completion({}, {},
-                       QCoreApplication::translate("SnowImageQtCodec",
-                                                   "Could not decode animated image."));
+            completion(
+                {}, {},
+                QCoreApplication::translate("SnowImageQtCodec", "Could not decode animated image"));
             return;
         }
         {
@@ -592,7 +592,7 @@ struct AnimationDecodeWorker final {
                             resetRequired = true;
                             if (error.isEmpty() && !cancelled())
                                 error = QCoreApplication::translate(
-                                    "SnowImageQtCodec", "Could not decode animated image.");
+                                    "SnowImageQtCodec", "Could not decode animated image");
                             break;
                         }
                         ++diagnostics->compositedFrames;
@@ -609,7 +609,7 @@ struct AnimationDecodeWorker final {
                                   original.sizeInBytes() * 3 + *outputBytes + 8 * 1024 * 1024});
                     if (!memoryBudget().reserve(this, admittedBytes)) {
                         error = QCoreApplication::translate("SnowImageQtCodec",
-                                                            "Could not decode animated image.");
+                                                            "Could not decode animated image");
                     }
                     if (error.isEmpty()) {
                         transformed =
@@ -617,7 +617,7 @@ struct AnimationDecodeWorker final {
                     }
                     if (transformed.isNull() && error.isEmpty())
                         error = QCoreApplication::translate("SnowImageQtCodec",
-                                                            "Could not decode animated image.");
+                                                            "Could not decode animated image");
                     if (!cancelled() && !transformed.isNull())
                         frameCache().insert(request.source, request.frameIndex, request.transform,
                                             original, transformed);
@@ -1024,7 +1024,7 @@ struct ScreenshotAnimationPlayback::Impl {
             if (hooks.error)
                 hooks.error(error.isEmpty()
                                 ? QCoreApplication::translate("SnowImageQtCodec",
-                                                              "Could not decode animated image.")
+                                                              "Could not decode animated image")
                                 : std::move(error));
             return;
         }
@@ -1313,7 +1313,7 @@ quint64 ScreenshotAnimationPlayback::prepareTransform(const QTransform& transfor
         if (frame.isNull() || transformed.isNull() || !error.isEmpty()) {
             if (error.isEmpty())
                 error = QCoreApplication::translate("SnowImageQtCodec",
-                                                    "Could not decode animated image.");
+                                                    "Could not decode animated image");
             owner.releaseTransformHold();
             if (completion)
                 completion({}, std::move(error));

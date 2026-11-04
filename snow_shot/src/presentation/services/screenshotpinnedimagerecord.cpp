@@ -17,7 +17,7 @@
 namespace snow_shot::presentation {
 namespace {
 QString loadError() {
-    return QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded.");
+    return QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded");
 }
 
 struct PreparedPinnedImage final {

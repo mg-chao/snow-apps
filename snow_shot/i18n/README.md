@@ -5,6 +5,9 @@ Edit the Qt Linguist `.ts` catalogs in the feature directories. Each feature has
 translations are identity strings, except for the native language name and
 language-specific plural forms.
 
+User-visible messages do not end with a sentence-ending period (`.` or `。`). Keep
+punctuation between sentences and ellipses that indicate an ongoing operation.
+
 `modules.json` assigns each Qt translation context to exactly one feature. Keep
 the same context and source text when moving messages between files: catalog
 paths are not part of Qt's translation lookup key. New contexts must be assigned

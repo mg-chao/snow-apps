@@ -200,32 +200,31 @@ void PermissionGuideWidget::retranslate() {
     QString instruction;
     if (m_status == AppPermissionStatus::Restricted) {
         instruction = guideText(QT_TRANSLATE_NOOP(
-            "PermissionGuide", "This permission is restricted by your Mac's administrator."));
+            "PermissionGuide", "This permission is restricted by your Mac's administrator"));
     } else if (microphone && m_status == AppPermissionStatus::Error) {
         instruction = guideText(QT_TRANSLATE_NOOP(
             "PermissionGuide",
-            "Microphone access is unavailable. Open the installed application and try again."));
+            "Microphone access is unavailable. Open the installed application and try again"));
     } else if (microphone && m_status == AppPermissionStatus::NotDetermined) {
         instruction = guideText(QT_TRANSLATE_NOOP(
-            "PermissionGuide", "Request microphone access, then allow it in the macOS prompt."));
+            "PermissionGuide", "Request microphone access, then allow it in the macOS prompt"));
     } else if (microphone) {
         instruction =
             guideText(QT_TRANSLATE_NOOP("PermissionGuide",
-                                        "Turn on microphone access for ‘%1’ in System Settings."))
+                                        "Turn on microphone access for ‘%1’ in System Settings"))
                 .arg(m_application.name);
     } else if (!bundled) {
-        instruction = guideText(
-            QT_TRANSLATE_NOOP("PermissionGuide",
-                              "Open the installed application to add it to the permissions list."));
+        instruction = guideText(QT_TRANSLATE_NOOP(
+            "PermissionGuide", "Open the installed application to add it to the permissions list"));
     } else if (m_fallback) {
         instruction = guideText(QT_TRANSLATE_NOOP("PermissionGuide",
                                                   "Drag ‘%1’ into the permissions list in System "
-                                                  "Settings. If it is already listed, turn it on."))
+                                                  "Settings. If it is already listed, turn it on"))
                           .arg(m_application.name);
     } else {
         instruction = guideText(QT_TRANSLATE_NOOP("PermissionGuide",
                                                   "Drag ‘%1’ into the permissions list above. If "
-                                                  "it is already listed, turn it on."))
+                                                  "it is already listed, turn it on"))
                           .arg(m_application.name);
     }
     setWindowTitle(guideText(QT_TRANSLATE_NOOP("PermissionGuide", "Permission setup")));

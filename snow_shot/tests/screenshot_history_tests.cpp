@@ -4485,7 +4485,7 @@ void shortcutExitConfirmationGatesCancellation() {
     require(modal != nullptr && modal->ownerWindow() == &owner &&
                 modal->mode() == adqt::widgets::AdModal::Mode::Window &&
                 modal->windowTitle() == QStringLiteral("Exit screenshot?") &&
-                modal->text() == QStringLiteral("Your current screenshot will be discarded.") &&
+                modal->text() == QStringLiteral("Your current screenshot will be discarded") &&
                 modal->acceptButton() != nullptr &&
                 modal->acceptButton()->text() == QStringLiteral("Exit") &&
                 modal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&

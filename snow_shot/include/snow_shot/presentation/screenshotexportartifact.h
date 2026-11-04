@@ -37,10 +37,10 @@ struct ScreenshotPinnedViewportExportSource final {
     QList<SnowCanvasBaseImageSource> samplingSources = {};
     // Optional output clip in the unchanged document coordinate system.
     std::optional<QRectF> visibleCanvasRect = std::nullopt;
-    ScreenshotTextAnnotationRenderSnapshot textAnnotations;
+    ScreenshotTextAnnotationRenderSnapshot textAnnotations = {};
     std::optional<ScreenshotRecognitionImageSnapshot> recognitionOverlay = std::nullopt;
-    QImage presentationImage;
-    QRectF presentationCanvasRect;
+    QImage presentationImage = {};
+    QRectF presentationCanvasRect = {};
 };
 
 // A styled crop retains the full composition domain and its original pixel phase.

@@ -650,7 +650,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Tapered shaft"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette",
                       "Tapered shafts support standard, triangle, triangle outline, and indented "
-                      "triangle arrowheads."),
+                      "triangle arrowheads"),
 };
 
 [[maybe_unused]] constexpr const char* kStartArrowheadOptionTranslations[] = {
@@ -2148,7 +2148,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     shaftConfig.accessibleName = QStringLiteral("Arrow shaft type");
     shaftConfig.triggerTooltip =
         QStringLiteral("Tapered shafts support standard, triangle, triangle outline, and indented "
-                       "triangle arrowheads.");
+                       "triangle arrowheads");
     shaftConfig.gridColumnCount = 2;
     shaftConfig.options = {
         {0, QStringLiteral("Plain shaft"), custom_outlined_icons::ArrowShaftPlain()},

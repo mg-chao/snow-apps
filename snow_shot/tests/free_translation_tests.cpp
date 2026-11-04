@@ -34,7 +34,7 @@ namespace {
 const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString message = QStringLiteral(
     "The free translation service may no longer be available. Please update the app or report "
-    "the issue.");
+    "the issue");
 
 SnowShotTranslationRequest request() {
     return {freeTranslationId, QStringLiteral("auto"), QStringLiteral("zh-Hant"),

@@ -16,8 +16,8 @@
             <translation>%1 · 让表达更清晰</translation>
         </message>
         <message>
-            <source>, excellent work.</source>
-            <translation>，出色工作。</translation>
+            <source>, excellent work</source>
+            <translation>，出色工作</translation>
         </message>
         <message>
             <source>About %1</source>
@@ -28,12 +28,12 @@
             <translation>关于 Snow Shot</translation>
         </message>
         <message>
-            <source>Automatic updates are unavailable for this copy.</source>
-            <translation>此副本无法使用自动更新。</translation>
+            <source>Automatic updates are unavailable for this copy</source>
+            <translation>此副本无法使用自动更新</translation>
         </message>
         <message>
-            <source>Built for daily work, and growing with the community.</source>
-            <translation>为日常工作打造，也在社区中持续成长。</translation>
+            <source>Built for daily work, and growing with the community</source>
+            <translation>为日常工作打造，也在社区中持续成长</translation>
         </message>
         <message>
             <source>Cancel download</source>
@@ -41,21 +41,21 @@
         </message>
         <message>
             <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
+so every moment on screen can be expressed clearly and shared easily</source>
             <translation>截图、标注、文字识别和屏幕录制，
-让屏幕上的每一刻都能清晰表达、轻松分享。</translation>
+让屏幕上的每一刻都能清晰表达、轻松分享</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>更新日志</translation>
         </message>
         <message>
-            <source>Check for a newer version of %1.</source>
-            <translation>检查 %1 是否有新版本。</translation>
+            <source>Check for a newer version of %1</source>
+            <translation>检查 %1 是否有新版本</translation>
         </message>
         <message>
-            <source>Check for a newer version of Snow Shot.</source>
-            <translation>检查是否有新版 Snow Shot。</translation>
+            <source>Check for a newer version of Snow Shot</source>
+            <translation>检查是否有新版 Snow Shot</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -82,8 +82,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>版权所有 © %1 %2</translation>
         </message>
         <message>
-            <source>Could not open the link. Open %1 in your browser.</source>
-            <translation>无法打开链接。请在浏览器中打开 %1。</translation>
+            <source>Could not open the link. Open %1 in your browser</source>
+            <translation>无法打开链接。请在浏览器中打开 %1</translation>
         </message>
         <message>
             <source>Current version</source>
@@ -134,8 +134,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>反馈与建议</translation>
         </message>
         <message>
-            <source>Free and open-source software. Distributed without any warranty.</source>
-            <translation>自由开源软件，不提供任何担保。</translation>
+            <source>Free and open-source software. Distributed without any warranty</source>
+            <translation>自由开源软件，不提供任何担保</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -150,8 +150,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>GitHub</translation>
         </message>
         <message>
-            <source>Make every moment clear.</source>
-            <translation>每一刻，都能清晰表达。</translation>
+            <source>Make every moment clear</source>
+            <translation>每一刻，都能清晰表达</translation>
         </message>
         <message>
             <source>Make the next experience better</source>
@@ -246,8 +246,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>更新失败：%1</translation>
         </message>
         <message>
-            <source>Updates are managed by Microsoft Store.</source>
-            <translation>更新由 Microsoft Store 管理。</translation>
+            <source>Updates are managed by Microsoft Store</source>
+            <translation>更新由 Microsoft Store 管理</translation>
         </message>
         <message>
             <source>Verifying update…</source>
@@ -265,32 +265,32 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>ApplicationRestart</name>
         <message>
-            <source>Another restart operation is in progress.</source>
-            <translation>另一个重启操作正在进行中。</translation>
+            <source>Another restart operation is in progress</source>
+            <translation>另一个重启操作正在进行中</translation>
         </message>
         <message>
-            <source>Could not create the restart handoff.</source>
-            <translation>无法创建重启交接。</translation>
+            <source>Could not create the restart handoff</source>
+            <translation>无法创建重启交接</translation>
         </message>
         <message>
-            <source>Could not start the replacement application.</source>
-            <translation>无法启动替代应用程序。</translation>
+            <source>Could not start the replacement application</source>
+            <translation>无法启动替代应用程序</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
-            <translation>请完成截图、录制、导出或更新后再重启。</translation>
+            <source>Finish capturing, recording, exporting, or updating before restarting</source>
+            <translation>请完成截图、录制、导出或更新后再重启</translation>
         </message>
         <message>
-            <source>The replacement application did not acknowledge the restart.</source>
-            <translation>替代应用程序未确认重启。</translation>
+            <source>The replacement application did not acknowledge the restart</source>
+            <translation>替代应用程序未确认重启</translation>
         </message>
         <message>
-            <source>The replacement application did not become ready.</source>
-            <translation>替代应用程序未准备就绪。</translation>
+            <source>The replacement application did not become ready</source>
+            <translation>替代应用程序未准备就绪</translation>
         </message>
         <message>
-            <source>Your settings could not be saved. Please retry before restarting.</source>
-            <translation>无法保存设置。请在重启前重试。</translation>
+            <source>Your settings could not be saved. Please retry before restarting</source>
+            <translation>无法保存设置。请在重启前重试</translation>
         </message>
     </context>
     <context>
@@ -330,72 +330,72 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>DiagnosticsService</name>
         <message>
-            <source>A log file could not be read.</source>
-            <translation>无法读取日志文件。</translation>
+            <source>A log file could not be read</source>
+            <translation>无法读取日志文件</translation>
         </message>
         <message>
-            <source>Crash capture is unavailable on this platform.</source>
-            <translation>此平台不支持崩溃捕获。</translation>
+            <source>Crash capture is unavailable on this platform</source>
+            <translation>此平台不支持崩溃捕获</translation>
         </message>
         <message>
-            <source>Log export is unavailable or already running.</source>
-            <translation>日志导出不可用或正在进行中。</translation>
+            <source>Log export is unavailable or already running</source>
+            <translation>日志导出不可用或正在进行中</translation>
         </message>
         <message>
-            <source>No writable diagnostics directory is available.</source>
-            <translation>没有可写入的诊断文件目录。</translation>
+            <source>No writable diagnostics directory is available</source>
+            <translation>没有可写入的诊断文件目录</translation>
         </message>
         <message>
-            <source>Some expired diagnostics could not be removed.</source>
-            <translation>部分过期诊断文件无法删除。</translation>
+            <source>Some expired diagnostics could not be removed</source>
+            <translation>部分过期诊断文件无法删除</translation>
         </message>
         <message>
-            <source>The crash collector could not be started. Check the application installation.</source>
-            <translation>无法启动崩溃收集程序。请检查应用安装。</translation>
+            <source>The crash collector could not be started. Check the application installation</source>
+            <translation>无法启动崩溃收集程序。请检查应用安装</translation>
         </message>
         <message>
-            <source>The diagnostics storage limit has been reached.</source>
-            <translation>诊断文件存储空间已达到上限。</translation>
+            <source>The diagnostics storage limit has been reached</source>
+            <translation>诊断文件存储空间已达到上限</translation>
         </message>
         <message>
-            <source>The diagnostics writer stopped unexpectedly.</source>
-            <translation>诊断日志写入线程意外停止。</translation>
+            <source>The diagnostics writer stopped unexpectedly</source>
+            <translation>诊断日志写入线程意外停止</translation>
         </message>
         <message>
-            <source>The local crash database could not be initialized.</source>
-            <translation>无法初始化本地崩溃数据库。</translation>
+            <source>The local crash database could not be initialized</source>
+            <translation>无法初始化本地崩溃数据库</translation>
         </message>
         <message>
-            <source>The log directory is not writable.</source>
-            <translation>无法写入日志目录。</translation>
+            <source>The log directory is not writable</source>
+            <translation>无法写入日志目录</translation>
         </message>
         <message>
-            <source>The log file could not be opened.</source>
-            <translation>无法打开日志文件。</translation>
+            <source>The log file could not be opened</source>
+            <translation>无法打开日志文件</translation>
         </message>
         <message>
-            <source>The log snapshot could not be saved.</source>
-            <translation>无法保存日志快照。</translation>
+            <source>The log snapshot could not be saved</source>
+            <translation>无法保存日志快照</translation>
         </message>
         <message>
-            <source>The log snapshot directory could not be created.</source>
-            <translation>无法创建日志快照目录。</translation>
+            <source>The log snapshot directory could not be created</source>
+            <translation>无法创建日志快照目录</translation>
         </message>
         <message>
-            <source>The preferred log directory is unavailable; a fallback is in use.</source>
-            <translation>首选日志目录不可用，正在使用备用目录。</translation>
+            <source>The preferred log directory is unavailable; a fallback is in use</source>
+            <translation>首选日志目录不可用，正在使用备用目录</translation>
         </message>
         <message>
-            <source>There is not enough space for a log snapshot.</source>
-            <translation>没有足够的空间保存日志快照。</translation>
+            <source>There is not enough space for a log snapshot</source>
+            <translation>没有足够的空间保存日志快照</translation>
         </message>
         <message>
-            <source>Today's log exceeds the export limit.</source>
-            <translation>今日日志超过导出大小限制。</translation>
+            <source>Today's log exceeds the export limit</source>
+            <translation>今日日志超过导出大小限制</translation>
         </message>
         <message>
-            <source>Writing the log file failed. Check available disk space.</source>
-            <translation>写入日志文件失败。请检查可用磁盘空间。</translation>
+            <source>Writing the log file failed. Check available disk space</source>
+            <translation>写入日志文件失败。请检查可用磁盘空间</translation>
         </message>
     </context>
     <context>
@@ -485,8 +485,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>McpDocumentService</name>
         <message>
-            <source>Document request failed (%1).</source>
-            <translation>文档请求失败（%1）。</translation>
+            <source>Document request failed (%1)</source>
+            <translation>文档请求失败（%1）</translation>
         </message>
     </context>
     <context>
@@ -660,32 +660,32 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>图像转换失败</translation>
         </message>
         <message>
-            <source>Image conversion is incomplete. Try a smaller area.</source>
-            <translation>图像转换不完整，请尝试较小的区域。</translation>
+            <source>Image conversion is incomplete. Try a smaller area</source>
+            <translation>图像转换不完整，请尝试较小的区域</translation>
         </message>
         <message>
             <source>Image conversion stream ended unexpectedly</source>
             <translation>图像转换流意外中断</translation>
         </message>
         <message>
-            <source>Image conversion timed out. Try a smaller area.</source>
-            <translation>图像转换超时，请尝试较小的区域。</translation>
+            <source>Image conversion timed out. Try a smaller area</source>
+            <translation>图像转换超时，请尝试较小的区域</translation>
         </message>
         <message>
             <source>Image recognition failed</source>
             <translation>图像识别失败</translation>
         </message>
         <message>
-            <source>Image recognition is incomplete. Try a smaller area.</source>
-            <translation>图像识别不完整，请尝试较小的区域。</translation>
+            <source>Image recognition is incomplete. Try a smaller area</source>
+            <translation>图像识别不完整，请尝试较小的区域</translation>
         </message>
         <message>
             <source>Image recognition stream ended unexpectedly</source>
             <translation>图像识别流意外中断</translation>
         </message>
         <message>
-            <source>Image recognition timed out. Try a smaller area.</source>
-            <translation>图像识别超时，请尝试较小的区域。</translation>
+            <source>Image recognition timed out. Try a smaller area</source>
+            <translation>图像识别超时，请尝试较小的区域</translation>
         </message>
         <message>
             <source>Invalid LaTeX recognition response</source>
@@ -752,12 +752,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>无法准备待识别的图像</translation>
         </message>
         <message>
-            <source>The image is too large to convert. Select a smaller area.</source>
-            <translation>图像过大，无法转换。请选择较小的区域。</translation>
+            <source>The image is too large to convert. Select a smaller area</source>
+            <translation>图像过大，无法转换。请选择较小的区域</translation>
         </message>
         <message>
-            <source>The image is too large to recognize. Select a smaller area.</source>
-            <translation>图像过大，无法识别。请选择较小的区域。</translation>
+            <source>The image is too large to recognize. Select a smaller area</source>
+            <translation>图像过大，无法识别。请选择较小的区域</translation>
         </message>
         <message>
             <source>The model response is too large</source>
@@ -772,32 +772,32 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>模型未返回可用的公式</translation>
         </message>
         <message>
-            <source>The model service changed. Retry to load its models.</source>
-            <translation>模型服务已更改。请重试以加载其模型。</translation>
+            <source>The model service changed. Retry to load its models</source>
+            <translation>模型服务已更改。请重试以加载其模型</translation>
         </message>
         <message>
-            <source>The text is too large to translate.</source>
-            <translation>文本过长，无法翻译。</translation>
+            <source>The text is too large to translate</source>
+            <translation>文本过长，无法翻译</translation>
         </message>
         <message>
-            <source>The translation response is too large.</source>
-            <translation>翻译响应过大。</translation>
+            <source>The translation response is too large</source>
+            <translation>翻译响应过大</translation>
         </message>
         <message>
-            <source>This service does not support the selected language combination.</source>
-            <translation>此服务不支持所选语言组合。</translation>
+            <source>This service does not support the selected language combination</source>
+            <translation>此服务不支持所选语言组合</translation>
         </message>
         <message>
             <source>Translation failed</source>
             <translation>翻译失败</translation>
         </message>
         <message>
-            <source>Translation request timed out.</source>
-            <translation>翻译请求超时。</translation>
+            <source>Translation request timed out</source>
+            <translation>翻译请求超时</translation>
         </message>
         <message>
-            <source>Translation service request failed (HTTP %1, code %2).</source>
-            <translation>翻译服务请求失败（HTTP %1，代码 %2）。</translation>
+            <source>Translation service request failed (HTTP %1, code %2)</source>
+            <translation>翻译服务请求失败（HTTP %1，代码 %2）</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>
@@ -849,20 +849,20 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>%1 %2 is available. Open About for update options.</source>
-            <translation>%1 %2 已发布。请打开“关于”查看更新选项。</translation>
+            <source>%1 %2 is available. Open About for update options</source>
+            <translation>%1 %2 已发布。请打开“关于”查看更新选项</translation>
         </message>
         <message>
             <source>%1 will close and restart to install the update. Continue?</source>
             <translation>%1 将关闭并重新启动以安装更新。是否继续？</translation>
         </message>
         <message>
-            <source>An update is ready. Open About to restart and update %1.</source>
-            <translation>更新已就绪。请打开“关于”重新启动并更新 %1。</translation>
+            <source>An update is ready. Open About to restart and update %1</source>
+            <translation>更新已就绪。请打开“关于”重新启动并更新 %1</translation>
         </message>
         <message>
-            <source>An update is ready. Open About to restart and update Snow Shot.</source>
-            <translation>更新已准备就绪。请打开“关于”页面，重启并更新 Snow Shot。</translation>
+            <source>An update is ready. Open About to restart and update Snow Shot</source>
+            <translation>更新已准备就绪。请打开“关于”页面，重启并更新 Snow Shot</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -881,12 +881,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>功能暂不可用</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
-            <translation>请先完成截图、录制、导出、文字识别或更新，再更改存储目录。</translation>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</source>
+            <translation>请先完成截图、录制、导出、文字识别或更新，再更改存储目录</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, or exporting before updating.</source>
-            <translation>请先完成截图、屏幕录制或导出，再进行更新。</translation>
+            <source>Finish capturing, recording, or exporting before updating</source>
+            <translation>请先完成截图、屏幕录制或导出，再进行更新</translation>
         </message>
         <message>
             <source>Restart and update</source>
@@ -897,8 +897,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>重启失败</translation>
         </message>
         <message>
-            <source>Snow Shot %1 is available. Open About for update options.</source>
-            <translation>Snow Shot %1 已推出。打开“关于”查看更新选项。</translation>
+            <source>Snow Shot %1 is available. Open About for update options</source>
+            <translation>Snow Shot %1 已推出。打开“关于”查看更新选项</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>
@@ -909,8 +909,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>所选文件的路径无效</translation>
         </message>
         <message>
-            <source>Your settings could not be saved. Please retry before updating.</source>
-            <translation>无法保存设置。请重试保存后再更新。</translation>
+            <source>Your settings could not be saved. Please retry before updating</source>
+            <translation>无法保存设置。请重试保存后再更新</translation>
         </message>
     </context>
     <context>

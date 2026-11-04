@@ -1407,7 +1407,7 @@ bool ScreenshotController::Impl::ensureScrollingFeature() {
                                     QCoreApplication::translate(
                                         "ScreenshotController",
                                         "Scrolling capture stopped. Check screen permissions and "
-                                        "display settings, then try again."));
+                                        "display settings, then try again"));
             },
             [this] { return m_captureState.presentationSuppressed; },
         },
@@ -1953,7 +1953,7 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
                     QStringLiteral("scrolling-display-changed"),
                     QCoreApplication::translate("ScreenshotController",
                                                 "Scrolling capture stopped because the display "
-                                                "configuration changed. Select the region again."));
+                                                "configuration changed. Select the region again"));
             if (m_captureWorkflow != nullptr) {
                 m_captureWorkflow->handleDisplayConfigurationChanged();
             }
@@ -2577,7 +2577,7 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                                  QCoreApplication::translate(
                                      "ScreenshotController",
                                      "Smart selection is using window mode. Enable Accessibility "
-                                     "access in Screenshot settings to select window elements."));
+                                     "access in Screenshot settings to select window elements"));
                      });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, &owner,
                      [this](bool ok) {
@@ -3341,7 +3341,7 @@ void ScreenshotController::Impl::pinWindowSelectionToScreen() {
         m_messages->error(
             QStringLiteral("screenshot-pin-window"),
             QCoreApplication::translate("ScreenshotController",
-                                        "No capturable window was found in the selection."));
+                                        "No capturable window was found in the selection"));
         return;
     }
     auto source = createLiveWindowSource(request->target, request->nativeSelection);
@@ -3349,7 +3349,7 @@ void ScreenshotController::Impl::pinWindowSelectionToScreen() {
         m_messages->error(
             QStringLiteral("screenshot-pin-window"),
             QCoreApplication::translate("ScreenshotController",
-                                        "Live window display could not be initialized."));
+                                        "Live window display could not be initialized"));
         return;
     }
     m_livePinInitializing = source;
@@ -3378,7 +3378,7 @@ void ScreenshotController::Impl::pinWindowSelectionToScreen() {
                 QStringLiteral("screenshot-pin-window"),
                 error.isEmpty()
                     ? QCoreApplication::translate("ScreenshotController",
-                                                  "Live window display could not be initialized.")
+                                                  "Live window display could not be initialized")
                     : error);
             return;
         }
@@ -3408,7 +3408,7 @@ void ScreenshotController::Impl::pinWindowSelectionToScreen() {
                 impl.m_messages->error(
                     QStringLiteral("screenshot-pin-window"),
                     QCoreApplication::translate("ScreenshotController",
-                                                "Live window display could not be initialized."));
+                                                "Live window display could not be initialized"));
             }
         };
         const QRect nativeRegion = source->initialDesktopRegion();
@@ -4014,17 +4014,17 @@ void ScreenshotController::Impl::pinSelectedFilesToScreen(
             return;
         case Error::PermissionDenied:
             message = owner.tr("Allow Snow Shot to access Finder in System Settings > Privacy & "
-                               "Security > Automation, then try again.");
+                               "Security > Automation, then try again");
             break;
         case Error::Timeout:
             message =
-                owner.tr("Finder took too long to return the selected files. Please try again.");
+                owner.tr("Finder took too long to return the selected files. Please try again");
             break;
         case Error::Unavailable:
-            message = owner.tr("Finder is unavailable. Open Finder and try again.");
+            message = owner.tr("Finder is unavailable. Open Finder and try again");
             break;
         case Error::QueryFailed:
-            message = owner.tr("Could not read the selected files from Finder. Please try again.");
+            message = owner.tr("Could not read the selected files from Finder. Please try again");
             break;
         }
         emit owner.selectedFilePinFailed(message);
@@ -4504,10 +4504,10 @@ void ScreenshotController::Impl::uploadSelectionToCloud() {
                     if (!receiver || receiver->m_impl->m_captureEpoch != epoch ||
                         receiver->m_impl->m_cloudUploadGeneration != generation)
                         return;
-                    impl.m_messages->success(QStringLiteral("cloud-upload"),
-                                             QCoreApplication::translate(
-                                                 "ScreenshotController",
-                                                 "Uploaded to cloud. Link copied to clipboard."));
+                    impl.m_messages->success(
+                        QStringLiteral("cloud-upload"),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "Uploaded to cloud. Link copied to clipboard"));
                 } else if (result.status == ScreenshotCloudUploadResult::Status::Failed) {
                     impl.m_messages->error(QStringLiteral("cloud-upload"), result.error);
                 }

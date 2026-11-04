@@ -214,7 +214,7 @@ void RecordingAudioGainPopover::refreshText() {
         m_slider->setAccessibleName(m_source == Source::Microphone ? tr("Microphone gain")
                                                                    : tr("System audio gain"));
         m_slider->setAccessibleDescription(
-            tr("Adjust gain from -24 to +24 dB. The track shows the processed audio level."));
+            tr("Adjust gain from -24 to +24 dB. The track shows the processed audio level"));
         m_slider->setTooltipFormatter([](double value) {
             const int gain = qRound(value);
             const QString amount =

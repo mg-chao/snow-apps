@@ -190,9 +190,9 @@ class WindowGroupSwitcherPopup::Impl {
         footer->setText(
             shortcutMode ? pickerText(QT_TRANSLATE_NOOP(
                                "WindowGroupSwitcher",
-                               "Release shortcut keys or click a group to switch. Esc to cancel."))
-                         : pickerText(QT_TRANSLATE_NOOP(
-                               "WindowGroupSwitcher", "Click a group to switch. Esc to cancel.")));
+                               "Release shortcut keys or click a group to switch. Esc to cancel"))
+                         : pickerText(QT_TRANSLATE_NOOP("WindowGroupSwitcher",
+                                                        "Click a group to switch. Esc to cancel")));
         q.setAccessibleDescription(footer->text());
     }
     void applyTheme() {

@@ -395,10 +395,10 @@ class ApplicationController::Impl {
                 systemTray.showUpdateMessage(
                     (edition::isMini
                          ? ApplicationController::tr(
-                               "%1 %2 is available. Open About for update options.")
+                               "%1 %2 is available. Open About for update options")
                                .arg(edition::productName(), version)
                          : ApplicationController::tr(
-                               "Snow Shot %1 is available. Open About for update options.")
+                               "Snow Shot %1 is available. Open About for update options")
                                .arg(version)));
             });
 #ifndef Q_OS_MACOS
@@ -406,10 +406,10 @@ class ApplicationController::Impl {
             systemTray.showUpdateMessage(
                 (edition::isMini
                      ? ApplicationController::tr(
-                           "An update is ready. Open About to restart and update %1.")
+                           "An update is ready. Open About to restart and update %1")
                            .arg(edition::productName())
                      : ApplicationController::tr(
-                           "An update is ready. Open About to restart and update Snow Shot.")));
+                           "An update is ready. Open About to restart and update Snow Shot")));
         });
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
@@ -424,7 +424,7 @@ class ApplicationController::Impl {
                     diagnostics::DiagnosticsService::instance().status().exporting)
                     return storage::StorageResult::failure(ApplicationController::tr(
                         "Finish capturing, recording, exporting, recognizing text, or updating "
-                        "before changing storage."));
+                        "before changing storage"));
                 groupManager.stackingCoordinator()->beginMutation();
                 migrationSource = storage::ApplicationStorage::instance().configurationDirectory();
                 migrationInput->active = true;
@@ -485,7 +485,7 @@ class ApplicationController::Impl {
                 (directCaptureController != nullptr &&
                  directCaptureController->blocksApplicationUpdate())) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Finish capturing, recording, or exporting before updating."));
+                    "Finish capturing, recording, or exporting before updating"));
                 return;
             }
             if (!confirmRestartAndUpdate(mainWindow)) {
@@ -493,7 +493,7 @@ class ApplicationController::Impl {
             }
             if (!storage::ApplicationStorage::instance().flushNow().success) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Your settings could not be saved. Please retry before updating."));
+                    "Your settings could not be saved. Please retry before updating"));
                 return;
             }
             if (imageEditingWindowCoordinator) {
@@ -518,7 +518,7 @@ class ApplicationController::Impl {
                 mcpSourceWork != 0 || (mcpJobs && mcpJobs->hasRunningJobs()) ||
                 !storage::ApplicationStorage::instance().flushNow().success) {
                 updates->reportBlocked(ApplicationController::tr(
-                    "Finish capturing, recording, or exporting before updating."));
+                    "Finish capturing, recording, or exporting before updating"));
                 return;
             }
         });

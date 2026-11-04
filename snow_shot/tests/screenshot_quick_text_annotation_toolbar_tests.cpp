@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QScreen>
 #include <QSet>
 #include <QWidget>
@@ -130,6 +131,74 @@ void processPopupEvents() {
     // A geometry feedback loop must not be able to keep this test inside one event drain.
     for (int pass = 0; pass < 12; ++pass)
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+}
+
+void toolbarDestructionReleasesWidgetsWhileOwnerEventsContinue() {
+    for (int selectionKind : {0, 1, 2}) {
+        for (int deletionKind : {0, 1, 2}) {
+            QPointer<QWidget> owner = new QWidget;
+            owner->setGeometry(150, 250, 700, 400);
+            owner->show();
+            processPopupEvents();
+            QPointer<Toolbar> toolbar = new Toolbar(owner);
+            Toolbar::States states;
+            if (selectionKind == 2)
+                states[static_cast<size_t>(Tool::Underline)] = {true, Style{}, false};
+            if (selectionKind != 0) {
+                toolbar->updateSelection(QRect(owner->mapToGlobal(QPoint(80, 160)), QSize(120, 30)),
+                                         states, 1);
+                processPopupEvents();
+                require(toolbar->isVisible(), "destruction fixture shows its quick toolbar");
+            }
+            if (selectionKind == 2) {
+                auto* editor = popover(*toolbar, "quickTextAnnotationStyleToolbar");
+                require(editor && editor->isVisible(),
+                        "destruction fixture shows its style editor");
+                adqt::widgets::AdColorPicker* activePicker = nullptr;
+                for (auto* picker :
+                     editor->contentWidget()->findChildren<adqt::widgets::AdColorPicker*>()) {
+                    if (picker->isVisibleTo(editor->contentWidget())) {
+                        activePicker = picker;
+                        break;
+                    }
+                }
+                require(activePicker != nullptr, "destruction fixture exposes its color picker");
+                activePicker->setPopupVisible(true);
+                processPopupEvents();
+                require(activePicker->popupVisible(),
+                        "destruction fixture keeps its nested color popup open");
+            }
+            QList<QPointer<QWidget>> widgets;
+            widgets.append(
+                owner->findChild<QWidget*>(QStringLiteral("quickTextAnnotationSelectionAnchor")));
+            require(widgets.first(), "destruction fixture owns a selection anchor");
+            for (auto* popup : toolbar->findChildren<AdPopover*>()) {
+                if (auto* content = popup->contentWidget())
+                    widgets.append(content);
+                if (auto* surface = popup->surfaceWidget())
+                    widgets.append(surface);
+            }
+            if (deletionKind == 0)
+                delete toolbar.data();
+            else if (deletionKind == 1) {
+                toolbar->clearSelection();
+                toolbar->deleteLater();
+            } else
+                delete owner.data();
+            for (int pass = 0; pass < 3; ++pass)
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(!toolbar, "direct, deferred and owner deletion release the quick toolbar");
+            for (const auto& widget : widgets)
+                require(!widget, "toolbar destruction releases its anchor and popup widgets");
+            if (owner) {
+                QEvent languageChange(QEvent::LanguageChange);
+                QApplication::sendEvent(owner, &languageChange);
+                owner->hide();
+                delete owner.data();
+            }
+            processPopupEvents();
+        }
+    }
 }
 
 void layoutSettlesAndColorEditsKeepAllPopupsStill() {
@@ -488,6 +557,7 @@ void toolbarPairClampsAtScreenEdges() {
 } // namespace
 
 void runScreenshotQuickTextAnnotationToolbarTests() {
+    toolbarDestructionReleasesWidgetsWhileOwnerEventsContinue();
     layoutSettlesAndColorEditsKeepAllPopupsStill();
     mainPopoverStaysAboveSelectionAndCenteredWhenEditorOpens();
     selectionControlsVisibilityAndEdits();
