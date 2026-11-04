@@ -2848,8 +2848,10 @@ ScreenshotRecognitionSessionController::fileExportSnapshot() {
 
 std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     const ScreenshotOcrPresentation* displayedPresentation) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     const QPointer<const ScreenshotRecognitionSessionController> lifetime(this);
     const auto transition = m_transitionGeneration;
+#endif
     if (m_attachmentToken && !ownsContentAttachment())
         return {};
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
