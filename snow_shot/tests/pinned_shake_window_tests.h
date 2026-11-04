@@ -2,7 +2,7 @@
 
 namespace pinned_shake_tests {
 using Access = ScreenshotPinnedWindowTestAccess;
-using Result = ScreenshotPinnedWindow::HideOtherWindowsResult;
+using Result = ScreenshotPinnedWindow::OtherWindowsVisibilityResult;
 using Settings = snow_shot::storage::PinToScreenSettings;
 
 ScreenshotPinnedWindow::Config config() {
@@ -33,7 +33,7 @@ void ordinaryDragCorrectionsKeepPeersVisible() {
     ScreenshotPinnedWindow peer;
     int requests = 0;
     auto value = config();
-    value.shakeHideOtherWindowsRequested = [&](const QString&) {
+    value.shakeToggleOtherWindowsRequested = [&](const QString&) {
         ++requests;
         const bool hidden = peer.requestHide();
         return Result{hidden, hidden};
@@ -64,58 +64,113 @@ void ordinaryDragCorrectionsKeepPeersVisible() {
 void callbackAndMessagePreserveDrag() {
     IsolatedPinnedStorage isolated;
     require(Settings().shakeWindowToHideOthers(), "shake setting defaults on");
+    for (const auto action : {Result::Action::Hide, Result::Action::Show}) {
+        ScreenshotPinnedWindow window;
+        auto value = config();
+        int requests = 0;
+        value.shakeToggleOtherWindowsRequested = [&](const QString& id) {
+            require(id == window.persistenceId(), "shake must exclude the grabbed pin by identity");
+            ++requests;
+            return Result{true, true, action};
+        };
+        present(window, value);
+        require(Access::beginShakeDrag(window), "begin controlled shake drag");
+        const auto grabber = QWidget::mouseGrabber();
+        const QRect before = window.currentNativeGeometry();
+        shake(window);
+        require(requests == 0 && Access::shakePending(window),
+                "visibility changes must be queued outside sampling");
+        QCoreApplication::processEvents();
+        require(requests == 1 && window.isVisible() && Access::shakeDragActive(window) &&
+                    QWidget::mouseGrabber() == grabber && window.currentNativeGeometry() == before,
+                "changing peer visibility must preserve the grabbed window and drag capture");
+        auto* message = Access::shakeMessage(window);
+        require(message && message->isOpen() &&
+                    message->content() == (action == Result::Action::Show
+                                               ? QStringLiteral("Other windows shown")
+                                               : QStringLiteral("Other windows hidden")) &&
+                    adqt::widgets::AdMessageService::instance(&window)->ownerWindow() == &window &&
+                    Access::shakeMessageRemaining(window) > 0 &&
+                    Access::shakeMessageRemaining(window) <= 3000,
+                "shake success must have a transient message owned by the grabbed window");
+        shake(window, {}, 350);
+        QCoreApplication::processEvents();
+        require(requests == 1, "one drag must trigger at most once");
+        Access::moveShakeDrag(window, QPointF(70, 10));
+        require(window.currentNativeGeometry() != before && Access::shakeDragActive(window),
+                "the grabbed window must continue moving after the visibility operation");
+        Access::finishShakeDrag(window);
+
+        class Translator final : public QTranslator {
+          public:
+            QString translate(const char* context, const char* source, const char*,
+                              int) const override {
+                if (qstrcmp(context, "ScreenshotPinnedWindow") == 0) {
+                    if (qstrcmp(source, "Other windows hidden") == 0)
+                        return QStringLiteral("Translated hidden message");
+                    if (qstrcmp(source, "Other windows shown") == 0)
+                        return QStringLiteral("Translated shown message");
+                }
+                return {};
+            }
+        } translator;
+        const qint64 remaining = Access::shakeMessageRemaining(window);
+        QCoreApplication::installTranslator(&translator);
+        QEvent language(QEvent::LanguageChange);
+        QCoreApplication::sendEvent(&window, &language);
+        require(message == Access::shakeMessage(window) &&
+                    message->content() == (action == Result::Action::Show
+                                               ? QStringLiteral("Translated shown message")
+                                               : QStringLiteral("Translated hidden message")) &&
+                    Access::shakeMessageRemaining(window) <= remaining,
+                "language changes must update the keyed message without extending its lifetime");
+        QCoreApplication::removeTranslator(&translator);
+        window.close();
+    }
+}
+
+void messageStaysAboveContentAfterLayerUpdates() {
+    IsolatedPinnedStorage isolated;
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.config();
+    const auto restoreTheme = qScopeGuard([&] { themes.setConfig(originalTheme); });
+    auto theme = originalTheme;
+    theme.motion = false;
+    themes.setConfig(theme);
+
     ScreenshotPinnedWindow window;
     auto value = config();
-    int requests = 0;
-    value.shakeHideOtherWindowsRequested = [&](const QString& id) {
-        require(id == window.persistenceId(), "shake must exclude the grabbed pin by identity");
-        ++requests;
-        return Result{true, true};
+    auto action = Result::Action::Hide;
+    value.shakeToggleOtherWindowsRequested = [&](const QString&) {
+        return Result{true, true, action};
     };
     present(window, value);
-    require(Access::beginShakeDrag(window), "begin controlled shake drag");
-    const auto grabber = QWidget::mouseGrabber();
-    const QRect before = window.currentNativeGeometry();
-    shake(window);
-    require(requests == 0 && Access::shakePending(window), "hide must be queued outside sampling");
-    QCoreApplication::processEvents();
-    require(requests == 1 && window.isVisible() && Access::shakeDragActive(window) &&
-                QWidget::mouseGrabber() == grabber && window.currentNativeGeometry() == before,
-            "hiding peers must preserve the grabbed window and drag capture");
-    auto* message = Access::shakeMessage(window);
-    require(message && message->isOpen() &&
-                message->content() == QStringLiteral("Other windows hidden.") &&
-                adqt::widgets::AdMessageService::instance(&window)->ownerWindow() == &window &&
-                Access::shakeMessageRemaining(window) > 0 &&
-                Access::shakeMessageRemaining(window) <= 3000,
-            "shake success must have a transient message owned by the grabbed window");
-    shake(window, {}, 350);
-    QCoreApplication::processEvents();
-    require(requests == 1, "one drag must trigger at most once");
-    Access::moveShakeDrag(window, QPointF(70, 10));
-    require(window.currentNativeGeometry() != before && Access::shakeDragActive(window),
-            "the grabbed window must continue moving after the hide operation");
-    Access::finishShakeDrag(window);
-
-    class Translator final : public QTranslator {
-      public:
-        QString translate(const char* context, const char* source, const char*,
-                          int) const override {
-            if (qstrcmp(context, "ScreenshotPinnedWindow") == 0 &&
-                qstrcmp(source, "Other windows hidden.") == 0)
-                return QStringLiteral("Translated shake message");
-            return {};
-        }
-    } translator;
-    const qint64 remaining = Access::shakeMessageRemaining(window);
-    QCoreApplication::installTranslator(&translator);
-    QEvent language(QEvent::LanguageChange);
-    QCoreApplication::sendEvent(&window, &language);
-    require(message == Access::shakeMessage(window) &&
-                message->content() == QStringLiteral("Translated shake message") &&
-                Access::shakeMessageRemaining(window) <= remaining,
-            "language changes must update the keyed message without extending its lifetime");
-    QCoreApplication::removeTranslator(&translator);
+    for (const auto nextAction :
+         {Result::Action::Hide, Result::Action::Show, Result::Action::Hide}) {
+        action = nextAction;
+        require(Access::beginShakeDrag(window), "begin shake feedback stacking drag");
+        shake(window);
+        translation_tests::flushEvents();
+        auto* message = Access::shakeMessage(window);
+        require(message && message->isOpen(), "shaking must open its feedback message");
+        auto* notice = message->noticeWidget();
+        auto* label = notice->findChild<QLabel*>(QStringLiteral("ad-message-content"));
+        require(label && label->isVisible(), "shake feedback must contain a visible label");
+        const auto requireUnobscured = [&] {
+            const QPoint point = label->mapTo(&window, label->rect().center());
+            auto* hit = window.childAt(point);
+            require(hit && (hit == notice || notice->isAncestorOf(hit)),
+                    "shake feedback must stay above pinned content after layer updates");
+        };
+        requireUnobscured();
+        // Continue dragging after the entrance animation has settled: no animation
+        // tick should be needed to bring the message back above the canvas.
+        Access::moveShakeDrag(window, QPointF(70, 10));
+        requireUnobscured();
+        Access::finishShakeDrag(window);
+        translation_tests::flushEvents();
+        requireUnobscured();
+    }
     window.close();
 }
 
@@ -130,7 +185,7 @@ void pendingActionsRespectCancellationAndSettings() {
         ScreenshotPinnedWindow window;
         auto value = config();
         int requests = 0;
-        value.shakeHideOtherWindowsRequested = [&](const QString&) {
+        value.shakeToggleOtherWindowsRequested = [&](const QString&) {
             ++requests;
             return Result{true, false};
         };
@@ -170,7 +225,7 @@ void liveSettingAndResetsRequireAFreshDrag() {
     ScreenshotPinnedWindow window;
     auto value = config();
     int requests = 0;
-    value.shakeHideOtherWindowsRequested = [&](const QString&) {
+    value.shakeToggleOtherWindowsRequested = [&](const QString&) {
         ++requests;
         return Result{true, true};
     };
@@ -203,10 +258,13 @@ void liveSettingAndResetsRequireAFreshDrag() {
 
 void failuresAndEmptyTargetsDoNotShowSuccess() {
     IsolatedPinnedStorage isolated;
-    for (const auto result : {Result{false, false}, Result{false, true}, Result{true, false}}) {
+    for (const auto result :
+         {Result{false, false}, Result{false, true}, Result{true, false},
+          Result{false, false, Result::Action::Show}, Result{false, true, Result::Action::Show},
+          Result{true, false, Result::Action::Show}}) {
         ScreenshotPinnedWindow window;
         auto value = config();
-        value.shakeHideOtherWindowsRequested = [result](const QString&) { return result; };
+        value.shakeToggleOtherWindowsRequested = [result](const QString&) { return result; };
         present(window, value);
         require(Access::beginShakeDrag(window), "begin unsuccessful shake drag");
         shake(window);
@@ -255,12 +313,47 @@ void fallbackHidesOnlyPeersAndPreservesSnapshots() {
     differentGroup.close();
 }
 
+void fallbackShowsHiddenPeersAndPreservesVisiblePeers() {
+    IsolatedPinnedStorage isolated;
+    ScreenshotPinnedWindow source;
+    ScreenshotPinnedWindow hidden;
+    ScreenshotPinnedWindow visible;
+    ScreenshotPinnedWindow differentGroup;
+    present(hidden, config());
+    present(visible, config());
+    auto other = config();
+    other.groupId = QStringLiteral("another-group");
+    present(differentGroup, other);
+    hidden.hide();
+    differentGroup.hide();
+    present(source, config());
+    const auto before = hidden.persistenceSnapshot();
+    source.showFromManagement();
+    translation_tests::waitUntil([&] { return QApplication::activeWindow() == &source; },
+                                 "the fallback owner must be active before its pointer press");
+    require(Access::beginShakeDrag(source), "begin fallback show drag");
+    shake(source);
+    QCoreApplication::processEvents();
+    require(source.isVisible() && hidden.isVisible() && visible.isVisible() &&
+                !differentGroup.isVisible() && hidden.testAttribute(Qt::WA_ShowWithoutActivating) &&
+                hidden.windowHandle()->property("_q_showWithoutActivating").toBool() &&
+                hidden.persistenceSnapshot().nativeGeometry == before.nativeGeometry &&
+                Access::shakeMessage(source) &&
+                Access::shakeMessage(source)->content() == QStringLiteral("Other windows shown"),
+            "fallback shows hidden peers without hiding visible peers or changing other groups");
+    Access::finishShakeDrag(source);
+    source.close();
+    hidden.close();
+    visible.close();
+    differentGroup.close();
+}
+
 void dpiChangesAndSharedGeometryCannotCompleteOldShakes() {
     IsolatedPinnedStorage isolated;
     ScreenshotPinnedWindow window;
     auto value = config();
     int requests = 0;
-    value.shakeHideOtherWindowsRequested = [&](const QString&) {
+    value.shakeToggleOtherWindowsRequested = [&](const QString&) {
         ++requests;
         return Result{true, false};
     };
@@ -300,8 +393,10 @@ void dpiChangesAndSharedGeometryCannotCompleteOldShakes() {
     second.close();
 }
 
-void peerContentAndWindowModesSurviveHiding() {
+void peerContentAndWindowModesSurviveHidingAndRestoring() {
     IsolatedPinnedStorage isolated;
+    auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+    require(Settings().setAutomaticTextRecognition(false), "disable recognition for mode restores");
     for (const QString& kind :
          {QStringLiteral("image"), QStringLiteral("text"), QStringLiteral("animation"),
           QStringLiteral("thumbnail"), QStringLiteral("hide-to-top")}) {
@@ -354,23 +449,65 @@ void peerContentAndWindowModesSurviveHiding() {
                     hidden->hideToTopMode == before.hideToTopMode,
                 "shaking must preserve every peer's content, placement and presentation mode");
         Access::finishShakeDrag(source);
+        require(repository.upsert(*hidden).success &&
+                    repository.setRecordsHidden({hidden->id}, true).success,
+                "persist the hidden peer for restoration");
+        ScreenshotSelectionExportUiServices service;
+        service.showAllWindows();
+        QPointer<ScreenshotPinnedWindow> restoredPeer;
+        translation_tests::waitUntil(
+            [&] {
+                for (auto* widget : QApplication::topLevelWidgets()) {
+                    auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                    if (window && window->persistenceId() == hidden->id &&
+                        window->sourcePinAvailable() && Access::shakeContentReady(*window)) {
+                        restoredPeer = window;
+                        return true;
+                    }
+                }
+                return false;
+            },
+            "the shared restoration path recovers each hidden peer mode");
+        const auto restored = restoredPeer->persistenceSnapshot();
+        require(
+            restored.nativeGeometry == before.nativeGeometry &&
+                restored.originalText == before.originalText &&
+                restored.thumbnailMode == before.thumbnailMode &&
+                restored.hideToTopMode == before.hideToTopMode &&
+                restored.canvasSession == before.canvasSession &&
+                bool(restored.animationSource) == bool(before.animationSource) &&
+                (!before.animationSource ||
+                 restored.animationSource->encoded == before.animationSource->encoded),
+            "restored peers retain their documents, geometry, animation and presentation modes");
+        service.destroyRecords({hidden->id});
+        translation_tests::flushEvents();
         source.close();
     }
 }
 
-void serviceHidesPersistedAndPendingPeers() {
+void serviceTogglesPersistedAndPendingPeers() {
     IsolatedPinnedStorage isolated;
     using namespace snow_shot;
     auto& storage = storage::ApplicationStorage::instance();
     auto& repository = storage.pinnedWindows();
     require(Settings().setAutomaticTextRecognition(false), "disable recognition for service test");
     presentation::PinnedWindowGroupManager groups(&repository);
+    const auto otherGroup = groups.createGroup(QStringLiteral("Other shakes"));
+    require(otherGroup.has_value(), "create an unrelated group");
     ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen, "service shake fixture requires a screen");
     QImage image(100, 80, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::green);
     const QRect geometry = physicalPinGeometry(*screen, {60, 60}, image.size());
+    auto unrelated = savedPinnedRecord(*screen, 1.0, image.size(), 100.0, QPoint(60, 60));
+    unrelated.groupId = *otherGroup;
+    unrelated.hidden = true;
+    auto closed = savedPinnedRecord(*screen, 1.0, image.size(), 100.0, QPoint(60, 60));
+    require(repository.upsert(unrelated).success && repository.upsert(closed).success &&
+                repository.setRecordsHidden({unrelated.id}, true).success &&
+                repository.markClosed(closed.id).success,
+            "seed unrelated hidden and closed pins");
     auto add = [&] {
         require(service.presentPinnedImage(image, screen, geometry, image.size()),
                 "create service pin");
@@ -392,7 +529,10 @@ void serviceHidesPersistedAndPendingPeers() {
         },
         "the first two service peers must publish and persist before adding a loading peer");
     const QString peerId = peer->persistenceId();
-    const auto before = peer->persistenceSnapshot();
+    Access::thumbnailForHideTest(*peer, true);
+    auto before = peer->persistenceSnapshot();
+    // Live pins can release source pixels after their first save.
+    before.image = repository.loadRecord(peerId)->image;
 
     ScreenshotImageLoadCallback delayed;
     require(service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1, {},
@@ -403,7 +543,7 @@ void serviceHidesPersistedAndPendingPeers() {
     translation_tests::waitUntil([&] { return bool(delayed); }, "pending loader must start");
     // Deliver the loading shell's queued show/activation before injecting the next pointer press.
     translation_tests::flushEvents();
-    source->activateWindow();
+    source->showFromManagement();
     translation_tests::waitUntil([&] { return QApplication::activeWindow() == source; },
                                  "the grabbed pin must own activation before its pointer press");
     class InputTrace final : public QObject {
@@ -448,20 +588,223 @@ void serviceHidesPersistedAndPendingPeers() {
     translation_tests::flushEvents();
     require(groups.liveWindows().size() == 1,
             "late loading completion must not revive hidden peers");
+    require(peer.isNull(), "hidden service peers release their widgets before restoration");
     Access::finishShakeDrag(*source);
-    service.showAllWindows();
-    translation_tests::waitUntil([&] { return groups.liveWindow(peerId) != nullptr; },
-                                 "Show All must recover the hidden peer");
+    require(Access::beginShakeDrag(*source), "begin a second shake to show hidden peers");
+    const auto ownerGeometry = source->currentNativeGeometry();
+    const auto ownerStacking = repository.stackingOrder(groups.activeGroupId());
+    // Offscreen activates passive windows; the native test verifies focus and capture.
+    shake(*source);
+    translation_tests::waitUntil(
+        [&] {
+            auto* restoredPeer = groups.liveWindow(peerId);
+            return restoredPeer && Access::shakeContentReady(*restoredPeer) &&
+                   groups.liveWindows().size() == 3;
+        },
+        "a second shake recovers persisted and previously loading peers");
     const auto restored = repository.loadRecord(peerId);
     require(restored && !restored->hidden && !restored->ignored &&
                 restored->nativeGeometry == before.nativeGeometry &&
-                restored->canvasSession == before.canvasSession,
-            "Show All must retain the hidden document and geometry");
+                restored->canvasSession == before.canvasSession &&
+                restored->image == before.image &&
+                restored->thumbnailMode == before.thumbnailMode && source->isVisible() &&
+                groups.liveWindow(peerId)->testAttribute(Qt::WA_ShowWithoutActivating) &&
+                groups.liveWindow(peerId)
+                    ->windowHandle()
+                    ->property("_q_showWithoutActivating")
+                    .toBool() &&
+                source->currentNativeGeometry() == ownerGeometry &&
+                repository.stackingOrder(groups.activeGroupId()) == ownerStacking &&
+                Access::shakeMessage(*source)->content() == QStringLiteral("Other windows shown"),
+            "showing peers retains their saved state and the owner's focus, geometry and drag");
+    shake(*source, {}, 350);
+    QCoreApplication::processEvents();
+    require(!repository.summary(peerId)->hidden, "one drag cannot show and then hide peers");
+    Access::finishShakeDrag(*source);
+
+    peer = groups.liveWindow(peerId);
+    require(peer->requestHide(), "manually hide one peer while another remains visible");
+    translation_tests::flushEvents();
+    QString visibleId;
+    for (auto* window : groups.liveWindows())
+        if (window != source)
+            visibleId = window->persistenceId();
+    QPointer<ScreenshotPinnedWindow> visiblePeer = groups.liveWindow(visibleId);
+    require(visiblePeer && Access::beginShakeDrag(*source), "begin mixed visibility shake");
+    shake(*source);
+    translation_tests::waitUntil([&] { return groups.liveWindow(peerId) != nullptr; },
+                                 "shaking restores manually hidden peers");
+    require(visiblePeer && visiblePeer == groups.liveWindow(visibleId) &&
+                visiblePeer->isVisible() && !repository.summary(visibleId)->hidden &&
+                !repository.summary(peerId)->hidden,
+            "mixed visibility shakes keep already visible peers intact");
+    Access::finishShakeDrag(*source);
+
+    require(Access::beginShakeDrag(*source), "begin a fresh hide after showing peers");
+    shake(*source);
+    QCoreApplication::processEvents();
+    Access::finishShakeDrag(*source);
+    require(repository.summary(peerId)->hidden && repository.summary(visibleId)->hidden &&
+                repository.summary(unrelated.id)->hidden &&
+                repository.summary(closed.id)->ignored && !groups.liveWindow(unrelated.id) &&
+                !groups.liveWindow(closed.id) &&
+                Access::shakeMessage(*source)->content() == QStringLiteral("Other windows hidden"),
+            "fresh shakes hide peers again and leave unrelated hidden pins and history intact");
+
+    auto& pool = storage.pinnedFullImagePool();
+    require(pool.waitForDone(5000), "finish source loads before gating restoration");
+    const int previousWorkers = pool.maxThreadCount();
+    const auto restoreWorkers = qScopeGuard([&] { pool.setMaxThreadCount(previousWorkers); });
+    pool.setMaxThreadCount(1);
+    int failures = 0;
+    service.setRestoreFailureHandler([&] { ++failures; });
+    for (const bool showAgain : {false, true}) {
+        auto started = std::make_shared<QSemaphore>();
+        auto gate = std::make_shared<QSemaphore>();
+        auto releaseWorker = qScopeGuard([&] { gate->release(); });
+        pool.start([started, gate] {
+            started->release();
+            gate->acquire();
+        });
+        require(started->tryAcquire(1, 5000), "gate restore workers before shaking");
+        require(Access::beginShakeDrag(*source), "begin a shake that queues restoration");
+        shake(*source);
+        QCoreApplication::processEvents();
+        Access::finishShakeDrag(*source);
+        require(!repository.summary(peerId)->hidden && !groups.liveWindow(peerId),
+                "showing hidden peers queues their load without creating a window synchronously");
+        require(Access::beginShakeDrag(*source), "begin another shake before restoration finishes");
+        shake(*source);
+        QCoreApplication::processEvents();
+        Access::finishShakeDrag(*source);
+        require(repository.summary(peerId)->hidden && repository.summary(visibleId)->hidden,
+                "a new shake hides peers and cancels their pending restoration");
+        if (showAgain) {
+            require(Access::beginShakeDrag(*source), "begin the latest show request");
+            shake(*source);
+            QCoreApplication::processEvents();
+            Access::finishShakeDrag(*source);
+        }
+        gate->release();
+        releaseWorker.dismiss();
+        require(pool.waitForDone(5000), "finish queued restore loads");
+        translation_tests::flushEvents();
+        if (showAgain) {
+            translation_tests::waitUntil(
+                [&] {
+                    auto* pin = groups.liveWindow(peerId);
+                    return pin && Access::shakeContentReady(*pin) &&
+                           groups.liveWindows().size() == 3;
+                },
+                "the latest shake shows peers after an earlier restore was canceled");
+        } else {
+            require(!groups.liveWindow(peerId) && !groups.liveWindow(visibleId) &&
+                        repository.summary(peerId)->hidden && groups.liveWindows().size() == 1,
+                    "canceled restore completions cannot revive hidden peers");
+        }
+    }
+    require(failures == 0, "intentional restore cancellation reports no failure");
     for (auto* window : groups.liveWindows())
         window->close();
     translation_tests::flushEvents();
 }
 } // namespace pinned_shake_tests
+
+#ifdef Q_OS_MACOS
+void pinnedShakeNativeFocus() {
+    using namespace pinned_shake_tests;
+    IsolatedPinnedStorage isolated;
+    auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+    require(Settings().setAutomaticTextRecognition(false),
+            "disable recognition for native shaking");
+    snow_shot::presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen, "native shaking needs a screen");
+    QImage image(240, 160, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::green);
+    for (const QPoint origin : {QPoint(100, 100), QPoint(500, 100)}) {
+        require(service.presentPinnedImage(image, screen,
+                                           physicalPinGeometry(*screen, origin, image.size()),
+                                           image.size()),
+                "create native shake pins");
+    }
+    translation_tests::waitUntil(
+        [&] {
+            const auto windows = groups.liveWindows();
+            return windows.size() == 2 &&
+                   std::all_of(windows.cbegin(), windows.cend(), [&](auto* window) {
+                       const auto summary = repository.summary(window->persistenceId());
+                       return Access::shakeContentReady(*window) && summary && !summary->pending;
+                   });
+        },
+        "native shake pins must finish presenting and saving");
+    QPointer<ScreenshotPinnedWindow> source = groups.liveWindows().front();
+    QString peerId = groups.liveWindows().back()->persistenceId();
+    source->showFromManagement();
+    waitForUi(500);
+    CGEventRef current = CGEventCreate(nullptr);
+    const CGPoint originalPointer = CGEventGetLocation(current);
+    CFRelease(current);
+    bool buttonDown = false;
+    QPointF lastPoint;
+    const auto post = [&](CGEventType type, const QPointF& point) {
+        lastPoint = point;
+        CGEventRef event = CGEventCreateMouseEvent(nullptr, type, CGPointMake(point.x(), point.y()),
+                                                   kCGMouseButtonLeft);
+        require(event, "create native shake mouse event");
+        CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
+        if (type == kCGEventLeftMouseDown || type == kCGEventLeftMouseUp)
+            buttonDown = type == kCGEventLeftMouseDown;
+        waitForUi(60);
+    };
+    const auto releasePointer = qScopeGuard([&] {
+        if (buttonDown)
+            post(kCGEventLeftMouseUp, lastPoint);
+        CGWarpMouseCursorPosition(originalPointer);
+    });
+    for (const bool hidden : {true, false, true}) {
+        const QPointF origin = source->mapToGlobal(QPoint(30, 30));
+        post(kCGEventMouseMoved, origin);
+        post(kCGEventLeftMouseDown, origin);
+        require(Access::shakeDragActive(*source), "native press starts dragging the shaken pin");
+        const auto grabber = QWidget::mouseGrabber();
+        for (int leg = 1; leg <= 6; ++leg)
+            post(kCGEventLeftMouseDragged, origin + QPointF((leg % 2) ? 64 : 0, 0));
+        translation_tests::waitUntil(
+            [&] {
+                const auto peer = repository.summary(peerId);
+                auto* window = groups.liveWindow(peerId);
+                return peer && peer->hidden == hidden &&
+                       (hidden || (window && Access::shakeContentReady(*window)));
+            },
+            "native shaking toggles the peer before releasing the pointer");
+        require(source->isVisible() && source->isActiveWindow() &&
+                    Access::shakeDragActive(*source) && QWidget::mouseGrabber() == grabber &&
+                    Access::shakeMessage(*source) &&
+                    Access::shakeMessage(*source)->content() ==
+                        (hidden ? QStringLiteral("Other windows hidden")
+                                : QStringLiteral("Other windows shown")),
+                "native hide and show preserve the owner's focus, capture and feedback");
+        const QRect before = source->currentNativeGeometry();
+        post(kCGEventLeftMouseDragged, origin + QPointF(20, 10));
+        require(source->currentNativeGeometry() == before.translated(20, 10) &&
+                    Access::shakeDragActive(*source) &&
+                    repository.summary(peerId)->hidden == hidden,
+                "native dragging continues without toggling again in the same drag");
+        post(kCGEventLeftMouseUp, lastPoint);
+        if (!hidden) {
+            const QString previousSource = source->persistenceId();
+            source = groups.liveWindow(peerId);
+            peerId = previousSource;
+        }
+    }
+    for (auto* window : groups.liveWindows())
+        window->close();
+    translation_tests::flushEvents();
+}
+#endif
 
 void pinnedShakeSamplingBenchmark() {
     using namespace pinned_shake_tests;
@@ -496,13 +839,15 @@ void pinnedShakeWindowTests() {
     using namespace pinned_shake_tests;
     ordinaryDragCorrectionsKeepPeersVisible();
     callbackAndMessagePreserveDrag();
+    messageStaysAboveContentAfterLayerUpdates();
     pendingActionsRespectCancellationAndSettings();
     liveSettingAndResetsRequireAFreshDrag();
     failuresAndEmptyTargetsDoNotShowSuccess();
     fallbackHidesOnlyPeersAndPreservesSnapshots();
+    fallbackShowsHiddenPeersAndPreservesVisiblePeers();
     dpiChangesAndSharedGeometryCannotCompleteOldShakes();
-    peerContentAndWindowModesSurviveHiding();
-    serviceHidesPersistedAndPendingPeers();
+    peerContentAndWindowModesSurviveHidingAndRestoring();
+    serviceTogglesPersistedAndPendingPeers();
 }
 
 #ifdef Q_OS_WIN
@@ -514,7 +859,7 @@ void pinnedShakeInsideRealMoveLoop() {
     present(peer, config());
     bool hiddenInsideMoveLoop = false;
     auto value = config();
-    value.shakeHideOtherWindowsRequested = [&](const QString&) {
+    value.shakeToggleOtherWindowsRequested = [&](const QString&) {
         GUITHREADINFO info{};
         info.cbSize = sizeof(info);
         hiddenInsideMoveLoop = GetGUIThreadInfo(GetCurrentThreadId(), &info) != FALSE &&
@@ -663,7 +1008,7 @@ void pinnedShakeNativeTests() {
         present(peer, config());
         auto value = config();
         int requests = 0;
-        value.shakeHideOtherWindowsRequested = [&](const QString&) {
+        value.shakeToggleOtherWindowsRequested = [&](const QString&) {
             ++requests;
             const bool hidden = peer.requestHide();
             return Result{hidden, hidden};

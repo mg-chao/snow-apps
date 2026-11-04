@@ -208,7 +208,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             owner.m_platform.setInputTransparent(this, transparent);
             palette->setGlobalCanvasClickThrough(transparent);
             emit owner.errorOccurred(
-                GlobalCanvasController::tr("Could not change canvas click-through."));
+                GlobalCanvasController::tr("Could not change canvas click-through"));
             return;
         }
         transparent = next;
@@ -379,7 +379,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         if (!laserSource)
             laserSource = owner.m_platform.createEffectsSource();
         if (!laserSource) {
-            laserFailed(GlobalCanvasController::tr("The laser pointer is unavailable."));
+            laserFailed(GlobalCanvasController::tr("The laser pointer is unavailable"));
             return;
         }
         ++laserGeneration;
@@ -463,7 +463,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             QTimer::singleShot(0, this, [this]() {
                 if (!owner.m_platform.setInputTransparent(this, transparent))
                     emit owner.errorOccurred(
-                        GlobalCanvasController::tr("Could not change canvas click-through."));
+                        GlobalCanvasController::tr("Could not change canvas click-through"));
             });
         }
         return result;

@@ -82,10 +82,9 @@ QString templateText(const char* source) {
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Next page"),
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Page %1 of %2"),
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "No pages"),
-    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget",
-                      "The page preview shows the last valid settings."),
-    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "The original image is unavailable."),
-    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Image preview was cancelled."),
+    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "The page preview shows the last valid settings"),
+    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "The original image is unavailable"),
+    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Image preview was cancelled"),
 };
 
 quint64 draggedId(const QMimeData* mime, const CollageDocument* document) {
@@ -194,7 +193,7 @@ class OriginalReply final : public adqt::widgets::AdImageReply {
         QTimer::singleShot(0, this, [this] {
             if (!isFinished()) {
                 if (m_image.isNull())
-                    fail(templateText("The original image is unavailable."));
+                    fail(templateText("The original image is unavailable"));
                 else
                     succeed(m_image);
             }
@@ -202,7 +201,7 @@ class OriginalReply final : public adqt::widgets::AdImageReply {
     }
     void abort() override {
         if (!isFinished())
-            fail(templateText("Image preview was cancelled."));
+            fail(templateText("Image preview was cancelled"));
     }
 
   private:
@@ -1305,7 +1304,7 @@ void CollagePdfTemplateWidget::setExportBusy(bool busy) {
 void CollagePdfTemplateWidget::retranslateUi() {
     auto& d = *m_impl;
     d.canvas->retranslateUi();
-    d.notice->setText(templateText("The page preview shows the last valid settings."));
+    d.notice->setText(templateText("The page preview shows the last valid settings"));
     d.strip->setAccessibleName(templateText("Input images"));
     d.previous->setToolTip(templateText("Previous page"));
     d.previous->setAccessibleName(d.previous->toolTip());

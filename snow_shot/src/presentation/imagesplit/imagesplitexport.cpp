@@ -20,12 +20,12 @@
 namespace snow_shot::presentation {
 namespace {
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("ImageSplitExport", "Export was canceled."),
-    QT_TRANSLATE_NOOP("ImageSplitExport", "The image or split configuration is invalid."),
-    QT_TRANSLATE_NOOP("ImageSplitExport", "The image could not be prepared for export."),
-    QT_TRANSLATE_NOOP("ImageSplitExport", "The output folder could not be created."),
+    QT_TRANSLATE_NOOP("ImageSplitExport", "Export was canceled"),
+    QT_TRANSLATE_NOOP("ImageSplitExport", "The image or split configuration is invalid"),
+    QT_TRANSLATE_NOOP("ImageSplitExport", "The image could not be prepared for export"),
+    QT_TRANSLATE_NOOP("ImageSplitExport", "The output folder could not be created"),
     QT_TRANSLATE_NOOP("ImageSplitExport", "Image %1 could not be saved: %2"),
-    QT_TRANSLATE_NOOP("ImageSplitExport", "There is not enough memory to export the image."),
+    QT_TRANSLATE_NOOP("ImageSplitExport", "There is not enough memory to export the image"),
 };
 void setError(ImageSplitExportResult& result, const char* source, QStringList arguments = {}) {
     result.errorSource = QString::fromUtf8(source);
@@ -214,11 +214,11 @@ ImageSplitExportResult exportSplitImages(const QImage& image, const ImageSplitLa
     result.totalCount = layout.outputCount();
     const auto cancellationRequested = [&cancelled] { return cancelled && cancelled(); };
     if (cancellationRequested()) {
-        setError(result, "Export was canceled.");
+        setError(result, "Export was canceled");
         return result;
     }
     if (image.isNull() || image.size() != layout.size || !layout.isValid()) {
-        setError(result, "The image or split configuration is invalid.");
+        setError(result, "The image or split configuration is invalid");
         return result;
     }
     try {
@@ -227,12 +227,12 @@ ImageSplitExportResult exportSplitImages(const QImage& image, const ImageSplitLa
                                               ? image.colorSpace().transformationToColorSpace(srgb)
                                               : QColorTransform{};
         if (cancellationRequested()) {
-            setError(result, "Export was canceled.");
+            setError(result, "Export was canceled");
             return result;
         }
         result.directory = createExportDirectory(parentDirectory, imageName);
         if (result.directory.isEmpty()) {
-            setError(result, "The output folder could not be created.");
+            setError(result, "The output folder could not be created");
             return result;
         }
         if (progress)
@@ -240,7 +240,7 @@ ImageSplitExportResult exportSplitImages(const QImage& image, const ImageSplitLa
         const QDir output(result.directory);
         for (qint64 index = 0; index < result.totalCount; ++index) {
             if (cancellationRequested()) {
-                setError(result, "Export was canceled.");
+                setError(result, "Export was canceled");
                 return result;
             }
             const auto rows = cropRows(image, layout.regionAt(index), cancelled, transform);
@@ -249,7 +249,7 @@ ImageSplitExportResult exportSplitImages(const QImage& image, const ImageSplitLa
                 ScreenshotImageFileFormat::Png);
             if (!saved.succeeded()) {
                 if (cancellationRequested())
-                    setError(result, "Export was canceled.");
+                    setError(result, "Export was canceled");
                 else
                     setError(result, "Image %1 could not be saved: %2",
                              {QString::number(index + 1), saved.error});
@@ -260,7 +260,7 @@ ImageSplitExportResult exportSplitImages(const QImage& image, const ImageSplitLa
                 progress(result.savedCount, result.totalCount);
         }
     } catch (const std::bad_alloc&) {
-        setError(result, "There is not enough memory to export the image.");
+        setError(result, "There is not enough memory to export the image");
     }
     return result;
 }

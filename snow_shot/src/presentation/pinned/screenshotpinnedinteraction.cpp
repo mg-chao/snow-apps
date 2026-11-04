@@ -110,10 +110,12 @@ void ScreenshotPinnedWindow::updateWindowShake(const QPointF& pointer, qint64 ti
             !snow_shot::storage::PinToScreenSettings().shakeWindowToHideOthers())
             return;
         const QPointer<ScreenshotPinnedWindow> lifetime(this);
-        const auto result = hideOtherWindowsForShake();
+        const auto result = toggleOtherWindowsForShake();
         if (lifetime && m_presentationGeneration == presentation && !m_closing && result.success &&
-            result.changed)
+            result.changed) {
+            m_shakeMessageAction = result.action;
             showShakeMessage();
+        }
     });
 }
 

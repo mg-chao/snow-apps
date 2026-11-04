@@ -407,8 +407,8 @@
             <translation>当前水印字体大小</translation>
         </message>
         <message>
-            <source>Cursor data is unavailable for this screenshot.</source>
-            <translation>此截图没有可用的光标数据。</translation>
+            <source>Cursor data is unavailable for this screenshot</source>
+            <translation>此截图没有可用的光标数据</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -459,8 +459,8 @@
             <translation>删除标注模板</translation>
         </message>
         <message>
-            <source>Delete annotation template "%1"? This action cannot be undone.</source>
-            <translation>删除标注模板“%1”？此操作无法撤销。</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone</source>
+            <translation>删除标注模板“%1”？此操作无法撤销</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -1427,8 +1427,8 @@
             <translation>渐宽箭杆</translation>
         </message>
         <message>
-            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</source>
-            <translation>渐宽箭杆支持标准、三角形、空心三角形和内凹三角形箭头。</translation>
+            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads</source>
+            <translation>渐宽箭杆支持标准、三角形、空心三角形和内凹三角形箭头</translation>
         </message>
         <message>
             <source>Target Language</source>
@@ -1667,16 +1667,16 @@
     <context>
         <name>snow_shot::presentation::GlobalCanvasController</name>
         <message>
-            <source>Could not change canvas click-through.</source>
-            <translation>无法切换画布的鼠标穿透状态。</translation>
+            <source>Could not change canvas click-through</source>
+            <translation>无法切换画布的鼠标穿透状态</translation>
         </message>
         <message>
             <source>Could not show the laser pointer: %1</source>
             <translation>无法显示激光笔：%1</translation>
         </message>
         <message>
-            <source>The laser pointer is unavailable.</source>
-            <translation>激光笔不可用。</translation>
+            <source>The laser pointer is unavailable</source>
+            <translation>激光笔不可用</translation>
         </message>
     </context>
 </TS>

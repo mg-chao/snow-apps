@@ -44,7 +44,7 @@ struct ScreenshotShortcutExitConfirmation::Impl {
         request.mode = AdModal::Mode::Window;
         request.title = QCoreApplication::translate("ScreenshotController", "Exit screenshot?");
         request.text = QCoreApplication::translate("ScreenshotController",
-                                                   "Your current screenshot will be discarded.");
+                                                   "Your current screenshot will be discarded");
         request.acceptText = QCoreApplication::translate("ScreenshotController", "Exit");
         request.rejectText = QCoreApplication::translate("ScreenshotController", "Cancel");
         request.acceptAccentRole = AdButton::AccentRole::Danger;

@@ -152,7 +152,7 @@ class AboutArtwork final : public QWidget {
                         ? snow_shot::app::edition::productName().toHtmlEscaped().toUtf8()
                         : translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Snow Shot")));
         svg.replace("{{moment}}",
-                    translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Make every moment clear.")));
+                    translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Make every moment clear")));
         svg.replace("{{ocr}}",
                     translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Text recognition")));
         svg.replace("{{pixels}}", translated(QT_TRANSLATE_NOOP("AboutPageWidget",
@@ -828,10 +828,10 @@ void AboutPageWidget::retranslateUi() {
                                                                                  : "#7052d8");
     m_ui->tagline->setText(QStringLiteral("<span style=\"color:%1\">%2</span>%3")
                                .arg(violet.name(), tr("Elegant screenshots").toHtmlEscaped(),
-                                    tr(", excellent work.").toHtmlEscaped()));
+                                    tr(", excellent work").toHtmlEscaped()));
     m_ui->description->setText(
         tr("Capture, annotate, recognize text, and record your screen,\n"
-           "so every moment on screen can be expressed clearly and shared easily."));
+           "so every moment on screen can be expressed clearly and shared easily"));
     const std::array<QString, 6> features{tr("Screenshot capture"), tr("Easy annotation"),
                                           tr("Text recognition"),   tr("Screen recording"),
                                           tr("Pin to screen"),      tr("Screenshot history")};
@@ -868,10 +868,10 @@ void AboutPageWidget::retranslateUi() {
         tr("QQ Group 3"),
         tr("Discussion and support · Group No. %1").arg(QStringLiteral("1037819112")),
         QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL)));
-    m_ui->community->setText(tr("Built for daily work, and growing with the community."));
+    m_ui->community->setText(tr("Built for daily work, and growing with the community"));
     m_ui->license->setText(
         tr("%1 · %2").arg(tr("GNU General Public License v3.0 or later"),
-                          tr("Free and open-source software. Distributed without any warranty.")));
+                          tr("Free and open-source software. Distributed without any warranty")));
     m_ui->privacyPolicy->setText(tr("Privacy policy"));
     m_ui->privacyPolicy->setAccessibleName(tr("Privacy policy"));
     m_ui->privacyPolicy->setToolTip(
@@ -884,7 +884,7 @@ void AboutPageWidget::retranslateUi() {
             : tr("Snow Shot · Make expression clearer"));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
-                                 : tr("Could not open the link. Open %1 in your browser.")
+                                 : tr("Could not open the link. Open %1 in your browser")
                                        .arg(m_failedUrl.toDisplayString()));
     m_ui->linkError->setVisible(!m_failedUrl.isEmpty());
     m_ui->artwork->refresh(m_ui->scheme);
@@ -1016,13 +1016,13 @@ void AboutPageWidget::refreshUpdateStatus() {
     QString action = tr("Check for updates");
     switch (status.state) {
     case UpdateState::Unavailable:
-        text = tr("Automatic updates are unavailable for this copy.");
+        text = tr("Automatic updates are unavailable for this copy");
         break;
     case UpdateState::Idle:
         text = status.version.isEmpty() ? (snow_shot::app::edition::isMini
-                                               ? tr("Check for a newer version of %1.")
+                                               ? tr("Check for a newer version of %1")
                                                      .arg(snow_shot::app::edition::productName())
-                                               : tr("Check for a newer version of Snow Shot."))
+                                               : tr("Check for a newer version of Snow Shot"))
                                         : tr("You are up to date");
         if (!status.version.isEmpty()) {
             statusIcon = outlined::CheckCircle();
@@ -1075,7 +1075,7 @@ void AboutPageWidget::refreshUpdateStatus() {
         break;
     }
     if (storeManaged) {
-        text = tr("Updates are managed by Microsoft Store.");
+        text = tr("Updates are managed by Microsoft Store");
         action = tr("Open Microsoft Store");
         statusIcon = outlined::InfoCircle();
         actionIcon = outlined::Link();

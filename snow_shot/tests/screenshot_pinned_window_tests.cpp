@@ -7344,7 +7344,7 @@ void pinnedWindowConfirmationPreferences() {
                                      : QStringLiteral("Translated Close pinned window")) &&
                         modal->text() ==
                             (destroy ? QStringLiteral("Translated Destroy this pinned window? This "
-                                                      "action cannot be undone.")
+                                                      "action cannot be undone")
                                      : QStringLiteral("Translated Close this pinned window?")) &&
                         modal->acceptText() == (destroy ? QStringLiteral("Translated Destroy")
                                                         : QStringLiteral("Translated Close")) &&
@@ -24515,7 +24515,7 @@ void pinnedMultiSelectionGroupFailureAndRetry() {
     require(modal->isOpen() && field->errorMessages().size() == 1 &&
                 field->errorMessages().front() ==
                     QStringLiteral("Unable to create the group or move the selected windows. Try "
-                                   "again.") &&
+                                   "again") &&
                 first.groupId() == QStringLiteral("default") &&
                 second.groupId() == QStringLiteral("default") &&
                 fixture.groups.groupsSortedForDisplay().size() == 1 &&
@@ -24592,8 +24592,7 @@ void pinnedMultiSelectionLiveLanguageAndTheme() {
                 return {};
             if (QByteArray(source) == "%n selected window(s)")
                 return QStringLiteral("Translated selected %1").arg(count);
-            if (QByteArray(source) ==
-                "Destroy %n selected window(s)? This action cannot be undone.")
+            if (QByteArray(source) == "Destroy %n selected window(s)? This action cannot be undone")
                 return QStringLiteral("Translated confirmation %1").arg(count);
             return QStringLiteral("Translated ") + QString::fromUtf8(source);
         }
@@ -27580,6 +27579,12 @@ int main(int argc, char* argv[]) {
             pinnedShakeWindowTests();
             return 0;
         }
+#ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--shake-focus-only"))) {
+            pinnedShakeNativeFocus();
+            return 0;
+        }
+#endif
 #ifdef Q_OS_WIN
         if (app.arguments().contains(QStringLiteral("--shake-hide-native-only"))) {
             pinnedShakeNativeTests();

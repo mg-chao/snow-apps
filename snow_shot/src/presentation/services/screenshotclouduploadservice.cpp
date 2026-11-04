@@ -130,7 +130,7 @@ void ScreenshotCloudUploadJob::prepare() {
         !m_impl->payload->directory.isValid()) {
         complete({ScreenshotCloudUploadResult::Status::Failed,
                   {},
-                  tr("The cloud upload configuration or image is unavailable.")});
+                  tr("The cloud upload configuration or image is unavailable")});
         return;
     }
     const QString filename = snow_shot::storage::composeExportFileName(
@@ -173,7 +173,7 @@ void ScreenshotCloudUploadJob::prepare() {
                 if (hash.isEmpty()) {
                     complete({ScreenshotCloudUploadResult::Status::Failed,
                               {},
-                              tr("The image could not be prepared for upload.")});
+                              tr("The image could not be prepared for upload")});
                 } else
                     upload(hash);
             });
@@ -198,14 +198,14 @@ void ScreenshotCloudUploadJob::prepare() {
     if (!started)
         complete({ScreenshotCloudUploadResult::Status::Failed,
                   {},
-                  tr("The screenshot export queue is full.")});
+                  tr("The screenshot export queue is full")});
 }
 void ScreenshotCloudUploadJob::upload(const QByteArray& hash) {
     auto* manager = sharedNetworkAccessManager();
     if (manager == nullptr) {
         complete({ScreenshotCloudUploadResult::Status::Failed,
                   {},
-                  tr("Cloud upload failed because of a network error or timeout.")});
+                  tr("Cloud upload failed because of a network error or timeout")});
         return;
     }
     auto* file = new UploadFile(m_impl->payload);
@@ -213,7 +213,7 @@ void ScreenshotCloudUploadJob::upload(const QByteArray& hash) {
         delete file;
         complete({ScreenshotCloudUploadResult::Status::Failed,
                   {},
-                  tr("The image could not be opened for upload.")});
+                  tr("The image could not be opened for upload")});
         return;
     }
     auto request = snow_shot::s3_upload::signedPut(m_impl->config, m_impl->key, hash,
@@ -253,10 +253,10 @@ void ScreenshotCloudUploadJob::upload(const QByteArray& hash) {
                 }
             }
             const QString error =
-                status > 0 ? tr("Cloud upload failed (HTTP %1%2).")
+                status > 0 ? tr("Cloud upload failed (HTTP %1%2)")
                                  .arg(status)
                                  .arg(code.isEmpty() ? QString() : QStringLiteral(", ") + code)
-                           : tr("Cloud upload failed because of a network error or timeout.");
+                           : tr("Cloud upload failed because of a network error or timeout");
             complete({ScreenshotCloudUploadResult::Status::Failed, {}, error});
         }
     });

@@ -11,7 +11,7 @@ inline QString freeTranslationErrorText() {
     return QCoreApplication::translate(
         "FreeTranslation",
         "The free translation service may no longer be available. Please update the app or report "
-        "the issue.");
+        "the issue");
 }
 } // namespace snow_shot::translation
 

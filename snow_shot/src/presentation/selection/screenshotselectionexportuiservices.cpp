@@ -1216,9 +1216,9 @@ void ScreenshotSelectionExportUiServices::configureVisibility(
         if (!lifetime.isNull())
             static_cast<void>(hideOtherWindows(id));
     };
-    config->shakeHideOtherWindowsRequested = [this, lifetime](const QString& id) {
-        return lifetime.isNull() ? ScreenshotPinnedWindow::HideOtherWindowsResult{}
-                                 : hideOtherWindowsWithResult(id);
+    config->shakeToggleOtherWindowsRequested = [this, lifetime](const QString& id) {
+        return lifetime.isNull() ? ScreenshotPinnedWindow::OtherWindowsVisibilityResult{}
+                                 : toggleOtherWindowsForShake(id);
     };
 }
 
@@ -1325,28 +1325,57 @@ void ScreenshotSelectionExportUiServices::showAllWindows() {
     for (const auto& record : records)
         if (!record.ignored && record.groupId == group)
             ids.append(record.id);
+    static_cast<void>(showRecords(group, ids));
+}
+
+bool ScreenshotSelectionExportUiServices::showRecords(const QString& group,
+                                                      const QVector<QString>& ids) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.pinnedWindows().setRecordsHidden(ids, false).success) {
         if (m_restoreFailure)
             m_restoreFailure();
-        return;
+        return false;
     }
+    auto* stacking = stackingCoordinator();
     const auto batch = stacking ? stacking->beginRestore(group, ids) : 0;
+    bool success = true;
     for (const auto& id : ids) {
         if (m_restoringIds.contains(id)) {
             if (stacking)
                 stacking->settleRestore(batch, id);
         } else {
-            static_cast<void>(restoreRecordImpl(
-                id, false, ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus, batch));
+            success &= restoreRecordImpl(
+                id, false, ScreenshotPinnedWindow::PresentationPolicy::PreserveFocus, batch);
         }
     }
+    return success;
+}
+
+ScreenshotPinnedWindow::OtherWindowsVisibilityResult
+ScreenshotSelectionExportUiServices::toggleOtherWindowsForShake(const QString& exceptId) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return {};
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    QVector<QString> hiddenIds;
+    for (const auto& record : storage.pinnedWindows().summariesIncludingPending()) {
+        if (!record.ignored && record.hidden && record.groupId == group && record.id != exceptId)
+            hiddenIds.append(record.id);
+    }
+    if (hiddenIds.isEmpty())
+        return hideOtherWindowsWithResult(exceptId);
+    if (auto* stacking = stackingCoordinator())
+        stacking->checkpoint();
+    return {showRecords(group, hiddenIds), true,
+            ScreenshotPinnedWindow::OtherWindowsVisibilityResult::Action::Show};
 }
 
 bool ScreenshotSelectionExportUiServices::hideOtherWindows(const QString& exceptId) {
     return hideOtherWindowsWithResult(exceptId).success;
 }
 
-ScreenshotPinnedWindow::HideOtherWindowsResult
+ScreenshotPinnedWindow::OtherWindowsVisibilityResult
 ScreenshotSelectionExportUiServices::hideOtherWindowsWithResult(const QString& exceptId) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())

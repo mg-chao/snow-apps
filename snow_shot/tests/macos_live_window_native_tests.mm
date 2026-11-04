@@ -379,7 +379,7 @@ int runFixture() {
     }
     require(minimized, "Minimization must keep the live pin in the minimized state.");
     require(source->stateMessage() ==
-                QStringLiteral("The window is minimized. The latest content cannot be displayed."),
+                QStringLiteral("The window is minimized. The latest content cannot be displayed"),
             "The minimized message must match the specified text.");
     bool rejected = false;
     source->requestFrame([&](const QImage& image, const QString& message) {
@@ -395,7 +395,7 @@ int runFixture() {
     require(waitFor([&] { return source->state() == LiveWindowState::Closed; }),
             "Closing the source must retain the pin with a terminal closed state.");
     require(source->stateMessage() ==
-                QStringLiteral("The window is closed. The latest content cannot be displayed."),
+                QStringLiteral("The window is closed. The latest content cannot be displayed"),
             "The closed message must match the specified text.");
     QObject::disconnect(connection);
     source->shutdown();

@@ -50,8 +50,8 @@ using adqt::widgets::AdModal;
     QT_TRANSLATE_NOOP("CollageWindow", "%1: %2"),
     QT_TRANSLATE_NOOP("CollageWindow", "Add images"),
     QT_TRANSLATE_NOOP("CollageWindow", "Allow Snow Shot to access Finder in System Settings > "
-                                       "Privacy & Security > Automation, then try again."),
-    QT_TRANSLATE_NOOP("CollageWindow", "All images will be removed from this collage."),
+                                       "Privacy & Security > Automation, then try again"),
+    QT_TRANSLATE_NOOP("CollageWindow", "All images will be removed from this collage"),
     QT_TRANSLATE_NOOP("CollageWindow", "Cancel"),
     QT_TRANSLATE_NOOP("CollageWindow", "Clear all"),
     QT_TRANSLATE_NOOP("CollageWindow", "Clear all images?"),
@@ -59,13 +59,12 @@ using adqt::widgets::AdModal;
     QT_TRANSLATE_NOOP("CollageWindow", "Collage"),
     QT_TRANSLATE_NOOP("CollageWindow", "Copy"),
     QT_TRANSLATE_NOOP("CollageWindow", "Copying collage…"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Copying could not be started. Try again."),
-    QT_TRANSLATE_NOOP("CollageWindow",
-                      "Could not read the selected image files. Please try again."),
+    QT_TRANSLATE_NOOP("CollageWindow", "Copying could not be started. Try again"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Could not read the selected image files. Please try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Discard"),
     QT_TRANSLATE_NOOP("CollageWindow", "Discard this collage?"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Export could not be started. Try again."),
-    QT_TRANSLATE_NOOP("CollageWindow", "Image loading could not be started. Try again."),
+    QT_TRANSLATE_NOOP("CollageWindow", "Export could not be started. Try again"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Image loading could not be started. Try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Images"),
     QT_TRANSLATE_NOOP("CollageWindow", "Loading images: %1 of %2"),
     QT_TRANSLATE_NOOP("CollageWindow", "Pinned window %1"),
@@ -81,21 +80,21 @@ using adqt::widgets::AdModal;
     QT_TRANSLATE_NOOP("CollageWindow", "Exporting PDF page %1 of %2: %3%"),
     QT_TRANSLATE_NOOP("CollageWindow", "Canceling PDF export…"),
     QT_TRANSLATE_NOOP("CollageWindow",
-                      "PDF export was canceled. Your images and edits are preserved."),
+                      "PDF export was canceled. Your images and edits are preserved"),
     QT_TRANSLATE_NOOP("CollageWindow", "Saved pages: %1\nFiles:\n%2\n%3"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Pages %1–%2 were not saved."),
-    QT_TRANSLATE_NOOP("CollageWindow", "Page %1 was not saved."),
-    QT_TRANSLATE_NOOP("CollageWindow", "The PDFs could not be exported. Try again."),
-    QT_TRANSLATE_NOOP("CollageWindow", "Saving could not be started. Try again."),
+    QT_TRANSLATE_NOOP("CollageWindow", "Pages %1–%2 were not saved"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Page %1 was not saved"),
+    QT_TRANSLATE_NOOP("CollageWindow", "The PDFs could not be exported. Try again"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Saving could not be started. Try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Screenshot %1"),
     QT_TRANSLATE_NOOP("CollageWindow", "Some images could not be loaded:\n%1"),
     QT_TRANSLATE_NOOP("CollageWindow", "The final screenshot is unavailable"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The file manager is unavailable. Open it and try again."),
+    QT_TRANSLATE_NOOP("CollageWindow", "The file manager is unavailable. Open it and try again"),
     QT_TRANSLATE_NOOP("CollageWindow",
                       "The file manager took too long to return the selected files. Please try "
-                      "again."),
+                      "again"),
     QT_TRANSLATE_NOOP("CollageWindow", "The image could not be decoded or is no longer available"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The images and edits in this collage will be discarded."),
+    QT_TRANSLATE_NOOP("CollageWindow", "The images and edits in this collage will be discarded"),
     QT_TRANSLATE_NOOP("CollageWindow", "The layout settings could not be remembered: %1"),
 };
 
@@ -116,14 +115,14 @@ QString selectedFileErrorText(platform::SelectedFileError error) {
     switch (error) {
     case platform::SelectedFileError::PermissionDenied:
         return collageText("Allow Snow Shot to access Finder in System Settings > Privacy & "
-                           "Security > Automation, then try again.");
+                           "Security > Automation, then try again");
     case platform::SelectedFileError::Timeout:
         return collageText("The file manager took too long to return the selected files. Please "
-                           "try again.");
+                           "try again");
     case platform::SelectedFileError::Unavailable:
-        return collageText("The file manager is unavailable. Open it and try again.");
+        return collageText("The file manager is unavailable. Open it and try again");
     case platform::SelectedFileError::QueryFailed:
-        return collageText("Could not read the selected image files. Please try again.");
+        return collageText("Could not read the selected image files. Please try again");
     case platform::SelectedFileError::None:
         return {};
     }
@@ -399,10 +398,10 @@ struct CollageWindow::Impl {
         case Status::PdfPartial: {
             QString reason =
                 lastPdfResult.cancelled
-                    ? collageText("PDF export was canceled. Your images and edits are preserved.")
+                    ? collageText("PDF export was canceled. Your images and edits are preserved")
                     : lastPdfResult.errorMessage();
             if (reason.isEmpty())
-                reason = collageText("The PDFs could not be exported. Try again.");
+                reason = collageText("The PDFs could not be exported. Try again");
             if (!lastPdfResult.completedPages.isEmpty()) {
                 QStringList pages;
                 for (auto page : lastPdfResult.completedPages)
@@ -411,8 +410,8 @@ struct CollageWindow::Impl {
                 if (firstRemaining <= lastPdfResult.totalCount)
                     reason +=
                         u'\n' + (firstRemaining == lastPdfResult.totalCount
-                                     ? collageText("Page %1 was not saved.").arg(firstRemaining)
-                                     : collageText("Pages %1–%2 were not saved.")
+                                     ? collageText("Page %1 was not saved").arg(firstRemaining)
+                                     : collageText("Pages %1–%2 were not saved")
                                            .arg(firstRemaining)
                                            .arg(lastPdfResult.totalCount));
                 reason = collageText("Saved pages: %1\nFiles:\n%2\n%3")
@@ -463,8 +462,8 @@ struct CollageWindow::Impl {
                                                        : collageText("Discard this collage?"));
         confirmation->setText(
             confirmationClear
-                ? collageText("All images will be removed from this collage.")
-                : collageText("The images and edits in this collage will be discarded."));
+                ? collageText("All images will be removed from this collage")
+                : collageText("The images and edits in this collage will be discarded"));
         confirmation->setAcceptText(confirmationClear ? collageText("Clear all")
                                                       : collageText("Discard"));
         confirmation->setRejectText(collageText("Cancel"));
@@ -732,9 +731,9 @@ struct CollageWindow::Impl {
                             request, decoded, token,
                             ScreenshotExportTaskResult::failure(
                                 ScreenshotExportFailureStage::Queue,
-                                collageText("Image loading could not be started. Try again.")));
+                                collageText("Image loading could not be started. Try again")));
                 }))
-            fail(collageText("Image loading could not be started. Try again."));
+            fail(collageText("Image loading could not be started. Try again"));
     }
 
     void importSelection(const SelectedFilesImport& request, quint64 token) {
@@ -925,7 +924,7 @@ struct CollageWindow::Impl {
             });
         if (!job.isValid()) {
             failures.append(collageText("%1: %2").arg(
-                request.label, collageText("Image loading could not be started. Try again.")));
+                request.label, collageText("Image loading could not be started. Try again")));
             discardRemainingSplit(request);
             QTimer::singleShot(0, &q, [this, token] {
                 if (token == generation)
@@ -966,7 +965,7 @@ struct CollageWindow::Impl {
                                                            std::move(prepared.payload), committed));
                     },
                     ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())}))
-                finishExport(false, collageText("Copying could not be started. Try again."));
+                finishExport(false, collageText("Copying could not be started. Try again"));
         } else if (!artifact->requestClipboard(&q, [this, token, committed](
                                                        ScreenshotExportClipboardResult result) {
                        if (closing || token != generation)
@@ -978,7 +977,7 @@ struct CollageWindow::Impl {
                        static_cast<void>(clipboard.commit(QApplication::clipboard(), &q,
                                                           std::move(result.payload), committed));
                    })) {
-            finishExport(false, collageText("Copying could not be started. Try again."));
+            finishExport(false, collageText("Copying could not be started. Try again"));
         }
     }
 
@@ -997,7 +996,7 @@ struct CollageWindow::Impl {
             if (!ScreenshotSaveAsFileDialog::open(
                     &q, editor->window(), artifact, {},
                     [complete](bool success) { complete(success, {}); }, nullptr, Qt::WindowModal))
-                complete(false, collageText("Saving could not be started. Try again."));
+                complete(false, collageText("Saving could not be started. Try again"));
             return;
         }
         nativeSave = ScreenshotManualSaveService::open(
@@ -1011,7 +1010,7 @@ struct CollageWindow::Impl {
                     guard->m_impl->showStatus(Status::Saving);
             });
         if (!nativeSave.isValid())
-            complete(false, collageText("Saving could not be started. Try again."));
+            complete(false, collageText("Saving could not be started. Try again"));
     }
 
     void finishPdfExport(CollagePdfExportResult result) {
@@ -1104,13 +1103,13 @@ struct CollageWindow::Impl {
                     if (result->error.isEmpty() && !result->cancelled)
                         result->error =
                             task.error.isEmpty()
-                                ? collageText("The PDFs could not be exported. Try again.")
+                                ? collageText("The PDFs could not be exported. Try again")
                                 : task.error;
                 }
                 finishPdfExport(std::move(*result));
             });
         if (!job.isValid()) {
-            result->error = collageText("Export could not be started. Try again.");
+            result->error = collageText("Export could not be started. Try again");
             finishPdfExport(std::move(*result));
         }
     }
@@ -1259,7 +1258,7 @@ struct CollageWindow::Impl {
                     publishSave(token);
             });
         if (!job.isValid())
-            finishExport(false, collageText("Export could not be started. Try again."));
+            finishExport(false, collageText("Export could not be started. Try again"));
     }
 };
 

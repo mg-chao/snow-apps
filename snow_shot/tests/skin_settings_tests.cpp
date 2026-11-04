@@ -86,7 +86,7 @@ class SkinStatusBackend final : public settings::SettingsBackend {
             return QCoreApplication::translate("MainWindowSkin", "Loading skin...");
         case Status::Error:
             return QCoreApplication::translate("MainWindowSkin",
-                                               "The skin image could not be opened.");
+                                               "The skin image could not be opened");
         }
         return {};
     }

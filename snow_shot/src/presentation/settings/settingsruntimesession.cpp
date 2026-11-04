@@ -1180,14 +1180,14 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
         !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
         return QCoreApplication::translate("SettingsBackend",
                                            "Enter a valid HTTP or HTTPS server address without "
-                                           "credentials, a query, or a fragment.");
+                                           "credentials, a query, or a fragment");
     }
 #endif
     const QString currentError = backendError(descriptor);
     if (!currentError.isEmpty()) {
         return currentError;
     }
-    return QCoreApplication::translate("SettingsBackend", "The setting could not be saved.");
+    return QCoreApplication::translate("SettingsBackend", "The setting could not be saved");
 }
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,

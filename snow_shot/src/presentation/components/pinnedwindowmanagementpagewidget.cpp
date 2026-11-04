@@ -1139,7 +1139,7 @@ void PinnedWindowManagementPageWidget::updateBatchActions() {
         m_batchPinAction->setToolTip(
             singleGroup
                 ? m_batchPinAction->text()
-                : tr("Select pinned windows from the same group to pin them to the screen."));
+                : tr("Select pinned windows from the same group to pin them to the screen"));
         m_batchPinAction->setEnabled(m_source && singleGroup);
     }
 }

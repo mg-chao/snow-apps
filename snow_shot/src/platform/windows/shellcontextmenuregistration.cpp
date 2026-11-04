@@ -50,7 +50,7 @@ QString menuLabel(const QString& accessKey) {
 QString invalidAccessKeyError() {
     return contextMenuText(
         QT_TRANSLATE_NOOP("ShellContextMenuRegistration",
-                          "The context menu access key must be one letter (A–Z) or digit (0–9)."));
+                          "The context menu access key must be one letter (A–Z) or digit (0–9)"));
 }
 
 ShellContextMenuRegistryValue stringValue(const QString& value) {
@@ -81,7 +81,7 @@ QString registryError(LSTATUS status) {
     return contextMenuText(
                QT_TRANSLATE_NOOP(
                    "ShellContextMenuRegistration",
-                   "Could not access the Windows context menu registry. Windows error %1."))
+                   "Could not access the Windows context menu registry. Windows error %1"))
         .arg(status);
 }
 
@@ -324,7 +324,7 @@ ShellContextMenuRegistrationSnapshot ShellContextMenuRegistration::snapshot() co
     if (!m_registry.childKeys || !m_registry.read || !m_registry.replace) {
         result.error = contextMenuText(
             QT_TRANSLATE_NOOP("ShellContextMenuRegistration",
-                              "The Windows context menu is only supported on Windows."));
+                              "The Windows context menu is only supported on Windows"));
         return result;
     }
     QStringList registeredExtensions;
@@ -386,7 +386,7 @@ bool ShellContextMenuRegistration::apply(ShellContextMenuMode mode, const QStrin
                 if (error)
                     *error = contextMenuText(QT_TRANSLATE_NOOP(
                         "ShellContextMenuRegistration",
-                        "The Windows context menu entry is owned by another application."));
+                        "The Windows context menu entry is owned by another application"));
                 return false;
             }
             requested = enabledKey(std::move(requested), accessKey);
@@ -412,7 +412,7 @@ bool ShellContextMenuRegistration::restore(const ShellContextMenuRegistrationSna
         if (error)
             *error = contextMenuText(
                 QT_TRANSLATE_NOOP("ShellContextMenuRegistration",
-                                  "Could not read the Windows context menu registration."));
+                                  "Could not read the Windows context menu registration"));
         return false;
     }
     bool success = true;
@@ -448,7 +448,7 @@ ShellContextMenuResult ShellContextMenuRegistration::changePackagedMode(
         return ShellContextMenuResult{
             false, contextMenuText(
                        QT_TRANSLATE_NOOP("ShellContextMenuRegistration",
-                                         "Could not save the Windows context menu preference."))};
+                                         "Could not save the Windows context menu preference"))};
     };
     if (m_packagedPreferencePath.isEmpty())
         return failure();
@@ -507,7 +507,7 @@ ShellContextMenuRegistration::changeMode(ShellContextMenuMode mode, const QStrin
         if (!commitPreference || commitPreference())
             return {true, {}};
         error = contextMenuText(QT_TRANSLATE_NOOP(
-            "ShellContextMenuRegistration", "Could not save the Windows context menu preference."));
+            "ShellContextMenuRegistration", "Could not save the Windows context menu preference"));
     }
     QString recoveryError;
     if (!restore(previous, &recoveryError))

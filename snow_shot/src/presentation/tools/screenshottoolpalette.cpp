@@ -111,7 +111,7 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show Cursor"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cursor data is unavailable for this screenshot."),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cursor data is unavailable for this screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recapture"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Hide selection toolbar"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
@@ -4698,13 +4698,13 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
     refreshRecordingShortcutTooltips();
     if (m_cursorButton) {
         m_cursorButton->setAccessibleDescription(
-            m_cursorAvailable ? QString() : tr("Cursor data is unavailable for this screenshot."));
+            m_cursorAvailable ? QString() : tr("Cursor data is unavailable for this screenshot"));
         if (m_cursorAvailable)
             applyScreenshotShortcutTooltip(m_cursorButton, QStringLiteral("Show Cursor"),
                                            QStringLiteral("toggle_cursor_visibility"));
         else {
-            configureScreenshotToolPaletteTooltip(
-                m_cursorButton, "Cursor data is unavailable for this screenshot.");
+            configureScreenshotToolPaletteTooltip(m_cursorButton,
+                                                  "Cursor data is unavailable for this screenshot");
             setScreenshotToolPaletteAccessibleNameSource(m_cursorButton, "Show Cursor");
             m_cursorButton->setAccessibleName(tr("Show Cursor"));
         }
@@ -8914,7 +8914,7 @@ void ScreenshotToolPalette::retranslateDrawTemplateUi() {
     if (m_deleteDrawTemplateModal != nullptr) {
         m_deleteDrawTemplateModal->setWindowTitle(tr("Delete Annotation Template"));
         m_deleteDrawTemplateModal->setText(
-            tr("Delete annotation template \"%1\"? This action cannot be undone.")
+            tr("Delete annotation template \"%1\"? This action cannot be undone")
                 .arg(m_deleteDrawTemplateName));
         m_deleteDrawTemplateModal->setAcceptText(tr("Delete"));
         m_deleteDrawTemplateModal->setRejectText(tr("Cancel"));

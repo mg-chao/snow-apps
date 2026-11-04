@@ -175,7 +175,7 @@ struct UpdateService::Impl {
         reset(channel(source));
         if (!busy())
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "Could not check for updates. Please try again."));
+                                            "Could not check for updates. Please try again"));
     }
     bool validUrl(const QUrl& url) const {
         const bool local =
@@ -421,7 +421,7 @@ struct UpdateService::Impl {
         if (!parseVersion(options.installedVersion) || !validUrl(options.githubApiUrl) ||
             !validUrl(options.giteeApiUrl)) {
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "Could not check for updates. Please try again."));
+                                            "Could not check for updates. Please try again"));
             return;
         }
         resetAll();

@@ -439,7 +439,7 @@ struct DiagnosticsService::Impl {
                 QDir(state.directory).filePath(task.date.toString(Qt::ISODate));
             if (!prepareDirectory(directory)) {
                 fail(QString::fromUtf8(
-                    QT_TRANSLATE_NOOP("DiagnosticsService", "The log directory is not writable.")));
+                    QT_TRANSLATE_NOOP("DiagnosticsService", "The log directory is not writable")));
                 return;
             }
             output.setFileName(QDir(directory).filePath(QStringLiteral("snow-shot-%1-%2.log")
@@ -450,7 +450,7 @@ struct DiagnosticsService::Impl {
             if (!safePath(output.fileName()) || !outputLock->tryLock(0) ||
                 !output.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
                 fail(QString::fromUtf8(
-                    QT_TRANSLATE_NOOP("DiagnosticsService", "The log file could not be opened.")));
+                    QT_TRANSLATE_NOOP("DiagnosticsService", "The log file could not be opened")));
                 std::lock_guard<std::mutex> lock(stateMutex);
                 state.loggingAvailable = false;
                 return;
@@ -469,7 +469,7 @@ struct DiagnosticsService::Impl {
             writeFailed = true;
             snow_diag_emergency(task.record.constData(), static_cast<size_t>(task.record.size()));
             fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-                "DiagnosticsService", "Writing the log file failed. Check available disk space.")));
+                "DiagnosticsService", "Writing the log file failed. Check available disk space")));
             std::lock_guard<std::mutex> lock(stateMutex);
             state.loggingAvailable = false;
         } else {
@@ -645,7 +645,7 @@ struct DiagnosticsService::Impl {
             if (!available && state.lastError.isEmpty())
                 state.lastError = QString::fromUtf8(QT_TRANSLATE_NOOP(
                     "DiagnosticsService", "The crash collector could not be started. Check the "
-                                          "application installation."));
+                                          "application installation"));
         }
         auto files = artifacts();
         qint64 total = 0;
@@ -707,7 +707,7 @@ struct DiagnosticsService::Impl {
             } else {
                 deletionFailed = true;
                 fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-                    "DiagnosticsService", "Some expired diagnostics could not be removed.")));
+                    "DiagnosticsService", "Some expired diagnostics could not be removed")));
             }
         }
         // Recount database metadata as well as dumps after Crashpad has completed deletion.
@@ -727,16 +727,16 @@ struct DiagnosticsService::Impl {
                         daily.value(today) > options.dailyBytes;
         if (budgetBlocked) {
             fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-                "DiagnosticsService", "The diagnostics storage limit has been reached.")));
+                "DiagnosticsService", "The diagnostics storage limit has been reached")));
         }
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             state.bytes = std::max<qint64>(total, 0);
             if (!budgetBlocked &&
                 (state.lastError ==
-                     QStringLiteral("The diagnostics storage limit has been reached.") ||
+                     QStringLiteral("The diagnostics storage limit has been reached") ||
                  state.lastError ==
-                     QStringLiteral("Some expired diagnostics could not be removed.")))
+                     QStringLiteral("Some expired diagnostics could not be removed")))
                 state.lastError = collectorError;
         }
         lastMaintenance = std::chrono::steady_clock::now();
@@ -754,7 +754,7 @@ struct DiagnosticsService::Impl {
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP(
                         "DiagnosticsService",
-                        "Writing the log file failed. Check available disk space."))};
+                        "Writing the log file failed. Check available disk space"))};
         }
         QByteArray combined;
         auto files = artifacts();
@@ -771,7 +771,7 @@ struct DiagnosticsService::Impl {
                 return {false,
                         {},
                         QString::fromUtf8(QT_TRANSLATE_NOOP("DiagnosticsService",
-                                                            "A log file could not be read."))};
+                                                            "A log file could not be read"))};
             }
             const qint64 limit = file.size();
             while (file.pos() < limit) {
@@ -795,7 +795,7 @@ struct DiagnosticsService::Impl {
                     return {false,
                             {},
                             QString::fromUtf8(QT_TRANSLATE_NOOP(
-                                "DiagnosticsService", "Today's log exceeds the export limit."))};
+                                "DiagnosticsService", "Today's log exceeds the export limit"))};
                 }
                 combined += line;
             }
@@ -818,7 +818,7 @@ struct DiagnosticsService::Impl {
             return {false,
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP("DiagnosticsService",
-                                                        "Today's log exceeds the export limit."))};
+                                                        "Today's log exceeds the export limit"))};
         }
         if (combined.isEmpty()) {
             std::lock_guard<std::mutex> lock(mutex);
@@ -833,7 +833,7 @@ struct DiagnosticsService::Impl {
             return {false,
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP(
-                        "DiagnosticsService", "There is not enough space for a log snapshot."))};
+                        "DiagnosticsService", "There is not enough space for a log snapshot"))};
         }
         const QString directory =
             QDir(state.directory)
@@ -844,7 +844,7 @@ struct DiagnosticsService::Impl {
             return {false,
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP(
-                        "DiagnosticsService", "The log snapshot directory could not be created."))};
+                        "DiagnosticsService", "The log snapshot directory could not be created"))};
         }
         const QString path = QDir(directory).filePath(
             QStringLiteral("snow-shot-%1.log").arg(date.toString(Qt::ISODate)));
@@ -854,14 +854,14 @@ struct DiagnosticsService::Impl {
             return {false,
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP("DiagnosticsService",
-                                                        "The log snapshot could not be saved."))};
+                                                        "The log snapshot could not be saved"))};
         QSaveFile snapshot(path);
         if (!snapshot.open(QIODevice::WriteOnly) || snapshot.write(combined) != combined.size() ||
             !snapshot.commit()) {
             return {false,
                     {},
                     QString::fromUtf8(QT_TRANSLATE_NOOP("DiagnosticsService",
-                                                        "The log snapshot could not be saved."))};
+                                                        "The log snapshot could not be saved"))};
         }
         pendingSnapshot = path;
         maintenance();
@@ -912,7 +912,7 @@ struct DiagnosticsService::Impl {
                         writeFailed = true;
                         fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
                             "DiagnosticsService",
-                            "Writing the log file failed. Check available disk space.")));
+                            "Writing the log file failed. Check available disk space")));
                     }
                     lastFlush = steadyNow;
                 }
@@ -945,7 +945,7 @@ struct DiagnosticsService::Impl {
             outputLock.reset();
         } catch (...) {
             fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-                "DiagnosticsService", "The diagnostics writer stopped unexpectedly.")));
+                "DiagnosticsService", "The diagnostics writer stopped unexpectedly")));
             std::lock_guard<std::mutex> lock(mutex);
             stopping = true;
             tasks.clear();
@@ -1006,7 +1006,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     }
     if (impl.state.directory.isEmpty()) {
         impl.state.lastError = QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "DiagnosticsService", "No writable diagnostics directory is available."));
+            "DiagnosticsService", "No writable diagnostics directory is available"));
         publishSession(session);
         impl.notify();
         return false;
@@ -1014,7 +1014,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     if (impl.state.directory != impl.roots.value(0)) {
         impl.state.fallbackReason = QString::fromUtf8(
             QT_TRANSLATE_NOOP("DiagnosticsService",
-                              "The preferred log directory is unavailable; a fallback is in use."));
+                              "The preferred log directory is unavailable; a fallback is in use"));
     }
     impl.sessionLock = std::make_unique<QLockFile>(
         QDir(impl.state.directory)
@@ -1055,7 +1055,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
             }
         } else {
             error = QCoreApplication::translate(
-                "DiagnosticsService", "The local crash database could not be initialized.");
+                "DiagnosticsService", "The local crash database could not be initialized");
         }
         if (!impl.state.crashCaptureAvailable)
             impl.state.lastError = error;
@@ -1279,7 +1279,7 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
                 {false,
                  {},
                  QString::fromUtf8(QT_TRANSLATE_NOOP(
-                     "DiagnosticsService", "Log export is unavailable or already running."))});
+                     "DiagnosticsService", "Log export is unavailable or already running"))});
             return future;
         }
         session->state.exporting = true;
@@ -1294,7 +1294,7 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
                  result = session->exportNow(date);
              } catch (...) {
                  result.error = QString::fromUtf8(QT_TRANSLATE_NOOP(
-                     "DiagnosticsService", "The log snapshot could not be saved."));
+                     "DiagnosticsService", "The log snapshot could not be saved"));
              }
              {
                  std::lock_guard<std::mutex> stateLock(session->stateMutex);
@@ -1327,7 +1327,7 @@ void DiagnosticsService::protectSnapshot(const QString& path) {
              if (!publication.open(QIODevice::WriteOnly) ||
                  publication.write(data) != data.size() || !publication.commit()) {
                  session->fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-                     "DiagnosticsService", "The log snapshot could not be saved.")));
+                     "DiagnosticsService", "The log snapshot could not be saved")));
              }
              session->snapshotLock.reset();
              session->maintenance();

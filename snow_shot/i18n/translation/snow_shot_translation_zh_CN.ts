@@ -4,8 +4,8 @@
     <context>
         <name>FreeTranslation</name>
         <message>
-            <source>The free translation service may no longer be available. Please update the app or report the issue.</source>
-            <translation>免费翻译服务可能已不可用。请更新应用或反馈此问题。</translation>
+            <source>The free translation service may no longer be available. Please update the app or report the issue</source>
+            <translation>免费翻译服务可能已不可用。请更新应用或反馈此问题</translation>
         </message>
     </context>
     <context>
@@ -264,20 +264,20 @@
             <translation>免费翻译</translation>
         </message>
         <message>
-            <source>Model configuration changed. Retry to use the updated settings.</source>
-            <translation>模型配置已更改。请重试以使用更新后的设置。</translation>
+            <source>Model configuration changed. Retry to use the updated settings</source>
+            <translation>模型配置已更改。请重试以使用更新后的设置</translation>
         </message>
         <message>
-            <source>No translation services are available.</source>
-            <translation>没有可用的翻译服务。</translation>
+            <source>No translation services are available</source>
+            <translation>没有可用的翻译服务</translation>
         </message>
         <message>
             <source>Unable to load translation services: %1</source>
             <translation>无法加载翻译服务：%1</translation>
         </message>
         <message>
-            <source>Unable to save translation preferences. Your previous selections were restored.</source>
-            <translation>无法保存翻译偏好，已恢复之前的选择。</translation>
+            <source>Unable to save translation preferences. Your previous selections were restored</source>
+            <translation>无法保存翻译偏好，已恢复之前的选择</translation>
         </message>
     </context>
 </TS>

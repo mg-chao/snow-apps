@@ -151,10 +151,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     }
     [[nodiscard]] bool liveFrameAvailable() const;
     Q_INVOKABLE void closeLiveWindow();
-    struct HideOtherWindowsResult {
+    struct OtherWindowsVisibilityResult {
+        enum class Action { Hide, Show };
         bool success = false;
-        // Includes hiding a displayed pin or canceling a peer's pending presentation/restore.
+        // Includes changing desired visibility for a pending presentation/restore.
         bool changed = false;
+        Action action = Action::Hide;
     };
     enum class PresentationPolicy { Activate, PreserveFocus };
     struct Config {
@@ -240,7 +242,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> persistenceHider;
         std::function<void()> showAllWindowsRequested;
         std::function<void(const QString&)> hideOtherWindowsRequested;
-        std::function<HideOtherWindowsResult(const QString&)> shakeHideOtherWindowsRequested;
+        std::function<OtherWindowsVisibilityResult(const QString&)>
+            shakeToggleOtherWindowsRequested;
         snow_shot::storage::PinnedWindowCreationSource creationSource =
             snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
@@ -633,8 +636,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void sampleWindowShake(const QPointF& pointer);
     void updateWindowShake(const QPointF& pointer, qint64 timeMs);
     void endWindowShake(bool cancel);
-    [[nodiscard]] HideOtherWindowsResult hideOtherWindowsForShake();
+    [[nodiscard]] OtherWindowsVisibilityResult toggleOtherWindowsForShake();
     void showShakeMessage(bool restart = true);
+    void setShowWithoutActivating(bool enabled);
     bool windowDragEnabled() const;
     bool windowDragEligible() const;
     bool windowDragEligibleAt(const QPoint& position,
@@ -877,9 +881,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceHider;
     std::function<void()> m_showAllWindowsRequested;
     std::function<void(const QString&)> m_hideOtherWindowsRequested;
-    std::function<HideOtherWindowsResult(const QString&)> m_shakeHideOtherWindowsRequested;
+    std::function<OtherWindowsVisibilityResult(const QString&)> m_shakeToggleOtherWindowsRequested;
     std::unique_ptr<ScreenshotPinnedShakeGesture> m_shakeGesture;
     QPointer<adqt::widgets::AdMessageHandle> m_shakeMessage;
+    OtherWindowsVisibilityResult::Action m_shakeMessageAction =
+        OtherWindowsVisibilityResult::Action::Hide;
     QDeadlineTimer m_shakeMessageDeadline{0};
     snow_shot::storage::PinnedWindowCreationSource m_creationSource =
         snow_shot::storage::PinnedWindowCreationSource::Other;

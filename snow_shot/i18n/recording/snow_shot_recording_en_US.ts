@@ -8,8 +8,8 @@
             <translation>%1 dB</translation>
         </message>
         <message>
-            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
-            <translation>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</translation>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level</source>
+            <translation>Adjust gain from -24 to +24 dB. The track shows the processed audio level</translation>
         </message>
         <message>
             <source>Microphone gain</source>
@@ -161,8 +161,8 @@
     <context>
         <name>RecordingTrimSession</name>
         <message>
-            <source>Choose a different file to preserve the original recording.</source>
-            <translation>Choose a different file to preserve the original recording.</translation>
+            <source>Choose a different file to preserve the original recording</source>
+            <translation>Choose a different file to preserve the original recording</translation>
         </message>
         <message>
             <source>Save to File</source>
@@ -242,8 +242,8 @@
     <context>
         <name>ScreenRecordingController</name>
         <message>
-            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</source>
-            <translation>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</translation>
+            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</source>
+            <translation>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</translation>
         </message>
         <message>
             <source>Keyboard recording failed: %1</source>
@@ -273,19 +273,19 @@
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</source>
+Keep this folder to recover the recording</source>
             <translation>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</translation>
+Keep this folder to recover the recording</translation>
         </message>
         <message>
             <source>The recording operation failed</source>
             <translation>The recording operation failed</translation>
         </message>
         <message>
-            <source>The webcam could not be initialized.</source>
-            <translation>The webcam could not be initialized.</translation>
+            <source>The webcam could not be initialized</source>
+            <translation>The webcam could not be initialized</translation>
         </message>
         <message>
             <source>Unable to create the recording directory</source>

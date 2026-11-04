@@ -29,7 +29,7 @@ AutoStartRegistrationSnapshot storeStartupState(std::optional<bool> enabled = st
     if (app::distribution::runtimePackageFamilyName().isEmpty()) {
         AutoStartRegistrationSnapshot result;
         result.error = QCoreApplication::translate("AutoStartRegistration",
-                                                   "Windows startup settings are unavailable.");
+                                                   "Windows startup settings are unavailable");
         return result;
     }
     return std::async(
@@ -48,8 +48,7 @@ AutoStartRegistrationSnapshot storeStartupState(std::optional<bool> enabled = st
                        auto task = factory.GetAsync(L"SnowShotStartup").get();
                        if (!task) {
                            result.error = QCoreApplication::translate(
-                               "AutoStartRegistration",
-                               "Windows startup settings are unavailable.");
+                               "AutoStartRegistration", "Windows startup settings are unavailable");
                            return result;
                        }
                        using State = winrt::Windows::ApplicationModel::StartupTaskState;
@@ -85,11 +84,10 @@ AutoStartRegistrationSnapshot storeStartupState(std::optional<bool> enabled = st
                                        result.state == AutoStartState::EnabledByPolicy;
                        if (!result.valid)
                            result.error = QCoreApplication::translate(
-                               "AutoStartRegistration",
-                               "Windows startup settings are unavailable.");
+                               "AutoStartRegistration", "Windows startup settings are unavailable");
                    } catch (const winrt::hresult_error&) {
                        result.error = QCoreApplication::translate(
-                           "AutoStartRegistration", "Windows startup settings are unavailable.");
+                           "AutoStartRegistration", "Windows startup settings are unavailable");
                    }
                    return result;
                })
@@ -189,12 +187,12 @@ QString AutoStartRegistration::hint() {
         return {};
     const auto current = snapshot();
     if (current.state == AutoStartState::DisabledByUser)
-        return QCoreApplication::translate(
-            "AutoStartRegistration", "Enable Snow Shot in Windows Settings > Apps > Startup.");
+        return QCoreApplication::translate("AutoStartRegistration",
+                                           "Enable Snow Shot in Windows Settings > Apps > Startup");
     if (current.state == AutoStartState::DisabledByPolicy ||
         current.state == AutoStartState::EnabledByPolicy)
         return QCoreApplication::translate("AutoStartRegistration",
-                                           "Startup is managed by your organization.");
+                                           "Startup is managed by your organization");
     return current.error;
 }
 
@@ -288,7 +286,7 @@ bool AutoStartRegistration::setEnabled(bool enabled, QString* error) {
             *error = current.error.isEmpty() ? hint() : current.error;
             if (error->isEmpty())
                 *error = QCoreApplication::translate("AutoStartRegistration",
-                                                     "Windows startup settings are unavailable.");
+                                                     "Windows startup settings are unavailable");
         }
         return success;
     }

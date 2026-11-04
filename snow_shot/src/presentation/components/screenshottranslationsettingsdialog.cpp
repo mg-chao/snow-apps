@@ -288,7 +288,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
             error->setText(
                 QCoreApplication::translate("snow_shot::translation::TranslationService",
                                             "Unable to save translation preferences. Your "
-                                            "previous selections were restored."));
+                                            "previous selections were restored"));
             error->show();
             return;
         }

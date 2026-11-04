@@ -16,7 +16,7 @@
 namespace snow_shot::presentation {
 namespace {
 QString loadError() {
-    return QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded.");
+    return QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded");
 }
 
 bool hasEditableSelection(const storage::PersistedSelection& selection) {

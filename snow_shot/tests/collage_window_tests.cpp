@@ -325,11 +325,11 @@ void emptySelectionsAndFailuresKeepWindowOpen() {
                         "switch the selected-file error language");
                 flushEvents();
                 const auto translated = QCoreApplication::translate(
-                    "CollageWindow", "Could not read the selected image files. Please try again.");
+                    "CollageWindow", "Could not read the selected image files. Please try again");
                 require(messageError(*window).contains(translated) &&
                             translated !=
                                 QStringLiteral(
-                                    "Could not read the selected image files. Please try again."),
+                                    "Could not read the selected image files. Please try again"),
                         "cached selection errors retranslate in both Chinese catalogs");
             }
             require(languages.setLanguage(QStringLiteral("en_US")), "restore collage language");

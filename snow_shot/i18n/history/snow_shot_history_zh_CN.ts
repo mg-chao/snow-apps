@@ -4,80 +4,80 @@
     <context>
         <name>CollageDocument</name>
         <message>
-            <source>Enter a nonnegative image spacing.</source>
-            <translation>请输入非负的图像间距。</translation>
+            <source>Enter a nonnegative image spacing</source>
+            <translation>请输入非负的图像间距</translation>
         </message>
         <message>
-            <source>Enter a nonnegative page margin.</source>
-            <translation>请输入非负的页边距。</translation>
+            <source>Enter a nonnegative page margin</source>
+            <translation>请输入非负的页边距</translation>
         </message>
         <message>
-            <source>Enter a positive paper dimension.</source>
-            <translation>请输入正数的纸张尺寸。</translation>
+            <source>Enter a positive paper dimension</source>
+            <translation>请输入正数的纸张尺寸</translation>
         </message>
         <message>
-            <source>Select a paper orientation.</source>
-            <translation>请选择纸张方向。</translation>
+            <source>Select a paper orientation</source>
+            <translation>请选择纸张方向</translation>
         </message>
         <message>
-            <source>Select a paper size.</source>
-            <translation>请选择纸张大小。</translation>
+            <source>Select a paper size</source>
+            <translation>请选择纸张大小</translation>
         </message>
         <message>
-            <source>Select a stitching method.</source>
-            <translation>请选择拼接方式。</translation>
+            <source>Select a stitching method</source>
+            <translation>请选择拼接方式</translation>
         </message>
         <message>
-            <source>Select a template.</source>
-            <translation>请选择模板。</translation>
+            <source>Select a template</source>
+            <translation>请选择模板</translation>
         </message>
         <message>
-            <source>Select an export mode.</source>
-            <translation>请选择导出模式。</translation>
+            <source>Select an export mode</source>
+            <translation>请选择导出模式</translation>
         </message>
         <message>
-            <source>The PDF page settings are invalid.</source>
-            <translation>PDF 页面设置无效。</translation>
+            <source>The PDF page settings are invalid</source>
+            <translation>PDF 页面设置无效</translation>
         </message>
         <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings.</source>
-            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置。</translation>
+            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置</translation>
         </message>
         <message>
-            <source>The collage export was cancelled.</source>
-            <translation>图片拼接导出已取消。</translation>
+            <source>The collage export was cancelled</source>
+            <translation>图片拼接导出已取消</translation>
         </message>
         <message>
-            <source>The collage images could not be prepared for export.</source>
-            <translation>无法准备图片拼接图像以供导出。</translation>
+            <source>The collage images could not be prepared for export</source>
+            <translation>无法准备图片拼接图像以供导出</translation>
         </message>
         <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead.</source>
-            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件。</translation>
+            <source>The collage is too large for the clipboard. Save it to a file instead</source>
+            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件</translation>
         </message>
         <message>
-            <source>The collage layout settings are invalid.</source>
-            <translation>图片拼接布局设置无效。</translation>
+            <source>The collage layout settings are invalid</source>
+            <translation>图片拼接布局设置无效</translation>
         </message>
         <message>
-            <source>The image spacing must leave usable template cells.</source>
-            <translation>图像间距必须为模板区域留出可用空间。</translation>
+            <source>The image spacing must leave usable template cells</source>
+            <translation>图像间距必须为模板区域留出可用空间</translation>
         </message>
         <message>
-            <source>The margins must leave a usable content area.</source>
-            <translation>页边距必须留出可用的内容区域。</translation>
+            <source>The margins must leave a usable content area</source>
+            <translation>页边距必须留出可用的内容区域</translation>
         </message>
         <message>
-            <source>The paper dimension exceeds the PDF size limit.</source>
-            <translation>纸张尺寸超过了 PDF 大小限制。</translation>
+            <source>The paper dimension exceeds the PDF size limit</source>
+            <translation>纸张尺寸超过了 PDF 大小限制</translation>
         </message>
         <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows.</source>
-            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口。</translation>
+            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</source>
+            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口</translation>
         </message>
         <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes.</source>
-            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像。</translation>
+            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像</translation>
         </message>
     </context>
     <context>
@@ -322,12 +322,12 @@
     <context>
         <name>CollagePdfExport</name>
         <message>
-            <source>Export was canceled.</source>
-            <translation>导出已取消。</translation>
+            <source>Export was canceled</source>
+            <translation>导出已取消</translation>
         </message>
         <message>
-            <source>No output destination was selected.</source>
-            <translation>未选择输出位置。</translation>
+            <source>No output destination was selected</source>
+            <translation>未选择输出位置</translation>
         </message>
         <message>
             <source>Page %1 could not be exported: %2</source>
@@ -338,24 +338,24 @@
             <translation>无法保存 PDF：%1</translation>
         </message>
         <message>
-            <source>The PDF settings or images are invalid.</source>
-            <translation>PDF 设置或图像无效。</translation>
+            <source>The PDF settings or images are invalid</source>
+            <translation>PDF 设置或图像无效</translation>
         </message>
         <message>
-            <source>The image could not be prepared for PDF export.</source>
-            <translation>无法准备图像以供导出为 PDF。</translation>
+            <source>The image could not be prepared for PDF export</source>
+            <translation>无法准备图像以供导出为 PDF</translation>
         </message>
         <message>
-            <source>The output folder could not be created.</source>
-            <translation>无法创建输出文件夹。</translation>
+            <source>The output folder could not be created</source>
+            <translation>无法创建输出文件夹</translation>
         </message>
         <message>
-            <source>The selected PDF already exists. Choose another filename.</source>
-            <translation>所选 PDF 已存在，请选择其他文件名。</translation>
+            <source>The selected PDF already exists. Choose another filename</source>
+            <translation>所选 PDF 已存在，请选择其他文件名</translation>
         </message>
         <message>
-            <source>There is not enough memory to export the PDF.</source>
-            <translation>内存不足，无法导出 PDF。</translation>
+            <source>There is not enough memory to export the PDF</source>
+            <translation>内存不足，无法导出 PDF</translation>
         </message>
     </context>
     <context>
@@ -385,8 +385,8 @@
             <translation>将图像文件拖到此处，或选择“添加图像”</translation>
         </message>
         <message>
-            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image.</source>
-            <translation>拖动页面以调整顺序。使用方向键选择页面，按 Enter 键预览原图。</translation>
+            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image</source>
+            <translation>拖动页面以调整顺序。使用方向键选择页面，按 Enter 键预览原图</translation>
         </message>
         <message>
             <source>Drop images to add pages</source>
@@ -401,8 +401,8 @@
             <translation>垂直翻转</translation>
         </message>
         <message>
-            <source>Image preview was cancelled.</source>
-            <translation>图像预览已取消。</translation>
+            <source>Image preview was cancelled</source>
+            <translation>图像预览已取消</translation>
         </message>
         <message>
             <source>PDF document pages</source>
@@ -441,12 +441,12 @@
             <translation>逆时针旋转 90°</translation>
         </message>
         <message>
-            <source>The original image is unavailable.</source>
-            <translation>原图不可用。</translation>
+            <source>The original image is unavailable</source>
+            <translation>原图不可用</translation>
         </message>
         <message>
-            <source>The page preview shows the last valid settings.</source>
-            <translation>页面预览使用上一次有效的设置。</translation>
+            <source>The page preview shows the last valid settings</source>
+            <translation>页面预览使用上一次有效的设置</translation>
         </message>
     </context>
     <context>
@@ -631,8 +631,8 @@
             <translation>图像 %1：%2</translation>
         </message>
         <message>
-            <source>Image preview was cancelled.</source>
-            <translation>图像预览已取消。</translation>
+            <source>Image preview was cancelled</source>
+            <translation>图像预览已取消</translation>
         </message>
         <message>
             <source>Input images</source>
@@ -687,12 +687,12 @@
             <translation>模板拼接预览</translation>
         </message>
         <message>
-            <source>The original image is unavailable.</source>
-            <translation>原图不可用。</translation>
+            <source>The original image is unavailable</source>
+            <translation>原图不可用</translation>
         </message>
         <message>
-            <source>The page preview shows the last valid settings.</source>
-            <translation>页面预览使用上一次有效的设置。</translation>
+            <source>The page preview shows the last valid settings</source>
+            <translation>页面预览使用上一次有效的设置</translation>
         </message>
     </context>
     <context>
@@ -706,12 +706,12 @@
             <translation>添加图像</translation>
         </message>
         <message>
-            <source>All images will be removed from this collage.</source>
-            <translation>将从此图片拼接中移除全部图像。</translation>
+            <source>All images will be removed from this collage</source>
+            <translation>将从此图片拼接中移除全部图像</translation>
         </message>
         <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试。</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -746,12 +746,12 @@
             <translation>正在复制图片拼接…</translation>
         </message>
         <message>
-            <source>Copying could not be started. Try again.</source>
-            <translation>无法开始复制，请重试。</translation>
+            <source>Copying could not be started. Try again</source>
+            <translation>无法开始复制，请重试</translation>
         </message>
         <message>
-            <source>Could not read the selected image files. Please try again.</source>
-            <translation>无法读取选中的图片文件，请重试。</translation>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>无法读取选中的图片文件，请重试</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -762,16 +762,16 @@
             <translation>放弃此图片拼接？</translation>
         </message>
         <message>
-            <source>Export could not be started. Try again.</source>
-            <translation>无法开始导出，请重试。</translation>
+            <source>Export could not be started. Try again</source>
+            <translation>无法开始导出，请重试</translation>
         </message>
         <message>
             <source>Exporting PDF page %1 of %2: %3%</source>
             <translation>正在导出 PDF 第 %1 页，共 %2 页：%3%</translation>
         </message>
         <message>
-            <source>Image loading could not be started. Try again.</source>
-            <translation>无法开始加载图像，请重试。</translation>
+            <source>Image loading could not be started. Try again</source>
+            <translation>无法开始加载图像，请重试</translation>
         </message>
         <message>
             <source>Images</source>
@@ -786,16 +786,16 @@
             <translation>PDF 文档</translation>
         </message>
         <message>
-            <source>PDF export was canceled. Your images and edits are preserved.</source>
-            <translation>PDF 导出已取消。您的图像和编辑已保留。</translation>
+            <source>PDF export was canceled. Your images and edits are preserved</source>
+            <translation>PDF 导出已取消。您的图像和编辑已保留</translation>
         </message>
         <message>
-            <source>Page %1 was not saved.</source>
-            <translation>第 %1 页未保存。</translation>
+            <source>Page %1 was not saved</source>
+            <translation>第 %1 页未保存</translation>
         </message>
         <message>
-            <source>Pages %1–%2 were not saved.</source>
-            <translation>第 %1–%2 页未保存。</translation>
+            <source>Pages %1–%2 were not saved</source>
+            <translation>第 %1–%2 页未保存</translation>
         </message>
         <message>
             <source>Pinned window %1</source>
@@ -840,8 +840,8 @@ Files:
             <translation>正在保存图片拼接…</translation>
         </message>
         <message>
-            <source>Saving could not be started. Try again.</source>
-            <translation>无法开始保存，请重试。</translation>
+            <source>Saving could not be started. Try again</source>
+            <translation>无法开始保存，请重试</translation>
         </message>
         <message>
             <source>Screenshot %1</source>
@@ -858,16 +858,16 @@ Files:
 %1</translation>
         </message>
         <message>
-            <source>The PDFs could not be exported. Try again.</source>
-            <translation>无法导出 PDF，请重试。</translation>
+            <source>The PDFs could not be exported. Try again</source>
+            <translation>无法导出 PDF，请重试</translation>
         </message>
         <message>
-            <source>The file manager is unavailable. Open it and try again.</source>
-            <translation>文件管理器不可用，请打开后重试。</translation>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>文件管理器不可用，请打开后重试</translation>
         </message>
         <message>
-            <source>The file manager took too long to return the selected files. Please try again.</source>
-            <translation>文件管理器返回选中文件的时间过长，请重试。</translation>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>文件管理器返回选中文件的时间过长，请重试</translation>
         </message>
         <message>
             <source>The final screenshot is unavailable</source>
@@ -878,8 +878,8 @@ Files:
             <translation>无法解码图像，或图像已不可用</translation>
         </message>
         <message>
-            <source>The images and edits in this collage will be discarded.</source>
-            <translation>将放弃此图片拼接中的图像和编辑。</translation>
+            <source>The images and edits in this collage will be discarded</source>
+            <translation>将放弃此图片拼接中的图像和编辑</translation>
         </message>
         <message>
             <source>The layout settings could not be remembered: %1</source>
@@ -1012,12 +1012,12 @@ Files:
             <translation>在访达中显示</translation>
         </message>
         <message>
-            <source>Unable to copy this entry's image path.</source>
-            <translation>无法复制此记录的图像路径。</translation>
+            <source>Unable to copy this entry's image path</source>
+            <translation>无法复制此记录的图像路径</translation>
         </message>
         <message>
-            <source>Unable to open this entry's file location.</source>
-            <translation>无法打开此条目的文件位置。</translation>
+            <source>Unable to open this entry's file location</source>
+            <translation>无法打开此条目的文件位置</translation>
         </message>
     </context>
     <context>
@@ -1027,59 +1027,59 @@ Files:
             <translation>%1 像素</translation>
         </message>
         <message>
-            <source>No available output filename was found.</source>
-            <translation>未找到可用的输出文件名。</translation>
+            <source>No available output filename was found</source>
+            <translation>未找到可用的输出文件名</translation>
         </message>
         <message>
-            <source>The editing content could not be prepared for export.</source>
-            <translation>无法准备要导出的编辑内容。</translation>
+            <source>The editing content could not be prepared for export</source>
+            <translation>无法准备要导出的编辑内容</translation>
         </message>
         <message>
-            <source>The image could not be loaded.</source>
-            <translation>无法加载图像。</translation>
+            <source>The image could not be loaded</source>
+            <translation>无法加载图像</translation>
         </message>
         <message>
-            <source>The save directory is not available.</source>
-            <translation>保存目录不可用。</translation>
+            <source>The save directory is not available</source>
+            <translation>保存目录不可用</translation>
         </message>
     </context>
     <context>
         <name>ImageSplitDocument</name>
         <message>
-            <source>Choose a split direction.</source>
-            <translation>请选择分割方向。</translation>
+            <source>Choose a split direction</source>
+            <translation>请选择分割方向</translation>
         </message>
         <message>
-            <source>Choose a split type.</source>
-            <translation>请选择分割类型。</translation>
+            <source>Choose a split type</source>
+            <translation>请选择分割类型</translation>
         </message>
         <message>
-            <source>Choose pixels or percentage.</source>
-            <translation>请选择像素或百分比。</translation>
+            <source>Choose pixels or percentage</source>
+            <translation>请选择像素或百分比</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high.</source>
-            <translation>每张图像的宽度和高度必须至少为 1 像素。</translation>
+            <source>Each image must be at least one pixel wide or high</source>
+            <translation>每张图像的宽度和高度必须至少为 1 像素</translation>
         </message>
         <message>
-            <source>Enter a percentage from 5% to 100%.</source>
-            <translation>请输入 5% 到 100% 的百分比。</translation>
+            <source>Enter a percentage from 5% to 100%</source>
+            <translation>请输入 5% 到 100% 的百分比</translation>
         </message>
         <message>
-            <source>Enter a positive whole number.</source>
-            <translation>请输入正整数。</translation>
+            <source>Enter a positive whole number</source>
+            <translation>请输入正整数</translation>
         </message>
         <message>
-            <source>Enter at least 16 pixels.</source>
-            <translation>请输入至少 16 像素。</translation>
+            <source>Enter at least 16 pixels</source>
+            <translation>请输入至少 16 像素</translation>
         </message>
         <message>
-            <source>The image is unavailable.</source>
-            <translation>图像不可用。</translation>
+            <source>The image is unavailable</source>
+            <translation>图像不可用</translation>
         </message>
         <message>
-            <source>The split lines require too much memory.</source>
-            <translation>分割线所需的内存过多。</translation>
+            <source>The split lines require too much memory</source>
+            <translation>分割线所需的内存过多</translation>
         </message>
     </context>
     <context>
@@ -1101,8 +1101,8 @@ Files:
             <translation>将图像文件拖到此处，或点击“选择图像”</translation>
         </message>
         <message>
-            <source>Drop one image file at a time.</source>
-            <translation>请一次拖入一个图像文件。</translation>
+            <source>Drop one image file at a time</source>
+            <translation>请一次拖入一个图像文件</translation>
         </message>
         <message>
             <source>Drop one image to replace the current image</source>
@@ -1113,12 +1113,12 @@ Files:
             <translation>拖入一张图像进行分割</translation>
         </message>
         <message>
-            <source>Enter a positive integer.</source>
-            <translation>请输入正整数。</translation>
+            <source>Enter a positive integer</source>
+            <translation>请输入正整数</translation>
         </message>
         <message>
-            <source>Enter an integer of at least 16 pixels.</source>
-            <translation>请输入至少为 16 像素的整数。</translation>
+            <source>Enter an integer of at least 16 pixels</source>
+            <translation>请输入至少为 16 像素的整数</translation>
         </message>
         <message>
             <source>Equal Split</source>
@@ -1208,35 +1208,35 @@ Files:
     <context>
         <name>ImageSplitExport</name>
         <message>
-            <source>Export was canceled.</source>
-            <translation>导出已取消。</translation>
+            <source>Export was canceled</source>
+            <translation>导出已取消</translation>
         </message>
         <message>
             <source>Image %1 could not be saved: %2</source>
             <translation>无法保存第 %1 张图像：%2</translation>
         </message>
         <message>
-            <source>The image could not be prepared for export.</source>
-            <translation>无法准备要导出的图像。</translation>
+            <source>The image could not be prepared for export</source>
+            <translation>无法准备要导出的图像</translation>
         </message>
         <message>
-            <source>The image or split configuration is invalid.</source>
-            <translation>图像或分割配置无效。</translation>
+            <source>The image or split configuration is invalid</source>
+            <translation>图像或分割配置无效</translation>
         </message>
         <message>
-            <source>The output folder could not be created.</source>
-            <translation>无法创建输出文件夹。</translation>
+            <source>The output folder could not be created</source>
+            <translation>无法创建输出文件夹</translation>
         </message>
         <message>
-            <source>There is not enough memory to export the image.</source>
-            <translation>内存不足，无法导出图像。</translation>
+            <source>There is not enough memory to export the image</source>
+            <translation>内存不足，无法导出图像</translation>
         </message>
     </context>
     <context>
         <name>ImageSplitPreviewCanvas</name>
         <message>
-            <source>Click a ruler to add a split line; drag a line to move it. Select a line and press Delete to remove it. Drag with the middle mouse button to pan; scroll to zoom.</source>
-            <translation>点击标尺添加分割线，拖动分割线可移动位置。选中分割线后按 Delete 删除。按住鼠标中键拖动可平移，滚动滚轮可缩放。</translation>
+            <source>Click a ruler to add a split line; drag a line to move it. Select a line and press Delete to remove it. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>点击标尺添加分割线，拖动分割线可移动位置。选中分割线后按 Delete 删除。按住鼠标中键拖动可平移，滚动滚轮可缩放</translation>
         </message>
         <message>
             <source>Image splitting preview</source>
@@ -1254,16 +1254,16 @@ Files:
     <context>
         <name>ImageSplitWindow</name>
         <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
-            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试。</translation>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试</translation>
         </message>
         <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
         <message>
-            <source>Could not read the selected image files. Please try again.</source>
-            <translation>无法读取选中的图片文件，请重试。</translation>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>无法读取选中的图片文件，请重试</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -1274,28 +1274,28 @@ Files:
             <translation>放弃当前图片分割？</translation>
         </message>
         <message>
-            <source>Drop one image file at a time.</source>
-            <translation>请一次拖入一个图像文件。</translation>
+            <source>Drop one image file at a time</source>
+            <translation>请一次拖入一个图像文件</translation>
         </message>
         <message>
-            <source>Export could not be started. Try again.</source>
-            <translation>无法开始导出，请重试。</translation>
+            <source>Export could not be started. Try again</source>
+            <translation>无法开始导出，请重试</translation>
         </message>
         <message>
             <source>Image Splitting</source>
             <translation>图片分割</translation>
         </message>
         <message>
-            <source>Image Stitching is busy. Try again when it finishes.</source>
-            <translation>图片拼接正忙。请等待完成后重试。</translation>
+            <source>Image Stitching is busy. Try again when it finishes</source>
+            <translation>图片拼接正忙。请等待完成后重试</translation>
         </message>
         <message>
-            <source>Image loading could not be started. Try again.</source>
-            <translation>无法开始加载图像，请重试。</translation>
+            <source>Image loading could not be started. Try again</source>
+            <translation>无法开始加载图像，请重试</translation>
         </message>
         <message>
-            <source>Image processing failed. Try again.</source>
-            <translation>图像处理失败，请重试。</translation>
+            <source>Image processing failed. Try again</source>
+            <translation>图像处理失败，请重试</translation>
         </message>
         <message>
             <source>Images</source>
@@ -1342,71 +1342,71 @@ Files:
             <translation>拼接为 PDF</translation>
         </message>
         <message>
-            <source>The file manager is unavailable. Open it and try again.</source>
-            <translation>文件管理器不可用，请打开后重试。</translation>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>文件管理器不可用，请打开后重试</translation>
         </message>
         <message>
-            <source>The file manager took too long to return the selected files. Please try again.</source>
-            <translation>文件管理器返回选中文件的时间过长，请重试。</translation>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>文件管理器返回选中文件的时间过长，请重试</translation>
         </message>
         <message>
-            <source>The image and current split edits will be discarded.</source>
-            <translation>图像和当前分割编辑将被丢弃。</translation>
+            <source>The image and current split edits will be discarded</source>
+            <translation>图像和当前分割编辑将被丢弃</translation>
         </message>
         <message>
-            <source>The image could not be read or is no longer available.</source>
-            <translation>无法读取图像，或图像已不可用。</translation>
+            <source>The image could not be read or is no longer available</source>
+            <translation>无法读取图像，或图像已不可用</translation>
         </message>
         <message>
-            <source>The image is too large or there is not enough memory to load it.</source>
-            <translation>图像过大，或内存不足，无法加载。</translation>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>图像过大，或内存不足，无法加载</translation>
         </message>
         <message>
-            <source>The images could not be exported. Try again.</source>
-            <translation>无法导出图像，请重试。</translation>
+            <source>The images could not be exported. Try again</source>
+            <translation>无法导出图像，请重试</translation>
         </message>
     </context>
     <context>
         <name>LiveWindowSource</name>
         <message>
-            <source>Allow Accessibility in System Settings to monitor the live window's state.</source>
-            <translation>请在系统设置中允许辅助功能权限，以监测实时窗口的状态。</translation>
+            <source>Allow Accessibility in System Settings to monitor the live window's state</source>
+            <translation>请在系统设置中允许辅助功能权限，以监测实时窗口的状态</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window.</source>
-            <translation>请在系统设置中允许屏幕与系统音频录制权限，以固定实时窗口。</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</source>
+            <translation>请在系统设置中允许屏幕与系统音频录制权限，以固定实时窗口</translation>
         </message>
         <message>
-            <source>The live window display could not be initialized.</source>
-            <translation>无法初始化窗口实时显示。</translation>
+            <source>The live window display could not be initialized</source>
+            <translation>无法初始化窗口实时显示</translation>
         </message>
         <message>
-            <source>The live window was closed.</source>
-            <translation>实时窗口已关闭。</translation>
+            <source>The live window was closed</source>
+            <translation>实时窗口已关闭</translation>
         </message>
         <message>
-            <source>The selected window is no longer available.</source>
-            <translation>所选窗口已不可用。</translation>
+            <source>The selected window is no longer available</source>
+            <translation>所选窗口已不可用</translation>
         </message>
         <message>
-            <source>The selected window's identity and state could not be verified.</source>
-            <translation>无法验证所选窗口的标识和状态。</translation>
+            <source>The selected window's identity and state could not be verified</source>
+            <translation>无法验证所选窗口的标识和状态</translation>
         </message>
         <message>
-            <source>The selection does not intersect the selected window.</source>
-            <translation>选区与所选窗口没有交集。</translation>
+            <source>The selection does not intersect the selected window</source>
+            <translation>选区与所选窗口没有交集</translation>
         </message>
         <message>
             <source>The window content is temporarily unavailable. Retrying…</source>
             <translation>窗口内容暂不可用，正在重试…</translation>
         </message>
         <message>
-            <source>The window is closed. The latest content cannot be displayed.</source>
-            <translation>窗口已关闭，无法显示最新内容。</translation>
+            <source>The window is closed. The latest content cannot be displayed</source>
+            <translation>窗口已关闭，无法显示最新内容</translation>
         </message>
         <message>
-            <source>The window is minimized. The latest content cannot be displayed.</source>
-            <translation>窗口已最小化，无法显示最新内容。</translation>
+            <source>The window is minimized. The latest content cannot be displayed</source>
+            <translation>窗口已最小化，无法显示最新内容</translation>
         </message>
         <message>
             <source>The window state is temporarily unavailable. Retrying…</source>
@@ -1623,8 +1623,8 @@ Files:
             <translation>选择此页的所有条目</translation>
         </message>
         <message>
-            <source>Select pinned windows from the same group to pin them to the screen.</source>
-            <translation>请选择同一分组中的固定窗口，以将它们固定到屏幕。</translation>
+            <source>Select pinned windows from the same group to pin them to the screen</source>
+            <translation>请选择同一分组中的固定窗口，以将它们固定到屏幕</translation>
         </message>
         <message>
             <source>Select record</source>
@@ -1827,8 +1827,8 @@ Files:
         </translation>
         </message>
         <message>
-            <source>A pinned window is no longer available to save.</source>
-            <translation>一个贴图窗口已无法保存。</translation>
+            <source>A pinned window is no longer available to save</source>
+            <translation>一个贴图窗口已无法保存</translation>
         </message>
         <message>
             <source>AirDrop</source>
@@ -1935,8 +1935,8 @@ Files:
             <translation>销毁固定到屏幕窗口</translation>
         </message>
         <message>
-            <source>Destroy this pinned window? This action cannot be undone.</source>
-            <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销。</translation>
+            <source>Destroy this pinned window? This action cannot be undone</source>
+            <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销</translation>
         </message>
         <message>
             <source>Disable Hide to Top</source>
@@ -2003,8 +2003,8 @@ Files:
             <translation>图像文件</translation>
         </message>
         <message>
-            <source>Image size is too large.</source>
-            <translation>图像尺寸过大。</translation>
+            <source>Image size is too large</source>
+            <translation>图像尺寸过大</translation>
         </message>
         <message>
             <source>Increase 10%</source>
@@ -2051,12 +2051,16 @@ Files:
             <translation>不透明度</translation>
         </message>
         <message>
-            <source>Other windows could not be hidden.</source>
-            <translation>无法隐藏其他窗口。</translation>
+            <source>Other windows could not be hidden</source>
+            <translation>无法隐藏其他窗口</translation>
         </message>
         <message>
-            <source>Other windows hidden.</source>
-            <translation>其他窗口已隐藏。</translation>
+            <source>Other windows hidden</source>
+            <translation>其他窗口已隐藏</translation>
+        </message>
+        <message>
+            <source>Other windows shown</source>
+            <translation>其他窗口已显示</translation>
         </message>
         <message>
             <source>Pause</source>
@@ -2119,14 +2123,14 @@ Files:
             <translation>保存已显示的窗口</translation>
         </message>
         <message numerus="yes">
-            <source>Saved %n window(s).</source>
+            <source>Saved %n window(s)</source>
             <translation>
-            <numerusform>已保存 %n 个窗口。</numerusform>
+            <numerusform>已保存 %n 个窗口</numerusform>
         </translation>
         </message>
         <message>
-            <source>Saved: %1; failed: %2.</source>
-            <translation>已保存：%1；失败：%2。</translation>
+            <source>Saved: %1; failed: %2</source>
+            <translation>已保存：%1；失败：%2</translation>
         </message>
         <message>
             <source>Scale</source>
@@ -2169,16 +2173,16 @@ Files:
             <translation>无法播放动画</translation>
         </message>
         <message>
-            <source>The current window content cannot be captured.</source>
-            <translation>无法捕获窗口的当前内容。</translation>
+            <source>The current window content cannot be captured</source>
+            <translation>无法捕获窗口的当前内容</translation>
         </message>
         <message>
             <source>The image could not be saved automatically: %1</source>
             <translation>无法自动保存图像：%1</translation>
         </message>
         <message>
-            <source>The live window requires a current frame snapshot.</source>
-            <translation>实时窗口需要获取当前帧快照。</translation>
+            <source>The live window requires a current frame snapshot</source>
+            <translation>实时窗口需要获取当前帧快照</translation>
         </message>
         <message>
             <source>The new content could not be loaded</source>
@@ -2205,16 +2209,16 @@ Files:
             <translation>无法启动已固定到屏幕的图像的保存</translation>
         </message>
         <message>
-            <source>The window changed while preparing the image. Please try again.</source>
-            <translation>准备图片时窗口发生了变化，请重试。</translation>
+            <source>The window changed while preparing the image. Please try again</source>
+            <translation>准备图片时窗口发生了变化，请重试</translation>
         </message>
         <message>
-            <source>The window is closed. The latest content cannot be displayed.</source>
-            <translation>窗口已关闭，无法显示最新内容。</translation>
+            <source>The window is closed. The latest content cannot be displayed</source>
+            <translation>窗口已关闭，无法显示最新内容</translation>
         </message>
         <message>
-            <source>The window is minimized. The latest content cannot be displayed.</source>
-            <translation>窗口已最小化，无法显示最新内容。</translation>
+            <source>The window is minimized. The latest content cannot be displayed</source>
+            <translation>窗口已最小化，无法显示最新内容</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>
@@ -2233,8 +2237,8 @@ Files:
             <translation>无标题窗口</translation>
         </message>
         <message>
-            <source>Uploaded to cloud. Link copied to clipboard.</source>
-            <translation>已上传到云端，链接已复制到剪贴板。</translation>
+            <source>Uploaded to cloud. Link copied to clipboard</source>
+            <translation>已上传到云端，链接已复制到剪贴板</translation>
         </message>
         <message>
             <source>Uploading to cloud... %1%</source>
@@ -2252,16 +2256,16 @@ Files:
             <translation>%1，%2 个未关闭窗口，共 %3 个</translation>
         </message>
         <message>
-            <source>Click a group to switch. Esc to cancel.</source>
-            <translation>点击分组以切换，按 Esc 取消。</translation>
+            <source>Click a group to switch. Esc to cancel</source>
+            <translation>点击分组以切换，按 Esc 取消</translation>
         </message>
         <message>
             <source>Current</source>
             <translation>当前</translation>
         </message>
         <message>
-            <source>Release shortcut keys or click a group to switch. Esc to cancel.</source>
-            <translation>松开所有快捷键或点击分组以切换，按 Esc 取消。</translation>
+            <source>Release shortcut keys or click a group to switch. Esc to cancel</source>
+            <translation>松开所有快捷键或点击分组以切换，按 Esc 取消</translation>
         </message>
         <message>
             <source>Switch Window Group</source>
@@ -2275,8 +2279,8 @@ Files:
     <context>
         <name>snow_shot::presentation::ImageEditingWindow</name>
         <message>
-            <source>Configure cloud upload before uploading an image.</source>
-            <translation>上传图像前请先配置云上传。</translation>
+            <source>Configure cloud upload before uploading an image</source>
+            <translation>上传图像前请先配置云上传</translation>
         </message>
         <message>
             <source>Continue Editing</source>
@@ -2295,8 +2299,8 @@ Files:
             <translation>导出完成</translation>
         </message>
         <message>
-            <source>Export could not be started.</source>
-            <translation>无法开始导出。</translation>
+            <source>Export could not be started</source>
+            <translation>无法开始导出</translation>
         </message>
         <message>
             <source>Exporting…</source>
@@ -2315,12 +2319,12 @@ Files:
             <translation>正在加载图像…</translation>
         </message>
         <message>
-            <source>No recognition result is available to export.</source>
-            <translation>没有可导出的识别结果。</translation>
+            <source>No recognition result is available to export</source>
+            <translation>没有可导出的识别结果</translation>
         </message>
         <message>
-            <source>Printing is unavailable.</source>
-            <translation>打印功能不可用。</translation>
+            <source>Printing is unavailable</source>
+            <translation>打印功能不可用</translation>
         </message>
         <message>
             <source>Save as file</source>
@@ -2331,12 +2335,12 @@ Files:
             <translation>文本文件 (*.txt)</translation>
         </message>
         <message>
-            <source>The image could not be loaded.</source>
-            <translation>无法加载图像。</translation>
+            <source>The image could not be loaded</source>
+            <translation>无法加载图像</translation>
         </message>
         <message>
-            <source>This editing window has unsaved changes.</source>
-            <translation>此编辑窗口有未保存的更改。</translation>
+            <source>This editing window has unsaved changes</source>
+            <translation>此编辑窗口有未保存的更改</translation>
         </message>
         <message>
             <source>View at actual size (100%)</source>
@@ -2366,20 +2370,20 @@ Files:
             <translation>默认</translation>
         </message>
         <message>
-            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</source>
-            <translation>删除“%1”及其中所有固定到屏幕窗口（包括已关闭的窗口）？此操作无法撤销。</translation>
+            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone</source>
+            <translation>删除“%1”及其中所有固定到屏幕窗口（包括已关闭的窗口）？此操作无法撤销</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</source>
-            <translation>删除“%1”中的所有固定到屏幕窗口（包括已关闭的窗口）？默认分组将保留。此操作无法撤销。</translation>
+            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone</source>
+            <translation>删除“%1”中的所有固定到屏幕窗口（包括已关闭的窗口）？默认分组将保留。此操作无法撤销</translation>
         </message>
         <message>
             <source>Delete empty groups</source>
             <translation>删除空分组</translation>
         </message>
         <message>
-            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
-            <translation>删除所有仅包含已关闭的固定到屏幕窗口或没有固定到屏幕窗口的分组？这些分组中保存的已关闭的固定到屏幕窗口也将被永久删除。此操作无法撤销。</translation>
+            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone</source>
+            <translation>删除所有仅包含已关闭的固定到屏幕窗口或没有固定到屏幕窗口的分组？这些分组中保存的已关闭的固定到屏幕窗口也将被永久删除。此操作无法撤销</translation>
         </message>
         <message>
             <source>Delete group</source>
@@ -2410,8 +2414,8 @@ Files:
             <translation>该分组名称已被使用</translation>
         </message>
         <message>
-            <source>Unable to create the group or move the selected windows. Try again.</source>
-            <translation>无法创建分组或移动所选窗口。请重试。</translation>
+            <source>Unable to create the group or move the selected windows. Try again</source>
+            <translation>无法创建分组或移动所选窗口。请重试</translation>
         </message>
     </context>
     <context>
@@ -2475,15 +2479,15 @@ Files:
             <translation>销毁</translation>
         </message>
         <message numerus="yes">
-            <source>Destroy %n displayed window(s)? This action cannot be undone.</source>
+            <source>Destroy %n displayed window(s)? This action cannot be undone</source>
             <translation>
-            <numerusform>要销毁已显示的 %n 个窗口吗？此操作无法撤销。</numerusform>
+            <numerusform>要销毁已显示的 %n 个窗口吗？此操作无法撤销</numerusform>
         </translation>
         </message>
         <message numerus="yes">
-            <source>Destroy %n selected window(s)? This action cannot be undone.</source>
+            <source>Destroy %n selected window(s)? This action cannot be undone</source>
             <translation>
-            <numerusform>销毁所选的 %n 个窗口？此操作无法撤销。</numerusform>
+            <numerusform>销毁所选的 %n 个窗口？此操作无法撤销</numerusform>
         </translation>
         </message>
         <message>
@@ -2519,23 +2523,23 @@ Files:
             <translation>新建分组</translation>
         </message>
         <message>
-            <source>The displayed windows could not be destroyed.</source>
-            <translation>无法销毁已显示的窗口。</translation>
+            <source>The displayed windows could not be destroyed</source>
+            <translation>无法销毁已显示的窗口</translation>
         </message>
         <message>
-            <source>The selected windows could not be destroyed.</source>
-            <translation>无法销毁所选窗口。</translation>
+            <source>The selected windows could not be destroyed</source>
+            <translation>无法销毁所选窗口</translation>
         </message>
         <message>
-            <source>The selected windows could not be moved to the group.</source>
-            <translation>无法将所选窗口移至该分组。</translation>
+            <source>The selected windows could not be moved to the group</source>
+            <translation>无法将所选窗口移至该分组</translation>
         </message>
     </context>
     <context>
         <name>snow_shot::presentation::WindowGroupSwitcherController</name>
         <message>
-            <source>Could not switch window group. Please try again.</source>
-            <translation>无法切换窗口分组，请重试。</translation>
+            <source>Could not switch window group. Please try again</source>
+            <translation>无法切换窗口分组，请重试</translation>
         </message>
     </context>
 </TS>

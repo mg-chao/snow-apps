@@ -209,9 +209,9 @@ void brandingRetranslatesWithoutChangingIdentifiers() {
         const char* mcpHelpSource =
             edition::isMini
                 ? "Add this configuration to your MCP client, then restart the client to connect. "
-                  "Keep %1 running while using MCP."
+                  "Keep %1 running while using MCP"
                 : "Add this configuration to your MCP client, then restart the client to connect. "
-                  "Keep Snow Shot running while using MCP.";
+                  "Keep Snow Shot running while using MCP";
         const QString translatedMcpHelp = translatedText("ScreenshotMcpSettings", mcpHelpSource);
         require(!translatedMcpHelp.isEmpty(), "all catalogs include edition-specific MCP help");
         require(mcpHelp->text() ==
