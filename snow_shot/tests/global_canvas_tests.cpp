@@ -359,7 +359,9 @@ void canvasCollectionBehavior() {
     require(captureWindowLevel({CaptureFamily::Screenshot, 0}) == screenshotLevel &&
                 captureWindowLevel({CaptureFamily::Recording, 0}) ==
                     screenshotLevel - kCaptureBandSize &&
-                pinnedWindowLevel() == screenshotLevel - 2 * kCaptureBandSize,
+                pinnedWindowLevel() > captureWindowLevel({CaptureFamily::DesktopToolbar, 1000}) &&
+                captureWindowLevel({CaptureFamily::Pinned, 1000}) <
+                    CGWindowLevelForKey(kCGDraggingWindowLevelKey),
             "screenshot, recording, and pin windows use separate native level bands");
     QWindow canvas;
     canvas.setProperty(kScreenshotLayer, kOverlayLayer);

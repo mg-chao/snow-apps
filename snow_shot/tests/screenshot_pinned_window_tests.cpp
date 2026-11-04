@@ -43,6 +43,12 @@ int macLivePinnedWindowTests();
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#ifdef Q_OS_MACOS
+class ScreenshotPinnedDragExport;
+int macPinnedContentDragTests(
+    const std::function<QImage(const ScreenshotPinnedWindow&)>& readImage,
+    const std::function<ScreenshotPinnedDragExport&(ScreenshotPinnedWindow&)>& readExporter);
+#endif
 #include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/screenshotquicktextannotationtoolbar.h"
 #ifdef Q_OS_WIN
@@ -17159,9 +17165,19 @@ void pinnedDragFileRetention() {
         directory.reset();
         retention.complete(lease, Qt::IgnoreAction);
         lease.reset();
+#ifdef Q_OS_MACOS
+        require(QFileInfo::exists(path) && retention.retainedFileCount() == 1 &&
+                    retention.retainedBytes() == 8,
+                "Cocoa's ambiguous IgnoreAction must preserve published files and budgets");
+        now += Retention::TransferGraceMilliseconds - 1;
+        retention.expire();
+        require(QFileInfo::exists(path), "ambiguous native completion keeps the full grace");
+        ++now;
+        retention.expire();
+#endif
         require(retention.retainedFileCount() == 0 && retention.retainedBytes() == 0 &&
                     !QFileInfo::exists(path),
-                "ignored drags must release their files and both budgets");
+                "ignored drags must eventually release their files and both budgets");
     }
     {
         Retention retention(nullptr, [&] { return now; });
@@ -17219,7 +17235,11 @@ void pinnedDragFileRetention() {
         retention.complete(lease, action);
         directory.reset();
         lease.reset();
-        if (action == Qt::CopyAction) {
+        if (action == Qt::CopyAction
+#ifdef Q_OS_MACOS
+            || action == Qt::IgnoreAction
+#endif
+        ) {
             require(removalAttempts == 0, "accepted files must keep their transfer grace");
             now += Retention::TransferGraceMilliseconds;
             retention.expire();
@@ -17754,8 +17774,13 @@ void pinnedDragExportOffscreen() {
                 completed = true;
             });
         wait([&] { return completed; }, "format drag completes");
+#ifdef Q_OS_MACOS
+        require(QFileInfo::exists(ignoredPath),
+                "Cocoa IgnoreAction must retain the published file for an external receiver");
+#else
         wait([&] { return !QFileInfo::exists(QFileInfo(ignoredPath).absolutePath()); },
              "ignored drops release their files and staging directories");
+#endif
     }
     // Closing/destroying a source during the nested native loop must not destroy
     // the drag object or the published file before the receiver finishes.
@@ -17777,7 +17802,11 @@ void pinnedDragExportOffscreen() {
                 throw std::runtime_error("destroyed source cannot receive completion");
             });
         wait([&] { return destroyedDuringDrag; }, "nested drag source destruction is safe");
-        if (action == Qt::CopyAction)
+        if (action == Qt::CopyAction
+#ifdef Q_OS_MACOS
+            || action == Qt::IgnoreAction
+#endif
+        )
             require(QFileInfo::exists(path), "accepted drop files outlive the source service");
         else
             wait([&] { return !QFileInfo::exists(QFileInfo(path).absolutePath()); },
@@ -27919,6 +27948,16 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--content-drag-native-only"))) {
+            IsolatedPinnedStorage storage;
+            return macPinnedContentDragTests(
+                [](const ScreenshotPinnedWindow& pin) {
+                    return ScreenshotPinnedWindowTestAccess::originalImage(pin);
+                },
+                [](ScreenshotPinnedWindow& pin) -> ScreenshotPinnedDragExport& {
+                    return ScreenshotPinnedWindowTestAccess::dragExport(pin);
+                });
+        }
         if (app.arguments().contains(QStringLiteral("--live-window-native-shell-only"))) {
             IsolatedPinnedStorage storage;
             return macLivePinnedWindowTests();

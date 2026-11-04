@@ -66,11 +66,19 @@ FileRetention::LeaseHandle FileRetention::reserve(std::shared_ptr<QTemporaryDir>
 void FileRetention::complete(const LeaseHandle& lease, Qt::DropAction action) {
     if (!lease || !m_leases.contains(lease))
         return;
+#ifdef Q_OS_MACOS
+    // Qt's Cocoa drag backend can report IgnoreAction after an external AppKit
+    // receiver accepted Copy. Finder may only open the URL after exec() returns.
+    // Keep every published macOS file for the bounded transfer grace, including
+    // apparent cancellations; unpublished preparation failures still clean up immediately.
+    Q_UNUSED(action);
+#else
     if (action == Qt::IgnoreAction) {
         lease->expiresAt = m_clock();
         expire();
         return;
     }
+#endif
     // QDrag has no receiver-consumption acknowledgement. The lease starts after the native
     // loop returns so a long-running drag never consumes a receiver's transfer grace period.
     lease->expiresAt = m_clock() + TransferGraceMilliseconds;
