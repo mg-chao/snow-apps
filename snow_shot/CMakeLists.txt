@@ -11838,6 +11838,26 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --creation-only -platform cocoa)
     set_tests_properties(snow-shot-macos-pinned-creation-tests PROPERTIES
         LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
+    target_sources(snow-shot-pinned-window-tests PRIVATE
+        tests/macos_pinned_content_drag_tests.mm
+        src/presentation/collage/collageeditorwidget.cpp
+        src/presentation/collage/collagepdfpagegrid.cpp
+        src/presentation/collage/collagepdftemplatewidget.cpp
+        src/presentation/collage/collagepdfsettingswidget.cpp
+        src/presentation/imagesplit/imagespliteditorwidget.cpp
+        include/snow_shot/presentation/components/collageeditorwidget.h
+        include/snow_shot/presentation/components/collagepdfpagegrid.h
+        include/snow_shot/presentation/components/collagepdftemplatewidget.h
+        include/snow_shot/presentation/components/collagepdfsettingswidget.h
+        include/snow_shot/presentation/components/imagespliteditorwidget.h)
+    target_link_libraries(snow-shot-pinned-window-tests PRIVATE
+        snow_shot_collage_core snow_shot_image_split_core)
+    foreach(_content_drag IN ITEMS external incoming internal)
+        add_test(NAME snow-shot-macos-pinned-content-drag-${_content_drag}-tests
+            COMMAND snow-shot-pinned-window-tests --content-drag-native-only --${_content_drag} -platform cocoa)
+        set_tests_properties(snow-shot-macos-pinned-content-drag-${_content_drag}-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 45 SKIP_RETURN_CODE 77)
+    endforeach()
     add_test(NAME snow-shot-macos-pinned-drag-tests
         COMMAND snow-shot-pinned-window-tests --native-controlled-drag-only -platform cocoa)
     set_tests_properties(snow-shot-macos-pinned-drag-tests PROPERTIES
@@ -12567,11 +12587,14 @@ if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
         add_executable(snow-shot-macos-floating-toolbar-drop-tests
             tests/macos_floating_toolbar_drop_tests.mm
             ../cmake/test-support/macos_native_input.mm
+            src/presentation/services/screenshotexportartifact.cpp
+            src/presentation/services/screenshotimagefileservice.cpp
+            src/presentation/services/screenshotpdfexport.cpp
             ${_snow_floating_macos_sources})
         list(APPEND _snow_floating_targets snow-shot-macos-floating-toolbar-drop-tests)
         target_include_directories(snow-shot-macos-floating-toolbar-drop-tests PRIVATE src)
         target_link_libraries(snow-shot-macos-floating-toolbar-drop-tests PRIVATE
-            "-framework AppKit" "-framework ApplicationServices")
+            snow_shot_export_scheduling "-framework AppKit" "-framework ApplicationServices")
         add_test(NAME snow-shot-macos-floating-toolbar-drop-policy-tests
             COMMAND snow-shot-macos-floating-toolbar-drop-tests -platform offscreen)
         set_tests_properties(snow-shot-macos-floating-toolbar-drop-policy-tests PROPERTIES
