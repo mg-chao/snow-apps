@@ -109,7 +109,7 @@ struct Fixture final {
         }
         const auto& line = Access::displayedRecognition(window).lines.at(row);
         const auto rect = line.quad.boundingRect();
-        const qreal fraction = static_cast<qreal>(character) / line.text.size();
+        const qreal fraction = static_cast<qreal>(character) / static_cast<qreal>(line.text.size());
         const QPointF source(rect.left() + rect.width() * fraction, rect.center().y());
         auto* canvas = window.findChild<SnowCanvasWidget*>();
         return content->mapFromGlobal(

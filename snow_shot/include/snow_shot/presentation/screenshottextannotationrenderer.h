@@ -21,8 +21,8 @@ struct ScreenshotTextAnnotationRenderItem final {
     QPainterPath path;
     QColor color;
     bool highlight = false;
-    std::shared_ptr<const ScreenshotTextAnnotationStroke> stroke;
-    QTransform sourceToCanvas;
+    std::shared_ptr<const ScreenshotTextAnnotationStroke> stroke = {};
+    QTransform sourceToCanvas = {};
     [[nodiscard]] QRectF bounds() const;
     [[nodiscard]] QPainterPath coverage() const;
     [[nodiscard]] bool sameGeometry(const ScreenshotTextAnnotationRenderItem& other) const;
