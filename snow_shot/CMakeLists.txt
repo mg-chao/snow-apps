@@ -1905,7 +1905,7 @@ target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE snow_shot_diag
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)
-    target_link_libraries(snow_shot_print PRIVATE shell32 uuid ole32 runtimeobject windowsapp
+    target_link_libraries(snow_shot_print PRIVATE Qt6::Concurrent shell32 uuid ole32 runtimeobject windowsapp
         d2d1 d3d11 dxgi windowscodecs)
 elseif(APPLE)
     target_sources(snow_shot_print PRIVATE src/platform/macos/nativeprint.mm
