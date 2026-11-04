@@ -3,6 +3,8 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include "snowimageqtcodec.h"
+#include "screenshotexportmemory_p.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/clipboardfilecache.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -128,6 +130,17 @@ ScreenshotExportSource::fromImageLoader(ImageLoader loader,
     source.m_imageLoader = std::move(loader);
     source.m_clipboardPlacement = std::move(placement);
     source.m_clipboardAppearance = std::move(appearance);
+    return source;
+}
+
+ScreenshotExportSource
+ScreenshotExportSource::fromDeferredImage(ImageLoader loader, ImagePreparation preparation,
+                                          std::function<qint64(QSize)> workingBytes,
+                                          std::optional<ScreenshotClipboardPlacement> placement,
+                                          std::optional<ScreenshotClipboardAppearance> appearance) {
+    auto source = fromImageLoader(std::move(loader), std::move(placement), std::move(appearance));
+    source.m_loadedImagePreparation = std::move(preparation);
+    source.m_loadedImageWorkingBytes = std::move(workingBytes);
     return source;
 }
 
@@ -358,6 +371,81 @@ struct ScreenshotExportArtifact::Impl final {
     ScreenshotExportJobHandle rowSourceJob;
     std::vector<ScreenshotExportJobHandle> outputJobs;
 };
+
+// Indexes hold weak references only: retained output owns no source raster or command state.
+struct ScreenshotExportArtifact::SharedEncodings final {
+    using Key = std::tuple<QByteArray, ScreenshotImageFileFormat, int, int>;
+    std::map<Key, std::weak_ptr<FileSource>> completed;
+    std::map<QByteArray, std::weak_ptr<ScreenshotExportArtifact>> pending;
+
+    std::shared_ptr<FileSource> find(const Key& key) {
+        std::erase_if(completed, [](const auto& entry) { return entry.second.expired(); });
+        const auto found = completed.find(key);
+        if (found == completed.end())
+            return {};
+        auto value = found->second.lock();
+        ScreenshotExportCache::encodedBytes().touch(value.get());
+        ScreenshotExportCache::encodedFiles().touch(value.get());
+        return value;
+    }
+    void retain(Key key, const std::shared_ptr<FileSource>& value) {
+        if (const auto previous = find(key)) {
+            ScreenshotExportCache::encodedBytes().remove(previous.get());
+            ScreenshotExportCache::encodedFiles().remove(previous.get());
+        }
+        const qint64 memory =
+            value->png.isValid() ? value->png.bytes().size() : value->bytes.size();
+        if (memory > 0)
+            ScreenshotExportCache::encodedBytes().retain(value, memory);
+        else if (value->byteCount > 0)
+            ScreenshotExportCache::encodedFiles().retain(value, value->byteCount);
+        completed[std::move(key)] = value;
+        std::erase_if(completed, [](const auto& entry) { return entry.second.expired(); });
+    }
+};
+
+ScreenshotExportArtifact::SharedEncodings& ScreenshotExportArtifact::sharedEncodings() {
+    static SharedEncodings cache;
+    return cache;
+}
+
+std::shared_ptr<ScreenshotExportArtifact>
+ScreenshotExportArtifact::encodingBroker(const ScreenshotImageRowSource& rows) {
+    if (m_impl->source.m_encodingCacheKey.isEmpty())
+        return {};
+    QImage image = rows.backingImage;
+    if (image.isNull()) {
+        QMutexLocker lock(&m_impl->mutex);
+        // Image-derived rows can convert premultiplied or wide-gamut pixels lazily, without an
+        // RGBA backingImage. Retain their original snapshot and let the broker create its own
+        // row reader and cancellation token. An arbitrary row factory may capture cancellation
+        // inside its callbacks, so only its explicit backingImage can be shared this way.
+        if (!m_impl->source.m_rowSourceFactory)
+            image = m_impl->image;
+    }
+    if (image.isNull())
+        return {};
+    auto& pending = sharedEncodings().pending;
+    std::erase_if(pending, [](const auto& entry) { return entry.second.expired(); });
+    auto& slot = pending[m_impl->source.m_encodingCacheKey];
+    if (auto active = slot.lock())
+        return active;
+    PngCachePolicy policy;
+    policy.maximumBytes = m_impl->maximumPngBytes;
+    policy.maximumFileBytes = m_impl->maximumFileBytes;
+    policy.encodingStarted = m_impl->encodingStarted;
+    policy.fileEncodingStarted = m_impl->fileEncodingStarted;
+    // The broker only encodes. Prepare its independent lazy row reader once, without scheduling
+    // another image job or converting the entire snapshot to RGBA.
+    auto source =
+        ScreenshotExportSource::fromProducer({}, [image = std::move(image)](std::function<bool()>) {
+            return snow_shot::image_codec::srgbRowSource(image);
+        });
+    auto broker = std::make_shared<ScreenshotExportArtifact>(std::move(source),
+                                                             m_impl->compressionLevel, policy);
+    slot = broker;
+    return broker;
+}
 
 ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source, QObject* parent)
     : ScreenshotExportArtifact(std::move(source),
@@ -594,8 +682,11 @@ void ScreenshotExportArtifact::startImage() {
     const QPointer<ScreenshotExportArtifact> guarded(this);
     if (m_impl->source.m_imageLoader) {
         const bool scheduled = m_impl->source.m_imageLoader(this, [guarded](QImage image) mutable {
-            if (!guarded.isNull()) {
-                guarded->completeImage({std::move(image), {}});
+            if (guarded && !guarded->isCancelled()) {
+                if (guarded->m_impl->source.m_loadedImagePreparation && !image.isNull())
+                    guarded->prepareLoadedImage(std::move(image));
+                else
+                    guarded->completeImage({std::move(image), {}});
             }
         });
         if (!scheduled) {
@@ -629,7 +720,8 @@ void ScreenshotExportArtifact::startImage() {
                 guarded->completeImage(
                     {result.succeeded() ? std::move(result.image) : QImage{}, result.error});
             }
-        });
+        },
+        m_impl->source.m_renderingBytes);
     if (!job.isValid()) {
         completeImage({{},
                        QCoreApplication::translate("ScreenshotExportArtifact",
@@ -646,6 +738,41 @@ void ScreenshotExportArtifact::startImage() {
     }
     if (!retained)
         job.cancel();
+}
+
+void ScreenshotExportArtifact::prepareLoadedImage(QImage image) {
+    const QPointer<ScreenshotExportArtifact> guarded(this);
+    const qint64 workingBytes = m_impl->source.m_loadedImageWorkingBytes
+                                    ? m_impl->source.m_loadedImageWorkingBytes(image.size())
+                                    : 0;
+    const auto job = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [image = std::move(image), prepare = m_impl->source.m_loadedImagePreparation](
+            const ScreenshotExportCancellation& cancellation) mutable {
+            ScreenshotExportTaskResult result;
+            if (!cancellation.isCancellationRequested())
+                result.image = prepare(std::move(image), cancellation);
+            if (cancellation.isCancellationRequested())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            return result;
+        },
+        [guarded](ScreenshotExportTaskResult result) {
+            if (guarded && !guarded->isCancelled())
+                guarded->completeImage({std::move(result.image), std::move(result.error)});
+        },
+        workingBytes);
+    if (!job.isValid()) {
+        completeImage({{},
+                       QCoreApplication::translate("ScreenshotExportArtifact",
+                                                   "The screenshot export queue is full")});
+        return;
+    }
+    QMutexLocker lock(&m_impl->mutex);
+    if (m_impl->cancelled->load() || m_impl->imagePhase != RequestPhase::Pending)
+        job.cancel();
+    else
+        m_impl->imageJob = job;
 }
 
 void ScreenshotExportArtifact::completeImage(ScreenshotExportImageResult result) {
@@ -712,6 +839,16 @@ bool ScreenshotExportArtifact::requestPng(QObject* receiver, ScreenshotCompressi
     }
     const auto cancelled = m_impl->cancelled;
     const int compressionLevel = pngCompression(compression);
+    if (!m_impl->source.m_encodingCacheKey.isEmpty()) {
+        if (const auto shared =
+                sharedEncodings().find({m_impl->source.m_encodingCacheKey,
+                                        ScreenshotImageFileFormat::Png, 100, compressionLevel});
+            shared && shared->png.isValid()) {
+            dispatchResult(cancelled, receiver, std::move(callback),
+                           ScreenshotExportEncodingResult{shared->png, {}});
+            return true;
+        }
+    }
     ScreenshotExportEncodingResult ready;
     bool dispatchReady = false;
     bool start = false;
@@ -787,8 +924,43 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
         pending.modeSealed = true;
     }
     const QPointer<ScreenshotExportArtifact> guarded(this);
+    if (!preparesClipboard) {
+        if (auto broker = encodingBroker(source)) {
+            auto compression = ScreenshotCompressionLevel::Medium;
+            for (const auto candidate :
+                 {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+                  ScreenshotCompressionLevel::High})
+                if (pngCompression(candidate) == compressionLevel)
+                    compression = candidate;
+            const auto sharedKey = m_impl->source.m_encodingCacheKey;
+            const bool accepted = broker->requestPng(
+                broker.get(), compression,
+                [broker, guarded, sharedKey,
+                 compressionLevel](ScreenshotExportEncodingResult result) mutable {
+                    if (result.succeeded()) {
+                        auto cached = std::make_shared<FileSource>();
+                        cached->png = result.image;
+                        sharedEncodings().retain(
+                            {sharedKey, ScreenshotImageFileFormat::Png, 100, compressionLevel},
+                            cached);
+                    }
+                    if (guarded && !guarded->isCancelled())
+                        guarded->completePng(compressionLevel, std::move(result));
+                });
+            if (!accepted)
+                completePng(compressionLevel,
+                            {{},
+                             QCoreApplication::translate("ScreenshotExportArtifact",
+                                                         "The screenshot export queue is full")});
+            return;
+        }
+    }
     auto encoded = std::make_shared<ScreenshotExportEncodingResult>();
     auto clipboard = preparesClipboard ? std::make_shared<ScreenshotClipboardPayload>() : nullptr;
+    const qint64 workingBytes = screenshot_export_memory::encodingWorkingBytes(
+        source.size, ScreenshotImageFileFormat::Png,
+        ScreenshotImageEncodingOptions{100, m_impl->compressionLevel},
+        std::numeric_limits<qint64>::max(), preparesClipboard);
     const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
         this,
         foreground ? ScreenshotExportCoordinator::Priority::Foreground
@@ -841,7 +1013,8 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
                                          : ScreenshotExportEncodingResult{{}, result.error},
                                      result.succeeded() ? std::move(clipboard) : nullptr);
             }
-        });
+        },
+        workingBytes);
     if (!job.isValid()) {
         completePng(compressionLevel,
                     {{},
@@ -869,6 +1042,13 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
 void ScreenshotExportArtifact::completePng(int compressionLevel,
                                            ScreenshotExportEncodingResult result,
                                            std::shared_ptr<ScreenshotClipboardPayload> clipboard) {
+    if (result.succeeded() && !m_impl->source.m_encodingCacheKey.isEmpty()) {
+        auto cached = std::make_shared<FileSource>();
+        cached->png = result.image;
+        sharedEncodings().retain({m_impl->source.m_encodingCacheKey, ScreenshotImageFileFormat::Png,
+                                  100, compressionLevel},
+                                 cached);
+    }
     std::vector<Impl::EncodingSubscriber> subscribers;
     std::vector<Impl::ClipboardSubscriber> clipboardSubscribers;
     const QPointer<ScreenshotExportArtifact> guarded(this);
@@ -964,7 +1144,10 @@ void ScreenshotExportArtifact::completePng(int compressionLevel,
                                                            "The screenshot clipboard payload is "
                                                            "invalid"));
                                   },
-                                  complete)
+                                  complete,
+                                  screenshot_export_memory::clipboardWorkingBytes(
+                                      result.image.pixelSize(),
+                                      pending->prototype->pngBytes().size()))
                             : ScreenshotExportJobHandle{};
                     if (!job.isValid()) {
                         complete(ScreenshotExportTaskResult::failure(
@@ -1023,6 +1206,16 @@ bool ScreenshotExportArtifact::requestClipboard(QObject* receiver, ClipboardCall
     const auto cancelled = m_impl->cancelled;
     const QPointer<QObject> target(receiver);
     const int level = pngCompression(m_impl->compressionLevel);
+    bool sharedCanonical = false;
+    if (!m_impl->source.m_encodingCacheKey.isEmpty()) {
+        const auto& key = m_impl->source.m_encodingCacheKey;
+        const auto prepared =
+            sharedEncodings().find({key, ScreenshotImageFileFormat::Png, 100, level});
+        sharedCanonical = prepared && prepared->png.isValid();
+        const auto pending = sharedEncodings().pending.find(key);
+        sharedCanonical = sharedCanonical || (pending != sharedEncodings().pending.end() &&
+                                              !pending->second.expired());
+    }
     bool fused = false;
     bool start = false;
     ScreenshotExportJobHandle promote;
@@ -1035,9 +1228,9 @@ bool ScreenshotExportArtifact::requestClipboard(QObject* receiver, ClipboardCall
             encoding.foreground = true;
             promote = encoding.job;
         }
-        if (encoding.phase == RequestPhase::Empty ||
-            (encoding.phase == RequestPhase::Pending &&
-             (encoding.preparesClipboard || !encoding.modeSealed))) {
+        if (!sharedCanonical && (encoding.phase == RequestPhase::Empty ||
+                                 (encoding.phase == RequestPhase::Pending &&
+                                  (encoding.preparesClipboard || !encoding.modeSealed)))) {
             if (!encoding.clipboardSubscribers)
                 encoding.clipboardSubscribers =
                     std::make_shared<std::vector<Impl::ClipboardSubscriber>>();
@@ -1109,6 +1302,8 @@ bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray ca
         }
         auto payload = std::make_shared<ScreenshotClipboardPayload>();
         auto completion = std::make_shared<ClipboardCallback>(std::move(callback));
+        const qint64 workingBytes =
+            screenshot_export_memory::clipboardWorkingBytes(source.size, canonicalPng.size());
         ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
             receiver, ScreenshotExportCoordinator::Priority::Foreground,
             [source = std::move(source), canonicalPng, payload,
@@ -1135,7 +1330,8 @@ bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray ca
                                                                    ? std::move(*payload)
                                                                    : ScreenshotClipboardPayload{},
                                                                result.error});
-            });
+            },
+            workingBytes);
         if (!job.isValid()) {
             dispatchResult(cancelled, guardedReceiver, std::move(*completion),
                            ScreenshotExportClipboardResult{
@@ -1346,6 +1542,30 @@ void ScreenshotExportArtifact::requestPreparedFile(ScreenshotImageRowSource rows
         : ScreenshotImageFileService::supportsCompressionLevel(format)  ? options.effort
                                                                         : 0;
     const Impl::FileKey key{format, quality, effort};
+    if (!m_impl->source.m_encodingCacheKey.isEmpty()) {
+        const SharedEncodings::Key sharedKey{m_impl->source.m_encodingCacheKey, format, quality,
+                                             effort};
+        if (auto ready = sharedEncodings().find(sharedKey)) {
+            callback(std::move(ready), {});
+            return;
+        }
+        if (auto broker = encodingBroker(rows)) {
+            const QPointer<ScreenshotExportArtifact> guarded(this);
+            auto complete = [broker, guarded, sharedKey, callback = std::move(callback)](
+                                std::shared_ptr<FileSource> prepared, QString error) mutable {
+                if (prepared && error.isEmpty())
+                    sharedEncodings().retain(sharedKey, prepared);
+                if (guarded && !guarded->isCancelled())
+                    callback(std::move(prepared), std::move(error));
+            };
+            // Both PNG and prepared-file requests use the broker's own immutable source. Never
+            // rebuild from backingImage here or inherit a subscribing command's row callbacks.
+            if (!broker->requestFileSource(format, encoding, complete))
+                complete({}, QCoreApplication::translate("ScreenshotExportArtifact",
+                                                         "The screenshot export queue is full"));
+            return;
+        }
+    }
     std::shared_ptr<FileSource> ready;
     std::shared_ptr<std::vector<FileSourceCallback>> lifetimes;
     {
@@ -1421,6 +1641,8 @@ void ScreenshotExportArtifact::requestPreparedFile(ScreenshotImageRowSource rows
     };
     const auto notify = m_impl->fileEncodingStarted;
     const auto memoryLimit = m_impl->maximumPngBytes;
+    const qint64 workingBytes =
+        screenshot_export_memory::encodingWorkingBytes(rows.size, format, encoding, memoryLimit);
     const auto job = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Foreground,
         [rows = std::move(rows), prepared, lifetimes, format, encoding, notify,
@@ -1460,7 +1682,7 @@ void ScreenshotExportArtifact::requestPreparedFile(ScreenshotImageRowSource rows
                     error.isEmpty() ? QStringLiteral("The image could not be encoded") : error);
             return ScreenshotExportTaskResult{};
         },
-        complete);
+        complete, workingBytes);
     if (!job.isValid()) {
         complete(ScreenshotExportTaskResult::failure(
             ScreenshotExportFailureStage::Queue,

@@ -1,5 +1,6 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
+#include "screenshotexportmemory_p.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "theme/theme_manager.h"
@@ -134,6 +135,11 @@ void ScreenshotSavePreviewCanvas::requestDetails() {
     };
     auto images = std::make_shared<Result>();
     const quint64 serial = m_detailSerial;
+    qint64 workingBytes = std::max(
+        original.isEmpty() ? 0 : screenshot_export_memory::previewWorkingBytes(m_sourcePixels),
+        output.isEmpty() ? 0 : screenshot_export_memory::previewWorkingBytes(m_outputPixels));
+    if (!screenshot_pinned_render::addBytes(workingBytes, qint64{16} * 1024 * 1024))
+        workingBytes = std::numeric_limits<qint64>::max();
     m_detailJob = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Foreground,
         [original, output, sourceRenderer = m_sourceRenderer, outputRenderer = m_outputRenderer,
@@ -162,7 +168,8 @@ void ScreenshotSavePreviewCanvas::requestDetails() {
                 m_outputDetail = {std::move(images->output), output};
             setProperty("detailGeneration", QVariant::fromValue(serial));
             update();
-        });
+        },
+        workingBytes);
 }
 void ScreenshotSavePreviewCanvas::setSplitRatio(double value) {
     m_split = std::clamp(value, 0.0, 1.0);

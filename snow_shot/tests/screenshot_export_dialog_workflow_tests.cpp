@@ -3089,7 +3089,7 @@ void boundedCanvasNativeDetail(QWidget& owner) {
                 content->property("previewDecodeCount").toInt() == 0,
             "large exact outputs must display a bounded preview without file decoding");
     for (int iteration = 0; iteration < 64 && canvas->zoom() < 1; ++iteration) {
-        QKeyEvent event(QEvent::KeyPress, Qt::Key_Plus, Qt::NoModifier);
+        PhysicalKeyEvent event(QEvent::KeyPress, Qt::Key_Plus, Qt::NoModifier);
         QApplication::sendEvent(canvas, &event);
     }
     require(canvas->zoom() >= 1, "native viewport keyboard zoom failed");

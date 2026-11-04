@@ -31,6 +31,7 @@
 #include "snow_shot/presentation/imagesplitwindow.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
@@ -591,6 +592,12 @@ class ApplicationController::Impl {
                        .toString() == QStringLiteral("smart_control");
         };
         memoryOptions.safe = [this] { return memoryTrimmingIsSafe(); };
+        memoryOptions.trim = [nativeTrim = std::move(memoryOptions.trim)] {
+            ScreenshotExportCache::pinnedPixels().clear();
+            ScreenshotExportCache::encodedBytes().clear();
+            ScreenshotExportCache::encodedFiles().clear();
+            return nativeTrim();
+        };
         memoryOptimization = std::make_unique<runtime::MemoryOptimizationController>(
             runtime::RuntimeActivityTracker::shared(), std::move(memoryOptions), &q);
 #endif

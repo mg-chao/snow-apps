@@ -428,6 +428,21 @@ std::optional<snow::image::EncoderInfo> encoderInfo(snow::image::Format format) 
     return result;
 }
 
+std::optional<qint64> encodeWorkingBytes(QSize size, snow::image::Format format,
+                                         const snow::image::EncodeOptions& options) {
+    if (size.isEmpty() || !backendAbiIsCompatible())
+        return std::nullopt;
+    const auto encodedOptions = bridgeOptions(format, options);
+    uint64_t working = 0;
+    constexpr uint64_t rowCache = 2 * 1024 * 1024;
+    if (!snow_shot_image_codec_encode_resources(static_cast<uint32_t>(size.width()),
+                                                static_cast<uint32_t>(size.height()),
+                                                &encodedOptions, &working) ||
+        working > static_cast<uint64_t>(std::numeric_limits<qint64>::max()) - rowCache)
+        return std::nullopt;
+    return static_cast<qint64>(working + rowCache);
+}
+
 bool encodeToDevice(const ScreenshotImageRowSource& source, QIODevice* device,
                     snow::image::Format format, const snow::image::EncodeOptions& options,
                     QString* error, EncodeResult* result) {
@@ -468,8 +483,18 @@ bool encodeToDevice(const ScreenshotImageRowSource& source, QIODevice* device,
     bridgeSink.seekable = device->isSequential() ? 0 : 1;
 
     auto verifiedOptions = options;
-    if (!verifiedOptions.verified_alpha_content && source.hasVerifiedOpaquePixels())
-        verifiedOptions.verified_alpha_content = snow::image::AlphaContent::opaque;
+    if (!verifiedOptions.verified_alpha_content) {
+        switch (source.verifiedAlphaContent()) {
+        case ScreenshotImageAlphaContent::Opaque:
+            verifiedOptions.verified_alpha_content = snow::image::AlphaContent::opaque;
+            break;
+        case ScreenshotImageAlphaContent::NonOpaque:
+            verifiedOptions.verified_alpha_content = snow::image::AlphaContent::non_opaque;
+            break;
+        case ScreenshotImageAlphaContent::Unknown:
+            break;
+        }
+    }
     const SnowShotImageCodecEncodeOptions encodedOptions = bridgeOptions(format, verifiedOptions);
     std::array<char, kBackendErrorCapacity> backendError{};
     SnowShotImageCodecEncodeResult bridgeResult{};
@@ -759,7 +784,15 @@ ScreenshotImageRowSource resizedRowSource(ScreenshotImageRowSource source, QSize
     result.cancellationRequested = source.cancellationRequested;
     result.reserveResources = source.reserveResources;
     result.isKnownOpaque = source.isKnownOpaque;
-    result.verifyOpaque = source.verifyOpaque;
+    if (source.classifyAlpha) {
+        // Resampling can discard transparent samples or round their alpha to 255. Only a
+        // proof of opacity survives without examining the resized pixels themselves.
+        result.classifyAlpha = [classify = source.classifyAlpha] {
+            return classify() == ScreenshotImageAlphaContent::Opaque
+                       ? ScreenshotImageAlphaContent::Opaque
+                       : ScreenshotImageAlphaContent::Unknown;
+        };
+    }
     result.previewImage = source.previewImage;
     auto reader = std::make_shared<ResizeRowReader>(std::move(source), output);
     if (!reader->prepare(error))
@@ -792,13 +825,13 @@ ScreenshotImageRowSource srgbRowSource(const QImage& image) {
     if (!source.isKnownOpaque) {
         struct Opacity final {
             std::once_flag once;
-            bool opaque = false;
+            ScreenshotImageAlphaContent content = ScreenshotImageAlphaContent::Unknown;
         };
         auto opacity = std::make_shared<Opacity>();
-        source.verifyOpaque = [image, opacity] {
+        source.classifyAlpha = [image, opacity] {
             std::call_once(opacity->once,
-                           [&] { opacity->opaque = detail::imageHasOnlyOpaquePixels(image); });
-            return opacity->opaque;
+                           [&] { opacity->content = detail::imageAlphaContent(image); });
+            return opacity->content;
         };
     }
     // Untagged images retain the existing assumption that their pixels are

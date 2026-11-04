@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
+#include "../src/presentation/services/screenshotexportfiletransfer_p.h"
+#include <QUuid>
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -16,6 +19,8 @@
 #include "../../test-support/virtualmemory.h"
 
 #include <QCoreApplication>
+#include <QDebug>
+#include <QBuffer>
 #include <QEvent>
 #include <QEventLoop>
 #include <QImage>
@@ -1519,6 +1524,324 @@ void fileEncodingsCoalesceAndNormalizeOptions() {
     }
 }
 
+void stagedFilesPublishExclusivelyWithBoundedFallback() {
+    QTemporaryDir directory;
+    const QString source = directory.filePath(QStringLiteral("source"));
+    const QByteArray bytes(3 * 1024 * 1024, 'x');
+    {
+        QFile file(source);
+        require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(),
+                "create immutable staged fixture");
+    }
+    for (const bool link : {true, false}) {
+        const auto destination =
+            directory.filePath(link ? QStringLiteral("linked") : QStringLiteral("copied"));
+        QString error;
+        require(screenshot_export_file_transfer::publishExclusive(source, destination, {}, &error,
+                                                                  link),
+                "exclusive staged publication succeeds");
+        QFile file(destination);
+        require(file.open(QIODevice::ReadOnly) && file.readAll() == bytes &&
+                    QFileInfo::exists(source),
+                "published bytes match and staging survives for companion rollback");
+        require(!screenshot_export_file_transfer::publishExclusive(source, destination, {}, &error,
+                                                                   link),
+                "existing destinations cannot be overwritten by either transfer path");
+        file.close();
+        require(file.remove(), "published fixture can be removed independently");
+        int checkpoints = 0;
+        require(!screenshot_export_file_transfer::publishExclusive(
+                    source, destination, [&] { return ++checkpoints >= 3; }, &error, false) &&
+                    !QFileInfo::exists(destination),
+                "mid-copy cancellation removes only our partial destination");
+        require(QFileInfo(source).size() == bytes.size(), "cancelled transfer preserves staging");
+    }
+}
+
+ScreenshotExportSource sharedEncodingSource(const QImage& image, bool loaded) {
+    if (loaded)
+        return ScreenshotExportSource::fromImageLoader(
+            [image](QObject*, std::function<void(QImage)> callback) {
+                callback(image);
+                return true;
+            });
+    return ScreenshotExportSource::fromImage(image);
+}
+
+void commandsShareEncodingsWithoutSharingCancellation(const QImage& image, bool loaded) {
+    ScreenshotExportCache::encodedBytes().clear();
+    ScreenshotExportCache::encodedFiles().clear();
+    const auto cleanup = qScopeGuard([] {
+        ScreenshotExportCache::encodedBytes().clear();
+        ScreenshotExportCache::encodedFiles().clear();
+    });
+    const auto key = QUuid::createUuid().toByteArray();
+    std::atomic_int encodings = 0;
+    QSemaphore release;
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    ScreenshotExportArtifact::PngCachePolicy policy;
+    policy.encodingStarted = [&] {
+        if (++encodings == 1)
+            release.acquire();
+    };
+    auto make = [&](QByteArray identity = {}) {
+        auto source = sharedEncodingSource(image, loaded);
+        source.setEncodingCacheKey(identity.isEmpty() ? key : identity);
+        return std::make_unique<ScreenshotExportArtifact>(
+            std::move(source), ScreenshotCompressionLevel::Medium, policy);
+    };
+    auto first = make();
+    auto second = make();
+    QObject receiver;
+    int ready = 0;
+    for (auto* artifact : {first.get(), second.get()})
+        require(artifact->requestRowSource(&receiver,
+                                           [&](auto rows, auto error) {
+                                               require(rows.isValid() && error.isEmpty(),
+                                                       "shared PNG rows prepare");
+                                               ++ready;
+                                           }),
+                "prepare PNG subscribers before holding the encoder");
+    processUntil([&] { return ready == 2; });
+    int callbacks = 0;
+    QByteArray held;
+    require(first->requestPng(&receiver, ScreenshotCompressionLevel::Low,
+                              [&](ScreenshotExportEncodingResult) { ++callbacks; }),
+            "first shared PNG request starts");
+    processUntil([&] { return encodings == 1; });
+    require(second->requestPng(&receiver, ScreenshotCompressionLevel::Low,
+                               [&](ScreenshotExportEncodingResult result) {
+                                   require(result.succeeded(),
+                                           "surviving command encodes successfully");
+                                   held = result.image.bytes();
+                                   ++callbacks;
+                               }),
+            "second shared PNG request starts");
+    first->cancel();
+    first.reset();
+    release.release();
+    processUntil([&] { return callbacks == 1; });
+    require(encodings == 1, "commands coalesce PNG encoding across first-owner cancellation");
+    const auto expected =
+        image.convertedToColorSpace(QColorSpace::SRgb).convertToFormat(QImage::Format_RGBA8888);
+    require(hasSamePixels(QImage::fromData(held, "PNG"), expected),
+            "shared PNG preserves source alpha and lazy color conversion");
+    second.reset();
+    auto repeated = make();
+    require(repeated->requestPng(
+                &receiver, ScreenshotCompressionLevel::Low,
+                [&](ScreenshotExportEncodingResult result) {
+                    require(result.image.bytes().constData() == held.constData(),
+                            "completed encoding reuses immutable storage after commands die");
+                    ++callbacks;
+                }),
+            "warm cross-command PNG request starts");
+    require(callbacks == 2 && encodings == 1, "warm PNG needs no worker or source pixels");
+    require(ScreenshotExportCache::encodedBytes().retainedBytes() == held.size(),
+            "shared PNG is charged once and excludes pixel donors");
+    require(repeated->requestPng(&receiver, ScreenshotCompressionLevel::High,
+                                 [&](ScreenshotExportEncodingResult result) {
+                                     require(result.succeeded(), "different compression encodes");
+                                     ++callbacks;
+                                 }),
+            "different compression request starts");
+    processUntil([&] { return callbacks == 3; });
+    require(encodings == 2, "compression options separate shared entries");
+    repeated.reset();
+    ScreenshotExportCache::encodedBytes().clear();
+    auto afterTrim = make();
+    require(afterTrim->requestPng(&receiver, ScreenshotCompressionLevel::Low,
+                                  [&](ScreenshotExportEncodingResult result) {
+                                      require(result.image.bytes() == held,
+                                              "eviction preserves outstanding bytes");
+                                      ++callbacks;
+                                  }),
+            "PNG re-encodes after memory trim");
+    processUntil([&] { return callbacks == 4; });
+    require(encodings == 3, "memory trim releases cached outputs");
+    auto changed = make(key + "changed");
+    require(changed->requestPng(&receiver, ScreenshotCompressionLevel::Low,
+                                [&](ScreenshotExportEncodingResult result) {
+                                    require(result.succeeded(), "new source revision encodes");
+                                    ++callbacks;
+                                }),
+            "new source revision request starts");
+    processUntil([&] { return callbacks == 5; });
+    require(encodings == 4, "source revisions isolate shared encodings");
+}
+
+void commandsSharePreparedFilesAndKeepIndependentDestinations(const QImage& image, bool loaded,
+                                                              bool spool) {
+    ScreenshotExportCache::encodedBytes().clear();
+    ScreenshotExportCache::encodedFiles().clear();
+    const auto cleanup = qScopeGuard([] {
+        ScreenshotExportCache::encodedBytes().clear();
+        ScreenshotExportCache::encodedFiles().clear();
+    });
+    const auto key = QUuid::createUuid().toByteArray();
+    QTemporaryDir directory;
+    QObject receiver;
+    std::atomic_int encodings = 0;
+    QSemaphore release;
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    ScreenshotExportArtifact::PngCachePolicy policy;
+    if (spool)
+        policy.maximumBytes = 1;
+    policy.fileEncodingStarted = [&](ScreenshotImageFileFormat) {
+        if (++encodings == 1)
+            release.acquire();
+    };
+    auto make = [&] {
+        auto source = sharedEncodingSource(image, loaded);
+        source.setEncodingCacheKey(key);
+        return std::make_unique<ScreenshotExportArtifact>(std::move(source),
+                                                          ScreenshotCompressionLevel::Low, policy);
+    };
+    auto cancelled = make();
+    auto first = make();
+    auto second = make();
+    int ready = 0;
+    for (auto* artifact : {cancelled.get(), first.get(), second.get()})
+        require(artifact->requestRowSource(&receiver,
+                                           [&](auto rows, auto error) {
+                                               require(rows.isValid() && error.isEmpty(),
+                                                       "shared file rows prepare");
+                                               ++ready;
+                                           }),
+                "prepare all subscribers before holding the encoder");
+    processUntil([&] { return ready == 3; });
+    int completed = 0;
+    QByteArray expected;
+    auto saved = [&](ScreenshotExportTaskResult result) {
+        QFile file(result.savedPath);
+        require(result.succeeded() && file.open(QIODevice::ReadOnly),
+                "shared prepared file publishes");
+        const auto bytes = file.readAll();
+        if (expected.isEmpty())
+            expected = bytes;
+        require(bytes == expected, "independent destinations reuse identical encoded bytes");
+        ++completed;
+    };
+    const ScreenshotImageEncodingOptions options{87, ScreenshotCompressionLevel::Low};
+    const auto cancelledPath = directory.filePath("cancelled.webp");
+    require(cancelled->requestSaveToPath(&receiver, cancelledPath, ScreenshotImageFileFormat::Webp,
+                                         options,
+                                         [](ScreenshotExportTaskResult) {
+                                             require(false, "cancelled command cannot publish");
+                                         }),
+            "first file subscriber owns the initial encoding request");
+    processUntil([&] { return encodings == 1; });
+    require(first->requestSaveToPath(&receiver, directory.filePath("first"),
+                                     ScreenshotImageFileFormat::Webp, options, saved) &&
+                second->requestSaveToPath(&receiver, directory.filePath("second"),
+                                          ScreenshotImageFileFormat::Webp, options, saved),
+            "concurrent commands start prepared file saves");
+    cancelled->cancel();
+    cancelled.reset();
+    release.release();
+    processUntil([&] { return completed == 2; });
+    require(encodings == 1 && !QFileInfo::exists(cancelledPath),
+            "file commands share one encoder independently of first-owner cancellation");
+    const auto referencePath = directory.filePath("reference.webp");
+    const auto reference = ScreenshotImageFileService::write(
+        image, referencePath, ScreenshotImageFileFormat::Webp, {}, {}, options);
+    QFile referenceFile(reference.path);
+    require(reference.succeeded() && referenceFile.open(QIODevice::ReadOnly) &&
+                referenceFile.readAll() == expected,
+            "shared file bytes preserve native pixels and lazy color conversion");
+    first.reset();
+    second.reset();
+    require((spool ? ScreenshotExportCache::encodedFiles() : ScreenshotExportCache::encodedBytes())
+                    .retainedBytes() == expected.size(),
+            "shared file cache charges only encoded bytes");
+    auto repeated = make();
+    require(repeated->requestSaveToPath(&receiver, directory.filePath("third"),
+                                        ScreenshotImageFileFormat::Webp, options, saved),
+            "warm prepared file save starts");
+    processUntil([&] { return completed == 3; });
+    require(encodings == 1, "prepared files survive original command destruction");
+    repeated.reset();
+    ScreenshotExportCache::encodedBytes().clear();
+    ScreenshotExportCache::encodedFiles().clear();
+    auto afterTrim = make();
+    require(afterTrim->requestSaveToPath(&receiver, directory.filePath("after-trim"),
+                                         ScreenshotImageFileFormat::Webp, options, saved),
+            "prepared file save starts after cache eviction");
+    processUntil([&] { return completed == 4; });
+    require(encodings == 2, "evicting prepared files releases their shared encoding");
+}
+
+void sharedEncodingCachesReleaseNativePixels() {
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Webp}) {
+        ScreenshotExportCache::encodedBytes().clear();
+        ScreenshotExportCache::encodedFiles().clear();
+        const auto cleanup = qScopeGuard([] {
+            ScreenshotExportCache::encodedBytes().clear();
+            ScreenshotExportCache::encodedFiles().clear();
+        });
+        auto pixels = std::make_shared<QImage>(
+            testImage().convertToFormat(QImage::Format_ARGB32_Premultiplied));
+        const std::weak_ptr<QImage> lifetime = pixels;
+        QImage image(
+            pixels->constBits(), pixels->width(), pixels->height(), pixels->bytesPerLine(),
+            pixels->format(),
+            [](void* owner) { delete static_cast<std::shared_ptr<QImage>*>(owner); },
+            new std::shared_ptr<QImage>(pixels));
+        pixels.reset();
+        image.setColorSpace(QColorSpace::SRgb);
+        auto source = ScreenshotExportSource::fromImage(std::move(image));
+        source.setEncodingCacheKey(QUuid::createUuid().toByteArray());
+        auto artifact = std::make_unique<ScreenshotExportArtifact>(std::move(source));
+        QTemporaryDir directory;
+        QObject receiver;
+        bool completed = false;
+        require(artifact->requestSaveToPath(
+                    &receiver, directory.filePath("output"), format, {},
+                    [&](ScreenshotExportTaskResult result) {
+                        require(result.succeeded(), "native snapshot encodes for lifetime test");
+                        completed = true;
+                    }),
+                "native snapshot encoding starts");
+        processUntil([&] { return completed; });
+        require(!lifetime.expired(), "the command still owns the original native pixel storage");
+        artifact.reset();
+        processUntil([&] { return lifetime.expired(); });
+        require(ScreenshotExportCache::encodedBytes().retainedBytes() > 0,
+                "completed shared encodings retain bytes without retaining source pixels");
+    }
+}
+
+void sharedEncodingsCoverNativeAndConvertedImages() {
+    for (const auto format : {QImage::Format_RGBA8888, QImage::Format_ARGB32_Premultiplied,
+                              QImage::Format_RGBA64_Premultiplied}) {
+        QImage image = testImage();
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x) {
+                QColor color = image.pixelColor(x, y);
+                color.setAlpha((x * 7 + y * 13) % 256);
+                image.setPixelColor(x, y, color);
+            }
+        image = image.convertToFormat(format);
+        if (format == QImage::Format_ARGB32_Premultiplied) {
+            ScreenshotPinnedViewportExportSource pinned;
+            pinned.backgroundImage = image;
+            pinned.backgroundCanvasRect = image.rect();
+            pinned.contentPixelSize = image.size();
+            pinned.resultStyle.cornerRadius = 5;
+            image = renderScreenshotPinnedViewport(pinned);
+            require(!image.isNull() && image.format() == format,
+                    "shared encoding fixture uses production pinned rendering");
+        } else if (format == QImage::Format_RGBA64_Premultiplied) {
+            image.setColorSpace(QColorSpace::DisplayP3);
+        }
+        const bool loaded = format != QImage::Format_RGBA8888;
+        commandsShareEncodingsWithoutSharingCancellation(image, loaded);
+        for (const bool spool : {false, true})
+            commandsSharePreparedFilesAndKeepIndependentDestinations(image, loaded, spool);
+    }
+    sharedEncodingCachesReleaseNativePixels();
+}
+
 void pdfPayloadReusePreservesDestinationMetadata() {
     QTemporaryDir directory;
     QObject receiver;
@@ -3017,6 +3340,273 @@ void pinnedViewportRenderingReleasesCompositorCaches() {
             "pinned rendering releases compositor caches before retiring its source snapshot");
 }
 
+void verifiedTransparentRowsAvoidCodecMaterialization() {
+    using Alpha = ScreenshotImageAlphaContent;
+    QImage image(67, 131, QImage::Format_RGBA8888);
+    for (int y = 0; y < image.height(); ++y)
+        for (int x = 0; x < image.width(); ++x)
+            image.setPixelColor(x, y, QColor(x * 3, y, (x + y) % 256, 100 + y % 155));
+    image.setColorSpace(QColorSpace::SRgb);
+    auto rows = snow_shot::image_codec::srgbRowSource(image);
+    require(rows.verifiedAlphaContent() == Alpha::NonOpaque,
+            "transparent immutable pixels carry a verified non-opaque classification");
+    for (const auto format : {ScreenshotImageFileFormat::Avif, ScreenshotImageFileFormat::Jxl}) {
+        const auto options = ScreenshotImageFileService::encodeOptions(
+            format, ScreenshotImageEncodingOptions{70, ScreenshotCompressionLevel::Low});
+        const auto encode = [&](ScreenshotImageRowSource source, int& maximumRows) {
+            const auto read = source.readRows;
+            source.readRows = [read, &maximumRows](int first, int count, qsizetype stride,
+                                                   uchar* target, qsizetype capacity) {
+                maximumRows = std::max(maximumRows, count);
+                return read(first, count, stride, target, capacity);
+            };
+            QByteArray bytes;
+            QBuffer buffer(&bytes);
+            require(buffer.open(QIODevice::WriteOnly) &&
+                        snow_shot::image_codec::encodeToDevice(source, &buffer, options.format,
+                                                               options),
+                    "transparent codec fixture encodes successfully");
+            return bytes;
+        };
+        auto unknown = rows;
+        unknown.classifyAlpha = {};
+        int referenceRows = 0;
+        const auto expected = encode(unknown, referenceRows);
+        int maximumRows = 0;
+        const auto actual = encode(rows, maximumRows);
+        require(actual == expected && maximumRows > 0 && maximumRows <= 64,
+                "verified transparent input preserves codec bytes without full-frame row reads");
+    }
+    require(snow_shot::image_codec::resizedRowSource(rows, image.size()).verifiedAlphaContent() ==
+                Alpha::NonOpaque,
+            "unchanged dimensions preserve verified non-opaque pixels");
+    require(snow_shot::image_codec::resizedRowSource(rows, {11, 8}).verifiedAlphaContent() ==
+                Alpha::Unknown,
+            "resampling cannot inherit a non-opaque proof from discarded source samples");
+    image.fill(Qt::white);
+    const auto opaque = snow_shot::image_codec::srgbRowSource(image);
+    require(snow_shot::image_codec::resizedRowSource(opaque, {11, 8}).verifiedAlphaContent() ==
+                Alpha::Opaque,
+            "resampling preserves verified opacity without another pixel scan");
+}
+
+void codecWorkingEstimatesAreDimensionOnlyAndConservative() {
+    using snow_shot::image_codec::encodeWorkingBytes;
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
+                              ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
+                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+        const auto options = ScreenshotImageFileService::encodeOptions(format, {});
+        const auto codec = ScreenshotImageFileService::snowImageFormat(format);
+        const auto small = encodeWorkingBytes({128, 128}, codec, options);
+        const auto large = encodeWorkingBytes({7680, 4320}, codec, options);
+        require(small && large && *small > 0 && *large >= *small,
+                "supported export codecs provide monotonic dimension-only admission estimates");
+        if (format == ScreenshotImageFileFormat::Avif || format == ScreenshotImageFileFormat::Jxl)
+            require(*large > qint64{512} * 1024 * 1024,
+                    "large buffered codecs request exclusive admission under the shared budget");
+        require(!encodeWorkingBytes({}, codec, options),
+                "invalid dimensions do not produce a usable memory estimate");
+    }
+}
+
+void nativePinnedSourceSharesImmutablePixels() {
+    QImage original = testImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < original.height(); ++y)
+        for (int x = 0; x < original.width(); ++x)
+            original.setPixelColor(x, y, QColor(x * 5, y * 11, x + y, (x * 7 + y * 3) % 256));
+    original.setDotsPerMeterX(6000);
+    original.setDotsPerMeterY(7000);
+    original.setOffset({3, 4});
+    original.setText(QStringLiteral("description"), QStringLiteral("input metadata"));
+    const QRectF rect(QPointF(-17.25, 4.5), QSizeF(original.size()));
+    for (const auto& colorSpace :
+         {QColorSpace{}, QColorSpace(QColorSpace::SRgb), QColorSpace(QColorSpace::DisplayP3)}) {
+        original.setColorSpace(colorSpace);
+        ScreenshotPinnedViewportExportSource source{{}, original, rect, original.size(),
+                                                    {}, {},       1.0};
+        QImage expected =
+            SnowCanvasRuntime::renderImageSourcesToImage(rect, original.size(), {{original, rect}});
+        expected.setColorSpace(colorSpace);
+        expected = ScreenshotResultCompositor::compose(expected, {});
+        auto actual = renderScreenshotPinnedViewport(source);
+        require(hasSamePixels(actual, expected) && actual.format() == expected.format() &&
+                    actual.colorSpace() == expected.colorSpace() &&
+                    actual.devicePixelRatio() == expected.devicePixelRatio() &&
+                    actual.dotsPerMeterX() == expected.dotsPerMeterX() &&
+                    actual.dotsPerMeterY() == expected.dotsPerMeterY() &&
+                    actual.offset() == expected.offset() &&
+                    actual.textKeys() == expected.textKeys(),
+                "native pinned export must match projected pixels and fresh raster metadata");
+        if (!colorSpace.isValid() || colorSpace == QColorSpace(QColorSpace::SRgb)) {
+            require(actual.constBits() == original.constBits(),
+                    "identity export must retain native premultiplied storage");
+            source.backgroundImage.fill(Qt::red);
+            require(hasSamePixels(actual, expected), "input mutation must not modify an export");
+            actual.fill(Qt::blue);
+            require(hasSamePixels(original, expected), "export mutation must not modify input");
+        }
+        require(renderScreenshotPinnedViewport(source, [] { return true; }).isNull(),
+                "identity export must honor cancellation");
+    }
+    ScreenshotPinnedViewportExportSource source{{}, original, rect, original.size(), {}, {}, 0.5};
+    auto expected =
+        SnowCanvasRuntime::renderImageSourcesToImage(rect, original.size(), {{original, rect}});
+    expected.setColorSpace(original.colorSpace());
+    expected = ScreenshotResultCompositor::compose(expected, {}, 1, 0.5);
+    const auto actual = renderScreenshotPinnedViewport(source);
+    require(hasSamePixels(actual, expected) && actual.constBits() != original.constBits(),
+            "opacity changes must detach shared pixels and preserve composition rounding");
+}
+
+void croppedCompositionMatchesFullResult() {
+    for (const QSize size : {QSize(91, 73), QSize(1537, 1025)}) {
+        QImage content(size, QImage::Format_ARGB32_Premultiplied);
+        content.setColorSpace(QColorSpace::SRgb);
+        for (int y = 0; y < size.height(); ++y) {
+            auto* row = reinterpret_cast<QRgb*>(content.scanLine(y));
+            for (int x = 0; x < size.width(); ++x)
+                row[x] = qPremultiply(
+                    qRgba((x * 7) % 256, (y * 11) % 256, (x + y) % 256, (x * 3 + y * 5) % 256));
+        }
+        std::vector<ScreenshotResultStyle> styles;
+        for (const int effect : {0, 9}) {
+            ScreenshotResultStyle rounded;
+            rounded.cornerRadius = 23;
+            rounded.shadowWidth = effect;
+            rounded.shadowColor = QColor(30, 75, 140, 170);
+            styles.push_back(rounded);
+            auto border = rounded;
+            border.borderType = ScreenshotSelectionBorderType::Border;
+            border.borderWidth = effect;
+            border.borderColor = Qt::yellow;
+            styles.push_back(border);
+            QPainterPath region;
+            region.setFillRule(Qt::OddEvenFill);
+            region.addEllipse(QRectF(0, 0, size.width(), size.height()));
+            region.addRect(QRectF(size.width() * 0.2, size.height() * 0.2, size.width() * 0.35,
+                                  size.height() * 0.4));
+            rounded.region =
+                ScreenshotRegionGeometry::fromPath(region, ScreenshotRegionType::Curve);
+            styles.push_back(rounded);
+            border.region = rounded.region;
+            styles.push_back(border);
+            rounded.region = ScreenshotRegionGeometry(
+                QRegion(0, 0, 25, 31)
+                    .united(QRegion(size.width() - 31, size.height() - 43, 31, 43)));
+            styles.push_back(rounded);
+        }
+        for (const auto& style : styles) {
+            for (const qreal opacity : {1.0, 0.55}) {
+                const auto full = ScreenshotResultCompositor::compose(content, style, 1, opacity);
+                require(!full.isNull(), "full composition reference succeeds");
+                for (const QRect crop :
+                     {QRect(-7, -5, 40, 35), QRect(13, 17, 51, 39),
+                      QRect(size.width() - 11, size.height() - 9, 37, 33), QRect(503, 507, 39, 31),
+                      QRect(size.width() + 50, size.height() + 50, 9, 7)}) {
+                    const auto expected = full.copy(crop);
+                    const auto actual =
+                        ScreenshotResultCompositor::composeViewport(content, style, crop, opacity);
+                    if (!hasSamePixels(actual, expected)) {
+                        qWarning() << "Cropped composition mismatch" << size << crop
+                                   << bool(style.region) << style.effectWidth() << opacity;
+                        bool reported = false;
+                        for (int y = 0; y < actual.height() && !reported; ++y)
+                            for (int x = 0; x < actual.width() && !reported; ++x)
+                                if (actual.pixel(x, y) != expected.pixel(x, y)) {
+                                    qWarning() << QPoint(x, y) << actual.pixelColor(x, y)
+                                               << expected.pixelColor(x, y);
+                                    reported = true;
+                                }
+                    }
+                    const auto layout = ScreenshotResultCompositor::layoutForContent(size, style);
+                    auto tileRect =
+                        ScreenshotResultCompositor::viewportRenderRect(size, style, crop)
+                            .intersected(layout.contentRect)
+                            .translated(-layout.contentRect.topLeft());
+                    if (tileRect.isEmpty())
+                        tileRect = QRect(0, 0, 1, 1);
+                    const auto partial = ScreenshotResultCompositor::composeViewport(
+                        content.copy(tileRect), size, tileRect.topLeft(), style, crop, opacity);
+                    require(hasSamePixels(partial, expected),
+                            "partial content composition preserves full-domain pixels");
+                    require(hasSamePixels(actual, expected) &&
+                                actual.format() == expected.format() &&
+                                actual.colorSpace() == expected.colorSpace(),
+                            "cropped composition must exactly match full render then crop");
+                }
+                ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+            }
+        }
+    }
+}
+
+void croppedSourceProjectionMatchesFullResult() {
+    QImage background(1537, 1025, QImage::Format_RGBA8888);
+    for (int y = 0; y < background.height(); ++y)
+        for (int x = 0; x < background.width(); ++x)
+            background.setPixelColor(
+                x, y, QColor((x * 7) % 256, (y * 11) % 256, (x + y) % 256, (x * 3 + y * 5) % 256));
+    const QRectF canvas(-17.25, 4.5, 1537.25, 1025.75);
+    for (const QSize size :
+         {QSize(1537, 1025), QSize(1999, 1333), QSize(511, 341), QSize(3074, 2050)}) {
+        const QList<CanvasExportSource> sources{{background, canvas}};
+        const auto full = SnowCanvasRuntime::renderImageSourcesToImage(canvas, size, sources);
+        for (const QRect crop : {QRect(17, 13, 73, 59), QRect(501, 509, 99, 65),
+                                 QRect(size.width() - 91, size.height() - 71, 109, 87),
+                                 QRect(-9, -7, 37, 31), QRect(11, 9, 37, 1200)}) {
+            const auto actual =
+                SnowCanvasRuntime::renderImageSourcesToImage(canvas, size, sources, crop);
+            const auto expected = full.copy(crop);
+            if (!hasSamePixels(actual, expected))
+                qWarning() << "Cropped source projection mismatch" << size << crop;
+            require(hasSamePixels(actual, expected),
+                    "cropped source projection must preserve the original sampling phase");
+            auto layeredSources = sources;
+            layeredSources.append({background, canvas.adjusted(17.4, 21.7, -59.2, -17.3),
+                                   canvas.adjusted(31.3, 19.8, -37.7, -41.1)});
+            const auto layered =
+                SnowCanvasRuntime::renderImageSourcesToImage(canvas, size, layeredSources, crop);
+            const auto layeredReference =
+                SnowCanvasRuntime::renderImageSourcesToImage(canvas, size, layeredSources)
+                    .copy(crop);
+            require(hasSamePixels(layered, layeredReference),
+                    "cropped projection preserves fractional sources and coverage clips");
+            ScreenshotResultStyle style;
+            style.cornerRadius = 23;
+            style.shadowWidth = 9;
+            ScreenshotPinnedViewportExportSource pinned{{},    background, canvas, size,
+                                                        style, {},         .55};
+            pinned.visibleCanvasRect =
+                QRectF(canvas.x() + crop.x() * canvas.width() / size.width(),
+                       canvas.y() + crop.y() * canvas.height() / size.height(),
+                       crop.width() * canvas.width() / size.width(),
+                       crop.height() * canvas.height() / size.height());
+            const auto pinnedActual = renderScreenshotPinnedViewport(pinned);
+            const auto pinnedExpected =
+                ScreenshotResultCompositor::compose(full, style, 1, .55).copy(crop);
+            if (!hasSamePixels(pinnedActual, pinnedExpected)) {
+                const auto plan = screenshotPinnedViewportRenderPlan(pinned);
+                qWarning() << "Pinned cropped projection mismatch" << size << crop
+                           << pinnedActual.size() << plan->outputPixelRect
+                           << plan->contentPixelRect.value_or(QRect());
+                bool reported = false;
+                for (int y = 0;
+                     y < std::min(pinnedActual.height(), pinnedExpected.height()) && !reported; ++y)
+                    for (int x = 0;
+                         x < std::min(pinnedActual.width(), pinnedExpected.width()) && !reported;
+                         ++x)
+                        if (pinnedActual.pixel(x, y) != pinnedExpected.pixel(x, y)) {
+                            qWarning() << QPoint(x, y) << pinnedActual.pixelColor(x, y)
+                                       << pinnedExpected.pixelColor(x, y);
+                            reported = true;
+                        }
+            }
+            require(hasSamePixels(pinnedActual, pinnedExpected),
+                    "pinned styled crop preserves scaled source sampling and composition");
+        }
+    }
+}
+
 void emptyPinnedSourceMatchesCanvasProjection() {
     SnowCanvasRuntime runtime;
     QImage background(37, 19, QImage::Format_RGBA8888);
@@ -3508,9 +4098,12 @@ int main(int argc, char** argv) {
         }
         diagnostics.shutdown();
         if (application.arguments().contains(QStringLiteral("--print-snapshots-only"))) {
+            croppedSourceProjectionMatchesFullResult();
+            croppedCompositionMatchesFullResult();
             pinnedRegionExportPreservesGapAnnotations();
             pinnedViewportSourceRendersExpectedPixels();
             emptyPinnedSourceMatchesCanvasProjection();
+            nativePinnedSourceSharesImmutablePixels();
             pinnedViewportExportsReleaseImportedSnapshots();
             return EXIT_SUCCESS;
         }
@@ -3529,6 +4122,8 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         if (application.arguments().contains(QStringLiteral("--row-source-only"))) {
+            codecWorkingEstimatesAreDimensionOnlyAndConservative();
+            verifiedTransparentRowsAvoidCodecMaterialization();
             rowRequestsCoalesceAndReuseBackingImage();
             convertedRowSourcesRetainOriginalPixelsWithoutMaterializing();
             lazyResizeRowsAndRegionsPreserveFullImagePixels();
@@ -3582,6 +4177,8 @@ int main(int argc, char** argv) {
                 clipboardAndSavesShareConfiguredEncoding(compression, clipboardFirst);
         }
         nonPngSaveReadsPixelsWithoutEncodingPng();
+        stagedFilesPublishExclusivelyWithBoundedFallback();
+        sharedEncodingsCoverNativeAndConvertedImages();
         fileEncodingsCoalesceAndNormalizeOptions();
         pdfPayloadReusePreservesDestinationMetadata();
         failedFileEncodingCanRetry();
@@ -3595,6 +4192,8 @@ int main(int argc, char** argv) {
         translucentWideGamutRowsKeepStraightAlphaThroughResizeAndEncoding();
         croppedRowsDoNotRejectDestinationsAfterTheirLastPixel();
         boundedExportRowsTests();
+        verifiedTransparentRowsAvoidCodecMaterialization();
+        codecWorkingEstimatesAreDimensionOnlyAndConservative();
         pngCacheBudgetEvictsLeastRecentlyUsedResults();
         oversizedPngStillFansOutWithoutRetention();
         cachedPngSavesReuseBytesBeyondRawCacheBudget();
@@ -3608,6 +4207,9 @@ int main(int argc, char** argv) {
         styledPinnedTextAnnotationsKeepTheirFullSourceOrigin();
         pinnedRegionExportPreservesGapAnnotations();
         emptyPinnedSourceMatchesCanvasProjection();
+        nativePinnedSourceSharesImmutablePixels();
+        croppedCompositionMatchesFullResult();
+        croppedSourceProjectionMatchesFullResult();
         pinnedViewportExportsReleaseImportedSnapshots();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

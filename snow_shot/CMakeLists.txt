@@ -749,6 +749,17 @@ add_library(snow_shot_runtime_activity INTERFACE)
 target_include_directories(snow_shot_runtime_activity INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_sources(snow_shot_runtime_activity INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/runtime/runtimeactivitytracker.h")
+# Native sharing/printing and all export hosts share one scheduler and memory-admission budget.
+add_library(snow_shot_export_scheduling STATIC src/presentation/services/screenshotexportcoordinator.cpp)
+target_include_directories(snow_shot_export_scheduling PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_export_scheduling PUBLIC Qt6::Gui snow_shot_image_codec PRIVATE snow_shot_diagnostics)
+snow_shot_register_source_capability(export_scheduling
+    FULL_TARGET snow_shot_export_scheduling MINI_TARGET snow_shot_export_scheduling_mini)
+snow_shot_source_requires(export_scheduling SOURCES
+    include/snow_shot/presentation/screenshotexportcoordinator.h
+    src/presentation/services/screenshotairdropservice.cpp
+    src/presentation/services/screenshotprintservice.cpp)
+
 add_library(snow_shot_memory_optimization STATIC
     src/runtime/memoryoptimizationcontroller.cpp)
 target_link_libraries(snow_shot_memory_optimization PUBLIC snow_shot_runtime_activity Qt6::Core)
@@ -1319,7 +1330,7 @@ set(SNOW_SHOT_COLLAGE_EXPORT_TEST_SOURCES
     src/presentation/services/screenshotsavepreviewcanvas.cpp
     src/presentation/services/screenshotclipboardservice.cpp
     src/presentation/services/screenshotexportartifact.cpp
-    src/presentation/services/screenshotexportcoordinator.cpp
+    include/snow_shot/presentation/screenshotexportcoordinator.h
     src/presentation/services/screenshotexportpinnedsource.cpp
     src/presentation/services/screenshotimagefileservice.cpp
     src/presentation/services/screenshotpdfexport.cpp
@@ -1872,7 +1883,7 @@ snow_shot_source_requires(airdrop SOURCES
     src/presentation/pinned/screenshotpinnedlive.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp)
 target_include_directories(snow_shot_airdrop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_airdrop PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
+target_link_libraries(snow_shot_airdrop PUBLIC Qt6::Widgets PRIVATE snow_shot_diagnostics)
 if(APPLE)
     target_sources(snow_shot_airdrop PRIVATE src/platform/macos/nativeairdrop.mm)
     target_compile_options(snow_shot_airdrop PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
@@ -1890,14 +1901,15 @@ snow_shot_source_requires(print SOURCES
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/imageediting/imageeditingexportcontroller.cpp)
 target_include_directories(snow_shot_print PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
+target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE snow_shot_diagnostics)
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)
     target_link_libraries(snow_shot_print PRIVATE shell32 uuid ole32 runtimeobject windowsapp
         d2d1 d3d11 dxgi windowscodecs)
 elseif(APPLE)
-    target_sources(snow_shot_print PRIVATE src/platform/macos/nativeprint.mm)
+    target_sources(snow_shot_print PRIVATE src/platform/macos/nativeprint.mm
+        src/platform/macos/nativeprintimage.mm)
     target_compile_options(snow_shot_print PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
     target_link_libraries(snow_shot_print PRIVATE "-framework AppKit")
 else()
@@ -1983,7 +1995,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotcolorpickerwindow.cpp
     src/presentation/services/screenshotcontroller.cpp
     src/presentation/services/screenshotshortcutexitconfirmation.cpp
-    src/presentation/services/screenshotexportcoordinator.cpp
+    include/snow_shot/presentation/screenshotexportcoordinator.h
     src/presentation/services/screenshotmessageservice.cpp
     src/presentation/services/screenshothistoryservice.cpp
     src/presentation/services/screenshotdisplayconfigurationobserver.cpp
@@ -2941,6 +2953,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-region-coverage-tests
+        COMMAND snow-shot-screenshot-result-compositor-tests --region-coverage-only -platform offscreen)
+    set_tests_properties(snow-shot-region-coverage-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     add_executable(snow-shot-screenshot-export-service-tests
         tests/screenshot_export_service_tests.cpp
@@ -3475,7 +3493,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/pin_to_screen_shortcut_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportartifact.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
     )
@@ -5331,7 +5349,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectionmodel.cpp
         src/presentation/selection/screenshotselectionparams.cpp
         src/presentation/pinned/screenshotpinnededitcontroller.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -5953,7 +5971,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/pinnedtextstylecapture.cpp
         ${SNOW_SELECTED_FILES_SOURCES}
         src/presentation/services/screenshotfilepinbatch.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
         include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotclipboardcontent.cpp
         src/presentation/services/pinnedcolorswatch.cpp
@@ -6343,7 +6360,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotclipboardservice.h
         include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotclipboardservice.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
     )
     target_include_directories(snow-shot-export-coordinator-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -6387,7 +6403,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
     )
@@ -6514,7 +6530,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
     )
@@ -10341,7 +10357,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/services/screenshotsaveexportpipeline.cpp
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
     )
     target_include_directories(snow-shot-save-to-file-performance-benchmark PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -10436,7 +10452,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/selection/screenshotselectionmodel.cpp
         src/presentation/selection/screenshotselectionparams.cpp
         src/presentation/pinned/screenshotpinnededitcontroller.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         src/presentation/services/screenshotexportartifact.cpp
         src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/ocr/screenshotrecognitionimage.cpp
@@ -11502,7 +11518,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-auto-filter-tests
         tests/screenshot_auto_filter_tests.cpp
         src/presentation/tools/screenshotautofiltercontroller.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
         include/snow_shot/presentation/screenshotautofiltercontroller.h)
     target_include_directories(snow-shot-auto-filter-tests PRIVATE include
         "${SNOW_SHOT_SNOW_IMAGE_DIR}/include"
@@ -12982,7 +12998,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_sources(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     add_executable(snow-shot-airdrop-service-tests tests/screenshot_airdrop_service_tests.cpp)
-    target_link_libraries(snow-shot-airdrop-service-tests PRIVATE snow_shot_airdrop)
+    target_link_libraries(snow-shot-airdrop-service-tests PRIVATE snow_shot_airdrop snow_shot_export_scheduling)
     snow_shot_import_offscreen_platform(snow-shot-airdrop-service-tests)
     add_test(NAME snow-shot-airdrop-service-tests
         COMMAND snow-shot-airdrop-service-tests -platform offscreen)

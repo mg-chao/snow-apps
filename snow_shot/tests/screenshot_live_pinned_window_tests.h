@@ -599,6 +599,65 @@ void deferredCopyRetainsItsActionTimeFrame() {
     window.closeLiveWindow();
 }
 
+void delayedCapturesLeaveExportWorkersAvailable() {
+    auto source = std::make_shared<FakeSource>();
+    source->deferFrames = true;
+    ScreenshotPinnedWindow window;
+    present(window, config(source));
+    QObject receiver;
+    std::vector<std::shared_ptr<ScreenshotExportArtifact>> artifacts;
+    int completed = 0;
+    for (int i = 0; i < 8; ++i) {
+        auto artifact = Access::artifact(window);
+        require(artifact &&
+                    artifact->requestImage(
+                        &receiver,
+                        [&](auto result) {
+                            require(result.succeeded() &&
+                                        result.image.pixelColor(0, 0) == QColor(Qt::red),
+                                    "delayed exports preserve the frame frozen at request time");
+                            ++completed;
+                        }),
+                "start deferred live export");
+        artifacts.push_back(std::move(artifact));
+    }
+    require(source->pending.size() == 8 && completed == 0,
+            "all live requests wait for capture completion");
+    artifacts[0]->cancel();
+    artifacts[1].reset();
+    int unrelated = 0;
+    for (int i = 0; i < 2; ++i) {
+        require(ScreenshotExportCoordinator::shared()
+                    .submit(
+                        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                        [](const ScreenshotExportCancellation&) {
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [&](auto result) {
+                            require(result.succeeded(), "unrelated worker succeeds");
+                            ++unrelated;
+                        })
+                    .isValid(),
+                "unrelated export is admitted while native capture waits");
+    }
+    wait([&] { return unrelated == 2; }, "deferred captures do not occupy either export worker");
+    source->publish(Qt::blue);
+    source->deliver();
+    wait([&] { return completed == 6; },
+         "remaining subscribers complete after cancelled and destroyed requests");
+    auto failed = Access::artifact(window);
+    bool failureDelivered = false;
+    require(failed && failed->requestImage(&receiver,
+                                           [&](auto result) {
+                                               require(!result.succeeded(),
+                                                       "source shutdown yields no export pixels");
+                                               failureDelivered = true;
+                                           }),
+            "start pending capture before source shutdown");
+    source->shutdown();
+    wait([&] { return failureDelivered; }, "shutdown completes pending live capture with failure");
+}
+
 void stoppedSourceClosesOnlyItsPin() {
     auto source = std::make_shared<FakeSource>();
     auto peerSource = std::make_shared<FakeSource>();
@@ -1632,6 +1691,7 @@ void pinnedLiveWindowTests() {
     live_pinned_tests::presentationFollowsOwnerGeometryAndLifetime();
     live_pinned_tests::frameSnapshotsAndTransforms();
     live_pinned_tests::deferredCopyRetainsItsActionTimeFrame();
+    live_pinned_tests::delayedCapturesLeaveExportWorkersAvailable();
     live_pinned_tests::stoppedSourceClosesOnlyItsPin();
     live_pinned_tests::statusAndCapabilityGates();
     live_pinned_tests::statusFitsConstrainedContent();

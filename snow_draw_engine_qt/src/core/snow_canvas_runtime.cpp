@@ -463,6 +463,14 @@ QImage SnowCanvasRuntime::renderImageSourcesToImage(const QRectF& canvasRect,
     return snow_canvas_export::renderImageSourcesToImage(canvasRect, outputSize, sources);
 }
 
+QImage SnowCanvasRuntime::renderImageSourcesToImage(const QRectF& canvasRect,
+                                                    const QSize& outputSize,
+                                                    const QList<CanvasExportSource>& sources,
+                                                    const QRect& outputPixelRect) {
+    return snow_canvas_export::renderImageSourcesToImage(canvasRect, outputSize, sources,
+                                                         outputPixelRect);
+}
+
 QImage SnowCanvasRuntime::renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                                         const QList<CanvasExportSource>& sources,
                                         const QImage& background) {

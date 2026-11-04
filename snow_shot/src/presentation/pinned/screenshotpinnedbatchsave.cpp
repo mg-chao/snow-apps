@@ -8,6 +8,8 @@
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/message.h"
+#include "../services/screenshotexportfiletransfer_p.h"
+#include <limits>
 
 #include <QFile>
 #include <QApplication>
@@ -23,7 +25,7 @@
 namespace {
 QPointer<QObject> activeBatchFileOperation;
 
-// QFile::copy refuses existing destinations, including files created after our collision check.
+// Exclusive publication refuses destinations created after our collision check.
 // Stage first so encoders never open a user-owned destination with overwrite semantics.
 ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const QString& directory,
                                              const QString& baseName, int& suffix,
@@ -60,11 +62,11 @@ ScreenshotExportTaskResult publishBatchFiles(const QStringList& sources, const Q
         bool collision = false;
         QString error;
         for (qsizetype i = 0; i < sources.size(); ++i) {
-            QFile source(sources.at(i));
-            if (cancellation.isCancellationRequested() || !source.copy(destinations.at(i))) {
+            if (!screenshot_export_file_transfer::publishExclusive(
+                    sources.at(i), destinations.at(i),
+                    [&] { return cancellation.isCancellationRequested(); }, &error)) {
                 collision = QFileInfo::exists(destinations.at(i)) ||
                             QFileInfo(destinations.at(i)).isSymLink();
-                error = source.errorString();
                 break;
             }
             created.append(destinations.at(i));
@@ -363,6 +365,8 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
     void submitPublication(const QStringList& paths,
                            std::optional<ScreenshotRecognitionFileSnapshot> recognition = {}) {
         auto suffix = std::make_shared<int>(m_suffix);
+        const qint64 workingBytes =
+            recognition ? std::numeric_limits<qint64>::max() : qint64(1024) * 1024;
         m_job = ScreenshotExportCoordinator::shared().submit(
             this, ScreenshotExportCoordinator::Priority::Foreground,
             [paths, recognition = std::move(recognition), staging = m_staging, cache = m_cache,
@@ -375,11 +379,14 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
                 if (recognition) {
-                    const auto result =
-                        ScreenshotRecognitionFileExport::saveToPath(*recognition, paths.first());
+                    const auto result = ScreenshotRecognitionFileExport::saveToPath(
+                        *recognition, paths.first(), false,
+                        [&] { return cancellation.isCancellationRequested(); });
                     if (!result.succeeded())
                         return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::File, result.error);
+                            result.wasCancelled ? ScreenshotExportFailureStage::Cancelled
+                                                : ScreenshotExportFailureStage::File,
+                            result.error);
                 }
 #else
                 Q_UNUSED(recognition);
@@ -389,7 +396,8 @@ class ScreenshotPinnedBatchSaveSession final : public QObject {
             [this, suffix](ScreenshotExportTaskResult result) {
                 m_suffix = *suffix;
                 complete(std::move(result));
-            });
+            },
+            workingBytes);
         if (!m_job.isValid())
             complete(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Queue,

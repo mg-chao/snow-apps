@@ -8,6 +8,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/exportfilename.h"
 #include "screenshotsaveexportpipeline.h"
+#include "screenshotexportmemory_p.h"
 #include "screenshotsavefooter.h"
 #include "screenshotsaveresult.h"
 #include "widgets/button.h"
@@ -1019,7 +1020,8 @@ class SaveContent final : public QWidget {
                             });
                         m_preview->setOutput(m_source.preview, m_state.sourceSize);
                         changed();
-                    });
+                    },
+                    screenshot_export_memory::previewWorkingBytes(rows.size));
                 if (!m_job.isValid())
                     sourceFailed(tr("The screenshot export queue is full"));
             });
@@ -1113,7 +1115,10 @@ class SaveContent final : public QWidget {
                 setProperty("encodedGeneration", QVariant::fromValue(generation));
                 if (generation == m_generation)
                     startRender();
-            });
+            },
+            screenshot_export_memory::resizedEncodingWorkingBytes(
+                m_source.rows.size, options.size, options.format,
+                {options.quality, options.compressionLevel}, bool(prepared)));
         if (!m_job.isValid()) {
             m_renderGeneration.reset();
             saveFailed(tr("The screenshot export queue is full"));
@@ -1189,7 +1194,8 @@ class SaveContent final : public QWidget {
                     return;
                 }
                 publishPreview(std::move(result.image), options);
-            });
+            },
+            screenshot_export_memory::previewWorkingBytes(options.size));
         if (!m_decodeJob.isValid()) {
             m_preview->setBusy(false);
             showError(tr("The screenshot export queue is full"));

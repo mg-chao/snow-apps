@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cmath>
+#include "snow_shot/presentation/screenshotexportcache.h"
 
 namespace {
 QByteArray pinnedExportHistoryStroke(QPointF offset = {}) {
@@ -79,6 +80,39 @@ void pinnedSnapshotMemoryMetadataTracksCachedDocument() {
                 annotatedCached.renderingBytes == annotated.renderingBytes &&
                 annotatedCached.outputSize == empty.outputSize,
             "drawing snapshots plan their committed document before caching memory metadata");
+}
+
+void pinnedExportCacheRetainsOnlyCompletedOutput() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    auto& cache = ScreenshotExportCache::pinnedPixels();
+    cache.clear();
+    const auto cleanup = qScopeGuard([&] { cache.clear(); });
+    QImage held;
+    {
+        PinnedSelectionFixture fixture;
+        auto& window = fixture.add({40, 60});
+        Access::setGeneralOpacity(window, 55);
+        auto artifact = Access::viewportExport(window);
+        require(cache.retainedBytes() == 0, "pending export donors do not enter output retention");
+        held = pinnedExportSnapshotPixels(artifact, window);
+        require(cache.retainedBytes() == held.sizeInBytes(),
+                "cache charges the actual completed pixel storage");
+        artifact.reset();
+        const auto repeated = pinnedExportSnapshotPixels(Access::viewportExport(window), window);
+        require(held.constBits() == repeated.constBits(),
+                "completed pixels survive command release and are shared by later commands");
+        cache.clear();
+        const auto fresh = pinnedExportSnapshotPixels(Access::viewportExport(window), window);
+        require(fresh.constBits() != held.constBits() && fresh == held,
+                "trimmed export recomputes pixels without invalidating a held consumer");
+        require(Access::crop(window, QRectF(10, 20, 40, 30)), "select a small retained crop");
+        cache.clear();
+        const auto crop = pinnedExportSnapshotPixels(Access::viewportExport(window), window);
+        require(cache.retainedBytes() == crop.sizeInBytes() && crop.size() == QSize(40, 30),
+                "cropped exports charge final dimensions rather than the full composition");
+    }
+    require(cache.retainedBytes() == 0 && !held.isNull(),
+            "destroying a window releases cached output while external pixels remain valid");
 }
 
 void pinnedCapturedPresentationReplacesDonor() {
@@ -174,6 +208,61 @@ void pinnedAsyncSnapshotsMaterializeAndCancel() {
         }
         waitForUi(20);
         require(completions == 1, "late materialization never completes a snapshot twice");
+    }
+}
+
+void pinnedRecognitionSerializationIsAsynchronousAndCancellable() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QTemporaryDir directory;
+    QObject blockerOwner;
+    for (const bool closeEarly : {false, true}) {
+        auto config = cachedOcrPinConfig(nullptr);
+        config.recognitionResults = {};
+        config.recognitionVisible = false;
+        auto window = std::make_unique<ScreenshotPinnedWindow>();
+        window->setAttribute(Qt::WA_DeleteOnClose, false);
+        require(window->present(config), "present recognition export lifetime fixture");
+        waitForUi(100);
+        QSemaphore release;
+        std::atomic_bool entered = false;
+        bool blockerFinished = false;
+        const auto unblock = qScopeGuard([&] { release.release(); });
+        const auto blocker = ScreenshotExportCoordinator::shared().submit(
+            &blockerOwner, ScreenshotExportCoordinator::Priority::Foreground,
+            [&](const ScreenshotExportCancellation&) {
+                entered = true;
+                release.acquire();
+                return ScreenshotExportTaskResult{};
+            },
+            [&](ScreenshotExportTaskResult) { blockerFinished = true; },
+            std::numeric_limits<qint64>::max());
+        require(blocker.isValid(), "admit exclusive fixture job");
+        translation_tests::waitUntil([&] { return entered.load(); }, "exclusive job begins");
+        const QString path = directory.filePath(closeEarly ? QStringLiteral("closed.txt")
+                                                           : QStringLiteral("frozen.txt"));
+        ScreenshotRecognitionFileSnapshot snapshot{ScreenshotRecognitionFileKind::Qr,
+                                                   QStringLiteral("frozen draft")};
+        Access::saveRecognition(*window, snapshot, path);
+        snapshot.source = QStringLiteral("later edit");
+        require(Access::recognitionSavePending(*window) && !QFileInfo::exists(path),
+                "recognition save returns before worker admission and publication");
+        if (closeEarly)
+            window.reset();
+        release.release();
+        translation_tests::waitUntil(
+            [&] {
+                return blockerFinished && (!window || !Access::recognitionSavePending(*window));
+            },
+            "recognition workers finish after admission");
+        if (closeEarly)
+            require(!QFileInfo::exists(path),
+                    "destroying a waiting recognition owner cancels publication");
+        else {
+            QFile file(path);
+            require(!Access::recognitionSavePending(*window) && file.open(QIODevice::ReadOnly) &&
+                        file.readAll() == "frozen draft",
+                    "recognition export uses request-time draft");
+        }
     }
 }
 

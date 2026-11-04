@@ -8,6 +8,7 @@
 #include <snow/image/service.h>
 #include <snow/image/processing.h>
 #include <snow/image/resource_estimate.h>
+#include <snow/image/resource_plan.h>
 
 #include <algorithm>
 #include <array>
@@ -1666,6 +1667,46 @@ class ExportCallbackPixelSink final : public snow::image::PixelSink {
     std::span<std::byte> m_storage;
 };
 } // namespace
+
+int32_t snow_shot_image_codec_encode_resources(uint32_t width, uint32_t height,
+                                               const SnowShotImageCodecEncodeOptions* bridgeOptions,
+                                               uint64_t* working) {
+    if (working == nullptr)
+        return 0;
+    *working = 0;
+    try {
+        snow::image::EncodeOptions options;
+        if (!validExportDimensions(width, height) ||
+            !optionsFromBridge(bridgeOptions, &options, nullptr, 0))
+            return 0;
+        SnowShotImageCodecRgba8Source source{};
+        source.width = width;
+        source.height = height;
+        CallbackRasterSource raster(source, options.format);
+        snow::image::ResourcePlanRequest request;
+        request.source = request.output = raster.descriptor();
+        request.encode_options = options;
+        // Unknown alpha is deliberately conservative. Planning never reads source pixels on the
+        // GUI thread, and includes fallback materialization when the route cannot be proven.
+        request.gpu_transform = false;
+        request.budgets.private_memory_bytes = std::numeric_limits<uint64_t>::max();
+        auto plan = snow::image::plan_resources(request);
+        if (!plan)
+            return 0;
+        for (const auto& phase : plan.value().phases) {
+            if (phase.phase != snow::image::ResourcePhase::encode)
+                continue;
+            const auto& footprint = phase.footprint;
+            if (footprint.private_memory_bytes >
+                std::numeric_limits<uint64_t>::max() - footprint.mapped_bytes)
+                return 0;
+            *working = footprint.private_memory_bytes + footprint.mapped_bytes;
+            return 1;
+        }
+    } catch (...) {
+    }
+    return 0;
+}
 
 int32_t snow_shot_image_codec_resize_resources(uint32_t sourceWidth, uint32_t sourceHeight,
                                                uint32_t outputWidth, uint32_t outputHeight,

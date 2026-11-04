@@ -284,6 +284,10 @@ snow_shot_image_codec_release_buffer(SnowShotImageCodecBuffer* buffer);
 
 // Export-only operations use caller-owned, optionally file-mapped RGBA buffers.
 typedef struct SnowShotImageCodecResizePlan SnowShotImageCodecResizePlan;
+// Conservative encode-phase storage, excluding caller-owned encoded output and Qt row caches.
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_encode_resources(
+    uint32_t width, uint32_t height, const SnowShotImageCodecEncodeOptions* options,
+    uint64_t* working_bytes);
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_resize_resources(
     uint32_t source_width, uint32_t source_height, uint32_t output_width, uint32_t output_height,
     uint64_t* retained_bytes, uint64_t* working_bytes);

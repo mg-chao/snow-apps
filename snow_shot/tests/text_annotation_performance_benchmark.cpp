@@ -30,7 +30,7 @@ template <typename Work> double medianMilliseconds(Work work) {
         QElapsedTimer timer;
         timer.start();
         work();
-        samples.push_back(timer.nsecsElapsed() / 1e6);
+        samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1e6);
     }
     std::sort(samples.begin(), samples.end());
     return samples[samples.size() / 2];
@@ -89,7 +89,7 @@ void retainedStrokeGeometry() {
     std::printf(
         "retained_geometry rows=500 description_MiB=%.2f recolour_ms=%.3f "
         "extra_stroke_preparations=%llu\n",
-        final.geometryBytes / 1048576.0, recolour,
+        static_cast<double>(final.geometryBytes) / 1048576.0, recolour,
         static_cast<unsigned long long>(final.strokePreparations - initial.strokePreparations));
 }
 
@@ -230,7 +230,8 @@ void coldSnapshotsAndVisibleCoverage() {
             std::printf("cold rows=%d style=%d prepare_ms=%.3f first_viewport_ms=%.3f "
                         "repaint_ms=%.3f descriptions_MiB=%.3f visible_cache_MiB=%.3f\n",
                         rows, int(rendering), preparation, firstPaint, repaint,
-                        descriptions.geometryBytes / 1048576., beforeRepaint.bytes / 1048576.);
+                        static_cast<double>(descriptions.geometryBytes) / 1048576.,
+                        static_cast<double>(beforeRepaint.bytes) / 1048576.);
         }
     }
 }
@@ -291,10 +292,11 @@ void viewportExport() {
             "direct mixed drawing/text exports preserve the prepared backdrop's exact pixels");
     std::printf("mixed_export source=7680x4320 prepared_ms=%.3f direct_ms=%.3f "
                 "avoided_background_MiB=%.2f\n",
-                mixedPrepared, mixedDirect, image.sizeInBytes() / 1048576.0);
+                mixedPrepared, mixedDirect, static_cast<double>(image.sizeInBytes()) / 1048576.0);
     std::printf("export source=7680x4320 crop=512x512 full_copy_ms=%.3f projected_ms=%.3f "
                 "avoided_source_MiB=%.2f no_text_4k_document_ms=%.3f\n",
-                fullCopy, projection, image.sizeInBytes() / 1048576.0, unannotated);
+                fullCopy, projection, static_cast<double>(image.sizeInBytes()) / 1048576.0,
+                unannotated);
 }
 } // namespace
 
