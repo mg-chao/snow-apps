@@ -463,6 +463,7 @@ bool ScreenshotPinnedWindow::commitPreparedCrop(
         ++m_liveFrameGeneration;
     }
     m_cropRect.reset();
+    clearTextAnnotations();
     ++m_contentReplacementGeneration;
     if (m_replacementPersistenceWriter)
         m_persistenceWriter = m_replacementPersistenceWriter;

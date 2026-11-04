@@ -259,6 +259,7 @@ struct PayloadSignature final {
     size_t resultStyleHash = 0;
     size_t canvasSessionHash = 0;
     size_t recognitionResultsHash = 0;
+    size_t textAnnotationsHash = 0;
 };
 
 bool operator==(const PayloadSignature& first, const PayloadSignature& second) {
@@ -269,7 +270,8 @@ bool operator==(const PayloadSignature& first, const PayloadSignature& second) {
            first.originalTextHash == second.originalTextHash &&
            first.resultStyleHash == second.resultStyleHash &&
            first.canvasSessionHash == second.canvasSessionHash &&
-           first.recognitionResultsHash == second.recognitionResultsHash;
+           first.recognitionResultsHash == second.recognitionResultsHash &&
+           first.textAnnotationsHash == second.textAnnotationsHash;
 }
 
 size_t payloadHash(const QByteArray& bytes) {
@@ -292,6 +294,7 @@ PayloadSignature payloadSignature(const PinnedWindowRecord& record,
     signature.resultStyleHash = payloadHash(record.resultStyle);
     signature.canvasSessionHash = payloadHash(record.canvasSession);
     signature.recognitionResultsHash = payloadHash(record.recognitionResults);
+    signature.textAnnotationsHash = payloadHash(record.textAnnotations);
     return signature;
 }
 
@@ -465,6 +468,9 @@ QJsonObject payloadsToJson(const PinnedWindowRecord& record) {
     if (!record.recognitionResults.isEmpty()) {
         payloads.insert(QStringLiteral("recognition_results"),
                         QStringLiteral("recognition_results.bin"));
+    }
+    if (!record.textAnnotations.isEmpty()) {
+        payloads.insert(QStringLiteral("text_annotations"), QStringLiteral("text_annotations.bin"));
     }
     return payloads;
 }
@@ -721,6 +727,7 @@ void clearResidentPayload(PinnedWindowRecord* record) {
     record->resultStyle.clear();
     record->canvasSession.clear();
     record->recognitionResults.clear();
+    record->textAnnotations.clear();
 }
 
 // Demotes a fully written record to its lazy form: the on-disk descriptor and the
@@ -749,7 +756,7 @@ qint64 residentPayloadBytes(const StoredRecord& stored) {
     return record.image.sizeInBytes() + 2 * record.originalHtml.size() +
            2 * record.originalText.size() + record.resultStyle.size() +
            record.canvasSession.size() + record.recognitionResults.size() +
-           retainedAnimationBytes(record) +
+           record.textAnnotations.size() + retainedAnimationBytes(record) +
            (stored.preparedSource ? stored.preparedSource->bytes().size() : 0);
 }
 
@@ -859,6 +866,7 @@ bool writePayload(const QString& root, const StoredRecord& stored, const QString
         {"result_style.bin", &record.resultStyle},
         {"canvas_session.bin", &record.canvasSession},
         {"recognition_results.bin", &record.recognitionResults},
+        {"text_annotations.bin", &record.textAnnotations},
     };
     for (const auto& blob : blobs) {
         if (blob.second->size() > kMaximumPayloadBytes ||
@@ -1107,6 +1115,7 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
         {"result_style", &record->resultStyle},
         {"canvas_session", &record->canvasSession},
         {"recognition_results", &record->recognitionResults},
+        {"text_annotations", &record->textAnnotations},
     };
     for (const auto& blob : blobs) {
         const QString key = QString::fromLatin1(blob.first);
@@ -1848,7 +1857,8 @@ PinnedWindowRepository::loadRecord(const QString& id,
     impl->observe(PinnedWindowOperation::PayloadRead);
     qint64 payloadBytes =
         8LL * (stored.record.canvasSession.size() + stored.record.recognitionResults.size() +
-               stored.record.originalHtml.size() + stored.record.originalText.size());
+               stored.record.textAnnotations.size() + stored.record.originalHtml.size() +
+               stored.record.originalText.size());
     if (allocationCheck) {
         const QString directory = payloadDirectory(impl->root, id);
         for (auto it = stored.payloads.begin(); it != stored.payloads.end(); ++it) {
@@ -2518,7 +2528,8 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
-        record.recognitionResults.size() > kMaximumPayloadBytes) {
+        record.recognitionResults.size() > kMaximumPayloadBytes ||
+        record.textAnnotations.size() > kMaximumPayloadBytes) {
         return StorageResult::failure(QStringLiteral("Pinned-window payload is too large"));
     }
     if (record.updatedUtc.isNull()) {
@@ -2608,7 +2619,8 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
-        record.recognitionResults.size() > kMaximumPayloadBytes) {
+        record.recognitionResults.size() > kMaximumPayloadBytes ||
+        record.textAnnotations.size() > kMaximumPayloadBytes) {
         return StorageResult::failure(QStringLiteral("Pinned-window source payload is invalid"));
     }
     if (record.updatedUtc.isNull()) {
@@ -2656,7 +2668,8 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         !record.surfaceCanvasRect.isValid() || record.surfaceCanvasRect.isEmpty() ||
         !record.initialWindowSize.isValid() || record.initialWindowSize.isEmpty() ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
-        record.recognitionResults.size() > kMaximumPayloadBytes) {
+        record.recognitionResults.size() > kMaximumPayloadBytes ||
+        record.textAnnotations.size() > kMaximumPayloadBytes) {
         return StorageResult::failure(QStringLiteral("Pinned-window state is invalid"));
     }
     if (record.updatedUtc.isNull()) {
@@ -2683,14 +2696,22 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         !existing->record.recognitionResults.isEmpty() ||
         existing->payloads.contains(QStringLiteral("recognition_results"));
     const bool incomingHasRecognitionResults = !record.recognitionResults.isEmpty();
+    const bool existingHasTextAnnotations =
+        !existing->record.textAnnotations.isEmpty() ||
+        existing->payloads.contains(QStringLiteral("text_annotations"));
+    const bool incomingHasTextAnnotations = !record.textAnnotations.isEmpty();
     const size_t canvasSessionHash = payloadHash(record.canvasSession);
     const size_t recognitionResultsHash = payloadHash(record.recognitionResults);
+    const size_t textAnnotationsHash = payloadHash(record.textAnnotations);
     const bool statePayloadChanged =
         (existingHasCanvasSession != incomingHasCanvasSession) ||
         (existingHasRecognitionResults != incomingHasRecognitionResults) ||
+        (existingHasTextAnnotations != incomingHasTextAnnotations) ||
         (incomingHasCanvasSession && existing->signature.canvasSessionHash != canvasSessionHash) ||
         (incomingHasRecognitionResults &&
-         existing->signature.recognitionResultsHash != recognitionResultsHash);
+         existing->signature.recognitionResultsHash != recognitionResultsHash) ||
+        (incomingHasTextAnnotations &&
+         existing->signature.textAnnotationsHash != textAnnotationsHash);
     record.sourceKind = existing->record.sourceKind;
     record.image = existing->record.image;
     record.animationSource = existing->record.animationSource;
@@ -2721,6 +2742,12 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
             payloads.insert(QStringLiteral("recognition_results"),
                             QStringLiteral("recognition_results.bin"));
         }
+        if (record.textAnnotations.isEmpty()) {
+            payloads.remove(QStringLiteral("text_annotations"));
+        } else {
+            payloads.insert(QStringLiteral("text_annotations"),
+                            QStringLiteral("text_annotations.bin"));
+        }
     }
     StoredRecord updated{std::move(record),
                          statePayloadChanged ? ++m_impl->nextPayloadRevision
@@ -2733,11 +2760,13 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
     updated.signature = existing->signature;
     updated.signature.canvasSessionHash = canvasSessionHash;
     updated.signature.recognitionResultsHash = recognitionResultsHash;
+    updated.signature.textAnnotationsHash = textAnnotationsHash;
     if (!updated.payloads.isEmpty()) {
         clearResidentImmutableSource(&updated.record);
         if (!statePayloadChanged) {
             updated.record.canvasSession.clear();
             updated.record.recognitionResults.clear();
+            updated.record.textAnnotations.clear();
         }
     }
     const QString id = updated.record.id;
@@ -2811,7 +2840,8 @@ StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
-        record.recognitionResults.size() > kMaximumPayloadBytes) {
+        record.recognitionResults.size() > kMaximumPayloadBytes ||
+        record.textAnnotations.size() > kMaximumPayloadBytes) {
         return StorageResult::failure(QStringLiteral("Pinned-window payload is too large"));
     }
     const PayloadSignature signature = m_impl->sourceSignature(record, true);
@@ -3188,7 +3218,8 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
             if (!hasCommittedFiles) {
                 candidate.bytes =
                     stored.record.canvasSession.size() + stored.record.recognitionResults.size() +
-                    stored.record.resultStyle.size() + stored.record.originalHtml.toUtf8().size() +
+                    stored.record.textAnnotations.size() + stored.record.resultStyle.size() +
+                    stored.record.originalHtml.toUtf8().size() +
                     stored.record.originalText.toUtf8().size();
                 if (stored.preparedSource.has_value())
                     candidate.bytes += stored.preparedSource->bytes().size();

@@ -6,6 +6,7 @@
 #include <QMargins>
 #include <QMetaObject>
 #include <QPointer>
+#include <QRect>
 #include <QString>
 #include <QWidget>
 
@@ -167,6 +168,11 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   QWidget* anchorWidget() const;
   void setAnchorWidget(QWidget* widget);
 
+  // QtTool placement-only override in global logical coordinates. The actual source/anchor
+  // widget continues to own visibility, focus and interaction; nullopt restores widget placement.
+  std::optional<QRect> anchorGlobalRect() const { return anchorGlobalRect_; }
+  void setAnchorGlobalRect(const std::optional<QRect>& rect);
+
   QWidget* titleWidget() const { return titleWidget_; }
   void setTitleWidget(QWidget* widget);
   QWidget* takeTitleWidget();
@@ -314,6 +320,7 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   QWidget* popupScopeWindow() const override;
   QWidget* popupSurfaceWidget() const override;
   QWidget* popupEnsureSurface() override;
+  std::optional<detail::PopupScreenRect> popupAnchorScreenSnapshot() const override;
   void popupPrepareToShow() override;
   bool popupHasContent() const override;
   detail::OverlayPopupPlacement popupPlacement() const override;
@@ -366,6 +373,7 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   QPointer<detail::OverlayPopupController> controller_;
   QPointer<QWidget> sourceWidget_;
   QPointer<QWidget> anchorWidget_;
+  std::optional<QRect> anchorGlobalRect_;
   QHash<QObject*, QMetaObject::Connection> observedWidgetDestroyedConnections_;
 
   QPointer<QWidget> ownedWidgetParkingRoot_;

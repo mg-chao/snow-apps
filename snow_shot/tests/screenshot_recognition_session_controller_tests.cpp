@@ -34,8 +34,11 @@
 #include <QDir>
 #include <QScreen>
 #include <QScopeGuard>
+#include <QElapsedTimer>
 
 #include <iostream>
+#include <array>
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -136,6 +139,90 @@ void headlessWorkflowResultsAndEdits() {
     require(session.workflowResult().value(QStringLiteral("contents")).toArray() ==
                 QJsonArray{QStringLiteral("payload")},
             "headless QR result");
+}
+
+void cachedTextResultAccess(bool benchmark = false) {
+    QEventLoop tableReady;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };
+    actions.setBusyState = [&](bool, bool tableBusy, bool) {
+        if (!tableBusy)
+            tableReady.quit();
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    require(!session.cachedTextRecognitionResult(), "no cached OCR without a current target");
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::white);
+    const ScreenshotRecognitionTarget target{QStringLiteral("cached-text"), image,
+                                             QRectF(0, 0, 80, 60)};
+    session.setTarget(target);
+    require(!session.cachedTextRecognitionResult(), "a new target has no OCR result");
+    ScreenshotRecognitionResults results;
+    results.key = target.key;
+    auto source = std::make_shared<ScreenshotOcrPresentation>();
+    source->selection = QRect(0, 0, 80, 60);
+    source->lines.append(
+        {QStringLiteral("Original text"), .95,
+         QPolygonF{QPointF(0, 0), QPointF(70, 0), QPointF(70, 20), QPointF(0, 20)}});
+    source->prepareForRendering();
+    results.text = ScreenshotOcrRecognitionResult{source};
+    results.text->filteredImage = image;
+    SnowShotTableResult table;
+    table.html = QStringLiteral("<table>") +
+                 QStringLiteral("<tr><td>One</td><td>Two</td><td>Three</td><td>Four</td></tr>")
+                     .repeated(benchmark ? 1000 : 3) +
+                 QStringLiteral("</table>");
+    results.table = table;
+    session.seedRecognitionResults(results);
+    const auto cached = session.cachedTextRecognitionResult();
+    require(cached && cached->presentation == source && cached->filteredImage.isNull() &&
+                session.cachedRecognitionResults().text->presentation == cached->presentation,
+            "the text-only accessor shares the original OCR and excludes filtered pixels");
+    session.activate(ScreenshotRecognitionSessionController::Mode::Table);
+    if (session.busy(ScreenshotRecognitionSessionController::Mode::Table)) {
+        QTimer::singleShot(5000, &tableReady, &QEventLoop::quit);
+        tableReady.exec();
+    }
+    require(!session.busy(ScreenshotRecognitionSessionController::Mode::Table),
+            "cached table parsing completes before editing or measuring cache reads");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("select_cells")},
+                                  {QStringLiteral("range"), QJsonArray{0, 0, 0, 1}}}) &&
+                session.editWorkflow({{QStringLiteral("action"), QStringLiteral("merge_cells")}}),
+            "prepare an unrelated table draft alongside cached OCR");
+    require(session.cachedTextRecognitionResult()->presentation == source,
+            "table editing does not change the cached OCR source");
+    if (benchmark) {
+        const auto median = [](auto work) {
+            std::array<double, 9> samples{};
+            for (auto& sample : samples) {
+                QElapsedTimer timer;
+                timer.start();
+                for (int i = 0; i < 10; ++i)
+                    work();
+                sample = timer.nsecsElapsed() / 10000.0;
+            }
+            std::sort(samples.begin(), samples.end());
+            return samples[samples.size() / 2];
+        };
+        std::optional<ScreenshotOcrRecognitionResult> read;
+        const double full = median([&] { read = session.cachedRecognitionResults().text; });
+        const double text = median([&] { read = session.cachedTextRecognitionResult(); });
+        require(read && read->presentation == source, "benchmark reads the same cached OCR");
+        std::cout << "recognition_cache table_cells=4000 full_snapshot_us=" << full
+                  << " text_only_us=" << text << '\n';
+    }
+    session.deactivate();
+    session.setTarget({QStringLiteral("other-target"), image, QRectF(0, 0, 80, 60)});
+    require(!session.cachedTextRecognitionResult(), "OCR lookup follows the current target");
+    session.setTarget(target);
+    require(session.cachedTextRecognitionResult()->presentation == source,
+            "returning to a cached target restores its original OCR identity");
+    session.invalidate();
+    require(!session.cachedTextRecognitionResult(), "invalidation releases the narrow cache view");
+    session.setTarget(target);
+    results.text->error = QStringLiteral("test recognition failure");
+    session.seedRecognitionResults(results);
+    require(!session.cachedTextRecognitionResult(), "failed OCR is never returned as cached text");
 }
 void tablePreparationPreservesSessionAndSiblingPopovers() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
@@ -1106,6 +1193,13 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--cached-text-only")) ||
+        application.arguments().contains(QStringLiteral("--cached-text-benchmark"))) {
+        cachedTextResultAccess(
+            application.arguments().contains(QStringLiteral("--cached-text-benchmark")));
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--notification-lifetime-only"))) {
         runRecognitionNotificationLifetimeTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -1159,6 +1253,7 @@ int main(int argc, char** argv) {
     }
     smartTypesettingUsesRecognizedLayout();
     headlessWorkflowResultsAndEdits();
+    cachedTextResultAccess();
     originalImagePreviewFollowsTextSessionLifecycle();
     deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();

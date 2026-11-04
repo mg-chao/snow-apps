@@ -5,9 +5,12 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshottextannotationgeometry.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include <QColorSpace>
 #include <QCoreApplication>
+#include <QTextDocument>
 #include <algorithm>
 
 namespace snow_shot::presentation {
@@ -64,6 +67,17 @@ void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visibl
     source.samplingSources.append({source.image, full});
     QRectF rasterBounds = full;
     if (source.resultStyle) {
+        // Bake text marks before masking the full backdrop. Painting them after the crop
+        // would restore transparent pixels outside the pin's rounded or shaped selection.
+        if (!source.textAnnotations.empty()) {
+            source.image =
+                renderScreenshotTextAnnotations(source.image, full, source.textAnnotations);
+            if (source.image.isNull()) {
+                source.error = loadError();
+                return;
+            }
+            source.textAnnotations = {};
+        }
         const auto style = ScreenshotResultCompositor::scaledStyle(*source.resultStyle, sx);
         const auto layout =
             ScreenshotResultCompositor::layoutForContent(source.image.size(), style);
@@ -157,6 +171,8 @@ ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& re
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedTextPreparation& preparation) {
     ImageEditingSource result;
+    std::shared_ptr<QTextDocument> formattedDocument;
+    qreal formattedDpi = 1;
     const auto style = decodeScreenshotResultStyle(record.resultStyle);
     if (!style) {
         result.error = loadError();
@@ -177,6 +193,8 @@ ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
             return result;
         }
         record.image = rendered->image;
+        formattedDocument = rendered->formattedDocument;
+        formattedDpi = rendered->formattedTextDevicePixelRatio;
     } else if (record.animationSource)
         record.image = record.animationSource->firstFrame;
     result.image =
@@ -188,6 +206,49 @@ ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
     result.recognition =
         ScreenshotPinnedWindow::decodeRecognitionSnapshot(record.recognitionResults);
     result.originalFileName = record.originalFileName;
+    ScreenshotTextAnnotationDocument textAnnotations;
+    if (!result.image.isNull() && !record.textAnnotations.isEmpty() &&
+        textAnnotations.restore(record.textAnnotations)) {
+        QVector<int> sourceLengths;
+        if (textAnnotations.source() == ScreenshotTextAnnotationSource::Formatted &&
+            formattedDocument) {
+            sourceLengths.append(formattedDocument->characterCount() - 1);
+        } else if (textAnnotations.source() == ScreenshotTextAnnotationSource::Ocr &&
+                   result.recognition.text && result.recognition.text->presentation) {
+            for (const auto& line : result.recognition.text->presentation->lines)
+                sourceLengths.append(static_cast<int>(line.text.size()));
+        }
+        if (!textAnnotations.validForSource(sourceLengths))
+            textAnnotations.clear();
+        QTransform pixelsToCanvas;
+        pixelsToCanvas.translate(result.canvasRect.left(), result.canvasRect.top());
+        pixelsToCanvas.scale(result.canvasRect.width() / result.image.width(),
+                             result.canvasRect.height() / result.image.height());
+        const QTransform orientedPixels =
+            QImage::trueMatrix(record.imageTransform, record.image.width(), record.image.height()) *
+            pixelsToCanvas;
+        if (textAnnotations.source() == ScreenshotTextAnnotationSource::Formatted &&
+            formattedDocument &&
+            textAnnotations.fingerprint() ==
+                screenshotFormattedTextAnnotationFingerprint(*formattedDocument)) {
+            result.textAnnotations = screenshotFormattedTextAnnotationSnapshot(
+                textAnnotations, *formattedDocument,
+                QTransform::fromScale(formattedDpi, formattedDpi) * orientedPixels);
+        } else if (textAnnotations.source() == ScreenshotTextAnnotationSource::Ocr &&
+                   result.recognition.text && result.recognition.text->presentation &&
+                   textAnnotations.fingerprint() == screenshotOcrTextAnnotationFingerprint(
+                                                        *result.recognition.text->presentation) &&
+                   !record.canvasSourceRect.isEmpty()) {
+            QTransform sourceToPixels;
+            sourceToPixels.scale(record.image.width() / record.canvasSourceRect.width(),
+                                 record.image.height() / record.canvasSourceRect.height());
+            sourceToPixels.translate(-record.canvasSourceRect.left(),
+                                     -record.canvasSourceRect.top());
+            result.textAnnotations = screenshotOcrTextAnnotationSnapshot(
+                textAnnotations, *result.recognition.text->presentation,
+                sourceToPixels * orientedPixels);
+        }
+    }
     if (record.cropRect && !result.image.isNull() &&
         screenshot_pinned_crop_geometry::valid(*record.cropRect) &&
         QRectF(record.image.rect()).contains(*record.cropRect)) {
@@ -217,6 +278,7 @@ ScreenshotExportSource imageEditingExportSource(const ImageEditingSource& source
                                                   source.canvasRect,    source.image.size(),
                                                   outputStyle,          source.smartErase};
     viewport.samplingSources = source.samplingSources;
+    viewport.textAnnotations = source.textAnnotations;
     return ScreenshotExportSource::fromPinnedViewport(std::move(viewport));
 }
 
@@ -231,6 +293,7 @@ ImageEditingSource completeImageEditingComposite(ImageEditingSource source, QIma
     source.samplingSources.clear();
     source.recognition = {};
     source.resultStyle.reset();
+    source.textAnnotations = {};
     source.flattened = true;
     if (source.image.isNull())
         source.error = loadError();

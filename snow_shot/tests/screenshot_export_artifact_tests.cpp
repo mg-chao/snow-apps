@@ -12,6 +12,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../snow_draw_engine_qt/src/rendering/snow_canvas_export.h"
 #include "../../test-support/virtualmemory.h"
 
 #include <QCoreApplication>
@@ -23,6 +24,7 @@
 #include <QSemaphore>
 #include <QColorSpace>
 #include <QCryptographicHash>
+#include <QPainter>
 
 #include <algorithm>
 #include <atomic>
@@ -2637,6 +2639,254 @@ void cancelledEncodersRetainEveryConsumerLease() {
     }
 }
 
+void pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop() {
+    QImage background(80, 60, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    SnowCanvasRuntime runtime;
+    require(
+        !runtime
+             .applyAnnotationTransaction(
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[15,15,10,10],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+             .isEmpty(),
+        "create ordinary annotation above text marks");
+    QPainterPath highlight;
+    highlight.addRect(QRectF(5, 5, 40, 30));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    marks.items.append({highlight, QColor(255, 0, 0), true});
+    marks.bounds = highlight.boundingRect();
+    QObject receiver;
+    for (const bool drawing : {false, true}) {
+        for (const bool crop : {false, true}) {
+            ScreenshotPinnedViewportExportSource source{drawing ? runtime.serializeDocumentSession()
+                                                                : QByteArray{},
+                                                        background,
+                                                        QRectF(0, 0, 80, 60),
+                                                        background.size(),
+                                                        {},
+                                                        {},
+                                                        1};
+            source.textAnnotations = marks;
+            if (crop)
+                source.visibleCanvasRect = QRectF(10, 10, 40, 30);
+            ScreenshotExportArtifact artifact(ScreenshotExportSource::fromPinnedViewport(source));
+            QImage image;
+            require(artifact.requestImage(&receiver,
+                                          [&](ScreenshotExportImageResult result) {
+                                              require(result.succeeded(),
+                                                      "text annotation export succeeds");
+                                              image = std::move(result.image);
+                                          }),
+                    "text annotation export is scheduled");
+            processUntil([&] { return !image.isNull(); });
+            const QPoint offset = crop ? QPoint(10, 10) : QPoint();
+            require(image.pixelColor(QPoint(12, 12) - offset) == QColor(Qt::red),
+                    "image exports include quick highlights in unchanged canvas coordinates");
+            require(image.pixelColor(QPoint(20, 20) - offset) ==
+                        QColor(drawing ? Qt::blue : Qt::red),
+                    "ordinary annotations render above quick text marks");
+            require(image.size() == (crop ? QSize(40, 30) : background.size()),
+                    "quick text marks retain viewport export dimensions");
+        }
+    }
+    require(background.pixelColor(12, 12) == QColor(Qt::white),
+            "exporting text marks never changes the original image");
+}
+
+void pinnedTextAnnotationsProjectAtOutputResolutionAndKeepDonorsPristine() {
+    const QRectF canvas(100, -50, 160, 100);
+    const QRectF visible(140, -30, 60, 40);
+    QImage background(80, 50, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(180, 160, 120, 200));
+    background.setColorSpace(QColorSpace::SRgb);
+    const QImage pristineBackground = background;
+    QImage donor(background.size(), background.format());
+    donor.fill(Qt::green);
+    SnowCanvasRuntime runtime;
+    require(
+        !runtime
+             .applyAnnotationTransaction(
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[150,-20,10,10],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+             .isEmpty(),
+        "create drawing over output-resolution text annotations");
+    QPainterPath highlight;
+    highlight.addRect(QRectF(130, -40, 70, 40));
+    QPainterPath underline;
+    underline.addRect(QRectF(130, 0, 70, 2));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    const QColor colour(255, 30, 10, 150);
+    marks.items.append({highlight, colour, true});
+    marks.items.append({underline, Qt::red, false});
+    marks.bounds = highlight.boundingRect().united(underline.boundingRect());
+    for (const bool drawing : {false, true}) {
+        for (const bool separateDonor : {false, true}) {
+            for (const bool annotated : {false, true}) {
+                for (const qreal scale : {0.5, 1.0, 2.0}) {
+                    ScreenshotPinnedViewportExportSource source{
+                        drawing ? runtime.serializeDocumentSession() : QByteArray{},
+                        background,
+                        canvas,
+                        QSize(qRound(canvas.width() * scale), qRound(canvas.height() * scale)),
+                        {},
+                        {},
+                        0.75};
+                    source.visibleCanvasRect = visible;
+                    if (annotated)
+                        source.textAnnotations = marks;
+                    const QImage sampling = separateDonor ? donor : background;
+                    source.samplingSources = {{sampling, canvas}};
+                    const QSize output(qRound(visible.width() * scale),
+                                       qRound(visible.height() * scale));
+                    QImage projected = SnowCanvasRuntime::renderImageSourcesToImage(
+                        visible, output, {{background, canvas}});
+                    if (annotated) {
+                        QPainter painter(&projected);
+                        painter.setRenderHint(QPainter::Antialiasing);
+                        painter.scale(scale, scale);
+                        painter.translate(-visible.x(), -visible.y());
+                        painter.setPen(Qt::NoPen);
+                        painter.setCompositionMode(QPainter::CompositionMode_Multiply);
+                        painter.fillPath(highlight, colour);
+                        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                        painter.fillPath(underline, Qt::red);
+                    }
+                    QImage expected = drawing
+                                          ? runtime.renderToImage(visible, output,
+                                                                  {{sampling, canvas}}, projected)
+                                          : projected;
+                    expected = ScreenshotResultCompositor::compose(expected, {}, 1, 0.75);
+                    snow_canvas_export::resetDiagnosticsForCurrentThread();
+                    const QImage actual = renderScreenshotPinnedViewport(source);
+                    require(!actual.isNull() && hasSamePixels(actual, expected) &&
+                                actual.colorSpace() == background.colorSpace(),
+                            "cropped exports preserve vector scale, alpha, ordering, backdrop and "
+                            "colour profile");
+                    if (drawing && annotated && !separateDonor) {
+                        const auto diagnostics = snow_canvas_export::diagnosticsForCurrentThread();
+                        require(diagnostics.directBackgroundOverlayCount == 1 &&
+                                    diagnostics.backgroundOverlayScratchBytes == 0,
+                                "ordinary drawings compose text marks directly into the output");
+                    }
+                }
+            }
+        }
+    }
+    require(hasSamePixels(background, pristineBackground) &&
+                donor.pixelColor(0, 0) == QColor(Qt::green),
+            "annotation composition leaves source and sampling pixels unchanged");
+}
+
+void backgroundOverlaysPreserveFilteringAndCancellation() {
+    QImage background(90, 60, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(180, 160, 120, 200));
+    const QImage pristine = background;
+    const QRectF full(100, -20, 90, 60);
+    QPainterPath path;
+    path.addRect(QRectF(110, -10, 50, 30));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    marks.items.append({path, QColor(240, 40, 80, 150), true});
+    marks.bounds = path.boundingRect();
+    for (bool filtered : {false, true}) {
+        SnowCanvasRuntime runtime;
+        const auto operations =
+            filtered
+                ? R"({"version":1,"operations":[{"type":"rectangle_filter","bounds":[100,-20,90,60],"style":{"filter":"gaussian_blur","strength":0.3}}]})"
+                : R"({"version":1,"operations":[{"type":"rectangle","bounds":[120,0,10,10],"style":{"fill":[0,0,255,180],"stroke_width":0}}]})";
+        require(!runtime.applyAnnotationTransaction(operations).isEmpty(),
+                "prepare direct and effectful background overlay scenes");
+        for (qreal scale : {.5, 1., 2.}) {
+            const QSize size(qRound(full.width() * scale), qRound(full.height() * scale));
+            auto prepared =
+                SnowCanvasRuntime::renderImageSourcesToImage(full, size, {{background, full}});
+            prepared = renderScreenshotTextAnnotations(prepared, full, marks);
+            const auto expected = runtime.renderToImage(full, size, {{background, full}}, prepared);
+            ScreenshotPinnedViewportExportSource source{
+                runtime.serializeDocumentSession(), background, full, size, {}, {}, 1};
+            source.textAnnotations = marks;
+            snow_canvas_export::resetDiagnosticsForCurrentThread();
+            const auto actual = renderScreenshotPinnedViewport(source);
+            const auto diagnostics = snow_canvas_export::diagnosticsForCurrentThread();
+            require(hasSamePixels(actual, expected),
+                    "background overlays preserve filtering, alpha and output-scale sampling");
+            require(filtered ? diagnostics.backgroundOverlayScratchBytes > 0
+                             : diagnostics.directBackgroundOverlayCount == 1 &&
+                                   diagnostics.backgroundOverlayScratchBytes == 0,
+                    "only an effectful scene needs a composed backdrop raster");
+            auto highDpr =
+                SnowCanvasRuntime::renderImageSourcesToImage(full, size, {{background, full}});
+            highDpr.setDevicePixelRatio(2.0);
+            const auto highDprResult = runtime.renderToImage(
+                full, size, {{background, full}}, highDpr,
+                [&](QPainter& painter, const QTransform& mapping) {
+                    return paintScreenshotTextAnnotations(painter, marks, mapping);
+                });
+            require(hasSamePixels(highDprResult, expected) && highDpr.devicePixelRatio() == 2.0,
+                    "overlay projection uses physical pixels without mutating prepared donors");
+            int calls = 0;
+            require(runtime.renderToImage(full, size, {{background, full}}, {},
+                                          [&](QPainter&, const QTransform&) {
+                                              ++calls;
+                                              return false;
+                                          })
+                            .isNull() &&
+                        calls == 1,
+                    "a cancelled overlay stops both direct and effectful exports");
+        }
+    }
+    require(hasSamePixels(background, pristine), "overlay export preserves pristine donors");
+}
+
+void styledPinnedTextAnnotationsKeepTheirFullSourceOrigin() {
+    QImage background(80, 60, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(90, 160, 210));
+    background.setColorSpace(QColorSpace::DisplayP3);
+    QPainterPath ink;
+    ink.addRect(QRectF(10, 15, 60, 25));
+    ScreenshotTextAnnotationRenderSnapshot marks;
+    marks.items.append({ink, Qt::red, true});
+    marks.bounds = ink.boundingRect();
+    for (const bool drawing : {false, true}) {
+        SnowCanvasRuntime runtime;
+        for (const bool shaped : {false, true}) {
+            ScreenshotPinnedViewportExportSource source{drawing ? runtime.serializeDocumentSession()
+                                                                : QByteArray{},
+                                                        background,
+                                                        QRectF(0, 0, 80, 60),
+                                                        background.size(),
+                                                        {},
+                                                        {},
+                                                        0.5};
+            source.textAnnotations = marks;
+            source.resultStyle.borderType = ScreenshotSelectionBorderType::Shadow;
+            source.resultStyle.shadowWidth = 4;
+            source.resultStyle.cornerRadius = 3;
+            if (shaped)
+                source.resultStyle.region = QRegion(0, 0, 30, 60) + QRect(50, 0, 30, 60);
+            const auto full = renderScreenshotPinnedViewport(source);
+            const auto reference = ScreenshotResultCompositor::compose(
+                renderScreenshotTextAnnotations(background, source.backgroundCanvasRect, marks),
+                source.resultStyle, 1, source.outputOpacity);
+            source.visibleCanvasRect = QRectF(10, 10, 40, 30);
+            const auto cropped = renderScreenshotPinnedViewport(source);
+            const auto layout = ScreenshotResultCompositor::layoutForContent(
+                source.contentPixelSize, source.resultStyle);
+            const auto expected =
+                full.copy(QRect(QPoint(10, 10) - layout.outputRect.topLeft(), QSize(40, 30)));
+            require(!full.isNull() && hasSamePixels(cropped, expected),
+                    "styled text annotation crops retain the full mask, shadow and opacity origin");
+            require(
+                hasSamePixels(full, reference) &&
+                    full.colorSpace() == QColorSpace(QColorSpace::SRgb) &&
+                    cropped.colorSpace() == full.colorSpace(),
+                "styled exports use the source profile for the compositor's sRGB normalization");
+        }
+    }
+    ScreenshotPinnedViewportExportSource source{
+        {}, background, QRectF(0, 0, 80, 60), background.size(), {}, {}, 1};
+    source.textAnnotations = marks;
+    require(renderScreenshotPinnedViewport(source, [] { return true; }).isNull(),
+            "cancelled pinned rendering does not publish annotation pixels");
+}
+
 void pinnedViewportSourceRendersExpectedPixels() {
     SnowCanvasRuntime runtime;
     const QByteArray session = runtime.serializeDocumentSession();
@@ -3150,9 +3400,30 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
 
 void boundedExportRowsTests();
 int runExportRowBenchmark(const QStringList& arguments);
+#if defined(SNOW_SHOT_TEXT_ANNOTATION_BENCHMARKS)
+int runTextAnnotationPerformanceBenchmark(int argc, char** argv);
+#endif
 
 int main(int argc, char** argv) {
+#if defined(SNOW_SHOT_TEXT_ANNOTATION_BENCHMARKS)
+    for (int i = 1; i < argc; ++i)
+        if (std::strcmp(argv[i], "--text-annotation-benchmark") == 0)
+            return runTextAnnotationPerformanceBenchmark(argc, argv);
+#endif
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
+        try {
+            pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop();
+            pinnedTextAnnotationsProjectAtOutputResolutionAndKeepDonorsPristine();
+            backgroundOverlaysPreserveFilteringAndCancellation();
+            styledPinnedTextAnnotationsKeepTheirFullSourceOrigin();
+            emptyPinnedSourceMatchesCanvasProjection();
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
     if (application.arguments().contains(QStringLiteral("--row-export-benchmark")))
         return runExportRowBenchmark(application.arguments());
     try {
@@ -3332,6 +3603,9 @@ int main(int argc, char** argv) {
         cancellationSuppressesPendingCallbacks();
         cancelledEncodersRetainEveryConsumerLease();
         pinnedViewportSourceRendersExpectedPixels();
+        pinnedTextAnnotationsExportBelowOrdinaryDrawingAndInsideCrop();
+        pinnedTextAnnotationsProjectAtOutputResolutionAndKeepDonorsPristine();
+        styledPinnedTextAnnotationsKeepTheirFullSourceOrigin();
         pinnedRegionExportPreservesGapAnnotations();
         emptyPinnedSourceMatchesCanvasProjection();
         pinnedViewportExportsReleaseImportedSnapshots();

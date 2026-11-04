@@ -702,6 +702,19 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     notify(&ScreenshotRecognitionSessionController::recognitionResultsChanged);
 }
 
+std::optional<ScreenshotOcrRecognitionResult>
+ScreenshotRecognitionSessionController::cachedTextRecognitionResult() const {
+    if (!hasTarget())
+        return std::nullopt;
+    const auto text = m_textCache.constFind(m_target.key);
+    if (text == m_textCache.cend() || !text->recognitionResult.error.isEmpty() ||
+        !text->recognitionResult.presentation)
+        return std::nullopt;
+    auto result = text->recognitionResult;
+    result.filteredImage = {};
+    return result;
+}
+
 ScreenshotRecognitionResults
 ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
     ScreenshotRecognitionResults results;
@@ -734,12 +747,7 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     results.conversions = m_conversion->entries(m_target.key);
 #endif
-    if (const auto text = m_textCache.constFind(m_target.key);
-        text != m_textCache.cend() && text->recognitionResult.error.isEmpty() &&
-        text->recognitionResult.presentation != nullptr) {
-        results.text = text->recognitionResult;
-        results.text->filteredImage = {};
-    }
+    results.text = cachedTextRecognitionResult();
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     results.tableModelSelection = m_tableModelSelection;
     results.tableEffectiveModel = resolvedRecognitionModel(Mode::Table);

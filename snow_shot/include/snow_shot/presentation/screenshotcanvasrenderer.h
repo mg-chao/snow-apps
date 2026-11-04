@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
+#include "snow_shot/presentation/screenshottextannotationrenderer.h"
 
 #include <QColor>
 #include <QCache>
@@ -196,6 +197,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                             OcrPresentationMode mode = OcrPresentationMode::BackgroundAndText);
     // Suppress rendering without discarding the latest presentation or filtered image.
     void setOcrVisible(bool visible);
+    void setTextAnnotations(ScreenshotTextAnnotationRenderSnapshot snapshot);
+    // Presentation suppression never removes the exportable annotation snapshot.
+    void setTextAnnotationsVisible(bool visible);
     void setOcrFilteredImage(QImage image, const QRectF& canvasRect);
     void clearOcrFilteredImage();
     [[nodiscard]] QImage ocrFilteredImage() const {
@@ -361,6 +365,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
     bool m_ocrVisible = true;
+    ScreenshotTextAnnotationRenderSnapshot m_textAnnotations;
+    ScreenshotTextAnnotationPaintCache m_textAnnotationPaintCache;
+    bool m_textAnnotationsVisible = true;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
     QImage m_ocrFilteredImage;
     QRectF m_ocrFilteredCanvasRect;

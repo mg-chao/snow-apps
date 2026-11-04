@@ -2,11 +2,13 @@
 #include "widgets/popup_surface_guard.h"
 #include "widgets/color_picker.h"
 #include "widgets/detail/top_level_popup_window.h"
+#include "widgets/detail/overlay_popup_surface.h"
 
 #include <QApplication>
 #include <QEvent>
 #include <QLabel>
 #include <QPushButton>
+#include <QScreen>
 #include <QTest>
 #include <QWindow>
 
@@ -27,6 +29,110 @@ void require(bool condition, const char* message) {
 void flush() {
   QCoreApplication::sendPostedEvents();
   QCoreApplication::processEvents();
+}
+
+class SurfaceMoveCounter final : public QObject {
+ public:
+  int moves = 0;
+
+ protected:
+  bool eventFilter(QObject* watched, QEvent* event) override {
+    if (event->type() == QEvent::Move) {
+      ++moves;
+    }
+    return QObject::eventFilter(watched, event);
+  }
+};
+
+void globalPlacementOverrideHasOneGeometryAuthority() {
+  QWidget host;
+  QPushButton trigger(&host);
+  host.setGeometry(10, 10, 200, 140);
+  trigger.setGeometry(20, 20, 80, 25);
+  host.show();
+  flush();
+  AdPopover popup;
+  popup.setSourceWidget(&trigger);
+  popup.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popup.setTriggers({});
+  popup.setVisibilityPolicy(AdPopover::VisibilityPolicy::Manual);
+  popup.setPlacement(AdPopover::Placement::BottomLeft);
+  popup.setAutoAdjustOverflow(false);
+  popup.setArrowVisible(false);
+  popup.setPopupOffset(0);
+  auto* content = new QWidget;
+  content->setFixedSize(80, 25);
+  popup.setContentWidget(content);
+  const QRect available = host.screen()->availableGeometry();
+  const QRect placement(available.center(), QSize(16, 8));
+  popup.setAnchorGlobalRect(placement);
+  popup.show();
+  flush();
+  auto* surface = qobject_cast<adqt::widgets::detail::OverlayPopupSurface*>(popup.surfaceWidget());
+  require(surface && surface->isVisible(),
+          "a visible source can place a tool popup beyond its own window");
+  const auto bodyTopLeft = [surface]() { return surface->bodyWidget()->mapToGlobal(QPoint()); };
+  const QPoint expected(placement.left(), placement.bottom() + 1);
+  require(popup.anchorGlobalRect() == placement && bodyTopLeft() == expected,
+          "global placement overrides geometry without changing the source anchor");
+  SurfaceMoveCounter counter;
+  surface->installEventFilter(&counter);
+  AdPopover::resetSyncPopupGeometryCountersForTesting();
+  for (int index = 0; index < 100; ++index) {
+    popup.setAnchorGlobalRect(placement);
+  }
+  require(AdPopover::syncPopupGeometryCallCountForTesting() == 0 && counter.moves == 0,
+          "repeated identical global anchors do not prepare or move the popup");
+  for (int index = 0; index < 8; ++index) {
+    popup.refreshPopupLayout();
+    flush();
+    require(bodyTopLeft() == expected, "framework refresh preserves the supplied global placement");
+  }
+  require(counter.moves == 0, "settled placement refreshes never oscillate the native surface");
+  QRect desktop;
+  for (QScreen* screen : QApplication::screens()) {
+    desktop = desktop.united(screen->geometry());
+  }
+  const QRect outsideDesktop(desktop.bottomRight() + QPoint(4096, 4096), QSize(16, 8));
+  require(!QApplication::screenAt(outsideDesktop.center()),
+          "fallback fixture lies outside every screen");
+  popup.setAnchorGlobalRect(outsideDesktop);
+  flush();
+  const QRect bodyBounds(bodyTopLeft(), surface->bodyWidget()->size());
+  require(available.contains(bodyBounds),
+          "off-screen overrides fall back to the actual anchor screen and remain screen-clamped");
+  popup.setAnchorGlobalRect(std::nullopt);
+  flush();
+  const QRect widgetAnchor(trigger.mapToGlobal(QPoint()), trigger.size());
+  require(!popup.anchorGlobalRect() &&
+              bodyTopLeft() == QPoint(widgetAnchor.left(), widgetAnchor.bottom() + 1),
+          "clearing the global override restores ordinary widget placement");
+  AdPopover embedded;
+  embedded.setSourceWidget(&trigger);
+  embedded.setTriggers({});
+  embedded.setPlacement(AdPopover::Placement::BottomLeft);
+  embedded.setAutoAdjustOverflow(false);
+  embedded.setArrowVisible(false);
+  embedded.setPopupOffset(0);
+  auto* embeddedContent = new QWidget;
+  embeddedContent->setFixedSize(60, 20);
+  embedded.setContentWidget(embeddedContent);
+  embedded.setAnchorGlobalRect(placement);
+  embedded.show();
+  flush();
+  auto* embeddedSurface =
+      qobject_cast<adqt::widgets::detail::OverlayPopupSurface*>(embedded.surfaceWidget());
+  require(embeddedSurface && !embeddedSurface->isWindow() &&
+              embeddedSurface->bodyWidget()->mapToGlobal(QPoint()) ==
+                  QPoint(widgetAnchor.left(), widgetAnchor.bottom() + 1),
+          "in-window popovers retain widget placement while a global override is configured");
+  embedded.hide();
+  popup.setAnchorGlobalRect(placement);
+  trigger.hide();
+  flush();
+  popup.refreshPopupLayout();
+  require(!surface->isVisible(),
+          "global placement never bypasses the actual source widget visibility");
 }
 
 void hiddenPreparationAndNativeRetention() {
@@ -205,6 +311,11 @@ void scopedGuardCoversLazyNestedAndReplacementSurfaces() {
 int main(int argc, char** argv) {
   qputenv("QT_QPA_PLATFORM", "offscreen");
   QApplication app(argc, argv);
+  if (app.arguments().contains(QStringLiteral("--global-anchor-only"))) {
+    globalPlacementOverrideHasOneGeometryAuthority();
+    return 0;
+  }
+  globalPlacementOverrideHasOneGeometryAuthority();
   hiddenPreparationAndNativeRetention();
   showGuardGatesInitialAndVisibleNativeTransitions();
   scopedGuardCoversLazyNestedAndReplacementSurfaces();

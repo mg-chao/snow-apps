@@ -1320,6 +1320,10 @@
             <translation>動畫圖片</translation>
         </message>
         <message>
+            <source>Annotate selected canvas text when text selection is set to Always.</source>
+            <translation>當文字選取設為「一律」時，為畫布上選取的文字加入標註。</translation>
+        </message>
+        <message>
             <source>Annotation</source>
             <translation>標註</translation>
         </message>
@@ -3474,6 +3478,10 @@
         <message>
             <source>Quick Selection Modification</source>
             <translation>快速修改選取區域</translation>
+        </message>
+        <message>
+            <source>Quick annotation for selected text</source>
+            <translation>選取文字快速標註</translation>
         </message>
         <message>
             <source>Quick save</source>

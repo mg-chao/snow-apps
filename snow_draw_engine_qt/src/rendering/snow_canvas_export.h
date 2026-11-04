@@ -20,6 +20,8 @@ struct RenderDiagnostics {
     std::size_t outputRasterBytes = 0;
     std::size_t peakScratchPoolBytes = 0;
     std::size_t peakSourceTileBytes = 0;
+    std::size_t directBackgroundOverlayCount = 0;
+    std::size_t backgroundOverlayScratchBytes = 0;
 };
 
 RenderDiagnostics diagnosticsForCurrentThread();
@@ -31,7 +33,8 @@ QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSi
 QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
                      const QSize& outputSize, const QList<CanvasExportSource>& sources,
                      const SnowCanvasSmartEraseSnapshot& smartErase = {},
-                     const QImage& background = {});
+                     const QImage& background = {},
+                     const SnowCanvasExportBackgroundOverlay& backgroundOverlay = {});
 
 QImage renderTilesToImage(SnowRuntime runtime, const QRectF& sourceFrame,
                           const QSize& sourcePixelSize, const QSize& outputSize,

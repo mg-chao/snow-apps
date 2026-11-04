@@ -1294,6 +1294,55 @@ void missingOptionalPayloadDoesNotHideRestorableImage() {
 // Invariant: demotion must not corrupt payload identity. A metadata-only
 // update after a commit reuses the committed payload instead of re-encoding
 // and re-writing it.
+void textAnnotationsSurviveLazyUpdatesAndClear() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "text annotation temporary storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(24, 12), 9));
+    record.canvasSession = QByteArrayLiteral("ordinary annotations");
+    record.textAnnotations = QByteArrayLiteral("first text annotations");
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        require(repository.upsert(record).success && repository.flush().success,
+                "text annotations commit with the source");
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations == record.textAnnotations,
+                "committed text annotations reload after source demotion");
+        record.textAnnotations = QByteArrayLiteral("recoloured text annotations");
+        require(repository.updateState(record).success && repository.flush().success,
+                "changing text marks updates a demoted mutable payload");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations == record.textAnnotations &&
+                    loaded->canvasSession == record.canvasSession,
+                "reopening retains text marks independently of ordinary drawing content");
+        loaded->opacityPercent = 83;
+        require(repository.updateState(*loaded).success && repository.flush().success,
+                "metadata-only saves retain text marks");
+        loaded->textAnnotations.clear();
+        require(repository.updateState(*loaded).success && repository.flush().success,
+                "clearing text marks removes the lazy payload descriptor");
+        const auto cleared = repository.loadRecord(id);
+        require(cleared && cleared->textAnnotations.isEmpty() &&
+                    cleared->canvasSession == record.canvasSession,
+                "clearing text marks retains the image and ordinary drawing document");
+        require(
+            !QFileInfo::exists(
+                QDir(directory.path())
+                    .filePath(
+                        QStringLiteral("pinned_windows_v2/pins/%1/text_annotations.bin").arg(id))),
+            "cleared text annotation payload files are pruned");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        const auto loaded = repository.loadRecord(id);
+        require(loaded && loaded->textAnnotations.isEmpty(),
+                "records without a text annotation payload remain restorable");
+    }
+}
+
 void metadataOnlyUpdatesDoNotRewriteCommittedPayloads() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -3103,6 +3152,10 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
+        textAnnotationsSurviveLazyUpdatesAndClear();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--image-path-only"))) {
         imagePathsResolveOnlyPersistedImages();
         return 0;
@@ -3205,6 +3258,7 @@ int main(int argc, char* argv[]) {
     sourceOnlyAdmissionAndCancellationExcludeDocumentPayloads();
     persistedSourceLoadsShareTheDecodedRasterLimit();
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
+    textAnnotationsSurviveLazyUpdatesAndClear();
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();
     specifiedGroupRemovalIsAtomicAndPersistent();

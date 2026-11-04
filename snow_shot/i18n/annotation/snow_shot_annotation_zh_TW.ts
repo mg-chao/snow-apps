@@ -2,6 +2,25 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>ScreenshotQuickTextAnnotationToolbar</name>
+        <message>
+            <source>Highlight</source>
+            <translation>醒目提示</translation>
+        </message>
+        <message>
+            <source>Strikethrough</source>
+            <translation>刪除線</translation>
+        </message>
+        <message>
+            <source>Underline</source>
+            <translation>底線</translation>
+        </message>
+        <message>
+            <source>Wavy Underline</source>
+            <translation>波浪底線</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolPalette</name>
         <message>
             <source>%1 (unavailable)</source>

@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOCRTEXTLAYOUT_H
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshottextannotationgeometry.h"
 #include <QFont>
 #include <QTextLayout>
 #include <memory>
@@ -20,6 +21,8 @@ class ScreenshotOcrTextLayout final {
                    std::optional<qreal> fontSizeCapRatio = {});
     void setSelection(const ScreenshotOcrTextRange& selection);
     [[nodiscard]] int cursorPositionAt(const QPointF& itemPosition) const;
+    [[nodiscard]] QVector<ScreenshotTextAnnotationFragment>
+    rangeFragments(const ScreenshotOcrTextRange& range) const;
 
     [[nodiscard]] bool usesSourceRows() const {
         return !m_fittedRows.empty();

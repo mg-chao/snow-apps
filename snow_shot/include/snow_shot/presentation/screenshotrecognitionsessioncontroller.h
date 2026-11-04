@@ -132,6 +132,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
                       ScreenshotQrRecognitionPort* qrRecognition,
                       SnowShotApiClient* tableRecognition);
     void seedRecognitionResults(ScreenshotRecognitionResults results);
+    // A lightweight view of the current target's original OCR, without serializing other modes.
+    [[nodiscard]] std::optional<ScreenshotOcrRecognitionResult> cachedTextRecognitionResult() const;
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] ScreenshotRecognitionResults recognitionResultsSnapshot() const;
     [[nodiscard]] bool hasTarget() const;

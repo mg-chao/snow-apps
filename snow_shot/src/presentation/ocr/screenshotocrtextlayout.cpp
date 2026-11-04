@@ -6,6 +6,7 @@
 #include <QRawFont>
 #include <QTextBoundaryFinder>
 #include <QTextOption>
+#include <QStringView>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -111,10 +112,12 @@ QVector<QRectF> normalizedOcrSourceRows(const ScreenshotOcrLine& line) {
         line.sourceLineQuads.size() < 2 || line.quad.size() != 4) {
         return {};
     }
-    const QRectF block = line.quad.boundingRect();
-    if (!block.isValid() || !std::isfinite(block.width()) || !std::isfinite(block.height())) {
+    const QPolygonF normalizedQuad({QPointF(0, 0), QPointF(1, 0), QPointF(1, 1), QPointF(0, 1)});
+    QTransform toNormalized;
+    if (!QTransform::quadToQuad(line.quad, normalizedQuad, toNormalized)) {
         return {};
     }
+    const QRectF block(0, 0, 1, 1);
     QVector<QRectF> boxes;
     for (const auto& quad : line.sourceLineQuads) {
         if (quad.size() != 4 || std::any_of(quad.begin(), quad.end(), [](const QPointF& point) {
@@ -122,12 +125,15 @@ QVector<QRectF> normalizedOcrSourceRows(const ScreenshotOcrLine& line) {
             })) {
             return {};
         }
-        const QRectF bounds = quad.boundingRect();
-        if (!bounds.isValid() || !block.contains(bounds) ||
-            std::abs(quad[0].y() - quad[1].y()) > bounds.height() * 0.1) {
+        const auto localQuad = toNormalized.map(quad);
+        const QRectF bounds = localQuad.boundingRect();
+        if (!bounds.isValid() || !std::isfinite(bounds.width()) ||
+            !std::isfinite(bounds.height()) ||
+            !block.adjusted(-0.000001, -0.000001, 0.000001, 0.000001).contains(bounds) ||
+            std::abs(localQuad[0].y() - localQuad[1].y()) > bounds.height() * 0.1) {
             return {};
         }
-        boxes.push_back(bounds);
+        boxes.push_back(bounds.intersected(block));
     }
     std::stable_sort(boxes.begin(), boxes.end(), [](const QRectF& a, const QRectF& b) {
         return a.center().y() < b.center().y();
@@ -144,10 +150,6 @@ QVector<QRectF> normalizedOcrSourceRows(const ScreenshotOcrLine& line) {
             }
             rows.push_back(box);
         }
-    }
-    for (auto& row : rows) {
-        row = QRectF((row.x() - block.x()) / block.width(), (row.y() - block.y()) / block.height(),
-                     row.width() / block.width(), row.height() / block.height());
     }
     return rows;
 }
@@ -808,6 +810,140 @@ int ScreenshotOcrTextLayout::cursorPositionAt(const QPointF& itemPosition) const
 
 QRectF ScreenshotOcrTextLayout::boundingRect() const {
     return m_bounds;
+}
+
+QVector<ScreenshotTextAnnotationFragment>
+screenshotTextLayoutAnnotationFragments(const QTextLayout& layout, int start, int end,
+                                        int textOffset) {
+    return screenshotTextLayoutAnnotationFragments(layout, layout.text(), start, end, textOffset);
+}
+
+QVector<ScreenshotTextAnnotationFragment>
+screenshotTextLayoutAnnotationFragments(const QTextLayout& layout, const QString& text, int start,
+                                        int end, int textOffset) {
+    QVector<ScreenshotTextAnnotationFragment> result;
+    start = qBound(0, start, static_cast<int>(text.size()));
+    end = qBound(start, end, static_cast<int>(text.size()));
+    if (end <= start)
+        return result;
+    // QTextLayout already owns Unicode cursor attributes for this shaped line. Reuse them
+    // across styled runs instead of segmenting the full source string for every interval.
+    if (!layout.isValidCursorPosition(start))
+        start = layout.previousCursorPosition(start);
+    if (!layout.isValidCursorPosition(end))
+        end = layout.nextCursorPosition(end);
+    const auto firstLine = layout.lineForTextPosition(start);
+    const auto lastLine = layout.lineForTextPosition(end - 1);
+    if (!firstLine.isValid() || !lastLine.isValid())
+        return result;
+    for (int index = firstLine.lineNumber(); index <= lastLine.lineNumber(); ++index) {
+        const QTextLine line = layout.lineAt(index);
+        const int rowStart = std::max(start, line.textStart());
+        const int rowEnd = std::min(end, line.textStart() + line.textLength());
+        if (!line.isValid() || rowEnd <= rowStart)
+            continue;
+        QVector<QRectF> cells;
+        // A bidi boundary has two cursor locations. Glyph-run bounds use Qt's native
+        // selection geometry and retain the correct edge of each selected script run.
+        // At least one retrieval array is required: Qt filters glyph runs that report
+        // isEmpty(), even when their native selection bounding rectangle is populated.
+        for (const auto& run :
+             line.glyphRuns(rowStart, rowEnd - rowStart, QTextLayout::RetrieveGlyphIndexes)) {
+            const QRectF bounds = run.boundingRect();
+            if (std::isfinite(bounds.left()) && std::isfinite(bounds.width()) &&
+                bounds.width() > 0.0001)
+                cells.push_back(QRectF(bounds.left(), line.y(), bounds.width(), line.height()));
+        }
+        // Tabs have no glyph run. Retain their text advance while excluding inline objects
+        // and structural separators, which are deliberately absent from annotation ink.
+        const auto rowText = QStringView(text).sliced(rowStart, rowEnd - rowStart);
+        for (qsizetype tab = rowText.indexOf(QLatin1Char('\t')); tab >= 0;
+             tab = rowText.indexOf(QLatin1Char('\t'), tab + 1)) {
+            const int position = rowStart + static_cast<int>(tab);
+            const qreal first = line.cursorToX(position);
+            const qreal last = line.cursorToX(position + 1);
+            if (std::isfinite(first) && std::isfinite(last) && std::abs(last - first) > 0.0001)
+                cells.push_back(
+                    QRectF(std::min(first, last), line.y(), std::abs(last - first), line.height()));
+        }
+        std::sort(cells.begin(), cells.end(), [](const QRectF& left, const QRectF& right) {
+            return left.left() < right.left();
+        });
+        for (const QRectF& cell : cells) {
+            if (!result.isEmpty() && result.back().range.start == textOffset + rowStart &&
+                result.back().range.end == textOffset + rowEnd &&
+                std::abs(result.back().rect.top() - cell.top()) < 0.0001 &&
+                cell.left() <= result.back().rect.right() + 0.01) {
+                result.back().rect = result.back().rect.united(cell);
+            } else {
+                result.push_back({{0, textOffset + rowStart, textOffset + rowEnd},
+                                  cell,
+                                  {},
+                                  line.y() + line.ascent()});
+            }
+        }
+    }
+    return result;
+}
+
+QVector<ScreenshotTextAnnotationFragment>
+ScreenshotOcrTextLayout::rangeFragments(const ScreenshotOcrTextRange& range) const {
+    QVector<ScreenshotTextAnnotationFragment> result;
+    const int start = qBound(0, range.start, static_cast<int>(m_text.size()));
+    const int end = static_cast<int>(
+        qBound(qint64(start), qint64(range.start) + range.length, qint64(m_text.size())));
+    if (end <= start)
+        return result;
+    if (m_direction == ScreenshotOcrTextDirection::Vertical) {
+        int first = -1;
+        int last = -1;
+        for (int index = 0; index < static_cast<int>(m_verticalGlyphs.size()); ++index) {
+            const auto& glyph = m_verticalGlyphs.at(static_cast<std::size_t>(index));
+            if (start < glyph.textStart + glyph.textLength && end > glyph.textStart) {
+                if (first < 0)
+                    first = index;
+                last = index;
+            }
+        }
+        if (first >= 0) {
+            // Rotation puts text advance on local x while keeping the beneath side on +y.
+            QTransform orientedToLayout;
+            orientedToLayout.translate(m_bounds.width(), 0.0);
+            orientedToLayout.rotate(90.0);
+            result.push_back({{0, start, end},
+                              QRectF(first * m_verticalCellAdvance, 0.0,
+                                     (last - first + 1) * m_verticalCellAdvance, m_bounds.width()),
+                              orientedToLayout,
+                              m_bounds.width() * 0.8});
+        }
+        return result;
+    }
+    if (usesSourceRows()) {
+        for (const auto& row : m_fittedRows) {
+            auto fragments = screenshotTextLayoutAnnotationFragments(
+                *row.layout, std::max(0, start - row.textStart),
+                std::min(row.textLength, end - row.textStart), row.textStart);
+            for (auto& fragment : fragments) {
+                fragment.rect =
+                    fragment.rect.intersected(row.transform.inverted().mapRect(row.bounds));
+                if (fragment.rect.isEmpty())
+                    continue;
+                fragment.localToSource *= row.transform;
+                result.push_back(std::move(fragment));
+            }
+        }
+        return result;
+    }
+    if (!m_layout)
+        return result;
+    result = screenshotTextLayoutAnnotationFragments(*m_layout, start, end);
+    const auto layoutToText = QTransform::fromTranslate(m_layoutOrigin.x(), m_layoutOrigin.y());
+    for (auto& fragment : result) {
+        fragment.rect = fragment.rect.intersected(m_bounds.translated(-m_layoutOrigin));
+        fragment.localToSource *= layoutToText;
+    }
+    result.removeIf([](const auto& fragment) { return fragment.rect.isEmpty(); });
+    return result;
 }
 
 void ScreenshotOcrTextLayout::paint(QPainter* painter, const QColor& selectionBackground,

@@ -157,6 +157,7 @@ enum class SettingsSwitchBinding {
     ShowOriginalImagePreview,
     ShowTextHighlighting,
     PinAutomaticTextRecognition,
+    PinQuickAnnotationForSelectedText,
     PinAutoResizeWindow,
     PinShowWindowButtons,
     PinShakeWindowToHideOthers,

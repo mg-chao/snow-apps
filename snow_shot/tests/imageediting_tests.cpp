@@ -46,6 +46,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshottextannotationgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingsnapshot.h"
 #include "snow_stitch_images.h"
 #include <QColorSpace>
@@ -1065,6 +1066,125 @@ void runImageEditingTests() {
         QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
     require(font >= 0, "editor fixtures load the bundled font");
     QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+    if (QApplication::arguments().contains(
+            QStringLiteral("--image-editing-text-annotations-only"))) {
+        ImageEditingSource original;
+        original.image = QImage(80, 60, QImage::Format_ARGB32_Premultiplied);
+        original.image.fill(Qt::white);
+        original.canvasRect = QRectF(100, 200, 80, 60);
+        SnowCanvasRuntime drawing;
+        require(
+            !drawing
+                 .applyAnnotationTransaction(
+                     R"({"version":1,"operations":[{"type":"rectangle","bounds":[115,215,10,10],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+                 .isEmpty(),
+            "create ordinary drawing content for quick annotation import");
+        original.canvasSession = drawing.serializeDocumentSession();
+        QPainterPath highlight;
+        highlight.addRect(QRectF(105, 205, 40, 30));
+        original.textAnnotations.items.append({highlight, QColor(255, 0, 0, 128), true});
+        original.textAnnotations.bounds = highlight.boundingRect();
+        const auto expected = renderScreenshotTextAnnotations(original.image, original.canvasRect,
+                                                              original.textAnnotations);
+        ImageEditingWindow window;
+        bool loaded = false;
+        QObject::connect(&window, &ImageEditingWindow::loaded, &window, [&](bool success) {
+            require(success, "quick text annotation import completes successfully");
+            loaded = true;
+        });
+        window.present(original);
+        awaitCondition([&] { return loaded; }, "wait for the asynchronous text annotation bake");
+        require(window.document()->image() == expected &&
+                    original.image.pixelColor(12, 12) == QColor(Qt::white),
+                "quick annotations bake into an owned editing base exactly once");
+        const auto snapshot = window.document()->snapshot();
+        require(snapshot.textAnnotations.empty() &&
+                    window.document()->runtime().hasDocumentContent(),
+                "import consumes quick annotation metadata while preserving ordinary drawing");
+        QImage output;
+        ScreenshotExportArtifact artifact(imageEditingExportSource(snapshot));
+        require(artifact.requestImage(&window,
+                                      [&](ScreenshotExportImageResult result) {
+                                          require(result.succeeded(),
+                                                  "export the imported text annotation image");
+                                          output = std::move(result.image);
+                                      }),
+                "schedule an image-editor export after text mark transfer");
+        awaitCondition([&] { return !output.isNull(); }, "complete imported text mark export");
+        require(output.pixelColor(12, 12) == expected.pixelColor(12, 12) &&
+                    output.pixelColor(20, 20) == QColor(Qt::blue),
+                "editor export preserves text marks without duplicate alpha below ordinary shapes");
+        window.shutdown();
+
+        auto cropped = original;
+        cropped.canvasSession.clear();
+        cropped.resultStyle = ScreenshotResultStyle{};
+        cropped.resultStyle->cornerRadius = 30;
+        const auto rounded = ScreenshotResultCompositor::compose(expected, *cropped.resultStyle);
+        const auto expectedCrop = rounded.copy(QRect(0, 0, 70, 50));
+        require(expectedCrop.pixelColor(5, 5).alpha() == 0,
+                "the rounded text annotation fixture has a transparent selected corner");
+        restrictImageEditingSource(cropped, original.canvasRect.adjusted(0, 0, -10, -10));
+        loaded = false;
+        ImageEditingWindow croppedWindow;
+        QObject::connect(&croppedWindow, &ImageEditingWindow::loaded, &croppedWindow,
+                         [&](bool success) {
+                             require(success, "cropped rounded text annotation import succeeds");
+                             loaded = true;
+                         });
+        croppedWindow.present(cropped);
+        awaitCondition([&] { return loaded; }, "complete cropped rounded text annotation import");
+        require(croppedWindow.document()->image() == expectedCrop,
+                "text annotation import preserves rounded alpha and paints each mark once");
+        require(cropped.textAnnotations.empty() && !cropped.resultStyle &&
+                    cropped.samplingSources.size() == 1 &&
+                    cropped.samplingSources.front().image == original.image,
+                "cropping consumes marks before the appearance and retains pristine donors");
+        croppedWindow.shutdown();
+
+        snow_shot::storage::PinnedWindowRecord record;
+        record.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;
+        record.originalText = QStringLiteral("Preserved source text");
+        record.firstCreationTextDpi = 1.5;
+        const auto preparation = captureScreenshotPinnedTextPreparation();
+        ScreenshotClipboardOriginalContent content;
+        content.text = record.originalText;
+        const auto rendered =
+            prepareScreenshotPinnedText(content, record.firstCreationTextDpi, preparation);
+        require(rendered && rendered->formattedDocument,
+                "prepare the closed formatted pin annotation fixture");
+        ScreenshotTextAnnotationDocument annotations;
+        annotations.bindSource(
+            ScreenshotTextAnnotationSource::Formatted,
+            screenshotFormattedTextAnnotationFingerprint(*rendered->formattedDocument));
+        ScreenshotTextAnnotationStyle style;
+        style.color = QColor(30, 180, 60, 150);
+        require(annotations.toggle({{0, 0, 9}}, ScreenshotTextAnnotationTool::Highlight, style),
+                "annotate the persisted formatted text source");
+        record.textAnnotations = annotations.serialize();
+        record.canvasSession = original.canvasSession;
+        auto restored = readImageEditingPinned(record, preparation);
+        require(restored.error.isEmpty() && !restored.textAnnotations.empty() &&
+                    restored.canvasSession == record.canvasSession,
+                "closed-pin import restores quick marks alongside its ordinary drawing document");
+        const auto expectedStored = renderScreenshotTextAnnotations(
+            restored.image, restored.canvasRect, restored.textAnnotations);
+        loaded = false;
+        ImageEditingWindow storedWindow;
+        QObject::connect(&storedWindow, &ImageEditingWindow::loaded, &storedWindow,
+                         [&](bool success) {
+                             require(success, "stored pin text annotation import succeeds");
+                             loaded = true;
+                         });
+        storedWindow.present(restored);
+        awaitCondition([&] { return loaded; }, "complete closed pin annotation import");
+        require(storedWindow.document()->image() == expectedStored &&
+                    storedWindow.document()->runtime().hasDocumentContent() &&
+                    record.originalText == QStringLiteral("Preserved source text"),
+                "closed-pin marks survive editing transfer while source text remains unchanged");
+        storedWindow.shutdown();
+        return;
+    }
     if (QApplication::arguments().contains(QStringLiteral("--image-editing-pin-only"))) {
         runImageEditingPinTests();
         return;

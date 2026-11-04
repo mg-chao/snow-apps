@@ -6513,6 +6513,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-export-artifact-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../snow_draw_engine_qt/crates/snow-draw-engine-c/include"
     )
     target_link_libraries(snow-shot-export-artifact-tests PRIVATE
         snow_shot_diagnostics
@@ -13733,6 +13734,121 @@ endif()
 
 # All focused fixtures and edition clones now exist. Resolve their source-owned
 # capabilities before the deferred Mini audit inspects the completed link graphs.
+add_library(snow_shot_text_annotations STATIC
+    src/presentation/pinned/screenshottextannotation.cpp
+    src/presentation/pinned/screenshottextannotationrenderer.cpp
+    src/presentation/ocr/screenshottextannotationgeometry.cpp
+    src/presentation/ocr/screenshotocrtextlayout.cpp
+    src/presentation/ocr/screenshotocrpresentation.cpp)
+target_include_directories(snow_shot_text_annotations PUBLIC include)
+target_link_libraries(snow_shot_text_annotations PUBLIC Qt6::Widgets snow_draw_engine_qt_canvas)
+target_compile_features(snow_shot_text_annotations PUBLIC cxx_std_20)
+snow_shot_register_source_capability(text_annotations
+    FULL_TARGET snow_shot_text_annotations MINI_TARGET snow_shot_text_annotations)
+snow_shot_source_requires(text_annotations SOURCES
+    src/presentation/ocr/screenshotrecognitionwindow.cpp
+    src/presentation/overlay/screenshotcanvasrenderer.cpp
+    src/presentation/services/screenshotexportpinnedsource.cpp
+    src/presentation/ocr/screenshotrecognitionimage.cpp
+    src/presentation/imageediting/imageeditingsource.cpp
+    src/presentation/imageediting/imageeditingwindow.cpp
+    src/presentation/pinned/screenshotpinnedwindow.cpp
+    src/presentation/pinned/screenshotpinnedtextannotation.cpp
+    src/presentation/pinned/screenshotquicktextannotationtoolbar.cpp)
+
+# Pin members must inherit each consumer's edition and test-hook definitions.
+get_property(_text_annotation_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target IN LISTS _text_annotation_targets)
+    get_target_property(_sources ${_target} SOURCES)
+    if("src/presentation/pinned/screenshotpinnedwindow.cpp" IN_LIST _sources)
+        target_sources(${_target} PRIVATE
+            src/presentation/pinned/screenshotpinnedtextannotation.cpp
+            src/presentation/pinned/screenshotquicktextannotationtoolbar.cpp
+            include/snow_shot/presentation/screenshotquicktextannotationtoolbar.h)
+    endif()
+endforeach()
+if(TARGET snow-shot-screenshot-tool-palette-tests)
+    target_sources(snow-shot-screenshot-tool-palette-tests PRIVATE
+        include/snow_shot/presentation/screenshotquicktextannotationtoolbar.h
+        src/presentation/pinned/screenshotquicktextannotationtoolbar.cpp
+        tests/screenshot_quick_text_annotation_toolbar_tests.cpp)
+endif()
+if(SNOW_SHOT_BUILD_TESTS)
+    set(_text_annotation_test_environment "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    if(WIN32)
+        list(APPEND _text_annotation_test_environment "QT_QPA_FONTDIR=$ENV{SystemRoot}/Fonts")
+    endif()
+    foreach(_kind IN ITEMS model geometry renderer)
+        if(_kind STREQUAL "model")
+            set(_text_annotation_test_source tests/text_annotation_model_tests.cpp)
+        elseif(_kind STREQUAL "geometry")
+            set(_text_annotation_test_source tests/text_annotation_geometry_tests.cpp)
+        else()
+            set(_text_annotation_test_source tests/screenshot_text_annotation_renderer_tests.cpp)
+        endif()
+        add_executable(snow-shot-text-annotation-${_kind}-tests ${_text_annotation_test_source})
+        target_link_libraries(snow-shot-text-annotation-${_kind}-tests PRIVATE snow_shot_text_annotations)
+        snow_shot_import_offscreen_platform(snow-shot-text-annotation-${_kind}-tests)
+        add_test(NAME snow-shot-text-annotation-${_kind}-tests
+            COMMAND snow-shot-text-annotation-${_kind}-tests -platform offscreen)
+        set_tests_properties(snow-shot-text-annotation-${_kind}-tests PROPERTIES
+            LABELS unit TIMEOUT 60 ENVIRONMENT "${_text_annotation_test_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    foreach(_pair IN ITEMS
+            "toolbar|snow-shot-screenshot-tool-palette-tests|--quick-text-annotation-only"
+            "pinned|snow-shot-pinned-window-tests|--quick-text-annotation-only"
+            "repository|snow-shot-pinned-window-repository-tests|--text-annotations-only"
+            "export|snow-shot-export-artifact-tests|--text-annotations-only"
+            "settings|snow-shot-file-pin-settings-tests|--quick-text-annotation-only"
+            "recognition-cache|snow-shot-recognition-session-controller-tests|--cached-text-only"
+            "recognition-exports|snow-shot-recognition-window-tests|--text-annotation-exports-only"
+            "selection-notifications|snow-shot-recognition-window-tests|--text-selection-notifications-only")
+        string(REPLACE "|" ";" _parts "${_pair}")
+        list(GET _parts 0 _name)
+        list(GET _parts 1 _target)
+        list(GET _parts 2 _argument)
+        if(TARGET ${_target})
+            add_test(NAME snow-shot-quick-text-annotation-${_name}-tests
+                COMMAND ${_target} ${_argument} -platform offscreen)
+            set_tests_properties(snow-shot-quick-text-annotation-${_name}-tests PROPERTIES
+                LABELS unit TIMEOUT 120 RUN_SERIAL TRUE ENVIRONMENT "${_text_annotation_test_environment}"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        endif()
+    endforeach()
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-quick-text-annotation-editor-transfer-tests
+            COMMAND snow-shot-pinned-window-tests --image-editing-only
+                --image-editing-text-annotations-only -platform offscreen)
+        set_tests_properties(snow-shot-quick-text-annotation-editor-transfer-tests PROPERTIES
+            LABELS unit TIMEOUT 120 RUN_SERIAL TRUE ENVIRONMENT "${_text_annotation_test_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    if(SNOW_SHOT_BUILD_BENCHMARKS AND TARGET snow-shot-recognition-session-controller-tests)
+        add_test(NAME snow-shot-text-annotation-recognition-cache-benchmark
+            COMMAND snow-shot-recognition-session-controller-tests --cached-text-benchmark
+                -platform offscreen)
+        set_tests_properties(snow-shot-text-annotation-recognition-cache-benchmark PROPERTIES
+            LABELS benchmark TIMEOUT 120 RUN_SERIAL TRUE
+            ENVIRONMENT "${_text_annotation_test_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    if(SNOW_SHOT_BUILD_BENCHMARKS AND TARGET snow-shot-export-artifact-tests)
+        target_sources(snow-shot-export-artifact-tests PRIVATE
+            tests/text_annotation_performance_benchmark.cpp)
+        target_compile_definitions(snow-shot-export-artifact-tests PRIVATE
+            SNOW_SHOT_TEXT_ANNOTATION_BENCHMARKS=1)
+        snow_shot_import_offscreen_platform(snow-shot-export-artifact-tests)
+        add_custom_target(snow-shot-text-annotation-performance-benchmark
+            DEPENDS snow-shot-export-artifact-tests)
+        add_test(NAME snow-shot-text-annotation-performance-benchmark
+            COMMAND snow-shot-export-artifact-tests --text-annotation-benchmark -platform offscreen)
+        set_tests_properties(snow-shot-text-annotation-performance-benchmark PROPERTIES
+            LABELS benchmark TIMEOUT 120 RUN_SERIAL TRUE
+            ENVIRONMENT "${_text_annotation_test_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endif()
 snow_shot_resolve_source_dependencies()
 
 if(SNOW_SHOT_BUILD_TESTS)

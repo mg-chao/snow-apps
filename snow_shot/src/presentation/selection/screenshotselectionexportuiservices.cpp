@@ -1681,6 +1681,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
     config.persistedCanvasSession = record.canvasSession;
     config.persistedRecognitionResults = record.recognitionResults;
+    config.persistedTextAnnotations = record.textAnnotations;
     config.persistedTextType = record.textType;
     config.persistedRecognitionVisible = record.recognitionVisible;
     config.persistedTranslationVisible = record.translationVisible;

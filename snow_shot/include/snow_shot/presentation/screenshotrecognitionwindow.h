@@ -7,9 +7,11 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
+#include "snow_shot/presentation/screenshottextannotation.h"
 #include <optional>
 
 #include <QPointF>
+#include <QHash>
 #include <QRect>
 #include <QRectF>
 #include <QStringList>
@@ -86,6 +88,17 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void()> handleCopy = noAction;
 };
 
+struct ScreenshotTextSelectionSnapshot {
+    ScreenshotTextAnnotationSource source = ScreenshotTextAnnotationSource::Ocr;
+    QVector<ScreenshotTextSelectionRange> ranges;
+    QRectF canvasBounds;
+    bool inProgress = false;
+
+    [[nodiscard]] bool empty() const {
+        return ranges.isEmpty();
+    }
+};
+
 class ScreenshotRecognitionWindow final : public QWidget {
     Q_OBJECT
 
@@ -96,6 +109,11 @@ class ScreenshotRecognitionWindow final : public QWidget {
     enum class PresentationMode {
         TopLevelWindow,
         EmbeddedChild,
+    };
+    enum class TextSelectionSnapshotMode {
+        WithGeometry,
+        // During a pointer gesture, return only its source and in-progress state.
+        CompletedOnly,
     };
 
     struct Config {
@@ -142,6 +160,9 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void clearOcrSelection();
     void clearTextSelection();
     [[nodiscard]] bool textSelectionActive() const;
+    [[nodiscard]] ScreenshotTextSelectionSnapshot textSelectionSnapshot(
+        TextSelectionSnapshotMode mode = TextSelectionSnapshotMode::WithGeometry) const;
+    void setTextSelectionFocusPreserver(std::function<bool(QWidget*)> predicate);
     // Only the active result page contributes a selection; no selection returns null.
     [[nodiscard]] std::unique_ptr<QMimeData> textSelectionClipboardMimeData() const;
     void updateOcrText(int lineIndex, const QString& text);
@@ -150,11 +171,13 @@ class ScreenshotRecognitionWindow final : public QWidget {
     imageSnapshot(QImage image, const QRectF& canvasRect, QImage filteredImage,
                   const QRectF& filteredCanvasRect, const ScreenshotResultStyle& style,
                   bool includeHiddenContent = false) const;
-    [[nodiscard]] QImage printViewportSnapshot(QImage background = {},
-                                               const QRectF& canvasRect = {}, QImage filtered = {},
-                                               const QRectF& filteredRect = {},
-                                               qreal contentOpacity = 1.0,
-                                               QSize outputPixelSize = {});
+    // The backdrop must not contain textAnnotations: canvas-text pages compose them once
+    // after recognition content and before output opacity. Other result pages ignore them.
+    [[nodiscard]] QImage
+    printViewportSnapshot(QImage background = {}, const QRectF& canvasRect = {},
+                          QImage filtered = {}, const QRectF& filteredRect = {},
+                          qreal contentOpacity = 1.0, QSize outputPixelSize = {},
+                          const ScreenshotTextAnnotationRenderSnapshot& textAnnotations = {});
     void showFormattedText(
         std::shared_ptr<QTextDocument> document,
         ScreenshotOcrTextLayer::RenderingMode mode = ScreenshotOcrTextLayer::RenderingMode::Normal,
@@ -201,6 +224,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void cancelLineBoxSelection();
 
   signals:
+    void textSelectionChanged();
+    void textSelectionGeometryChanged();
     void embeddedContextMenuRequested(const QPoint& globalPosition);
     void imageConversionRetryRequested();
     void recognitionRetryRequested();
@@ -218,6 +243,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    [[nodiscard]] ScreenshotRecognitionImageSnapshot ocrImageSnapshot() const;
     void showTextEditorWithOwner(QTextDocument* document,
                                  std::shared_ptr<QTextDocument> documentOwner, bool readOnly,
                                  bool streaming, bool preserveLatexPreview = false);
@@ -228,6 +254,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     [[nodiscard]] QTransform canvasToLocalTransform() const;
     void registerWindowShortcuts();
     void synchronizeTextLayer();
+    void notifyTextSelectionChanged();
+    void cancelPointerTextSelection();
     void updateTextEditorSpinGeometry();
     void updateOriginalImagePreview();
     void destroyOriginalImagePreview();
@@ -345,6 +373,13 @@ class ScreenshotRecognitionWindow final : public QWidget {
     std::function<bool(QObject*, QEvent*)> m_embeddedPointerEventHandler;
     bool m_selectionResizeActive = false;
     bool m_selectionOnly = false;
+    bool m_textSelectionPointerActive = false;
+    std::function<bool(QWidget*)> m_textSelectionFocusPreserver;
+    mutable ScreenshotTextSelectionSnapshot m_cachedTextSelectionSnapshot;
+    mutable const ScreenshotOcrPresentation* m_cachedTextSelectionPresentation = nullptr;
+    mutable quint64 m_cachedTextSelectionRevision = 0;
+    mutable QFont m_cachedTextSelectionFont;
+    mutable QHash<int, QRectF> m_cachedTextSelectionLineBounds;
     std::optional<QPointF> m_lineBoxPressPosition;
     bool m_lineBoxThresholdReached = false;
 };

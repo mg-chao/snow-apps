@@ -123,6 +123,7 @@ struct PinnedWindowRecord final {
     QByteArray resultStyle;
     QByteArray canvasSession;
     QByteArray recognitionResults;
+    QByteArray textAnnotations;
     PinnedTextType textType = PinnedTextType::RecognitionResults;
     bool recognitionVisible = false;
     bool translationVisible = false;

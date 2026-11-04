@@ -682,8 +682,11 @@ void ScreenshotToolPaletteColorEditor::build(QBoxLayout* layout, QWidget* parent
 
 void ScreenshotToolPaletteColorEditor::update(const QColor& color, bool mixed) {
     if (m_picker != nullptr) {
-        const QSignalBlocker blocker(m_picker);
-        m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
+        const auto current = m_picker->value();
+        if (!current.isSolid() || current.solidColor != color) {
+            const QSignalBlocker blocker(m_picker);
+            m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
+        }
     }
     if (m_trigger != nullptr) {
         m_trigger->setSwatchColor(color);
@@ -855,8 +858,11 @@ void ScreenshotToolPaletteStrokeEditor::update(const QColor& color, SnowCanvasSt
     m_colorMixed = colorMixed;
     m_styleMixed = styleMixed;
     if (m_picker != nullptr) {
-        const QSignalBlocker blocker(m_picker);
-        m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
+        const auto current = m_picker->value();
+        if (!current.isSolid() || current.solidColor != color) {
+            const QSignalBlocker blocker(m_picker);
+            m_picker->setValue(adqt::widgets::AdColorValue::solid(color));
+        }
     }
     if (m_trigger != nullptr) {
         m_trigger->setSwatchColor(color);
