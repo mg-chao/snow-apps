@@ -46,6 +46,7 @@ struct ScreenshotRecognitionFileSnapshot {
 struct ScreenshotRecognitionFileSaveResult {
     QString path;
     QString error;
+    bool wasCancelled = false;
 
     [[nodiscard]] bool succeeded() const {
         return !path.isEmpty() && error.isEmpty();
@@ -69,10 +70,10 @@ class ScreenshotRecognitionFileExport final {
     [[nodiscard]] static bool confirmOverwrite(QWidget* owner, const QStringList& paths);
     [[nodiscard]] static ScreenshotRecognitionFileSaveResult
     saveToPath(const ScreenshotRecognitionFileSnapshot& snapshot, const QString& path,
-               bool allowOverwrite = false);
+               bool allowOverwrite = false, std::function<bool()> cancelled = {});
     [[nodiscard]] static ScreenshotRecognitionFileSaveResult
     quickSave(const ScreenshotRecognitionFileSnapshot& snapshot, const QString& directory,
-              const QString& baseName);
+              const QString& baseName, std::function<bool()> cancelled = {});
 };
 #endif
 

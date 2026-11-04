@@ -32,10 +32,9 @@
 #include <QScopedValueRollback>
 #include <QPainter>
 #include <QTimer>
-#include <chrono>
-#include <future>
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 using snow_shot::presentation::LiveWindowSource;
 using snow_shot::presentation::LiveWindowState;
@@ -392,30 +391,90 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
     appearance.checkerboardEnabled = m_checkerboardEnabled.value_or(false);
     appearance.showBorder = m_showBorder;
     appearance.showShadow = m_showShadow;
-    auto promise = std::make_shared<std::promise<QImage>>();
-    const auto future = promise->get_future().share();
-    // Acquire now, before an export worker or save dialog can observe a later frame.
-    m_liveSource->requestFrame(
-        [promise](const QImage& frame, const QString&) { promise->set_value(frame); });
-    return ScreenshotExportSource::fromProducer(
-        [future, output, transform, opacity,
-         visible](const ScreenshotExportCancellation& cancellation) {
-            while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
-                if (cancellation.isCancellationRequested())
+    struct CapturedFrame {
+        QImage image;
+        bool ready = false;
+        struct Subscriber {
+            QPointer<QObject> receiver;
+            std::function<void(QImage)> callback;
+        };
+        std::vector<Subscriber> subscribers;
+        void complete(QImage value) {
+            if (ready)
+                return;
+            ready = true;
+            image = std::move(value);
+            auto waiting = std::move(subscribers);
+            for (auto& subscriber : waiting)
+                if (subscriber.receiver)
+                    subscriber.callback(image);
+        }
+    };
+    auto captured = std::make_shared<CapturedFrame>();
+    // Capture starts at the action, before a dialog or queued renderer can see another frame.
+    // A pending native capture owns no export worker or preparation-memory admission.
+    m_liveSource->requestFrame([captured](const QImage& frame, const QString&) {
+        QMetaObject::invokeMethod(
+            qApp, [captured, frame] { captured->complete(frame); }, Qt::AutoConnection);
+    });
+    return ScreenshotExportSource::fromDeferredImage(
+        [captured](QObject* receiver, std::function<void(QImage)> callback) {
+            if (captured->ready)
+                callback(captured->image);
+            else
+                captured->subscribers.push_back({receiver, std::move(callback)});
+            return true;
+        },
+        [output, transform, opacity, visible](QImage frame,
+                                              const ScreenshotExportCancellation& cancellation) {
+            if (frame.isNull() || cancellation.isCancellationRequested())
+                return QImage{};
+            if (visible != QRectF(0, 0, 1, 1)) {
+                const QRect crop =
+                    QRectF(visible.x() * frame.width(), visible.y() * frame.height(),
+                           visible.width() * frame.width(), visible.height() * frame.height())
+                        .toAlignedRect()
+                        .intersected(frame.rect());
+                if (crop.isEmpty())
                     return QImage{};
+                // A strided view includes padding after its last row. Keep that entire
+                // span inside the owner, including bottom-edge crops with an x offset.
+                if ((frame.depth() == 32 || frame.depth() == 64) &&
+                    (crop.x() == 0 || crop.bottom() < frame.height() - 1)) {
+                    auto owner = std::make_unique<QImage>(std::move(frame));
+                    QImage view(
+                        owner->constScanLine(crop.y()) + qsizetype(crop.x()) * (owner->depth() / 8),
+                        crop.width(), crop.height(), owner->bytesPerLine(), owner->format(),
+                        [](void* context) { delete static_cast<QImage*>(context); }, owner.get());
+                    if (view.isNull())
+                        return QImage{};
+                    view.setColorSpace(owner->colorSpace());
+                    view.setDevicePixelRatio(owner->devicePixelRatio());
+                    owner.release();
+                    frame = std::move(view);
+                } else {
+                    frame = frame.copy(crop);
+                }
+            }
             if (cancellation.isCancellationRequested())
                 return QImage{};
-            QImage frame = future.get();
-            if (frame.isNull())
-                return QImage{};
-            if (visible != QRectF(0, 0, 1, 1))
-                frame = frame.copy(QRectF(visible.x() * frame.width(), visible.y() * frame.height(),
-                                          visible.width() * frame.width(),
-                                          visible.height() * frame.height())
-                                       .toAlignedRect()
-                                       .intersected(frame.rect()));
             const QImage transformed =
                 snowCanvasTransformImage(frame, transform, Qt::SmoothTransformation);
+            if (transformed.isNull() || cancellation.isCancellationRequested())
+                return QImage{};
+            if (transformed.size() == output && transformed.devicePixelRatio() == 1 &&
+                opacity == 1 && transformed.format() == QImage::Format_ARGB32_Premultiplied) {
+                auto owner = std::make_unique<QImage>(transformed);
+                QImage result(
+                    owner->constBits(), owner->width(), owner->height(), owner->bytesPerLine(),
+                    owner->format(), [](void* context) { delete static_cast<QImage*>(context); },
+                    owner.get());
+                if (result.isNull())
+                    return QImage{};
+                result.setColorSpace(owner->colorSpace());
+                owner.release();
+                return result;
+            }
             QImage result(output, QImage::Format_ARGB32_Premultiplied);
             if (result.isNull())
                 return QImage{};
@@ -432,7 +491,11 @@ ScreenshotExportSource ScreenshotPinnedWindow::liveExportSource(bool applyWindow
             }
             return result;
         },
-        {}, placement, appearance);
+        [output](QSize frame) {
+            return qint64(frame.width()) * frame.height() * 16 +
+                   qint64(output.width()) * output.height() * 8 + 8 * 1024 * 1024;
+        },
+        placement, appearance);
 }
 
 std::shared_ptr<ScreenshotExportArtifact>

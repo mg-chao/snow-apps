@@ -2,17 +2,17 @@
 #include "snow_shot/presentation/screenshotairdropservice.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "nativeairdropbackend.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include <QFile>
 
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QFutureWatcher>
 #include <QImageWriter>
 #include <QPointer>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QWidget>
-#include <QtConcurrentRun>
 
 #include <atomic>
 #include <utility>
@@ -28,6 +28,7 @@ struct ScreenshotAirDropService::Request {
     QMetaObject::Connection ownerDestroyed;
     QMetaObject::Connection receiverDestroyed;
     bool completed = false;
+    ScreenshotExportJobHandle preparation;
 
     ~Request() {
         QObject::disconnect(ownerDestroyed);
@@ -61,6 +62,7 @@ void ScreenshotAirDropService::finish(const std::shared_ptr<Request>& request, R
     const auto active = request;
     active->completed = true;
     active->cancelled.store(true, std::memory_order_release);
+    active->preparation.cancel();
     QObject::disconnect(active->ownerDestroyed);
     QObject::disconnect(active->receiverDestroyed);
     m_request.reset();
@@ -96,20 +98,24 @@ bool ScreenshotAirDropService::shareImage(QObject* receiver, QWidget* owner, QIm
         QString path;
         QString error;
     };
-    auto* watcher = new QFutureWatcher<Prepared>(this);
-    connect(watcher, &QFutureWatcher<Prepared>::finished, this, [this, request, watcher] {
-        auto prepared = watcher->result();
-        watcher->deleteLater();
+    auto prepared = std::make_shared<Prepared>();
+    auto completedPreparation = [this, request, prepared](ScreenshotExportTaskResult result) {
         if (m_request != request || request->completed)
             return;
-        if (prepared.path.isEmpty()) {
+        if (!result.succeeded() || prepared->path.isEmpty()) {
+            if (result.failureStage == ScreenshotExportFailureStage::Cancelled) {
+                finish(request, {Status::Cancelled, {}});
+                return;
+            }
+            if (prepared->error.isEmpty())
+                prepared->error = result.error;
             finish(request, {Status::Failed, QCoreApplication::translate(
                                                  "ScreenshotAirDropService",
                                                  "The image could not be prepared for AirDrop: %1")
-                                                 .arg(prepared.error)});
+                                                 .arg(prepared->error)});
             return;
         }
-        request->directory = std::move(prepared.directory);
+        request->directory = std::move(prepared->directory);
         const QPointer<ScreenshotAirDropService> guard(this);
         const auto completed = [guard, request](Result result) {
             // Dispatch through the application so a worker callback never races
@@ -125,35 +131,89 @@ bool ScreenshotAirDropService::shareImage(QObject* receiver, QWidget* owner, QIm
                 Qt::QueuedConnection);
         };
         if (m_backend)
-            m_backend(request->owner, prepared.path, completed);
+            m_backend(request->owner, prepared->path, completed);
         else
             completed({Status::Unavailable,
                        QCoreApplication::translate("ScreenshotAirDropService",
                                                    "AirDrop is unavailable on this Mac")});
-    });
-    watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork(
-        [request, snapshot = std::move(snapshot), filename = std::move(filename)]() mutable {
-            Prepared result;
-            if (request->cancelled.load(std::memory_order_acquire))
-                return result;
-            result.directory = std::make_shared<QTemporaryDir>(
+    };
+    const qint64 workingBytes = qint64(snapshot.width()) * snapshot.height() * 8 + 16 * 1024 * 1024;
+    request->preparation = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [request, prepared, snapshot = std::move(snapshot),
+         filename = std::move(filename)](const ScreenshotExportCancellation& cancellation) mutable {
+            const auto cancelled = [&] {
+                return cancellation.isCancellationRequested() ||
+                       request->cancelled.load(std::memory_order_acquire);
+            };
+            const auto stopped = [] {
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            };
+            if (cancelled())
+                return stopped();
+            prepared->directory = std::make_shared<QTemporaryDir>(
                 QDir::tempPath() + QStringLiteral("/snow-shot-airdrop-XXXXXX"));
-            if (!result.directory->isValid()) {
-                result.error = result.directory->errorString();
-                return result;
-            }
-            const QString path = result.directory->filePath(filename);
-            // Preserve alpha and color-space metadata; printing's white flattening
-            // is deliberately not part of sharing a screenshot.
+            if (!prepared->directory->isValid())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
+                                                           prepared->directory->errorString());
+            const QString path = prepared->directory->filePath(filename);
+            // Qt's PNG writer retains the source profile and alpha. Abort its incremental
+            // writes when the source disappears; the private directory owns partial output.
+            class Output final : public QIODevice {
+              public:
+                Output(QString path, std::function<bool()> cancelled)
+                    : file(std::move(path)), stopped(std::move(cancelled)) {
+                    if (file.open(QIODevice::WriteOnly))
+                        open(QIODevice::WriteOnly);
+                    else
+                        setErrorString(file.errorString());
+                }
+                bool isSequential() const override {
+                    return true;
+                }
+                bool finish() {
+                    return file.flush();
+                }
+
+              protected:
+                qint64 readData(char*, qint64) override {
+                    return -1;
+                }
+                qint64 writeData(const char* data, qint64 size) override {
+                    if (stopped())
+                        return -1;
+                    const auto written = file.write(data, size);
+                    if (written != size)
+                        setErrorString(file.errorString());
+                    return written;
+                }
+
+              private:
+                QFile file;
+                std::function<bool()> stopped;
+            } output(path, cancelled);
             snapshot.setDevicePixelRatio(1.0);
-            QImageWriter writer(path, "png");
-            if (!writer.write(snapshot)) {
-                result.error = writer.errorString();
-                return result;
-            }
-            if (!request->cancelled.load(std::memory_order_acquire))
-                result.path = path;
-            return result;
-        })));
+            QImageWriter writer(&output, "png");
+            const bool written = output.isOpen() && writer.write(snapshot) && output.finish();
+            if (cancelled())
+                return stopped();
+            if (!written)
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
+                                                           writer.errorString());
+            prepared->path = path;
+            return ScreenshotExportTaskResult{};
+        },
+        completedPreparation, workingBytes);
+    if (!request->preparation.isValid())
+        QMetaObject::invokeMethod(
+            this,
+            [completedPreparation] {
+                completedPreparation(ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Queue,
+                    QCoreApplication::translate("ScreenshotController",
+                                                "The screenshot export queue is full")));
+            },
+            Qt::QueuedConnection);
     return true;
 }

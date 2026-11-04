@@ -183,30 +183,42 @@ void ScreenshotPinnedDragExport::start(std::shared_ptr<ScreenshotExportArtifact>
             request->image = std::move(result.image);
             request->directory = std::make_shared<QTemporaryDir>(
                 QDir::temp().filePath(QStringLiteral("snow-shot-drag-XXXXXX")));
-            request->job = ScreenshotExportCoordinator::shared().submit(
-                this, ScreenshotExportCoordinator::Priority::Foreground,
-                [directory = request->directory, image = request->image, format, encoding, pdf,
-                 filenameFormat, requestedAt](const ScreenshotExportCancellation& cancellation) {
-                    if (cancellation.isCancellationRequested())
-                        return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::Cancelled, {});
-                    if (!directory->isValid())
-                        return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::File, directory->errorString());
-                    const auto saved = ScreenshotImageFileService::saveAutomatically(
-                        image, {directory->path()}, format, filenameFormat, requestedAt, pdf,
-                        encoding);
-                    ScreenshotExportTaskResult output;
-                    output.savedPath = saved.path;
-                    output.error = saved.error;
-                    if (!saved.succeeded())
-                        output.failureStage = ScreenshotExportFailureStage::File;
-                    return output;
+            if (!request->directory->isValid()) {
+                finish(request,
+                       ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
+                                                           request->directory->errorString()));
+                return;
+            }
+            const bool saving = request->artifact->requestAutomaticSave(
+                this, {request->directory->path()}, format, filenameFormat, encoding,
+                [this, request](ScreenshotExportTaskResult saved) {
+                    if (m_request != request)
+                        return;
+                    if (!saved.succeeded()) {
+                        finish(request, saved);
+                        return;
+                    }
+                    request->job = ScreenshotExportCoordinator::shared().submit(
+                        this, ScreenshotExportCoordinator::Priority::Foreground,
+                        [image = request->image,
+                         saved](const ScreenshotExportCancellation& cancellation) mutable {
+                            if (cancellation.isCancellationRequested())
+                                return ScreenshotExportTaskResult::failure(
+                                    ScreenshotExportFailureStage::Cancelled, {});
+                            saved.image = image.scaled(160, 160, Qt::KeepAspectRatio,
+                                                       Qt::SmoothTransformation);
+                            return saved;
+                        },
+                        [this, request](ScreenshotExportTaskResult result) {
+                            finish(request, result);
+                        },
+                        qint64(request->image.width()) * 160 * 8 + 160 * 160 * 8);
+                    if (!request->job.isValid())
+                        finish(request, ScreenshotExportTaskResult::failure(
+                                            ScreenshotExportFailureStage::Queue, queueError()));
                 },
-                [this, request](const ScreenshotExportTaskResult& saved) {
-                    finish(request, saved);
-                });
-            if (!request->job.isValid())
+                pdf, requestedAt);
+            if (!saving)
                 finish(request, ScreenshotExportTaskResult::failure(
                                     ScreenshotExportFailureStage::Queue, queueError()));
         });
@@ -241,8 +253,7 @@ void ScreenshotPinnedDragExport::finish(const std::shared_ptr<Request>& request,
     mime->setImageData(request->image);
     mime->setUrls({QUrl::fromLocalFile(result.savedPath)});
     drag->setMimeData(mime);
-    drag->setPixmap(QPixmap::fromImage(
-        request->image.scaled(160, 160, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+    drag->setPixmap(QPixmap::fromImage(result.image));
     drag->setHotSpot(QPoint(drag->pixmap().width() / 2, drag->pixmap().height() / 2));
     const auto execute = m_executor;
     QPointer<ScreenshotPinnedDragExport> guard(this);

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
@@ -42,6 +43,104 @@ bool processUntil(const std::function<bool()>& predicate, int timeoutMs = 5000) 
         QThread::msleep(1);
     }
     return predicate();
+}
+
+void exportCacheBoundsAggregateRetention() {
+    ScreenshotExportCache cache(8);
+    auto held = std::make_shared<int>(11);
+    std::weak_ptr<int> oldest;
+    std::weak_ptr<int> newest;
+    for (int index = 0; index < 100; ++index) {
+        auto value = std::make_shared<int>(index);
+        oldest = newest;
+        newest = value;
+        cache.retain(held, 4);
+        cache.retain(value, 4);
+        cache.touch(held.get());
+        require(oldest.expired() && cache.retainedBytes() == 8,
+                "aggregate export cache evicts LRU entries across many owners");
+    }
+    cache.retain(held, 9);
+    require(cache.retainedBytes() == 4 && *held == 11,
+            "oversized output is not retained and consumers survive eviction");
+    cache.clear();
+    require(newest.expired() && cache.retainedBytes() == 0 && *held == 11,
+            "pressure trimming releases optional storage without invalidating consumers");
+    cache.retain(held, 4);
+    cache.remove(held.get());
+    require(cache.retainedBytes() == 0, "owner invalidation releases retained output immediately");
+}
+
+void workingBytesGateJobsWithoutOccupyingWorkers() {
+    ScreenshotExportCoordinator coordinator(5000, qint64{8});
+    QObject receiver;
+    auto gate = std::make_shared<QSemaphore>();
+    const auto release = qScopeGuard([&] { gate->release(4); });
+    std::atomic_int firstStarted{0};
+    std::atomic_int smallStarted{0};
+    int completions = 0;
+    const auto first = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [gate, &firstStarted](const auto&) {
+            ++firstStarted;
+            gate->acquire();
+            return ScreenshotExportTaskResult{};
+        },
+        [&](auto) { ++completions; }, 6);
+    require(first.isValid() && processUntil([&] { return firstStarted.load() == 1; }),
+            "the first byte-accounted job starts");
+    auto payload = std::make_shared<int>(42);
+    const std::weak_ptr<int> waitingPayload = payload;
+    const auto large = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [payload](const auto&) {
+            require(false, "cancelled byte-waiting work must not execute");
+            return ScreenshotExportTaskResult{};
+        },
+        [&](auto result) {
+            require(result.failureStage == ScreenshotExportFailureStage::Cancelled,
+                    "byte-waiting cancellation delivers the normal result");
+            ++completions;
+        },
+        6);
+    payload.reset();
+    const auto small = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [gate, &smallStarted](const auto&) {
+            ++smallStarted;
+            gate->acquire();
+            return ScreenshotExportTaskResult{};
+        },
+        [&](auto) { ++completions; }, 1);
+    require(large.isValid() && small.isValid() && coordinator.activeWorkingBytes() == 6 &&
+                coordinator.pendingJobCount() == 3,
+            "a large head request waits fairly without admitting smaller followers");
+    large.cancel();
+    require(waitingPayload.expired(), "cancel releases byte-waiting captures immediately");
+    if (QThread::idealThreadCount() > 1) {
+        require(processUntil([&] { return smallStarted.load() == 1; }) &&
+                    coordinator.activeWorkingBytes() == 7,
+                "cancelling the blocked head allows compatible work to use the idle worker");
+    }
+    gate->release(2);
+    require(processUntil([&] { return completions == 3; }) && coordinator.activeWorkingBytes() == 0,
+            "completion releases every working-byte admission");
+
+    const auto oversized = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Background,
+        [gate](const auto&) {
+            gate->acquire();
+            return ScreenshotExportTaskResult{};
+        },
+        [&](auto) { ++completions; }, 9);
+    const auto follower = coordinator.submit(
+        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [](const auto&) { return ScreenshotExportTaskResult{}; }, [&](auto) { ++completions; });
+    require(oversized.isValid() && follower.isValid() && coordinator.activeWorkingBytes() == 9,
+            "oversized work runs alone without rejecting supported large exports");
+    gate->release();
+    require(processUntil([&] { return completions == 5; }) && coordinator.activeWorkingBytes() == 0,
+            "an oversized job releases admission for its follower");
 }
 
 void completionRunsOnceOnGuiThread() {
@@ -738,6 +837,8 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         completionRunsOnceOnGuiThread();
+        exportCacheBoundsAggregateRetention();
+        workingBytesGateJobsWithoutOccupyingWorkers();
         cancellationPropagates();
         destroyedReceiverSuppressesCompletion();
         queueAndWorkerBoundsAreEnforced();

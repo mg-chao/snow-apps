@@ -128,6 +128,8 @@ struct ScreenshotPinnedRecognitionProviders {
     SnowShotApiClient* tableRecognition = nullptr;
 };
 
+struct ScreenshotRecognitionFileSnapshot;
+
 class ScreenshotPinnedWindow final : public QWidget {
     Q_OBJECT
 
@@ -557,6 +559,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] std::optional<QByteArray> exportDocumentSnapshot() const;
     void quickSave();
     void invalidatePendingCopy();
+    void saveRecognitionSnapshot(ScreenshotRecognitionFileSnapshot snapshot, QString path,
+                                 QString baseName = {}, bool automatic = false);
     [[nodiscard]] ScreenshotClipboardService::PublicationId beginCopyRequest();
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact,
@@ -734,6 +738,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotExportJobHandle m_contentReplacementJob;
     quint64 m_contentReplacementGeneration = 0;
     ScreenshotExportJobHandle m_fileSaveJob;
+    ScreenshotExportJobHandle m_recognitionSaveJob;
+    quint64 m_recognitionSaveGeneration = 0;
+    bool m_recognitionSavePending = false;
     std::shared_ptr<ScreenshotExportArtifact> m_quickSaveArtifact;
     bool m_quickSavePending = false;
     QPointer<ScreenshotCloudUploadJob> m_cloudUploadJob;

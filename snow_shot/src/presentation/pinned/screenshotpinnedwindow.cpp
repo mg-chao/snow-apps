@@ -73,6 +73,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotexportcache.h"
 #include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_shot/presentation/screenshotpinnedrecognition.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
@@ -156,6 +157,7 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <limits>
 
 namespace {
 snow_shot::storage::PinnedWindowPlacement
@@ -951,10 +953,15 @@ struct ScreenshotPinnedWindow::CopyOutputOptions {
 struct ScreenshotPinnedWindow::PinnedRenderCache final {
     struct Entry {
         QByteArray key;
-        std::shared_ptr<ScreenshotExportArtifact> pixels;
-        qint64 byteCount = 0;
+        std::weak_ptr<ScreenshotExportArtifact> pixels;
         ScreenshotPinnedViewportRenderPlan plan;
     };
+    ~PinnedRenderCache() {
+        for (const auto& entry : entries)
+            if (const auto pixels = entry.pixels.lock())
+                ScreenshotExportCache::pinnedPixels().remove(pixels.get());
+    }
+    QByteArray revision;
     std::vector<Entry> entries;
 };
 
@@ -1683,6 +1690,10 @@ ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
     m_materializationJob = {};
     m_fileSaveJob.cancel();
     m_fileSaveJob = {};
+    m_recognitionSaveJob.cancel();
+    m_recognitionSaveJob = {};
+    ++m_recognitionSaveGeneration;
+    m_recognitionSavePending = false;
     if (m_quickSaveArtifact) {
         m_quickSaveArtifact->cancel();
         m_quickSaveArtifact.reset();
@@ -2332,6 +2343,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_airDropService = config.airDropService;
     cancelCloudUpload();
     ++m_presentationGeneration;
+    m_pinnedRenderCache.reset();
     endWindowShake(true);
     if (m_shakeMessage)
         m_shakeMessage->close();
@@ -3009,6 +3021,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     // User-close entry points have already captured this snapshot before hiding.
     const auto snapshot = m_closeSnapshot ? *m_closeSnapshot : persistenceRecord();
     hideForClosing();
+    m_pinnedRenderCache.reset();
     stopLiveSource();
     if (!isLiveWindow() && !m_closeStatePersisted &&
         m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Close &&
@@ -3052,6 +3065,10 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_materializationCallbacks.clear();
     m_fileSaveJob.cancel();
     m_fileSaveJob = {};
+    m_recognitionSaveJob.cancel();
+    m_recognitionSaveJob = {};
+    ++m_recognitionSaveGeneration;
+    m_recognitionSavePending = false;
     if (m_quickSaveArtifact) {
         m_quickSaveArtifact->cancel();
         m_quickSaveArtifact.reset();
@@ -6300,6 +6317,18 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
             true);
         return;
     }
+    if (mimeData->hasImage()) {
+        const QImage image = qvariant_cast<QImage>(mimeData->imageData());
+        if (!image.isNull()) {
+            CopyOutputOptions options{snow_shot::storage::ScreenshotSettings()};
+            options.autoSave = false;
+            options.copyFile = false;
+            copyRenderedImage(std::make_shared<ScreenshotExportArtifact>(
+                                  ScreenshotExportSource::fromImage(image)),
+                              options, publicationId);
+            return;
+        }
+    }
     if (m_copyPublicationId == publicationId)
         clipboard->setMimeData(mimeData.release(), QClipboard::Clipboard);
 }
@@ -6344,6 +6373,7 @@ ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportS
             request.clipboardAppearance->rasterSize = snapshot.outputSize;
     };
     if (request.recognitionOverlay || !request.presentationImage.isNull()) {
+        m_pinnedRenderCache.reset();
         auto document = exportDocumentSnapshot();
         if (!document)
             return {};
@@ -6356,24 +6386,33 @@ ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportS
         // The immutable source still caches its own pixels for all consumers of this command.
         return ScreenshotExportSource::fromPinnedViewport(std::move(request));
     }
+    QByteArray revision;
+    QDataStream revisionStream(&revision, QIODevice::WriteOnly);
+    revisionStream.setVersion(QDataStream::Qt_6_11);
+    revisionStream << m_presentationGeneration << m_runtime.documentRevision()
+                   << m_textAnnotations.revision() << request.backgroundImage.cacheKey()
+                   << request.smartErase.cacheKey();
+    if (m_pinnedRenderCache && m_pinnedRenderCache->revision != revision)
+        m_pinnedRenderCache.reset();
     QByteArray key;
     QDataStream stream(&key, QIODevice::WriteOnly);
     stream.setVersion(QDataStream::Qt_6_11);
     stream << request.visibleCanvasRect.has_value() << request.visibleCanvasRect.value_or(QRectF());
     stream << !request.textAnnotations.empty();
-    stream << m_presentationGeneration << m_runtime.documentRevision()
-           << m_textAnnotations.revision() << request.backgroundImage.cacheKey()
-           << request.backgroundCanvasRect << request.contentPixelSize
-           << encodeScreenshotResultStyle(request.resultStyle) << request.outputOpacity
-           << request.smartErase.cacheKey();
-    if (!m_pinnedRenderCache)
+    stream << revision << request.backgroundCanvasRect << request.contentPixelSize
+           << encodeScreenshotResultStyle(request.resultStyle) << request.outputOpacity;
+    if (!m_pinnedRenderCache) {
         m_pinnedRenderCache = std::make_unique<PinnedRenderCache>();
+        m_pinnedRenderCache->revision = revision;
+    }
     std::shared_ptr<ScreenshotExportArtifact> pixels;
     auto& entries = m_pinnedRenderCache->entries;
+    std::erase_if(entries, [](const auto& entry) { return entry.pixels.expired(); });
     const auto found = std::find_if(entries.begin(), entries.end(),
                                     [&](const auto& entry) { return entry.key == key; });
     if (found != entries.end()) {
-        pixels = found->pixels;
+        pixels = found->pixels.lock();
+        ScreenshotExportCache::pinnedPixels().touch(pixels.get());
         applyPlan(found->plan);
         auto entry = std::move(*found);
         entries.erase(found);
@@ -6392,42 +6431,50 @@ ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportS
         renderRequest.clipboardAppearance.reset();
         pixels = std::make_shared<ScreenshotExportArtifact>(
             ScreenshotExportSource::fromPinnedViewport(std::move(renderRequest)));
-        // Retain at most two surfaces within the existing 64 MiB image budget.
-        // Outstanding commands own their snapshot independently of cache eviction.
-        const QSize outputSize = plan->resultLayout.outputRect.size();
-        const qint64 byteCount = qint64(outputSize.width()) * outputSize.height() * 4;
-        constexpr qint64 budget = 64 * 1024 * 1024;
-        if (byteCount <= budget) {
-            qint64 retained = 0;
-            for (const auto& entry : entries)
-                retained += entry.byteCount;
-            while (!entries.empty() && (entries.size() >= 2 || retained > budget - byteCount)) {
-                retained -= entries.front().byteCount;
-                entries.erase(entries.begin());
-            }
-            entries.push_back({key, pixels, byteCount, *plan});
+        // Track pending snapshots weakly; only completed output enters the global byte budget.
+        if (entries.size() >= 2) {
+            if (const auto oldest = entries.front().pixels.lock())
+                ScreenshotExportCache::pinnedPixels().remove(oldest.get());
+            entries.erase(entries.begin());
         }
+        entries.push_back({key, pixels, *plan});
     }
     // Each command owns its cancellation and current clipboard placement. Pixel
     // preparation is shared independently, so cancelling a copy cannot poison it.
-    return ScreenshotExportSource::fromImageLoader(
+    auto source = ScreenshotExportSource::fromImageLoader(
         [pixels = std::move(pixels), key, owner = QPointer<ScreenshotPinnedWindow>(this)](
             QObject* receiver, std::function<void(QImage)> callback) {
-            return pixels->requestImage(receiver, [callback = std::move(callback), key, owner](
+            return pixels->requestImage(receiver, [callback = std::move(callback), key, owner,
+                                                   weakPixels = std::weak_ptr(pixels)](
                                                       ScreenshotExportImageResult result) mutable {
-                if (!result.succeeded() && owner) {
-                    static_cast<void>(QMetaObject::invokeMethod(owner, [key, owner] {
-                        if (owner && owner->m_pinnedRenderCache) {
+                if (owner) {
+                    const qint64 bytes = result.succeeded() ? result.image.sizeInBytes() : 0;
+                    static_cast<void>(
+                        QMetaObject::invokeMethod(owner, [key, owner, weakPixels, bytes] {
+                            if (!owner || !owner->m_pinnedRenderCache)
+                                return;
                             auto& cache = owner->m_pinnedRenderCache->entries;
-                            std::erase_if(cache,
-                                          [&](const auto& entry) { return entry.key == key; });
-                        }
-                    }));
+                            const auto pixels = weakPixels.lock();
+                            const auto found =
+                                std::find_if(cache.begin(), cache.end(), [&](const auto& entry) {
+                                    return entry.key == key && entry.pixels.lock() == pixels;
+                                });
+                            if (found == cache.end())
+                                return;
+                            if (bytes > 0)
+                                ScreenshotExportCache::pinnedPixels().retain(pixels, bytes);
+                            else {
+                                ScreenshotExportCache::pinnedPixels().remove(pixels.get());
+                                cache.erase(found);
+                            }
+                        }));
                 }
                 callback(std::move(result.image));
             });
         },
         std::move(request.clipboardPlacement), std::move(request.clipboardAppearance));
+    source.setEncodingCacheKey(m_persistenceId.toUtf8() + key);
+    return source;
 }
 
 std::shared_ptr<ScreenshotExportArtifact>
@@ -6953,7 +7000,8 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
 void ScreenshotPinnedWindow::quickSave() {
     if (isLiveWindow())
         return;
-    if (m_closing || m_printPending || m_quickSavePending || property("saveDialogOpen").toBool())
+    if (m_closing || m_printPending || m_quickSavePending || m_recognitionSavePending ||
+        property("saveDialogOpen").toBool())
         return;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
@@ -6965,20 +7013,12 @@ void ScreenshotPinnedWindow::quickSave() {
     if (fileSnapshot) {
         const snow_shot::storage::ScreenshotSettings settings;
         const QDateTime timestamp = QDateTime::currentDateTime();
-        const auto result = ScreenshotRecognitionFileExport::quickSave(
-            *fileSnapshot,
-            snow_shot::storage::expandScreenshotExportVariables(settings.imageSaveDirectory(),
-                                                                timestamp),
-            ScreenshotImageFileService::suggestedBaseName(settings.autoSaveFilenameFormat(),
-                                                          timestamp));
-        if (!result.succeeded()) {
-            showPinnedRecognitionMessage(
-                this,
-                QCoreApplication::translate("ScreenshotController",
-                                            "The recognition result could not be saved: %1")
-                    .arg(result.error),
-                true);
-        }
+        saveRecognitionSnapshot(*fileSnapshot,
+                                snow_shot::storage::expandScreenshotExportVariables(
+                                    settings.imageSaveDirectory(), timestamp),
+                                ScreenshotImageFileService::suggestedBaseName(
+                                    settings.autoSaveFilenameFormat(), timestamp),
+                                true);
         return;
     }
 #endif
@@ -7030,6 +7070,70 @@ void ScreenshotPinnedWindow::quickSave() {
     }
 }
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+void ScreenshotPinnedWindow::saveRecognitionSnapshot(ScreenshotRecognitionFileSnapshot snapshot,
+                                                     QString path, QString baseName,
+                                                     bool automatic) {
+    m_recognitionSaveJob.cancel();
+    const auto generation = ++m_recognitionSaveGeneration;
+    m_recognitionSavePending = true;
+    auto complete = [this, generation, automatic](ScreenshotExportTaskResult result) {
+        if (m_closing || generation != m_recognitionSaveGeneration)
+            return;
+        m_recognitionSaveJob = {};
+        m_recognitionSavePending = false;
+        if (result.succeeded()) {
+            if (!automatic)
+                static_cast<void>(
+                    snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
+                        QFileInfo(result.savedPath).absolutePath()));
+        } else if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The recognition result could not be saved: %1")
+                    .arg(result.error),
+                true);
+        }
+    };
+    // Table ZIP/XML expansion varies with cell text. Admit it exclusively until streaming
+    // workbook serialization provides a tighter bound; text exports have bounded UTF-8 copies.
+    const qint64 workingBytes =
+        snapshot.kind == ScreenshotRecognitionFileKind::Table
+            ? std::numeric_limits<qint64>::max()
+            : std::min(qint64((std::numeric_limits<qint64>::max() - 2 * 1024 * 1024) / 12),
+                       qint64(snapshot.source.size())) *
+                      12 +
+                  2 * 1024 * 1024;
+    m_recognitionSaveJob = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [snapshot = std::move(snapshot), path = std::move(path), baseName = std::move(baseName),
+         automatic](const ScreenshotExportCancellation& cancellation) {
+            auto cancelled = [&] { return cancellation.isCancellationRequested(); };
+            const auto saved =
+                automatic
+                    ? ScreenshotRecognitionFileExport::quickSave(snapshot, path, baseName,
+                                                                 cancelled)
+                    : ScreenshotRecognitionFileExport::saveToPath(snapshot, path, true, cancelled);
+            if (!saved.succeeded())
+                return ScreenshotExportTaskResult::failure(
+                    saved.wasCancelled ? ScreenshotExportFailureStage::Cancelled
+                                       : ScreenshotExportFailureStage::File,
+                    saved.error);
+            ScreenshotExportTaskResult result;
+            result.savedPath = saved.path;
+            return result;
+        },
+        complete, workingBytes);
+    if (!m_recognitionSaveJob.isValid())
+        complete(ScreenshotExportTaskResult::failure(
+            ScreenshotExportFailureStage::Queue,
+            QCoreApplication::translate("ScreenshotController",
+                                        "The screenshot export queue is full")));
+}
+#endif
+
 void ScreenshotPinnedWindow::cancelContentReplacement() {
     cancelCloudUpload();
     ++m_contentReplacementGeneration;
@@ -7050,7 +7154,7 @@ bool ScreenshotPinnedWindow::blocksMemoryTrimming() const {
         m_exportDragPreparing || (m_dragExport && m_dragExport->dragging()) ||
         (m_nativeGeometryController && m_nativeGeometryController->hasInteractiveTransaction()) ||
         m_geometryAnimating || m_attentionPending || m_printPending || m_quickSavePending ||
-        m_cloudUploadPreparing || m_cloudUploadJob)
+        m_recognitionSavePending || m_cloudUploadPreparing || m_cloudUploadJob)
         return true;
     if (m_hideToTop && m_hideToTop->animation().state() != QAbstractAnimation::Stopped)
         return true;
@@ -7392,6 +7496,10 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
     invalidatePendingCopy();
     m_fileSaveJob.cancel();
     m_fileSaveJob = {};
+    m_recognitionSaveJob.cancel();
+    m_recognitionSaveJob = {};
+    ++m_recognitionSaveGeneration;
+    m_recognitionSavePending = false;
     if (m_quickSaveArtifact != nullptr) {
         m_quickSaveArtifact->cancel();
         m_quickSaveArtifact.reset();
@@ -7399,6 +7507,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
     m_quickSavePending = false;
     cancelCloudUpload();
     ++m_presentationGeneration;
+    m_pinnedRenderCache.reset();
     m_initialAnnotationMode = false;
     m_deferredPresentationSetupScheduled = false;
     clearTextAnnotations();
@@ -7775,7 +7884,8 @@ void ScreenshotPinnedWindow::uploadToCloud() {
 void ScreenshotPinnedWindow::saveAsFile() {
     if (!liveCommandAllowed(QStringLiteral("save_as_file")))
         return;
-    if (m_printPending || property("saveDialogOpen").toBool())
+    if (m_closing || m_printPending || m_recognitionSavePending ||
+        property("saveDialogOpen").toBool())
         return;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION
@@ -7820,19 +7930,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
                 this,
                 ScreenshotRecognitionFileExport::outputPaths(primaryPath, fileSnapshot->kind)))
             return;
-        const auto result =
-            ScreenshotRecognitionFileExport::saveToPath(*fileSnapshot, primaryPath, true);
-        if (result.succeeded()) {
-            static_cast<void>(
-                settings.setLastManualSaveDirectory(QFileInfo(result.path).absolutePath()));
-        } else {
-            showPinnedRecognitionMessage(
-                this,
-                QCoreApplication::translate("ScreenshotController",
-                                            "The recognition result could not be saved: %1")
-                    .arg(result.error),
-                true);
-        }
+        saveRecognitionSnapshot(*fileSnapshot, primaryPath);
         return;
     }
 #endif

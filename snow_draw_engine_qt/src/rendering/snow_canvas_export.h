@@ -29,6 +29,9 @@ void resetDiagnosticsForCurrentThread();
 
 QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSize,
                                  const QList<CanvasExportSource>& sources);
+QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSize,
+                                 const QList<CanvasExportSource>& sources,
+                                 const QRect& outputPixelRect);
 
 QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
                      const QSize& outputSize, const QList<CanvasExportSource>& sources,

@@ -63,8 +63,8 @@ QString spreadsheetText(const QString& text) {
     return result;
 }
 
-QByteArray tableWorkbook(const ScreenshotTableDocument& document,
-                         const QVector<int>& columnWidths) {
+QByteArray tableWorkbook(const ScreenshotTableDocument& document, const QVector<int>& columnWidths,
+                         const std::function<bool()>& cancelled) {
     if (document.empty() || document.rowCount() > 1048576 || document.columnCount() > 16384)
         return {};
     void* stream = mz_stream_mem_create();
@@ -246,6 +246,10 @@ QByteArray tableWorkbook(const ScreenshotTableDocument& document,
                     xml.writeStartElement(u"sheetData");
                     QStringList merges;
                     for (int row = 0; row < document.rowCount(); ++row) {
+                        if (cancelled && cancelled()) {
+                            validCells = false;
+                            return;
+                        }
                         xml.writeStartElement(u"row");
                         xml.writeAttribute(u"r", QString::number(row + 1));
                         for (int column = 0; column < document.columnCount(); ++column) {
@@ -430,7 +434,10 @@ ScreenshotRecognitionFileSaveResult ScreenshotRecognitionFileExport::openTempora
 
 ScreenshotRecognitionFileSaveResult
 ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnapshot& snapshot,
-                                            const QString& path, bool allowOverwrite) {
+                                            const QString& path, bool allowOverwrite,
+                                            std::function<bool()> cancelled) {
+    if (cancelled && cancelled())
+        return {{}, {}, true};
     if (!snapshot.hasContent())
         return {{},
                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
@@ -461,7 +468,9 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
     QByteArray bytes;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (snapshot.kind == ScreenshotRecognitionFileKind::Table) {
-        bytes = tableWorkbook(*snapshot.table, snapshot.tableColumnWidths);
+        bytes = tableWorkbook(*snapshot.table, snapshot.tableColumnWidths, cancelled);
+        if (cancelled && cancelled())
+            return {{}, {}, true};
         if (bytes.isEmpty())
             return {{},
                     message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
@@ -469,6 +478,8 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
     } else
 #endif
         bytes = snapshot.source.toUtf8();
+    if (cancelled && cancelled())
+        return {{}, {}, true};
     QStringList staged;
     QStringList backups(paths.size());
     QStringList published;
@@ -483,6 +494,10 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
             QFile::remove(stagedPath);
     };
     for (qsizetype index = 0; index < paths.size(); ++index) {
+        if (cancelled && cancelled()) {
+            rollback();
+            return {{}, {}, true};
+        }
         const QString temporary = reserveTemporaryPath(directory);
         if (temporary.isEmpty()) {
             rollback();
@@ -500,6 +515,12 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
             return {{}, error};
         }
         file.close();
+    }
+    // Publication is one short transaction. Cancel before backups, then finish or roll back
+    // the complete primary/companion pair without interrupting the rename sequence.
+    if (cancelled && cancelled()) {
+        rollback();
+        return {{}, {}, true};
     }
     if (!allowOverwrite && !existingPaths(paths).isEmpty()) {
         rollback();
@@ -551,7 +572,10 @@ ScreenshotRecognitionFileExport::saveToPath(const ScreenshotRecognitionFileSnaps
 
 ScreenshotRecognitionFileSaveResult
 ScreenshotRecognitionFileExport::quickSave(const ScreenshotRecognitionFileSnapshot& snapshot,
-                                           const QString& directory, const QString& baseName) {
+                                           const QString& directory, const QString& baseName,
+                                           std::function<bool()> cancelled) {
+    if (cancelled && cancelled())
+        return {{}, {}, true};
     if (!snapshot.hasContent())
         return {{},
                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
@@ -571,6 +595,8 @@ ScreenshotRecognitionFileExport::quickSave(const ScreenshotRecognitionFileSnapsh
                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
                                           "The output directory could not be created"))};
     for (int suffix = 0; suffix < 1000000; ++suffix) {
+        if (cancelled && cancelled())
+            return {{}, {}, true};
         const QString ending = (suffix == 0 ? QString() : QStringLiteral("_%1").arg(suffix)) +
                                QLatin1Char('.') + extension(snapshot.kind);
         // A Markdown companion has a longer extension than its primary file. Reserve enough
@@ -584,7 +610,7 @@ ScreenshotRecognitionFileExport::quickSave(const ScreenshotRecognitionFileSnapsh
         stem.chop(longestEnding.size());
         const QString path = QDir(target).filePath(stem + ending);
         if (existingPaths(outputPaths(path, snapshot.kind)).isEmpty()) {
-            const auto result = saveToPath(snapshot, path);
+            const auto result = saveToPath(snapshot, path, false, cancelled);
             if (result.error != message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
                                                           "An output file already exists")))
                 return result;

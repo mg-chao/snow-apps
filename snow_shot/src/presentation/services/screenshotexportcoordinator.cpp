@@ -20,6 +20,7 @@
 namespace {
 constexpr int kMaximumPendingJobs = 16;
 constexpr int kDefaultShutdownTimeoutMilliseconds = 5000;
+constexpr qint64 kMaximumWorkingBytes = qint64{512} * 1024 * 1024;
 // Reuse workers for a burst of screenshots, then release their stacks and
 // thread-local native resources while the application is idle.
 constexpr int kWorkerIdleTimeoutMilliseconds = 5000;
@@ -80,14 +81,53 @@ struct ScreenshotExportCoordinator::Impl final {
         // Protected by mutex until the worker claims it or cancellation removes it.
         QRunnable* queuedRunnable = nullptr;
         bool foreground = false;
+        bool admitted = false;
+        qint64 workingBytes = 0;
         Completion complete;
     };
 
-    explicit Impl(int shutdownTimeoutMsValue) : shutdownTimeoutMs(shutdownTimeoutMsValue) {
+    Impl(int shutdownTimeoutMsValue, qint64 maximumBytes)
+        : shutdownTimeoutMs(shutdownTimeoutMsValue), maximumWorkingBytes(maximumBytes) {
         const int ideal = QThread::idealThreadCount();
         pool->setMaxThreadCount(std::clamp(ideal, 1, 2));
         pool->setExpiryTimeout(kWorkerIdleTimeoutMilliseconds);
         pool->setObjectName(QStringLiteral("snow-shot-export"));
+    }
+
+    // Never occupy a worker while waiting for bytes. FIFO within each priority also prevents
+    // a large head request from being starved by a stream of smaller requests behind it.
+    void dispatchLocked() {
+        if (!pool || shuttingDown.load())
+            return;
+        while (activeJobs < pool->maxThreadCount() && !waiting.empty()) {
+            auto next = std::find_if(waiting.begin(), waiting.end(),
+                                     [](const auto& job) { return job->foreground; });
+            if (next == waiting.end())
+                next = waiting.begin();
+            const auto job = *next;
+            if (activeJobs > 0 && (activeBytes > maximumWorkingBytes ||
+                                   job->workingBytes > maximumWorkingBytes - activeBytes))
+                return;
+            waiting.erase(next);
+            job->admitted = true;
+            ++activeJobs;
+            activeBytes += job->workingBytes;
+            pool->start(job->queuedRunnable, job->foreground ? 1 : -1);
+        }
+    }
+
+    void releaseLocked(const std::shared_ptr<Job>& job) {
+        if (job && job->admitted) {
+            job->admitted = false;
+            --activeJobs;
+            activeBytes -= job->workingBytes;
+        }
+    }
+
+    void finish(const std::shared_ptr<Job>& job) {
+        QMutexLocker lock(&mutex);
+        releaseLocked(job);
+        dispatchLocked();
     }
 
     bool reservePending() {
@@ -104,9 +144,17 @@ struct ScreenshotExportCoordinator::Impl final {
         QRunnable* removed = nullptr;
         {
             QMutexLocker lock(&mutex);
-            if (!pool || !job->queuedRunnable || !pool->tryTake(job->queuedRunnable))
+            if (!pool || !job->queuedRunnable)
                 return;
+            if (job->admitted) {
+                if (!pool->tryTake(job->queuedRunnable))
+                    return;
+                releaseLocked(job);
+            } else {
+                std::erase(waiting, job);
+            }
             removed = std::exchange(job->queuedRunnable, nullptr);
+            dispatchLocked();
         }
         // The worker clears queuedRunnable under the same lock before running.
         // Thus tryTake never receives an auto-deleted pointer (or an ABA reuse).
@@ -120,7 +168,16 @@ struct ScreenshotExportCoordinator::Impl final {
     void promoteQueued(const std::shared_ptr<Job>& job) {
         QMutexLocker lock(&mutex);
         if (!pool || shuttingDown.load() || job->cancelled->load() || job->foreground ||
-            !job->queuedRunnable || !pool->tryTake(job->queuedRunnable))
+            !job->queuedRunnable)
+            return;
+        if (!job->admitted) {
+            job->foreground = true;
+            std::erase(waiting, job);
+            waiting.push_back(job);
+            dispatchLocked();
+            return;
+        }
+        if (!pool->tryTake(job->queuedRunnable))
             return;
         // The same mutex protects the worker's claim and queued cancellation. Requeueing keeps
         // the job's admission, resource leases, cancellation token and exactly-once completion.
@@ -129,11 +186,15 @@ struct ScreenshotExportCoordinator::Impl final {
     }
 
     const int shutdownTimeoutMs;
+    const qint64 maximumWorkingBytes;
+    qint64 activeBytes = 0;
+    int activeJobs = 0;
     std::unique_ptr<QThreadPool> pool = std::make_unique<QThreadPool>();
     std::atomic_int pending{0};
     std::atomic_bool shuttingDown{false};
     QMutex mutex;
     std::vector<std::weak_ptr<Job>> jobs;
+    std::vector<std::shared_ptr<Job>> waiting;
     QList<QPointer<ScreenshotExportQueue>> queues;
 };
 
@@ -142,7 +203,13 @@ ScreenshotExportCoordinator::ScreenshotExportCoordinator(QObject* parent)
 
 ScreenshotExportCoordinator::ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds,
                                                          QObject* parent)
-    : QObject(parent), m_impl(std::make_shared<Impl>(std::max(1, shutdownTimeoutMilliseconds))) {}
+    : ScreenshotExportCoordinator(shutdownTimeoutMilliseconds, kMaximumWorkingBytes, parent) {}
+
+ScreenshotExportCoordinator::ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds,
+                                                         qint64 maximumWorkingBytes,
+                                                         QObject* parent)
+    : QObject(parent), m_impl(std::make_shared<Impl>(std::max(1, shutdownTimeoutMilliseconds),
+                                                     std::max(qint64{1}, maximumWorkingBytes))) {}
 
 ScreenshotExportCoordinator::~ScreenshotExportCoordinator() {
     shutdown();
@@ -157,28 +224,36 @@ ScreenshotExportCoordinator& ScreenshotExportCoordinator::shared() {
 }
 
 ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver, Priority priority,
-                                                              Work work, Completion completion) {
-    if (receiver == nullptr || !work || !completion ||
+                                                              Work work, Completion completion,
+                                                              qint64 estimatedWorkingBytes) {
+    if (receiver == nullptr || !work || !completion || estimatedWorkingBytes < 0 ||
         m_impl->shuttingDown.load(std::memory_order_acquire) || !m_impl->reservePending()) {
         return {};
     }
 
     const auto state = m_impl;
     auto job = std::make_shared<Impl::Job>();
+    job->workingBytes = estimatedWorkingBytes;
     auto terminal = std::make_shared<std::atomic_bool>(false);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<ScreenshotExportCoordinator> guardedCoordinator(this);
-    job->complete = [state, guardedCoordinator, guardedReceiver, terminal, activity = job->activity,
-                     completion =
-                         std::move(completion)](ScreenshotExportTaskResult result) mutable {
+    job->complete = [state, weakJob = std::weak_ptr(job), guardedCoordinator, guardedReceiver,
+                     terminal, activity = job->activity, completion = std::move(completion)](
+                        ScreenshotExportTaskResult result) mutable {
         state->pending.fetch_sub(1, std::memory_order_acq_rel);
-        if (guardedCoordinator.isNull())
+        const auto finishedJob = weakJob.lock();
+        if (guardedCoordinator.isNull()) {
+            state->finish(finishedJob);
             return;
+        }
         auto sharedResult = std::make_shared<ScreenshotExportTaskResult>(std::move(result));
         static_cast<void>(QMetaObject::invokeMethod(
             guardedCoordinator,
-            [guardedCoordinator, guardedReceiver, terminal, sharedResult, activity,
-             completion = std::move(completion)]() mutable {
+            [state, finishedJob, guardedCoordinator, guardedReceiver, terminal, sharedResult,
+             activity, completion = std::move(completion)]() mutable {
+                // The output becomes consumer-owned at delivery. Release before user callbacks,
+                // which may open a native modal dialog or synchronously enqueue dependent work.
+                state->finish(finishedJob);
                 static_cast<void>(activity);
                 if (!terminal->exchange(true, std::memory_order_acq_rel) && guardedReceiver)
                     completion(std::move(*sharedResult));
@@ -226,7 +301,8 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
         state->jobs.push_back(job);
         job->queuedRunnable = runnable;
         job->foreground = priority == Priority::Foreground;
-        state->pool->start(runnable, priority == Priority::Foreground ? 1 : -1);
+        state->waiting.push_back(job);
+        state->dispatchLocked();
     }
     const std::weak_ptr<Impl> weakState = state;
     const std::weak_ptr<Impl::Job> weakJob = job;
@@ -246,6 +322,11 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
 
 int ScreenshotExportCoordinator::pendingJobCount() const {
     return m_impl->pending.load(std::memory_order_acquire);
+}
+
+qint64 ScreenshotExportCoordinator::activeWorkingBytes() const {
+    QMutexLocker lock(&m_impl->mutex);
+    return m_impl->activeBytes;
 }
 
 bool ScreenshotExportCoordinator::acceptingSubmissions() const {
@@ -281,12 +362,14 @@ void ScreenshotExportCoordinator::shutdown() {
     // Deleting the pool would wait for stragglers unconditionally; orphan it
     // past the deadline so in-flight runnables finish against their QPointer
     // guards instead of stalling teardown.
-    if (!m_impl->pool->waitForDone(m_impl->shutdownTimeoutMs)) {
+    const bool drained = m_impl->pool->waitForDone(m_impl->shutdownTimeoutMs);
+    // Byte-waiting jobs are outside the pool. Preserve normal shutdown's cancellation delivery,
+    // but suppress abandoned queued work just as for the original pool-owned queue.
+    for (const auto& job : jobs)
+        m_impl->cancelQueued(job, drained);
+    if (!drained) {
         qWarning("Screenshot export workers did not stop within %d milliseconds; abandoning them",
                  m_impl->shutdownTimeoutMs);
-        // Retire what the deadline could not, without delivering abandoned work.
-        for (const auto& job : jobs)
-            m_impl->cancelQueued(job, false);
         QMutexLocker lock(&m_impl->mutex);
         // An expiry timeout of 0 makes a worker exit the next time it parks (QThreadPool
         // re-reads the timeout on every park). Workers already parked under the
@@ -310,10 +393,12 @@ ScreenshotExportQueue::~ScreenshotExportQueue() {
 
 bool ScreenshotExportQueue::enqueue(ScreenshotExportCoordinator::Priority priority,
                                     ScreenshotExportCoordinator::Work work,
-                                    ScreenshotExportCoordinator::Completion completion) {
-    if (!m_coordinator || !m_coordinator->acceptingSubmissions() || !work || !completion)
+                                    ScreenshotExportCoordinator::Completion completion,
+                                    qint64 estimatedWorkingBytes) {
+    if (!m_coordinator || !m_coordinator->acceptingSubmissions() || !work || !completion ||
+        estimatedWorkingBytes < 0)
         return false;
-    m_requests.enqueue({priority, std::move(work), std::move(completion)});
+    m_requests.enqueue({priority, std::move(work), std::move(completion), estimatedWorkingBytes});
     dispatch();
     return true;
 }
@@ -347,7 +432,8 @@ void ScreenshotExportQueue::dispatch() {
                 completion(std::move(result));
                 if (guard)
                     dispatch();
-            });
+            },
+            request.estimatedWorkingBytes);
         if (!job.isValid())
             return;
         m_requests.dequeue();

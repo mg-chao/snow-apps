@@ -2,18 +2,18 @@
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "nativeprintbackend.h"
 #include "screenshotprintdiagnostics.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "../../image/snowimageopacity.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QColorSpace>
-#include <QFutureWatcher>
 #include <QElapsedTimer>
 #include <QPainter>
 #include <QPointer>
 #include <QThread>
 #include <QUuid>
 #include <QWidget>
-#include <QtConcurrentRun>
 
 #include <algorithm>
 #include <atomic>
@@ -35,6 +35,7 @@ struct ScreenshotPrintService::Request {
     Completion completion;
     bool legacy = false;
     bool completed = false;
+    ScreenshotExportJobHandle preparation;
     QMetaObject::Connection ownerDestroyed;
     QMetaObject::Connection receiverDestroyed;
 
@@ -47,6 +48,7 @@ struct ScreenshotPrintService::Request {
 
     ~Request() {
         cancelled->store(true, std::memory_order_release);
+        preparation.cancel();
         QObject::disconnect(ownerDestroyed);
         QObject::disconnect(receiverDestroyed);
     }
@@ -71,16 +73,36 @@ bool ScreenshotPrintService::busy() const {
 QImage ScreenshotPrintService::opaqueImage(const QImage& image) {
     if (image.isNull())
         return {};
+    auto source = image;
+    if (source.colorSpace().isValid() && source.colorSpace() != QColorSpace(QColorSpace::SRgb))
+        source.convertToColorSpace(QColorSpace::SRgb);
+    if (source.isNull())
+        return {};
+    const bool nativeOpaque = source.format() == QImage::Format_RGB32 ||
+                              ((source.format() == QImage::Format_ARGB32 ||
+                                source.format() == QImage::Format_ARGB32_Premultiplied) &&
+                               snow_shot::image_codec::detail::imageAlphaContent(source) ==
+                                   ScreenshotImageAlphaContent::Opaque);
+    if (nativeOpaque) {
+        auto owner = std::make_unique<QImage>(std::move(source));
+        QImage view(
+            owner->constBits(), owner->width(), owner->height(), owner->bytesPerLine(),
+            QImage::Format_RGB32, [](void* context) { delete static_cast<QImage*>(context); },
+            owner.get());
+        if (view.isNull())
+            return {};
+        owner.release();
+        view.setColorSpace(QColorSpace::SRgb);
+        return view;
+    }
     QImage result(image.size(), QImage::Format_RGB32);
     if (result.isNull())
         return {};
     result.fill(Qt::white);
     QPainter painter(&result);
-    auto source = image;
-    if (source.colorSpace().isValid())
-        source.convertToColorSpace(QColorSpace::SRgb);
-    source.setDevicePixelRatio(1.0);
-    painter.drawImage(QPoint(), source);
+    // Keep the source palette and format metadata. Explicit pixel bounds ignore its DPR
+    // without detaching the source or constructing an incomplete raw-buffer view.
+    painter.drawImage(result.rect(), source, source.rect());
     result.setColorSpace(QColorSpace::SRgb);
     return result;
 }
@@ -131,6 +153,7 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
         fields.insert(QStringLiteral("reason"), QString::fromLatin1(reason));
         logPrintEvent("print.completed", fields);
         request->cancelled->store(true, std::memory_order_release);
+        request->preparation.cancel();
         m_request.reset();
         QObject::disconnect(request->ownerDestroyed);
         QObject::disconnect(request->receiverDestroyed);
@@ -142,10 +165,8 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
     if (receiver != owner)
         request->receiverDestroyed = connect(receiver, &QObject::destroyed, this,
                                              [abandon] { abandon("receiver_destroyed"); });
-    auto* watcher = new QFutureWatcher<QImage>(this);
-    connect(watcher, &QFutureWatcher<QImage>::finished, this, [this, request, watcher] {
-        const QImage prepared = watcher->result();
-        watcher->deleteLater();
+    auto completedPreparation = [this, request](ScreenshotExportTaskResult result) {
+        const QImage prepared = std::move(result.image);
         if (m_request != request || request->completed)
             return;
         request->image = prepared;
@@ -155,14 +176,32 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
         logPrintEvent(prepared.isNull() ? "print.preparation_failed" : "print.prepared", fields,
                       prepared.isNull() ? QtWarningMsg : QtInfoMsg);
         startBackend(request, false);
-    });
-    watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork(
-        [snapshot = std::move(snapshot), cancelled = request->cancelled] {
-            if (cancelled->load(std::memory_order_acquire))
-                return QImage{};
-            QImage prepared = opaqueImage(snapshot);
-            return cancelled->load(std::memory_order_acquire) ? QImage{} : prepared;
-        })));
+    };
+    const bool native = snapshot.format() == QImage::Format_RGB32 &&
+                        (!snapshot.colorSpace().isValid() ||
+                         snapshot.colorSpace() == QColorSpace(QColorSpace::SRgb));
+    const qint64 workingBytes = native ? 4096
+                                       : snapshot.sizeInBytes() +
+                                             qint64(snapshot.width()) * snapshot.height() * 4 +
+                                             4 * 1024 * 1024;
+    request->preparation = ScreenshotExportCoordinator::shared().submit(
+        this, ScreenshotExportCoordinator::Priority::Foreground,
+        [snapshot = std::move(snapshot),
+         cancelled = request->cancelled](const ScreenshotExportCancellation& cancellation) {
+            ScreenshotExportTaskResult result;
+            if (!cancelled->load(std::memory_order_acquire) &&
+                !cancellation.isCancellationRequested())
+                result.image = opaqueImage(snapshot);
+            if (cancelled->load(std::memory_order_acquire) ||
+                cancellation.isCancellationRequested())
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            return result;
+        },
+        completedPreparation, workingBytes);
+    if (!request->preparation.isValid())
+        QMetaObject::invokeMethod(
+            this, [completedPreparation] { completedPreparation({}); }, Qt::QueuedConnection);
     return true;
 }
 

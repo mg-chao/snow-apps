@@ -16,6 +16,7 @@
 #include <QtMath>
 
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -263,6 +264,43 @@ QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSi
     renderSources(painter, projection, sources);
     painter.end();
     output.setDevicePixelRatio(1.0);
+    return output;
+}
+
+QImage renderImageSourcesToImage(const QRectF& canvasRect, const QSize& outputSize,
+                                 const QList<CanvasExportSource>& sources,
+                                 const QRect& outputPixelRect) {
+    const ExportProjection projection{canvasRect, outputSize};
+    if (!projection.isValid() || outputPixelRect.isEmpty())
+        return {};
+    QImage output =
+        snowCanvasAllocateImage(outputPixelRect.size(), QImage::Format_ARGB32_Premultiplied);
+    if (output.isNull())
+        return {};
+    output.fill(Qt::transparent);
+    const QRect visible = outputPixelRect.intersected(QRect(QPoint{}, outputSize));
+    // Keep the original horizontal span origin: clipping it can alter Qt's fixed-point
+    // texture stepping. Integer vertical translation preserves the full-render sample phase.
+    const int bandHeight = static_cast<int>(
+        std::max(qint64(1), qint64(8) * 1024 * 1024 / (qint64(outputSize.width()) * 4)));
+    for (int top = visible.top(); top <= visible.bottom(); top += bandHeight) {
+        const int height = std::min(bandHeight, visible.bottom() - top + 1);
+        QImage band = snowCanvasAllocateImage(QSize(outputSize.width(), height),
+                                              QImage::Format_ARGB32_Premultiplied);
+        if (band.isNull())
+            return {};
+        band.fill(Qt::transparent);
+        QPainter painter(&band);
+        configureExportPainter(painter);
+        painter.translate(0, -top);
+        renderSources(painter, projection, sources);
+        painter.end();
+        for (int y = 0; y < height; ++y)
+            std::memcpy(output.scanLine(top + y - outputPixelRect.y()) +
+                            (visible.x() - outputPixelRect.x()) * 4,
+                        band.constScanLine(y) + visible.x() * 4,
+                        static_cast<std::size_t>(visible.width()) * 4);
+    }
     return output;
 }
 

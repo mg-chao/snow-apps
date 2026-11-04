@@ -84,11 +84,17 @@ class ScreenshotExportCoordinator final : public QObject {
     // The deadline bounds how long shutdown() waits for workers that ignore
     // their cancellation tokens; tests shrink it to exercise abandonment.
     ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds, QObject* parent = nullptr);
+    ScreenshotExportCoordinator(int shutdownTimeoutMilliseconds, qint64 maximumWorkingBytes,
+                                QObject* parent = nullptr);
     ~ScreenshotExportCoordinator() override;
 
     [[nodiscard]] static ScreenshotExportCoordinator& shared();
     [[nodiscard]] ScreenshotExportJobHandle submit(QObject* receiver, Priority priority, Work work,
-                                                   Completion completion);
+                                                   Completion completion,
+                                                   qint64 estimatedWorkingBytes = 0);
+    // Estimates bound concurrent scratch/output preparation, separately from cached or externally
+    // owned results. A job larger than the budget runs alone so existing large exports still work.
+    [[nodiscard]] qint64 activeWorkingBytes() const;
     [[nodiscard]] int pendingJobCount() const;
     [[nodiscard]] bool acceptingSubmissions() const;
     void shutdown();
@@ -110,7 +116,8 @@ class ScreenshotExportQueue final : public QObject {
     ~ScreenshotExportQueue() override;
     [[nodiscard]] bool enqueue(ScreenshotExportCoordinator::Priority priority,
                                ScreenshotExportCoordinator::Work work,
-                               ScreenshotExportCoordinator::Completion completion);
+                               ScreenshotExportCoordinator::Completion completion,
+                               qint64 estimatedWorkingBytes = 0);
     void cancel();
     [[nodiscard]] bool active() const;
 
@@ -121,6 +128,7 @@ class ScreenshotExportQueue final : public QObject {
         ScreenshotExportCoordinator::Priority priority;
         ScreenshotExportCoordinator::Work work;
         ScreenshotExportCoordinator::Completion completion;
+        qint64 estimatedWorkingBytes = 0;
     };
     QPointer<ScreenshotExportCoordinator> m_coordinator;
     QQueue<Request> m_requests;

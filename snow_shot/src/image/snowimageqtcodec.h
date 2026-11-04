@@ -95,6 +95,10 @@ struct EncodeResult final {
 };
 
 [[nodiscard]] std::optional<snow::image::EncoderInfo> encoderInfo(snow::image::Format format);
+// Dimension-only admission estimate, including Qt's bounded row-conversion cache. Does not scan
+// alpha or include caller-owned encoded bytes; unknown routes use the codec's conservative plan.
+[[nodiscard]] std::optional<qint64> encodeWorkingBytes(QSize size, snow::image::Format format,
+                                                       const snow::image::EncodeOptions& options);
 
 [[nodiscard]] bool encodeToDevice(const ScreenshotImageRowSource& source, QIODevice* device,
                                   snow::image::Format format,

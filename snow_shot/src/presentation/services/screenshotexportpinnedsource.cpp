@@ -43,23 +43,54 @@ bool finiteRect(const QRectF& rect) {
            std::isfinite(rect.top()) && std::isfinite(rect.right()) && std::isfinite(rect.bottom());
 }
 
+bool sharesNativePinnedBackground(const ScreenshotPinnedViewportExportSource& source,
+                                  const QRectF& outputRect, const QSize& outputSize) {
+    return source.documentSession.isEmpty() && source.textAnnotations.empty() &&
+           !source.recognitionOverlay && source.presentationImage.isNull() &&
+           outputRect == source.backgroundCanvasRect &&
+           outputSize == source.backgroundImage.size() && outputRect.size() == QSizeF(outputSize) &&
+           source.backgroundImage.devicePixelRatio() == 1 &&
+           source.backgroundImage.format() == QImage::Format_ARGB32_Premultiplied;
+}
+
 std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource& source,
                                      const ScreenshotPinnedViewportRenderPlan& plan) {
     using namespace screenshot_pinned_render;
-    const auto content = rasterBytes(plan.renderPixelSize);
-    const auto composed = rasterBytes(plan.resultLayout.outputRect.size());
+    const auto style = ScreenshotResultCompositor::normalizedStyle(source.resultStyle);
+    const QRect compositionRect = plan.composeVisibleOnly
+                                      ? ScreenshotResultCompositor::viewportRenderRect(
+                                            source.contentPixelSize, style, plan.outputPixelRect)
+                                      : plan.resultLayout.outputRect;
+    const auto content =
+        rasterBytes(plan.contentPixelRect ? plan.contentPixelRect->size() : plan.renderPixelSize);
+    const auto fullComposed = rasterBytes(plan.resultLayout.outputRect.size());
+    const auto composed = rasterBytes(compositionRect.size());
     const auto output = rasterBytes(plan.outputSize());
-    const auto mask = rasterBytes(plan.resultLayout.outputRect.size(), 8);
-    if (!content || !composed || !output || !mask)
+    const auto mask =
+        rasterBytes(plan.composeVisibleOnly && !style.region ? compositionRect.size()
+                                                             : plan.resultLayout.outputRect.size(),
+                    8);
+    if (!content || !fullComposed || !composed || !output || !mask)
         return std::nullopt;
-    qint64 bytes = *content;
+    const auto colorSpace = source.backgroundImage.colorSpace();
+    const bool sharesBackground =
+        !plan.contentPixelRect &&
+        sharesNativePinnedBackground(source, plan.renderCanvasRect, plan.renderPixelSize);
+    const bool convertsColor = colorSpace.isValid() && colorSpace != QColorSpace(QColorSpace::SRgb);
+    const bool sharesPixels = sharesBackground && !convertsColor;
+    qint64 bytes = sharesPixels ? 4096 : *content;
+    if (convertsColor && !sharesBackground && !addBytes(bytes, *content))
+        return std::nullopt;
+    if (plan.contentPixelRect &&
+        !addBytes(bytes,
+                  std::max(qint64(8) * 1024 * 1024, qint64(plan.renderPixelSize.width()) * 4)))
+        return std::nullopt;
     const bool document = !source.documentSession.isEmpty();
     // Drawing can coexist with a prepared backdrop and canvas compositor scratch.
     if (document)
         for (int index = 0; index < 3; ++index)
             if (!addBytes(bytes, *content))
                 return std::nullopt;
-    const auto style = ScreenshotResultCompositor::normalizedStyle(source.resultStyle);
     const bool composition = style.region || style.cornerRadius > 0 || style.effectWidth() > 0;
     if (composition) {
         if (!addBytes(bytes, *composed))
@@ -71,10 +102,10 @@ std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource&
                 const qint64 effect = plan.resultLayout.effectInsets.left();
                 const qint64 side = std::max(qint64(512), effect * 8) + effect * 2 + 4;
                 const auto size = plan.resultLayout.outputRect.size();
-                const qint64 pixels =
-                    std::min(*composed / 4, std::max(qint64(1024) * 1024,
-                                                     std::min(side, qint64(size.width())) *
-                                                         std::min(side, qint64(size.height()))));
+                const qint64 pixels = std::min(
+                    *fullComposed / 4,
+                    std::max(qint64(1024) * 1024, std::min(side, qint64(size.width())) *
+                                                      std::min(side, qint64(size.height()))));
                 for (int index = 0; index < 3; ++index)
                     if (!addBytes(bytes, pixels * 4))
                         return std::nullopt;
@@ -90,6 +121,9 @@ std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource&
                 return std::nullopt;
         } else {
             qint64 scratch = style.region || style.cornerRadius > 0 ? *mask : 0;
+            if (plan.composeVisibleOnly && style.region && style.effectWidth() > 0 &&
+                (!addBytes(scratch, *mask) || !addBytes(scratch, *output)))
+                return std::nullopt;
             if (style.borderType == ScreenshotSelectionBorderType::Shadow &&
                 style.effectWidth() > 0) {
                 const qint64 radius = qRound(std::min(
@@ -112,7 +146,9 @@ std::optional<qint64> renderingBytes(const ScreenshotPinnedViewportExportSource&
     } else if (source.outputOpacity < 1 && !addBytes(bytes, *content)) {
         return std::nullopt;
     }
-    if (plan.cropAfterRender && !addBytes(bytes, *output))
+    if (plan.cropAfterRender &&
+        (!plan.composeVisibleOnly || compositionRect != plan.outputPixelRect) &&
+        !addBytes(bytes, *output))
         return std::nullopt;
     return bytes;
 }
@@ -125,6 +161,20 @@ QImage renderPinnedBackground(const ScreenshotPinnedViewportExportSource& source
         !source.recognitionOverlay && source.presentationImage.isNull() &&
         outputRect == source.backgroundCanvasRect && outputSize == source.backgroundImage.size())
         return source.backgroundImage;
+    if (sharesNativePinnedBackground(source, outputRect, outputSize)) {
+        // Match a freshly projected raster's metadata while retaining immutable native pixels.
+        // The owner also makes mutations of either the input or the result detach safely.
+        auto owner = std::make_unique<QImage>(source.backgroundImage);
+        QImage background(
+            owner->constBits(), owner->width(), owner->height(), owner->bytesPerLine(),
+            owner->format(), [](void* context) { delete static_cast<QImage*>(context); },
+            owner.get());
+        if (!background.isNull()) {
+            owner.release();
+            background.setColorSpace(source.backgroundImage.colorSpace());
+        }
+        return background;
+    }
     const QImage& backdrop =
         source.presentationImage.isNull() ? source.backgroundImage : source.presentationImage;
     const QRectF backdropRect = source.presentationImage.isNull() ? source.backgroundCanvasRect
@@ -190,12 +240,29 @@ screenshotPinnedViewportRenderPlan(const ScreenshotPinnedViewportExportSource& s
                 qint64(*y) + output.height() - 1 > std::numeric_limits<int>::max())
                 return std::nullopt;
             plan.outputPixelRect = QRect(QPoint(*x, *y), output);
+            // Region annotations render over the composed capture and may sample its full
+            // backdrop. Keep that ordering until the renderer can request composed halos.
+            plan.composeVisibleOnly =
+                source.documentSession.isEmpty() || !source.resultStyle.region;
         } else {
             plan.renderCanvasRect = visible;
             plan.renderPixelSize = output;
             plan.resultLayout = ScreenshotResultCompositor::layoutForContent(output, {});
             plan.outputPixelRect = plan.resultLayout.outputRect;
         }
+    }
+    if (plan.composeVisibleOnly && source.documentSession.isEmpty() &&
+        source.textAnnotations.empty() && !source.recognitionOverlay &&
+        source.presentationImage.isNull() &&
+        !sharesNativePinnedBackground(source, plan.renderCanvasRect, plan.renderPixelSize)) {
+        auto contentRect = ScreenshotResultCompositor::viewportRenderRect(
+                               source.contentPixelSize, source.resultStyle, plan.outputPixelRect)
+                               .intersected(plan.resultLayout.contentRect)
+                               .translated(-plan.resultLayout.contentRect.topLeft());
+        // A transparent placeholder supplies metadata for a shadow-only viewport.
+        if (contentRect.isEmpty())
+            contentRect = QRect(0, 0, 1, 1);
+        plan.contentPixelRect = contentRect;
     }
     const auto bytes = renderingBytes(source, plan);
     if (!bytes)
@@ -230,7 +297,14 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
                                  !source.presentationImage.isNull();
     QImage background;
     if (needsBackground) {
-        background = renderPinnedBackground(source, outputRect, outputSize, cancelled);
+        if (plan.contentPixelRect) {
+            background = SnowCanvasRuntime::renderImageSourcesToImage(
+                outputRect, outputSize, {{source.backgroundImage, source.backgroundCanvasRect}},
+                *plan.contentPixelRect);
+            background.setColorSpace(source.backgroundImage.colorSpace());
+        } else {
+            background = renderPinnedBackground(source, outputRect, outputSize, cancelled);
+        }
         if (background.isNull() || stopped())
             return {};
     }
@@ -270,6 +344,10 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source,
     if (stopped())
         return {};
     content.setColorSpace(source.backgroundImage.colorSpace());
+    if (plan.composeVisibleOnly)
+        return ScreenshotResultCompositor::composeViewport(
+            content, source.contentPixelSize, plan.contentPixelRect.value_or(QRect()).topLeft(),
+            source.resultStyle, plan.outputPixelRect, source.outputOpacity);
     return content.isNull()
                ? QImage{}
                : ScreenshotResultCompositor::compose(
@@ -296,11 +374,14 @@ QImage renderScreenshotPinnedViewport(const ScreenshotPinnedViewportExportSource
     QImage image = renderPinnedViewport(source, *plan, cancelled);
     if (image.isNull() || (cancelled && cancelled()))
         return {};
-    return plan->cropAfterRender ? snowCanvasCopyImage(image, plan->outputPixelRect) : image;
+    return plan->cropAfterRender && !plan->composeVisibleOnly
+               ? snowCanvasCopyImage(image, plan->outputPixelRect)
+               : image;
 }
 
 ScreenshotExportSource
 ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource source) {
+    const auto plan = screenshotPinnedViewportRenderPlan(source);
     auto placement = source.clipboardPlacement;
     auto appearance = source.clipboardAppearance;
     auto pixels = std::make_shared<PinnedPixels>(std::move(source));
@@ -323,6 +404,7 @@ ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource 
         });
     result.m_clipboardPlacement = std::move(placement);
     result.m_clipboardAppearance = std::move(appearance);
+    result.m_renderingBytes = plan ? plan->workingBytes : std::numeric_limits<qint64>::max();
     return result;
 }
 

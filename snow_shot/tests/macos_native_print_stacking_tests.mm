@@ -1,6 +1,9 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
 #include "platform/macos/capturewindowlayers_p.h"
+#include "platform/macos/nativeprintimage.h"
+#include <array>
+#include <cstring>
 
 #import <AppKit/AppKit.h>
 
@@ -19,6 +22,43 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+
+void nativePrintProviderRetainsImmutablePixels() {
+    std::array<QRgb, 3> storage{qRgb(255, 0, 0), qRgb(0, 255, 0), qRgb(0, 0, 255)};
+    bool released = false;
+    QImage source(
+        reinterpret_cast<const uchar*>(storage.data()), 3, 1, 12, QImage::Format_RGB32,
+        [](void* context) { *static_cast<bool*>(context) = true; }, &released);
+    CGImageRef image = snow_shot::platform::macos::createPrintImage(source);
+    require(image && CGImageGetWidth(image) == 3 && CGImageGetHeight(image) == 1,
+            "native print provider creates the prepared bitmap without conversion");
+    source.fill(Qt::white);
+    source = {};
+    require(!released,
+            "native print provider retains source storage after caller mutation and release");
+    CFDataRef bytes = CGDataProviderCopyData(CGImageGetDataProvider(image));
+    require(bytes && CFDataGetLength(bytes) == 12 &&
+                std::memcmp(CFDataGetBytePtr(bytes), storage.data(), 12) == 0,
+            "native print provider preserves immutable BGRA pixel storage");
+    CFRelease(bytes);
+    QImage rendered(3, 1, QImage::Format_RGB32);
+    rendered.fill(Qt::black);
+    CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context =
+        CGBitmapContextCreate(rendered.bits(), 3, 1, 8, 12, color,
+                              static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Host) |
+                                  static_cast<CGBitmapInfo>(kCGImageAlphaNoneSkipFirst));
+    require(context, "native print verification context exists");
+    CGContextDrawImage(context, CGRectMake(0, 0, 3, 1), image);
+    CGContextRelease(context);
+    CGColorSpaceRelease(color);
+    require(rendered.pixelColor(0, 0) == QColor(Qt::red) &&
+                rendered.pixelColor(1, 0) == QColor(Qt::green) &&
+                rendered.pixelColor(2, 0) == QColor(Qt::blue),
+            "Core Graphics interprets prepared channels and sRGB colors correctly");
+    CGImageRelease(image);
+    require(released, "native provider releases the raster when printing releases its image");
 }
 
 void nativeSheetsInheritCaptureFloors() {
@@ -197,6 +237,7 @@ void nativePrintPanelCoversToolbar() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    nativePrintProviderRetainsImmutablePixels();
     nativeSheetsInheritCaptureFloors();
     if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
         @autoreleasepool {

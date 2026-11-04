@@ -705,9 +705,22 @@ void exteriorPaintingPreservesClippingAndPainterState() {
                             "exterior painting must restore all caller painter state");
                 }
             }
-            require(
-                actual == expected,
-                "tiled exterior coverage must match full rasterization under transforms and clips");
+            if (shape == 0) {
+                // Qt quantizes solid-brush and premultiplied-image opacity one level apart.
+                // The empty path takes the solid fill shortcut; shaped coverage remains exact.
+                for (int y = 0; y < actual.height(); ++y)
+                    for (int x = 0; x < actual.width(); ++x) {
+                        const auto a = actual.pixel(x, y), b = expected.pixel(x, y);
+                        require(qAbs(qAlpha(a) - qAlpha(b)) <= 1 && qAbs(qRed(a) - qRed(b)) <= 1 &&
+                                    qAbs(qGreen(a) - qGreen(b)) <= 1 &&
+                                    qAbs(qBlue(a) - qBlue(b)) <= 1,
+                                "empty exterior fills preserve brush/image opacity quantization");
+                    }
+            } else {
+                require(actual == expected,
+                        "tiled exterior coverage must match full rasterization under transforms "
+                        "and clips");
+            }
         }
     }
 }
@@ -739,6 +752,194 @@ void windingLiveResultMatchesExport() {
             "persisted winding selections must have identical bordered live and exported pixels");
 }
 
+void croppedSelfIntersectingRegionsPreserveTheirMask() {
+    const QSize size(422, 353);
+    QImage content(size, QImage::Format_ARGB32_Premultiplied);
+    content.fill(QColor(30, 100, 210, 255));
+    const QPoint hole(304, 119);
+    const QPoint selected(304, 100);
+    for (const auto fillRule : {Qt::WindingFill, Qt::OddEvenFill}) {
+        QPainterPath path;
+        path.setFillRule(fillRule);
+        path.moveTo(217, 78);
+        path.lineTo(388, 153);
+        path.lineTo(285, 55);
+        path.lineTo(340, 247);
+        path.closeSubpath();
+        require(!path.contains(QPointF(hole)) && path.contains(QPointF(selected)),
+                "self-intersecting fixture contains both a hole and selected content");
+        for (const auto borderType :
+             {ScreenshotSelectionBorderType::Shadow, ScreenshotSelectionBorderType::Border}) {
+            for (const int effectWidth : {0, 6}) {
+                ScreenshotResultStyle style;
+                style.borderType = borderType;
+                style.shadowWidth = effectWidth;
+                style.borderWidth = effectWidth;
+                style.region =
+                    ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+                const auto restored =
+                    decodeScreenshotResultStyle(encodeScreenshotResultStyle(style));
+                require(restored && restored->region && restored->region->path() == path,
+                        "persisted self-intersecting regions retain their fill rule and contours");
+                const auto full = ScreenshotResultCompositor::compose(content, *restored);
+                const auto layout =
+                    ScreenshotResultCompositor::layoutForContent(content.size(), *restored);
+                const auto offset = layout.contentRect.topLeft();
+                for (const QRect contentCrop : {QRect(300, 83, 8, 55), QRect(200, 50, 30, 45)}) {
+                    const QRect viewport = contentCrop.translated(offset);
+                    const auto expected = full.copy(viewport);
+                    const auto actual =
+                        ScreenshotResultCompositor::composeViewport(content, *restored, viewport);
+                    require(actual == expected,
+                            "cropped custom regions must preserve full-render selection coverage");
+                    const QRect tile =
+                        ScreenshotResultCompositor::viewportRenderRect(size, *restored, viewport)
+                            .intersected(layout.contentRect)
+                            .translated(-offset);
+                    const auto partial = ScreenshotResultCompositor::composeViewport(
+                        content.copy(tile), size, tile.topLeft(), *restored, viewport);
+                    require(partial == expected,
+                            "partial content crops must preserve self-intersecting region masks");
+                    if (effectWidth == 0 && contentCrop.contains(hole)) {
+                        const QPoint localHole = hole - contentCrop.topLeft();
+                        const QPoint localSelected = selected - contentCrop.topLeft();
+                        require(expected.pixelColor(localHole).alpha() == 0 &&
+                                    actual.pixelColor(localHole).alpha() == 0 &&
+                                    partial.pixelColor(localHole).alpha() == 0 &&
+                                    actual.pixelColor(localSelected) ==
+                                        content.pixelColor(selected),
+                                "zero-effect region crops retain transparent holes and selected "
+                                "source pixels");
+                    }
+                }
+            }
+        }
+    }
+}
+
+QPainterPath selfIntersectingContourAcrossTile(int side, int padding) {
+    QPainterPath path;
+    path.setFillRule(Qt::WindingFill);
+    path.moveTo(216.5, 78.4);
+    path.lineTo(388.3, 153.1);
+    path.lineTo(284.9, 55.1);
+    path.lineTo(324.4, 251.8);
+    path.lineTo(68.9, 62.1);
+    path.lineTo(407.8, 142.8);
+    path.lineTo(340.4, 247.3);
+    path.closeSubpath();
+    const QRectF source(299, 82, 10, 57);
+    const QRectF target =
+        QRectF(512, 512, side, side).adjusted(-padding, -padding, padding, padding);
+    QTransform transform;
+    transform.translate(target.x(), target.y());
+    transform.scale(target.width() / source.width(), target.height() / source.height());
+    transform.translate(-source.x(), -source.y());
+    return transform.map(path);
+}
+
+void tiledLiveMasksAndBackgroundsPreserveInteriorHoles() {
+    const QRect viewport(512, 512, 256, 256);
+    const QColor selectedColor(30, 100, 210);
+    const QColor exteriorColor(210, 30, 100);
+    const auto livePath = selfIntersectingContourAcrossTile(256, 1);
+    for (const bool mask : {true, false}) {
+        QImage expected(viewport.size(), QImage::Format_ARGB32_Premultiplied);
+        expected.fill(mask ? QColor(Qt::transparent) : exteriorColor);
+        {
+            QPainter painter(&expected);
+            painter.translate(-viewport.topLeft());
+            painter.setRenderHint(QPainter::Antialiasing);
+            if (!mask)
+                painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+            painter.fillPath(livePath, mask ? selectedColor : QColor(Qt::black));
+        }
+        QImage actual(viewport.size(), expected.format());
+        actual.fill(mask ? selectedColor : QColor(Qt::transparent));
+        {
+            QPainter painter(&actual);
+            painter.translate(-viewport.topLeft());
+            if (mask)
+                ScreenshotResultCompositor::maskLiveSurface(painter, viewport, livePath);
+            else
+                ScreenshotResultCompositor::fillOutsideSelection(painter, viewport, livePath,
+                                                                 exteriorColor);
+        }
+        for (int y = 0; y < actual.height(); ++y)
+            for (int x = 0; x < actual.width(); ++x)
+                require(qAbs(qAlpha(actual.pixel(x, y)) - qAlpha(expected.pixel(x, y))) <= 1,
+                        "live tiles must rasterize self-intersections instead of skipping holes");
+        require(actual.pixelColor(38, 155).alpha() == (mask ? 0 : 255),
+                "live tiles must preserve the known exterior point inside the contour bounds");
+    }
+
+    QImage background(QSize(1024, 1024), QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::green);
+    QImage content(viewport.size(), background.format());
+    content.fill(QColor(30, 100, 210, 128));
+    const auto path = selfIntersectingContourAcrossTile(256, 0);
+    QImage coverage(viewport.size(), QImage::Format_Alpha8);
+    coverage.fill(0);
+    {
+        QPainter painter(&coverage);
+        painter.translate(-viewport.topLeft());
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.fillPath(path, Qt::white);
+    }
+    const auto retained = ScreenshotResultCompositor::maskBackgroundForSelection(
+        background, content, path, viewport.topLeft());
+    for (int y = 0; y < viewport.height(); ++y)
+        for (int x = 0; x < viewport.width(); ++x) {
+            const int alpha = coverage.constScanLine(y)[x];
+            const int denominator = 255 - (128 * alpha + 127) / 255;
+            const int expected = (255 * (255 - alpha) + denominator / 2) / denominator;
+            require(qAlpha(retained.pixel(x + viewport.x(), y + viewport.y())) == expected,
+                    "background tiles retain uncovered pixels beneath translucent selections");
+        }
+    require(retained.pixelColor(550, 667) == QColor(Qt::green),
+            "background masking must retain the known self-intersection hole");
+}
+
+void tiledRegionExportsAndLiveShadowsPreserveInteriorHoles() {
+    const QRect viewport(512, 512, 512, 512);
+    const QRect halo = viewport.adjusted(-12, -12, 12, 12);
+    const auto path = selfIntersectingContourAcrossTile(512, 12);
+    ScreenshotResultStyle style;
+    style.shadowWidth = 10;
+    style.shadowColor = Qt::black;
+    style.region =
+        ScreenshotRegionGeometry::fromPath(path.translated(-10, -10), ScreenshotRegionType::Curve);
+    QImage content(halo.size(), QImage::Format_ARGB32_Premultiplied);
+    content.fill(Qt::blue);
+    const auto cropped = ScreenshotResultCompositor::composeViewport(
+        content, QSize(1536, 1536), halo.topLeft() - QPoint(10, 10), style, viewport);
+    const QPoint hole(580, 824);
+    const QPoint shadow(580, 815);
+    const QPoint selected(580, 700);
+    require(cropped.pixelColor(hole - viewport.topLeft()).alpha() < 255 &&
+                cropped.pixelColor(shadow - viewport.topLeft()).alpha() > 0 &&
+                cropped.pixelColor(shadow - viewport.topLeft()).alpha() < 255 &&
+                cropped.pixelColor(selected - viewport.topLeft()) == QColor(Qt::blue),
+            "tiled exports retain holes and their boundary shadows without exposing source pixels");
+
+    auto livePath = path;
+    // This distant component aligns the region-local shadow grid with the same visible tile.
+    livePath.addRect(QRectF(-12278, 10, 1, 1));
+    const auto region = ScreenshotRegionGeometry::fromPath(livePath, ScreenshotRegionType::Curve);
+    ScreenshotRegionShadowRenderer renderer;
+    QImage live(viewport.size(), QImage::Format_ARGB32_Premultiplied);
+    live.fill(Qt::transparent);
+    {
+        QPainter painter(&live);
+        painter.translate(-viewport.topLeft());
+        renderer.render(painter, region, 0, 10, Qt::black, QTransform(), QRegion(viewport));
+    }
+    require(live.pixelColor(shadow - viewport.topLeft()).alpha() > 0 &&
+                live.pixelColor(hole - viewport.topLeft()).alpha() < 255 &&
+                live.pixelColor(selected - viewport.topLeft()).alpha() == 0,
+            "live region shadow tiles retain self-intersection boundaries inside their bounds");
+}
+
 void sharedMetadataAndOpacityKeepMappedOwnership() {
     QImage source = snowCanvasAllocateImage(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
     require(!source.isNull(), "large composition fixture must allocate");
@@ -761,6 +962,11 @@ void sharedMetadataAndOpacityKeepMappedOwnership() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        croppedSelfIntersectingRegionsPreserveTheirMask();
+        tiledLiveMasksAndBackgroundsPreserveInteriorHoles();
+        tiledRegionExportsAndLiveShadowsPreserveInteriorHoles();
+        if (application.arguments().contains(QStringLiteral("--region-coverage-only")))
+            return EXIT_SUCCESS;
         persistedStylePreservesQt611Format();
         borderCompositionAndStylePersistence();
         scaledEffectsKeepTheirOutputPixelWidths();
