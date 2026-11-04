@@ -3244,17 +3244,17 @@ void translationCopyProviderHandlesKeyboardAndContextMenu() {
     QApplication::processEvents();
     auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
     require(editor, "translation copy owns a result editor");
-    window.setTranslationClipboardProvider(
-        [] { return true; },
-        [&]() -> std::unique_ptr<QMimeData> {
-            if (fail)
-                return {};
-            if (auto selected = window.textSelectionClipboardMimeData())
-                return selected;
-            auto mime = std::make_unique<QMimeData>();
-            mime->setImageData(window.translationDocumentImage());
-            return mime;
-        });
+    static_cast<void>(window.attachSession(
+        &window, {[] { return true; },
+                  [&]() -> std::unique_ptr<QMimeData> {
+                      if (fail)
+                          return {};
+                      if (auto selected = window.textSelectionClipboardMimeData())
+                          return selected;
+                      auto mime = std::make_unique<QMimeData>();
+                      mime->setImageData(window.translationDocumentImage());
+                      return mime;
+                  }}));
     const auto image = window.translationDocumentImage();
     require(!image.isNull() && image.height() > editor->viewport()->height(),
             "translation image includes content below the viewport");

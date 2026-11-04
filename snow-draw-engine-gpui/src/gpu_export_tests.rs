@@ -530,6 +530,137 @@ fn svg_entry_points_agree_and_rough_styles_use_gpu_composites() {
 }
 
 #[test]
+fn arrow_outline_svg_falls_back_to_the_correct_gpu_pixels_for_every_entry_point() {
+    use base64::Engine as _;
+
+    #[derive(Clone, Default)]
+    struct SharedWriter(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl Write for SharedWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let host = gpui_windows::gpu_extensions::OffscreenGpuHost::new().unwrap();
+    for (width, alpha, raster) in [(0.0, 128, false), (4.0, 0, false), (4.0, 128, true)] {
+        let mut document = CanvasDocument::default();
+        let mut session = CanvasSession::new(&mut document).unwrap();
+        session.set_surface(&mut document, 96, 72).unwrap();
+        session
+            .set_camera(
+                &mut document,
+                Camera {
+                    center: Point::new(48.0, 36.0),
+                    zoom: 1.0,
+                },
+            )
+            .unwrap();
+        let batch = serde_json::to_vec(&serde_json::json!({"version":1,"operations":[
+            {"type":"arrow","points":[[16,36],[80,36]],"style":{
+                "stroke":[200,40,20,0],"stroke_width":8,
+                "arrow_outline_width":width,"arrow_outline_color":[20,180,40,alpha]
+            }}
+        ]}))
+        .unwrap();
+        document
+            .command(|engine| engine.apply_annotation_json(&batch))
+            .unwrap();
+        session.flush(&document).unwrap();
+        let snapshot = CanvasSnapshot::capture(&document, &session).unwrap();
+        assert_eq!(
+            vector_snapshot(&snapshot, GpuExportFormat::Svg).is_none(),
+            raster
+        );
+        assert_eq!(
+            crate::vector_export::svg(&snapshot, 1.0, &Default::default()).is_err(),
+            raster
+        );
+        let mut job = GpuExportJob::bytes(
+            host.service(),
+            snapshot.clone(),
+            1.0,
+            Default::default(),
+            GpuExportFormat::Svg,
+            Default::default(),
+        )
+        .unwrap();
+        let bytes = finish(&mut job).unwrap();
+        let svg = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(svg.contains("data:image/png;base64,"), raster);
+        if !raster {
+            continue;
+        }
+        let payload = svg
+            .split_once("data:image/png;base64,")
+            .unwrap()
+            .1
+            .split('"')
+            .next()
+            .unwrap();
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .unwrap();
+        let mut job = GpuExportJob::bytes(
+            host.service(),
+            snapshot.clone(),
+            1.0,
+            Default::default(),
+            GpuExportFormat::Png,
+            Default::default(),
+        )
+        .unwrap();
+        let direct = finish(&mut job).unwrap();
+        let embedded = image::load_from_memory(&png).unwrap().to_rgba8();
+        assert_eq!(
+            embedded,
+            image::load_from_memory(&direct).unwrap().to_rgba8()
+        );
+        // The ordinary document viewport clears to white. The partial-alpha
+        // outline must composite over that backdrop, retaining the empty center.
+        assert_eq!(embedded.get_pixel(48, 40).0, [137, 217, 147, 255]);
+        assert_eq!(embedded.get_pixel(48, 36).0, [255; 4]);
+        let output = SharedWriter::default();
+        let mut job = GpuExportJob::to_writer(
+            host.service(),
+            snapshot.clone(),
+            1.0,
+            Default::default(),
+            GpuExportFormat::Svg,
+            output.clone(),
+            Default::default(),
+        )
+        .unwrap();
+        finish(&mut job).unwrap();
+        assert_eq!(bytes, *output.0.lock().unwrap());
+        let path = std::env::temp_dir().join(format!(
+            "snow-arrow-outline-{}-{}.svg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut job = GpuExportJob::to_path(
+            host.service(),
+            snapshot,
+            1.0,
+            Default::default(),
+            GpuExportFormat::Svg,
+            path.clone(),
+            Default::default(),
+        )
+        .unwrap();
+        finish(&mut job).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(saved, bytes);
+    }
+}
+
+#[test]
 fn export_staging_reserves_the_shared_budget_before_native_submission() {
     let host = gpui_windows::gpu_extensions::OffscreenGpuHost::new().unwrap();
     let service = host.service();

@@ -1,5 +1,239 @@
 use super::*;
 use crate::{CanvasRect, ImageSourceLayer};
+
+fn source_history_image(value: u8) -> SourceImage {
+    SourceImage::new(RgbaImage::from_pixel(1, 1, image::Rgba([value, 0, 0, 255]))).unwrap()
+}
+
+fn source_history_pixel(document: &CanvasDocument) -> Option<u8> {
+    document
+        .background()
+        .map(|image| image.raster_pixels().unwrap().get_pixel(0, 0).0[0])
+}
+
+fn source_history_annotation(document: &mut CanvasDocument, viewport: ViewportId) {
+    document
+        .command(|engine| {
+            engine.set_viewport_watermark_config(
+                viewport,
+                snow_draw_engine_document::WatermarkConfig {
+                    text: "source history annotation".into(),
+                    ..Default::default()
+                },
+            )
+        })
+        .unwrap();
+}
+
+#[test]
+fn source_history_repeated_replacement_branches_release_abandoned_images() {
+    let mut document = CanvasDocument::default();
+    document.set_background(Some(source_history_image(1)));
+    for _ in 0..MAX_SOURCE_HISTORY_IMAGES * 2 {
+        let image = source_history_image(2);
+        let pixels = Arc::downgrade(&image.pixels);
+        document.replace_background(Some(image)).unwrap();
+        assert_eq!(document.host_sources.len(), 2);
+        document.command(Engine::undo).unwrap();
+        assert_eq!(source_history_pixel(&document), Some(1));
+        assert!(pixels.upgrade().is_some());
+        document.replace_background(None).unwrap();
+        assert!(pixels.upgrade().is_none());
+        assert_eq!(document.host_sources.len(), 2);
+        document.command(Engine::undo).unwrap();
+    }
+}
+
+#[test]
+fn source_history_admission_preserves_redo_and_discounts_discarded_sources() {
+    let mut document = CanvasDocument::default();
+    document.set_background(Some(source_history_image(0)));
+    for value in 1..MAX_SOURCE_HISTORY_IMAGES {
+        document
+            .replace_background(Some(source_history_image(value as u8)))
+            .unwrap();
+    }
+    let session = CanvasSession::new(&mut document).unwrap();
+    source_history_annotation(&mut document, session.viewport());
+    document.command(Engine::undo).unwrap();
+    let state = document.host_state;
+    let revision = document.resource_revision();
+    let sources = document.host_sources.len();
+    assert!(matches!(
+        document.replace_background(Some(source_history_image(200))),
+        Err(CanvasError::ResourceLimit)
+    ));
+    assert_eq!(document.host_state, state);
+    assert_eq!(document.resource_revision(), revision);
+    assert_eq!(document.host_sources.len(), sources);
+    assert_eq!(source_history_pixel(&document), Some(127));
+    assert!(document.engine().history_state().can_redo);
+    document.command(Engine::redo).unwrap();
+    assert_eq!(
+        document.engine().watermark_config().text,
+        "source history annotation"
+    );
+    document.command(Engine::undo).unwrap();
+    document.command(Engine::undo).unwrap();
+    document
+        .replace_background(Some(source_history_image(201)))
+        .unwrap();
+    assert_eq!(source_history_pixel(&document), Some(201));
+    assert_eq!(document.host_sources.len(), MAX_SOURCE_HISTORY_IMAGES);
+    assert!(!document.engine().history_state().can_redo);
+}
+
+#[test]
+fn source_history_annotation_branch_releases_redo_without_changing_source_token() {
+    let mut document = CanvasDocument::default();
+    let session = CanvasSession::new(&mut document).unwrap();
+    document.set_background(Some(source_history_image(1)));
+    let image = source_history_image(2);
+    let pixels = Arc::downgrade(&image.pixels);
+    document.replace_background(Some(image)).unwrap();
+    document.command(Engine::undo).unwrap();
+    let state = document.host_state;
+    let revision = document.resource_revision();
+    source_history_annotation(&mut document, session.viewport());
+    assert_eq!(document.host_state, state);
+    assert_eq!(document.resource_revision(), revision);
+    assert_eq!(document.host_sources.len(), 1);
+    assert!(pixels.upgrade().is_none());
+    assert!(!document.engine().history_state().can_redo);
+}
+
+#[test]
+fn source_history_snapshots_keep_pruned_resources_alive_independently() {
+    let mut document = CanvasDocument::default();
+    let session = CanvasSession::new(&mut document).unwrap();
+    document.set_background(Some(source_history_image(1)));
+    let image = source_history_image(2);
+    let pixels = Arc::downgrade(&image.pixels);
+    document.replace_background(Some(image)).unwrap();
+    let snapshot = crate::CanvasSnapshot::capture(&document, &session).unwrap();
+    document.command(Engine::undo).unwrap();
+    document
+        .replace_background(Some(source_history_image(3)))
+        .unwrap();
+    assert_eq!(document.host_sources.len(), 2);
+    assert_eq!(
+        snapshot
+            .background
+            .as_ref()
+            .unwrap()
+            .pixels
+            .get_pixel(0, 0)
+            .0[0],
+        2
+    );
+    assert!(pixels.upgrade().is_some());
+    drop(snapshot);
+    assert!(pixels.upgrade().is_none());
+}
+
+#[test]
+fn source_history_image_and_annotation_undo_redo_and_persistence_remain_ordered() {
+    let mut document = CanvasDocument::default();
+    let session = CanvasSession::new(&mut document).unwrap();
+    document.set_background(Some(source_history_image(1)));
+    source_history_annotation(&mut document, session.viewport());
+    document.replace_background(None).unwrap();
+    document
+        .replace_background(Some(source_history_image(2)))
+        .unwrap();
+    document.command(Engine::undo).unwrap();
+    assert_eq!(source_history_pixel(&document), None);
+    document.command(Engine::undo).unwrap();
+    assert_eq!(source_history_pixel(&document), Some(1));
+    document.command(Engine::undo).unwrap();
+    assert!(document.engine().watermark_config().text.is_empty());
+    document.command(Engine::redo).unwrap();
+    document.command(Engine::redo).unwrap();
+    assert_eq!(source_history_pixel(&document), None);
+    document.command(Engine::redo).unwrap();
+    assert_eq!(source_history_pixel(&document), Some(2));
+    let mut restored = CanvasDocument::deserialize(&document.serialize().unwrap()).unwrap();
+    assert_eq!(source_history_pixel(&restored), Some(2));
+    assert_eq!(restored.host_sources.len(), 1);
+    assert_eq!(restored.engine().host_history_states(true), [0]);
+    restored.command(Engine::undo).unwrap();
+    assert_eq!(source_history_pixel(&restored), Some(2));
+    assert!(restored.engine().watermark_config().text.is_empty());
+}
+
+#[test]
+fn source_history_budget_counts_unique_images_and_exact_byte_boundaries() {
+    assert_eq!(MAX_SOURCE_HISTORY_BYTES, 1024 * 1024 * 1024);
+    assert_eq!(MAX_SOURCE_HISTORY_IMAGES, 128);
+    let first = source_history_image(1);
+    let clone = first.clone();
+    let second = source_history_image(2);
+    assert!(validate_source_history_budget([&first, &clone], 4, 1).is_ok());
+    assert!(validate_source_history_budget([&first, &second], 8, 2).is_ok());
+    assert!(matches!(
+        validate_source_history_budget([&first, &second], 7, 2),
+        Err(CanvasError::ResourceLimit)
+    ));
+    assert!(matches!(
+        validate_source_history_budget([&first, &second], 8, 1),
+        Err(CanvasError::ResourceLimit)
+    ));
+}
+
+#[test]
+fn source_history_external_tokens_and_command_errors_reconcile_reachability() {
+    let mut document = CanvasDocument::default();
+    document.set_background(Some(source_history_image(1)));
+    document
+        .command(|engine| engine.commit_host_history_state(u64::MAX))
+        .unwrap();
+    assert_eq!(source_history_pixel(&document), Some(1));
+    assert_eq!(document.host_sources.len(), 2);
+    document.command(Engine::undo).unwrap();
+    let error = document.command::<()>(|engine| {
+        engine.commit_host_history_state(u64::MAX - 1)?;
+        Err(ErrorCode::InvalidArgument)
+    });
+    assert!(matches!(
+        error,
+        Err(CanvasError::Engine(ErrorCode::InvalidArgument))
+    ));
+    assert_eq!(document.host_state, u64::MAX - 1);
+    assert_eq!(source_history_pixel(&document), Some(1));
+    assert!(!document.host_sources.contains_key(&u64::MAX));
+    assert_eq!(document.host_sources.len(), 2);
+}
+
+#[test]
+fn source_history_reset_and_recommit_reconcile_even_with_the_same_current_token() {
+    let mut document = CanvasDocument::default();
+    document.set_background(Some(source_history_image(1)));
+    let image = source_history_image(2);
+    let pixels = Arc::downgrade(&image.pixels);
+    document.replace_background(Some(image)).unwrap();
+    document
+        .replace_background(Some(source_history_image(3)))
+        .unwrap();
+    let state = document.host_state;
+    let generation = document.host_history_generation;
+    document
+        .command(|engine| {
+            engine.clear_document_preserving_viewports()?;
+            engine.commit_host_history_state(state)
+        })
+        .unwrap();
+    assert_eq!(document.host_state, state);
+    assert_ne!(document.host_history_generation, generation);
+    assert_eq!(document.host_sources.len(), 2);
+    assert!(pixels.upgrade().is_none());
+    document
+        .command(Engine::clear_document_preserving_viewports)
+        .unwrap();
+    assert_eq!(source_history_pixel(&document), Some(1));
+    assert_eq!(document.host_sources.len(), 1);
+    assert_eq!(document.host_history_generation, 0);
+}
+
 #[test]
 fn decode_preflights_rgba_budget_before_native_decode_or_conversion() {
     let mut png = Vec::new();

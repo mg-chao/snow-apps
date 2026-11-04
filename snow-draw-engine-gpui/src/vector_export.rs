@@ -23,9 +23,11 @@ pub(crate) fn supports(snapshot: &CanvasSnapshot, vectors: &mut VectorContext) -
                 }
                 SceneDisplayItem::Arrow(item) => {
                     item.stroke_rendering_style == StrokeRenderingStyle::Architect
+                        && !crate::gpu_geometry::arrow_outline_visible(item)
                 }
                 SceneDisplayItem::SpeechBubble(item) => {
                     item.path.stroke_rendering_style == StrokeRenderingStyle::Architect
+                        && !crate::gpu_geometry::arrow_outline_visible(&item.path)
                 }
                 SceneDisplayItem::SerialNumber(item) => {
                     item.stroke_rendering_style == StrokeRenderingStyle::Architect

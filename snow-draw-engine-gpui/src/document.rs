@@ -19,6 +19,8 @@ use snow_draw_engine::{
 use crate::RetainedScene;
 
 const MAX_FILE_BYTES: usize = 512 * 1024 * 1024;
+const MAX_SOURCE_HISTORY_BYTES: usize = 1024 * 1024 * 1024;
+const MAX_SOURCE_HISTORY_IMAGES: usize = 128;
 pub const MAX_SURFACE_PIXELS: u64 = 16 * 1024 * 1024;
 pub const MAX_RASTER_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 static NEXT_DOCUMENT: AtomicU64 = AtomicU64::new(1);
@@ -569,6 +571,28 @@ pub struct CanvasDocument {
     interaction_owner: Option<ViewportId>,
     host_sources: std::collections::HashMap<u64, Option<SourceImage>>,
     host_state: u64,
+    host_history_generation: u64,
+}
+
+fn validate_source_history_budget<'a>(
+    sources: impl IntoIterator<Item = &'a SourceImage>,
+    maximum_bytes: usize,
+    maximum_images: usize,
+) -> Result<(), CanvasError> {
+    let mut identities = std::collections::HashSet::new();
+    let mut bytes = 0usize;
+    for source in sources {
+        if !identities.insert(source.pixels_identity()) {
+            continue;
+        }
+        bytes = bytes
+            .checked_add(source.retained_bytes())
+            .ok_or(CanvasError::ResourceLimit)?;
+        if bytes > maximum_bytes || identities.len() > maximum_images {
+            return Err(CanvasError::ResourceLimit);
+        }
+    }
+    Ok(())
 }
 
 impl Default for CanvasDocument {
@@ -587,6 +611,7 @@ impl CanvasDocument {
             interaction_owner: None,
             host_sources: [(0, None)].into_iter().collect(),
             host_state: 0,
+            host_history_generation: 0,
         })
     }
 
@@ -609,8 +634,17 @@ impl CanvasDocument {
         &mut self,
         command: impl FnOnce(&mut Engine) -> Result<T, ErrorCode>,
     ) -> Result<T, CanvasError> {
-        let result = command(&mut self.engine).map_err(CanvasError::from)?;
+        let result = command(&mut self.engine).map_err(CanvasError::from);
+        self.synchronize_source_history();
+        result
+    }
+
+    fn synchronize_source_history(&mut self) {
         let state = self.engine.host_history_state(0);
+        let generation = self.engine.host_history_generation();
+        if state == self.host_state && generation == self.host_history_generation {
+            return;
+        }
         if state != self.host_state {
             self.host_sources
                 .entry(state)
@@ -621,7 +655,12 @@ impl CanvasDocument {
             }
             self.host_state = state;
         }
-        Ok(result)
+        if self.host_sources.len() > 1 {
+            let states = self.engine.host_history_states(true);
+            self.host_sources
+                .retain(|state, _| states.binary_search(state).is_ok());
+        }
+        self.host_history_generation = generation;
     }
 
     pub fn background(&self) -> Option<&SourceImage> {
@@ -641,23 +680,23 @@ impl CanvasDocument {
     /// Source replacement shares the engine's undo timeline. Resource undo is
     /// runtime-only, as are the engine host-state tokens. Reject new snapshots
     /// beyond 1 GiB/128 distinct assets rather than evicting required undo data.
+    /// Admission excludes the redo branch discarded by a successful replacement;
+    /// rejected replacements preserve that branch and all of its source assets.
     /// Metadata token references follow the engine history's runtime lifetime.
     pub fn replace_background(&mut self, image: Option<SourceImage>) -> Result<(), CanvasError> {
         if self.engine.has_pointer_capture() {
             return Err(ErrorCode::InvalidState.into());
         }
-        let mut identities = std::collections::HashSet::new();
-        let bytes = self
-            .host_sources
-            .values()
-            .flatten()
-            .chain(image.as_ref())
-            .filter(|source| identities.insert(source.pixels_identity()))
-            .map(SourceImage::retained_bytes)
-            .sum::<usize>();
-        if bytes > 1024 * 1024 * 1024 || identities.len() > 128 {
-            return Err(CanvasError::ResourceLimit);
-        }
+        let surviving_states = self.engine.host_history_states(false);
+        validate_source_history_budget(
+            surviving_states
+                .iter()
+                .filter_map(|state| self.host_sources.get(state))
+                .flatten()
+                .chain(image.as_ref()),
+            MAX_SOURCE_HISTORY_BYTES,
+            MAX_SOURCE_HISTORY_IMAGES,
+        )?;
         let mut state = NEXT_HOST_STATE.fetch_add(1, Ordering::Relaxed);
         while self.host_sources.contains_key(&state) {
             state = NEXT_HOST_STATE.fetch_add(1, Ordering::Relaxed);
@@ -665,6 +704,7 @@ impl CanvasDocument {
         self.engine.commit_host_history_state(state)?;
         self.host_state = state;
         self.set_background(image);
+        self.synchronize_source_history();
         Ok(())
     }
 
@@ -679,6 +719,7 @@ impl CanvasDocument {
     }
     pub(crate) fn from_parts(engine: Engine, background: Option<SourceImage>) -> Self {
         let host_sources = [(0, background.clone())].into_iter().collect();
+        let host_history_generation = engine.host_history_generation();
         Self {
             identity: NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed),
             engine,
@@ -687,6 +728,7 @@ impl CanvasDocument {
             interaction_owner: None,
             host_sources,
             host_state: 0,
+            host_history_generation,
         }
     }
 }

@@ -23,6 +23,9 @@ use snow_draw_engine::*;
 
 use crate::{CanvasError, vector::VectorContext};
 
+#[path = "gpu_arrow_outline.rs"]
+mod arrow_outline;
+
 static NEXT_MESH: AtomicU64 = AtomicU64::new(1);
 const CACHE_BUDGET: usize = 64 * 1024 * 1024;
 const MAX_MESH_VERTICES: usize = 1_048_576;
@@ -145,6 +148,13 @@ struct ChunkMesh {
     mesh: Arc<Mesh>,
 }
 
+#[derive(Hash, PartialEq, Eq)]
+struct ArrowOutlineKey {
+    parts: Vec<u64>,
+    width: u64,
+    tolerance: u32,
+}
+
 /// Mesh keys omit pose, color, fill pattern, opacity and blend mode. A style-only
 /// edit reuses the geometry uploaded for its previous frame.
 #[derive(Default)]
@@ -152,6 +162,7 @@ pub(crate) struct GpuGeometryCache {
     meshes: HashMap<MeshKey, Arc<Mesh>>,
     glyphs: HashMap<GlyphKey, Arc<Mesh>>,
     chunks: HashMap<ChunkKey, ChunkMesh>,
+    arrow_outlines: HashMap<ArrowOutlineKey, Arc<Mesh>>,
     retained_bytes: usize,
     pub builds: u64,
     pub text: VectorContext,
@@ -162,6 +173,7 @@ impl GpuGeometryCache {
         self.meshes.clear();
         self.glyphs.clear();
         self.chunks.clear();
+        self.arrow_outlines.clear();
         self.retained_bytes = 0;
     }
 
@@ -323,6 +335,7 @@ impl GpuGeometryCache {
             self.meshes.clear();
             self.glyphs.clear();
             self.chunks.clear();
+            self.arrow_outlines.clear();
             self.retained_bytes = 0;
         }
     }
@@ -549,6 +562,11 @@ impl GpuGeometryCache {
             .or_else(|| item.arrowhead_primitives.first().map(|h| h.center))
             .unwrap_or([0.0, 0.0]);
         let transform = translation(origin);
+        let outlined_roughness = arrow_outline_visible(item).then_some((
+            item.stroke_rendering_style,
+            item.stroke_rendering_seed,
+            item.stroke_width * 10.0,
+        ));
         let full_path =
             || {
                 let commands: Box<dyn Iterator<Item = PathCommand> + '_> =
@@ -587,7 +605,7 @@ impl GpuGeometryCache {
                 DisplayFillStyle::Solid,
                 transform,
                 tolerance,
-                None,
+                outlined_roughness,
                 false,
             )?;
         } else {
@@ -634,56 +652,144 @@ impl GpuGeometryCache {
             }
         }
         for head in &item.arrowhead_primitives {
-            let mut path = Path::builder();
-            if head.kind == ArrowheadDisplayPrimitiveKind::Circle {
-                path.add_circle(
-                    local(head.center, origin)?,
-                    head.diameter as f32 / 2.0,
-                    Winding::Positive,
+            output
+                .parts
+                .extend(self.arrow_head(item, head, origin, tolerance, clear_color)?);
+        }
+        if arrow_outline_visible(item) {
+            let outline = self.arrow_outline(item, origin, tolerance)?;
+            if !outline.indices.is_empty() {
+                output.parts.insert(
+                    0,
+                    Paint {
+                        mesh: outline,
+                        color: item.arrow_outline_color,
+                        fill_style: DisplayFillStyle::Solid,
+                        transform,
+                        rough_style: item.stroke_rendering_style,
+                        rough_seed: item.stroke_rendering_seed,
+                        rough_scale: item.stroke_width * 10.0,
+                        is_text: false,
+                        color_glyph: None,
+                        glyph_tint: false,
+                        coverage_group: 2,
+                    },
                 );
-            } else if let Some(first) = head.points.first() {
-                path.begin(local(*first, origin)?);
-                for p in head.points.iter().skip(1) {
-                    path.line_to(local(*p, origin)?);
-                }
-                path.end(head.kind == ArrowheadDisplayPrimitiveKind::Polygon);
             }
-            let path = path.build();
-            let fill = match head.fill_mode {
-                ArrowheadDisplayFillMode::Stroke => item.stroke,
-                ArrowheadDisplayFillMode::Background => clear_color,
-            };
-            if head.kind != ArrowheadDisplayPrimitiveKind::Line {
-                self.push(
-                    &mut output.parts,
-                    &path,
-                    None,
-                    fill,
-                    DisplayFillStyle::Solid,
-                    transform,
-                    tolerance,
-                    None,
-                    false,
-                )?;
-            }
-            let style = match head.dash_mode {
-                ArrowheadDisplayDashMode::Inherit => item.stroke_style,
-                ArrowheadDisplayDashMode::Solid => StrokeStyle::Solid,
-                ArrowheadDisplayDashMode::DottedCap => StrokeStyle::Dotted,
-            };
+        }
+        Ok(())
+    }
+
+    fn arrow_head(
+        &mut self,
+        item: &ArrowDisplayItem,
+        head: &ArrowheadDisplayPrimitive,
+        origin: [f64; 2],
+        tolerance: f32,
+        clear_color: ColorRgba8,
+    ) -> Result<Vec<Paint>, CanvasError> {
+        let mut parts = Vec::new();
+        let transform = translation(origin);
+        let outlined_roughness = arrow_outline_visible(item).then_some((
+            item.stroke_rendering_style,
+            item.stroke_rendering_seed,
+            item.stroke_width * 10.0,
+        ));
+        let path = arrowhead_path(head, origin)?;
+        let fill = match head.fill_mode {
+            ArrowheadDisplayFillMode::Stroke => item.stroke,
+            ArrowheadDisplayFillMode::Background => clear_color,
+        };
+        if head.kind != ArrowheadDisplayPrimitiveKind::Line {
             self.push(
-                &mut output.parts,
+                &mut parts,
                 &path,
-                Some((item.stroke_width, style)),
-                item.stroke,
+                None,
+                fill,
                 DisplayFillStyle::Solid,
                 transform,
                 tolerance,
-                None,
+                outlined_roughness,
                 false,
             )?;
         }
-        Ok(())
+        let style = match head.dash_mode {
+            ArrowheadDisplayDashMode::Inherit => item.stroke_style,
+            ArrowheadDisplayDashMode::Solid => StrokeStyle::Solid,
+            ArrowheadDisplayDashMode::DottedCap => StrokeStyle::Dotted,
+        };
+        self.push(
+            &mut parts,
+            &path,
+            Some((item.stroke_width, style)),
+            item.stroke,
+            DisplayFillStyle::Solid,
+            transform,
+            tolerance,
+            outlined_roughness,
+            false,
+        )?;
+        Ok(parts)
+    }
+
+    fn arrow_outline(
+        &mut self,
+        item: &ArrowDisplayItem,
+        origin: [f64; 2],
+        tolerance: f32,
+    ) -> Result<Arc<Mesh>, CanvasError> {
+        // Geometry must survive a transparent foreground. Alpha belongs to its
+        // paint, rather than determining which contours have an outline.
+        let mut source = item.clone();
+        source.stroke = white();
+        source.fill.a = 0;
+        source.arrow_outline_width = 0.0;
+        source.stroke_rendering_style = StrokeRenderingStyle::Architect;
+        source.arrowhead_primitives.clear();
+        let mut shaft = ItemGeometry::default();
+        self.arrow(&source, tolerance, ColorRgba8::default(), &mut shaft)?;
+        let mut heads = Vec::new();
+        for head in &item.arrowhead_primitives {
+            // Use the shaft's local origin for both visible head ink and outline
+            // coverage, retaining subpixel alignment even far from canvas zero.
+            let parts = self.arrow_head(&source, head, origin, tolerance, ColorRgba8::default())?;
+            heads.push((head, parts));
+        }
+        let mut key = ArrowOutlineKey {
+            parts: Vec::new(),
+            width: item.arrow_outline_width.to_bits(),
+            tolerance: tolerance.to_bits(),
+        };
+        for parts in std::iter::once(&shaft.parts).chain(heads.iter().map(|(_, parts)| parts)) {
+            key.parts.push(parts.len() as u64);
+            for part in parts {
+                key.parts.push(part.mesh.identity);
+                let mut transform = part.transform;
+                transform[4] -= origin[0];
+                transform[5] -= origin[1];
+                key.parts.extend(transform.map(f64::to_bits));
+            }
+        }
+        for (head, _) in &heads {
+            key.parts.push(head.fill_mode as u64);
+        }
+        if let Some(mesh) = self.arrow_outlines.get(&key) {
+            return Ok(mesh.clone());
+        }
+        let path = arrow_outline::ink_contour(&shaft.parts, &heads, origin, tolerance)?;
+        let mesh = Arc::new(tessellate(
+            &path,
+            Some((item.arrow_outline_width, StrokeStyle::Solid)),
+            tolerance,
+        )?);
+        self.builds += 1;
+        let bytes = mesh.retained_bytes() + key.parts.len() * std::mem::size_of::<u64>();
+        if bytes <= CACHE_BUDGET {
+            self.reserve(bytes);
+            self.retained_bytes += bytes;
+            self.arrow_outlines.insert(key, mesh.clone());
+        }
+        Ok(mesh)
     }
 
     fn serial(
@@ -930,6 +1036,31 @@ fn white() -> ColorRgba8 {
         b: 255,
         a: 255,
     }
+}
+
+fn arrowhead_path(head: &ArrowheadDisplayPrimitive, origin: [f64; 2]) -> Result<Path, CanvasError> {
+    let mut path = Path::builder();
+    if head.kind == ArrowheadDisplayPrimitiveKind::Circle {
+        path.add_circle(
+            local(head.center, origin)?,
+            head.diameter as f32 / 2.0,
+            Winding::Positive,
+        );
+    } else if let Some(first) = head.points.first() {
+        path.begin(local(*first, origin)?);
+        for p in head.points.iter().skip(1) {
+            path.line_to(local(*p, origin)?);
+        }
+        path.end(head.kind == ArrowheadDisplayPrimitiveKind::Polygon);
+    }
+    Ok(path.build())
+}
+
+pub(crate) fn arrow_outline_visible(item: &ArrowDisplayItem) -> bool {
+    !item.is_free_draw
+        && item.stroke_width > 0.0
+        && item.arrow_outline_width > 0.0
+        && item.arrow_outline_color.a != 0
 }
 
 pub(crate) fn color_glyph_mesh(glyph: &crate::vector::ColorGlyph) -> Result<Mesh, CanvasError> {
