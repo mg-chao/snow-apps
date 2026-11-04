@@ -457,6 +457,14 @@ ScreenshotQuickTextAnnotationToolbar::ScreenshotQuickTextAnnotationToolbar(QWidg
 }
 
 ScreenshotQuickTextAnnotationToolbar::~ScreenshotQuickTextAnnotationToolbar() {
+    // Releasing the anchor sends ChildRemoved to the owner while Private is being
+    // destroyed. Stop observing before member and QObject child teardown begins.
+    if (d->owner)
+        d->owner->removeEventFilter(this);
+    for (auto* popup : {d->main, d->editor}) {
+        if (auto* surface = popup->surfaceWidget())
+            surface->removeEventFilter(this);
+    }
     clearSelection();
 }
 
