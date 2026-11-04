@@ -417,7 +417,7 @@ void ScreenshotRecognitionSessionController::setProviders(
 #endif
             if (affected)
                 if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
-                            tr("Recognition service changed. Retry to use the updated settings.")))
+                            tr("Recognition service changed. Retry to use the updated settings")))
                     return;
             if (!updateRecognitionModels())
                 return;
@@ -464,7 +464,7 @@ void ScreenshotRecognitionSessionController::setProviders(
                 if (affected) {
                     if (!notify(
                             &ScreenshotRecognitionSessionController::failModelRecognition,
-                            tr("Model configuration changed. Retry to use the updated settings.")))
+                            tr("Model configuration changed. Retry to use the updated settings")))
                         return;
                 }
                 if (!updateRecognitionModels())
@@ -1251,7 +1251,7 @@ void ScreenshotRecognitionSessionController::activateModelResult() {
             m_recognitionAwaitingModel = false;
             if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
                         tr("Snow Shot's visual understanding model is unavailable. Choose "
-                           "another model or retry.")))
+                           "another model or retry")))
                 return;
         }
         return;
@@ -1267,7 +1267,7 @@ void ScreenshotRecognitionSessionController::activateModelResult() {
                 return;
         } else if (!notify(&ScreenshotRecognitionSessionController::failModelRecognition,
                            tr("The selected recognition model is unavailable. Choose another model "
-                              "or retry."))) {
+                              "or retry"))) {
             return;
         }
         return;
@@ -3432,7 +3432,7 @@ void ScreenshotRecognitionSessionController::materializeTableEntry(
             !guard->recognitionEntryValid(entry.model, entry.modelFingerprint)) {
             if (!guard->notify(
                     &ScreenshotRecognitionSessionController::failModelRecognition,
-                    tr("Recognition service changed. Retry to use the updated settings.")))
+                    tr("Recognition service changed. Retry to use the updated settings")))
                 return;
             return;
         }

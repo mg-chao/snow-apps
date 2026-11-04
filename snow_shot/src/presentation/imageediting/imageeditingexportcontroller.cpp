@@ -56,7 +56,7 @@ ScreenshotExportTaskResult saveText(const QByteArray& bytes, const QString& path
             return ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::File,
                 QCoreApplication::translate("ImageEditingWindow",
-                                            "The save directory is not available."));
+                                            "The save directory is not available"));
         for (int index = 0; index < 1000000; ++index) {
             if (cancel.isCancellationRequested())
                 return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
@@ -81,7 +81,7 @@ ScreenshotExportTaskResult saveText(const QByteArray& bytes, const QString& path
         return ScreenshotExportTaskResult::failure(
             ScreenshotExportFailureStage::File,
             QCoreApplication::translate("ImageEditingWindow",
-                                        "No available output filename was found."));
+                                        "No available output filename was found"));
     }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
@@ -122,7 +122,7 @@ struct ImageEditingExportController::Impl {
         if (!request->job.isValid())
             finish(request, false,
                    QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                               "Export could not be started."));
+                                               "Export could not be started"));
     }
     void confirmOverwrite(QPointer<Request> request, const QStringList& paths,
                           std::function<void()> write) {
@@ -293,7 +293,7 @@ struct ImageEditingExportController::Impl {
                                 success ? QString{}
                                         : QCoreApplication::translate(
                                               "snow_shot::presentation::ImageEditingWindow",
-                                              "Export could not be started."));
+                                              "Export could not be started"));
                     };
                     // Keep the callback alive if a synchronous completion destroys the editor.
                     const auto handler = lifetime->m_impl->pin;
@@ -304,7 +304,7 @@ struct ImageEditingExportController::Impl {
                     lifetime->m_impl->finish(
                         request, false,
                         QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                    "Export could not be started."));
+                                                    "Export could not be started"));
             }
             break;
         }
@@ -324,7 +324,7 @@ struct ImageEditingExportController::Impl {
                 }))
                 finish(request, false,
                        QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                   "Export could not be started."));
+                                                   "Export could not be started"));
             break;
         case Operation::Save:
             if (storage::ScreenshotSettings().saveAsFileDialog() == QStringLiteral("snow_shot")) {
@@ -335,7 +335,7 @@ struct ImageEditingExportController::Impl {
                     finish(
                         request, false,
                         QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                    "Export could not be started."));
+                                                    "Export could not be started"));
             } else {
                 const auto save = ScreenshotManualSaveService::open(request, owner, artifact, done);
                 if (!request || active != request)
@@ -345,14 +345,14 @@ struct ImageEditingExportController::Impl {
                     finish(
                         request, false,
                         QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                    "Export could not be started."));
+                                                    "Export could not be started"));
             }
             break;
         case Operation::QuickSave:
             if (!artifact->requestQuickSave(request, done))
                 finish(request, false,
                        QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                   "Export could not be started."));
+                                                   "Export could not be started"));
             break;
         case Operation::Print:
             if (!artifact->requestImage(request, [this, request,
@@ -374,11 +374,11 @@ struct ImageEditingExportController::Impl {
                         finish(request, false,
                                QCoreApplication::translate(
                                    "snow_shot::presentation::ImageEditingWindow",
-                                   "Printing is unavailable."));
+                                   "Printing is unavailable"));
                 }))
                 finish(request, false,
                        QCoreApplication::translate("snow_shot::presentation::ImageEditingWindow",
-                                                   "Export could not be started."));
+                                                   "Export could not be started"));
             break;
         case Operation::Upload: {
             const auto config = ScreenshotCloudUploadService::configuration();
@@ -386,7 +386,7 @@ struct ImageEditingExportController::Impl {
                 finish(request, false,
                        QCoreApplication::translate(
                            "snow_shot::presentation::ImageEditingWindow",
-                           "Configure cloud upload before uploading an image."));
+                           "Configure cloud upload before uploading an image"));
                 break;
             }
             request->upload = ScreenshotCloudUploadService::upload(

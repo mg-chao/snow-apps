@@ -899,12 +899,12 @@ void statusAndCapabilityGates() {
         if (state == State::Minimized)
             require(result->subTitle() ==
                         QStringLiteral(
-                            "The window is minimized. The latest content cannot be displayed."),
+                            "The window is minimized. The latest content cannot be displayed"),
                     "minimized sources show the specified message");
         if (state == State::Closed)
             require(
                 result->subTitle() ==
-                    QStringLiteral("The window is closed. The latest content cannot be displayed."),
+                    QStringLiteral("The window is closed. The latest content cannot be displayed"),
                 "closed sources show the specified message");
         const int requests = source->requests;
         Access::convert(window);

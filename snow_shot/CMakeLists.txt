@@ -13712,6 +13712,12 @@ if(TARGET snow-shot-pinned-window-tests)
     set_tests_properties(snow-shot-pinned-shake-window-tests PROPERTIES
         LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 90
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    if(APPLE)
+        add_test(NAME snow-shot-pinned-shake-focus-native-tests
+            COMMAND snow-shot-pinned-window-tests --shake-focus-only -platform cocoa)
+        set_tests_properties(snow-shot-pinned-shake-focus-native-tests PROPERTIES
+            LABELS "interactive;e2e" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     if(WIN32)
         add_test(NAME snow-shot-pinned-shake-native-tests
             COMMAND snow-shot-pinned-window-tests --shake-hide-native-only -platform windows)

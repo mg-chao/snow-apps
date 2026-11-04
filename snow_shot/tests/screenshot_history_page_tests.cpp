@@ -1558,7 +1558,7 @@ void moreMenuOffersPinStitchAndDelete() {
         flushEvents();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         require(!menu &&
-                    failureMessage == QStringLiteral("Unable to copy this entry's image path.") &&
+                    failureMessage == QStringLiteral("Unable to copy this entry's image path") &&
                     QApplication::clipboard()->text() == QDir::toNativeSeparators(imagePath) &&
                     dataSource.readFailures == 0 && selected->isChecked(),
                 "missing image files and directories preserve the clipboard and selection");
@@ -1578,7 +1578,7 @@ void moreMenuOffersPinStitchAndDelete() {
                 dataSource.records().size() == 2 && selected->isChecked(),
             "failed reveal preserves history and selection without invoking read-failure cleanup");
     require(dataSource.revealedIds.size() == 3 &&
-                failureMessage == QStringLiteral("Unable to open this entry's file location.") &&
+                failureMessage == QStringLiteral("Unable to open this entry's file location") &&
                 QApplication::activeModalWidget() == nullptr,
             "failed reveal displays a non-modal error");
     adqt::widgets::AdMessageService::destroyAll(&page);

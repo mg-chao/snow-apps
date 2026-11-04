@@ -412,15 +412,15 @@ void pageAndAlerts() {
             const QVector<QStringList> expectedRows{
                 {QStringLiteral("screen-recording"),
                  QStringLiteral("Screen & System Audio Recording"),
-                 QStringLiteral("Capture screenshots and record your screen and system audio.")},
+                 QStringLiteral("Capture screenshots and record your screen and system audio")},
                 {QStringLiteral("accessibility"), QStringLiteral("Accessibility"),
                  QStringLiteral("Use global mouse gestures, select individual window elements, "
-                                "and translate selected text.")},
+                                "and translate selected text")},
                 {QStringLiteral("input-monitoring"), QStringLiteral("Input Monitoring"),
-                 QStringLiteral("Recognize global mouse gestures while you use other apps.")},
+                 QStringLiteral("Recognize global mouse gestures while you use other apps")},
                 {QStringLiteral("microphone"), QStringLiteral("Microphone"),
                  QStringLiteral("Optional. Record your microphone when microphone audio is "
-                                "enabled for recording.")}};
+                                "enabled for recording")}};
             for (const QStringList& expected : expectedRows) {
                 auto* row =
                     page.findChild<QWidget*>(QStringLiteral("settings-item-") + expected.at(0));

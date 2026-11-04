@@ -36,16 +36,16 @@ constexpr qint64 conversionCacheBytes = 2 * 1024 * 1024;
 QString resourceError() {
     return QCoreApplication::translate(
         "CollageDocument",
-        "The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings.");
+        "The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings");
 }
 
 QString preparationError() {
     return QCoreApplication::translate("CollageDocument",
-                                       "The collage images could not be prepared for export.");
+                                       "The collage images could not be prepared for export");
 }
 
 QString cancellationError() {
-    return QCoreApplication::translate("CollageDocument", "The collage export was cancelled.");
+    return QCoreApplication::translate("CollageDocument", "The collage export was cancelled");
 }
 
 void report(QString* destination, const QString& error) {
@@ -721,45 +721,44 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
     const auto positiveDimension = [&](const QString& key, qreal value) {
         if (!std::isfinite(value) || value <= 0)
             errors.insert(key, QCoreApplication::translate("CollageDocument",
-                                                           "Enter a positive paper dimension."));
+                                                           "Enter a positive paper dimension"));
         // PDF 1.7 permits at most 14400 default user-space units and a UserUnit of 75000.
         // Reject unrepresentable physical paper before converting millimeters to points.
         else if (value > maximumPdfDimensionMm)
             errors.insert(
-                key, QCoreApplication::translate(
-                         "CollageDocument", "The paper dimension exceeds the PDF size limit."));
+                key, QCoreApplication::translate("CollageDocument",
+                                                 "The paper dimension exceeds the PDF size limit"));
     };
     const auto nonnegativeMargin = [&](const QString& key, qreal value) {
         if (!std::isfinite(value) || value < 0)
             errors.insert(key, QCoreApplication::translate("CollageDocument",
-                                                           "Enter a nonnegative page margin."));
+                                                           "Enter a nonnegative page margin"));
     };
     if (settings.stitchingMethod != CollagePdfStitchingMethod::PageBased &&
         settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
         errors.insert(QStringLiteral("stitching_method"),
-                      QCoreApplication::translate("CollageDocument", "Select a stitching method."));
+                      QCoreApplication::translate("CollageDocument", "Select a stitching method"));
     if (collagePdfTemplateCapacity(settings.templateType) == 0)
         errors.insert(QStringLiteral("template_type"),
-                      QCoreApplication::translate("CollageDocument", "Select a template."));
+                      QCoreApplication::translate("CollageDocument", "Select a template"));
     const bool templateBased = settings.stitchingMethod == CollagePdfStitchingMethod::TemplateBased;
     if (templateBased && (!std::isfinite(settings.imageSpacingMm) || settings.imageSpacingMm < 0))
         errors.insert(
             QStringLiteral("image_spacing_mm"),
-            QCoreApplication::translate("CollageDocument", "Enter a nonnegative image spacing."));
+            QCoreApplication::translate("CollageDocument", "Enter a nonnegative image spacing"));
     if (settings.paperSize < CollagePdfPaperSize::A3 ||
         settings.paperSize > CollagePdfPaperSize::ImageSize)
         errors.insert(QStringLiteral("paper_size"),
-                      QCoreApplication::translate("CollageDocument", "Select a paper size."));
+                      QCoreApplication::translate("CollageDocument", "Select a paper size"));
     if ((settings.paperSize != CollagePdfPaperSize::ImageSize || templateBased) &&
         settings.orientation != CollagePdfOrientation::Portrait &&
         settings.orientation != CollagePdfOrientation::Landscape)
-        errors.insert(
-            QStringLiteral("orientation"),
-            QCoreApplication::translate("CollageDocument", "Select a paper orientation."));
+        errors.insert(QStringLiteral("orientation"),
+                      QCoreApplication::translate("CollageDocument", "Select a paper orientation"));
     if (settings.exportMode != CollagePdfExportMode::Combined &&
         settings.exportMode != CollagePdfExportMode::PerPage)
         errors.insert(QStringLiteral("export_mode"),
-                      QCoreApplication::translate("CollageDocument", "Select an export mode."));
+                      QCoreApplication::translate("CollageDocument", "Select an export mode"));
     if (settings.paperSize == CollagePdfPaperSize::ImageSize && !templateBased)
         return errors;
     if (settings.paperSize == CollagePdfPaperSize::Custom) {
@@ -780,7 +779,7 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
         if (std::isfinite(remaining) && remaining > 0)
             return;
         const QString message = QCoreApplication::translate(
-            "CollageDocument", "The margins must leave a usable content area.");
+            "CollageDocument", "The margins must leave a usable content area");
         errors.insert(beforeKey, message);
         errors.insert(afterKey, message);
     };
@@ -796,7 +795,7 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
             errors.insert(
                 QStringLiteral("image_spacing_mm"),
                 QCoreApplication::translate("CollageDocument",
-                                            "The image spacing must leave usable template cells."));
+                                            "The image spacing must leave usable template cells"));
     }
     return errors;
 }
@@ -807,7 +806,7 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
     layout.fieldErrors = validateCollagePdfSettings(settings);
     if (!layout.fieldErrors.isEmpty()) {
         layout.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid.");
+            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
         return layout;
     }
     if (transformedPixels.isEmpty()) {
@@ -820,7 +819,7 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
         if (layout.pageMillimeters.width() > maximumPdfDimensionMm ||
             layout.pageMillimeters.height() > maximumPdfDimensionMm) {
             layout.error = QCoreApplication::translate(
-                "CollageDocument", "The paper dimension exceeds the PDF size limit.");
+                "CollageDocument", "The paper dimension exceeds the PDF size limit");
             return layout;
         }
         layout.contentMillimeters = QRectF(QPointF(0, 0), layout.pageMillimeters);
@@ -843,7 +842,7 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
     if (layout.imageMillimeters.isEmpty() || !std::isfinite(fitted.width()) ||
         !std::isfinite(fitted.height()))
         layout.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid.");
+            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
     return layout;
 }
 
@@ -853,7 +852,7 @@ CollagePdfComposedPage calculateCollagePdfComposedPage(const QVector<CollageItem
     CollagePdfComposedPage page;
     const auto invalid = [&] {
         page.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid.");
+            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
         return page;
     };
     if (pageIndex < 0 || pageIndex >= collagePdfPageCount(items.size(), settings) ||
@@ -924,7 +923,7 @@ CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
         return result;
     if (!settingsValid(settings)) {
         result.error = QCoreApplication::translate("CollageDocument",
-                                                   "The collage layout settings are invalid.");
+                                                   "The collage layout settings are invalid");
         return result;
     }
     const bool vertical = settings.direction == CollageDirection::Vertical;
@@ -1446,7 +1445,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
         report(error, QCoreApplication::translate(
                           "CollageDocument",
                           "This collage requires too much temporary memory. Try fewer images or "
-                          "smaller image sizes."));
+                          "smaller image sizes"));
         return {};
     }
     if (preparedBytes > collage_detail::maximumRasterBytes) {
@@ -1599,7 +1598,7 @@ CollageClipboardEstimate estimateCollageClipboard(QSize outputSize) {
         result.dibBytes > std::numeric_limits<quint32>::max())
         result.error = QCoreApplication::translate(
             "CollageDocument",
-            "The collage is too large for the clipboard. Save it to a file instead.");
+            "The collage is too large for the clipboard. Save it to a file instead");
     return result;
 }
 
@@ -1628,7 +1627,7 @@ qint64 collageImageImportBytes(QSize size, QString* error) {
         report(error, QCoreApplication::translate(
                           "CollageDocument",
                           "This collage requires too much temporary memory. Try fewer images "
-                          "or smaller image sizes."));
+                          "or smaller image sizes"));
         return 0;
     }
     return bytes * 2;

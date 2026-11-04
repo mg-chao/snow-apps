@@ -227,7 +227,7 @@ bool CloudUploadSettingsWidget::save(const CloudUploadSettings& values) {
     m_error->setVisible(!success);
     if (!success)
         m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
-                            "writable and try again."));
+                            "writable and try again"));
     return success;
 }
 void CloudUploadSettingsWidget::copyConfiguration(const QString& id) {
@@ -401,20 +401,20 @@ void CloudUploadSettingsWidget::submitEditor(bool validateOnly) {
     std::array<QString, 9> errors;
     for (size_t i = 0; i < 6; ++i)
         if (text(i).trimmed().isEmpty())
-            errors[i] = tr("This field is required.");
+            errors[i] = tr("This field is required");
     if (std::any_of(values.configurations.cbegin(), values.configurations.cend(),
                     [&value](const auto& other) {
                         return other.id != value.id &&
                                other.name.compare(value.name, Qt::CaseInsensitive) == 0;
                     }))
-        errors[0] = tr("A configuration with this name already exists.");
+        errors[0] = tr("A configuration with this name already exists");
     if (!validCloudUploadUrl(value.endpoint))
         errors[1] =
-            tr("Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment.");
+            tr("Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment");
     if (!value.publicBaseUrl.isEmpty() && !validCloudUploadUrl(value.publicBaseUrl))
         errors[8] =
             errors[1].isEmpty()
-                ? tr("Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment.")
+                ? tr("Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment")
                 : errors[1];
     QWidget* invalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
@@ -429,7 +429,7 @@ void CloudUploadSettingsWidget::submitEditor(bool validateOnly) {
     }
     if (!cloudUploadConfigurationUsable(value)) {
         m_modalError->setText(tr("Check the region, bucket, addressing style, and credentials. "
-                                 "Fields must not contain line breaks."));
+                                 "Fields must not contain line breaks"));
         m_modalError->show();
         return;
     }
@@ -477,7 +477,7 @@ void CloudUploadSettingsWidget::translateEditor() {
                 "CloudUploadSettingsWidget",
                 QT_TRANSLATE_NOOP(
                     "CloudUploadSettingsWidget",
-                    "Optional bucket-root URL. Link access follows your bucket or CDN policy.")};
+                    "Optional bucket-root URL. Link access follows your bucket or CDN policy")};
         m_fields[i]->setMetadata(metadata);
     }
     auto metadata = m_addressing->metadata();
@@ -496,7 +496,7 @@ void CloudUploadSettingsWidget::retranslateUi() {
     const bool storageError =
         m_modalError && !m_modalError->isHidden() && m_modalError->text() == m_error->text();
     m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
-                        "writable and try again."));
+                        "writable and try again"));
     m_add->setText(tr("Add configuration"));
     m_title->setText(tr("Upload Configurations"));
     m_default->retranslateUi();

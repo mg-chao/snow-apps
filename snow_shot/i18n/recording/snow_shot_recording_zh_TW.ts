@@ -8,8 +8,8 @@
             <translation>%1 dB</translation>
         </message>
         <message>
-            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
-            <translation>將增益調整至 -24 到 +24 dB。滑軌顯示處理後的音訊電平。</translation>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level</source>
+            <translation>將增益調整至 -24 到 +24 dB。滑軌顯示處理後的音訊電平</translation>
         </message>
         <message>
             <source>Microphone gain</source>
@@ -161,8 +161,8 @@
     <context>
         <name>RecordingTrimSession</name>
         <message>
-            <source>Choose a different file to preserve the original recording.</source>
-            <translation>請選擇其他檔案，以保留原始錄製。</translation>
+            <source>Choose a different file to preserve the original recording</source>
+            <translation>請選擇其他檔案，以保留原始錄製</translation>
         </message>
         <message>
             <source>Save to File</source>
@@ -242,8 +242,8 @@
     <context>
         <name>ScreenRecordingController</name>
         <message>
-            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder.</source>
-            <translation>Windows 結束工作階段時中斷了螢幕錄製。您可以復原已儲存的錄製內容或開啟其資料夾。</translation>
+            <source>A recording was interrupted when Windows ended the session. Recover the saved recording or open its folder</source>
+            <translation>Windows 結束工作階段時中斷了螢幕錄製。您可以復原已儲存的錄製內容或開啟其資料夾</translation>
         </message>
         <message>
             <source>Keyboard recording failed: %1</source>
@@ -273,19 +273,19 @@
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
 %1
 
-Keep this folder to recover the recording.</source>
+Keep this folder to recover the recording</source>
             <translation>無法完成錄製檔案。可復原的媒體及其時間軸已儲存於：
 %1
 
-請保留此資料夾，以便復原錄製內容。</translation>
+請保留此資料夾，以便復原錄製內容</translation>
         </message>
         <message>
             <source>The recording operation failed</source>
             <translation>錄製作業失敗</translation>
         </message>
         <message>
-            <source>The webcam could not be initialized.</source>
-            <translation>無法初始化攝影機。</translation>
+            <source>The webcam could not be initialized</source>
+            <translation>無法初始化攝影機</translation>
         </message>
         <message>
             <source>Unable to create the recording directory</source>

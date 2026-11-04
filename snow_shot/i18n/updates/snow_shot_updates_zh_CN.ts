@@ -542,8 +542,8 @@
     <context>
         <name>UpdateService</name>
         <message>
-            <source>Could not check for updates. Please try again.</source>
-            <translation>无法检查更新，请重试。</translation>
+            <source>Could not check for updates. Please try again</source>
+            <translation>无法检查更新，请重试</translation>
         </message>
     </context>
 </TS>

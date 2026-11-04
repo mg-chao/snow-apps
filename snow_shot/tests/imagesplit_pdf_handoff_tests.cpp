@@ -151,7 +151,7 @@ void footerDraftsAndTranslations() {
                  translated != QStringLiteral("Stitch to PDF")) &&
                 window.lastError() ==
                     QCoreApplication::translate(
-                        "ImageSplitWindow", "Image Stitching is busy. Try again when it finishes."),
+                        "ImageSplitWindow", "Image Stitching is busy. Try again when it finishes"),
             "button, accessibility and rejection feedback retranslate in an open window");
     }
     accepted = true;

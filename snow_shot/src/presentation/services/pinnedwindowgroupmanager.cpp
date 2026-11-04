@@ -441,7 +441,7 @@ void PinnedWindowGroupManager::openDeleteEmptyGroupsConfirmation(QWidget* owner)
         modal->setText(
             tr("Delete every group with no pinned windows other than closed ones? Closed pinned "
                "windows saved in those groups will also be permanently deleted. This "
-               "action cannot be undone."));
+               "action cannot be undone"));
         modal->setAcceptText(tr("Delete groups"));
         modal->setRejectText(tr("Cancel"));
     };
@@ -471,10 +471,10 @@ void PinnedWindowGroupManager::openDeleteSpecifiedGroupConfirmation(const QStrin
         modal->setText(
             isDefault
                 ? tr("Delete all pinned windows in \"%1\", including closed windows? The Default "
-                     "group will remain. This action cannot be undone.")
+                     "group will remain. This action cannot be undone")
                       .arg(displayName(groupId))
                 : tr("Delete \"%1\" and all its pinned windows, including closed windows? This "
-                     "action cannot be undone.")
+                     "action cannot be undone")
                       .arg(displayName(groupId)));
         modal->setAcceptText(isDefault ? tr("Clear group") : tr("Delete group"));
         modal->setRejectText(tr("Cancel"));
@@ -720,7 +720,7 @@ void PinnedWindowGroupManager::openCreateGroupModal(
         if (!managerGuard) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
             result.errors.push_back(
-                tr("Unable to create the group or move the selected windows. Try again."));
+                tr("Unable to create the group or move the selected windows. Try again"));
             return result;
         }
         const QString name = value.toString().trimmed();
@@ -775,8 +775,8 @@ void PinnedWindowGroupManager::openCreateGroupModal(
                 itemGuard->setLabel(tr("Group name"));
                 itemGuard->setRequiredMessage(tr("Please enter a group name"));
                 if (itemGuard->property(kGroupCreateAssignmentFailureProperty).toBool())
-                    itemGuard->setErrorMessages({tr(
-                        "Unable to create the group or move the selected windows. Try again.")});
+                    itemGuard->setErrorMessages(
+                        {tr("Unable to create the group or move the selected windows. Try again")});
             });
     QVector<QString> persistenceIds;
     persistenceIds.reserve(currentWindows.size());
@@ -815,8 +815,8 @@ void PinnedWindowGroupManager::openCreateGroupModal(
                 if (itemGuard) {
                     itemGuard->setProperty(kGroupCreateAssignmentFailureProperty, true);
                     itemGuard->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
-                    itemGuard->setErrorMessages({tr(
-                        "Unable to create the group or move the selected windows. Try again.")});
+                    itemGuard->setErrorMessages(
+                        {tr("Unable to create the group or move the selected windows. Try again")});
                 }
                 return;
             }

@@ -90,7 +90,7 @@ class LocalCrashCollector final : public CrashCollector {
         m_database = crashpad::CrashReportDatabase::Initialize(nativePath(m_directory));
         if (!m_database || !m_database->GetSettings()->SetUploadsEnabled(false)) {
             *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
-                "DiagnosticsService", "The local crash database could not be initialized."));
+                "DiagnosticsService", "The local crash database could not be initialized"));
             return false;
         }
         if (!capture)
@@ -101,7 +101,7 @@ class LocalCrashCollector final : public CrashCollector {
                              SNOW_DIAGNOSTICS_REVISION)) {
             *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
                 "DiagnosticsService",
-                "The crash collector could not be started. Check the application installation."));
+                "The crash collector could not be started. Check the application installation"));
             return false;
         }
         m_pipe = QString::fromUtf8(snow_diag_pipe());
@@ -111,7 +111,7 @@ class LocalCrashCollector final : public CrashCollector {
         Q_UNUSED(handler);
         Q_UNUSED(session);
         *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "DiagnosticsService", "Crash capture is unavailable on this platform."));
+            "DiagnosticsService", "Crash capture is unavailable on this platform"));
         return false;
 #endif
     }

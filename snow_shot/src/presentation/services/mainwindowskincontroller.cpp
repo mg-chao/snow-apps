@@ -1123,17 +1123,16 @@ QString MainWindowSkinController::statusText(SkinSurface surface) const {
     case image_codec::SkinDecodeError::None:
         return {};
     case image_codec::SkinDecodeError::UnsupportedFormat:
-        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "Choose a PNG, JPG, or WebP image."));
+        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "Choose a PNG, JPG, or WebP image"));
     case image_codec::SkinDecodeError::UnreadableFile:
-        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image could not be opened."));
+        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image could not be opened"));
     case image_codec::SkinDecodeError::InputTooLarge:
-        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image exceeds 64 MiB."));
+        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image exceeds 64 MiB"));
     case image_codec::SkinDecodeError::InvalidImage:
-        return skinText(
-            QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image could not be decoded."));
+        return skinText(QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image could not be decoded"));
     case image_codec::SkinDecodeError::ResourceLimit:
         return skinText(
-            QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image exceeds processing limits."));
+            QT_TRANSLATE_NOOP("MainWindowSkin", "The skin image exceeds processing limits"));
     }
     return {};
 }

@@ -16,8 +16,8 @@
             <translation>%1 · Make expression clearer</translation>
         </message>
         <message>
-            <source>, excellent work.</source>
-            <translation>, excellent work.</translation>
+            <source>, excellent work</source>
+            <translation>, excellent work</translation>
         </message>
         <message>
             <source>About %1</source>
@@ -28,12 +28,12 @@
             <translation>About Snow Shot</translation>
         </message>
         <message>
-            <source>Automatic updates are unavailable for this copy.</source>
-            <translation>Automatic updates are unavailable for this copy.</translation>
+            <source>Automatic updates are unavailable for this copy</source>
+            <translation>Automatic updates are unavailable for this copy</translation>
         </message>
         <message>
-            <source>Built for daily work, and growing with the community.</source>
-            <translation>Built for daily work, and growing with the community.</translation>
+            <source>Built for daily work, and growing with the community</source>
+            <translation>Built for daily work, and growing with the community</translation>
         </message>
         <message>
             <source>Cancel download</source>
@@ -41,21 +41,21 @@
         </message>
         <message>
             <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
+so every moment on screen can be expressed clearly and shared easily</source>
             <translation>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</translation>
+so every moment on screen can be expressed clearly and shared easily</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>Changelog</translation>
         </message>
         <message>
-            <source>Check for a newer version of %1.</source>
-            <translation>Check for a newer version of %1.</translation>
+            <source>Check for a newer version of %1</source>
+            <translation>Check for a newer version of %1</translation>
         </message>
         <message>
-            <source>Check for a newer version of Snow Shot.</source>
-            <translation>Check for a newer version of Snow Shot.</translation>
+            <source>Check for a newer version of Snow Shot</source>
+            <translation>Check for a newer version of Snow Shot</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -82,8 +82,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Copyright © %1 %2</translation>
         </message>
         <message>
-            <source>Could not open the link. Open %1 in your browser.</source>
-            <translation>Could not open the link. Open %1 in your browser.</translation>
+            <source>Could not open the link. Open %1 in your browser</source>
+            <translation>Could not open the link. Open %1 in your browser</translation>
         </message>
         <message>
             <source>Current version</source>
@@ -134,8 +134,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Feedback and suggestions</translation>
         </message>
         <message>
-            <source>Free and open-source software. Distributed without any warranty.</source>
-            <translation>Free and open-source software. Distributed without any warranty.</translation>
+            <source>Free and open-source software. Distributed without any warranty</source>
+            <translation>Free and open-source software. Distributed without any warranty</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -150,8 +150,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>GitHub</translation>
         </message>
         <message>
-            <source>Make every moment clear.</source>
-            <translation>Make every moment clear.</translation>
+            <source>Make every moment clear</source>
+            <translation>Make every moment clear</translation>
         </message>
         <message>
             <source>Make the next experience better</source>
@@ -246,8 +246,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Update failed: %1</translation>
         </message>
         <message>
-            <source>Updates are managed by Microsoft Store.</source>
-            <translation>Updates are managed by Microsoft Store.</translation>
+            <source>Updates are managed by Microsoft Store</source>
+            <translation>Updates are managed by Microsoft Store</translation>
         </message>
         <message>
             <source>Verifying update…</source>
@@ -265,32 +265,32 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>ApplicationRestart</name>
         <message>
-            <source>Another restart operation is in progress.</source>
-            <translation>Another restart operation is in progress.</translation>
+            <source>Another restart operation is in progress</source>
+            <translation>Another restart operation is in progress</translation>
         </message>
         <message>
-            <source>Could not create the restart handoff.</source>
-            <translation>Could not create the restart handoff.</translation>
+            <source>Could not create the restart handoff</source>
+            <translation>Could not create the restart handoff</translation>
         </message>
         <message>
-            <source>Could not start the replacement application.</source>
-            <translation>Could not start the replacement application.</translation>
+            <source>Could not start the replacement application</source>
+            <translation>Could not start the replacement application</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
-            <translation>Finish capturing, recording, exporting, or updating before restarting.</translation>
+            <source>Finish capturing, recording, exporting, or updating before restarting</source>
+            <translation>Finish capturing, recording, exporting, or updating before restarting</translation>
         </message>
         <message>
-            <source>The replacement application did not acknowledge the restart.</source>
-            <translation>The replacement application did not acknowledge the restart.</translation>
+            <source>The replacement application did not acknowledge the restart</source>
+            <translation>The replacement application did not acknowledge the restart</translation>
         </message>
         <message>
-            <source>The replacement application did not become ready.</source>
-            <translation>The replacement application did not become ready.</translation>
+            <source>The replacement application did not become ready</source>
+            <translation>The replacement application did not become ready</translation>
         </message>
         <message>
-            <source>Your settings could not be saved. Please retry before restarting.</source>
-            <translation>Your settings could not be saved. Please retry before restarting.</translation>
+            <source>Your settings could not be saved. Please retry before restarting</source>
+            <translation>Your settings could not be saved. Please retry before restarting</translation>
         </message>
     </context>
     <context>
@@ -330,72 +330,72 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>DiagnosticsService</name>
         <message>
-            <source>A log file could not be read.</source>
-            <translation>A log file could not be read.</translation>
+            <source>A log file could not be read</source>
+            <translation>A log file could not be read</translation>
         </message>
         <message>
-            <source>Crash capture is unavailable on this platform.</source>
-            <translation>Crash capture is unavailable on this platform.</translation>
+            <source>Crash capture is unavailable on this platform</source>
+            <translation>Crash capture is unavailable on this platform</translation>
         </message>
         <message>
-            <source>Log export is unavailable or already running.</source>
-            <translation>Log export is unavailable or already running.</translation>
+            <source>Log export is unavailable or already running</source>
+            <translation>Log export is unavailable or already running</translation>
         </message>
         <message>
-            <source>No writable diagnostics directory is available.</source>
-            <translation>No writable diagnostics directory is available.</translation>
+            <source>No writable diagnostics directory is available</source>
+            <translation>No writable diagnostics directory is available</translation>
         </message>
         <message>
-            <source>Some expired diagnostics could not be removed.</source>
-            <translation>Some expired diagnostics could not be removed.</translation>
+            <source>Some expired diagnostics could not be removed</source>
+            <translation>Some expired diagnostics could not be removed</translation>
         </message>
         <message>
-            <source>The crash collector could not be started. Check the application installation.</source>
-            <translation>The crash collector could not be started. Check the application installation.</translation>
+            <source>The crash collector could not be started. Check the application installation</source>
+            <translation>The crash collector could not be started. Check the application installation</translation>
         </message>
         <message>
-            <source>The diagnostics storage limit has been reached.</source>
-            <translation>The diagnostics storage limit has been reached.</translation>
+            <source>The diagnostics storage limit has been reached</source>
+            <translation>The diagnostics storage limit has been reached</translation>
         </message>
         <message>
-            <source>The diagnostics writer stopped unexpectedly.</source>
-            <translation>The diagnostics writer stopped unexpectedly.</translation>
+            <source>The diagnostics writer stopped unexpectedly</source>
+            <translation>The diagnostics writer stopped unexpectedly</translation>
         </message>
         <message>
-            <source>The local crash database could not be initialized.</source>
-            <translation>The local crash database could not be initialized.</translation>
+            <source>The local crash database could not be initialized</source>
+            <translation>The local crash database could not be initialized</translation>
         </message>
         <message>
-            <source>The log directory is not writable.</source>
-            <translation>The log directory is not writable.</translation>
+            <source>The log directory is not writable</source>
+            <translation>The log directory is not writable</translation>
         </message>
         <message>
-            <source>The log file could not be opened.</source>
-            <translation>The log file could not be opened.</translation>
+            <source>The log file could not be opened</source>
+            <translation>The log file could not be opened</translation>
         </message>
         <message>
-            <source>The log snapshot could not be saved.</source>
-            <translation>The log snapshot could not be saved.</translation>
+            <source>The log snapshot could not be saved</source>
+            <translation>The log snapshot could not be saved</translation>
         </message>
         <message>
-            <source>The log snapshot directory could not be created.</source>
-            <translation>The log snapshot directory could not be created.</translation>
+            <source>The log snapshot directory could not be created</source>
+            <translation>The log snapshot directory could not be created</translation>
         </message>
         <message>
-            <source>The preferred log directory is unavailable; a fallback is in use.</source>
-            <translation>The preferred log directory is unavailable; a fallback is in use.</translation>
+            <source>The preferred log directory is unavailable; a fallback is in use</source>
+            <translation>The preferred log directory is unavailable; a fallback is in use</translation>
         </message>
         <message>
-            <source>There is not enough space for a log snapshot.</source>
-            <translation>There is not enough space for a log snapshot.</translation>
+            <source>There is not enough space for a log snapshot</source>
+            <translation>There is not enough space for a log snapshot</translation>
         </message>
         <message>
-            <source>Today's log exceeds the export limit.</source>
-            <translation>Today's log exceeds the export limit.</translation>
+            <source>Today's log exceeds the export limit</source>
+            <translation>Today's log exceeds the export limit</translation>
         </message>
         <message>
-            <source>Writing the log file failed. Check available disk space.</source>
-            <translation>Writing the log file failed. Check available disk space.</translation>
+            <source>Writing the log file failed. Check available disk space</source>
+            <translation>Writing the log file failed. Check available disk space</translation>
         </message>
     </context>
     <context>
@@ -485,8 +485,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>McpDocumentService</name>
         <message>
-            <source>Document request failed (%1).</source>
-            <translation>Document request failed (%1).</translation>
+            <source>Document request failed (%1)</source>
+            <translation>Document request failed (%1)</translation>
         </message>
     </context>
     <context>
@@ -660,32 +660,32 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Image conversion failed</translation>
         </message>
         <message>
-            <source>Image conversion is incomplete. Try a smaller area.</source>
-            <translation>Image conversion is incomplete. Try a smaller area.</translation>
+            <source>Image conversion is incomplete. Try a smaller area</source>
+            <translation>Image conversion is incomplete. Try a smaller area</translation>
         </message>
         <message>
             <source>Image conversion stream ended unexpectedly</source>
             <translation>Image conversion stream ended unexpectedly</translation>
         </message>
         <message>
-            <source>Image conversion timed out. Try a smaller area.</source>
-            <translation>Image conversion timed out. Try a smaller area.</translation>
+            <source>Image conversion timed out. Try a smaller area</source>
+            <translation>Image conversion timed out. Try a smaller area</translation>
         </message>
         <message>
             <source>Image recognition failed</source>
             <translation>Image recognition failed</translation>
         </message>
         <message>
-            <source>Image recognition is incomplete. Try a smaller area.</source>
-            <translation>Image recognition is incomplete. Try a smaller area.</translation>
+            <source>Image recognition is incomplete. Try a smaller area</source>
+            <translation>Image recognition is incomplete. Try a smaller area</translation>
         </message>
         <message>
             <source>Image recognition stream ended unexpectedly</source>
             <translation>Image recognition stream ended unexpectedly</translation>
         </message>
         <message>
-            <source>Image recognition timed out. Try a smaller area.</source>
-            <translation>Image recognition timed out. Try a smaller area.</translation>
+            <source>Image recognition timed out. Try a smaller area</source>
+            <translation>Image recognition timed out. Try a smaller area</translation>
         </message>
         <message>
             <source>Invalid LaTeX recognition response</source>
@@ -752,12 +752,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The image could not be prepared for recognition</translation>
         </message>
         <message>
-            <source>The image is too large to convert. Select a smaller area.</source>
-            <translation>The image is too large to convert. Select a smaller area.</translation>
+            <source>The image is too large to convert. Select a smaller area</source>
+            <translation>The image is too large to convert. Select a smaller area</translation>
         </message>
         <message>
-            <source>The image is too large to recognize. Select a smaller area.</source>
-            <translation>The image is too large to recognize. Select a smaller area.</translation>
+            <source>The image is too large to recognize. Select a smaller area</source>
+            <translation>The image is too large to recognize. Select a smaller area</translation>
         </message>
         <message>
             <source>The model response is too large</source>
@@ -772,32 +772,32 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The model returned no usable formula</translation>
         </message>
         <message>
-            <source>The model service changed. Retry to load its models.</source>
-            <translation>The model service changed. Retry to load its models.</translation>
+            <source>The model service changed. Retry to load its models</source>
+            <translation>The model service changed. Retry to load its models</translation>
         </message>
         <message>
-            <source>The text is too large to translate.</source>
-            <translation>The text is too large to translate.</translation>
+            <source>The text is too large to translate</source>
+            <translation>The text is too large to translate</translation>
         </message>
         <message>
-            <source>The translation response is too large.</source>
-            <translation>The translation response is too large.</translation>
+            <source>The translation response is too large</source>
+            <translation>The translation response is too large</translation>
         </message>
         <message>
-            <source>This service does not support the selected language combination.</source>
-            <translation>This service does not support the selected language combination.</translation>
+            <source>This service does not support the selected language combination</source>
+            <translation>This service does not support the selected language combination</translation>
         </message>
         <message>
             <source>Translation failed</source>
             <translation>Translation failed</translation>
         </message>
         <message>
-            <source>Translation request timed out.</source>
-            <translation>Translation request timed out.</translation>
+            <source>Translation request timed out</source>
+            <translation>Translation request timed out</translation>
         </message>
         <message>
-            <source>Translation service request failed (HTTP %1, code %2).</source>
-            <translation>Translation service request failed (HTTP %1, code %2).</translation>
+            <source>Translation service request failed (HTTP %1, code %2)</source>
+            <translation>Translation service request failed (HTTP %1, code %2)</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>
@@ -849,20 +849,20 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>%1 %2 is available. Open About for update options.</source>
-            <translation>%1 %2 is available. Open About for update options.</translation>
+            <source>%1 %2 is available. Open About for update options</source>
+            <translation>%1 %2 is available. Open About for update options</translation>
         </message>
         <message>
             <source>%1 will close and restart to install the update. Continue?</source>
             <translation>%1 will close and restart to install the update. Continue?</translation>
         </message>
         <message>
-            <source>An update is ready. Open About to restart and update %1.</source>
-            <translation>An update is ready. Open About to restart and update %1.</translation>
+            <source>An update is ready. Open About to restart and update %1</source>
+            <translation>An update is ready. Open About to restart and update %1</translation>
         </message>
         <message>
-            <source>An update is ready. Open About to restart and update Snow Shot.</source>
-            <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
+            <source>An update is ready. Open About to restart and update Snow Shot</source>
+            <translation>An update is ready. Open About to restart and update Snow Shot</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -881,12 +881,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Feature unavailable</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
-            <translation>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</translation>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</source>
+            <translation>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</translation>
         </message>
         <message>
-            <source>Finish capturing, recording, or exporting before updating.</source>
-            <translation>Finish capturing, recording, or exporting before updating.</translation>
+            <source>Finish capturing, recording, or exporting before updating</source>
+            <translation>Finish capturing, recording, or exporting before updating</translation>
         </message>
         <message>
             <source>Restart and update</source>
@@ -897,8 +897,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Restart failed</translation>
         </message>
         <message>
-            <source>Snow Shot %1 is available. Open About for update options.</source>
-            <translation>Snow Shot %1 is available. Open About for update options.</translation>
+            <source>Snow Shot %1 is available. Open About for update options</source>
+            <translation>Snow Shot %1 is available. Open About for update options</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>
@@ -909,8 +909,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The selected file path is invalid</translation>
         </message>
         <message>
-            <source>Your settings could not be saved. Please retry before updating.</source>
-            <translation>Your settings could not be saved. Please retry before updating.</translation>
+            <source>Your settings could not be saved. Please retry before updating</source>
+            <translation>Your settings could not be saved. Please retry before updating</translation>
         </message>
     </context>
     <context>

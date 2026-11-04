@@ -94,7 +94,7 @@ ScreenshotMcpResponse ScreenshotMcpSession::failure(const ScreenshotMcpRequest& 
     ScreenshotMcpResponse r;
     r.requestId = request.requestId;
     r.errorCode = code;
-    r.errorMessage = tr("MCP request failed (%1).").arg(code);
+    r.errorMessage = tr("MCP request failed (%1)").arg(code);
     // Authentication permits application access, not access to another client's document.
     // In particular, busy and session_not_found must not disclose the owner's session ID.
     if (m_owner != 0 && request.connectionId == m_owner &&

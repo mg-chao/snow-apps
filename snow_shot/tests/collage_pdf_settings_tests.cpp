@@ -565,7 +565,7 @@ void fieldEditsMergeAndRetranslate() {
                     margin->accessibleName() == label && fieldFor(margin)->label() == label &&
                     fieldFor(margin)->helpText() ==
                         QCoreApplication::translate("CollageDocument",
-                                                    "Enter a nonnegative page margin.") &&
+                                                    "Enter a nonnegative page margin") &&
                     store.readPdf() == persisted,
                 "language changes retranslate the singular margin and errors without losing drafts "
                 "or persisting invalid input");

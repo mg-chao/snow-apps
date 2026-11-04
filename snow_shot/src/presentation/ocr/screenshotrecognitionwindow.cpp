@@ -1621,11 +1621,11 @@ QString ScreenshotRecognitionWindow::latexPreviewStatus() const {
         return m_latexPreviewImage.isNull() ? tr("Rendering formula...") : QString{};
     switch (static_cast<Error>(m_latexPreviewError)) {
     case Error::InvalidFormula:
-        return tr("Unable to preview this formula. Check the LaTeX source.");
+        return tr("Unable to preview this formula. Check the LaTeX source");
     case Error::LimitExceeded:
-        return tr("Formula preview limit exceeded.");
+        return tr("Formula preview limit exceeded");
     case Error::InitializationFailed:
-        return tr("Formula renderer is unavailable.");
+        return tr("Formula renderer is unavailable");
     case Error::None:
         break;
     }

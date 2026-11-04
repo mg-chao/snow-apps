@@ -332,9 +332,9 @@ void GlobalMouseRow::syncModalText() {
     const int messageWidth = CONFIGURATION_MODAL_WIDTH - 2 * m_colorScheme.metricAlias.paddingLG;
     int messageHeight = 0;
     for (const QString& message :
-         {tr("Select at least one activation key."), tr("Select a mouse button."),
+         {tr("Select at least one activation key"), tr("Select a mouse button"),
           tr("This mouse combination is already assigned to another action. Choose a "
-             "different combination.")}) {
+             "different combination")}) {
         messageHeight = qMax(
             messageHeight,
             metrics.boundingRect(QRect(0, 0, messageWidth, 0), Qt::TextWordWrap, message).height());
@@ -357,11 +357,11 @@ void GlobalMouseRow::syncModalValidation() {
         m_runtimeSession.globalMouseCombinationAvailable(m_action, modalCombination());
     const QString message =
         available  ? QString()
-        : !hasKeys ? tr("Select at least one activation key.")
+        : !hasKeys ? tr("Select at least one activation key")
         : !hasMouseButton
-            ? tr("Select a mouse button.")
+            ? tr("Select a mouse button")
             : tr("This mouse combination is already assigned to another action. Choose a "
-                 "different combination.");
+                 "different combination");
     m_mouseButtonController->setFeedback(message.isEmpty() ? QStringList() : QStringList{message});
     if (m_modal->acceptButton() != nullptr) {
         m_modal->acceptButton()->setEnabled(available);

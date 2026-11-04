@@ -204,6 +204,6 @@ void WindowGroupSwitcherController::finish(const QString& commitId) {
     if (m_draining)
         m_timer.start();
     if (!target.isEmpty() && !m_groups.setActiveGroup(target))
-        emit errorOccurred(tr("Could not switch window group. Please try again."));
+        emit errorOccurred(tr("Could not switch window group. Please try again"));
 }
 } // namespace snow_shot::presentation

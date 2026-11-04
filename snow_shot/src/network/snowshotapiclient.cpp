@@ -1041,7 +1041,7 @@ SnowShotApiClient::ensureChatModels(const QString& locale, QObject* receiver,
             if (generation != m_serverGeneration ||
                 localeGeneration != m_chatModelsLocaleGeneration || !hasBuiltInModels(locale)) {
                 result.code = QStringLiteral("catalog_changed");
-                result.error = tr("The model service changed. Retry to load its models.");
+                result.error = tr("The model service changed. Retry to load its models");
             }
             finishChatModels(token, std::move(result));
         });
@@ -1425,8 +1425,8 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageRequest(
     state->timeout = deadline;
     connect(deadline, &QTimer::timeout, this, [this, token, absoluteDeadline]() {
         SnowShotTranslationResult result;
-        result.error = absoluteDeadline ? tr("Image recognition timed out. Try a smaller area.")
-                                        : tr("Image conversion timed out. Try a smaller area.");
+        result.error = absoluteDeadline ? tr("Image recognition timed out. Try a smaller area")
+                                        : tr("Image conversion timed out. Try a smaller area");
         result.code = absoluteDeadline ? QStringLiteral("recognition_timeout")
                                        : QStringLiteral("conversion_timeout");
         finishTranslation(token, std::move(result));
@@ -1486,9 +1486,9 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageRequest(
                                            ? tr("The image could not be prepared for recognition")
                                            : tr("The image could not be prepared for conversion"))
                                     : (absoluteDeadline ? tr("The image is too large to recognize. "
-                                                             "Select a smaller area.")
+                                                             "Select a smaller area")
                                                         : tr("The image is too large to convert. "
-                                                             "Select a smaller area."));
+                                                             "Select a smaller area"));
                             result.code = body.isEmpty() ? QStringLiteral("image_encoding_failed")
                                                          : QStringLiteral("payload_too_large");
                             guard->finishTranslation(token, std::move(result));
@@ -1520,7 +1520,7 @@ void SnowShotApiClient::submitChatStream(RequestToken token, QByteArray body) {
             state->timeout = deadline;
             connect(deadline, &QTimer::timeout, this, [this, token] {
                 SnowShotTranslationResult result;
-                result.error = tr("Translation request timed out.");
+                result.error = tr("Translation request timed out");
                 result.code = QStringLiteral("translation_timeout");
                 finishTranslation(token, std::move(result));
             });
@@ -1841,8 +1841,8 @@ void SnowShotApiClient::drainChatStream(RequestToken token) {
                 reason != QStringLiteral("stop")) {
                 SnowShotTranslationResult result;
                 result.error = current->absoluteDeadline
-                                   ? tr("Image recognition is incomplete. Try a smaller area.")
-                                   : tr("Image conversion is incomplete. Try a smaller area.");
+                                   ? tr("Image recognition is incomplete. Try a smaller area")
+                                   : tr("Image conversion is incomplete. Try a smaller area");
                 result.code = reason;
                 finishTranslation(token, std::move(result));
                 return;
@@ -2062,7 +2062,7 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
     // Wall-clock expiry takes precedence regardless of event delivery order.
     if (request->absoluteDeadline && request->elapsed.elapsed() >= m_visionTimeoutMs) {
         result = {};
-        result.error = tr("Image recognition timed out. Try a smaller area.");
+        result.error = tr("Image recognition timed out. Try a smaller area");
         result.code = QStringLiteral("recognition_timeout");
     }
     if (request->freeTranslation && !result.cancelled && !result.succeeded())
@@ -2207,8 +2207,8 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
     if (body.isEmpty() || body.size() > kMaximumChatRequestBytes) {
         SnowShotTranslationResult result;
         result.error = body.isEmpty()
-                           ? tr("This service does not support the selected language combination.")
-                           : tr("The text is too large to translate.");
+                           ? tr("This service does not support the selected language combination")
+                           : tr("The text is too large to translate");
         finishTranslation(token, result);
         return;
     }
@@ -2237,7 +2237,7 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
     state->timeout = timeout;
     connect(timeout, &QTimer::timeout, this, [this, token] {
         SnowShotTranslationResult result;
-        result.error = tr("Translation request timed out.");
+        result.error = tr("Translation request timed out");
         finishTranslation(token, result);
     });
     timeout->start(kTranslationTimeoutMs);
@@ -2258,11 +2258,11 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
             if (parsed.throttled)
                 result.httpStatus = 429;
             if (response->tooLarge()) {
-                result.error = tr("The translation response is too large.");
+                result.error = tr("The translation response is too large");
             } else if (pending->reply->error() != QNetworkReply::NoError ||
                        result.httpStatus >= 400 || !parsed.code.isEmpty()) {
                 // Do not surface arbitrary gateway bodies, URLs, or credentials in errors.
-                result.error = tr("Translation service request failed (HTTP %1, code %2).")
+                result.error = tr("Translation service request failed (HTTP %1, code %2)")
                                    .arg(result.httpStatus)
                                    .arg(result.code.isEmpty() ? QStringLiteral("-") : result.code);
             } else if (!parsed.valid) {

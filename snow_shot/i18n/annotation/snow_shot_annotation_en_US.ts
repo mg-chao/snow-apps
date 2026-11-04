@@ -407,8 +407,8 @@
             <translation>Current watermark font size</translation>
         </message>
         <message>
-            <source>Cursor data is unavailable for this screenshot.</source>
-            <translation>Cursor data is unavailable for this screenshot.</translation>
+            <source>Cursor data is unavailable for this screenshot</source>
+            <translation>Cursor data is unavailable for this screenshot</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -459,8 +459,8 @@
             <translation>Delete Annotation Template</translation>
         </message>
         <message>
-            <source>Delete annotation template "%1"? This action cannot be undone.</source>
-            <translation>Delete annotation template "%1"? This action cannot be undone.</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone</source>
+            <translation>Delete annotation template "%1"? This action cannot be undone</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -1427,8 +1427,8 @@
             <translation>Tapered shaft</translation>
         </message>
         <message>
-            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</source>
-            <translation>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</translation>
+            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads</source>
+            <translation>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads</translation>
         </message>
         <message>
             <source>Target Language</source>
@@ -1667,16 +1667,16 @@
     <context>
         <name>snow_shot::presentation::GlobalCanvasController</name>
         <message>
-            <source>Could not change canvas click-through.</source>
-            <translation>Could not change canvas click-through.</translation>
+            <source>Could not change canvas click-through</source>
+            <translation>Could not change canvas click-through</translation>
         </message>
         <message>
             <source>Could not show the laser pointer: %1</source>
             <translation>Could not show the laser pointer: %1</translation>
         </message>
         <message>
-            <source>The laser pointer is unavailable.</source>
-            <translation>The laser pointer is unavailable.</translation>
+            <source>The laser pointer is unavailable</source>
+            <translation>The laser pointer is unavailable</translation>
         </message>
     </context>
 </TS>

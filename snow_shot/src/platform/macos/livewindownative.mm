@@ -147,7 +147,7 @@ class MacLiveWindow final : public live_window_detail::NativeWindowMonitor {
             if (error)
                 *error = nativeText(QT_TRANSLATE_NOOP("LiveWindowSource",
                                                       "Allow Screen & System Audio Recording in "
-                                                      "System Settings to pin a live window."));
+                                                      "System Settings to pin a live window"));
             return false;
         }
         if (m_target.processId == NSProcessInfo.processInfo.processIdentifier) {
@@ -172,7 +172,7 @@ class MacLiveWindow final : public live_window_detail::NativeWindowMonitor {
             if (error)
                 *error = nativeText(QT_TRANSLATE_NOOP(
                     "LiveWindowSource",
-                    "Allow Accessibility in System Settings to monitor the live window's state."));
+                    "Allow Accessibility in System Settings to monitor the live window's state"));
             return false;
         }
         const pid_t pid = static_cast<pid_t>(m_target.processId);
@@ -317,7 +317,7 @@ class MacLiveWindow final : public live_window_detail::NativeWindowMonitor {
         if (error)
             *error = nativeText(QT_TRANSLATE_NOOP(
                 "LiveWindowSource",
-                "The selected window's identity and state could not be verified."));
+                "The selected window's identity and state could not be verified"));
         return false;
     }
     static void observed(AXObserverRef, AXUIElementRef, CFStringRef notification, void* data) {

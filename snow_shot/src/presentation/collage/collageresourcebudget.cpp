@@ -87,7 +87,7 @@ void setError(QString* error) {
         *error = QCoreApplication::translate(
             "CollageDocument",
             "There is not enough available memory for this collage operation. Try fewer images "
-            "or close other collage windows.");
+            "or close other collage windows");
 }
 } // namespace
 
@@ -197,7 +197,7 @@ std::shared_ptr<CollageImportReservation> reserveCollageImport(qint64 bytes, QSt
             *error = QCoreApplication::translate(
                 "CollageDocument",
                 "There is not enough available memory for this collage operation. Try fewer images "
-                "or close other collage windows.");
+                "or close other collage windows");
         return {};
     }
 }

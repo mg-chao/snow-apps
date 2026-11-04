@@ -1367,7 +1367,7 @@ QString ShortcutKeyRow::registrationTooltipText() const {
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Disabled) {
         return tr("This shortcut is temporarily disabled and released for use by other "
                   "applications. It will be restored when global hotkeys are enabled and the "
-                  "focused window allows them.");
+                  "focused window allows them");
     }
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Registered ||
         m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Unset) {

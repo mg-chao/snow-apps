@@ -4284,7 +4284,7 @@ void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
     require(waitFor([&] {
                 return preview() && preview()->accessibleDescription() ==
                                         QStringLiteral("Unable to preview this formula. Check the "
-                                                       "LaTeX source.");
+                                                       "LaTeX source");
             }),
             "language-change fixture starts with an invalid formula draft");
     QPointer<ScreenshotOriginalImagePreviewWindow> textPreview;

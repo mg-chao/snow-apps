@@ -29,11 +29,11 @@ QString signatureError() {
     return app::edition::isMini
                ? text(QT_TRANSLATE_NOOP("LoginItemService",
                                         "%1 needs a valid code signature to use launch at login. "
-                                        "Reinstall the signed app."))
+                                        "Reinstall the signed app"))
                      .arg(app::edition::productName())
                : text(QT_TRANSLATE_NOOP("LoginItemService",
                                         "Snow Shot needs a valid code signature to use launch at "
-                                        "login. Reinstall the signed app."));
+                                        "login. Reinstall the signed app"));
 }
 LoginItemSnapshot query() {
     @autoreleasepool {
@@ -51,11 +51,11 @@ LoginItemSnapshot query() {
                     (app::edition::isMini
                          ? text(QT_TRANSLATE_NOOP("LoginItemService",
                                                   "Move the signed %1 app to /Applications or "
-                                                  "~/Applications to use launch at login."))
+                                                  "~/Applications to use launch at login"))
                                .arg(app::edition::productName())
                          : text(QT_TRANSLATE_NOOP("LoginItemService",
                                                   "Move the signed Snow Shot app to /Applications "
-                                                  "or ~/Applications to use launch at login.")))};
+                                                  "or ~/Applications to use launch at login")))};
         }
         // Registration enforces signing. Routine status refreshes must not revalidate
         // the entire bundle on the GUI thread whenever a settings page is shown.

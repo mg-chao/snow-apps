@@ -48,7 +48,7 @@ class WindowsLiveWindow final : public live_window_detail::NativeWindowMonitor {
         if (inspect().state != LiveWindowState::Live) {
             if (error)
                 *error = nativeText(QT_TRANSLATE_NOOP(
-                    "LiveWindowSource", "The selected window is no longer available."));
+                    "LiveWindowSource", "The selected window is no longer available"));
             return false;
         }
         m_destroyHook =
@@ -141,7 +141,7 @@ class WindowsLivePresentation final : public live_window_detail::NativeWindowPre
             return true;
         if (error)
             *error = nativeText(QT_TRANSLATE_NOOP(
-                "LiveWindowSource", "The live window display could not be initialized."));
+                "LiveWindowSource", "The live window display could not be initialized"));
         return false;
     }
     bool presenting() const override {

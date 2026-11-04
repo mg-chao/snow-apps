@@ -549,7 +549,7 @@ constexpr auto kTranslationSourceProperty = "screenshotPinnedTranslationSource";
 constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
 constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
 constexpr auto kModelDownloadMessageKey = "screenshot-pinned-model-download-status";
-constexpr auto kOcrTooLargeDescription = "Image size is too large.";
+constexpr auto kOcrTooLargeDescription = "Image size is too large";
 
 struct PinnedExportAppearance final {
     ScreenshotResultStyle resultStyle;
@@ -594,7 +594,7 @@ bool paintFirstFrameSynchronously() {
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Exit click-through mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Save as file"),
-    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image size is too large."),
+    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image size is too large"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image could not be prepared"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image copy could not be started"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image save could not be started"),
@@ -2412,7 +2412,7 @@ void ScreenshotPinnedWindow::retranslateUi() {
     if (m_destroyConfirmation != nullptr) {
         m_destroyConfirmation->setWindowTitle(tr("Destroy pinned window"));
         m_destroyConfirmation->setText(
-            tr("Destroy this pinned window? This action cannot be undone."));
+            tr("Destroy this pinned window? This action cannot be undone"));
         m_destroyConfirmation->setAcceptText(tr("Destroy"));
         m_destroyConfirmation->setRejectText(tr("Cancel"));
     }
@@ -2642,7 +2642,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_persistenceHider = config.persistenceHider;
     m_showAllWindowsRequested = config.showAllWindowsRequested;
     m_hideOtherWindowsRequested = config.hideOtherWindowsRequested;
-    m_shakeHideOtherWindowsRequested = config.shakeHideOtherWindowsRequested;
+    m_shakeToggleOtherWindowsRequested = config.shakeToggleOtherWindowsRequested;
     m_creationSource = config.creationSource;
     m_sourceIdentity = config.sourceIdentity;
     m_sourcePinAvailable = true;
@@ -2852,9 +2852,8 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     const bool restoreClickThrough =
         config.restorePersistentState && config.persistedClickThroughMode &&
         !config.persistedHideToTopMode && !config.persistedThumbnailMode;
-    setAttribute(Qt::WA_ShowWithoutActivating,
-                 restoreClickThrough || hideToTopActive() ||
-                     config.presentationPolicy == PresentationPolicy::PreserveFocus);
+    setShowWithoutActivating(restoreClickThrough || hideToTopActive() ||
+                             config.presentationPolicy == PresentationPolicy::PreserveFocus);
     configureAnimationPlayback(config.restorePersistentState ? config.persistedAnimationSpeedPercent
                                                              : 100,
                                !config.restorePersistentState || config.persistedAnimationPlaying);
@@ -4687,11 +4686,11 @@ void ScreenshotPinnedWindow::updateChildStackingOrder() {
     for (QWidget* layer : layers) {
         if (layer == nullptr)
             continue;
-        // Work down from the top so an already ordered stack is unchanged.
+        // Order only the pinned content layers relative to one another. Raising
+        // the first layer would also move the canvas above transient feedback
+        // whenever dragging, recognition or hover controls refresh the stack.
         if (above != nullptr)
             layer->stackUnder(above);
-        else
-            layer->raise();
         above = layer;
     }
     for (auto* button : m_colorSwatchButtons) {
@@ -7028,7 +7027,7 @@ ScreenshotPinnedImageSnapshot ScreenshotPinnedWindow::splittingSnapshot() {
         snapshot.error = QCoreApplication::translate(
             "ImageSplitWindow",
             QT_TRANSLATE_NOOP("ImageSplitWindow",
-                              "The image is too large or there is not enough memory to load it."));
+                              "The image is too large or there is not enough memory to load it"));
     return snapshot;
 }
 
@@ -7112,7 +7111,7 @@ ScreenshotPinnedImageSnapshot ScreenshotPinnedWindow::processedImageSnapshot(boo
         auto document = exportDocumentSnapshot();
         if (!document) {
             snapshot.error = QCoreApplication::translate(
-                "ImageEditingWindow", "The editing content could not be prepared for export.");
+                "ImageEditingWindow", "The editing content could not be prepared for export");
             return snapshot;
         }
         ScreenshotPinnedViewportExportSource source{
@@ -7980,7 +7979,7 @@ void ScreenshotPinnedWindow::uploadToCloud() {
                             return;
                         adqt::widgets::AdMessage::Request message;
                         message.key = QStringLiteral("cloud-upload");
-                        message.content = tr("Uploaded to cloud. Link copied to clipboard.");
+                        message.content = tr("Uploaded to cloud. Link copied to clipboard");
                         adqt::widgets::AdMessageService::success(std::move(message), this);
                     } else if (result.status == ScreenshotCloudUploadResult::Status::Failed)
                         showPinnedRecognitionMessage(this, result.error, true);
@@ -9052,7 +9051,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
             return false;
         }
         setAttribute(Qt::WA_TransparentForMouseEvents, false);
-        setAttribute(Qt::WA_ShowWithoutActivating, false);
+        setShowWithoutActivating(false);
         m_clickThroughActive = false;
         applyEffectiveOpacity();
         if (m_clickThroughExitButton != nullptr) {
@@ -9094,12 +9093,12 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
             // Native failure may happen after input was disabled. Keep the
             // independently interactive recovery controls until exit succeeds.
             setAttribute(Qt::WA_TransparentForMouseEvents, true);
-            setAttribute(Qt::WA_ShowWithoutActivating, true);
+            setShowWithoutActivating(true);
             refreshContextMenu();
             return;
         }
         setAttribute(Qt::WA_TransparentForMouseEvents, false);
-        setAttribute(Qt::WA_ShowWithoutActivating, false);
+        setShowWithoutActivating(false);
         m_clickThroughActive = false;
         applyEffectiveOpacity();
         if (m_clickThroughExitButton != nullptr) {
@@ -9124,7 +9123,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         rollback(true);
         return false;
     }
-    setAttribute(Qt::WA_ShowWithoutActivating, true);
+    setShowWithoutActivating(true);
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
     refreshContextMenu();
     schedulePersistence();
@@ -9218,7 +9217,7 @@ void ScreenshotPinnedWindow::shutdownClickThrough() {
         static_cast<void>(m_platform->setInputTransparent(false));
     }
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
-    setAttribute(Qt::WA_ShowWithoutActivating, false);
+    setShowWithoutActivating(false);
     m_clickThroughActive = false;
     applyEffectiveOpacity();
     setClickThroughScreen(nullptr);
@@ -9754,21 +9753,42 @@ void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
     raise();
 }
 
-ScreenshotPinnedWindow::HideOtherWindowsResult ScreenshotPinnedWindow::hideOtherWindowsForShake() {
-    if (m_shakeHideOtherWindowsRequested)
-        return m_shakeHideOtherWindowsRequested(m_persistenceId);
-    HideOtherWindowsResult result{true, false};
+ScreenshotPinnedWindow::OtherWindowsVisibilityResult
+ScreenshotPinnedWindow::toggleOtherWindowsForShake() {
+    if (m_shakeToggleOtherWindowsRequested)
+        return m_shakeToggleOtherWindowsRequested(m_persistenceId);
+    OtherWindowsVisibilityResult result{true, false};
     const auto windows = livePinnedWindows();
+    const auto eligible = [this](const auto& window) {
+        return window && window != this && !window->isLiveWindow() && window->m_presented &&
+               window->sourcePinAvailable() && window->m_groupId == m_groupId;
+    };
+    const auto isHidden = [](const auto& window) {
+        const auto* handle = window->m_hideToTop->handleWidget();
+        return !window->isVisible() &&
+               !(window->hideToTopActive() && handle && handle->isVisible());
+    };
+    const bool showHidden = std::any_of(windows.cbegin(), windows.cend(), [&](const auto& window) {
+        return eligible(window) && isHidden(window);
+    });
+    if (showHidden)
+        result.action = OtherWindowsVisibilityResult::Action::Show;
     for (const auto& window : windows) {
-        if (!window || window == this || window->isLiveWindow() || !window->m_presented ||
-            !window->sourcePinAvailable() || window->m_groupId != m_groupId)
+        if (!eligible(window))
             continue;
+        if (showHidden) {
+            if (isHidden(window)) {
+                window->showPreservingStacking();
+                result.changed |= window && !isHidden(window);
+            }
+            continue;
+        }
         const bool hidden = window->requestHide();
         result.success &= hidden;
         result.changed |= hidden;
     }
     if (!result.success)
-        showPinnedRecognitionMessage(this, tr("Other windows could not be hidden."), true);
+        showPinnedRecognitionMessage(this, tr("Other windows could not be hidden"), true);
     return result;
 }
 
@@ -9780,7 +9800,9 @@ void ScreenshotPinnedWindow::showShakeMessage(bool restart) {
         return;
     adqt::widgets::AdMessage::Request message;
     message.key = QStringLiteral("pinned-shake-hide-others");
-    message.content = tr("Other windows hidden.");
+    message.content = m_shakeMessageAction == OtherWindowsVisibilityResult::Action::Show
+                          ? tr("Other windows shown")
+                          : tr("Other windows hidden");
     message.durationMs = static_cast<int>(remaining);
     message.pauseOnHover = false;
     m_shakeMessage = adqt::widgets::AdMessageService::success(std::move(message), this);
@@ -10014,7 +10036,7 @@ void ScreenshotPinnedWindow::showFromManagement() {
     if (hideToTopActive())
         m_hideToTop->setSuppressed(false);
     else {
-        setAttribute(Qt::WA_ShowWithoutActivating, m_clickThroughActive);
+        setShowWithoutActivating(m_clickThroughActive);
         if (m_stackingCoordinator)
             m_stackingCoordinator->promote(this);
         show();
@@ -10024,6 +10046,14 @@ void ScreenshotPinnedWindow::showFromManagement() {
     }
 }
 
+void ScreenshotPinnedWindow::setShowWithoutActivating(bool enabled) {
+    setAttribute(Qt::WA_ShowWithoutActivating, enabled);
+    // Qt copies this hint when creating the native window. Pooled shells already
+    // have a handle, so changing only the widget attribute leaves a stale hint.
+    if (auto* handle = windowHandle())
+        handle->setProperty("_q_showWithoutActivating", enabled);
+}
+
 void ScreenshotPinnedWindow::showPreservingStacking() {
     if (m_closing)
         return;
@@ -10031,7 +10061,7 @@ void ScreenshotPinnedWindow::showPreservingStacking() {
         m_hideToTop->setSuppressed(false);
         return;
     }
-    setAttribute(Qt::WA_ShowWithoutActivating, true);
+    setShowWithoutActivating(true);
     show();
     if (m_stackingCoordinator)
         m_stackingCoordinator->presented(this, true);
@@ -10081,7 +10111,7 @@ void ScreenshotPinnedWindow::confirmDestroy() {
     modal->setWindowModality(Qt::WindowModal);
     modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
     modal->setWindowTitle(tr("Destroy pinned window"));
-    modal->setText(tr("Destroy this pinned window? This action cannot be undone."));
+    modal->setText(tr("Destroy this pinned window? This action cannot be undone"));
     modal->setAcceptText(tr("Destroy"));
     modal->setRejectText(tr("Cancel"));
     modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
@@ -11053,7 +11083,7 @@ bool ScreenshotPinnedWindow::automationWorkflowBusy() const {
 snow_shot::presentation::ImageEditingSource ScreenshotPinnedWindow::imageEditingSnapshot() const {
     snow_shot::presentation::ImageEditingSource source;
     if (isLiveWindow()) {
-        source.error = tr("The live window requires a current frame snapshot.");
+        source.error = tr("The live window requires a current frame snapshot");
         return source;
     }
     if (m_closing || !m_firstContentFramePublished)
@@ -11080,7 +11110,7 @@ snow_shot::presentation::ImageEditingSource ScreenshotPinnedWindow::imageEditing
     source.canvasSession = m_runtime.serializeDocumentSnapshot();
     if (source.canvasSession.isEmpty())
         source.error = QCoreApplication::translate(
-            "ImageEditingWindow", "The editing content could not be prepared for export.");
+            "ImageEditingWindow", "The editing content could not be prepared for export");
     source.smartErase = m_runtime.smartEraseSnapshot();
     source.recognition = recognitionSnapshot();
     source.originalFileName = QFileInfo(m_originalClipboardContent.localFilePath).fileName();

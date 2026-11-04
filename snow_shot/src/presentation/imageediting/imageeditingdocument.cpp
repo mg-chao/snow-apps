@@ -349,7 +349,7 @@ ImageEditingSource ImageEditingDocument::snapshot() const {
     result.canvasSession = m_runtime.serializeDocumentSnapshot();
     if (result.canvasSession.isEmpty())
         result.error = QCoreApplication::translate(
-            "ImageEditingWindow", "The editing content could not be prepared for export.");
+            "ImageEditingWindow", "The editing content could not be prepared for export");
     result.smartErase = m_runtime.smartEraseSnapshot();
     result.samplingSources = baseImageSources();
     return result;

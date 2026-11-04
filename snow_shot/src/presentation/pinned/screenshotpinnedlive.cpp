@@ -292,11 +292,11 @@ void ScreenshotPinnedWindow::updateLiveState() {
         QString summary;
         switch (m_liveSource->state()) {
         case LiveWindowState::Minimized:
-            text = tr("The window is minimized. The latest content cannot be displayed.");
+            text = tr("The window is minimized. The latest content cannot be displayed");
             summary = tr("Minimized");
             break;
         case LiveWindowState::Closed:
-            text = tr("The window is closed. The latest content cannot be displayed.");
+            text = tr("The window is closed. The latest content cannot be displayed");
             summary = tr("Closed");
             break;
         case LiveWindowState::Initializing:
@@ -446,7 +446,7 @@ void ScreenshotPinnedWindow::requestLiveSnapshot(std::function<void(QImage, QStr
                                                  bool applyWindowOpacity) {
     auto artifact = liveViewportArtifact(applyWindowOpacity);
     if (!artifact) {
-        completion({}, tr("The current window content cannot be captured."));
+        completion({}, tr("The current window content cannot be captured"));
         return;
     }
     auto callback = std::make_shared<std::function<void(QImage, QString)>>(std::move(completion));
@@ -457,7 +457,7 @@ void ScreenshotPinnedWindow::requestLiveSnapshot(std::function<void(QImage, QStr
                                                                      std::move(result.error));
                                 }) &&
         *callback)
-        std::exchange(*callback, {})({}, tr("The current window content cannot be captured."));
+        std::exchange(*callback, {})({}, tr("The current window content cannot be captured"));
 }
 
 void ScreenshotPinnedWindow::convertLiveToImage() {
@@ -483,7 +483,7 @@ void ScreenshotPinnedWindow::convertLiveToImage() {
                 request.key = QStringLiteral("live-window-conversion");
                 request.content =
                     error.isEmpty()
-                        ? tr("The window changed while preparing the image. Please try again.")
+                        ? tr("The window changed while preparing the image. Please try again")
                         : error;
                 adqt::widgets::AdMessageService::error(std::move(request), this);
             }

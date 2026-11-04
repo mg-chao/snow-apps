@@ -177,7 +177,7 @@ void mcpSettingsWidget() {
     qApp->setProperty("snowShotMcpRunning", false);
     QMetaObject::invokeMethod(timers.front(), "timeout", Qt::DirectConnection);
     require(status->colorScheme() == adqt::widgets::AdTag::ColorScheme::Default &&
-                clients->text() == QStringLiteral("MCP is disabled or unavailable."),
+                clients->text() == QStringLiteral("MCP is disabled or unavailable"),
             "stopping the service clears the connected state");
 }
 } // namespace

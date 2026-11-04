@@ -209,7 +209,7 @@ void TranslationService::refreshModels(bool force) {
         force ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
               : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
     if (m_modelsToken == 0)
-        m_catalogError = tr("No translation services are available.");
+        m_catalogError = tr("No translation services are available");
     emit catalogChanged();
 }
 
@@ -232,17 +232,16 @@ void TranslationService::setLocale(const QLocale& locale) {
 
 QString TranslationService::errorText() const {
     if (m_storageError)
-        return tr(
-            "Unable to save translation preferences. Your previous selections were restored.");
+        return tr("Unable to save translation preferences. Your previous selections were restored");
     if (!m_models.isEmpty() || loadingModels() || !m_catalogAttempted)
         return {};
     return m_catalogError.isEmpty()
-               ? tr("No translation services are available.")
+               ? tr("No translation services are available")
                : tr("Unable to load translation services: %1").arg(m_catalogError);
 }
 
 QString TranslationService::modelConfigurationChangedText() {
-    return tr("Model configuration changed. Retry to use the updated settings.");
+    return tr("Model configuration changed. Retry to use the updated settings");
 }
 
 TranslationJob* TranslationService::createJob(const QStringList& texts, QObject* owner) {

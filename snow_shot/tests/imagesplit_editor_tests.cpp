@@ -1016,7 +1016,7 @@ void dragFeedbackUsesUploadSurface() {
                                          "Drop one image to replace the current image") &&
                     description->text() ==
                         QCoreApplication::translate("ImageSplitEditorWidget",
-                                                    "Drop one image file at a time.") &&
+                                                    "Drop one image file at a time") &&
                     hint->accessibleName() == title->text() &&
                     hint->accessibleDescription() == description->text(),
                 "visible upload feedback and accessibility must retranslate together");

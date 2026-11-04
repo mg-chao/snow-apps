@@ -330,8 +330,8 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
             connect(action, &QAction::triggered, this,
                     [this, manager, targets, valid, id = entry.id, owner = QPointer(owner)] {
                         if (valid() && manager && !manager->moveWindows(targets, id))
-                            showFailure(
-                                owner, tr("The selected windows could not be moved to the group."));
+                            showFailure(owner,
+                                        tr("The selected windows could not be moved to the group"));
                     });
         }
         group->addSeparator();
@@ -416,8 +416,8 @@ void PinnedWindowSelectionController::confirmDestroy(
         if (m_destroyRecords) {
             const auto result = m_destroyRecords(ids);
             if (!result.success) {
-                showFailure(owner, displayed ? tr("The displayed windows could not be destroyed.")
-                                             : tr("The selected windows could not be destroyed."));
+                showFailure(owner, displayed ? tr("The displayed windows could not be destroyed")
+                                             : tr("The selected windows could not be destroyed"));
                 return;
             }
         }
@@ -472,10 +472,10 @@ void PinnedWindowSelectionController::retranslateUi() {
         m_destroyConfirmation->setWindowTitle(displayed ? tr("Destroy displayed windows")
                                                         : tr("Destroy selected windows"));
         m_destroyConfirmation->setText(
-            displayed ? tr("Destroy %n displayed window(s)? This action cannot be undone.", nullptr,
-                           count)
-                      : tr("Destroy %n selected window(s)? This action cannot be undone.", nullptr,
-                           count));
+            displayed
+                ? tr("Destroy %n displayed window(s)? This action cannot be undone", nullptr, count)
+                : tr("Destroy %n selected window(s)? This action cannot be undone", nullptr,
+                     count));
         m_destroyConfirmation->setAcceptText(tr("Destroy"));
         m_destroyConfirmation->setRejectText(tr("Cancel"));
     }

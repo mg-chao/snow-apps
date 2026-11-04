@@ -29,7 +29,7 @@ QString LoginItemService::hint() const {
     if (m_snapshot.status == LoginItemStatus::ApprovalRequired)
         return text(QT_TRANSLATE_NOOP(
             "LoginItemService",
-            "Approval required. Allow Snow Shot in System Settings > General > Login Items."));
+            "Approval required. Allow Snow Shot in System Settings > General > Login Items"));
     return {};
 }
 LoginItemResult LoginItemService::initialize(bool enabledByDefault) {
@@ -41,7 +41,7 @@ LoginItemResult LoginItemService::initialize(bool enabledByDefault) {
             false,
             text(QT_TRANSLATE_NOOP(
                 "LoginItemService",
-                "Could not save launch-at-login initialization. Registration was not changed."))};
+                "Could not save launch-at-login initialization. Registration was not changed"))};
     // An existing native registration (including revoked consent) takes precedence.
     if (m_snapshot.requested() || !enabledByDefault)
         return {};
@@ -50,7 +50,7 @@ LoginItemResult LoginItemService::initialize(bool enabledByDefault) {
 LoginItemResult LoginItemService::setEnabled(bool enabled) {
     if (m_pending)
         return {false, text(QT_TRANSLATE_NOOP("LoginItemService",
-                                              "A launch-at-login change is already in progress."))};
+                                              "A launch-at-login change is already in progress"))};
     refresh();
     if (!available())
         return {false, hint()};
@@ -59,7 +59,7 @@ LoginItemResult LoginItemService::setEnabled(bool enabled) {
             false,
             text(QT_TRANSLATE_NOOP(
                 "LoginItemService",
-                "Could not save launch-at-login initialization. Registration was not changed."))};
+                "Could not save launch-at-login initialization. Registration was not changed"))};
     LoginItemResult result;
     {
         QScopedValueRollback<bool> pending(m_pending, true);
@@ -71,14 +71,14 @@ LoginItemResult LoginItemService::setEnabled(bool enabled) {
             result = {false,
                       text(QT_TRANSLATE_NOOP("LoginItemService",
                                              "macOS did not apply the launch-at-login change. "
-                                             "Check Login Items in System Settings."))};
+                                             "Check Login Items in System Settings"))};
         if (available() && !m_operations.savePreference(m_snapshot.requested())) {
             if (!result.error.isEmpty())
                 result.error += QLatin1Char('\n');
             result.success = false;
             result.error += text(QT_TRANSLATE_NOOP("LoginItemService",
                                                    "Could not save the launch-at-login preference. "
-                                                   "The displayed macOS status is still current."));
+                                                   "The displayed macOS status is still current"));
         }
     }
     emit changed();

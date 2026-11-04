@@ -621,7 +621,7 @@ void widgetContracts(QApplication& app) {
     flushEvents();
     const auto labels = editor->contentWidget()->findChildren<QLabel*>();
     const auto translatedRequired =
-        QCoreApplication::translate("CloudUploadSettingsWidget", "This field is required.");
+        QCoreApplication::translate("CloudUploadSettingsWidget", "This field is required");
     require(
         std::any_of(labels.cbegin(), labels.cend(),
                     [&](const auto* label) { return label->text().contains(translatedRequired); }),
