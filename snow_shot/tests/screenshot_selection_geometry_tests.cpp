@@ -1435,6 +1435,50 @@ void shadowWidthPreservesSelectionAndToolbarPlacement() {
         }
     }
 }
+void toolbarAtDisplaySeamStaysOutsideTheSelection() {
+    for (const QPoint origin : {QPoint(0, 0), QPoint(1600, 120), QPoint(-1600, -120)}) {
+        for (const qreal backingScale : {1.0, 2.0}) {
+            ScreenshotDisplaySession displays;
+            for (const QRect bounds : {QRect(origin - QPoint(1600, 0), QSize(1600, 900)),
+                                       QRect(origin, QSize(1600, 900))}) {
+                CapturedDisplayModel display;
+                display.active = true;
+                display.canvasUsesPoints = true;
+                display.capturedLogicalRect = bounds;
+                display.physicalRect = bounds;
+                display.backingScale = backingScale;
+                displays.appendDisplay(std::move(display));
+            }
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            const auto& display = displays.displayAt(1);
+            ScreenshotToolbarPlacementSnapshot toolbar;
+            toolbar.bottom = {QRect(100, 0, 700, 40), QRect(200, 44, 600, 44),
+                              QRect(100, 0, 700, 88)};
+            toolbar.top = {QRect(100, 48, 700, 40), QRect(200, 0, 600, 44), QRect(100, 0, 700, 88)};
+            for (const int top : {200, 760}) {
+                const QRect selection(origin + QPoint(0, top), QSize(200, 120));
+                ScreenshotToolbarPresentationState state;
+                state.selectionPixels = selection.translated(-geometry.canvasOrigin());
+                state.selectionCanvas = state.selectionPixels;
+                require(geometry.displayForCanvasRect(displays, state.selectionCanvas) == &display,
+                        "a selection flush with the seam must belong to the right-hand display");
+                const auto placement = snow_shot::presentation::screenshotToolbarPlacement(
+                    state, geometry, &display, toolbar, display.logicalRect, 4);
+                require(placement.usesTopRightPlacement == (top == 760),
+                        "seam adjustment must choose the side with enough vertical space");
+                const auto& layout = placement.usesTopRightPlacement ? toolbar.top : toolbar.bottom;
+                const QRect occupied =
+                    layout.occupiedContentRect.translated(placement.contentPosition);
+                require(display.logicalRect.contains(occupied) &&
+                            occupied.left() == selection.left() && !occupied.intersects(selection),
+                        "a seam-clamped toolbar must stay on the selected display and outside the "
+                        "capture region regardless of backing scale");
+            }
+        }
+    }
+}
+
 void logicalPinSelectionUsesDesktopBounds() {
     ScreenshotDisplaySession displays;
     for (const auto& entry :
@@ -1996,6 +2040,7 @@ int main() {
     historyPinMatchesScreenshotSelectionPlacement();
     logicalPinSelectionUsesDesktopBounds();
     shadowWidthPreservesSelectionAndToolbarPlacement();
+    toolbarAtDisplaySeamStaysOutsideTheSelection();
     lockedAspectRatioAppliesToEveryResizeHandle();
     lockedResizeStaysInsideBoundsWithoutDistorting();
     lockedResizeAllowsFlippingAcrossOppositeEdges();
