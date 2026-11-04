@@ -165,7 +165,9 @@ void RecordingEffectPreview::configure(
     const QColor& keyboardForeground, int keyboardSize, const QColor& highlight,
     bool recordMouseClicks, int highlightRadius, uint32_t playbackOverlay,
     const QColor& progressBarColor, SnowWebcam* webcam, int webcamSize, uint32_t webcamShape,
-    const QPoint& webcamOffset, bool recordMouseScrolling, uint32_t webcamOrientation) {
+    const QPoint& webcamOffset, bool recordMouseScrolling, uint32_t webcamOrientation,
+    bool recordNumberKeys, bool recordLettersAndSymbols, bool recordControlKeys,
+    bool preserveKeyboardShortcuts) {
     if (m_sessionEnding)
         return;
     const bool sameScene =
@@ -176,7 +178,10 @@ void RecordingEffectPreview::configure(
         m_recordMouseClicks == recordMouseClicks &&
         m_recordMouseScrolling == recordMouseScrolling && m_highlightRadius == highlightRadius &&
         m_playbackOverlay == playbackOverlay && m_progressBarColor == progressBarColor &&
-        m_webcam == webcam;
+        m_webcam == webcam && m_recordNumberKeys == recordNumberKeys &&
+        m_recordLettersAndSymbols == recordLettersAndSymbols &&
+        m_recordControlKeys == recordControlKeys &&
+        m_preserveKeyboardShortcuts == preserveKeyboardShortcuts;
     if (sameScene && m_webcamSize == webcamSize && m_webcamShape == webcamShape &&
         m_webcamOffset == webcamOffset && m_webcamOrientation == webcamOrientation) {
         return;
@@ -203,6 +208,10 @@ void RecordingEffectPreview::configure(
     m_recordMouseClicks = recordMouseClicks;
     m_recordMouseScrolling = recordMouseScrolling;
     m_keyboard = keyboard;
+    m_recordNumberKeys = recordNumberKeys;
+    m_recordLettersAndSymbols = recordLettersAndSymbols;
+    m_recordControlKeys = recordControlKeys;
+    m_preserveKeyboardShortcuts = preserveKeyboardShortcuts;
     m_webcam = webcam;
     m_webcamSize = webcamSize;
     m_webcamOffset = webcamOffset;
@@ -338,7 +347,11 @@ void RecordingEffectPreview::synchronize() {
                                       static_cast<uint32_t>(m_webcamOffset.x()),
                                       static_cast<uint32_t>(m_webcamOffset.y()),
                                       static_cast<uint32_t>(m_recordMouseScrolling),
-                                      m_webcamOrientation};
+                                      m_webcamOrientation,
+                                      static_cast<uint32_t>(m_recordNumberKeys),
+                                      static_cast<uint32_t>(m_recordLettersAndSymbols),
+                                      static_cast<uint32_t>(m_recordControlKeys),
+                                      static_cast<uint32_t>(m_preserveKeyboardShortcuts)};
     font.applyTo(config);
     QString error;
     const bool success = m_running ? m_source->configure(config, error)

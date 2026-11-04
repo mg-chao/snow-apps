@@ -429,6 +429,15 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] QColor recordingKeyboardBackgroundColor() const;
     void setRecordingKeyboardForegroundColor(const QColor& value);
     [[nodiscard]] QColor recordingKeyboardForegroundColor() const;
+    void setRecordingRecordNumberKeys(bool value);
+    [[nodiscard]] bool recordingRecordNumberKeys() const;
+    void setRecordingRecordLettersAndSymbols(bool value);
+    [[nodiscard]] bool recordingRecordLettersAndSymbols() const;
+    void setRecordingRecordControlKeys(bool value);
+    [[nodiscard]] bool recordingRecordControlKeys() const;
+    void setRecordingPreserveKeyboardShortcuts(bool value);
+    [[nodiscard]] bool recordingPreserveKeyboardShortcuts() const;
+    adqt::widgets::AdPopover* recordingKeyboardPopover() const;
     void setRecordingMouseTrailColor(const QColor& color);
     [[nodiscard]] QColor recordingMouseTrailColor() const;
     void setRecordingMouseClickColor(const QColor& color);
@@ -645,6 +654,10 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingMouseTrailColorChanged(const QColor& color);
     void recordingMouseClickColorChanged(const QColor& color);
     void recordingKeyboardVisibleChanged(bool visible);
+    void recordingRecordNumberKeysChanged(bool value);
+    void recordingRecordLettersAndSymbolsChanged(bool value);
+    void recordingRecordControlKeysChanged(bool value);
+    void recordingPreserveKeyboardShortcutsChanged(bool value);
     void recordingMouseHighlightEnabledChanged(bool value);
     void recordingRecordMouseClicksChanged(bool value);
     void recordingRecordMouseScrollingChanged(bool value);
@@ -741,6 +754,7 @@ class ScreenshotToolPalette final : public QWidget,
     void refreshRecordingExportSettingsText();
     void refreshRecordingEffectSettingsModalText();
     void refreshRecordingMouseOptions();
+    void refreshRecordingKeyboardOptions();
     void refreshRecordingPostProcessingOptions();
     void refreshRecordingHighlightSwatch();
     bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
@@ -1052,6 +1066,15 @@ class ScreenshotToolPalette final : public QWidget,
     std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
+    adqt::widgets::AdPopover* m_recordKeyboardPopover = nullptr;
+    QPointer<adqt::widgets::AdCheckbox> m_recordNumberKeysCheckbox;
+    QPointer<adqt::widgets::AdCheckbox> m_recordLettersAndSymbolsCheckbox;
+    QPointer<adqt::widgets::AdCheckbox> m_recordControlKeysCheckbox;
+    QPointer<adqt::widgets::AdCheckbox> m_recordPreserveKeyboardShortcutsCheckbox;
+    bool m_recordingRecordNumberKeys = true;
+    bool m_recordingRecordLettersAndSymbols = true;
+    bool m_recordingRecordControlKeys = true;
+    bool m_recordingPreserveKeyboardShortcuts = true;
     adqt::widgets::AdButton* m_recordWebcamButton = nullptr;
     adqt::widgets::AdInputNumber* m_recordWebcamSizeInput = nullptr;
     adqt::widgets::AdSelect* m_recordWebcamShapeSelect = nullptr;

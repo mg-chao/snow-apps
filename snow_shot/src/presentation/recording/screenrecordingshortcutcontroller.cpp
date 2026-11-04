@@ -140,6 +140,25 @@ bool ScreenRecordingShortcutController::canActivate(
                 (context.event && context.event->key() == Qt::Key_Escape))
                 return false;
         }
+        if (const auto* popup = m_toolbar->palette()->recordingKeyboardPopover(); popup) {
+            const bool opensKeyboardOptions = receiver == popup->sourceWidget() && context.event &&
+                                              context.event->key() == Qt::Key_Down &&
+                                              (context.event->modifiers() == Qt::NoModifier ||
+                                               context.event->modifiers() == Qt::AltModifier);
+            if (opensKeyboardOptions)
+                return false;
+            const QWidget* content = popup->contentWidget();
+            const bool keyboardOptionsFocused =
+                content && context.focusWidget &&
+                (content == context.focusWidget || content->isAncestorOf(context.focusWidget));
+            const QWidget* surface = popup->surfaceWidget();
+            const bool keyboardOptionsReceiver =
+                (content && (content == receiver || content->isAncestorOf(receiver))) ||
+                (surface && (surface == receiver || surface->isAncestorOf(receiver)));
+            if (popup->isVisible() && (keyboardOptionsFocused || keyboardOptionsReceiver ||
+                                       (context.event && context.event->key() == Qt::Key_Escape)))
+                return false;
+        }
     }
     return m_area != nullptr && m_toolbar != nullptr && m_area->isVisible() &&
            m_toolbar->recordingUiPresented() && receiver != nullptr && receiver->isVisible() &&

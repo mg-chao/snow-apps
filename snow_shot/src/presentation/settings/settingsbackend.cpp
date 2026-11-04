@@ -2558,9 +2558,20 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
     case SettingsSectionReset::ScreenRecordingEncoding:
     case SettingsSectionReset::PinToScreenToolbar:
     case SettingsSectionReset::ScreenshotActionToolbar:
-    case SettingsSectionReset::ScreenRecordingActionToolbar:
         return storage::ApplicationStorage::instance().configuration().setValues(
             sectionDefaults(reset));
+    case SettingsSectionReset::ScreenRecordingActionToolbar: {
+        auto defaults = sectionDefaults(reset);
+        for (const auto* key :
+             {"screen_recording/record_number_keys", "screen_recording/record_letters_and_symbols",
+              "screen_recording/record_control_keys",
+              "screen_recording/preserve_keyboard_shortcuts"}) {
+            const auto configurationKey = QString::fromLatin1(key);
+            defaults.insert(configurationKey,
+                            storage::ConfigurationSchema::defaultValue(configurationKey));
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
+    }
     case SettingsSectionReset::ScreenshotEditorShortcuts:
     case SettingsSectionReset::ScreenshotOtherShortcuts:
     case SettingsSectionReset::DrawingShortcuts:
@@ -3011,6 +3022,18 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
             {QStringLiteral("screen_recording/keyboard_foreground_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/keyboard_foreground_color"))},
+            {QStringLiteral("screen_recording/record_number_keys"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/record_number_keys"))},
+            {QStringLiteral("screen_recording/record_letters_and_symbols"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/record_letters_and_symbols"))},
+            {QStringLiteral("screen_recording/record_control_keys"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/record_control_keys"))},
+            {QStringLiteral("screen_recording/preserve_keyboard_shortcuts"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/preserve_keyboard_shortcuts"))},
             {QStringLiteral("screen_recording/show_keyboard"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/show_keyboard"))},

@@ -25,6 +25,7 @@ fn run(size: (u32, u32), moving: bool, enabled: bool) -> Result<(), String> {
         labels: BTreeMap::new(),
     };
     let config = PreviewConfig {
+        keyboard_filter: Default::default(),
         webcam: None,
         region: (0, 0, size.0, size.1),
         canvas: size,

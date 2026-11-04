@@ -15,7 +15,7 @@ typedef struct SnowRecordingEffectsKeyLabel {
     const char* label_utf8;
 } SnowRecordingEffectsKeyLabel;
 
-#define SNOW_RECORDING_EFFECTS_CONFIG_VERSION 11u
+#define SNOW_RECORDING_EFFECTS_CONFIG_VERSION 12u
 typedef struct SnowRecordingEffectsConfig {
     uint32_t version;
     uint32_t struct_size;
@@ -59,6 +59,12 @@ typedef struct SnowRecordingEffectsConfig {
     /* Version 11: clockwise quarter-turns in bits 0..1; reflect horizontally before
        rotation in bit 2. Values 0..7; older configurations use identity (0). */
     uint32_t webcam_orientation;
+    /* Version 12: keystroke category filters. Each is 0 or 1; older callers enable all.
+       Shortcut preservation is effective only while record_control_keys is enabled. */
+    uint32_t record_number_keys;
+    uint32_t record_letters_and_symbols;
+    uint32_t record_control_keys;
+    uint32_t preserve_keyboard_shortcuts;
 } SnowRecordingEffectsConfig;
 
 typedef struct SnowRecordingEffectsTile {

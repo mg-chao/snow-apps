@@ -13,7 +13,9 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "../src/presentation/recording/screenrecordingselection.h"
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
 #include "widgets/dpi_stable_window_controller.h"
+#include "widgets/popover.h"
 
 #include <QApplication>
 #include <QDir>
@@ -640,6 +642,78 @@ void recordingModalsBlockSessionShortcuts() {
     pressCommands(area);
     require(shapes == 2 && starts == 2 && closes == 2,
             "drawing and recording shortcuts must resume after closing the recording modal");
+}
+
+void recordingKeyboardOptionsOwnKeyboardInput() {
+    namespace storage = snow_shot::storage;
+    const storage::DrawingShortcutSettings drawing;
+    const storage::ScreenRecordingShortcutSettings recording;
+    const auto savedShape = drawing.shape();
+    const auto savedRecording = recording.allShortcuts();
+    const auto restore = qScopeGuard([&] {
+        require(drawing.setShape(savedShape) && recording.setAllShortcutsAtomic(savedRecording),
+                "restore keyboard options shortcut settings");
+    });
+    require(drawing.setShape({QStringLiteral("Space"), QStringLiteral("Down")}) &&
+                recording.setShortcuts(QStringLiteral("toggle_recording"),
+                                       {QStringLiteral("F8"), QStringLiteral("Alt+Down")}) &&
+                recording.setShortcuts(QStringLiteral("end_recording"), {QStringLiteral("Esc")}),
+            "configure shortcuts that keyboard options must suppress");
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setRecordingRegion(QRect(40, 40, 320, 240));
+    toolbar.setTransientOwnerWindow(&area);
+    auto* palette = toolbar.palette();
+    auto* exportSettings = palette->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(exportSettings != nullptr, "keyboard options require the export settings row");
+    if (!palette->recordingExportSettingsVisible())
+        exportSettings->click();
+    require(palette->recordingExportSettingsVisible(),
+            "keyboard shortcut fixture must open the export settings row");
+    ScreenRecordingShortcutController shortcuts(area, toolbar);
+    int shapes = 0, starts = 0, closes = 0;
+    QObject::connect(palette, &ScreenshotToolPalette::shapeRequested, &area, [&] { ++shapes; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested, &area,
+                     [&] { ++starts; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested, &area,
+                     [&] { ++closes; });
+    area.show();
+    toolbar.show();
+    auto* trigger =
+        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
+    require(trigger && palette->recordingKeyboardPopover(), "keyboard options trigger exists");
+    focus(*trigger);
+    press(*trigger, Qt::Key_Down);
+    auto* popup = palette->recordingKeyboardPopover();
+    require(popup->isVisible() && popup->contentWidget() && shapes == 0,
+            "Down on the keyboard trigger must open its options before the drawing shortcut");
+    auto* number = popup->contentWidget()->findChild<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("screenRecordingRecordNumberKeys"));
+    require(number && number->isChecked(), "number keys are initially included");
+    focus(*number);
+    press(*number, Qt::Key_Space);
+    require(!number->isChecked() && !palette->recordingRecordNumberKeys() && shapes == 0 &&
+                popup->isVisible(),
+            "Space must edit the checkbox without activating the drawing shortcut");
+    press(*number, Qt::Key_F8);
+    require(starts == 0 && popup->isVisible(),
+            "recording commands must remain suppressed while editing keyboard options");
+    auto escape = keyEvent(QEvent::KeyPress, Qt::Key_Escape);
+    QCoreApplication::sendEvent(number, &escape);
+    require(!popup->isVisible() && closes == 0, "Escape must dismiss only the keyboard popover");
+    auto escapeRelease = keyEvent(QEvent::KeyRelease, Qt::Key_Escape);
+    QCoreApplication::sendEvent(trigger, &escapeRelease);
+    require(closes == 0, "dismissing options must not arm the close-on-release shortcut");
+    focus(*trigger);
+    press(*trigger, Qt::Key_Down, Qt::AltModifier);
+    require(popup->isVisible() && popup->contentWidget() && starts == 0,
+            "Alt+Down on the keyboard trigger must open its options before the recording shortcut");
+    popup->hide();
+    focus(area);
+    press(area, Qt::Key_F8);
+    press(area, Qt::Key_Escape);
+    require(starts == 1 && closes == 1, "recording shortcuts must resume after options close");
 }
 
 void autoHiddenRecordingToolbarRetainsAreaShortcuts() {
@@ -1381,6 +1455,11 @@ int main(int argc, char* argv[]) {
         storage.shutdown();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--keyboard-options-only"))) {
+        recordingKeyboardOptionsOwnKeyboardInput();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--area-history-only"))) {
         recordingAreaHistoryShortcuts();
         storage.shutdown();
@@ -1432,6 +1511,7 @@ int main(int argc, char* argv[]) {
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();
     recordingControlShortcutsFollowButtonsAndSettings();
     recordingModalsBlockSessionShortcuts();
+    recordingKeyboardOptionsOwnKeyboardInput();
     recordingShortcutsFollowBothWindowsAndConfiguredKeys();
     autoHiddenRecordingToolbarRetainsAreaShortcuts();
     storage.shutdown();

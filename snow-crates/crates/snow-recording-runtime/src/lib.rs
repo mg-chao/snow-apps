@@ -23,6 +23,7 @@ mod output_schedule;
 mod webcam;
 mod worker_startup;
 pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};
+pub use snow_recording_effects::KeyboardFilterConfig;
 #[cfg(feature = "legacy-capture")]
 pub(crate) mod processor;
 #[cfg(feature = "legacy-capture")]

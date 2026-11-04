@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::keyboard_filter::{KeyboardFilter, KeyboardFilterConfig};
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig, KeycapRasterizer};
 use crate::mouse_effects::{CLICK_QUEUE_DEPTH, RenderClick};
@@ -29,6 +30,7 @@ pub struct PreviewConfig {
     pub record_mouse_scrolling: bool,
     pub show_keyboard: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
+    pub keyboard_filter: KeyboardFilterConfig,
     pub generation: u64,
 }
 
@@ -45,6 +47,7 @@ impl PreviewConfig {
             && self.record_mouse_clicks == next.record_mouse_clicks
             && self.record_mouse_scrolling == next.record_mouse_scrolling
             && self.show_keyboard == next.show_keyboard
+            && self.keyboard_filter == next.keyboard_filter
             && self.keyboard == next.keyboard
             && self.generation == next.generation
             && self.webcam.as_ref().map(|w| &w.source) == next.webcam.as_ref().map(|w| &w.source)
@@ -123,6 +126,7 @@ pub struct EffectsPreview {
     position: Option<(i32, i32)>,
     continuity: u64,
     webcam: crate::webcam::WebcamOverlay,
+    keyboard_filter: KeyboardFilter,
 }
 
 impl std::ops::Deref for EffectsPreview {
@@ -169,6 +173,7 @@ impl EffectsPreview {
             position: None,
             continuity: 0,
             webcam: Default::default(),
+            keyboard_filter: KeyboardFilter::default(),
         }
     }
     pub fn observe(&mut self, position: Option<(i32, i32)>, at: u64) {
@@ -194,9 +199,18 @@ impl EffectsPreview {
         self.input_effects.click(click);
     }
     pub fn key_event(&mut self, event: crate::keyboard_overlay::KeyEvent) {
-        self.input_effects.queue_key(event);
+        if self.input_effects.pending_keys.len() == crate::state::MAX_PENDING_KEYS {
+            self.reset_inputs(event.at_ms);
+        }
+        if let Some(event) = self
+            .keyboard_filter
+            .event(self.config.keyboard_filter, event)
+        {
+            self.input_effects.queue_key(event);
+        }
     }
     pub fn reset_inputs(&mut self, now: u64) {
+        self.keyboard_filter.reset();
         self.input_effects.reset_keyboard(now);
     }
     pub fn mouse_event(&mut self, event: &MouseClickObservation, at_ms: u64) {
@@ -790,6 +804,7 @@ mod tests {
 
     fn config() -> PreviewConfig {
         PreviewConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             region: (-400, -200, 1920, 1080),
             canvas: (1920, 1080),
@@ -1415,6 +1430,46 @@ mod tests {
             label: "A".into(),
             modifiers: vec![],
         }
+    }
+
+    #[test]
+    fn preview_filters_plain_keys_but_renders_preserved_shortcuts() {
+        let mut cfg = config();
+        cfg.trail = [0; 4];
+        cfg.click = [0; 4];
+        cfg.keyboard_filter.record_letters_and_symbols = false;
+        let mut preview = EffectsPreview::new(cfg, Some(Box::new(Solid)));
+        preview.key_event(key(0, true));
+        preview.key_event(key(10, false));
+        assert!(preview.render(10).unwrap().is_empty());
+        let mut shortcut = key(20, true);
+        shortcut.modifiers = vec![(0xa2, "Left Ctrl".into())];
+        preview.key_event(shortcut);
+        preview.key_event(key(30, false));
+        assert!(!preview.render(40).unwrap().is_empty());
+        assert!(preview.render(2000).unwrap().is_empty());
+        preview.reset_inputs(2010);
+        preview.key_event(key(2020, true));
+        assert!(preview.render(2030).unwrap().is_empty());
+    }
+
+    #[test]
+    fn preview_control_filter_also_removes_mouse_modifier_labels() {
+        let mut cfg = config();
+        cfg.keyboard_filter.record_control_keys = false;
+        let mut preview = EffectsPreview::new(cfg, None);
+        let mut event = key(0, true);
+        event.modifiers = vec![(0xa2, "Left Ctrl".into())];
+        preview.key_event(event.clone());
+        event.key = 0x200;
+        preview.key_event(event);
+        assert_eq!(preview.pending_keys.len(), 2);
+        assert!(
+            preview
+                .pending_keys
+                .iter()
+                .all(|event| event.modifiers.is_empty())
+        );
     }
     #[test]
     fn preview_keycaps_keep_fixed_size_in_capture_coordinates() {

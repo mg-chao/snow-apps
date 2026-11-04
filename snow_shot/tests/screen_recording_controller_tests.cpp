@@ -7614,6 +7614,101 @@ void recordingAreaHistoryTests() {
     }
 }
 
+void recordingKeyboardFiltersPropagate() {
+    using snow_shot::storage::ApplicationStorage;
+    using snow_shot::storage::RecordingSettings;
+    prepareWebcamSettings(false);
+    const RecordingSettings settings;
+    require(settings.recordNumberKeys() && settings.recordLettersAndSymbols() &&
+                settings.recordControlKeys() && settings.preserveKeyboardShortcuts(),
+            "all keyboard filter defaults must be enabled");
+    require(settings.setShowKeyboard(true) && settings.setDeleteFilesOnRecordingClose(true) &&
+                settings.setRecordNumberKeys(false) && settings.setRecordControlKeys(false),
+            "prepare persisted keyboard filters");
+    {
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open({40, 40, 320, 240});
+        pumpPreview();
+        auto state = effectSources.back().lock();
+        require(state && state->active && !state->recordNumberKeys &&
+                    state->recordLettersAndSymbols && !state->recordControlKeys &&
+                    state->preserveKeyboardShortcuts && !palette()->recordingRecordNumberKeys() &&
+                    palette()->recordingRecordLettersAndSymbols() &&
+                    !palette()->recordingRecordControlKeys() &&
+                    palette()->recordingPreserveKeyboardShortcuts(),
+                "stored keyboard filters reach the palette and idle preview");
+        const auto generation = state->generation;
+        palette()->recordingRecordNumberKeysChanged(true);
+        palette()->recordingRecordLettersAndSymbolsChanged(false);
+        palette()->recordingRecordControlKeysChanged(true);
+        palette()->recordingPreserveKeyboardShortcutsChanged(false);
+        pumpPreview();
+        require(state->generation > generation && state->recordNumberKeys &&
+                    !state->recordLettersAndSymbols && state->recordControlKeys &&
+                    !state->preserveKeyboardShortcuts && settings.recordNumberKeys() &&
+                    !settings.recordLettersAndSymbols() && settings.recordControlKeys() &&
+                    !settings.preserveKeyboardShortcuts(),
+                "each keyboard filter edit persists and reconfigures preview");
+        controller.startRecording();
+        waitForRecording(controller);
+        require(lastDirectConfig.record_number_keys == 1 &&
+                    lastDirectConfig.record_letters_and_symbols == 0 &&
+                    lastDirectConfig.record_control_keys == 1 &&
+                    lastDirectConfig.preserve_keyboard_shortcuts == 0,
+                "manual startup snapshots all four keyboard filters");
+        palette()->recordingCloseRequested();
+        waitForIdle(controller);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    // Successful capture appends area history independently of recording preferences.
+    const auto preferences = [] {
+        auto snapshot = ApplicationStorage::instance().configuration().snapshot();
+        snapshot.remove(QStringLiteral("screen_recording/area_history"));
+        return snapshot;
+    };
+    const auto saved = preferences();
+    for (const bool deferred : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        const QJsonObject options{{QStringLiteral("post_processing"), deferred},
+                                  {QStringLiteral("show_keyboard"), true},
+                                  {QStringLiteral("record_number_keys"), false},
+                                  {QStringLiteral("record_letters_and_symbols"), true},
+                                  {QStringLiteral("record_control_keys"), false},
+                                  {QStringLiteral("preserve_keyboard_shortcuts"), true}};
+        require(controller.startAutomation({40, 40, 320, 240}, options, &error),
+                "automation accepts keyboard filter overrides");
+        waitForRecording(controller);
+        const auto actual =
+            controller.automationState().value(QStringLiteral("options")).toObject();
+        require(lastDirectConfig.record_number_keys == 0 &&
+                    lastDirectConfig.record_letters_and_symbols == 1 &&
+                    lastDirectConfig.record_control_keys == 0 &&
+                    lastDirectConfig.preserve_keyboard_shortcuts == 1,
+                "direct and deferred automation pass all keyboard overrides to capture");
+        require(!palette()->recordingRecordNumberKeys() &&
+                    palette()->recordingRecordLettersAndSymbols() &&
+                    !palette()->recordingRecordControlKeys() &&
+                    palette()->recordingPreserveKeyboardShortcuts(),
+                "automation synchronizes keyboard filter controls");
+        require(!actual.value(QStringLiteral("record_number_keys")).toBool() &&
+                    actual.value(QStringLiteral("record_letters_and_symbols")).toBool() &&
+                    !actual.value(QStringLiteral("record_control_keys")).toBool() &&
+                    actual.value(QStringLiteral("preserve_keyboard_shortcuts")).toBool(),
+                "automation reports all four keyboard filter overrides");
+        const auto current = preferences();
+        for (auto it = current.cbegin(); it != current.cend(); ++it) {
+            if (saved.value(it.key()) != it.value())
+                std::cerr << "Automation changed setting: " << qPrintable(it.key()) << '\n';
+        }
+        require(current == saved, "automation keyboard filters must not overwrite preferences");
+        require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                "close the keyboard filter automation fixture");
+        waitForIdle(controller);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+}
+
 template <typename Application> int runRecordingControllerTests(Application& app) {
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary storage must exist");
@@ -8036,6 +8131,26 @@ template <typename Application> int runRecordingControllerTests(Application& app
             checkOption(QStringLiteral("start_delay_seconds"), 7, [](const QJsonValue& value) {
                 palette()->recordingStartDelaySecondsChanged(value.toInt());
             });
+            checkOption(QStringLiteral("record_number_keys"),
+                        !options.value(QStringLiteral("record_number_keys")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordNumberKeysChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("record_letters_and_symbols"),
+                        !options.value(QStringLiteral("record_letters_and_symbols")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordLettersAndSymbolsChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("record_control_keys"),
+                        !options.value(QStringLiteral("record_control_keys")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingRecordControlKeysChanged(value.toBool());
+                        });
+            checkOption(QStringLiteral("preserve_keyboard_shortcuts"),
+                        !options.value(QStringLiteral("preserve_keyboard_shortcuts")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingPreserveKeyboardShortcutsChanged(value.toBool());
+                        });
             checkOption(QStringLiteral("keyboard_size"), 96, [](const QJsonValue& value) {
                 palette()->recordingKeyboardSizeChanged(value.toInt());
             });
@@ -8059,7 +8174,13 @@ template <typename Application> int runRecordingControllerTests(Application& app
                     "reopening an existing UI tracks region changes and restoration");
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        const auto saved = ApplicationStorage::instance().configuration().snapshot();
+        const auto preferenceSnapshot = [] {
+            auto values = ApplicationStorage::instance().configuration().snapshot();
+            // Successful captures append session history without changing recording preferences.
+            values.remove(QStringLiteral("screen_recording/area_history"));
+            return values;
+        };
+        const auto saved = preferenceSnapshot();
         ScreenRecordingController controller(testEffectsSource);
         QString error;
         QTemporaryDir contractOutputDirectory;
@@ -8174,7 +8295,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         QCoreApplication::processEvents();
         require(!controller.isOpen() && starts == previousStarts,
                 "disconnect must cancel countdown without starting capture");
-        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+        require(preferenceSnapshot() == saved,
                 "automation options must not change persistent preferences");
         QTemporaryDir outputDirectory;
         require(outputDirectory.isValid(), "recording output directory must be isolated");
@@ -8197,9 +8318,10 @@ template <typename Application> int runRecordingControllerTests(Application& app
                 "automation HEVC hardware preference must reach capture without changing settings");
         require(lastDirectConfig.capture_fps == 24,
                 "automation frame rate must reach the native capture configuration");
-        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE &&
-                    ApplicationStorage::instance().configuration().snapshot() == saved,
-                "separate audio override reaches capture without changing preferences");
+        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE,
+                "separate audio override must reach capture");
+        require(preferenceSnapshot() == saved,
+                "separate audio override must preserve persistent preferences");
         require(lastDirectConfig.quality == 63,
                 "automation quality must reach the native capture configuration");
         const auto runningRevision =
@@ -8220,7 +8342,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         require(exports == previousExports + 1 &&
                     controller.automationState().value(QStringLiteral("finalized")).toBool(),
                 "disconnect must finalize exactly once and retain the output artifact");
-        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+        require(preferenceSnapshot() == saved,
                 "recording lifecycle must preserve persistent preferences");
         return 0;
     }
@@ -8232,6 +8354,10 @@ template <typename Application> int runRecordingControllerTests(Application& app
 #endif
     if (app.arguments().contains(QStringLiteral("--playback-preview-only"))) {
         playbackPreviewAtZero();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--keyboard-filter-only"))) {
+        recordingKeyboardFiltersPropagate();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {

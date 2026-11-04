@@ -1848,6 +1848,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateRecordingControls();
     updateRecordingExportSettingsControls();
     refreshRecordingMouseOptions();
+    refreshRecordingKeyboardOptions();
     updateRecordingControlMetrics();
     refreshRecordingPostProcessingOptions();
 }
@@ -2503,6 +2504,46 @@ QColor ScreenshotToolPalette::recordingKeyboardForegroundColor() const {
     return m_recordingKeyboardForegroundColor;
 }
 
+void ScreenshotToolPalette::setRecordingRecordNumberKeys(bool value) {
+    m_recordingRecordNumberKeys = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordNumberKeys() const {
+    return m_recordingRecordNumberKeys;
+}
+
+void ScreenshotToolPalette::setRecordingRecordLettersAndSymbols(bool value) {
+    m_recordingRecordLettersAndSymbols = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordLettersAndSymbols() const {
+    return m_recordingRecordLettersAndSymbols;
+}
+
+void ScreenshotToolPalette::setRecordingRecordControlKeys(bool value) {
+    m_recordingRecordControlKeys = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingRecordControlKeys() const {
+    return m_recordingRecordControlKeys;
+}
+
+void ScreenshotToolPalette::setRecordingPreserveKeyboardShortcuts(bool value) {
+    m_recordingPreserveKeyboardShortcuts = value;
+    refreshRecordingKeyboardOptions();
+}
+
+bool ScreenshotToolPalette::recordingPreserveKeyboardShortcuts() const {
+    return m_recordingPreserveKeyboardShortcuts;
+}
+
+adqt::widgets::AdPopover* ScreenshotToolPalette::recordingKeyboardPopover() const {
+    return m_recordKeyboardPopover;
+}
+
 void ScreenshotToolPalette::setRecordingMouseTrailColor(const QColor& color) {
     const QColor value = color.isValid() ? color : QColor(0, 0, 0, 0);
     if (m_recordingMouseTrailColor == value) {
@@ -2642,6 +2683,42 @@ void ScreenshotToolPalette::refreshRecordingMouseOptions() {
         checkbox->setFont(textFont);
     }
     if (auto* content = m_recordCursorPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
+void ScreenshotToolPalette::refreshRecordingKeyboardOptions() {
+    if (!m_recordNumberKeysCheckbox || !m_recordLettersAndSymbolsCheckbox ||
+        !m_recordControlKeysCheckbox || !m_recordPreserveKeyboardShortcutsCheckbox) {
+        return;
+    }
+    const QSignalBlocker numbersBlocker(m_recordNumberKeysCheckbox);
+    const QSignalBlocker lettersBlocker(m_recordLettersAndSymbolsCheckbox);
+    const QSignalBlocker controlsBlocker(m_recordControlKeysCheckbox);
+    const QSignalBlocker shortcutsBlocker(m_recordPreserveKeyboardShortcutsCheckbox);
+    m_recordNumberKeysCheckbox->setText(tr("Number keys"));
+    m_recordLettersAndSymbolsCheckbox->setText(tr("Letters and symbols"));
+    m_recordControlKeysCheckbox->setText(tr("Control keys"));
+    m_recordPreserveKeyboardShortcutsCheckbox->setText(tr("Preserve keyboard shortcuts"));
+    m_recordNumberKeysCheckbox->setChecked(m_recordingRecordNumberKeys);
+    m_recordLettersAndSymbolsCheckbox->setChecked(m_recordingRecordLettersAndSymbols);
+    m_recordControlKeysCheckbox->setChecked(m_recordingRecordControlKeys);
+    m_recordPreserveKeyboardShortcutsCheckbox->setChecked(m_recordingPreserveKeyboardShortcuts);
+    m_recordPreserveKeyboardShortcutsCheckbox->setEnabled(m_recordingRecordControlKeys);
+    for (auto* checkbox :
+         {m_recordNumberKeysCheckbox.data(), m_recordLettersAndSymbolsCheckbox.data(),
+          m_recordControlKeysCheckbox.data(), m_recordPreserveKeyboardShortcutsCheckbox.data()}) {
+        checkbox->setAccessibleName(checkbox->text());
+        auto tokens = adqt::widgets::AdCheckbox::ComponentTokens{};
+        tokens.metrics.checkboxSize = scaledMetric(16);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        checkbox->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        checkbox->setFont(textFont);
+    }
+    if (auto* content = m_recordKeyboardPopover->contentWidget()) {
         content->layout()->setSpacing(scaledMetric(8));
     }
 }
@@ -3901,7 +3978,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         configureScreenshotToolPaletteStyleButton(m_recordKeyboardButton,
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
+        m_recordKeyboardButton->setFocusPolicy(Qt::StrongFocus);
     }
+    refreshRecordingKeyboardOptions();
     if (m_recordPostProcessingButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordPostProcessingButton,
                                                   "Post-processing effects",
@@ -4457,6 +4536,48 @@ void ScreenshotToolPalette::finishScrollingSelectionMove() {
 }
 
 bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
+    if (event && m_recordKeyboardPopover) {
+        const auto* widget = qobject_cast<QWidget*>(watched);
+        const auto* content = m_recordKeyboardPopover->contentWidget();
+        const bool inKeyboardOptions =
+            content && widget && (content == widget || content->isAncestorOf(widget));
+        if (inKeyboardOptions &&
+            (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress)) {
+            // Keep keyboard or pointer editing open until it is explicitly dismissed.
+            m_recordKeyboardPopover->show();
+        }
+        if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            const bool sourceDown =
+                watched == m_recordKeyboardButton && key->key() == Qt::Key_Down &&
+                (key->modifiers() == Qt::NoModifier || key->modifiers() == Qt::AltModifier);
+            const bool escape = key->key() == Qt::Key_Escape &&
+                                (m_recordKeyboardPopover->isVisible() || inKeyboardOptions);
+            if (event->type() == QEvent::ShortcutOverride) {
+                if (sourceDown || escape || inKeyboardOptions) {
+                    key->accept();
+                    return true;
+                }
+            } else if (escape) {
+                m_recordKeyboardPopover->hide();
+                if (inKeyboardOptions) {
+                    m_recordKeyboardButton->window()->activateWindow();
+                    m_recordKeyboardButton->setFocus(Qt::OtherFocusReason);
+                }
+                key->accept();
+                return true;
+            } else if (sourceDown && m_recordKeyboardPopover->isEnabled()) {
+                m_recordKeyboardPopover->show();
+                if (m_recordNumberKeysCheckbox && m_recordKeyboardPopover->surfaceWidget() &&
+                    m_recordKeyboardPopover->surfaceWidget()->isVisible()) {
+                    m_recordKeyboardPopover->surfaceWidget()->activateWindow();
+                    m_recordNumberKeysCheckbox->setFocus(Qt::OtherFocusReason);
+                }
+                key->accept();
+                return true;
+            }
+        }
+    }
     if (event && watched && watched == m_backgroundOpacityEditor) {
         if (snow_shot::presentation::pointerHoverPositionWithin(m_backgroundOpacityEditor, event))
             emit selectionBackgroundPreviewVisibleChanged(true);
@@ -7373,6 +7494,62 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
     m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
     layout->addWidget(m_recordKeyboardButton);
+    m_recordKeyboardButton->setFocusPolicy(Qt::StrongFocus);
+    m_recordKeyboardPopover = new adqt::widgets::AdPopover(m_recordKeyboardButton);
+    m_recordKeyboardPopover->setObjectName(QStringLiteral("screenRecordingKeyboardPopover"));
+    m_recordKeyboardPopover->setSourceWidget(m_recordKeyboardButton);
+    m_recordKeyboardPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordKeyboardPopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_recordKeyboardPopover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordKeyboardPopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingKeyboardOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordNumberKeysCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordLettersAndSymbolsCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordControlKeysCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordPreserveKeyboardShortcutsCheckbox = new adqt::widgets::AdCheckbox(content);
+            m_recordNumberKeysCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordNumberKeys"));
+            m_recordLettersAndSymbolsCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordLettersAndSymbols"));
+            m_recordControlKeysCheckbox->setObjectName(
+                QStringLiteral("screenRecordingRecordControlKeys"));
+            m_recordPreserveKeyboardShortcutsCheckbox->setObjectName(
+                QStringLiteral("screenRecordingPreserveKeyboardShortcuts"));
+            options->addWidget(m_recordNumberKeysCheckbox);
+            options->addWidget(m_recordLettersAndSymbolsCheckbox);
+            options->addWidget(m_recordControlKeysCheckbox);
+            options->addWidget(m_recordPreserveKeyboardShortcutsCheckbox);
+            refreshRecordingKeyboardOptions();
+            connect(m_recordNumberKeysCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordNumberKeys(value);
+                        emit recordingRecordNumberKeysChanged(value);
+                    });
+            connect(m_recordLettersAndSymbolsCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordLettersAndSymbols(value);
+                        emit recordingRecordLettersAndSymbolsChanged(value);
+                    });
+            connect(m_recordControlKeysCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingRecordControlKeys(value);
+                        emit recordingRecordControlKeysChanged(value);
+                    });
+            connect(m_recordPreserveKeyboardShortcutsCheckbox, &QAbstractButton::toggled, this,
+                    [this](bool value) {
+                        setRecordingPreserveKeyboardShortcuts(value);
+                        emit recordingPreserveKeyboardShortcutsChanged(value);
+                    });
+            installWheelFilters(this, content);
+            emit materializedScope(content);
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
     m_recordWebcamButton = createScreenshotToolPaletteStyleActionButton(
         m_recordExportSettingsPanel, "Record webcam", custom_outlined_icons::RecordingCamera(),
         styleButtonMetrics(m_physicalScale));
@@ -7863,6 +8040,7 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
         m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
     }
     refreshRecordingMouseOptions();
+    refreshRecordingKeyboardOptions();
     refreshRecordingPostProcessingOptions();
     if (m_recordPostProcessingButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordPostProcessingButton,
@@ -7914,6 +8092,9 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     if (!visible && m_recordCursorPopover) {
         m_recordCursorPopover->hide();
     }
+    if (!visible && m_recordKeyboardPopover) {
+        m_recordKeyboardPopover->hide();
+    }
     if (!visible && m_recordSettingsModal != nullptr) {
         m_recordSettingsModal->close();
     }
@@ -7953,6 +8134,12 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
         m_recordCursorPopover->setEnabled(editable);
         if (!editable) {
             m_recordCursorPopover->hide();
+        }
+    }
+    if (m_recordKeyboardPopover) {
+        m_recordKeyboardPopover->setEnabled(editable);
+        if (!editable) {
+            m_recordKeyboardPopover->hide();
         }
     }
     if (m_recordSettingsForm != nullptr) {

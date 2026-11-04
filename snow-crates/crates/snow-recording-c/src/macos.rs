@@ -286,6 +286,7 @@ pub unsafe extern "C" fn snow_recording_macos_create(
                 clicks: config.click_effects == 1,
                 trail: config.trail == 1,
                 show_keyboard: config.keyboard == 1,
+                keyboard_filter: Default::default(),
                 record_mouse_clicks: config.record_mouse_clicks == 1,
                 record_mouse_scrolling: config.record_mouse_scrolling == 1,
                 highlight_radius: if size > previous_size {

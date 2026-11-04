@@ -42,6 +42,7 @@ fn main() -> Result<(), String> {
             labels: Default::default(),
         };
         let config = PreviewConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             region: (0, 0, size.0, size.1),
             canvas: size,

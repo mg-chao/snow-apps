@@ -1431,6 +1431,8 @@ pub(crate) struct InputRecorder {
     keyboard: Option<KeyboardInput>,
     style: Option<crate::KeyboardOverlayConfig>,
     include_modifiers: bool,
+    keyboard_filter_config: snow_recording_effects::KeyboardFilterConfig,
+    keyboard_filter: snow_recording_effects::keyboard_filter::KeyboardFilter,
     mouse_generation: u64,
     key_generation: u64,
     shapes: VecDeque<CursorShapeRecord>,
@@ -1486,7 +1488,11 @@ impl InputRecorder {
             movement,
             keyboard,
             style: config.keyboard.clone(),
-            include_modifiers: config.show_keyboard,
+            include_modifiers: config
+                .keyboard_filter
+                .include_mouse_modifiers(config.show_keyboard),
+            keyboard_filter_config: config.keyboard_filter,
+            keyboard_filter: Default::default(),
             mouse_generation: 0,
             key_generation: 0,
             shapes: VecDeque::new(),
@@ -1521,6 +1527,7 @@ impl InputRecorder {
         Ok(())
     }
     pub fn reset(&mut self, clock: &RecordingClock, at: Instant) -> Result<()> {
+        self.keyboard_filter.reset();
         while self.clicks.try_recv().is_ok() {}
         while self.movement.try_recv().is_ok() {}
         if let Some(keyboard) = &self.keyboard {
@@ -1553,6 +1560,7 @@ impl InputRecorder {
         if generation != self.mouse_generation || key_generation != self.key_generation {
             self.mouse_generation = generation;
             self.key_generation = key_generation;
+            self.keyboard_filter.reset();
             self.push(clock, now, RecordedInput::KeyboardReset)?;
         }
         let accept = |at: Instant| {
@@ -1610,9 +1618,14 @@ impl InputRecorder {
             if !accept(event.at) || event.generation != self.key_generation {
                 continue;
             }
-            if let Some(style) = &self.style {
-                let key = key_record(event.event(clock.active_elapsed_ms(event.at), style));
-                self.push(clock, now, RecordedInput::Key(key))?;
+            if let Some(style) = &self.style
+                && let Some(key) = filtered_key_record(
+                    &mut self.keyboard_filter,
+                    self.keyboard_filter_config,
+                    event.event(clock.active_elapsed_ms(event.at), style),
+                )
+            {
+                self.push(clock, now, key)?;
             }
         }
         while let Ok(event) = self.movement.try_recv() {
@@ -1698,6 +1711,7 @@ impl InputRecorder {
             destination: fitted_rect(source, self.logical)?,
         };
         if self.geometry != geometry {
+            self.keyboard_filter.reset();
             self.geometry = geometry;
             self.last_shape = None;
             self.shapes.clear();
@@ -1843,6 +1857,16 @@ impl InputRecorder {
         Ok(())
     }
 }
+fn filtered_key_record(
+    filter: &mut snow_recording_effects::keyboard_filter::KeyboardFilter,
+    config: snow_recording_effects::KeyboardFilterConfig,
+    event: snow_recording_effects::keyboard_overlay::KeyEvent,
+) -> Option<RecordedInput> {
+    filter
+        .event(config, event)
+        .map(|key| RecordedInput::Key(key_record(key)))
+}
+
 fn key_record(event: snow_recording_effects::keyboard_overlay::KeyEvent) -> KeyEventRecord {
     KeyEventRecord {
         at_ms: event.at_ms,
@@ -1856,6 +1880,70 @@ fn key_record(event: snow_recording_effects::keyboard_overlay::KeyEvent) -> KeyE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_input_store_excludes_filtered_keys_and_keeps_complete_shortcuts() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("filtered-inputs");
+        let mut writer = InputStoreWriter::new(&path).unwrap();
+        let mut filter = snow_recording_effects::keyboard_filter::KeyboardFilter::default();
+        let config = snow_recording_effects::KeyboardFilterConfig {
+            record_number_keys: false,
+            record_letters_and_symbols: false,
+            ..Default::default()
+        };
+        let input = |at_ms, key, down, modifiers| KeyEventRecord {
+            at_ms,
+            key,
+            down,
+            label: format!("key {key}"),
+            modifiers,
+        };
+        let events = [
+            input(0, 0x41, true, vec![]),
+            input(1, 0x41, false, vec![]),
+            input(2, 0x31, true, vec![]),
+            input(3, 0x31, false, vec![]),
+            input(4, 0xa2, true, vec![(0xa2, "Left Ctrl".into())]),
+            input(5, 0x43, true, vec![(0xa2, "Left Ctrl".into())]),
+            input(6, 0xa2, false, vec![]),
+            input(7, 0x43, false, vec![]),
+            input(8, 0x32, true, vec![(0xa0, "Left Shift".into())]),
+            input(9, 0x32, false, vec![]),
+            input(10, 0x45, true, vec![(0xa5, "AltGr".into())]),
+            input(11, 0x45, false, vec![]),
+        ];
+        for (sequence, event) in events.into_iter().enumerate() {
+            let at_ms = event.at_ms;
+            if let Some(event) = filtered_key_record(&mut filter, config, event) {
+                writer
+                    .push(&RecordedInputEvent {
+                        timestamp_ms: at_ms,
+                        sequence: sequence as u64,
+                        event,
+                    })
+                    .unwrap();
+            }
+        }
+        writer.finish().unwrap();
+        let mut reader = snow_recording_model::InputStoreReader::open(&path).unwrap();
+        let mut recorded = Vec::new();
+        while let Some(event) = reader.next_event().unwrap() {
+            let RecordedInput::Key(key) = event.event else {
+                panic!("unexpected input")
+            };
+            recorded.push((key.at_ms, key.key, key.down));
+        }
+        assert_eq!(
+            recorded,
+            [
+                (4, 0xa2, true),
+                (5, 0x43, true),
+                (6, 0xa2, false),
+                (7, 0x43, false)
+            ]
+        );
+    }
 
     #[test]
     fn recovered_source_index_matches_surviving_frames_and_initial_hold() {
@@ -1929,6 +2017,7 @@ mod tests {
     }
     fn test_config(output_path: PathBuf) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             loop_animated_images: false,
             region: crate::RecordingRegion::new(0, 0, 16, 16),

@@ -23,6 +23,10 @@ struct RecordingEffectTestState {
     bool recordMouseClicks = false;
     bool recordMouseScrolling = false;
     bool showKeyboard = false;
+    bool recordNumberKeys = true;
+    bool recordLettersAndSymbols = true;
+    bool recordControlKeys = true;
+    bool preserveKeyboardShortcuts = true;
     uint32_t trailDurationMs = 0;
     uint32_t keyboardBackground = 0;
     uint32_t keyboardForeground = 0;
@@ -84,6 +88,10 @@ class RecordingEffectTestSource final : public RecordingEffectsSource {
         state->recordMouseClicks = config.record_mouse_clicks != 0;
         state->recordMouseScrolling = config.record_mouse_scrolling != 0;
         state->showKeyboard = config.show_keyboard != 0;
+        state->recordNumberKeys = config.record_number_keys != 0;
+        state->recordLettersAndSymbols = config.record_letters_and_symbols != 0;
+        state->recordControlKeys = config.record_control_keys != 0;
+        state->preserveKeyboardShortcuts = config.preserve_keyboard_shortcuts != 0;
         state->trailDurationMs = config.trail_duration_ms;
         state->keyboardBackground = config.keyboard_background_rgba;
         state->keyboardForeground = config.keyboard_text_rgba;

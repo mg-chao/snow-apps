@@ -115,6 +115,18 @@ inline const QJsonObject& recordingAutomationOptionContracts() {
         {QStringLiteral("show_keyboard"),
          QJsonObject{
              {QStringLiteral("type"), QStringLiteral("boolean")}}},
+        {QStringLiteral("record_number_keys"),
+         QJsonObject{
+             {QStringLiteral("type"), QStringLiteral("boolean")}}},
+        {QStringLiteral("record_letters_and_symbols"),
+         QJsonObject{
+             {QStringLiteral("type"), QStringLiteral("boolean")}}},
+        {QStringLiteral("record_control_keys"),
+         QJsonObject{
+             {QStringLiteral("type"), QStringLiteral("boolean")}}},
+        {QStringLiteral("preserve_keyboard_shortcuts"),
+         QJsonObject{
+             {QStringLiteral("type"), QStringLiteral("boolean")}}},
         {QStringLiteral("webcam"),
          QJsonObject{
              {QStringLiteral("type"), QStringLiteral("boolean")}}},

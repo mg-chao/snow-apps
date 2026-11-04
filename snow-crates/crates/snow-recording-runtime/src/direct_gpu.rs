@@ -843,6 +843,7 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            keyboard_filter: Default::default(),
             webcam: None,
             audio_mode: Default::default(),
             system_audio_gain_db: 0,
