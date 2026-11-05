@@ -316,14 +316,11 @@ impl Editor {
         policy: ToolPolicy,
         canvas_point: Point<f64>,
     ) -> Result<InteractionOutput, ErrorCode> {
-        // A press on blank canvas prioritizes deselecting an existing element
-        // selection; the creation workflow only begins once nothing is
-        // selected, so the same press never both deselects and starts
-        // creating (which would turn a deselect click with slight movement
-        // into an accidental element).
-        if self.empty_canvas_press_deselects_first() {
+        if policy.empty_canvas_action.starts_creation() && !self.state.selection.is_empty() {
             self.clear_selection();
             self.clear_transient_visuals();
+        }
+        if self.empty_canvas_press_deselects_first() {
             return Ok(InteractionOutput {
                 consumed: true,
                 capture: PointerCaptureCommand::NoChange,
@@ -758,11 +755,10 @@ mod empty_canvas_selection_tests {
     }
 
     #[test]
-    fn shape_tool_blank_press_deselects_before_creating() {
+    fn blank_press_with_selected_shape_starts_a_new_rectangle() {
         let (document, id) = document_with_rectangle();
         let mut editor = editor_with_tool_and_selection(&document, id, ActiveTool::Shape);
 
-        // The first blank-canvas press spends itself on deselecting.
         let update = editor
             .process_input(
                 &document,
@@ -772,22 +768,6 @@ mod empty_canvas_selection_tests {
         assert!(update.interaction.consumed);
         assert!(update.command.is_none());
         assert!(editor.state.selection.ids.is_empty());
-        assert!(matches!(editor.state.interaction, InteractionState::Idle));
-
-        editor
-            .process_input(
-                &document,
-                pointer(PointerEventType::Up, blank_canvas_view_point()),
-            )
-            .unwrap();
-
-        // With nothing selected, the next press-drag-release creates.
-        editor
-            .process_input(
-                &document,
-                pointer(PointerEventType::Down, blank_canvas_view_point()),
-            )
-            .unwrap();
         assert!(matches!(
             editor.state.interaction,
             InteractionState::CreatingRectangle(_)
@@ -811,7 +791,7 @@ mod empty_canvas_selection_tests {
     }
 
     #[test]
-    fn arrow_tool_blank_press_deselects_before_creating() {
+    fn blank_press_with_selected_arrow_starts_a_new_arrow() {
         let (document, id) = document_with_arrow();
         let mut editor = editor_with_tool_and_selection(&document, id, ActiveTool::Arrow);
 
@@ -824,20 +804,6 @@ mod empty_canvas_selection_tests {
         assert!(update.interaction.consumed);
         assert!(update.command.is_none());
         assert!(editor.state.selection.ids.is_empty());
-        assert!(matches!(editor.state.interaction, InteractionState::Idle));
-
-        editor
-            .process_input(
-                &document,
-                pointer(PointerEventType::Up, blank_canvas_view_point()),
-            )
-            .unwrap();
-        editor
-            .process_input(
-                &document,
-                pointer(PointerEventType::Down, blank_canvas_view_point()),
-            )
-            .unwrap();
         assert!(matches!(
             editor.state.interaction,
             InteractionState::CreatingArrow(_)
@@ -881,23 +847,35 @@ mod empty_canvas_selection_tests {
     }
 
     #[test]
-    fn empty_canvas_press_deselects_first_reports_the_shared_policy() {
-        let (document, id) = document_with_rectangle();
-
-        let mut shape = editor_with_tool_and_selection(&document, id, ActiveTool::Shape);
-        assert!(shape.empty_canvas_press_deselects_first());
-        shape.clear_selection();
-        assert!(!shape.empty_canvas_press_deselects_first());
-
-        // The select tool keeps spending the press on its marquee instead.
-        let mut select = editor_with_tool_and_selection(&document, id, ActiveTool::Select);
-        assert!(!select.empty_canvas_press_deselects_first());
-        select.clear_selection();
-        assert!(!select.empty_canvas_press_deselects_first());
+    fn active_arrow_label_edit_owns_the_blank_press() {
+        let (document, id) = document_with_arrow();
+        let mut editor = editor_with_tool_and_selection(&document, id, ActiveTool::Arrow);
+        assert!(!editor.empty_canvas_press_deselects_first());
+        editor
+            .set_active_text_draft_presentation(
+                &document,
+                ActiveTextDraftPresentation {
+                    target: ActiveTextDraftTarget::NewArrow(id),
+                    revision: 1,
+                    text: TextData::default(),
+                },
+            )
+            .unwrap();
+        assert!(editor.empty_canvas_press_deselects_first());
+        let update = editor
+            .process_input(
+                &document,
+                pointer(PointerEventType::Down, blank_canvas_view_point()),
+            )
+            .unwrap();
+        assert!(update.interaction.consumed);
+        assert!(editor.selected_ids().is_empty());
+        assert!(matches!(editor.state.interaction, InteractionState::Idle));
+        assert!(update.command.is_none());
     }
 
     #[test]
-    fn text_tool_blank_press_deselects_without_requesting_a_draft() {
+    fn text_tool_blank_press_with_selection_requests_one_new_draft() {
         let (document, id) = document_with_rectangle();
         let mut editor = editor_with_tool_and_selection(&document, id, ActiveTool::Text);
 
@@ -909,6 +887,7 @@ mod empty_canvas_selection_tests {
             .unwrap();
         assert!(editor.state.selection.ids.is_empty());
         assert!(matches!(editor.state.interaction, InteractionState::Idle));
+        assert!(editor.take_new_text_draft_request());
         assert!(!editor.take_new_text_draft_request());
     }
 

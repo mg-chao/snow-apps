@@ -1847,7 +1847,7 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
             "the text interior should remain available for caret placement while editing");
 }
 
-void blankCanvasPressDeselectsBeforeBeginningNewText() {
+void blankCanvasPressWithSelectedTextBeginsNewDraft() {
     SnowCanvasRuntime runtime;
     require(runtime.isValid(), "blank-canvas deselect test should create a runtime");
     SnowRuntime runtimeHandle = snow_canvas_runtime::Access::handle(runtime);
@@ -1888,28 +1888,18 @@ void blankCanvasPressDeselectsBeforeBeginningNewText() {
 
     const QPointF blank(500.0, 300.0);
     sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, blank, Qt::LeftButton, Qt::LeftButton);
-    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
-    QApplication::processEvents();
-
     require(!isElementSelected(runtimeHandle, inspectionViewport.get(), textId),
             "the first blank press should deselect the previously selected text");
+    require(canvas.hasActiveTextEditing(), "the same press should open the new text editor");
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
     SnowTextElementInfo draftInfo{};
     SnowTextStyle draftStyle{};
     std::uint8_t activeDraft = 0;
     require(snow_viewport_get_active_text_draft_presentation(
                 runtimeHandle, inspectionViewport.get(), &draftInfo, &draftStyle, &activeDraft) ==
                     SNOW_OK &&
-                activeDraft == 0,
-            "the first blank press must not begin a new text draft");
-
-    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, blank, Qt::LeftButton, Qt::LeftButton);
-    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, blank, Qt::LeftButton, Qt::NoButton);
-    QApplication::processEvents();
-    require(snow_viewport_get_active_text_draft_presentation(
-                runtimeHandle, inspectionViewport.get(), &draftInfo, &draftStyle, &activeDraft) ==
-                    SNOW_OK &&
                 activeDraft != 0,
-            "the blank press after deselecting should begin a new text draft");
+            "the new draft should stay active after release");
 }
 
 void textFontWheelPreservesMixedSelectionStyles() {
@@ -5714,7 +5704,7 @@ int main(int argc, char** argv) {
     selectionHitTestingTreatsTextFramePaddingAsMoveRing();
     selectionHitTestingDistinguishesMoveFromHandles();
     textEditorActivationPreservesSelectToolSelectionBox();
-    blankCanvasPressDeselectsBeforeBeginningNewText();
+    blankCanvasPressWithSelectedTextBeginsNewDraft();
     selectToolDragRendersSelectionMarquee();
     textToolInitialSelectionFrameRendersAndResizesThroughWidgetEvents();
     textFontWheelPreservesMixedSelectionStyles();

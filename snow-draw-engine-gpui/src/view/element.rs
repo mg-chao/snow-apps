@@ -342,6 +342,21 @@ impl CanvasView {
         {
             return;
         }
+        // A blank primary press belongs to the editor it just closed. Forward
+        // presses on existing targets so another label or handle can take over.
+        if finishing_text
+            && event.button == MouseButton::Left
+            && self.primary_element_at(event.position).is_none()
+            && !self.hits_existing_selection(event.position)
+        {
+            if let Err(error) = self.session.mutate(
+                &mut self.document,
+                draw::Engine::clear_selection_with_viewport_changes,
+            ) {
+                self.fail(error, cx);
+            }
+            return;
+        }
         let kind = if event.click_count >= 2 {
             draw::PointerEventType::DoubleClick
         } else {
@@ -384,6 +399,17 @@ impl CanvasView {
             });
         }
     }
+    fn primary_element_at(&self, position: Point<Pixels>) -> Option<draw::ElementId> {
+        self.document
+            .engine()
+            .hit_quick_selection_at(
+                self.session.viewport(),
+                self.world(position),
+                draw::PointerButton::Primary,
+            )
+            .ok()
+            .flatten()
+    }
     pub(super) fn hits_existing_selection(&self, position: Point<Pixels>) -> bool {
         let world = self.world(position);
         let selected = self.document.engine().selected_ids();
@@ -398,15 +424,7 @@ impl CanvasView {
             .ok()
             == Some(draw::ActiveTool::Select)
             && self
-                .document
-                .engine()
-                .hit_quick_selection_at(
-                    self.session.viewport(),
-                    self.local(position),
-                    draw::PointerButton::Primary,
-                )
-                .ok()
-                .flatten()
+                .primary_element_at(position)
                 .is_some_and(|id| selected.contains(&id))
         {
             return true;
