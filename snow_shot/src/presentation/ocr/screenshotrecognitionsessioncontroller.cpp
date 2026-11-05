@@ -112,6 +112,11 @@ copyTextPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentat
     auto copy = std::make_shared<ScreenshotOcrPresentation>();
     copy->selection = presentation->selection;
     copy->lines = presentation->lines;
+    // A captured result has no live request to finish its preview layout.
+    for (int index = 0; index < copy->lines.size(); ++index) {
+        if (copy->lines.at(index).translationStreaming)
+            copy->lines[index].translationStreaming = false;
+    }
     copy->prepareForRendering();
     return copy;
 }
@@ -2077,7 +2082,8 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
                                settings.originalImageTranslationEnabled() && !it->formatted &&
                                it->presentation != nullptr;
     if (originalImage != m_translationInImage) {
-        cancelTranslationRequests();
+        if (!cancelTranslationRequests())
+            return;
     }
     m_translationInImage = originalImage;
     m_translationKey = m_editingKey;
@@ -2442,15 +2448,8 @@ void ScreenshotRecognitionSessionController::startTranslation() {
                         return;
                 return;
             }
-            entry->overlayTranslation.presentation->setLineText(index, text);
-            if (m_active && m_mode == Mode::Text && originalImageTranslationActive() &&
-                key == m_editingKey) {
-                if (m_actions.updateOcrText) {
-                    if (!notifyUiCallback(m_actions.updateOcrText, index, text))
-                        return;
-                } else if (content() != nullptr)
-                    content()->updateOcrText(index, text);
-            }
+            updateOverlayTranslationLine(key, *entry->overlayTranslation.presentation, index, text,
+                                         true);
         });
     connect(job, &TranslationJob::stateChanged, this, [this, job, key, generation, inImage] {
         if (generation != m_translationGeneration)
@@ -2468,6 +2467,8 @@ void ScreenshotRecognitionSessionController::startTranslation() {
             entry->translationStatus = status;
         if (job->state() != TranslationJob::State::WaitingForModels)
             entry->translationConfiguration.modelId = job->preferences().modelId;
+        if (inImage && !finishOverlayTranslationLines(*entry, key))
+            return;
         if (content() != nullptr && m_translating && !inImage)
             content()->setTextEditorStreaming(job->busy());
         if (!updateTextState())
@@ -2560,12 +2561,49 @@ void ScreenshotRecognitionSessionController::failTranslationPreparation(const QS
 #endif
 }
 
-void ScreenshotRecognitionSessionController::cancelTranslationRequests() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+bool ScreenshotRecognitionSessionController::updateOverlayTranslationLine(
+    const QString& key, ScreenshotOcrPresentation& presentation, int index, const QString& text,
+    bool streaming) {
+    presentation.setLineText(index, text, streaming);
+    if (m_active && m_mode == Mode::Text && originalImageTranslationActive() &&
+        key == m_editingKey) {
+        if (m_actions.updateOcrText)
+            return notifyUiCallback(m_actions.updateOcrText, index, text, streaming);
+        if (content())
+            return notifyCallback([this, index, text, streaming] {
+                content()->updateOcrText(index, text, streaming);
+            });
+    }
+    return true;
+}
+
+bool ScreenshotRecognitionSessionController::finishOverlayTranslationLines(
+    const TextCacheEntry& entry, const QString& key) {
+    const auto presentation = entry.overlayTranslation.presentation;
+    const auto job = entry.translationJob;
+    if (!presentation || !job || !entry.jobInImage)
+        return true;
+    const auto generation = m_translationGeneration;
+    for (int index = 0; index < presentation->lines.size(); ++index) {
+        const auto& line = presentation->lines.at(index);
+        if (line.translationStreaming &&
+            job->units().at(index).state != TranslationJob::State::Streaming) {
+            if (!updateOverlayTranslationLine(key, *presentation, index, line.text, false) ||
+                generation != m_translationGeneration || !job)
+                return false;
+        }
+    }
+    return true;
+}
+#endif
+
+bool ScreenshotRecognitionSessionController::cancelTranslationRequests() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     ++m_translationGeneration;
     auto it = m_textCache.find(m_translationKey);
     if (it == m_textCache.end())
-        return;
+        return true;
     if (it->translationJob != nullptr) {
         disconnect(it->translationJob, nullptr, this, nullptr);
         it->translationJob->cancel();
@@ -2574,6 +2612,9 @@ void ScreenshotRecognitionSessionController::cancelTranslationRequests() {
         it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
     if (it->overlayTranslation.status == TextCacheEntry::TranslationStatus::Streaming)
         it->overlayTranslation.status = TextCacheEntry::TranslationStatus::Failed;
+    return finishOverlayTranslationLines(*it, m_translationKey);
+#else
+    return true;
 #endif
 }
 
@@ -2622,7 +2663,8 @@ void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool r
     if (it == m_textCache.end()) {
         return;
     }
-    cancelTranslationRequests();
+    if (!cancelTranslationRequests())
+        return;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (it->translationJob != nullptr) {
         it->translationJob->deleteLater();
@@ -4245,7 +4287,8 @@ bool ScreenshotRecognitionSessionController::showStatus(QString message, bool er
 }
 
 void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
-    cancelTranslationRequests();
+    if (!cancelTranslationRequests())
+        return;
     cancelModelRecognition(Mode::Table);
     cancelModelRecognition(Mode::Latex);
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
@@ -4300,7 +4343,8 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         m_translationInImage && translation != m_textCache.cend() &&
         translation->overlayTranslation.status == TextCacheEntry::TranslationStatus::Streaming;
     if (mode != Mode::Qr && overlayWasPending) {
-        cancelTranslationRequests();
+        if (!cancelTranslationRequests())
+            return;
         if (!notify(&ScreenshotRecognitionSessionController::reportOverlayTranslationFailure))
             return;
     }

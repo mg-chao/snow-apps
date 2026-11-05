@@ -310,10 +310,11 @@ void ScreenshotOcrPresentation::prepareForRendering() {
     m_geometryPrepared = true;
 }
 
-void ScreenshotOcrPresentation::setLineText(int lineIndex, const QString& text) {
-    if (lineIndex < 0 || lineIndex >= lines.size() || lines.at(lineIndex).text == text) {
+void ScreenshotOcrPresentation::setLineText(int lineIndex, const QString& text, bool streaming) {
+    if (lineIndex < 0 || lineIndex >= lines.size() ||
+        (lines.at(lineIndex).text == text && lines.at(lineIndex).translationStreaming == streaming))
         return;
-    }
+    lines[lineIndex].translationStreaming = streaming;
     lines[lineIndex].text = text;
     const QVector<int> boundaries = graphemeBoundaries(text);
     if (m_geometryPrepared && m_cachedLineGeometry.size() == lines.size()) {

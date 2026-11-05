@@ -1235,9 +1235,10 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionWindow::textSelectionClipboardMi
     return mime;
 }
 
-void ScreenshotRecognitionWindow::updateOcrText(int lineIndex, const QString& text) {
+void ScreenshotRecognitionWindow::updateOcrText(int lineIndex, const QString& text,
+                                                bool streaming) {
     if (m_ocrPresentation != nullptr) {
-        m_ocrPresentation->setLineText(lineIndex, text);
+        m_ocrPresentation->setLineText(lineIndex, text, streaming);
         m_textLayer->updateLineText(lineIndex);
         notifyTextSelectionChanged();
     }

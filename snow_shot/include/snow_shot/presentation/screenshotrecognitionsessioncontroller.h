@@ -90,7 +90,7 @@ struct ScreenshotRecognitionSessionActions {
     // rect it covers and is invalid when the filtered region is empty.
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage, QRectF)>
         applyOcrBackgroundImage;
-    std::function<void(int, const QString&)> updateOcrText;
+    std::function<void(int, const QString&, bool streaming)> updateOcrText;
     // Workflow activity is independent of the host's provider/tool availability.
     std::function<void(bool active, bool busy, SnowShotImageConversionFormat format)>
         setConversionState;
@@ -370,7 +370,12 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void prepareOverlayTranslation(TextCacheEntry& entry);
     void reportOverlayTranslationFailure();
     void failTranslationPreparation(const QString& message);
-    void cancelTranslationRequests();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    bool updateOverlayTranslationLine(const QString& key, ScreenshotOcrPresentation& presentation,
+                                      int index, const QString& text, bool streaming);
+    bool finishOverlayTranslationLines(const TextCacheEntry& entry, const QString& key);
+#endif
+    bool cancelTranslationRequests();
     void handleTranslationFinished(quint64 generation, const QString& key,
                                    SnowShotTranslationResult result);
     void invalidateCurrentTranslation(bool restartIfVisible);
