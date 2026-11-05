@@ -2,6 +2,17 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>CaptureHistoryRepository</name>
+        <message>
+            <source>Unable to create the screenshot history entry folder</source>
+            <translation>Unable to create the screenshot history entry folder</translation>
+        </message>
+        <message>
+            <source>Unable to write screenshot history file %1: %2</source>
+            <translation>Unable to write screenshot history file %1: %2</translation>
+        </message>
+    </context>
+    <context>
         <name>CollageDocument</name>
         <message>
             <source>Enter a nonnegative image spacing</source>
