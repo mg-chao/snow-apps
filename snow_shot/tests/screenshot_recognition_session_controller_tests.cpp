@@ -506,7 +506,7 @@ void cachedTextResultAccess(bool benchmark = false) {
                 timer.start();
                 for (int i = 0; i < 10; ++i)
                     work();
-                sample = timer.nsecsElapsed() / 10000.0;
+                sample = static_cast<double>(timer.nsecsElapsed()) / 10000.0;
             }
             std::sort(samples.begin(), samples.end());
             return samples[samples.size() / 2];

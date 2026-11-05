@@ -250,9 +250,9 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 applyOcrBackgroundToOverlays(presentation, std::move(filteredImage),
                                              filteredImageCanvasRect);
             },
-            [this](int lineIndex, const QString& text) {
+            [this](int lineIndex, const QString& text, bool streaming) {
                 if (m_recognitionWindow != nullptr) {
-                    m_recognitionWindow->updateOcrText(lineIndex, text);
+                    m_recognitionWindow->updateOcrText(lineIndex, text, streaming);
                 }
             },
             [this](bool, bool busy, SnowShotImageConversionFormat format) {

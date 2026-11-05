@@ -5904,18 +5904,18 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     m_screenshotRenderer->setOcrFilteredImage(std::move(filteredImage), canvasRect);
                 }
             },
-            [this](int lineIndex, const QString& text) {
+            [this](int lineIndex, const QString& text, bool streaming) {
                 const bool changed = m_originalOcrPresentation && lineIndex >= 0 &&
                                      lineIndex < m_originalOcrPresentation->lines.size() &&
                                      m_originalOcrPresentation->lines[lineIndex].text != text;
                 if (m_originalOcrPresentation != nullptr) {
-                    m_originalOcrPresentation->setLineText(lineIndex, text);
+                    m_originalOcrPresentation->setLineText(lineIndex, text, streaming);
                 }
                 if (m_displayOcrPresentation != nullptr) {
-                    m_displayOcrPresentation->setLineText(lineIndex, text);
+                    m_displayOcrPresentation->setLineText(lineIndex, text, streaming);
                 }
                 if (m_recognitionContent != nullptr) {
-                    m_recognitionContent->updateOcrText(lineIndex, text);
+                    m_recognitionContent->updateOcrText(lineIndex, text, streaming);
                 }
                 if (changed)
                     clearTextAnnotations();
