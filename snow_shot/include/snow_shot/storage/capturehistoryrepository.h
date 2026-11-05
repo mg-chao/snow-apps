@@ -17,7 +17,13 @@ struct CaptureHistorySnapshot {
     quint64 revision = 0;
     QVector<CaptureHistoryRecord> records;
 };
-enum class CaptureHistoryOperation { IndexRead, IndexWrite, PayloadRead, WorkerStarted };
+enum class CaptureHistoryOperation {
+    IndexRead,
+    IndexWrite,
+    PayloadRead,
+    WorkerStarted,
+    PayloadWritten
+};
 
 struct CaptureHistoryRepositoryCallbacks {
     std::function<void()> recordsChanged;

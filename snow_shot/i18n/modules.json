@@ -123,6 +123,7 @@
     "snow_shot::translation::TranslationService"
   ],
   "history": [
+    "CaptureHistoryRepository",
     "CollageDocument",
     "CollageEditorWidget",
     "CollagePdfExport",
