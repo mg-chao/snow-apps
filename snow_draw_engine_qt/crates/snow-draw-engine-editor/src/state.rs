@@ -53,8 +53,7 @@ pub(crate) enum ToolEmptyCanvasAction {
 }
 
 impl ToolEmptyCanvasAction {
-    /// A press on blank canvas spends itself on deselecting an existing
-    /// selection before any creation workflow may begin.
+    /// Creation actions clear an idle selection and start from the same press.
     pub(crate) fn starts_creation(self) -> bool {
         match self {
             Self::Configure | Self::MarqueeSelect => false,

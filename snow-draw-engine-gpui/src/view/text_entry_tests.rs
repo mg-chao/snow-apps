@@ -247,6 +247,51 @@ fn text_entry_finishing_press_does_not_start_a_new_draft(cx: &mut TestAppContext
 }
 
 #[gpui::test]
+fn text_entry_dismissing_a_serial_label_leaves_the_next_badge_for_the_next_click(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut visual) = fixture(cx, CanvasDocument::default());
+    visual.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.set_tool(draw::ActiveTool::SerialNumber, window, cx)
+        });
+    });
+    let origin = view.read_with(&visual, |view, _| view.bounds.origin);
+    let start = origin + point(px(150.0), px(150.0));
+    let end = start + point(px(80.0), px(20.0));
+    visual.simulate_event(MouseDownEvent {
+        button: MouseButton::Left,
+        position: start,
+        click_count: 1,
+        ..Default::default()
+    });
+    visual.simulate_event(MouseMoveEvent {
+        pressed_button: Some(MouseButton::Left),
+        position: end,
+        ..Default::default()
+    });
+    visual.simulate_event(MouseUpEvent {
+        button: MouseButton::Left,
+        position: end,
+        ..Default::default()
+    });
+    paint(&mut visual);
+    assert!(view.read_with(&visual, |view, _| view.has_text_draft()));
+    visual.simulate_input("First badge");
+    let blank = origin + point(px(500.0), px(350.0));
+    for expected_badges in [1, 2] {
+        click(&mut visual, blank, Modifiers::default());
+        view.read_with(&visual, |view, _| {
+            assert!(!view.has_text_draft());
+            let badges = view.session.scene().ordered_nodes().filter(|node| {
+                matches!(node.item.as_ref(), draw::SceneDisplayItem::SerialNumber(_))
+            });
+            assert_eq!(badges.count(), expected_badges);
+        });
+    }
+}
+
+#[gpui::test]
 fn text_entry_finishing_press_can_open_another_existing_element(cx: &mut TestAppContext) {
     let (view, mut visual, id, position) = text_fixture(cx, draw::ActiveTool::Text, false, 1.0);
     let blank = view.read_with(&visual, |view, _| {

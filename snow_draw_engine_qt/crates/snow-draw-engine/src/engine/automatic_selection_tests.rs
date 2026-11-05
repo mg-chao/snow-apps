@@ -395,18 +395,26 @@ fn automatic_selection_does_not_select_stroke_continuations() {
 }
 
 #[test]
-fn automatic_selection_preserves_blank_press_deselection() {
+fn automatic_selection_allows_the_next_shape_drag_on_blank_canvas() {
     let (mut engine, viewport) = setup(ActiveTool::Shape, true);
     drag(&mut engine, viewport);
-    assert_eq!(engine.selected_ids().len(), 1);
+    let original = engine.model.paint_order()[0];
+    assert_eq!(engine.selected_ids(), vec![original]);
     pointer(&mut engine, viewport, PointerEventType::Down, 500.0, 400.0);
-    pointer(&mut engine, viewport, PointerEventType::Up, 550.0, 450.0);
     assert!(engine.selected_ids().is_empty());
-    assert_eq!(engine.model.paint_order().len(), 1);
-    pointer(&mut engine, viewport, PointerEventType::Down, 500.0, 400.0);
+    assert!(engine.has_pointer_capture());
+    pointer(&mut engine, viewport, PointerEventType::Move, 550.0, 450.0);
     pointer(&mut engine, viewport, PointerEventType::Up, 550.0, 450.0);
     assert_eq!(engine.model.paint_order().len(), 2);
     assert_eq!(engine.selected_ids(), vec![engine.model.paint_order()[1]]);
+    let rect = engine
+        .model
+        .rectangle(engine.model.paint_order()[1])
+        .unwrap();
+    assert_eq!(rect.center, Point::new(125.0, 125.0));
+    assert_eq!((rect.width, rect.height), (50.0, 50.0));
+    assert!(engine.undo().unwrap());
+    assert_eq!(engine.model.paint_order(), &[original]);
 }
 
 #[test]
