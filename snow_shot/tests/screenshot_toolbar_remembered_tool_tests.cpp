@@ -496,7 +496,7 @@ void rememberedDrawingToolRestoresOncePerCapture() {
 }
 // Exercise production keyboard routing and toolbar signal connections together.
 // Only the command sink substitutes for external recognition/export services.
-void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
+void selectionShortcutsReachToolbarCommands(bool hiddenTools = false, bool captureAction = false) {
     using Tool = ScreenshotToolPalette::Tool;
     const storage::ScreenshotShortcutSettings screenshotSettings;
     const storage::DrawingShortcutSettings drawingSettings;
@@ -625,7 +625,23 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             if (hiddenTools)
                 window.show();
         };
-        actions.selectionConfirmed = [&] { ++confirmations; };
+        actions.updateOverlayState = [&] {
+            require(commands.calls == 1 && !interaction.moveToolActive(),
+                    "the first committed overlay must already use the requested tool");
+        };
+        actions.selectionConfirmed = [&] {
+            ++confirmations;
+            if (captureAction) {
+                if (drawing) {
+                    window.restoreRememberedDrawingTool();
+                } else {
+                    window.suppressRememberedDrawingTool();
+                    refreshAvailability();
+                    require(window.palette()->activateScreenshotShortcut(id),
+                            "pending capture action must activate its toolbar command");
+                }
+            }
+        };
         ScreenshotOverlayInputHandler handler(
             {capture, interaction, selection, intelligent, geometry, displays, actions});
         auto screenshot = originalScreenshot;
@@ -652,7 +668,7 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             QCoreApplication::sendEvent(&receiver, &event);
             return event.isAccepted();
         };
-        if (recognition) {
+        if (recognition && !captureAction) {
             selection.setSelectionRect(QRectF(0, 0, 3841, 2160));
             require(!dispatch() && interaction.selecting() && preparations == 0 &&
                         commands.calls == 0 && presentations == 0,
@@ -660,9 +676,14 @@ void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
             selection.setSelectionRect(QRectF(10, 20, 80, 60));
         }
         intelligent.beginPress(QPointF(30, 40), selection.normalizedSelection());
-        require(dispatch() && commands.calls == 1 && preparations == 1,
-                "keyboard shortcut must reach its real toolbar command exactly once");
-        require(presentations == (completion ? 0 : 1) && confirmations == (completion ? 0 : 1),
+        if (captureAction)
+            handler.handleMouseRelease(nullptr, QPointF(30, 40));
+        else
+            require(dispatch(), "keyboard shortcut must be handled");
+        require(commands.calls == 1 && preparations == (captureAction ? 0 : 1),
+                "selection must reach its real toolbar command exactly once");
+        require(presentations == (completion ? 0 : 1) &&
+                    confirmations == (completion && !captureAction ? 0 : 1),
                 "completed captures must not be presented or confirmed again");
         handler.handleMouseRelease(nullptr, QPointF(300, 300));
         require(commands.calls == 1 && selection.pixelSelection() == QRect(10, 20, 80, 60),
@@ -847,6 +868,7 @@ int main(int argc, char** argv) {
     selectionToolbarStateSurvivesEvictedMoveControls();
     rememberedDrawingToolRestoresOncePerCapture();
     selectionShortcutsReachToolbarCommands();
+    selectionShortcutsReachToolbarCommands(false, true);
     applicationStorage.shutdown();
     return 0;
 }

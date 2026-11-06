@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "snow_shot/presentation/screenshotcontroller.h"
 #include <QImage>
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/screenshotsessionfocus.h"
 #endif
 
-class ScreenshotController;
 class ScreenshotOverlayWindow;
 class ScreenshotToolbarCommandSink;
 struct ScreenshotSelectionParams;
@@ -17,6 +17,8 @@ class ScreenshotControllerTestAccess {
     static void prepareSelection(ScreenshotController& controller, QImage image,
                                  const ScreenshotSelectionParams& selection);
     static ScreenshotOverlayWindow* presentSelection(ScreenshotController& controller);
+    static void confirmCaptureSelection(ScreenshotController& controller,
+                                        ScreenshotController::CaptureAction action);
     [[nodiscard]] static bool exportActive(const ScreenshotController& controller);
 #ifdef Q_OS_MACOS
     static void

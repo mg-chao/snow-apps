@@ -17,6 +17,7 @@
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
+#include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "widgets/modal.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
@@ -107,6 +108,59 @@ ScreenshotOcrRecognitionService::Options isolatedRecognitionOptions(const QStrin
         QDir(directory).filePath(QStringLiteral("missing-recognizer.onnx"));
     options.dictionaryPath = QDir(directory).filePath(QStringLiteral("missing-dictionary.txt"));
     return options;
+}
+
+void captureActionsChooseToolBeforeFirstPresentation(const QString& directory) {
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const auto originalTool = toolbarSettings.lastDrawingTool();
+    const bool originalRemember = drawingSettings.rememberLastUsedTool();
+    const auto restoreSettings = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalTool));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRemember));
+    });
+    require(drawingSettings.setRememberLastUsedTool(true), "enable remembered drawing tools");
+    using Action = ScreenshotController::CaptureAction;
+    for (const auto action : {Action::None, Action::RecognizeText, Action::RecognizeTextAndCopy,
+                              Action::RecognizeTextTranslation}) {
+        require(toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+                "seed a competing remembered tool for every capture action");
+        ScreenshotOcrRecognitionService recognition(isolatedRecognitionOptions(directory));
+        ScreenshotController controller(nullptr, nullptr, &recognition);
+        ScreenshotSelectionParams selection;
+        selection.selection = QRect(10, 10, 60, 40);
+        ScreenshotControllerTestAccess::prepareSelection(controller, fixture(), selection);
+        ScreenshotControllerTestAccess::presentSelection(controller);
+        const QString expected = action == Action::None ? QStringLiteral("rectangle")
+                                 : action == Action::RecognizeTextTranslation
+                                     ? QStringLiteral("text_translation")
+                                     : QStringLiteral("ocr");
+        struct ToolbarObserver final : QObject {
+            ScreenshotController& controller;
+            QString expected;
+            int presentations = 0;
+            ToolbarObserver(ScreenshotController& capture, QString tool)
+                : controller(capture), expected(std::move(tool)) {}
+            bool eventFilter(QObject* watched, QEvent* event) override {
+                if (event->type() == QEvent::Show &&
+                    qobject_cast<ScreenshotToolbarWindow*>(watched)) {
+                    ++presentations;
+                    require(controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                                expected,
+                            "the first toolbar presentation must already use the capture tool");
+                }
+                return false;
+            }
+        } observer(controller, expected);
+        qApp->installEventFilter(&observer);
+        ScreenshotControllerTestAccess::confirmCaptureSelection(controller, action);
+        qApp->removeEventFilter(&observer);
+        require(observer.presentations == 1 &&
+                    controller.mcpState().value(QStringLiteral("active_tool")).toString() ==
+                        expected,
+                "capture actions and remembered tools must activate synchronously exactly once");
+        controller.mcpCancelCapture();
+    }
 }
 
 void queuedRecognitionDoesNotOverrideReselection(const QString& directory) {
@@ -227,8 +281,9 @@ void recognitionWindowsFollowSelectionTransitions(const QString& directory) {
                 sendMouse(*canvas, QEvent::MouseButtonRelease, {99, 89}, Qt::LeftButton,
                           Qt::NoButton);
             }
-            waitUntil([&] { return activeTool() == tool && visibleRecognitionWindow(); },
-                      "selection completion must restore recognition on its new bounds");
+            require(activeTool() == tool && visibleRecognitionWindow(),
+                    "selection completion must restore recognition before returning to the event "
+                    "loop");
             const auto bounds = controller.mcpState()
                                     .value(QStringLiteral("selection"))
                                     .toObject()
@@ -638,6 +693,7 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
     static_cast<void>(snow_shot::presentation::styles::ThemeManager::instance());
     if (application.arguments().contains(QStringLiteral("--controller-reselection-tests"))) {
         const auto shutdown = qScopeGuard([&] { storage.shutdown(); });
+        captureActionsChooseToolBeforeFirstPresentation(directory.path());
         queuedRecognitionDoesNotOverrideReselection(directory.path());
         recognitionWindowsFollowSelectionTransitions(directory.path());
         return EXIT_SUCCESS;
