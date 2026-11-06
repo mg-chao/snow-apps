@@ -62,6 +62,7 @@ void requireCoverage(const ImageSplitLayout& layout) {
 
 void overlappingRegions() {
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.overlapWidth = 10;
     auto layout = calculateImageSplitLayout({100, 80}, settings);
     require(layout.isValid() && layout.outputCount() == 2 &&
@@ -170,6 +171,7 @@ void overlapHistoryPreservesManualGuides() {
 
 void equalAndGrid() {
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.count = 3;
     auto layout = calculateImageSplitLayout({1200, 900}, settings);
     require(layout.isValid() && layout.outputCount() == 3 &&
@@ -247,6 +249,7 @@ void compactAxes() {
     require(!segmented.appendArithmetic(std::numeric_limits<int>::max(), 1, 2),
             "overflowing arithmetic endpoints are rejected before mutation");
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.count = 64'000'000;
     const auto extreme = calculateImageSplitLayout({64'000'000, 1}, settings);
     require(extreme.isValid() && extreme.outputCount() == 64'000'000 &&

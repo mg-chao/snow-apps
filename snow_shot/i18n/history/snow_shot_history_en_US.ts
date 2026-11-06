@@ -319,6 +319,10 @@
             <translation>Select image</translation>
         </message>
         <message>
+            <source>Smart split</source>
+            <translation>Smart split</translation>
+        </message>
+        <message>
             <source>Split direction</source>
             <translation>Split direction</translation>
         </message>
@@ -422,6 +426,10 @@
         <message>
             <source>Export could not be started. Try again</source>
             <translation>Export could not be started. Try again</translation>
+        </message>
+        <message>
+            <source>Finding split lines…</source>
+            <translation>Finding split lines…</translation>
         </message>
         <message>
             <source>Image loading could not be started. Try again</source>

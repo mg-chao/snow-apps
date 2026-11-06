@@ -11,6 +11,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "widgets/button.h"
 #include "widgets/input_number.h"
+#include "widgets/segmented.h"
 #include "widgets/message.h"
 #include "widgets/modal.h"
 #include "pinned_animation_fixtures.h"
@@ -26,6 +27,7 @@
 #include <QUuid>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QTemporaryDir>
 #include <QThread>
@@ -70,6 +72,40 @@ adqt::widgets::AdButton* saveButton(ImageSplitWindow& window) {
         QStringLiteral("imageSplitSaveAll"));
     require(button != nullptr, "Save All is discoverable");
     return button;
+}
+adqt::widgets::AdButton* outputButton(ImageSplitWindow& window, bool pdf) {
+    if (!pdf)
+        return saveButton(window);
+    auto* button = window.editor()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("imageSplitStitchToPdf"));
+    require(button != nullptr, "Stitch to PDF is discoverable");
+    return button;
+}
+void typeCountDraft(ImageSplitWindow& window, const QString& value) {
+    auto* count = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitCount"));
+    auto* input = count ? count->findChild<QLineEdit*>() : nullptr;
+    require(input != nullptr, "count draft editor is discoverable");
+    window.editor()->window()->activateWindow();
+    input->setFocus();
+    flush();
+    require(input->hasFocus(), "count draft has focus before clicking the footer");
+    input->selectAll();
+    for (const auto character : value) {
+        QKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier, QString(character));
+        QApplication::sendEvent(input, &key);
+    }
+}
+void footerMouseEvent(adqt::widgets::AdButton* button, QEvent::Type type, bool inside = true) {
+    // Synthetic QWidget events bypass native mouse focus dispatch. A real press transfers focus
+    // before the button handles it, which commits the spin box and may start Smart calculation.
+    if (type == QEvent::MouseButtonPress && inside)
+        button->setFocus(Qt::MouseFocusReason);
+    const auto position = inside ? QPointF(button->rect().center()) : QPointF(-10, -10);
+    QMouseEvent event(type, position, button->mapToGlobal(position.toPoint()), Qt::LeftButton,
+                      type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(button, &event);
 }
 adqt::widgets::AdMessageHandle* statusMessage(ImageSplitWindow& window) {
     auto* messages = adqt::widgets::AdMessageService::instance(window.editor()->window());
@@ -607,6 +643,8 @@ void saveCommitsVisibleDraft() {
     QApplication::sendEvent(input, &three);
     require(window.document()->settings().count == 2, "visible draft remains uncommitted");
     window.saveAll();
+    waitUntil([&] { return choices == 1; },
+              "Smart draft finishes before choosing export destination");
     require(choices == 1 && bool(chosen) && window.document()->settings().count == 3 &&
                 window.document()->layout().outputCount() == 3 && window.document()->canUndo(),
             "Save All commits the visible valid draft before selecting its destination");
@@ -915,7 +953,7 @@ void exportFeedbackUsesLoadingButtonAndMessages() {
             "late canceled writing cannot reopen feedback or open a directory");
 }
 
-void renderPreview(const QString& path, bool dark, qreal dpr) {
+void renderPreview(const QString& path, bool dark, qreal dpr, bool smart) {
     styles::ThemeManager::instance().setThemeMode(dark ? styles::ThemeMode::Dark
                                                        : styles::ThemeMode::Light);
     QImage source({1200, 900}, QImage::Format_RGBA8888);
@@ -936,11 +974,11 @@ void renderPreview(const QString& path, bool dark, qreal dpr) {
     window.presentImage(source, QStringLiteral("design.png"));
     loaded(window);
     auto settings = window.document()->settings();
-    settings.direction = ImageSplitDirection::Grid;
+    settings.direction = smart ? ImageSplitDirection::Horizontal : ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 3;
     settings.overlapWidth = qEnvironmentVariableIntValue("SNOW_TEST_IMAGE_SPLIT_OVERLAP");
-    require(window.document()->setSettings(settings), "preview grid configured");
+    require(window.document()->setSettings(settings), "preview split configured");
     window.editor()->window()->resize(1200, 800);
     flush();
     window.editor()->canvas()->fitToCanvas();
@@ -1132,6 +1170,339 @@ void loadingErrorsFollowLanguageAcrossQueuedCompletion() {
             "existing loading errors retain their stable translation source");
     window.shutdown();
 }
+void footerActivationsWaitForSmartSettings() {
+    enum class Activation { Mouse, Keyboard, CancelledMouse };
+    for (const bool pdf : {false, true}) {
+        for (const bool finishBeforeRelease : {false, true}) {
+            for (const auto activation :
+                 {Activation::Mouse, Activation::Keyboard, Activation::CancelledMouse}) {
+                const bool releaseInside = activation != Activation::CancelledMouse;
+                std::atomic_bool release{false};
+                std::atomic_int calculations{0};
+                int choices = 0;
+                QVector<ImageSplitSnapshot> handoffs;
+                std::function<void(QString)> chosen;
+                ImageSplitWindowServices ports;
+                ports.chooseDirectory = [&](QWidget*, auto done) {
+                    ++choices;
+                    chosen = std::move(done);
+                };
+                ports.stitchToPdf = [&](ImageSplitSnapshot snapshot) {
+                    handoffs.append(std::move(snapshot));
+                    return true;
+                };
+                ports.prepareSplit = [&](const QImage& source, const ImageSplitSettings& settings,
+                                         const ImageSplitWindowServices::Cancellation& cancelled) {
+                    ++calculations;
+                    while (!release.load() && !cancelled())
+                        QThread::msleep(1);
+                    return prepareImageSplitLayout(source, settings, cancelled);
+                };
+                ImageSplitWindow window(nullptr, ports);
+                window.presentImage(image());
+                loaded(window);
+                typeCountDraft(window, QStringLiteral("3"));
+                require(window.document()->settings().count == 2,
+                        "keyboard draft remains uncommitted before footer activation");
+                auto* button = outputButton(window, pdf);
+                require(button->isEnabled(), "a valid draft allows a footer action");
+                const auto activate = [&](bool press) {
+                    if (activation == Activation::Keyboard) {
+                        if (press)
+                            button->setFocus(Qt::TabFocusReason);
+                        QKeyEvent event(press ? QEvent::KeyPress : QEvent::KeyRelease,
+                                        Qt::Key_Space, Qt::NoModifier);
+                        QApplication::sendEvent(button, &event);
+                    } else {
+                        footerMouseEvent(
+                            button, press ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease,
+                            press || releaseInside);
+                    }
+                };
+                activate(true);
+                require(window.editor()->calculating() && button->isEnabled(),
+                        "focus-loss calculation must preserve the pending footer activation");
+                waitUntil([&] { return calculations == 1; }, "focus loss starts one calculation");
+                if (finishBeforeRelease) {
+                    release = true;
+                    waitUntil([&] { return !window.busy(); }, "calculation finishes during press");
+                }
+                require(choices == 0 && handoffs.isEmpty(),
+                        "pressing a footer button alone must not request output");
+                activate(false);
+                if (!finishBeforeRelease) {
+                    require(choices == 0 && handoffs.isEmpty(),
+                            "output waits for the new Smart geometry");
+                    release = true;
+                    waitUntil([&] { return !window.busy(); }, "requested calculation finishes");
+                }
+                flush();
+                require(calculations == 1 && window.document()->settings().count == 3 &&
+                            window.document()->layout().outputCount() == 3,
+                        "footer actions commit the requested geometry without restarting work");
+                require(choices == (releaseInside && !pdf ? 1 : 0) &&
+                            handoffs.size() == (releaseInside && pdf ? 1 : 0),
+                        "one completed click requests output once; releasing outside cancels it");
+                if (!handoffs.isEmpty())
+                    require(handoffs.first().layout.outputCount() == 3 &&
+                                handoffs.first().layout.verticalLines ==
+                                    window.document()->layout().verticalLines,
+                            "PDF receives the newly committed Smart boundaries");
+                if (chosen)
+                    chosen({});
+                window.shutdown();
+            }
+        }
+    }
+}
+
+void footerActionsDiscardObsoleteRequests() {
+    enum class Interruption { Failure, Settings, InvalidDraft, Document, Replacement, Shutdown };
+    for (const bool pdf : {false, true}) {
+        for (const auto interruption :
+             {Interruption::Failure, Interruption::Settings, Interruption::InvalidDraft,
+              Interruption::Document, Interruption::Replacement, Interruption::Shutdown}) {
+            std::atomic_bool release{false};
+            std::atomic_int calculations{0};
+            int outputs = 0;
+            ImageSplitWindowServices ports;
+            ports.chooseDirectory = [&](QWidget*, auto done) {
+                ++outputs;
+                done({});
+            };
+            ports.stitchToPdf = [&](ImageSplitSnapshot) {
+                ++outputs;
+                return true;
+            };
+            ports.confirm = [](QWidget*, bool, auto done) { done(true); };
+            ports.prepareSplit = [&](const QImage& source, const ImageSplitSettings& settings,
+                                     const ImageSplitWindowServices::Cancellation& cancelled) {
+                ++calculations;
+                while (!release.load() && !cancelled())
+                    QThread::msleep(1);
+                if (interruption == Interruption::Failure)
+                    throw std::runtime_error("injected analysis failure");
+                return prepareImageSplitLayout(source, settings, cancelled);
+            };
+            ImageSplitWindow window(nullptr, ports);
+            window.presentImage(image());
+            loaded(window);
+            typeCountDraft(window, QStringLiteral("3"));
+            auto* button = outputButton(window, pdf);
+            footerMouseEvent(button, QEvent::MouseButtonPress);
+            footerMouseEvent(button, QEvent::MouseButtonRelease);
+            waitUntil([&] { return calculations == 1; }, "footer request waits on a worker");
+            require(window.busy() && outputs == 0, "pending output cannot use old geometry");
+            switch (interruption) {
+            case Interruption::Failure:
+                break;
+            case Interruption::Settings:
+                window.editor()
+                    ->findChild<adqt::widgets::AdInputNumber*>(QStringLiteral("imageSplitCount"))
+                    ->setValue(4);
+                break;
+            case Interruption::InvalidDraft:
+                typeCountDraft(window, QStringLiteral("0"));
+                require(!button->isEnabled(), "invalid drafts still disable footer actions");
+                break;
+            case Interruption::Document:
+                require(window.document()->createLine(true, 10),
+                        "an external edit invalidates the requested layout");
+                break;
+            case Interruption::Replacement:
+                window.presentImage(image({200, 150}));
+                loaded(window);
+                break;
+            case Interruption::Shutdown:
+                window.shutdown();
+                break;
+            }
+            release = true;
+            waitUntil([&] { return !window.busy(); }, "obsolete calculation stops");
+            waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
+                      "obsolete workers drain before checking output");
+            flush();
+            require(outputs == 0, "failed, superseded and cancelled requests never produce output");
+            if (interruption == Interruption::Failure)
+                require(!window.lastError().isEmpty() && window.document()->settings().count == 2,
+                        "failure reports feedback and retains the committed geometry");
+            if (interruption == Interruption::Settings)
+                require(window.document()->settings().count == 4,
+                        "new settings finish without inheriting the old footer request");
+            window.shutdown();
+        }
+    }
+}
+
+void smartInitialLoadAndReplacement() {
+    const auto textImage = [](int width, int gap) {
+        QImage source(width, 127, QImage::Format_RGBA8888);
+        source.fill(Qt::white);
+        for (int x = 0; x < width; ++x)
+            for (int y = 0; y < source.height(); ++y)
+                if ((x < gap || x > gap + 5) && y % 14 < 3)
+                    source.setPixelColor(x, y, QColor(20, 40, 60, 180));
+        return source;
+    };
+    QVector<ImageSplitSnapshot> handoffs;
+    std::atomic_bool entered{false};
+    std::atomic_bool finished{false};
+    ImageSplitWindowServices ports;
+    ports.confirm = [](QWidget*, bool, auto done) { done(true); };
+    ports.stitchToPdf = [&](ImageSplitSnapshot value) {
+        handoffs.append(std::move(value));
+        return true;
+    };
+    ports.prepareSplit = [&](const QImage&, const ImageSplitSettings&,
+                             const ImageSplitWindowServices::Cancellation& cancelled)
+        -> std::optional<ImageSplitPreparedLayout> {
+        entered = true;
+        while (!cancelled())
+            QThread::msleep(1);
+        finished = true;
+        return std::nullopt;
+    };
+    ImageSplitWindow window(nullptr, ports);
+    window.presentImage(textImage(160, 91));
+    loaded(window);
+    require(window.document()->settings().type == ImageSplitType::Smart &&
+                window.document()->layout().verticalLines.first() == 93 &&
+                !window.document()->canUndo(),
+            "initial image worker prepares final Smart geometry as the undo baseline");
+    window.stitchToPdf();
+    require(handoffs.size() == 1 && handoffs.first().layout.verticalLines.first() == 93 &&
+                handoffs.first().layout.size == window.document()->layout().size &&
+                handoffs.first().layout.horizontalLines ==
+                    window.document()->layout().horizontalLines,
+            "PDF snapshot carries the exact adjusted preview boundaries");
+    auto* count = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitCount"));
+    count->setValue(3);
+    waitUntil([&] { return entered.load(); }, "replacement race has an active analysis");
+    window.presentImage(textImage(200, 110));
+    loaded(window);
+    waitUntil([&] { return finished.load(); }, "replacement cancels previous source analysis");
+    flush();
+    require(window.document()->image().width() == 200 &&
+                window.document()->layout().verticalLines.first() == 112 &&
+                window.document()->settings().count == 2 && !window.document()->canUndo(),
+            "replacement keeps its own Smart baseline after an older worker completes");
+    window.shutdown();
+}
+
+void smartSettingsWorkers() {
+    std::atomic_int calls{0};
+    std::atomic_int active{0};
+    std::atomic_int maximumActive{0};
+    std::atomic_bool release{false};
+    std::atomic_bool fail{false};
+    ImageSplitWindowServices ports;
+    ports.prepareSplit = [&](const QImage& source, const ImageSplitSettings& settings,
+                             const ImageSplitWindowServices::Cancellation& cancelled) {
+        ++calls;
+        const int concurrent = ++active;
+        maximumActive.store(std::max(maximumActive.load(), concurrent));
+        while (!release.load() && !cancelled())
+            QThread::msleep(1);
+        --active;
+        if (fail.load())
+            throw std::runtime_error("injected analysis failure");
+        return prepareImageSplitLayout(source, settings, cancelled);
+    };
+    ImageSplitWindow window(nullptr, ports);
+    window.presentImage(image());
+    loaded(window);
+    auto* count = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitCount"));
+    auto* type =
+        window.editor()->findChild<adqt::widgets::AdSegmented*>(QStringLiteral("imageSplitType"));
+    require(count && type, "Smart controls are discoverable");
+    const auto initial = window.document()->state();
+    count->setValue(3);
+    waitUntil([&] { return calls == 1; }, "Smart calculation enters worker");
+    require(window.busy() && window.editor()->calculating() && saveButton(window)->isEnabled() &&
+                count->isEnabled() && type->isEnabled() && window.document()->state() == initial,
+            "pending Smart settings accept output requests and keep committed geometry intact");
+    require(!window.editor()->commitPendingSettings() && calls == 1,
+            "repeated commit does not restart the same analysis or export stale guides");
+    waitUntil(
+        [&] {
+            const auto* message = statusMessage(window);
+            return message && message->content() == QStringLiteral("Finding split lines…");
+        },
+        "long calculation displays delayed progress");
+    auto& languages = LanguageManager::instance();
+    languages.initialize();
+    require(languages.setLanguage(QStringLiteral("zh_CN")), "change language during analysis");
+    flush();
+    require(statusMessage(window) &&
+                statusMessage(window)->content() == QString::fromUtf8("正在查找分割线…"),
+            "calculation status retranslates while work continues");
+    require(languages.setLanguage(QStringLiteral("en_US")), "restore English during analysis");
+    count->setValue(4);
+    count->setValue(5);
+    release = true;
+    waitUntil([&] { return !window.busy() && window.document()->settings().count == 5; },
+              "only the latest pending settings are applied");
+    require(maximumActive == 1 && calls <= 2 && window.document()->layout().outputCount() == 5,
+            "one worker and one latest request bound concurrency and preserve requested count");
+    window.document()->undo();
+    require(window.document()->state() == initial,
+            "one completed calculation creates one undo entry");
+    window.document()->redo();
+    const int cachedCalls = calls;
+    type->setCurrentValue(QStringLiteral("equal"));
+    type->setCurrentValue(QStringLiteral("smart"));
+    require(!window.busy() && calls == cachedCalls,
+            "returning to cached Smart geometry needs no worker");
+    auto* overlap = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitOverlapWidth"));
+    require(window.document()->createLine(true, 10), "Smart allows manual guide editing");
+    const auto manual = window.document()->state();
+    overlap->setValue(7);
+    require(!window.busy() && calls == cachedCalls &&
+                window.document()->state().verticalLines == manual.verticalLines,
+            "overlap commits preserve manual guides without analysis");
+    const auto beforeFailure = window.document()->state();
+    fail = true;
+    count->setValue(6);
+    waitUntil([&] { return !window.busy(); }, "analysis failure finishes");
+    require(window.document()->state() == beforeFailure && count->value() == 5 &&
+                !window.lastError().isEmpty(),
+            "failure restores controls and retains the committed document");
+    fail = false;
+    release = false;
+    const int beforeStale = calls;
+    count->setValue(7);
+    waitUntil([&] { return calls > beforeStale; }, "stale-result calculation starts");
+    require(window.document()->createLine(true, 30), "external edit changes the document revision");
+    const auto edited = window.document()->state();
+    release = true;
+    waitUntil([&] { return !window.busy(); }, "stale result is delivered");
+    require(window.document()->state() == edited,
+            "stale worker result cannot overwrite a newer edit");
+    fail = true;
+    release = false;
+    const int beforeStaleFailure = calls;
+    count->setValue(8);
+    waitUntil([&] { return calls > beforeStaleFailure; }, "stale failing calculation starts");
+    require(window.document()->createLine(true, 40), "another edit invalidates the failing worker");
+    const auto afterEdit = window.document()->state();
+    release = true;
+    waitUntil([&] { return !window.busy(); }, "stale failure is delivered");
+    require(window.document()->state() == afterEdit && window.lastError().isEmpty() &&
+                count->value() == 8,
+            "stale failures preserve newer drafts and do not report an obsolete error");
+    fail = false;
+    release = false;
+    const int beforeClose = calls;
+    count->setValue(9);
+    waitUntil([&] { return calls > beforeClose; }, "close-race calculation starts");
+    window.shutdown();
+    waitUntil([&] { return active == 0; }, "shutdown cancels the active calculation");
+    release = true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1162,13 +1533,27 @@ int main(int argc, char** argv) {
         shutdownDuringWorkers();
         canceledCloseResumesReplacement();
         loadingErrorsFollowLanguageAcrossQueuedCompletion();
+    } else if (arguments.contains(QStringLiteral("--footer-actions-only"))) {
+        footerActivationsWaitForSmartSettings();
+        footerActionsDiscardObsoleteRequests();
+        saveCommitsVisibleDraft();
+    } else if (arguments.contains(QStringLiteral("--smart-only"))) {
+        footerActivationsWaitForSmartSettings();
+        footerActionsDiscardObsoleteRequests();
+        smartInitialLoadAndReplacement();
+        smartSettingsWorkers();
     } else if (preview >= 0) {
         require(preview + 1 < arguments.size(), "preview requires output path");
         renderPreview(arguments[preview + 1], arguments.contains(QStringLiteral("--dark")),
                       arguments.contains(QStringLiteral("--dpr2"))     ? 2
                       : arguments.contains(QStringLiteral("--dpr1.5")) ? 1.5
-                                                                       : 1);
+                                                                       : 1,
+                      arguments.contains(QStringLiteral("--smart-preview")));
     } else {
+        footerActivationsWaitForSmartSettings();
+        footerActionsDiscardObsoleteRequests();
+        smartInitialLoadAndReplacement();
+        smartSettingsWorkers();
         windowPinStartsEnabledAndPreservesEdits();
         replacementAndCancellation();
         independentHistoryAndSourceWindows();

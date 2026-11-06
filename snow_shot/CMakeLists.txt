@@ -1303,7 +1303,8 @@ target_link_libraries(snow_shot_collage PUBLIC snow_shot_collage_core snow_shot_
 
 add_library(snow_shot_image_split_core STATIC
     include/snow_shot/presentation/imagesplitdocument.h
-    src/presentation/imagesplit/imagesplitdocument.cpp)
+    src/presentation/imagesplit/imagesplitdocument.cpp
+    src/presentation/imagesplit/imagesplitsmartlayout.cpp)
 target_include_directories(snow_shot_image_split_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_image_split_core PUBLIC Qt6::Widgets)
 add_library(snow_shot_image_split STATIC
@@ -1599,6 +1600,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-image-split-document-tests PRIVATE snow_shot_image_split_core)
     add_test(NAME snow-shot-image-split-document-tests COMMAND snow-shot-image-split-document-tests)
     set_tests_properties(snow-shot-image-split-document-tests PROPERTIES LABELS unit
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(snow-shot-image-split-smart-tests tests/imagesplit_smart_tests.cpp)
+    target_link_libraries(snow-shot-image-split-smart-tests PRIVATE snow_shot_image_split_core)
+    add_test(NAME snow-shot-image-split-smart-tests COMMAND snow-shot-image-split-smart-tests)
+    set_tests_properties(snow-shot-image-split-smart-tests PROPERTIES LABELS unit
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     foreach(_image_split_test IN ITEMS editor window export)
         add_executable(snow-shot-image-split-${_image_split_test}-tests
@@ -7700,6 +7706,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         ${SNOW_SHOT_COLLAGE_EXPORT_TEST_SOURCES}
         src/presentation/services/screenshotexportscrollingsource.cpp)
     list(REMOVE_DUPLICATES _scrolling_settings_test_sources)
+    # Image splitting links snow_shot_settings. Reuse its form/theme implementations and MOC
+    # objects instead of compiling a second copy from the overlay fixture's source inventory.
+    list(REMOVE_ITEM _scrolling_settings_test_sources ${SNOW_SHOT_SETTINGS_SOURCES})
     add_executable(snow-shot-scrolling-capture-settings-tests
         tests/scrolling_capture_settings_tests.cpp
         ${_scrolling_settings_test_sources}
@@ -7714,7 +7723,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/image src/presentation/services)
     target_link_libraries(snow-shot-scrolling-capture-settings-tests PRIVATE
         snow-shot-scrolling-settings-test-runtime snow_shot_diagnostics snow_shot_storage
-        snow_shot_image_split
+        snow_shot_image_split snow_shot_settings
         snow_shot_window_shortcuts snow_draw_engine_qt_canvas snow_canvas_image snow_stitch_images_c
         ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
     snow_shot_link_macos_window_platform(snow-shot-scrolling-capture-settings-tests)

@@ -50,6 +50,9 @@ struct ImageSplitWindowServices final {
         exportBatch;
     std::function<void(const QString&)> openDirectory;
     std::function<bool(ImageSplitSnapshot)> stitchToPdf;
+    std::function<std::optional<ImageSplitPreparedLayout>(const QImage&, const ImageSplitSettings&,
+                                                          Cancellation)>
+        prepareSplit;
 };
 
 class ImageSplitWindow final : public QObject {

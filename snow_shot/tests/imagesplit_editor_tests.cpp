@@ -434,15 +434,41 @@ void defaultsConditionalControlsAndActions() {
     auto* direction = child<AdSegmented>(editor, "imageSplitDirection");
     auto* type = child<AdSegmented>(editor, "imageSplitType");
     auto* count = child<AdInputNumber>(editor, "imageSplitCount");
+    const auto options = type->options();
+    require(options.size() == 3 && options[0].value == QStringLiteral("smart") &&
+                options[1].value == QStringLiteral("equal") &&
+                options[2].value == QStringLiteral("precise"),
+            "split types place Smart first, followed by Equal and Precise");
     require(direction->currentValue() == QStringLiteral("vertical") &&
-                type->currentValue() == QStringLiteral("equal") && count->value() == 2 &&
+                type->currentValue() == QStringLiteral("smart") && count->value() == 2 &&
                 editor.configurationValid() && document.layout().outputCount() == 2,
-            "opening an image must show vertical equal splitting into two images");
+            "opening an image must show vertical Smart splitting into two images");
     require(!form->field(QStringLiteral("type"))->itemHidden() &&
                 !form->field(QStringLiteral("count"))->itemHidden() &&
                 form->field(QStringLiteral("rows"))->itemHidden() &&
                 form->field(QStringLiteral("size"))->itemHidden(),
-            "equal splitting must show only its applicable controls");
+            "Smart splitting must show the same count controls as Equal splitting");
+    const auto smartState = document.state();
+    for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "Smart labels use complete application catalogs");
+        QApplication::installTranslator(&translator);
+        QEvent language(QEvent::LanguageChange);
+        QApplication::sendEvent(&editor, &language);
+        const auto smart = QCoreApplication::translate("ImageSplitEditorWidget", "Smart split");
+        require(type->optionLabel(0) == smart && type->currentValue() == QStringLiteral("smart") &&
+                    document.state() == smartState &&
+                    (QString::fromLatin1(locale) == QStringLiteral("en_US") ||
+                     smart != QStringLiteral("Smart split")),
+                "Smart label retranslates without changing selection or history");
+        for (int option = 0; option < 3; ++option)
+            require(type->rect().contains(type->optionRect(option)),
+                    "all three split types fit the selector");
+        QApplication::removeTranslator(&translator);
+        QApplication::sendEvent(&editor, &language);
+    }
     direction->setCurrentValue(QStringLiteral("grid"));
     require(form->field(QStringLiteral("type"))->itemHidden() &&
                 form->field(QStringLiteral("count"))->itemHidden() &&
@@ -1282,6 +1308,39 @@ void submissionCommitsValidPendingDraftsOnly() {
     require(!editor.commitPendingSettings() && !editor.configurationValid() &&
                 document.state() == beforeInvalid,
             "submission must reject invalid pending drafts without changing output geometry");
+}
+
+void submissionRequiresTheRequestedSettings() {
+    ImageSplitDocument document;
+    document.setImage(image({1001, 800}));
+    ImageSplitEditorWidget editor(&document);
+    show(editor);
+    auto* count = child<AdInputNumber>(editor, "imageSplitCount");
+    auto* text = count->findChild<QLineEdit*>();
+    require(text != nullptr, "number control must expose its text editor");
+    const auto typeThree = [&] {
+        text->setFocus();
+        text->selectAll();
+        QKeyEvent three(QEvent::KeyPress, Qt::Key_3, Qt::NoModifier, QStringLiteral("3"));
+        QApplication::sendEvent(text, &three);
+    };
+    editor.setSettingsCommitter([&](const ImageSplitSettings&) { editor.setCalculating(true); });
+    typeThree();
+    require(!editor.commitPendingSettings() && editor.calculating() && editor.configurationValid(),
+            "valid input remains actionable while its geometry is still pending");
+    editor.setCalculating(false);
+    editor.restoreCommittedSettings();
+    editor.setCalculating(true);
+    require(!editor.commitPendingSettings(),
+            "even matching settings cannot be submitted while calculation is pending");
+    editor.setCalculating(false);
+    editor.setSettingsCommitter(
+        [&](const ImageSplitSettings&) { editor.restoreCommittedSettings(); });
+    typeThree();
+    require(!editor.commitPendingSettings() && editor.configurationValid() &&
+                document.settings().count == 2 && count->value() == 2 && !document.canUndo(),
+            "a synchronous commit failure cannot submit the restored previous settings");
+    editor.setSettingsCommitter({});
 }
 
 void focusedDraftsAreDiscardedOnDestruction() {
@@ -2158,6 +2217,12 @@ int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--submission-only"))) {
+            submissionCommitsValidPendingDraftsOnly();
+            submissionRequiresTheRequestedSettings();
+            std::cout << "Image split submission tests passed\n";
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--overlap-only"))) {
             overlapControlValidationAndHistory();
             overlapBandsFollowGeometry();
@@ -2213,6 +2278,7 @@ int main(int argc, char** argv) {
         invalidDraftsSurviveFocusAndCanceledLoading();
         invalidDirectionDoesNotEditThePreviousAxis();
         submissionCommitsValidPendingDraftsOnly();
+        submissionRequiresTheRequestedSettings();
         zoomedCanvasUsesFullResolutionPixels();
         sequenceNumbersUsePdfBadgeStyle();
         denseGuidesDoNotHideLaterReadableRegions();

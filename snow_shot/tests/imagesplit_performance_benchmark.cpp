@@ -4,6 +4,9 @@
 #include "snow_shot/presentation/imagesplitwindow.h"
 #ifndef SNOW_SHOT_IMAGE_SPLIT_BASELINE
 #include "imagesplitimagepreparation_p.h"
+#include "imagesplit_smart_reference.h"
+#include "widgets/input_number.h"
+#include "snow_shot/storage/applicationstorage.h"
 #endif
 #include "theme/theme_manager.h"
 #include "../../test-support/memorysnapshot.h"
@@ -181,9 +184,15 @@ class PaintCounter final : public QObject {
     }
 };
 
+ImageSplitSettings equalSplitSettings() {
+    ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
+    return settings;
+}
+
 void hoverReport(QJsonObject& report, const QImage& image, const QImage& preview) {
     ImageSplitDocument document;
-    document.setImage(image, preview);
+    document.setImage(image, preview, equalSplitSettings());
     ImageSplitEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
@@ -216,7 +225,8 @@ void hoverReport(QJsonObject& report, const QImage& image, const QImage& preview
 
 void historyReport(QJsonObject& report, int operations) {
     ImageSplitDocument document;
-    document.setImage(QImage(operations * 4 + 4, 1, QImage::Format_RGBA8888));
+    document.setImage(QImage(operations * 4 + 4, 1, QImage::Format_RGBA8888), {},
+                      equalSplitSettings());
     auto settings = document.settings();
     settings.count = document.image().width();
     require(document.setSettings(settings), "fragmented history fixture is valid");
@@ -323,7 +333,7 @@ void canvasReport(QJsonObject& report, const QImage& image, const QImage& previe
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler memory;
     ImageSplitDocument document;
-    document.setImage(image, preview);
+    document.setImage(image, preview, equalSplitSettings());
     ImageSplitEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
@@ -341,6 +351,7 @@ void canvasReport(QJsonObject& report, const QImage& image, const QImage& previe
     latencyReport(report, QStringLiteral("canvas_fit_pan_and_paint"), sampler.samplePan(96));
     latencyReport(report, QStringLiteral("canvas_fit_zoom_and_paint"), sampler.sampleZoom(96));
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 1000;
     settings.columns = 1000;
@@ -385,12 +396,13 @@ void extremeCanvasReport(QJsonObject& report, const QImage& source) {
     const QImage preview = image.scaled({2048, 1}, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     require(!preview.isNull(), "extreme canvas preview is prepared before measurements");
     ImageSplitDocument document;
-    document.setImage(image, preview);
+    document.setImage(image, preview, equalSplitSettings());
     ImageSplitEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
     QApplication::processEvents(QEventLoop::AllEvents);
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.count = width;
     QElapsedTimer configuration;
     configuration.start();
@@ -441,6 +453,7 @@ QImage fixture(QSize size) {
 
 void geometryReport(QJsonObject& report) {
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2000;
     settings.columns = 32000;
@@ -551,6 +564,143 @@ void exportReport(QJsonObject& report, const QImage& image, const QString& paren
     report.insert(prefix + QStringLiteral("_peak_resident_delta_bytes"),
                   double(peak.load() - quint64(baseline.residentBytes)));
 }
+#ifndef SNOW_SHOT_IMAGE_SPLIT_BASELINE
+void smartCase(QJsonObject& report, const QImage& image, ImageSplitSettings settings,
+               const QString& prefix, int samples, bool verify = true) {
+    QElapsedTimer firstTimer;
+    firstTimer.start();
+    const auto first = prepareImageSplitLayout(image, settings);
+    report.insert(prefix + QStringLiteral("_first_ms"), milliseconds(firstTimer));
+    require(first && first->layout.isValid(), "first Smart calculation succeeds");
+    std::optional<ImageSplitLayout> reference;
+    if (verify)
+        reference = image_split_test::referenceSmart(image, settings);
+    const auto baseline = snow::test_support::memorySnapshot();
+    MemorySampler memory;
+    std::vector<double> elapsed;
+    for (int sample = 0; sample < samples; ++sample) {
+        QElapsedTimer timer;
+        timer.start();
+        const auto prepared = prepareImageSplitLayout(image, settings);
+        elapsed.push_back(milliseconds(timer));
+        require(prepared && prepared->layout.isValid(), "Smart benchmark returns valid geometry");
+        if (reference)
+            require(prepared->layout.verticalLines == reference->verticalLines &&
+                        prepared->layout.horizontalLines == reference->horizontalLines,
+                    "optimized Smart boundaries exactly match scalar reference");
+    }
+    latencyReport(report, prefix, elapsed);
+    report.insert(prefix + QStringLiteral("_peak_resident_delta_bytes"),
+                  double(memory.peak() - std::min(memory.peak(), quint64(baseline.residentBytes))));
+}
+void smartReport(QJsonObject& report) {
+    const auto image = fixture({3840, 2160});
+    const auto opaque = image.convertToFormat(QImage::Format_RGB32);
+    ImageSplitSettings settings;
+    for (const auto direction : {ImageSplitDirection::Vertical, ImageSplitDirection::Horizontal}) {
+        settings.direction = direction;
+        const auto axis = direction == ImageSplitDirection::Vertical ? QStringLiteral("vertical")
+                                                                     : QStringLiteral("horizontal");
+        for (const int count : {2, 8, 16}) {
+            settings.count = count;
+            smartCase(report, opaque, settings,
+                      QStringLiteral("smart_4k_rgb_%1_%2").arg(axis).arg(count), 16);
+            smartCase(report, image, settings,
+                      QStringLiteral("smart_4k_rgba_%1_%2").arg(axis).arg(count), 16);
+        }
+        settings.count = 16;
+        smartCase(report, image.convertToFormat(QImage::Format_RGBA64), settings,
+                  QStringLiteral("smart_4k_rgba64_%1").arg(axis), 8);
+    }
+    ImageSplitDocument document;
+    document.setImage(image, {}, settings);
+    std::vector<double> cached;
+    for (int sample = 0; sample < 100; ++sample) {
+        QElapsedTimer timer;
+        timer.start();
+        require(document.cachedLayout(settings).has_value(), "Smart cache hit succeeds");
+        cached.push_back(milliseconds(timer));
+    }
+    latencyReport(report, QStringLiteral("smart_cached_layout_lookup"), cached);
+    cached.clear();
+    auto equal = settings;
+    equal.type = ImageSplitType::Equal;
+    for (int sample = 0; sample < 100; ++sample) {
+        QElapsedTimer timer;
+        timer.start();
+        require(document.setSettings(equal) && document.setSettings(settings),
+                "cached mode roundtrip commits Equal and Smart without analysis");
+        cached.push_back(milliseconds(timer));
+    }
+    latencyReport(report, QStringLiteral("smart_cached_mode_roundtrip"), cached);
+    QImage large(8000, 8000, QImage::Format_RGB32);
+    large.fill(QColor(32, 64, 96));
+    for (int y = 0; y < large.height(); ++y) {
+        auto* row = reinterpret_cast<QRgb*>(large.scanLine(y));
+        for (int x = 0; x < large.width(); ++x)
+            if (y % 40 < 25 && x % 16 < 3)
+                row[x] = qRgb(210, 220, 230);
+    }
+    for (const auto direction : {ImageSplitDirection::Vertical, ImageSplitDirection::Horizontal}) {
+        settings.direction = direction;
+        const auto axis = direction == ImageSplitDirection::Vertical ? QStringLiteral("vertical")
+                                                                     : QStringLiteral("horizontal");
+        for (int count : {16, 1024}) {
+            settings.count = count;
+            smartCase(report, large, settings,
+                      QStringLiteral("smart_64mp_%1_%2").arg(axis).arg(count), 5);
+        }
+    }
+    int checks = 0;
+    QElapsedTimer cancelTimer;
+    cancelTimer.start();
+    require(!prepareImageSplitLayout(large, settings, [&] { return ++checks >= 8; }),
+            "large Smart analysis supports cancellation inside a scan batch");
+    report.insert(QStringLiteral("smart_cancel_ms"), milliseconds(cancelTimer));
+    report.insert(QStringLiteral("smart_analysis_scratch_limit_bytes"),
+                  double(imageSplitAnalysisMaximumWorkingBytes));
+    QImage thin(1'000'000, 1, QImage::Format_RGB32);
+    thin.fill(Qt::white);
+    settings.direction = ImageSplitDirection::Vertical;
+    settings.count = thin.width();
+    smartCase(report, thin, settings, QStringLiteral("smart_million_fixed_guides"), 100, false);
+    ImageSplitWindow window;
+    window.presentImage(image);
+    while (window.loading()) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(!window.document()->image().isNull(), "Smart GUI benchmark source loads");
+    auto* count = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitCount"));
+    require(count, "Smart GUI benchmark finds count control");
+    QElapsedTimer heartbeat;
+    std::vector<double> gaps;
+    QTimer pulse;
+    pulse.setInterval(1);
+    QObject::connect(&pulse, &QTimer::timeout, [&] {
+        gaps.push_back(milliseconds(heartbeat));
+        heartbeat.restart();
+    });
+    heartbeat.start();
+    pulse.start();
+    for (int sample = 0; sample < 8; ++sample) {
+        const int next = 511 + sample % 2;
+        count->setValue(next);
+        while (window.editor()->calculating()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(window.document()->settings().count == next,
+                "GUI applies the completed Smart count");
+    }
+    pulse.stop();
+    latencyReport(report, QStringLiteral("smart_gui_heartbeat"), gaps);
+    window.shutdown();
+    geometryReport(report);
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -562,6 +712,22 @@ int main(int argc, char** argv) {
     return 1;
 #else
     try {
+#ifndef SNOW_SHOT_IMAGE_SPLIT_BASELINE
+        if (application.arguments().contains(QStringLiteral("--smart-only"))) {
+            QTemporaryDir storage;
+            require(storage.isValid(), "Smart benchmark uses isolated storage");
+            require(snow_shot::storage::ApplicationStorage::instance()
+                        .initialize({storage.path(), storage.path(), 60000})
+                        .success,
+                    "Smart benchmark storage initializes");
+            QJsonObject report;
+            report.insert(QStringLiteral("build_type"), QStringLiteral("Release"));
+            smartReport(report);
+            snow_shot::storage::ApplicationStorage::instance().shutdown();
+            std::cout << QJsonDocument(report).toJson(QJsonDocument::Indented).constData();
+            return 0;
+        }
+#endif
         QTemporaryDir temporary;
         require(temporary.isValid(), "benchmark output directory exists");
         QJsonObject report;
@@ -589,6 +755,7 @@ int main(int argc, char** argv) {
         hoverReport(report, image, preview);
         extremeCanvasReport(report, image);
         ImageSplitSettings settings;
+        settings.type = ImageSplitType::Equal;
         exportReport(report, image, temporary.path(), QStringLiteral("large_image"), settings);
         settings.direction = ImageSplitDirection::Grid;
         settings.rows = 20;

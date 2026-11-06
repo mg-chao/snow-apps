@@ -67,7 +67,7 @@ void loaded(ImageSplitWindow& window) {
           "split source loads");
 }
 ImageSplitSnapshot snapshot(QImage pixels, ImageSplitSettings settings = {}) {
-    const auto layout = calculateImageSplitLayout(pixels.size(), settings);
+    const auto layout = prepareImageSplitLayout(pixels, settings)->layout;
     return {std::move(pixels), layout, QStringLiteral("pieces"), {}};
 }
 void typeCount(ImageSplitWindow& window, int key, const QString& text) {
@@ -123,6 +123,7 @@ void footerDraftsAndTranslations() {
     typeCount(window, Qt::Key_3, QStringLiteral("3"));
     require(window.document()->settings().count == 2, "visible count draft is uncommitted");
     button(window)->click();
+    until([&] { return requests.size() == 1; }, "Smart draft finishes before PDF handoff");
     require(requests.size() == 1 && requests.first().layout.outputCount() == 3 &&
                 window.document()->settings().count == 3 && window.modal()->isOpen() &&
                 !directoryChoice,
@@ -136,6 +137,7 @@ void footerDraftsAndTranslations() {
     typeCount(window, Qt::Key_3, QStringLiteral("3"));
     accepted = false;
     window.stitchToPdf();
+    until([&] { return requests.size() == 2; }, "Smart draft finishes before rejected PDF handoff");
     require(requests.size() == 2 && !window.lastError().isEmpty() && window.modal()->isOpen() &&
                 window.document()->settings().count == 3,
             "rejected handoff preserves edits and reports feedback");
@@ -278,6 +280,7 @@ void queuedBatchesKeepRequestOrder() {
     ImageStitchingWindowCoordinator coordinator;
     const auto first = snapshot(image({20, 12}));
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Horizontal;
     const auto second = snapshot(image({8, 18}), settings);
     require(coordinator.presentSplitImagesAsPdf(first) && coordinator.window()->loading() &&
