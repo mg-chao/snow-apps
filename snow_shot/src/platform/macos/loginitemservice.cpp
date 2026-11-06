@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QScopedValueRollback>
+#include <QtConcurrentRun>
 #include <utility>
 
 namespace snow_shot::platform::macos {
@@ -12,12 +13,49 @@ QString text(const char* source) {
 } // namespace
 LoginItemService::LoginItemService(LoginItemOperations operations, QObject* parent)
     : QObject(parent), m_operations(std::move(operations)) {
+    connect(&m_queryWatcher, &QFutureWatcher<LoginItemSnapshot>::finished, this,
+            &LoginItemService::queryFinished);
     refresh();
 }
 void LoginItemService::refresh() {
     if (m_pending)
         return;
-    auto snapshot = m_operations.query();
+    if (m_queryInFlight) {
+        // Coalesce bursts (page show, activation, language change) into one follow-up
+        // query instead of starving the worker pool with concurrent XPC calls.
+        m_queryQueued = true;
+        return;
+    }
+    startQuery();
+}
+void LoginItemService::refreshSynchronously() {
+    if (m_pending)
+        return;
+    // A routine query may still be running. Its snapshot predates the one read below, so
+    // forget it instead of letting it roll the result of an explicit operation back.
+    m_queryQueued = false;
+    if (m_queryInFlight)
+        m_discardQueryResult = true;
+    applySnapshot(m_operations.query());
+}
+void LoginItemService::startQuery() {
+    m_queryInFlight = true;
+    m_queryQueued = false;
+    m_queryWatcher.setFuture(QtConcurrent::run(m_operations.query));
+}
+void LoginItemService::queryFinished() {
+    LoginItemSnapshot snapshot = m_queryWatcher.result();
+    const bool discard = m_discardQueryResult;
+    const bool queued = m_queryQueued;
+    m_queryInFlight = false;
+    m_queryQueued = false;
+    m_discardQueryResult = false;
+    if (!discard && !m_pending)
+        applySnapshot(std::move(snapshot));
+    if (queued && !m_queryInFlight)
+        startQuery();
+}
+void LoginItemService::applySnapshot(LoginItemSnapshot snapshot) {
     if (snapshot.status == m_snapshot.status && snapshot.error == m_snapshot.error)
         return;
     m_snapshot = std::move(snapshot);
@@ -33,7 +71,7 @@ QString LoginItemService::hint() const {
     return {};
 }
 LoginItemResult LoginItemService::initialize(bool enabledByDefault) {
-    refresh();
+    refreshSynchronously();
     if (!available() || m_operations.initialized())
         return {};
     if (!m_operations.markInitialized())
@@ -51,7 +89,7 @@ LoginItemResult LoginItemService::setEnabled(bool enabled) {
     if (m_pending)
         return {false, text(QT_TRANSLATE_NOOP("LoginItemService",
                                               "A launch-at-login change is already in progress"))};
-    refresh();
+    refreshSynchronously();
     if (!available())
         return {false, hint()};
     if (!m_operations.markInitialized())

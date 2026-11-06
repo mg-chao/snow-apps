@@ -131,7 +131,7 @@ if(WIN32 AND (SNOW_SHOT_BUILD_TESTS OR SNOW_SHOT_DISTRIBUTION_CHANNEL STREQUAL "
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowQt.cmake")
-snow_find_qt(COMPONENTS Widgets LinguistTools Svg Network)
+snow_find_qt(COMPONENTS Widgets LinguistTools Svg Network Concurrent)
 
 add_library(snow_shot_distribution STATIC
     include/snow_shot/app/distribution.h
@@ -1055,7 +1055,7 @@ add_library(snow_shot_login_item STATIC
     include/snow_shot/platform/macos/loginitemservice.h
     src/platform/macos/loginitemservice.cpp)
 target_include_directories(snow_shot_login_item PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_login_item PUBLIC Qt6::Core)
+target_link_libraries(snow_shot_login_item PUBLIC Qt6::Core PRIVATE Qt6::Concurrent)
 if(APPLE)
     target_sources(snow_shot_login_item PRIVATE src/platform/macos/loginitembackend.mm)
     target_link_libraries(snow_shot_login_item PRIVATE snow_shot_storage
@@ -1177,7 +1177,6 @@ if(APPLE)
         "-framework ApplicationServices"
         "-framework AVFoundation")
 endif()
-find_package(Qt6 REQUIRED COMPONENTS Concurrent)
 add_library(snow_shot_cloud_upload STATIC
     include/snow_shot/presentation/screenshotclouduploadservice.h
     src/presentation/services/screenshotclouduploadservice.cpp)

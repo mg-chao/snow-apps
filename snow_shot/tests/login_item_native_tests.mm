@@ -6,10 +6,13 @@
 #import <objc/runtime.h>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 #include <utility>
 
 namespace {
@@ -21,6 +24,18 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+template <typename Predicate> void waitUntil(Predicate ready, const char* message) {
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!ready() && deadline.elapsed() < 10000) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(ready(), message);
+}
+void waitForRefresh(const snow_shot::platform::macos::LoginItemService& service) {
+    waitUntil([&] { return !service.refreshing(); }, "routine status refresh completes");
 }
 id fixtureMainBundle(id object, SEL selector) {
     Q_UNUSED(object);
@@ -145,6 +160,7 @@ void nativeStatusAndRegistration() {
                 return true;
             };
             LoginItemService service(std::move(operations));
+            waitForRefresh(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         native.statusReads == 1,
@@ -155,6 +171,7 @@ void nativeStatusAndRegistration() {
                 const int before = native.statusReads;
                 native.nativeStatus = status;
                 service.refresh();
+                waitForRefresh(service);
                 const auto expected = status == SMAppServiceStatusEnabled ? LoginItemStatus::Enabled
                                       : status == SMAppServiceStatusRequiresApproval
                                           ? LoginItemStatus::ApprovalRequired
@@ -166,6 +183,7 @@ void nativeStatusAndRegistration() {
             }
             native.nativeStatus = SMAppServiceStatusNotFound;
             service.refresh();
+            waitForRefresh(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         service.hint().isEmpty(),
@@ -181,6 +199,7 @@ void nativeStatusAndRegistration() {
                         service.snapshot().status == LoginItemStatus::Unregistered,
                     "registration signature failure is explained without falsely enabling login");
             service.refresh();
+            waitForRefresh(service);
             require(service.available() && service.initialize(true).success &&
                         native.registrations == 1,
                     "status refresh neither prevalidates signing nor retries failed registration");
@@ -201,6 +220,7 @@ void nativeStatusAndRegistration() {
                     "unregistration continues to reflect native status");
             native.nativeStatus = SMAppServiceStatusNotFound;
             service.refresh();
+            waitForRefresh(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered,
                     "notFound remains eligible after the item is removed");
@@ -257,6 +277,7 @@ int main(int argc, char** argv) {
         [manager removeEventHandlerForEventClass:kCoreEventClass andEventID:kAEOpenApplication];
         [fixture release];
         const auto& service = loginItemService();
+        waitForRefresh(service);
         require(!service.available(), "test executable outside Applications cannot register");
         require(!service.hint().isEmpty(), "ineligible native bundle has actionable guidance");
         nativeStatusAndRegistration();

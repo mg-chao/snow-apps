@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PLATFORM_MACOS_LOGINITEMSERVICE_H
 #define SNOW_SHOT_PLATFORM_MACOS_LOGINITEMSERVICE_H
 
+#include <QFutureWatcher>
 #include <QObject>
 #include <QStringList>
 #include <functional>
@@ -27,7 +28,10 @@ struct LoginItemOperations {
     std::function<void()> openSettings;
 };
 
-// All operations run on the owning GUI thread. Tests inject operations without touching macOS.
+// The service lives on the owning GUI thread. Routine status queries are dispatched to a
+// worker thread because reading the native login item status is a synchronous XPC round
+// trip to the smd daemon that can stall the caller for an unbounded time. Registration
+// changes stay on the GUI thread. Tests inject operations without touching macOS.
 class LoginItemService final : public QObject {
     Q_OBJECT
   public:
@@ -42,7 +46,13 @@ class LoginItemService final : public QObject {
         return m_snapshot.status != LoginItemStatus::Unavailable;
     }
     QString hint() const;
+    // Requests a status refresh without blocking the caller. The updated snapshot is
+    // announced through changed() once the worker finished reading the native status.
     void refresh();
+    // True while a routine refresh is queued or reading the native status.
+    bool refreshing() const {
+        return m_queryInFlight || m_queryQueued;
+    }
     LoginItemResult initialize(bool enabledByDefault);
     LoginItemResult setEnabled(bool enabled);
     void openSettings();
@@ -51,9 +61,20 @@ class LoginItemService final : public QObject {
     void changed();
 
   private:
+    // Blocking query for explicit operations that must act on and report the observed
+    // status in the same call. Never use this for routine refreshes.
+    void refreshSynchronously();
+    void startQuery();
+    void queryFinished();
+    void applySnapshot(LoginItemSnapshot snapshot);
+
     LoginItemOperations m_operations;
     LoginItemSnapshot m_snapshot;
+    QFutureWatcher<LoginItemSnapshot> m_queryWatcher;
     bool m_pending = false;
+    bool m_queryInFlight = false;
+    bool m_queryQueued = false;
+    bool m_discardQueryResult = false;
 };
 
 // Canonical paths only: callers resolve symlinks before checking containment.

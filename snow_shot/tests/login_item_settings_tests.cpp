@@ -7,9 +7,12 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QTemporaryDir>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -17,6 +20,18 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+template <typename Predicate> void waitUntil(Predicate ready, const char* message) {
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!ready() && deadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(ready(), message);
+}
+void waitForRefresh(const snow_shot::platform::macos::LoginItemService& service) {
+    waitUntil([&] { return !service.refreshing(); }, "routine status refresh completes");
 }
 } // namespace
 int main(int argc, char** argv) {
@@ -45,6 +60,7 @@ int main(int argc, char** argv) {
                               },
                               [] { return true; }, [] { return true; }, [&](bool) { return save; },
                               [&] { ++opened; }});
+    waitForRefresh(service);
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts, nullptr, nullptr, nullptr, &service);
     const auto binding = settings::SettingsSwitchBinding::AutoStartAtBoot;
@@ -72,14 +88,17 @@ int main(int argc, char** argv) {
                 opened == 1,
             "settings action reaches injected native operation");
     require(language.setLanguage(QStringLiteral("en_US")), "English language");
+    waitForRefresh(service);
     const QString englishHint = backend.switchHint(binding);
     for (const QString& locale : {QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
         require(language.setLanguage(locale), "switch translated language");
+        waitForRefresh(service);
         require(backend.switchHint(binding) != englishHint &&
                     !backend.switchHint(binding).isEmpty(),
                 "approval hint retranslates at runtime");
     }
     require(language.setLanguage(QStringLiteral("en_US")), "restore English");
+    waitForRefresh(service);
     fail = true;
     require(!backend.applySwitchValue(binding, false) && backend.switchValue(binding) &&
                 error == u"native failure",
@@ -107,6 +126,8 @@ int main(int argc, char** argv) {
     const int beforeRefresh = changes;
     native.status = LoginItemStatus::Unregistered;
     backend.refreshPlatformSettings();
+    waitForRefresh(service);
+    app.processEvents();
     require(!backend.switchValue(binding) && changes == beforeRefresh,
             "external removal refresh never re-registers");
     const auto registry = settings::buildBuiltInSettingsRegistry();
@@ -159,11 +180,15 @@ int main(int argc, char** argv) {
     SettingsPageWidget page(registry, QStringLiteral("general"), session);
     native = {LoginItemStatus::Unavailable, QStringLiteral("install app")};
     page.show();
+    waitForRefresh(service);
+    app.processEvents();
     require(!backend.switchEnabled(binding) && backend.switchHint(binding) == u"install app",
             "showing settings refreshes eligibility and explanation");
     page.hide();
     native = {LoginItemStatus::Enabled, {}};
     emit app.applicationStateChanged(Qt::ApplicationActive);
+    waitForRefresh(service);
+    app.processEvents();
     require(backend.switchEnabled(binding) && backend.switchValue(binding),
             "activation refresh observes external enable");
     app.processEvents();
@@ -173,9 +198,11 @@ int main(int argc, char** argv) {
     SettingsPageWidget screenshots(registry, QStringLiteral("screenshots"), session);
     for (int cycle = 0; cycle < 3; ++cycle) {
         page.show();
+        waitForRefresh(service);
         app.processEvents();
         page.hide();
         screenshots.show();
+        waitForRefresh(service);
         app.processEvents();
         screenshots.hide();
     }
@@ -183,15 +210,18 @@ int main(int argc, char** argv) {
             "switching pages with unchanged native state must not refresh all settings");
     native = {LoginItemStatus::Unavailable, QStringLiteral("install app")};
     page.show();
+    waitForRefresh(service);
     app.processEvents();
     require(refreshes == 1 && !session.state(QStringLiteral("system.auto-start-at-boot")).enabled,
             "page switch must still refresh settings when native eligibility changes");
     native.error = QStringLiteral("updated explanation");
     backend.refreshPlatformSettings();
+    waitForRefresh(service);
     app.processEvents();
     require(refreshes == 2 && backend.switchHint(binding) == native.error,
             "changed native explanation must refresh settings even with the same status");
     backend.refreshPlatformSettings();
+    waitForRefresh(service);
     app.processEvents();
     require(refreshes == 2,
             "repeated platform refresh must not repeat the complete settings refresh");

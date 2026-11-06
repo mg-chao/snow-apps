@@ -35,6 +35,8 @@ QString signatureError() {
                                         "Snow Shot needs a valid code signature to use launch at "
                                         "login. Reinstall the signed app"));
 }
+// Runs on the login item query worker thread. SMAppService.status is a synchronous XPC
+// round trip to the smd daemon, so it must never run on the GUI thread.
 LoginItemSnapshot query() {
     @autoreleasepool {
         NSBundle* bundle = NSBundle.mainBundle;
@@ -58,7 +60,7 @@ LoginItemSnapshot query() {
                                                   "or ~/Applications to use launch at login")))};
         }
         // Registration enforces signing. Routine status refreshes must not revalidate
-        // the entire bundle on the GUI thread whenever a settings page is shown.
+        // the entire bundle whenever a settings page is shown.
         switch (SMAppService.mainAppService.status) {
         case SMAppServiceStatusNotRegistered:
             return {LoginItemStatus::Unregistered, {}};

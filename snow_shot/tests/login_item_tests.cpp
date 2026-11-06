@@ -1,9 +1,14 @@
 #include "snow_shot/platform/macos/loginitemservice.h"
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QThread>
+#include <chrono>
 #include <cstdlib>
+#include <future>
 #include <iostream>
+#include <thread>
 
 using namespace snow_shot::platform::macos;
 namespace {
@@ -12,6 +17,18 @@ void require(bool ok, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+template <typename Predicate> void waitUntil(Predicate ready, const char* message) {
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!ready() && deadline.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(ready(), message);
+}
+void waitForRefresh(const LoginItemService& service) {
+    waitUntil([&] { return !service.refreshing(); }, "routine status refresh completes");
 }
 struct Fixture {
     QTemporaryDir directory;
@@ -25,6 +42,12 @@ struct Fixture {
     int changes = 0;
     int opened = 0;
     LoginItemService service{operations()};
+    Fixture() {
+        settle();
+    }
+    void settle() {
+        waitForRefresh(service);
+    }
     bool initialized() {
         QSettings settings(directory.filePath(QStringLiteral("state.ini")), QSettings::IniFormat);
         return settings.value(QStringLiteral("initialized"), false).toBool();
@@ -79,19 +102,24 @@ void refreshNotifications() {
     const int beforeRefresh = f.queries;
     f.service.refresh();
     f.service.refresh();
+    f.settle();
     require(f.queries == beforeRefresh + 2, "refresh must still observe current native state");
     require(notifications == 0, "unchanged refresh must not notify settings consumers");
     f.native.status = LoginItemStatus::Unavailable;
     f.service.refresh();
+    f.settle();
     require(notifications == 1 && !f.service.available(), "status change must notify consumers");
     f.native.error = QStringLiteral("install app");
     f.service.refresh();
+    f.settle();
     require(notifications == 2 && f.service.hint() == f.native.error,
             "hint change must notify even when status is unchanged");
     f.service.refresh();
+    f.settle();
     require(notifications == 2, "unchanged status and hint must not notify twice");
     f.native = {LoginItemStatus::Unregistered, {}};
     f.service.refresh();
+    f.settle();
     require(notifications == 3 && f.service.hint().isEmpty(), "cleared hint must notify consumers");
     notifications = 0;
     require(f.service.setEnabled(true).success, "registration succeeds");
@@ -105,6 +133,30 @@ void refreshNotifications() {
                 f.service.snapshot().requested(),
             "failed mutation must notify busy and idle even with an unchanged snapshot");
 }
+void asynchronousRefresh() {
+    std::promise<void> started;
+    std::promise<void> release;
+    QThread* queryThread = nullptr;
+    LoginItemOperations operations{[&] {
+                                       queryThread = QThread::currentThread();
+                                       started.set_value();
+                                       release.get_future().wait();
+                                       return LoginItemSnapshot{LoginItemStatus::Unregistered, {}};
+                                   },
+                                   [](bool) { return LoginItemResult{}; },
+                                   [] { return true; },
+                                   [] { return true; },
+                                   [](bool) { return true; },
+                                   [] {}};
+    LoginItemService service(operations);
+    started.get_future().wait();
+    require(service.refreshing(), "routine refresh is asynchronous");
+    require(queryThread != service.thread(), "native status read runs off the service thread");
+    release.set_value();
+    waitForRefresh(service);
+    require(service.available() && service.snapshot().status == LoginItemStatus::Unregistered,
+            "asynchronous status refresh updates the snapshot");
+}
 void registration() {
     Fixture f;
     require(f.service.initialize(true).success && f.changes == 1 && f.preference,
@@ -113,6 +165,7 @@ void registration() {
     require(f.service.initialize(true).success && f.changes == 1, "initialize is idempotent");
     f.native.status = LoginItemStatus::ApprovalRequired;
     f.service.refresh();
+    f.settle();
     require(f.service.snapshot().requested() && !f.service.hint().isEmpty(),
             "revoked approval needs guidance");
     require(f.service.initialize(true).success && f.changes == 1,
@@ -204,6 +257,7 @@ void launchAndPaths() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     refreshNotifications();
+    asynchronousRefresh();
     registration();
     failuresAndEligibility();
     launchAndPaths();
