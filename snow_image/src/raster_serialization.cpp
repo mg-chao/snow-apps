@@ -66,7 +66,8 @@ bool hardware_crc32c_available() {
 #if defined(__clang__)
 __attribute__((target("sse4.2")))
 #endif
-std::uint32_t hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
+std::uint32_t
+hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
     std::size_t offset = 0;
     std::uint64_t crc = state;
     while (bytes.size() - offset >= sizeof(std::uint64_t)) {
@@ -106,7 +107,8 @@ __attribute__((target("crc")))
 #elif defined(__GNUC__)
 __attribute__((target("arch=armv8-a+crc")))
 #endif
-std::uint32_t hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
+std::uint32_t
+hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
     std::size_t offset = 0;
     while (bytes.size() - offset >= sizeof(std::uint64_t)) {
         std::uint64_t block = 0;
@@ -457,7 +459,7 @@ bool read_descriptor(BinaryReader* reader, const RasterStoreLimits& limits,
     std::uint8_t format = 0;
     std::uint8_t kind = 0;
     std::uint64_t frame_count = 0;
-    if (!reader->integer(&format) || format > static_cast<std::uint8_t>(Format::webp) ||
+    if (!reader->integer(&format) || format > static_cast<std::uint8_t>(Format::tiff) ||
         !reader->integer(&kind) || kind > static_cast<std::uint8_t>(DocumentKind::deep) ||
         !reader->integer(&descriptor->canvas_width) ||
         !reader->integer(&descriptor->canvas_height) || !reader->integer(&descriptor->loop_count) ||

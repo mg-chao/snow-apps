@@ -1537,7 +1537,8 @@ void ScreenshotExportArtifact::requestPreparedFile(ScreenshotImageRowSource rows
         : ScreenshotImageFileService::supportsQuality(format) ? options.quality
                                                               : 100;
     const int effort =
-        format == ScreenshotImageFileFormat::Png                        ? options.compression_level
+        (format == ScreenshotImageFileFormat::Png || format == ScreenshotImageFileFormat::Tiff)
+            ? options.compression_level
         : format == ScreenshotImageFileFormat::Webp && options.lossless ? options.lossless_effort
         : ScreenshotImageFileService::supportsCompressionLevel(format)  ? options.effort
                                                                         : 0;
@@ -1662,6 +1663,30 @@ void ScreenshotExportArtifact::requestPreparedFile(ScreenshotImageRowSource rows
                     screenshot_pdf::prepare(rows, qBound(0, encoding.quality, 100), &error);
                 if (prepared->pdf)
                     prepared->byteCount = QFileInfo(prepared->pdf->path()).size();
+            } else if (format == ScreenshotImageFileFormat::Tiff) {
+                // TIFF backpatches its directory offsets. Retain a seekable spool; the final
+                // atomic copy hashes only the finalized bytes and keeps memory bounded.
+                prepared->directory = std::make_shared<QTemporaryDir>(
+                    QDir::temp().filePath(QStringLiteral("snow-shot-export-XXXXXX")));
+                if (!prepared->directory->isValid()) {
+                    error = prepared->directory->errorString();
+                } else {
+                    prepared->path = prepared->directory->filePath(QStringLiteral("encoded.tiff"));
+                    QFile output(prepared->path);
+                    if (!output.open(QIODevice::WriteOnly)) {
+                        error = output.errorString();
+                    } else if (!snow_shot::image_codec::encodeToDevice(
+                                   rows, &output,
+                                   ScreenshotImageFileService::snowImageFormat(format),
+                                   ScreenshotImageFileService::encodeOptions(format, encoding),
+                                   &error) ||
+                               !output.flush()) {
+                        if (error.isEmpty())
+                            error = output.errorString();
+                    } else {
+                        prepared->byteCount = output.size();
+                    }
+                }
             } else {
                 FileSource::Output output(*prepared, memoryLimit);
                 if (!snow_shot::image_codec::encodeToDevice(

@@ -68,6 +68,13 @@ Animated pinned images use giflib (MIT) for GIF decoding, libwebp (BSD-3-Clause)
 for WebP decoding, and libpng (Libpng) with zlib-ng (Zlib) for PNG/APNG frames.
 Their resolved copyright notices are included in the generated vcpkg license bundle.
 
+TIFF image imports and lossless exports use LibTIFF (libtiff license), with
+libjpeg-turbo (IJG, BSD-3-Clause, and Zlib) for JPEG-compressed TIFF imports and
+zlib-ng (Zlib) for Deflate compression. Their resolved copyright notices are
+included in the generated vcpkg license bundle.
+Little CMS (MIT) creates the embedded sRGB color profile for TIFF exports; its
+resolved notice is included in the same bundle.
+
 The OCR worker uses the Apache-2.0 `simd-paddle-ocr-rs` Git submodule for
 CPU inference and optional Vulkan/Metal acceleration. It includes adaptations of Sdcb.SimdPaddleOCR (Apache-2.0),
 .NET runtime reading-order sorting (MIT), and AMD win-libm exponential

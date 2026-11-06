@@ -301,7 +301,9 @@ and the local response frame to 64 MiB. `source_revision` identifies the immutab
 snapshot when a user edits while export is running.
 
 Save requires an absolute `path` or explicit `automatic_path: true`. Formats are
-`png` (default), `jpeg`, `webp`, `avif`, `jxl`, `bmp`, and `pdf`, subject to the platform codecs.
+`png` (default), `jpeg`, `webp`, `avif`, `jxl`, `bmp`, `tiff`, and `pdf`, subject to the platform codecs.
+TIFF exports are lossless single-page images; TIFF inputs use their first page. Both `.tif`
+and `.tiff` input extensions are accepted; the MCP format key is `tiff`.
 `quality` is 1–100; `compression_level` is `low|medium|high`. PDF accepts
 `pdf_page_size: image_size|a4_portrait|a4_landscape` and a `pdf_title` up to 1024 characters.
 Canonical parent validation rejects relative, URL, UNC/device,

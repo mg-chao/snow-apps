@@ -1448,7 +1448,7 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsSwitchDefinition>(copyImageFile->payload).binding ==
                 settings::SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
-                7 &&
+                8 &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
                     .options.at(2)
                     .value == QStringLiteral("bmp") &&
@@ -1457,6 +1457,15 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
+
+    const auto& outputFormats =
+        std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options;
+    const auto tiffFormat =
+        std::find_if(outputFormats.cbegin(), outputFormats.cend(),
+                     [](const auto& option) { return option.value == QStringLiteral("tiff"); });
+    require(tiffFormat != outputFormats.cend() &&
+                tiffFormat->label.translated() == QStringLiteral("TIFF"),
+            "automatic image output must offer the canonical TIFF format");
 
     const auto& autoSaveActions =
         std::get<settings::SettingsMultiSelectDefinition>(autoSaveAfterExecution->payload);

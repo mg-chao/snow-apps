@@ -32,6 +32,8 @@ snow::image::Format ScreenshotImageFileService::snowImageFormat(ScreenshotImageF
         return snow::image::Format::jxl;
     case ScreenshotImageFileFormat::Avif:
         return snow::image::Format::avif;
+    case ScreenshotImageFileFormat::Tiff:
+        return snow::image::Format::tiff;
     }
     return snow::image::Format::unknown;
 }
@@ -91,6 +93,9 @@ ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat format,
     options.quality = qBound(0, encoding.quality, 100);
     const auto encoder = snow_shot::image_codec::encoderInfo(options.format);
     switch (format) {
+    case ScreenshotImageFileFormat::Tiff:
+        options.lossless = true;
+        [[fallthrough]];
     case ScreenshotImageFileFormat::Png:
         if (encoder.has_value())
             options.compression_level =

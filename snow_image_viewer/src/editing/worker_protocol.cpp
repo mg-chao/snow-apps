@@ -381,7 +381,7 @@ bool receiptFromJson(const QJsonValue& value, snow::image::EncodedArtifactReceip
     const int count = object.value(QStringLiteral("emittedFrameCount")).toInt(-1);
     const int sampling = object.value(QStringLiteral("resolvedJpegChromaSubsampling")).toInt(-2);
     if (format < static_cast<int>(snow::image::Format::unknown) ||
-        format > static_cast<int>(snow::image::Format::webp) ||
+        format > static_cast<int>(snow::image::Format::tiff) ||
         kind < static_cast<int>(snow::image::DocumentKind::raster) ||
         kind > static_cast<int>(snow::image::DocumentKind::deep) || width < 0 || height < 0 ||
         count < 0 || !object.value(QStringLiteral("encoderFinalizedAndSinkFlushed")).toBool() ||
@@ -450,7 +450,7 @@ bool settingsFromJson(const QJsonValue& value, EditExportSettings* settings, QSt
     if (resampling < static_cast<int>(snow::image::ResamplingMethod::nearest) ||
         resampling > static_cast<int>(snow::image::ResamplingMethod::lanczos3) ||
         format < static_cast<int>(snow::image::Format::unknown) ||
-        format > static_cast<int>(snow::image::Format::webp)) {
+        format > static_cast<int>(snow::image::Format::tiff)) {
         setError(error, QStringLiteral("The worker job enum value is invalid."));
         return false;
     }

@@ -38,6 +38,8 @@ uint32_t bridgeFormat(ScreenshotImageFileFormat format) {
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_JXL;
     case ScreenshotImageFileFormat::Avif:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_AVIF;
+    case ScreenshotImageFileFormat::Tiff:
+        return SNOW_SHOT_IMAGE_CODEC_FORMAT_TIFF;
     }
     return SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN;
 }

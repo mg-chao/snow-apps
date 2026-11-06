@@ -4436,6 +4436,10 @@
             <translation>System tray icon, actions and menu</translation>
         </message>
         <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
+        </message>
+        <message>
             <source>Table recognition</source>
             <translation>Table recognition</translation>
         </message>

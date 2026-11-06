@@ -347,6 +347,7 @@ endif()
     $ns.AddNamespace('com', 'http://schemas.microsoft.com/appx/manifest/com/windows10')
     $types = @($manifest.SelectNodes('//uap:FileType', $ns) | ForEach-Object InnerText)
     Require (($types -join ',') -ceq ((Get-SnowMsixFileExtensions) -join ',')) 'File associations must follow supportedPinFileExtensions.'
+    Require ($types -ccontains '.tif' -and $types -ccontains '.tiff') 'Both TIFF suffixes must be registered for file activation.'
     $association = $manifest.SelectSingleNode('//uap3:FileTypeAssociation', $ns)
     Require ($association.Parameters -ceq '--edit-with-snow-shot "%1"' -and
         $association.MultiSelectModel -ceq 'Document') 'Open with and default file activation must retain typed file arguments.'

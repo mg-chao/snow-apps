@@ -807,7 +807,82 @@ void selectionTransitionAnimationMigratesAndPersists() {
             "unsupported stored animation values must recover to Soft");
 }
 
+void saveFormatSchemaSupportsTiff() {
+    const QStringList formats{
+        QStringLiteral("png"),  QStringLiteral("jpeg"), QStringLiteral("bmp"),
+        QStringLiteral("webp"), QStringLiteral("jxl"),  QStringLiteral("avif"),
+        QStringLiteral("tiff"), QStringLiteral("pdf"),
+    };
+    for (const QString& key : {QStringLiteral("screenshot/image_format"),
+                               QStringLiteral("screenshot/last_manual_save_format")}) {
+        const auto* entry = storage::ConfigurationSchema::entry(key);
+        require(entry && entry->allowedStringValues == formats &&
+                    entry->defaultValue == QStringLiteral("png"),
+                "save formats must add TIFF while preserving existing formats and PNG defaults");
+        for (const QString& format : formats) {
+            const auto normalized = storage::ConfigurationSchema::normalize(key, format);
+            require(normalized.valid && !normalized.changed && normalized.value == format,
+                    "canonical save formats must survive configuration normalization");
+        }
+        require(!storage::ConfigurationSchema::normalize(key, QStringLiteral("unsupported")).valid,
+                "save format settings must reject unsupported values");
+    }
+    const auto repairedManualOptions = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/manual_save_format_options"),
+        QJsonObject{
+            {QStringLiteral("png"),
+             QJsonObject{{QStringLiteral("quality"), 41},
+                         {QStringLiteral("compression_level"), QStringLiteral("medium")},
+                         {QStringLiteral("unknown"), true}}},
+            {QStringLiteral("jpeg"),
+             QJsonObject{{QStringLiteral("quality"), -4},
+                         {QStringLiteral("compression_level"), QStringLiteral("high")}}},
+            {QStringLiteral("webp"),
+             QJsonObject{{QStringLiteral("quality"), 140},
+                         {QStringLiteral("compression_level"), QStringLiteral("invalid")}}},
+            {QStringLiteral("jxl"), QStringLiteral("malformed")},
+            {QStringLiteral("avif"),
+             QJsonObject{{QStringLiteral("quality"), 55.5},
+                         {QStringLiteral("compression_level"), QStringLiteral("high")}}},
+            {QStringLiteral("tiff"),
+             QJsonObject{{QStringLiteral("quality"), 41},
+                         {QStringLiteral("compression_level"), QStringLiteral("low")}}},
+            {QStringLiteral("pdf"), QJsonObject{{QStringLiteral("quality"), 0}}},
+            {QStringLiteral("unsupported"), QJsonObject{{QStringLiteral("quality"), 75}}},
+        });
+    const QJsonObject expectedManualOptions{
+        {QStringLiteral("png"),
+         QJsonObject{{QStringLiteral("compression_level"), QStringLiteral("medium")}}},
+        {QStringLiteral("jpeg"), QJsonObject{{QStringLiteral("quality"), 0}}},
+        {QStringLiteral("webp"), QJsonObject{{QStringLiteral("quality"), 100}}},
+        {QStringLiteral("avif"),
+         QJsonObject{{QStringLiteral("compression_level"), QStringLiteral("high")}}},
+        {QStringLiteral("tiff"),
+         QJsonObject{{QStringLiteral("compression_level"), QStringLiteral("low")}}},
+        {QStringLiteral("pdf"), QJsonObject{{QStringLiteral("quality"), 0}}},
+    };
+    require(repairedManualOptions.valid && repairedManualOptions.changed &&
+                repairedManualOptions.value.toObject() == expectedManualOptions &&
+                !storage::ConfigurationSchema::normalize(
+                     QStringLiteral("screenshot/manual_save_format_options"), QJsonArray{})
+                     .valid,
+            "manual-save format options must clamp supported values and remove malformed fields");
+    for (const int quality : {0, 1, 99, 100}) {
+        require(storage::ConfigurationSchema::normalize(QStringLiteral("screenshot/image_quality"),
+                                                        quality)
+                    .valid,
+                "image quality boundaries must be accepted");
+    }
+    for (const int quality : {-1, 101}) {
+        require(!storage::ConfigurationSchema::normalize(QStringLiteral("screenshot/image_quality"),
+                                                         quality)
+                     .valid,
+                "out-of-range image quality must be rejected");
+    }
+}
+
 void settingsSchemaDefaultsAndValidationAreComplete() {
+    saveFormatSchemaSupportsTiff();
     const auto defaultValue = [](const char* key) {
         return storage::ConfigurationSchema::defaultValue(QString::fromLatin1(key));
     };
@@ -1145,10 +1220,6 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
          {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("quick_save"),
           QStringLiteral("pin"), QStringLiteral("ocr"), QStringLiteral("ocr_copy"),
           QStringLiteral("cancel"), QStringLiteral("none")}},
-        {QStringLiteral("screenshot/image_format"),
-         {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
-          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
-          QStringLiteral("pdf")}},
         {QStringLiteral("screenshot/compression_level"),
          {QStringLiteral("low"), QStringLiteral("medium"), QStringLiteral("high")}},
         {QStringLiteral("capture_history/compression_level"),
@@ -1193,54 +1264,6 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             !storage::ConfigurationSchema::normalize(it.key(), QStringLiteral("unsupported-value"))
                  .valid,
             "select settings must reject unsupported values");
-    }
-
-    const auto repairedManualOptions = storage::ConfigurationSchema::normalize(
-        QStringLiteral("screenshot/manual_save_format_options"),
-        QJsonObject{
-            {QStringLiteral("png"),
-             QJsonObject{{QStringLiteral("quality"), 41},
-                         {QStringLiteral("compression_level"), QStringLiteral("medium")},
-                         {QStringLiteral("unknown"), true}}},
-            {QStringLiteral("jpeg"),
-             QJsonObject{{QStringLiteral("quality"), -4},
-                         {QStringLiteral("compression_level"), QStringLiteral("high")}}},
-            {QStringLiteral("webp"),
-             QJsonObject{{QStringLiteral("quality"), 140},
-                         {QStringLiteral("compression_level"), QStringLiteral("invalid")}}},
-            {QStringLiteral("jxl"), QStringLiteral("malformed")},
-            {QStringLiteral("avif"),
-             QJsonObject{{QStringLiteral("quality"), 55.5},
-                         {QStringLiteral("compression_level"), QStringLiteral("high")}}},
-            {QStringLiteral("pdf"), QJsonObject{{QStringLiteral("quality"), 0}}},
-            {QStringLiteral("unsupported"), QJsonObject{{QStringLiteral("quality"), 75}}},
-        });
-    const QJsonObject expectedManualOptions{
-        {QStringLiteral("png"),
-         QJsonObject{{QStringLiteral("compression_level"), QStringLiteral("medium")}}},
-        {QStringLiteral("jpeg"), QJsonObject{{QStringLiteral("quality"), 0}}},
-        {QStringLiteral("webp"), QJsonObject{{QStringLiteral("quality"), 100}}},
-        {QStringLiteral("avif"),
-         QJsonObject{{QStringLiteral("compression_level"), QStringLiteral("high")}}},
-        {QStringLiteral("pdf"), QJsonObject{{QStringLiteral("quality"), 0}}},
-    };
-    require(repairedManualOptions.valid && repairedManualOptions.changed &&
-                repairedManualOptions.value.toObject() == expectedManualOptions &&
-                !storage::ConfigurationSchema::normalize(
-                     QStringLiteral("screenshot/manual_save_format_options"), QJsonArray{})
-                     .valid,
-            "manual-save format options must clamp supported values and remove malformed fields");
-    for (const int quality : {0, 1, 99, 100}) {
-        require(storage::ConfigurationSchema::normalize(QStringLiteral("screenshot/image_quality"),
-                                                        quality)
-                    .valid,
-                "image quality boundaries must be accepted");
-    }
-    for (const int quality : {-1, 101}) {
-        require(!storage::ConfigurationSchema::normalize(QStringLiteral("screenshot/image_quality"),
-                                                         quality)
-                     .valid,
-                "out-of-range image quality must be rejected");
     }
 }
 
@@ -2910,7 +2933,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 36 &&
+        screenshotDefaults.size() == 37 &&
             portable(screenshotDefaults.value(QStringLiteral("duplicate_latest_region"))) ==
                 QStringList{QStringLiteral("R")} &&
             portable(screenshotShortcuts.moveTool()) ==
@@ -2948,6 +2971,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             portable(screenshotShortcuts.toggleGuides()) == QStringList{QStringLiteral("Alt")} &&
             portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
+            portable(screenshotDefaults.value(QStringLiteral("pin_window_to_screen"))) ==
+                QStringList{QStringLiteral("Alt+W")} &&
             portable(screenshotDefaults.value(QStringLiteral("quick_save"))) ==
                 QStringList{QStringLiteral("Ctrl+Shift+S")} &&
             portable(screenshotDefaults.value(QStringLiteral("save_as_file"))) ==
@@ -3035,12 +3060,14 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
 
     const shortcuts::ShortcutBindingMap defaults = drawingShortcuts.allShortcuts();
     require(
-        defaults.size() == 17 && defaults.contains(QStringLiteral("line")) &&
+        defaults.size() == 18 && defaults.contains(QStringLiteral("line")) &&
             defaults.value(QStringLiteral("line")).isEmpty() &&
             defaults.contains(QStringLiteral("spotlight")) &&
             defaults.value(QStringLiteral("spotlight")).isEmpty() &&
             defaults.contains(QStringLiteral("magnifier")) &&
             defaults.value(QStringLiteral("magnifier")).isEmpty() &&
+            defaults.contains(QStringLiteral("bracket")) &&
+            defaults.value(QStringLiteral("bracket")).isEmpty() &&
             defaults.contains(QStringLiteral("speech_bubble")) &&
             defaults.value(QStringLiteral("speech_bubble")).isEmpty() &&
             portable(defaults.value(QStringLiteral("select"))) ==
@@ -3053,7 +3080,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("Ctrl+Shift+Z")} &&
             drawingShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !drawingShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "drawing shortcut adapter must expose sixteen tools and the canvas reset default");
+        "drawing shortcut adapter must expose seventeen tools and the canvas reset default");
 
     require(drawingShortcuts.setSelect({QStringLiteral("Ctrl+Shift+V")}) &&
                 portable(drawingShortcuts.select()) == QStringList{QStringLiteral("Ctrl+Shift+V")},
@@ -4270,6 +4297,10 @@ int main(int argc, char** argv) {
     }
 #endif
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--save-formats-only"))) {
+        saveFormatSchemaSupportsTiff();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--smart-selection-only"))) {
         QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
         QCoreApplication::setApplicationName(QStringLiteral("smart-selection-storage-tests"));

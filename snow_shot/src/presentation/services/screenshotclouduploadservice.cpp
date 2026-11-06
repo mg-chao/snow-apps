@@ -67,6 +67,8 @@ QByteArray contentType(ScreenshotImageFileFormat format) {
         return "image/bmp";
     case ScreenshotImageFileFormat::Pdf:
         return "application/pdf";
+    case ScreenshotImageFileFormat::Tiff:
+        return "image/tiff";
     }
     return "application/octet-stream";
 }

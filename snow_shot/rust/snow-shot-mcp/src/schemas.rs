@@ -139,6 +139,7 @@ enum Format {
     Avif,
     Jxl,
     Bmp,
+    Tiff,
     Pdf,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -1118,6 +1119,45 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn tiff_exports_use_the_canonical_format_and_existing_compression_levels() {
+        for compression in ["low", "medium", "high"] {
+            for (name, mut input) in [
+                (
+                    "snow_shot_screenshot_save",
+                    json!({"session_id":"s","expected_revision":1}),
+                ),
+                (
+                    "snow_shot_screenshot_finish",
+                    json!({"session_id":"s","expected_revision":1,"output":"save"}),
+                ),
+                (
+                    "snow_shot_screenshot_direct_capture",
+                    json!({"target":"current_monitor","output":"save"}),
+                ),
+                (
+                    "snow_shot_document_save",
+                    json!({"document_id":"d","expected_revision":1}),
+                ),
+            ] {
+                input["path"] = json!("C:/output.tiff");
+                input["format"] = json!("tiff");
+                input["compression_level"] = json!(compression);
+                assert!(schema(name, Some(input.clone())).is_ok(), "{name}");
+                input["format"] = json!("tif");
+                assert!(schema(name, Some(input)).is_err(), "{name}");
+                let output_schema = Value::Object(schema(name, None).unwrap());
+                assert!(
+                    output_schema["$defs"]["Format"]["enum"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("tiff")),
+                    "{name} advertises TIFF"
+                );
+            }
+        }
+    }
 
     #[test]
     #[cfg(not(feature = "mini"))]

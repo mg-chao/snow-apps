@@ -172,7 +172,7 @@ if(NOT DEFINED SNOW_IMAGE_PROFILE OR SNOW_IMAGE_PROFILE STREQUAL "")
         "Snow Image codec profile used by the workspace." FORCE)
 endif()
 set(_snow_workspace_all_image_codecs
-    PNG JPEG GIF ICON XBITMAP SVG HEIF JXL EXR WEBP
+    PNG JPEG GIF ICON XBITMAP SVG HEIF JXL EXR WEBP TIFF
 )
 if(SNOW_IMAGE_PROFILE STREQUAL "full")
     set(_snow_workspace_image_codecs
@@ -181,7 +181,7 @@ if(SNOW_IMAGE_PROFILE STREQUAL "full")
 elseif(SNOW_APPS_BUILD_SNOW_SHOT)
     # Keep Snow Shot's raster export codecs and animated pin decoders in the
     # minimal workspace configuration as well as the full profile.
-    set(_snow_workspace_image_codecs PNG JPEG GIF HEIF JXL WEBP)
+    set(_snow_workspace_image_codecs PNG JPEG GIF HEIF JXL WEBP TIFF)
 else()
     set(_snow_workspace_image_codecs)
 endif()

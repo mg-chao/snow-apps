@@ -32,6 +32,9 @@
 #if defined(SNOW_IMAGE_HAS_WEBP)
 #include "codecs/webp_codec.h"
 #endif
+#if defined(SNOW_IMAGE_HAS_TIFF)
+#include "codecs/tiff_codec.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -57,6 +60,12 @@ EncoderInfo describe_encoder(Format format) {
         info.features = EncoderFeature::quality | EncoderFeature::progressive |
                         EncoderFeature::chroma_subsampling;
         info.quality = {1, 100, 75};
+        info.cancellation = CodecCancellation::cooperative;
+        break;
+    case Format::tiff:
+        info.features = EncoderFeature::alpha | EncoderFeature::compression_level |
+                        EncoderFeature::pixel_exact | EncoderFeature::metadata;
+        info.compression_level = {0, 9, 6};
         info.cancellation = CodecCancellation::cooperative;
         break;
     case Format::webp:
@@ -150,6 +159,8 @@ bool first_frame_only(Format format) noexcept {
     case Format::ppm:
     case Format::xbm:
     case Format::xpm:
+        return true;
+    case Format::tiff:
         return true;
     default:
         return false;
@@ -509,7 +520,7 @@ Result<EncodeResult> Codec::encode(const Document& document, const Output& outpu
         std::all_of(document.frames.begin(), document.frames.end(),
                     [](const Frame& frame) { return frame.image.format() == kRgba8; });
     PixelRoundTrip round_trip = PixelRoundTrip::codec_artifact;
-    if (format() == Format::png || canonical_webp ||
+    if (format() == Format::png || format() == Format::tiff || canonical_webp ||
         (format() == Format::jxl && options.lossless)) {
         round_trip = PixelRoundTrip::exact;
     }
@@ -552,10 +563,11 @@ Result<EncodeResult> Codec::encode(const RasterSource& source, const Output& out
                         return frame.layout.planes.size() == 1 &&
                                frame.layout.planes.front().format == kRgba8;
                     });
-    const PixelRoundTrip round_trip =
-        format() == Format::png || canonical_webp || (format() == Format::jxl && options.lossless)
-            ? PixelRoundTrip::exact
-            : PixelRoundTrip::codec_artifact;
+    const PixelRoundTrip round_trip = format() == Format::png || format() == Format::tiff ||
+                                              canonical_webp ||
+                                              (format() == Format::jxl && options.lossless)
+                                          ? PixelRoundTrip::exact
+                                          : PixelRoundTrip::codec_artifact;
     EncodedArtifactReceipt receipt = std::move(encoded).value();
     Result<void> receipt_status = validate_receipt_shape(receipt, format());
     if (!receipt_status)
@@ -663,6 +675,9 @@ CodecRegistry::CodecRegistry() {
 #endif
 #if defined(SNOW_IMAGE_HAS_WEBP)
     codecs_.push_back(std::make_shared<WebpCodec>());
+#endif
+#if defined(SNOW_IMAGE_HAS_TIFF)
+    codecs_.push_back(std::make_shared<TiffCodec>());
 #endif
     codecs_.push_back(std::make_shared<PnmCodec>(Format::pbm));
     codecs_.push_back(std::make_shared<PnmCodec>(Format::pgm));

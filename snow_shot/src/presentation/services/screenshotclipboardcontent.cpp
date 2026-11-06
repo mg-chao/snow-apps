@@ -203,10 +203,11 @@ struct EncodedImageFormat {
 };
 
 constexpr EncodedImageFormat kEncodedImageFormats[] = {
-    {"image/png", snow::image::Format::png},  {"image/jpeg", snow::image::Format::jpeg},
-    {"image/jpg", snow::image::Format::jpeg}, {"image/webp", snow::image::Format::webp},
-    {"image/jxl", snow::image::Format::jxl},  {"image/avif", snow::image::Format::avif},
-    {"image/gif", snow::image::Format::gif},  {"image/apng", snow::image::Format::png},
+    {"image/png", snow::image::Format::png},   {"image/jpeg", snow::image::Format::jpeg},
+    {"image/jpg", snow::image::Format::jpeg},  {"image/webp", snow::image::Format::webp},
+    {"image/jxl", snow::image::Format::jxl},   {"image/avif", snow::image::Format::avif},
+    {"image/gif", snow::image::Format::gif},   {"image/apng", snow::image::Format::png},
+    {"image/tiff", snow::image::Format::tiff},
 };
 
 using snow_shot::image::ImageFileFormat;

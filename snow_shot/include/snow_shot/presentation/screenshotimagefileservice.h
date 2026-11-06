@@ -28,6 +28,7 @@ enum class ScreenshotImageFileFormat {
     Avif,
     Bmp,
     Pdf,
+    Tiff,
 };
 
 enum class ScreenshotCompressionLevel {

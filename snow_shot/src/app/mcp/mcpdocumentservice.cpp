@@ -2128,7 +2128,7 @@ struct McpDocumentService::Impl {
             const QStringList formats{QStringLiteral("png"),  QStringLiteral("jpeg"),
                                       QStringLiteral("webp"), QStringLiteral("jxl"),
                                       QStringLiteral("bmp"),  QStringLiteral("avif"),
-                                      QStringLiteral("pdf")};
+                                      QStringLiteral("tiff"), QStringLiteral("pdf")};
             QString path;
             ScreenshotImageEncodingOptions encoding;
             ScreenshotPdfOptions pdf;

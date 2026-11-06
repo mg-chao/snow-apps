@@ -29,6 +29,7 @@ enum class Format : std::uint8_t {
     jxl,
     exr,
     webp,
+    tiff,
 };
 
 enum class EncoderFeature : std::uint32_t {
