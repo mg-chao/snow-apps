@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/imageeditingcanvas.h"
 #include "snow_shot/presentation/imageeditingwindow.h"
 #include "snow_shot/presentation/screenshotimageconversioncontroller.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
+#include "snowimageqtcodec.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
@@ -10,6 +12,7 @@
 #include "widgets/input_line_edit.h"
 #include "widgets/modal.h"
 #include "widgets/result.h"
+#include "widgets/select.h"
 #include "../src/presentation/imageediting/imageeditingexportcontroller.h"
 #include "spreadsheet_open_test_support.h"
 #include "recognition_workbook_test_support.h"
@@ -80,10 +83,16 @@ QFileDialog* systemDialog(ImageEditingWindow& window) {
         QStringLiteral("screenshotManualSaveDialog"));
 }
 
-void saveWorkflow(bool custom, const QTemporaryDir& directory, bool showResult = false) {
+void saveWorkflow(bool custom, const QTemporaryDir& directory, bool showResult = false,
+                  ScreenshotImageFileFormat format = ScreenshotImageFileFormat::Png) {
     using Axis = ImageEditingDocument::CropAxis;
+    require(snow_shot::storage::ScreenshotSettings().setLastManualSaveFormat(QStringLiteral("png")),
+            "each editor save starts from the PNG default");
     ImageEditingWindow window;
-    window.present(source());
+    auto initial = source();
+    if (format == ScreenshotImageFileFormat::Tiff)
+        initial.image.setPixelColor(0, 0, QColor(71, 93, 118, 59));
+    window.present(initial);
     require(window.document()->crop(Axis::Rows, 2, 4), "save fixture has unsaved image changes");
     int exports = 0;
     bool succeeded = false;
@@ -119,12 +128,17 @@ void saveWorkflow(bool custom, const QTemporaryDir& directory, bool showResult =
     const QString filename =
         showResult ? QStringLiteral("editor-result")
                    : (custom ? QStringLiteral("editor-custom") : QStringLiteral("editor-system"));
-    const auto destination = directory.filePath(filename + QStringLiteral(".png"));
+    const QString suffix = format == ScreenshotImageFileFormat::Tiff && !custom
+                               ? QStringLiteral("tif")
+                               : ScreenshotImageFileService::extension(format);
+    const auto destination = directory.filePath(filename + u'.' + suffix);
     window.palette()->saveRequested();
     if (custom) {
         auto* dialog = customDialog(window);
         require(dialog && dialog->isOpen(), "custom save can retry after cancellation");
         auto* content = dialog->contentWidget();
+        content->findChild<adqt::widgets::AdSelect*>(QStringLiteral("saveFormatSelect"))
+            ->setCurrentValue(ScreenshotImageFileService::formatKey(format));
         content->findChild<AdLineEdit*>(QStringLiteral("saveDirectoryInput"))
             ->setText(directory.path());
         content->findChild<AdLineEdit*>(QStringLiteral("saveFilenameInput"))->setText(filename);
@@ -133,7 +147,10 @@ void saveWorkflow(bool custom, const QTemporaryDir& directory, bool showResult =
         dialog->acceptButton()->click();
     } else {
         auto* dialog = systemDialog(window);
-        require(dialog, "system save can retry after cancellation");
+        require(dialog && dialog->nameFilters().contains(
+                              ScreenshotImageFileService::dialogFilter(format)),
+                "system save can retry and exposes the selected image format");
+        dialog->selectNameFilter(ScreenshotImageFileService::dialogFilter(format));
         dialog->selectFile(destination);
         require(QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection),
                 "system save accepts the chosen destination");
@@ -152,7 +169,9 @@ void saveWorkflow(bool custom, const QTemporaryDir& directory, bool showResult =
     }
     awaitCondition([&] { return exports == 2; }, "image file save completes once");
     require(succeeded && QFileInfo::exists(destination), "selected save dialog writes an image");
-    const auto saved = QImage(destination).convertToFormat(QImage::Format_ARGB32);
+    const auto saved = snow_shot::image_codec::decodeFile(
+                           destination, ScreenshotImageFileService::snowImageFormat(format))
+                           .convertToFormat(QImage::Format_ARGB32);
     require(saved.size() == expected.size(), "saved image has the captured crop dimensions");
     for (int y = 0; y < expected.height(); ++y)
         for (int x = 0; x < expected.width(); ++x)
@@ -784,6 +803,7 @@ void runImageEditingSaveTests() {
                                                     : QStringLiteral("system")),
                 "select image save dialog");
         saveWorkflow(custom, directory);
+        saveWorkflow(custom, directory, false, ScreenshotImageFileFormat::Tiff);
         shutdownCancelsSave(custom);
     }
     require(settings.setSaveAsFileDialog(QStringLiteral("snow_shot")) &&

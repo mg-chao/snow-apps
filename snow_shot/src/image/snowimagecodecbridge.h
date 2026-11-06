@@ -46,6 +46,7 @@ enum SnowShotImageCodecFormat {
     SNOW_SHOT_IMAGE_CODEC_FORMAT_JXL = 16,
     SNOW_SHOT_IMAGE_CODEC_FORMAT_EXR = 17,
     SNOW_SHOT_IMAGE_CODEC_FORMAT_WEBP = 18,
+    SNOW_SHOT_IMAGE_CODEC_FORMAT_TIFF = 19,
 };
 
 enum SnowShotImageCodecChromaSubsampling {

@@ -158,6 +158,10 @@
             <translation>拖动图像以移动或交换；拖动选框控制点以围绕中心缩放。按住鼠标中键拖动以平移，滚动以缩放</translation>
         </message>
         <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
+        </message>
+        <message>
             <source>Drop images to add to collage</source>
             <translation>松开鼠标，将图片添加到图片拼接</translation>
         </message>

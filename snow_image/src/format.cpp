@@ -28,6 +28,7 @@ constexpr std::array<std::string_view, 1> kAvifExtensions{"avif"};
 constexpr std::array<std::string_view, 1> kJxlExtensions{"jxl"};
 constexpr std::array<std::string_view, 1> kExrExtensions{"exr"};
 constexpr std::array<std::string_view, 1> kWebpExtensions{"webp"};
+constexpr std::array<std::string_view, 2> kTiffExtensions{"tif", "tiff"};
 
 std::string normalized_extension(std::string_view extension) {
     const std::size_t separator = extension.find_last_of("/\\");
@@ -118,6 +119,8 @@ std::string_view format_name(Format format) noexcept {
         return "OpenEXR";
     case Format::webp:
         return "WebP";
+    case Format::tiff:
+        return "TIFF";
     case Format::unknown:
         return "Unknown";
     }
@@ -162,6 +165,8 @@ std::span<const std::string_view> format_extensions(Format format) noexcept {
         return kExrExtensions;
     case Format::webp:
         return kWebpExtensions;
+    case Format::tiff:
+        return kTiffExtensions;
     case Format::unknown:
         return {};
     }
@@ -171,10 +176,11 @@ std::span<const std::string_view> format_extensions(Format format) noexcept {
 Format format_from_extension(std::string_view extension) noexcept {
     try {
         const std::string normalized = normalized_extension(extension);
-        constexpr std::array<Format, 18> formats{
-            Format::bmp, Format::cur,  Format::gif,  Format::ico, Format::jpeg, Format::pbm,
-            Format::pgm, Format::png,  Format::ppm,  Format::svg, Format::svgz, Format::xbm,
-            Format::xpm, Format::heif, Format::avif, Format::jxl, Format::exr,  Format::webp};
+        constexpr std::array<Format, 19> formats{
+            Format::bmp,  Format::cur, Format::gif,  Format::ico,  Format::jpeg,
+            Format::pbm,  Format::pgm, Format::png,  Format::ppm,  Format::svg,
+            Format::svgz, Format::xbm, Format::xpm,  Format::heif, Format::avif,
+            Format::jxl,  Format::exr, Format::webp, Format::tiff};
         for (Format format : formats) {
             for (std::string_view candidate : format_extensions(format)) {
                 if (candidate == normalized) {

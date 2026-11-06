@@ -158,6 +158,10 @@
             <translation>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</translation>
         </message>
         <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
+        </message>
+        <message>
             <source>Drop images to add to collage</source>
             <translation>Drop images to add to collage</translation>
         </message>

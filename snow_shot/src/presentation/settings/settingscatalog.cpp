@@ -1414,6 +1414,7 @@ SettingsItemDefinition screenshotImageFormatItem() {
          {QStringLiteral("webp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WebP"))},
          {QStringLiteral("jxl"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "JPEG XL"))},
          {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))},
+         {QStringLiteral("tiff"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "TIFF"))},
          {QStringLiteral("pdf"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "PDF"))}});
 }
 

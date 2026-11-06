@@ -822,7 +822,7 @@ void encodingAndFullResolutionDisplay() {
             require(source.preview == original,
                     "original comparison pixels changed during source preparation");
             for (auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
-                                Format::Avif}) {
+                                Format::Avif, Format::Tiff}) {
                 for (int quality : {100, 72}) {
                     const ScreenshotSaveExportOptions options{
                         .size = quality == 100 ? QSize(80, 50) : QSize(96, 32),
@@ -875,7 +875,7 @@ void encodingAndFullResolutionDisplay() {
             require(large.rows.size == QSize(128, 6000) && large.preview.height() == 2048,
                     "large source must retain full dimensions and a bounded preview");
             for (auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
-                                Format::Avif}) {
+                                Format::Avif, Format::Tiff}) {
                 const auto output = pipeline::render(
                     large, {.size = QSize(48, 2304), .format = format, .quality = 72}, cancellation,
                     &error);
@@ -1961,6 +1961,17 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     require(qualityRow->isHidden() && !compressionRow->isHidden() &&
                 compression->currentValue() == QStringLiteral("medium"),
             "PNG must hide Quality and show Compression level at Medium");
+    format->setCurrentValue(QStringLiteral("tiff"));
+    require(format->currentValue() == QStringLiteral("tiff") && qualityRow->isHidden() &&
+                !compressionRow->isHidden(),
+            "TIFF must offer compression and hide quality");
+    compression->setCurrentValue(QStringLiteral("high"));
+    format->setCurrentValue(QStringLiteral("png"));
+    require(compression->currentValue() == QStringLiteral("medium"),
+            "TIFF compression must remain independent from PNG");
+    format->setCurrentValue(QStringLiteral("tiff"));
+    require(compression->currentValue() == QStringLiteral("high"),
+            "TIFF must restore its own compression setting");
     format->setCurrentValue(QStringLiteral("bmp"));
     require(format->currentValue() == QStringLiteral("bmp") && qualityRow->isHidden() &&
                 compressionRow->isHidden(),
@@ -2039,6 +2050,13 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
         "saved output must use normalized extension and requested dimensions");
     flush();
     const QJsonObject rememberedOptions = storage::ScreenshotSettings().manualSaveFormatOptions();
+    require(rememberedOptions.value(QStringLiteral("tiff"))
+                        .toObject()
+                        .value(QStringLiteral("compression_level")) == QStringLiteral("high") &&
+                !rememberedOptions.value(QStringLiteral("tiff"))
+                     .toObject()
+                     .contains(QStringLiteral("quality")),
+            "confirmed saves must persist TIFF compression without a quality option");
     require(rememberedOptions.value(QStringLiteral("png"))
                         .toObject()
                         .value(QStringLiteral("compression_level")) == QStringLiteral("medium") &&

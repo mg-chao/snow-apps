@@ -3087,7 +3087,7 @@ void documents(const QString& directory) {
     for (const auto& format :
          {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("webp"),
           QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("bmp"),
-          QStringLiteral("pdf")}) {
+          QStringLiteral("tiff"), QStringLiteral("pdf")}) {
         const auto path = QDir(directory).filePath(QStringLiteral("all-formats.") + format);
         const auto exported =
             call(QStringLiteral("snow_shot_document_save"),
@@ -3154,6 +3154,10 @@ void documents(const QString& directory) {
                         "AVIF signature");
             else if (format == QStringLiteral("bmp"))
                 require(bytes.startsWith("BM"), "BMP signature");
+            else if (format == QStringLiteral("tiff"))
+                require(bytes.startsWith(QByteArray::fromHex("49492a00")) ||
+                            bytes.startsWith(QByteArray::fromHex("4d4d002a")),
+                        "TIFF signature");
         }
     }
     for (const auto& page : {QStringLiteral("image_size"), QStringLiteral("a4_portrait")}) {
@@ -3319,6 +3323,11 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage");
     const qsizetype serveIndex = application.arguments().indexOf(QStringLiteral("--serve"));
+    if (application.arguments().contains(QStringLiteral("--save-formats-only"))) {
+        documents(temporary.path());
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-style-only"))) {
         documentSelectionStylesPreserveCanvasUnits();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

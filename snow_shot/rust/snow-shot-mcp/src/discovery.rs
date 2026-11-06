@@ -195,7 +195,7 @@ pub(super) fn complete(request: CompleteRequestParams) -> Result<CompleteResult,
             if reference.name == "background_image_workflow"
                 && request.argument.name == "output_format" =>
         {
-            ["png", "jpeg", "webp", "avif", "jxl", "bmp", "pdf"]
+            ["png", "jpeg", "webp", "avif", "jxl", "bmp", "tiff", "pdf"]
                 .into_iter()
                 .filter(|s| s.starts_with(&request.argument.value))
                 .map(str::to_owned)
@@ -212,6 +212,23 @@ pub(super) fn complete(request: CompleteRequestParams) -> Result<CompleteResult,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_output_completion_includes_tiff() {
+        for prefix in ["", "t", "tif", "tiff"] {
+            let request = serde_json::from_value(json!({
+                "ref":{"type":"ref/prompt","name":"background_image_workflow"},
+                "argument":{"name":"output_format","value":prefix}
+            }))
+            .unwrap();
+            let result = complete(request).unwrap();
+            assert!(result.completion.values.contains(&"tiff".to_owned()));
+            if !prefix.is_empty() {
+                assert_eq!(result.completion.values, ["tiff"]);
+            }
+        }
+    }
+
     #[test]
     fn resources_reject_paths_and_untrusted_uri_components() {
         for uri in [

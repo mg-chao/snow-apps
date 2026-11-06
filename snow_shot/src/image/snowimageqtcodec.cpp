@@ -180,6 +180,8 @@ uint32_t bridgeFormat(snow::image::Format format) noexcept {
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_EXR;
     case snow::image::Format::webp:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_WEBP;
+    case snow::image::Format::tiff:
+        return SNOW_SHOT_IMAGE_CODEC_FORMAT_TIFF;
     }
     return SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN;
 }

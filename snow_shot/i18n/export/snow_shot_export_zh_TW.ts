@@ -132,6 +132,10 @@
             <translation>PNG 影像 (*.png)</translation>
         </message>
         <message>
+            <source>TIFF image (*.tif *.tiff)</source>
+            <translation>TIFF 圖像 (*.tif *.tiff)</translation>
+        </message>
+        <message>
             <source>The encoded image is empty</source>
             <translation>編碼後的影像為空</translation>
         </message>
@@ -500,6 +504,10 @@
         <message>
             <source>Size unit</source>
             <translation>尺寸單位</translation>
+        </message>
+        <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
         </message>
         <message>
             <source>The clipboard could not be updated: %1</source>

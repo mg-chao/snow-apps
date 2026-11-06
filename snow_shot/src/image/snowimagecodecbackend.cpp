@@ -152,6 +152,9 @@ bool formatFromBridge(uint32_t value, snow::image::Format* output) noexcept {
     case SNOW_SHOT_IMAGE_CODEC_FORMAT_WEBP:
         *output = snow::image::Format::webp;
         return true;
+    case SNOW_SHOT_IMAGE_CODEC_FORMAT_TIFF:
+        *output = snow::image::Format::tiff;
+        return true;
     default:
         return false;
     }
@@ -203,6 +206,8 @@ uint32_t formatToBridge(snow::image::Format format) noexcept {
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_EXR;
     case snow::image::Format::webp:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_WEBP;
+    case snow::image::Format::tiff:
+        return SNOW_SHOT_IMAGE_CODEC_FORMAT_TIFF;
     case snow::image::Format::unknown:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN;
     }
@@ -296,6 +301,8 @@ const char* nameHint(snow::image::Format format) noexcept {
         return "snow-shot.jxl";
     case snow::image::Format::avif:
         return "snow-shot.avif";
+    case snow::image::Format::tiff:
+        return "snow-shot.tiff";
     default:
         return "snow-shot.image";
     }
