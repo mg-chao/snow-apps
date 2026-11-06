@@ -477,7 +477,8 @@ constexpr SchemaAllowedValues kSchemaAllowed7 = {kSchemaStrings9, std::size(kSch
 constexpr SchemaString kSchemaStrings10[] = {u"manual", u"check"};
 constexpr SchemaAllowedValues kSchemaAllowed8 = {kSchemaStrings10, std::size(kSchemaStrings10)};
 constexpr SchemaString kSchemaStrings11[] = {u"manual", u"check", u"download", u"next_launch"};
-constexpr SchemaAllowedValues kSchemaAllowed9 = {kSchemaStrings11, std::size(kSchemaStrings11)};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed9 = {kSchemaStrings11,
+                                                                  std::size(kSchemaStrings11)};
 constexpr SchemaString kSchemaStrings12[] = {u"none", u"system", u"manual"};
 constexpr SchemaAllowedValues kSchemaAllowed10 = {kSchemaStrings12, std::size(kSchemaStrings12)};
 constexpr SchemaString kSchemaStrings13[] = {u"extra_small", u"small", u"medium"};
@@ -489,14 +490,17 @@ constexpr SchemaAllowedValues kSchemaAllowed13 = {kSchemaStrings15, std::size(kS
 constexpr SchemaString kSchemaStrings16[] = {u"auto", u"ar", u"de", u"en",      u"es",     u"fr",
                                              u"hi",   u"it", u"ja", u"ko",      u"pt",     u"ru",
                                              u"th",   u"tr", u"vi", u"zh-Hans", u"zh-Hant"};
-constexpr SchemaAllowedValues kSchemaAllowed14 = {kSchemaStrings16, std::size(kSchemaStrings16)};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed14 = {kSchemaStrings16,
+                                                                   std::size(kSchemaStrings16)};
 constexpr SchemaString kSchemaStrings17[] = {u"ar", u"de", u"en",      u"es",     u"fr", u"hi",
                                              u"it", u"ja", u"ko",      u"pt",     u"ru", u"th",
                                              u"tr", u"vi", u"zh-Hans", u"zh-Hant"};
-constexpr SchemaAllowedValues kSchemaAllowed15 = {kSchemaStrings17, std::size(kSchemaStrings17)};
-constexpr ConfigurationIntegerRange kSchemaRange4{30, 100};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed15 = {kSchemaStrings17,
+                                                                   std::size(kSchemaStrings17)};
+[[maybe_unused]] constexpr ConfigurationIntegerRange kSchemaRange4{30, 100};
 constexpr SchemaString kSchemaStrings18[] = {u"smart_merge", u"original"};
-constexpr SchemaAllowedValues kSchemaAllowed16 = {kSchemaStrings18, std::size(kSchemaStrings18)};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed16 = {kSchemaStrings18,
+                                                                   std::size(kSchemaStrings18)};
 constexpr SchemaAllowedValues kSchemaAllowed17 = {nullptr, 0, SchemaAllowedProvider::OcrFormatting};
 constexpr SchemaAllowedValues kSchemaAllowed18 = {nullptr, 0,
                                                   SchemaAllowedProvider::OcrPunctuation};
@@ -508,12 +512,12 @@ constexpr SchemaString kSchemaStrings22[] = {u"F3"};
 constexpr SchemaString kSchemaStrings23[] = {u"Ctrl+F3"};
 constexpr SchemaString kSchemaStrings24[] = {u"all_windows", u"game_windows"};
 constexpr SchemaAllowedValues kSchemaAllowed20 = {kSchemaStrings24, std::size(kSchemaStrings24)};
-constexpr SchemaProperty kSchemaProperties0[] = {{u"activation_key", u"windows"},
-                                                 {u"mouse_button", u"left_drag"}};
-constexpr SchemaProperty kSchemaProperties1[] = {{u"activation_key", u"windows"},
-                                                 {u"mouse_button", u"wheel_drag"}};
-constexpr SchemaProperty kSchemaProperties2[] = {{u"activation_key", u"windows"},
-                                                 {u"mouse_button", u"right_drag"}};
+[[maybe_unused]] constexpr SchemaProperty kSchemaProperties0[] = {{u"activation_key", u"windows"},
+                                                                  {u"mouse_button", u"left_drag"}};
+[[maybe_unused]] constexpr SchemaProperty kSchemaProperties1[] = {{u"activation_key", u"windows"},
+                                                                  {u"mouse_button", u"wheel_drag"}};
+[[maybe_unused]] constexpr SchemaProperty kSchemaProperties2[] = {{u"activation_key", u"windows"},
+                                                                  {u"mouse_button", u"right_drag"}};
 constexpr ConfigurationIntegerRange kSchemaRange5{-24, 24, 1};
 constexpr SchemaString kSchemaStrings25[] = {u"4k", u"2k", u"1080p", u"720p", u"480p"};
 constexpr SchemaAllowedValues kSchemaAllowed21 = {kSchemaStrings25, std::size(kSchemaStrings25)};
@@ -585,11 +589,11 @@ constexpr SchemaString kSchemaStrings62[] = {u"Alt+R"};
 constexpr SchemaString kSchemaStrings63[] = {u"Shift+P"};
 constexpr SchemaString kSchemaStrings64[] = {u"Alt"};
 constexpr SchemaString kSchemaStrings65[] = {u"C"};
-constexpr SchemaString kSchemaStrings66[] = {u"Ctrl+X"};
-constexpr SchemaString kSchemaStrings67[] = {u"Ctrl+Q"};
+[[maybe_unused]] constexpr SchemaString kSchemaStrings66[] = {u"Ctrl+X"};
+[[maybe_unused]] constexpr SchemaString kSchemaStrings67[] = {u"Ctrl+Q"};
 constexpr SchemaString kSchemaStrings68[] = {u"Ctrl+R"};
 constexpr SchemaString kSchemaStrings69[] = {u"Ctrl+D"};
-constexpr SchemaString kSchemaStrings70[] = {u"Ctrl+T"};
+[[maybe_unused]] constexpr SchemaString kSchemaStrings70[] = {u"Ctrl+T"};
 constexpr SchemaString kSchemaStrings71[] = {u"L"};
 constexpr SchemaString kSchemaStrings72[] = {u"Ctrl+Shift+S"};
 constexpr SchemaString kSchemaStrings73[] = {u"Ctrl+P"};
@@ -624,7 +628,8 @@ constexpr SchemaAllowedValues kSchemaAllowed31 = {kSchemaStrings100, std::size(k
 constexpr SchemaString kSchemaStrings101[] = {u"pen_highlight", u"highlight", u"spotlight"};
 constexpr SchemaAllowedValues kSchemaAllowed32 = {kSchemaStrings101, std::size(kSchemaStrings101)};
 constexpr SchemaString kSchemaStrings102[] = {u"table", u"qr"};
-constexpr SchemaAllowedValues kSchemaAllowed33 = {kSchemaStrings102, std::size(kSchemaStrings102)};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed33 = {kSchemaStrings102,
+                                                                   std::size(kSchemaStrings102)};
 constexpr SchemaString kSchemaStrings103[] = {u"rectangle-filter", u"pen-filter", u"auto-filter"};
 constexpr SchemaAllowedValues kSchemaAllowed34 = {kSchemaStrings103, std::size(kSchemaStrings103)};
 constexpr SchemaString kSchemaStrings104[] = {u"eraser", u"rectangle-eraser", u"brush-eraser"};
@@ -719,7 +724,8 @@ constexpr SchemaString kSchemaStrings119[] = {u"quick.screenshot",
                                               u"tray.show-main-window",
                                               u"tray.restart-app",
                                               u"tray.exit"};
-constexpr SchemaAllowedValues kSchemaAllowed50 = {kSchemaStrings119, std::size(kSchemaStrings119)};
+[[maybe_unused]] constexpr SchemaAllowedValues kSchemaAllowed50 = {kSchemaStrings119,
+                                                                   std::size(kSchemaStrings119)};
 constexpr SchemaString kSchemaStrings120[] = {u"quick.screenshot",
                                               u"quick.screenshot-delay",
                                               u"quick.screenshot-fixed",

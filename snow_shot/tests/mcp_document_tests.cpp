@@ -47,6 +47,7 @@
 
 using namespace snow_shot::app::mcp;
 void runMcpApplicationTests();
+void runMcpLoginItemImportTests();
 void runMcpApplicationReplayTests();
 void runMcpTranslationTests();
 namespace {
@@ -3393,6 +3394,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--translation-only"))) {
         runMcpTranslationTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--login-item-import-only"))) {
+        runMcpLoginItemImportTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

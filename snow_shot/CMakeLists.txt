@@ -9580,6 +9580,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-mcp-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-mcp-application-tests
         COMMAND snow-shot-mcp-document-tests --application-only -platform offscreen)
+    if(APPLE)
+        add_test(NAME snow-shot-mcp-login-item-import-tests
+            COMMAND snow-shot-mcp-document-tests --login-item-import-only -platform offscreen)
+        set_tests_properties(snow-shot-mcp-login-item-import-tests PROPERTIES LABELS "unit;macos" TIMEOUT 30)
+    endif()
     add_test(NAME snow-shot-mcp-application-replay-tests
         COMMAND snow-shot-mcp-document-tests --application-replay-only -platform offscreen)
     add_test(NAME snow-shot-mcp-document-replay-tests
@@ -12306,8 +12311,13 @@ endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-login-item-settings-tests tests/login_item_settings_tests.cpp
-        src/presentation/services/screenshotclipboardservice.cpp)
-    target_link_libraries(snow-shot-login-item-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp)
+    target_link_libraries(snow-shot-login-item-settings-tests PRIVATE snow_shot_settings
+        snow_shot_image_codec snow_shot_export_scheduling)
     snow_shot_import_offscreen_platform(snow-shot-login-item-settings-tests)
     snow_shot_add_translations(snow-shot-login-item-settings-tests)
     add_test(NAME snow-shot-login-item-settings-tests COMMAND snow-shot-login-item-settings-tests)
