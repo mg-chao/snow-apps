@@ -157,7 +157,9 @@ inline ExportKey exportKey(const EditExportSettings& settings, quint64 sourceGen
             effort ? normalized.effort : 0,
             format == snow::image::Format::webp && normalized.lossless ? normalized.lossless_effort
                                                                        : 0,
-            format == snow::image::Format::png ? normalized.compression_level : 0,
+            format == snow::image::Format::png || format == snow::image::Format::tiff
+                ? normalized.compression_level
+                : 0,
             lossless && normalized.lossless,
             normalized.preserve_metadata,
             format == snow::image::Format::jpeg && normalized.progressive,

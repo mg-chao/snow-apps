@@ -957,7 +957,7 @@ void ScreenshotMcpSession::publishOutput(const ScreenshotMcpRequest& r, bool fin
             r.params.value(QStringLiteral("format")).toString(QStringLiteral("png"));
         if (!QStringList{QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("webp"),
                          QStringLiteral("jxl"), QStringLiteral("bmp"), QStringLiteral("avif"),
-                         QStringLiteral("pdf")}
+                         QStringLiteral("tiff"), QStringLiteral("pdf")}
                  .contains(format)) {
             failPending(QStringLiteral("invalid_parameters"), QStringLiteral("format"));
             return;

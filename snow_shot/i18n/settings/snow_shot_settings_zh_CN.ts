@@ -4436,6 +4436,10 @@
             <translation>系统托盘图标、操作与菜单</translation>
         </message>
         <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
+        </message>
+        <message>
             <source>Table recognition</source>
             <translation>表格识别</translation>
         </message>

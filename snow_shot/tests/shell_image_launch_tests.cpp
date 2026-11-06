@@ -20,6 +20,8 @@ void launchArguments() {
     const QStringList paths{QDir::temp().filePath(QStringLiteral("image one.png")),
                             QDir::temp().filePath(QStringLiteral("图片 two.JPEG")),
                             QDir::temp().filePath(QStringLiteral("bitmap three.BMP")),
+                            QDir::temp().filePath(QStringLiteral("scan one.TIF")),
+                            QDir::temp().filePath(QStringLiteral("scan two.tiff")),
                             QDir::temp().filePath(QStringLiteral("document 四.MD")),
                             QDir::temp().filePath(QStringLiteral("styles.CSS")),
                             QDir::temp().filePath(QStringLiteral("page.html")),
@@ -65,7 +67,8 @@ void imageSuffixes() {
     require(extensions ==
                 QStringList{QStringLiteral("gif"), QStringLiteral("apng"), QStringLiteral("png"),
                             QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("webp"),
-                            QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("bmp")},
+                            QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("bmp"),
+                            QStringLiteral("tif"), QStringLiteral("tiff")},
             "shell registration covers the formats accepted by Snow Shot's file image reader");
     require(!extensions.contains(QStringLiteral("txt")) &&
                 !extensions.contains(QStringLiteral("html")) &&

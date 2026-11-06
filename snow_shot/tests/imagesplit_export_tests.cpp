@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/imagesplitdocument.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snowimageqtcodec.h"
 #include "imagesplit_guarded_image.h"
 
@@ -129,6 +131,32 @@ void orderingAndUniqueDirectories() {
     verifyOutputs(
         image, horizontal,
         exportSplitImages(image, horizontal, temporary.path(), QStringLiteral("horizontal")));
+}
+
+void tiffImportsSplitWithoutLosingPixels() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "TIFF split import fixture directory exists");
+    QImage original = fixture();
+    original.setDevicePixelRatio(1);
+    ImageSplitSettings settings;
+    settings.direction = ImageSplitDirection::Grid;
+    settings.rows = 2;
+    settings.columns = 3;
+    const auto layout = calculateImageSplitLayout(original.size(), settings);
+    for (const auto* suffix : {"tif", "tiff"}) {
+        const auto saved = ScreenshotImageFileService::write(
+            original, temporary.filePath(QStringLiteral("source.") + QLatin1String(suffix)),
+            ScreenshotImageFileFormat::Tiff);
+        require(saved.succeeded(), "TIFF split input is encoded");
+        const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles({saved.path});
+        require(files.size() == 1, "both TIFF suffixes reach image splitting imports");
+        const QImage imported = ScreenshotClipboardContentReader::decodeImageFile(files.first());
+        require(imported == original,
+                "TIFF import preserves straight alpha, color, and dimensions");
+        verifyOutputs(original, layout,
+                      exportSplitImages(imported, layout, temporary.path(),
+                                        QStringLiteral("tiff-import-") + QLatin1String(suffix)));
+    }
 }
 
 void exportNamesPreserveSplitPolicy() {
@@ -454,6 +482,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
         orderingAndUniqueDirectories();
+        tiffImportsSplitWithoutLosingPixels();
         exportNamesPreserveSplitPolicy();
         std::cout << "Image split filename policy tests passed\n";
         failureAndCancellation();

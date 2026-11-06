@@ -1459,10 +1459,14 @@ void fileEncodingsCoalesceAndNormalizeOptions() {
     QObject receiver;
     for (auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
                         ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
-                        ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+                        ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
+                        ScreenshotImageFileFormat::Tiff}) {
         std::atomic_int encodings = 0;
         ScreenshotExportArtifact::PngCachePolicy policy;
-        policy.maximumBytes = format == ScreenshotImageFileFormat::Png ? 1 : 64 * 1024 * 1024;
+        policy.maximumBytes =
+            (format == ScreenshotImageFileFormat::Png || format == ScreenshotImageFileFormat::Tiff)
+                ? 1
+                : 64 * 1024 * 1024;
         policy.fileEncodingStarted = [&](ScreenshotImageFileFormat encodedFormat) {
             require(encodedFormat == format, "file encoding observer received the wrong format");
             ++encodings;
@@ -1495,7 +1499,8 @@ void fileEncodingsCoalesceAndNormalizeOptions() {
         processUntil([&] { return completed == 2; });
         require(encodings == 1, "concurrent file saves performed duplicate encodings");
         auto compatible = encoding;
-        if (format == ScreenshotImageFileFormat::Bmp || format == ScreenshotImageFileFormat::Png)
+        if (format == ScreenshotImageFileFormat::Bmp || format == ScreenshotImageFileFormat::Png ||
+            format == ScreenshotImageFileFormat::Tiff)
             compatible.quality = -10;
         if (format == ScreenshotImageFileFormat::Bmp || format == ScreenshotImageFileFormat::Jpeg)
             compatible.compressionLevel = ScreenshotCompressionLevel::High;
@@ -3394,15 +3399,17 @@ void codecWorkingEstimatesAreDimensionOnlyAndConservative() {
     using snow_shot::image_codec::encodeWorkingBytes;
     for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
                               ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
-                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
+                              ScreenshotImageFileFormat::Tiff}) {
         const auto options = ScreenshotImageFileService::encodeOptions(format, {});
         const auto codec = ScreenshotImageFileService::snowImageFormat(format);
-        const auto small = encodeWorkingBytes({128, 128}, codec, options);
-        const auto large = encodeWorkingBytes({7680, 4320}, codec, options);
-        require(small && large && *small > 0 && *large >= *small,
+        const auto smallEstimate = encodeWorkingBytes({128, 128}, codec, options);
+        const auto largeEstimate = encodeWorkingBytes({7680, 4320}, codec, options);
+        require(smallEstimate && largeEstimate && *smallEstimate > 0 &&
+                    *largeEstimate >= *smallEstimate,
                 "supported export codecs provide monotonic dimension-only admission estimates");
         if (format == ScreenshotImageFileFormat::Avif || format == ScreenshotImageFileFormat::Jxl)
-            require(*large > qint64{512} * 1024 * 1024,
+            require(*largeEstimate > qint64{512} * 1024 * 1024,
                     "large buffered codecs request exclusive admission under the shared budget");
         require(!encodeWorkingBytes({}, codec, options),
                 "invalid dimensions do not produce a usable memory estimate");
@@ -4024,6 +4031,11 @@ int main(int argc, char** argv) {
         logging.mirrorToConsole = false;
         auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         require(diagnostics.initialize(logging), "export diagnostics must initialize");
+        if (application.arguments().contains(QStringLiteral("--file-encodings-only"))) {
+            fileEncodingsCoalesceAndNormalizeOptions();
+            diagnostics.shutdown();
+            return EXIT_SUCCESS;
+        }
         if (application.arguments().contains(QStringLiteral("--window-variables-only"))) {
             windowNamesSurviveAsynchronousFileExports();
             diagnostics.shutdown();

@@ -1838,7 +1838,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
-      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("pdf")}},
+      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("tiff"),
+      QStringLiteral("pdf")}},
     {QStringLiteral("screenshot/save_as_file_dialog"),
      QStringLiteral("system"),
      ConfigurationValueKind::String,
@@ -1912,7 +1913,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
-      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("pdf")}},
+      QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("tiff"),
+      QStringLiteral("pdf")}},
     {QStringLiteral("screenshot/compression_level"),
      QStringLiteral("medium"),
      ConfigurationValueKind::String,
@@ -2837,10 +2839,8 @@ ConfigurationNormalization normalizeManualSaveFormatOptions(const QJsonValue& va
         QStringLiteral("avif"), QStringLiteral("pdf"),
     };
     const QSet<QString> compressionFormats{
-        QStringLiteral("png"),
-        QStringLiteral("webp"),
-        QStringLiteral("jxl"),
-        QStringLiteral("avif"),
+        QStringLiteral("png"),  QStringLiteral("webp"), QStringLiteral("jxl"),
+        QStringLiteral("avif"), QStringLiteral("tiff"),
     };
     const QSet<QString> compressionValues{
         QStringLiteral("low"),

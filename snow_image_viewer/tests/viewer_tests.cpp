@@ -2855,6 +2855,72 @@ void testSharedMemoryAttachRetry(const QString& directory) {
             "shared-memory attach failure retries once through a verified file and cleans up");
 }
 
+void testTiffWorkerCompatibility() {
+    namespace protocol = snow::image_viewer::worker_protocol;
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(2, 1);
+    settings.width = 2;
+    settings.height = 1;
+    settings.format = snow::image::Format::tiff;
+    settings.encode.format = settings.format;
+    settings.encode.compression_level = 6;
+    settings.encode.preserve_metadata = true;
+    snow::image_viewer::EditExportSettings decodedSettings;
+    QString error;
+    require(
+        protocol::settingsFromJson(protocol::settingsToJson(settings), &decodedSettings, &error) &&
+            decodedSettings.format == snow::image::Format::tiff &&
+            decodedSettings.encode.compression_level == 6 &&
+            decodedSettings.encode.preserve_metadata,
+        "worker protocol accepts TIFF settings and preserves compression/metadata options");
+    snow::image::EncodedArtifactReceipt receipt;
+    receipt.format = snow::image::Format::tiff;
+    receipt.canvas_width = 2;
+    receipt.canvas_height = 1;
+    receipt.emitted_frame_count = 1;
+    receipt.emitted_frame_extents.push_back({0, 0, 2, 1});
+    receipt.encoder_finalized_and_sink_flushed = true;
+    snow::image::EncodedArtifactReceipt decodedReceipt;
+    require(protocol::receiptFromJson(protocol::receiptToJson(receipt), &decodedReceipt, &error) &&
+                decodedReceipt == receipt,
+            "worker protocol accepts finalized TIFF receipts");
+    auto invalid = protocol::settingsToJson(settings);
+    invalid.insert(QStringLiteral("format"), static_cast<int>(snow::image::Format::tiff) + 1);
+    require(!protocol::settingsFromJson(invalid, &decodedSettings, &error),
+            "worker protocol continues rejecting unknown format identifiers");
+    const auto normalKey = snow::image_viewer::exportKey(settings, 1);
+    const auto preparationKey = snow::image_viewer::preparationKey(settings, 1);
+    settings.encode.compression_level = 9;
+    require(normalKey != snow::image_viewer::exportKey(settings, 1) &&
+                preparationKey == snow::image_viewer::preparationKey(settings, 1),
+            "TIFF compression isolates artifacts while reusing prepared pixels");
+    require(snow::image_viewer::animationPolicyForFormat(settings.format) ==
+                snow::image::AnimationPolicy::first_frame,
+            "TIFF shares the viewer first-frame export and receipt policy");
+    snow::image::Service service;
+    const auto* encoder = service.encoder_info(settings.format);
+    if (!encoder)
+        return;
+    auto image = take(snow::image::MutableImage::allocate(2, 1, snow::image::kRgba16),
+                      "allocate TIFF export preparation fixture");
+    std::fill(image.pixels().begin(), image.pixels().end(), std::byte{0x80});
+    snow::image::Document document;
+    document.canvas_width = 2;
+    document.canvas_height = 1;
+    document.color.primaries = snow::image::ColorPrimaries::srgb;
+    document.color.transfer = snow::image::TransferFunction::srgb;
+    snow::image::Frame frame;
+    frame.image = std::move(image).freeze();
+    document.frames.push_back(std::move(frame));
+    QString warning;
+    const auto prepared = take(snow::image_viewer::worker_core::prepareForExport(
+                                   std::move(document), settings, *encoder, &warning),
+                               "prepare TIFF worker export");
+    require(prepared.document.frames.size() == 1 &&
+                prepared.document.frames.front().image.format() == snow::image::kRgba8,
+            "TIFF worker preparation converts native high-depth samples to supported RGBA8");
+}
+
 void testExportKeyNormalization() {
     snow::image_viewer::EditExportSettings settings;
     settings.sourceSize = QSize(64, 32);
@@ -3232,6 +3298,10 @@ int main(int argc, char** argv) {
         testExportKeyNormalization();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--tiff-compat-only"))) {
+        testTiffWorkerCompatibility();
+        return 0;
+    }
     if (argc > 1) {
         const QString path = QString::fromLocal8Bit(argv[1]);
         const snow::image_viewer::DecodeResult decoded =
@@ -3294,6 +3364,7 @@ int main(int argc, char** argv) {
     testWorkerStartupFailureCompletes(directory.path(), "incompatible");
     testSharedMemoryAttachRetry(directory.path());
     testExportKeyNormalization();
+    testTiffWorkerCompatibility();
     testWebpNativeRoutingAndArtifactReuse(directory.path());
     testJpegNativePreviewAndArtifactReuse(directory.path());
     std::cout << "snow_image_viewer tests passed\n";

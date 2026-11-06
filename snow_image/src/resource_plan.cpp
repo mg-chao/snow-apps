@@ -247,6 +247,13 @@ Result<ResourcePlan> plan_resources(const ResourcePlanRequest& request) {
         !add(decode.private_memory_bytes, std::uint64_t{8} << 20U, &decode.private_memory_bytes))
         return overflow();
     decode.temporary_disk_bytes = source_bytes.value();
+    if (request.source.format == Format::tiff) {
+        std::uint64_t converted = 0;
+        if (!multiply(source_bytes.value(), 2U, &converted) ||
+            !add(converted, std::uint64_t{16} << 20U, &converted))
+            return overflow();
+        decode.private_memory_bytes = std::max(decode.private_memory_bytes, converted);
+    }
     result.phases.push_back({ResourcePhase::decode, decode});
 
     ResourceFootprint transform;
@@ -337,9 +344,9 @@ Result<ResourcePlan> plan_resources(const ResourcePlanRequest& request) {
     result.phases.push_back({ResourcePhase::transform, transform});
 
     ResourceFootprint encode;
-    const std::uint64_t artifact_bytes = request.expected_artifact_bytes == 0
-                                             ? output_bytes.value()
-                                             : request.expected_artifact_bytes;
+    std::uint64_t artifact_bytes = request.expected_artifact_bytes == 0
+                                       ? output_bytes.value()
+                                       : request.expected_artifact_bytes;
     if (request.output.format == Format::webp) {
         const bool animation = request.output.frames.size() > 1;
         std::uint64_t metadata_bytes = request.output.color.icc_profile.size();
@@ -385,6 +392,23 @@ Result<ResourcePlan> plan_resources(const ResourcePlanRequest& request) {
         // needs both a substantial fixed working set and pixel-scaled headroom.
         encode.private_memory_bytes =
             std::max({encode.private_memory_bytes, pixel_scaled, std::uint64_t{640} << 20U});
+    }
+    if (request.output.format == Format::tiff) {
+        std::uint64_t metadata_bytes = 0;
+        if (request.encode_options.preserve_metadata &&
+            (!add(request.output.color.icc_profile.size(), request.output.metadata.xmp.size(),
+                  &metadata_bytes) ||
+             !add(metadata_bytes, request.output.metadata.comment.size(), &metadata_bytes)))
+            return overflow();
+        std::uint64_t metadata_working = 0;
+        if (!multiply(metadata_bytes, 2U, &metadata_working) ||
+            !add(encode.private_memory_bytes, metadata_working, &encode.private_memory_bytes))
+            return overflow();
+        if (request.expected_artifact_bytes == 0 &&
+            (!add(artifact_bytes, artifact_bytes / 100U, &artifact_bytes) ||
+             !add(artifact_bytes, metadata_bytes, &artifact_bytes) ||
+             !add(artifact_bytes, std::uint64_t{1} << 20U, &artifact_bytes)))
+            return overflow();
     }
     encode.mapped_bytes = output_bytes.value();
     encode.artifact_bytes = artifact_bytes;

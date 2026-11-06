@@ -42,6 +42,8 @@
           "platform": "osx"
         },
         { "name": "libpng", "features": ["apng"] },
+        { "name": "tiff", "default-features": false, "features": ["jpeg", "zip"] },
+        "lcms",
         "tinyxml2",
         {
           "name": "libwebp",
@@ -67,13 +69,15 @@
       "description": "Enable the complete Snow Image codec profile.",
       "dependencies": [
         "giflib",
+        "lcms",
         { "name": "libheif", "default-features": false, "features": ["aom", "hevc"] },
         "libjpeg-turbo",
         "libjxl",
         { "name": "libpng", "features": ["apng"] },
         "libwebp",
         "lunasvg",
-        "openexr"
+        "openexr",
+        { "name": "tiff", "default-features": false, "features": ["jpeg", "zip"] }
       ]
     },
     "image-viewer": {

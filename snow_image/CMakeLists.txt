@@ -28,6 +28,7 @@ option(SNOW_IMAGE_CODEC_HEIF "Enable HEIF, HEIC, HIF, and AVIF codecs." OFF)
 option(SNOW_IMAGE_CODEC_JXL "Enable JPEG XL codecs." OFF)
 option(SNOW_IMAGE_CODEC_EXR "Enable OpenEXR codecs." OFF)
 option(SNOW_IMAGE_CODEC_WEBP "Enable WebP codecs." OFF)
+option(SNOW_IMAGE_CODEC_TIFF "Enable the LibTIFF codec." OFF)
 option(SNOW_IMAGE_LINK_PNG_DEPENDENCIES
     "Link the PNG dependency into the static Snow Image target."
     ON
@@ -268,6 +269,14 @@ if(SNOW_IMAGE_CODEC_WEBP)
     list(APPEND SNOW_IMAGE_PRIVATE_DEFINITIONS SNOW_IMAGE_HAS_WEBP=1)
 endif()
 
+if(SNOW_IMAGE_CODEC_TIFF)
+    find_package(TIFF 4.6.1 REQUIRED)
+    find_package(lcms2 CONFIG REQUIRED)
+    list(APPEND SNOW_IMAGE_SOURCES src/codecs/tiff_codec.cpp src/codecs/tiff_codec.h)
+    list(APPEND SNOW_IMAGE_PRIVATE_LIBRARIES TIFF::TIFF lcms2::lcms2)
+    list(APPEND SNOW_IMAGE_PRIVATE_DEFINITIONS SNOW_IMAGE_HAS_TIFF=1)
+endif()
+
 function(snow_image_configure_target target_name linkage)
     add_library(${target_name} ${linkage} ${SNOW_IMAGE_PUBLIC_HEADERS} ${SNOW_IMAGE_SOURCES})
     target_compile_features(${target_name} PUBLIC cxx_std_20)
@@ -372,6 +381,7 @@ if(SNOW_IMAGE_BUILD_STATIC)
         src/raster_serialization.cpp
         src/codecs/heif_codec.cpp
         src/codecs/jxl_codec.cpp
+        src/codecs/tiff_codec.cpp
         PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
     )
     add_library(snow_image::snow_image_static ALIAS snow_image_static)

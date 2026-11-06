@@ -47,7 +47,8 @@ snow::image::Result<snow::image::Document> prepareColorForExport(snow::image::Do
     if (format == snow::image::Format::png && pngNativeSamples)
         return document;
     if (format == snow::image::Format::png || format == snow::image::Format::jpeg ||
-        format == snow::image::Format::webp || format == snow::image::Format::heif) {
+        format == snow::image::Format::webp || format == snow::image::Format::heif ||
+        format == snow::image::Format::tiff) {
         return snow::image::convert_to_sdr_srgb(document, true, stop);
     }
     if (format == snow::image::Format::avif) {

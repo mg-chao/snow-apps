@@ -4436,6 +4436,10 @@
             <translation>系統匣圖示、操作與選單</translation>
         </message>
         <message>
+            <source>TIFF</source>
+            <translation>TIFF</translation>
+        </message>
+        <message>
             <source>Table recognition</source>
             <translation>表格辨識</translation>
         </message>
