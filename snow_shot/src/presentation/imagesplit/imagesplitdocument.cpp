@@ -807,7 +807,7 @@ ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings&
             const bool vertical = settings.direction == ImageSplitDirection::Vertical;
             const int dimension = vertical ? size.width() : size.height();
             auto& lines = vertical ? layout.verticalLines : layout.horizontalLines;
-            if (settings.type == ImageSplitType::Equal)
+            if (settings.type == ImageSplitType::Equal || settings.type == ImageSplitType::Smart)
                 equalLines(dimension, settings.count, QStringLiteral("count"), layout, lines);
             else if (settings.type == ImageSplitType::Precise)
                 preciseLines(dimension, settings, layout, lines);
@@ -838,6 +838,8 @@ struct ImageSplitDocument::Impl final {
     ImageSplitLayout layout;
     QVector<HistoryEntry> history;
     qsizetype cursor = 0;
+    quint64 revision = 0;
+    std::optional<ImageSplitPreparedLayout> cachedSmart;
     std::optional<ImageSplitState> beforeDrag;
     bool dragVertical = true;
     int dragIndex = -1;
@@ -856,6 +858,7 @@ struct ImageSplitDocument::Impl final {
     }
 
     void restoreHistory() {
+        ++revision;
         const auto& entry = history.at(cursor);
         state = entry.state;
         layout.size = image.size();
@@ -871,6 +874,7 @@ struct ImageSplitDocument::Impl final {
         history.append({next, layout.errors});
         cursor = history.size() - 1;
         state = std::move(next);
+        ++revision;
         synchronizeLines();
         return true;
     }
@@ -891,21 +895,32 @@ const QImage& ImageSplitDocument::preview() const {
 }
 void ImageSplitDocument::setImage(QImage image, QImage preview,
                                   ImageSplitSettings initialSettings) {
+    const auto prepared = prepareImageSplitLayout(image, initialSettings);
+    if (prepared)
+        setPreparedImage(std::move(image), std::move(preview), *prepared);
+}
+bool ImageSplitDocument::setPreparedImage(QImage image, QImage preview,
+                                          const ImageSplitPreparedLayout& prepared) {
+    if (prepared.sourceKey != image.cacheKey() || prepared.layout.size != image.size())
+        return false;
     auto& d = *m_impl;
     d.beforeDrag.reset();
     d.image = std::move(image);
     d.preview = preview.isNull() ? d.image : std::move(preview);
-    d.state = {};
-    d.state.settings = std::move(initialSettings);
-    d.layout = calculateImageSplitLayout(d.image.size(), d.state.settings);
-    d.state.verticalLines = d.layout.verticalLines;
-    d.state.horizontalLines = d.layout.horizontalLines;
-    // Initializer-list assignment reuses the old allocation. Source replacement also releases the
-    // entry capacity accumulated by the previous image's unlimited undo history.
+    d.state = {prepared.settings, prepared.layout.verticalLines, prepared.layout.horizontalLines,
+               false};
+    d.layout = prepared.layout;
+    d.cachedSmart.reset();
+    if (prepared.settings.type == ImageSplitType::Smart &&
+        prepared.settings.direction != ImageSplitDirection::Grid && prepared.layout.isValid())
+        d.cachedSmart = prepared;
+    // Source replacement releases the previous image's unlimited undo history.
     d.history = QVector<Impl::HistoryEntry>{{d.state, d.layout.errors}};
     d.cursor = 0;
+    ++d.revision;
     emit changed();
     emit historyChanged();
+    return true;
 }
 ImageSplitSettings ImageSplitDocument::settings() const {
     return m_impl->state.settings;
@@ -930,24 +945,69 @@ qsizetype ImageSplitDocument::historyStorageBytes() const {
         include(*m_impl->beforeDrag);
     return bytes;
 }
+quint64 ImageSplitDocument::revision() const {
+    return m_impl->revision;
+}
+std::optional<ImageSplitPreparedLayout>
+ImageSplitDocument::cachedLayout(const ImageSplitSettings& settings) const {
+    const auto& d = *m_impl;
+    const auto nominal = calculateImageSplitLayout(d.image.size(), settings);
+    if (!nominal.isValid())
+        return std::nullopt;
+    const bool horizontal = settings.direction == ImageSplitDirection::Horizontal;
+    const int dimension = horizontal ? d.image.height() : d.image.width();
+    const int length = horizontal ? d.image.width() : d.image.height();
+    if (settings.type != ImageSplitType::Smart || settings.direction == ImageSplitDirection::Grid ||
+        settings.count == 1 || settings.count == dimension || length == 1)
+        return ImageSplitPreparedLayout{d.image.cacheKey(), settings, nominal};
+    if (!d.cachedSmart || d.cachedSmart->sourceKey != d.image.cacheKey() ||
+        d.cachedSmart->settings.direction != settings.direction ||
+        d.cachedSmart->settings.count != settings.count)
+        return std::nullopt;
+    auto result = *d.cachedSmart;
+    result.settings = settings;
+    result.layout.overlapWidth = settings.overlapWidth;
+    return result;
+}
 bool ImageSplitDocument::setSettings(const ImageSplitSettings& settings) {
     if (settings == m_impl->state.settings)
         return false;
-    const auto next = calculateImageSplitLayout(m_impl->image.size(), settings);
-    if (!next.isValid())
+    auto previous = m_impl->state.settings;
+    previous.overlapWidth = settings.overlapWidth;
+    if (previous == settings) {
+        auto layout = m_impl->layout;
+        layout.overlapWidth = settings.overlapWidth;
+        return setPreparedSettings({m_impl->image.cacheKey(), settings, layout}, revision());
+    }
+    const auto cached = cachedLayout(settings);
+    const auto prepared = cached ? cached : prepareImageSplitLayout(m_impl->image, settings);
+    return prepared && setPreparedSettings(*prepared, revision());
+}
+bool ImageSplitDocument::setPreparedSettings(const ImageSplitPreparedLayout& prepared,
+                                             quint64 expectedRevision) {
+    auto& d = *m_impl;
+    const auto& settings = prepared.settings;
+    if (expectedRevision != d.revision || prepared.sourceKey != d.image.cacheKey() ||
+        prepared.layout.size != d.image.size() || !prepared.layout.isValid() ||
+        prepared.layout.overlapWidth != settings.overlapWidth || settings == d.state.settings ||
+        !calculateImageSplitLayout(d.image.size(), settings).isValid())
         return false;
     cancelLineDrag();
-    auto previousSettings = m_impl->state.settings;
+    auto previousSettings = d.state.settings;
     previousSettings.overlapWidth = settings.overlapWidth;
-    auto nextState = m_impl->state;
+    auto nextState = d.state;
     if (!(previousSettings == settings)) {
-        m_impl->layout = next;
-        nextState = {settings, next.verticalLines, next.horizontalLines, false};
+        d.layout = prepared.layout;
+        nextState = {settings, prepared.layout.verticalLines, prepared.layout.horizontalLines,
+                     false};
+        if (settings.type == ImageSplitType::Smart &&
+            settings.direction != ImageSplitDirection::Grid)
+            d.cachedSmart = prepared;
     } else {
         // Overlap changes crop margins, never the user's manually positioned guides.
         nextState.settings = settings;
     }
-    if (!m_impl->commit(std::move(nextState)))
+    if (!d.commit(std::move(nextState)))
         return false;
     emit changed();
     emit historyChanged();
@@ -1019,6 +1079,7 @@ bool ImageSplitDocument::beginLineDrag(bool vertical, int index) {
     if (index < 0 || index >= lines.size())
         return false;
     d.beforeDrag = d.state;
+    ++d.revision;
     d.dragVertical = vertical;
     d.dragIndex = index;
     d.dragStartIndex = index;
@@ -1058,6 +1119,7 @@ bool ImageSplitDocument::moveDraggedLine(int coordinate) {
         lines[d.dragIndex] = coordinate;
     }
     d.state.manuallyEdited = true;
+    ++d.revision;
     d.synchronizeLines();
     if (indexChanged)
         emit lineDragIndexChanged(d.dragIndex);
@@ -1073,6 +1135,7 @@ void ImageSplitDocument::endLineDrag() {
     const bool geometryChanged = next.verticalLines != d.beforeDrag->verticalLines ||
                                  next.horizontalLines != d.beforeDrag->horizontalLines;
     d.state = std::move(*d.beforeDrag);
+    ++d.revision;
     d.beforeDrag.reset();
     if (geometryChanged)
         d.commit(std::move(next));
@@ -1086,6 +1149,7 @@ void ImageSplitDocument::cancelLineDrag() {
     if (!d.beforeDrag)
         return;
     d.state = std::move(*d.beforeDrag);
+    ++d.revision;
     d.beforeDrag.reset();
     const bool indexChanged = d.dragIndex != d.dragStartIndex;
     d.dragIndex = d.dragStartIndex;

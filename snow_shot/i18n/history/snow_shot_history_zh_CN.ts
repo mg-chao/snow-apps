@@ -319,6 +319,10 @@
             <translation>选择图像</translation>
         </message>
         <message>
+            <source>Smart split</source>
+            <translation>智能分割</translation>
+        </message>
+        <message>
             <source>Split direction</source>
             <translation>分割方向</translation>
         </message>
@@ -422,6 +426,10 @@
         <message>
             <source>Export could not be started. Try again</source>
             <translation>无法开始导出，请重试</translation>
+        </message>
+        <message>
+            <source>Finding split lines…</source>
+            <translation>正在查找分割线…</translation>
         </message>
         <message>
             <source>Image loading could not be started. Try again</source>

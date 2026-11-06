@@ -45,11 +45,19 @@ class ImageSplitEditorWidget final : public QWidget {
     explicit ImageSplitEditorWidget(ImageSplitDocument* document, QWidget* parent = nullptr);
     ~ImageSplitEditorWidget() override;
     [[nodiscard]] ImageSplitPreviewCanvas* canvas() const;
+    // Valid draft input can accept an output request while its layout is being calculated.
     [[nodiscard]] bool configurationValid() const;
+    // Returns true only when the requested draft has finished committing to the document.
     [[nodiscard]] bool commitPendingSettings();
     [[nodiscard]] QWidget* outputDescriptionWidget() const;
     void setLoading(bool loading);
     void setExportBusy(bool busy);
+    // The window supplies a worker-backed committer; standalone editors keep synchronous commits.
+    void setSettingsCommitter(std::function<void(const ImageSplitSettings&)> committer);
+    void setCalculating(bool calculating);
+    [[nodiscard]] bool calculating() const;
+    [[nodiscard]] bool matchesDraft(const ImageSplitSettings& settings) const;
+    void restoreCommittedSettings();
     void retranslateUi();
 
   signals:

@@ -88,6 +88,7 @@ void overlappingPixelsAreExported() {
     for (const auto direction : {ImageSplitDirection::Vertical, ImageSplitDirection::Horizontal,
                                  ImageSplitDirection::Grid}) {
         ImageSplitSettings settings;
+        settings.type = ImageSplitType::Equal;
         settings.direction = direction;
         settings.overlapWidth = 2;
         const auto layout = calculateImageSplitLayout(source.size(), settings);
@@ -120,6 +121,7 @@ void orderingAndUniqueDirectories() {
     const QByteArray original(reinterpret_cast<const char*>(image.constBits()),
                               image.sizeInBytes());
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 3;
@@ -171,6 +173,7 @@ void tiffImportsSplitWithoutLosingPixels() {
     QImage original = fixture();
     original.setDevicePixelRatio(1);
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 3;
@@ -351,6 +354,7 @@ void boundedNativeFormatAndColorConversion() {
     const QImage reference =
         fixture().scaled(37, 41, Qt::IgnoreAspectRatio, Qt::FastTransformation);
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 3;
     settings.columns = 5;
@@ -413,6 +417,7 @@ void largeProfileConversionMatchesFullNormalization() {
         }
     }
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 2;
@@ -457,6 +462,7 @@ void cancellationDuringEncodingRetainsCompletedPrefix() {
                         .convertToFormat(QImage::Format_ARGB32_Premultiplied);
     native.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
     ImageSplitSettings settings;
+    settings.type = ImageSplitType::Equal;
     settings.direction = ImageSplitDirection::Vertical;
     settings.count = 2;
     const auto layout = calculateImageSplitLayout(native.size(), settings);
@@ -513,16 +519,46 @@ void failuresRetranslate() {
     require(external.errorMessage() == external.error,
             "existing four-field aggregate service results retain their error text");
 }
+void smartBoundariesAreExported() {
+    QTemporaryDir temporary;
+    QImage source(120, 160, QImage::Format_RGBA8888);
+    source.fill(Qt::white);
+    for (int y = 0; y < source.height(); ++y)
+        for (int x = 0; x < source.width(); ++x)
+            if ((y < 91 || y > 96) && x % 12 < 3)
+                source.setPixelColor(x, y, QColor(20, 40, 60, 180));
+    ImageSplitSettings settings;
+    settings.direction = ImageSplitDirection::Horizontal;
+    ImageSplitDocument document;
+    document.setImage(source, {}, settings);
+    require(document.layout().horizontalLines.first() == 93,
+            "export fixture uses the adjusted Smart boundary");
+    const auto result =
+        exportSplitImages(source, document.layout(), temporary.path(), QStringLiteral("smart"));
+    verifyOutputs(source, document.layout(), result);
+    settings.overlapWidth = 3;
+    require(document.setSettings(settings), "Smart export overlap is configurable");
+    verifyOutputs(source, document.layout(),
+                  exportSplitImages(source, document.layout(), temporary.path(),
+                                    QStringLiteral("smart-overlap")));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--smart-only"))) {
+            smartBoundariesAreExported();
+            std::cout << "Smart split export tests passed\n";
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--overlap-only"))) {
             overlappingPixelsAreExported();
             std::cout << "Image split overlap export tests passed\n";
             return 0;
         }
+        smartBoundariesAreExported();
         orderingAndUniqueDirectories();
         overlappingPixelsAreExported();
         tiffImportsSplitWithoutLosingPixels();

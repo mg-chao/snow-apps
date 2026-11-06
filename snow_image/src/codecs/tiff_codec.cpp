@@ -164,6 +164,7 @@ int map_tiff(thandle_t, void**, toff_t*) noexcept {
 }
 void unmap_tiff(thandle_t, void*, toff_t) noexcept {}
 
+TIFF_ATTRIBUTE((__format__(__printf__, 4, 0)))
 int error_tiff(TIFF*, void* opaque, const char*, const char* format, va_list arguments) noexcept {
     auto& io = *static_cast<TiffIo*>(opaque);
     if (io.message.front() == '\0')
@@ -550,7 +551,8 @@ Result<void> write_metadata(TIFF* tif, const Metadata& metadata, const ColorEnco
         return tiff_error(ErrorCode::encode_failed, "Could not set the TIFF comment.");
     const auto set_dpi = [&](std::uint32_t tag, std::optional<double> value) {
         return !value || !std::isfinite(*value) || *value <= 0 ||
-               *value > std::numeric_limits<float>::max() || TIFFSetField(tif, tag, *value) == 1;
+               *value > static_cast<double>(std::numeric_limits<float>::max()) ||
+               TIFFSetField(tif, tag, *value) == 1;
     };
     if (TIFFSetField(tif, TIFFTAG_RESOLUTIONUNIT, RESUNIT_INCH) != 1 ||
         !set_dpi(TIFFTAG_XRESOLUTION, metadata.horizontal_dpi) ||

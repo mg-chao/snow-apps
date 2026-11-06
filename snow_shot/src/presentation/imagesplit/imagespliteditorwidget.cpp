@@ -90,6 +90,7 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Overlap width"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget",
                       "Each image extends this many pixels past each split line"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Smart split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Equal split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Precise split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Number of images"),
@@ -920,6 +921,8 @@ struct ImageSplitEditorWidget::Impl {
     bool syncing = false;
     bool loading = false;
     bool exporting = false;
+    bool calculating = false;
+    std::function<void(const ImageSplitSettings&)> settingsCommitter;
     bool valid = false;
     qint64 imageKey = 0;
     ImageSplitSettings lastSettings;
@@ -953,8 +956,10 @@ struct ImageSplitEditorWidget::Impl {
                              : direction->currentValue() == QStringLiteral("grid")
                                  ? ImageSplitDirection::Grid
                                  : ImageSplitDirection::Vertical;
-        settings.type = type->currentValue() == QStringLiteral("precise") ? ImageSplitType::Precise
-                                                                          : ImageSplitType::Equal;
+        settings.type = type->currentValue() == QStringLiteral("smart") ? ImageSplitType::Smart
+                        : type->currentValue() == QStringLiteral("precise")
+                            ? ImageSplitType::Precise
+                            : ImageSplitType::Equal;
         settings.unit = unit->currentValue() == QStringLiteral("pixels")
                             ? ImageSplitUnit::Pixels
                             : ImageSplitUnit::Percentage;
@@ -978,7 +983,7 @@ struct ImageSplitEditorWidget::Impl {
         if (settings.direction == ImageSplitDirection::Grid) {
             integer(QStringLiteral("rows"), settings.rows, 1);
             integer(QStringLiteral("columns"), settings.columns, 1);
-        } else if (settings.type == ImageSplitType::Equal) {
+        } else if (settings.type != ImageSplitType::Precise) {
             integer(QStringLiteral("count"), settings.count, 1);
         } else if (settings.unit == ImageSplitUnit::Pixels) {
             integer(QStringLiteral("pixels"), settings.pixels, 16);
@@ -1026,12 +1031,16 @@ struct ImageSplitEditorWidget::Impl {
         if (syncing || busy())
             return;
         const auto [settings, errors] = draftSettings();
-        if (errors.isEmpty() && !(settings == document->settings()))
-            document->setSettings(settings);
+        if (errors.isEmpty() && (!(settings == document->settings()) || calculating)) {
+            if (settingsCommitter)
+                settingsCommitter(settings);
+            else
+                document->setSettings(settings);
+        }
         validate();
     }
     void updateActions() {
-        const bool available = !busy() && !document->image().isNull();
+        const bool available = !busy() && !calculating && !document->image().isNull();
         actions[0]->setEnabled(available && document->canUndo());
         actions[1]->setEnabled(available && document->canRedo());
         actions[2]->setEnabled(!document->image().isNull());
@@ -1051,7 +1060,7 @@ struct ImageSplitEditorWidget::Impl {
     }
     void updateVisibility() {
         const bool grid = direction->currentValue() == QStringLiteral("grid");
-        const bool equal = type->currentValue() == QStringLiteral("equal");
+        const bool equal = type->currentValue() != QStringLiteral("precise");
         typeField->setItemHidden(grid);
         countField->setItemHidden(grid || !equal);
         sizeField->setItemHidden(grid || equal);
@@ -1069,8 +1078,9 @@ struct ImageSplitEditorWidget::Impl {
             settings.direction == ImageSplitDirection::Vertical     ? QStringLiteral("vertical")
             : settings.direction == ImageSplitDirection::Horizontal ? QStringLiteral("horizontal")
                                                                     : QStringLiteral("grid"));
-        type->setCurrentValue(settings.type == ImageSplitType::Equal ? QStringLiteral("equal")
-                                                                     : QStringLiteral("precise"));
+        type->setCurrentValue(settings.type == ImageSplitType::Smart   ? QStringLiteral("smart")
+                              : settings.type == ImageSplitType::Equal ? QStringLiteral("equal")
+                                                                       : QStringLiteral("precise"));
         unit->setCurrentValue(settings.unit == ImageSplitUnit::Pixels
                                   ? QStringLiteral("pixels")
                                   : QStringLiteral("percentage"));
@@ -1252,7 +1262,8 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         segmented("imageSplitDirection", {QStringLiteral("vertical"), QStringLiteral("horizontal"),
                                           QStringLiteral("grid")});
     d.directionField = d.form->addField({}, d.direction, QStringLiteral("direction"));
-    d.type = segmented("imageSplitType", {QStringLiteral("equal"), QStringLiteral("precise")});
+    d.type = segmented("imageSplitType", {QStringLiteral("smart"), QStringLiteral("equal"),
+                                          QStringLiteral("precise")});
     d.typeField = d.form->addField({}, d.type, QStringLiteral("type"));
     const auto number = [&d](const char* name) {
         auto* input = new AdInputNumber(d.form);
@@ -1380,7 +1391,7 @@ ImageSplitEditorWidget::ImageSplitEditorWidget(ImageSplitDocument* document, QWi
         }
         binding.priority = WindowShortcutManager::StandardPriority::WindowCommand;
         binding.canActivate = [this, undo](const auto& context) {
-            return !m_impl->busy() &&
+            return !m_impl->busy() && !m_impl->calculating &&
                    !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
                    (undo ? m_impl->document->canUndo() : m_impl->document->canRedo());
         };
@@ -1418,8 +1429,14 @@ bool ImageSplitEditorWidget::configurationValid() const {
 bool ImageSplitEditorWidget::commitPendingSettings() {
     if (m_impl->busy())
         return false;
+    const auto [requested, errors] = m_impl->draftSettings();
+    if (!errors.isEmpty())
+        return false;
     m_impl->commit();
-    return m_impl->valid && m_impl->draftSettings().first == m_impl->document->settings();
+    // A failed committer can synchronously restore the previous controls. Readiness must refer
+    // to the original request, never to that restored draft or an unfinished calculation.
+    return !m_impl->calculating && m_impl->valid && requested == m_impl->document->settings() &&
+           matchesDraft(requested);
 }
 QWidget* ImageSplitEditorWidget::outputDescriptionWidget() const {
     return m_impl->description;
@@ -1432,6 +1449,27 @@ void ImageSplitEditorWidget::setExportBusy(bool busy) {
     m_impl->exporting = busy;
     m_impl->updateActions();
 }
+void ImageSplitEditorWidget::setSettingsCommitter(
+    std::function<void(const ImageSplitSettings&)> committer) {
+    m_impl->settingsCommitter = std::move(committer);
+}
+void ImageSplitEditorWidget::setCalculating(bool calculating) {
+    if (m_impl->calculating == calculating)
+        return;
+    m_impl->calculating = calculating;
+    m_impl->validate();
+}
+bool ImageSplitEditorWidget::calculating() const {
+    return m_impl->calculating;
+}
+bool ImageSplitEditorWidget::matchesDraft(const ImageSplitSettings& settings) const {
+    const auto [draft, errors] = m_impl->draftSettings();
+    return errors.isEmpty() && draft == settings;
+}
+void ImageSplitEditorWidget::restoreCommittedSettings() {
+    m_impl->sync();
+    m_impl->validate();
+}
 void ImageSplitEditorWidget::retranslateUi() {
     auto& d = *m_impl;
     d.validatedSettings.reset();
@@ -1440,8 +1478,9 @@ void ImageSplitEditorWidget::retranslateUi() {
         d.direction->setOptionLabel(static_cast<int>(i), editorText(directions[i]));
     d.directionField->setLabel(editorText("Split direction"));
     d.direction->setAccessibleName(d.directionField->label());
-    d.type->setOptionLabel(0, editorText("Equal split"));
-    d.type->setOptionLabel(1, editorText("Precise split"));
+    d.type->setOptionLabel(0, editorText("Smart split"));
+    d.type->setOptionLabel(1, editorText("Equal split"));
+    d.type->setOptionLabel(2, editorText("Precise split"));
     d.typeField->setLabel(editorText("Split type"));
     d.type->setAccessibleName(d.typeField->label());
     d.overlapField->setLabel(editorText("Overlap width"));
