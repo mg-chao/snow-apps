@@ -734,6 +734,7 @@ class ScreenshotToolPalette final : public QWidget,
     void clearDrawingToolGroups();
     void releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
+    void activateDefaultToolbarTool();
     void activateDrawingTool(Tool tool);
     void selectDrawingToolGroupEntry(Tool tool);
     void selectDrawingItemGroupEntry(const QString& itemId);

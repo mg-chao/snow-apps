@@ -5708,7 +5708,7 @@ void recordingMagnifierUnavailableWithoutImageSources() {
     }
 }
 
-void recordingActiveToolsReturnToSelect() {
+void recordingActiveToolsReturnToExportSettings() {
     using Tool = ScreenshotToolPalette::Tool;
     using State = ScreenshotToolPalette::RecordingState;
     using InputMode = ScreenRecordingAreaWindow::InputMode;
@@ -5769,11 +5769,11 @@ void recordingActiveToolsReturnToSelect() {
     int selectRequests = 0;
     QObject::connect(tools, &ScreenshotToolPalette::selectRequested, tools,
                      [&] { ++selectRequests; });
-    const auto requireSelect = [&] {
-        require(
-            tools->activeTool() == Tool::Select && canvas->canvasTool() == SnowCanvasTool::Select &&
-                area->inputMode() == InputMode::Drawing && !tools->recordingExportSettingsVisible(),
-            "repeated recording tool activation selects canvas elements without export settings");
+    const auto requireExportSettings = [&] {
+        require(!tools->activeTool().has_value() && !canvas->interactionEnabled() &&
+                    area->inputMode() == InputMode::RegionEditing &&
+                    tools->recordingExportSettingsVisible(),
+                "repeated recording tool activation restores Export settings and region editing");
     };
     for (const auto state : {State::Idle, State::Recording, State::Paused}) {
         if (state == State::Recording) {
@@ -5802,18 +5802,24 @@ void recordingActiveToolsReturnToSelect() {
             require(trigger != nullptr, "active recording tool has a visible toolbar trigger");
             const int previousSelectRequests = selectRequests;
             trigger->click();
-            requireSelect();
+            requireExportSettings();
             require(selectRequests == previousSelectRequests + 1,
                     "repeated toolbar click issues exactly one selection command");
             trigger->click();
             require(tools->activeTool() == test.tool && canvas->canvasTool() == test.canvasTool,
                     "clicking the deactivated trigger restores its remembered tool");
             require(tools->activateDrawingShortcut(shortcut), "repeat the active tool shortcut");
-            requireSelect();
-            require(tools->activateToolShortcut(Tool::Select), "repeat the Select shortcut");
-            requireSelect();
+            requireExportSettings();
+            require(tools->activateToolShortcut(Tool::Select) &&
+                        tools->activeTool() == Tool::Select && canvas->interactionEnabled(),
+                    "Select must enable annotation interaction from Export settings");
+            require(tools->activateToolShortcut(Tool::Select), "repeat the active Select shortcut");
+            requireExportSettings();
             selectButton->click();
-            requireSelect();
+            require(tools->activeTool() == Tool::Select && canvas->interactionEnabled(),
+                    "Select click must enable annotation interaction from Export settings");
+            selectButton->click();
+            requireExportSettings();
             require(tools->recordingSession().state() == state &&
                         controller.isRecording() == (state != State::Idle),
                     "tool toggles preserve the active recording state");
@@ -8030,7 +8036,7 @@ template <typename Application> int runRecordingControllerTests(Application& app
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--tool-toggle-only"))) {
-        recordingActiveToolsReturnToSelect();
+        recordingActiveToolsReturnToExportSettings();
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--magnifier-availability-only"))) {

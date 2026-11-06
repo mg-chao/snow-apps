@@ -734,10 +734,17 @@ void verifyCropToolHighlight(snow_shot::presentation::ImageEditingWindow& window
             require(window.canvas()->mode() == (selected == rows
                                                     ? ImageEditingCanvas::Mode::CropRows
                                                     : ImageEditingCanvas::Mode::CropColumns),
-                    "crop clicks preserve the selected editing mode");
+                    "the first crop click selects its editing mode");
             requireHighlight(selected);
+            selected->click();
+            require(window.canvas()->mode() == ImageEditingCanvas::Mode::Pan &&
+                        window.palette()->activeTool() == ScreenshotToolPalette::Tool::Move &&
+                        !window.canvas()->interactionEnabled(),
+                    "clicking the active crop tool restores Pan and disables annotation input");
+            requireHighlight(nullptr);
         }
     }
+    rows->click();
     window.palette()->shapeRequested();
     require(window.canvas()->mode() == ImageEditingCanvas::Mode::Draw, "drawing exits crop mode");
     requireHighlight(nullptr);
@@ -749,6 +756,40 @@ void verifyCropToolHighlight(snow_shot::presentation::ImageEditingWindow& window
 void verifyEditingToolbar(snow_shot::presentation::ImageEditingWindow& window) {
     verifyCropToolHighlight(window);
     using Tool = ScreenshotToolPalette::Tool;
+    using Mode = snow_shot::presentation::ImageEditingCanvas::Mode;
+    auto* palette = window.palette();
+    const auto checkpoint = window.document()->checkpoint();
+    for (const auto& [tool, label] :
+         {std::pair{Tool::Select, "Select elements"}, std::pair{Tool::Shape, "Shape"},
+          std::pair{Tool::Move, "Pan"}}) {
+        adqt::widgets::AdButton* button = nullptr;
+        for (auto* candidate : palette->findChildren<adqt::widgets::AdButton*>()) {
+            if (candidate->accessibleName() == QLatin1String(label)) {
+                button = candidate;
+                break;
+            }
+        }
+        require(button, "the editor exposes the tool's toolbar control");
+        for (const bool shortcut : {false, true}) {
+            palette->clearActiveTool();
+            const auto activate = [&] {
+                if (shortcut)
+                    require(palette->activateToolShortcut(tool), "editor tool shortcut activates");
+                else
+                    button->click();
+            };
+            activate();
+            require(palette->activeTool() == tool &&
+                        window.canvas()->mode() == (tool == Tool::Move ? Mode::Pan : Mode::Draw),
+                    "the first activation selects the requested editor mode");
+            activate();
+            require(palette->activeTool() == Tool::Move && window.canvas()->mode() == Mode::Pan &&
+                        !window.canvas()->interactionEnabled(),
+                    "repeating an editor tool returns to Pan and disables annotation interaction");
+        }
+    }
+    require(window.document()->checkpoint() == checkpoint,
+            "returning to Pan preserves the editor document and history");
     auto* screen = QGuiApplication::primaryScreen();
     require(screen && screen->handle(), "editing toolbar fixture has a screen");
     const auto originalBounds = screen->handle()->geometry();
