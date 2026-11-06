@@ -19,8 +19,8 @@
             <translation>Cancel</translation>
         </message>
         <message>
-            <source>Language Detection Confidence Threshold</source>
-            <translation>Language Detection Confidence Threshold</translation>
+            <source>Language detection confidence threshold</source>
+            <translation>Language detection confidence threshold</translation>
         </message>
         <message>
             <source>Minimum confidence required to switch to the secondary target language</source>
@@ -31,20 +31,20 @@
             <translation>OK</translation>
         </message>
         <message>
-            <source>Original Image Translation</source>
-            <translation>Original Image Translation</translation>
+            <source>Original image translation</source>
+            <translation>Original image translation</translation>
         </message>
         <message>
-            <source>Primary Target Language</source>
-            <translation>Primary Target Language</translation>
+            <source>Primary target language</source>
+            <translation>Primary target language</translation>
         </message>
         <message>
             <source>Retry</source>
             <translation>Retry</translation>
         </message>
         <message>
-            <source>Secondary Target Language</source>
-            <translation>Secondary Target Language</translation>
+            <source>Secondary target language</source>
+            <translation>Secondary target language</translation>
         </message>
         <message>
             <source>Source language</source>
@@ -133,16 +133,16 @@
     <context>
         <name>TranslationPageWidget</name>
         <message>
-            <source>Auto Detect</source>
-            <translation>Auto Detect</translation>
+            <source>Auto detect</source>
+            <translation>Auto detect</translation>
         </message>
         <message>
             <source>Copy (%1)</source>
             <translation>Copy (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (%1)</source>
-            <translation>Copy and Close (%1)</translation>
+            <source>Copy and close (%1)</source>
+            <translation>Copy and close (%1)</translation>
         </message>
         <message>
             <source>Copy translated text</source>
@@ -208,12 +208,12 @@
     <context>
         <name>TranslationService</name>
         <message>
-            <source>General Models</source>
-            <translation>General Models</translation>
+            <source>General models</source>
+            <translation>General models</translation>
         </message>
         <message>
-            <source>Translation Models</source>
-            <translation>Translation Models</translation>
+            <source>Translation models</source>
+            <translation>Translation models</translation>
         </message>
     </context>
     <context>
@@ -223,8 +223,8 @@
             <translation>Close</translation>
         </message>
         <message>
-            <source>Copy and Close</source>
-            <translation>Copy and Close</translation>
+            <source>Copy and close</source>
+            <translation>Copy and close</translation>
         </message>
         <message>
             <source>Failed to retrieve selected text</source>
@@ -260,8 +260,8 @@
     <context>
         <name>snow_shot::translation::TranslationService</name>
         <message>
-            <source>Free Translation</source>
-            <translation>Free Translation</translation>
+            <source>Free translation</source>
+            <translation>Free translation</translation>
         </message>
         <message>
             <source>Model configuration changed. Retry to use the updated settings</source>

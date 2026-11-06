@@ -29,7 +29,7 @@ QString revealActionText() {
 #elif defined(Q_OS_MACOS)
     return QCoreApplication::translate("HistoryFileLocation", "Reveal in Finder");
 #else
-    return QCoreApplication::translate("HistoryFileLocation", "Open Containing Folder");
+    return QCoreApplication::translate("HistoryFileLocation", "Open containing folder");
 #endif
 }
 

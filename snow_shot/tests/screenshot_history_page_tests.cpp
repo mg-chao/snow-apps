@@ -626,7 +626,7 @@ void entriesUseBordersAndSupportCrossPageSelection() {
     flushEvents();
     require(selectionBar->isVisible() && summary->text() == QStringLiteral("Selected 1 item"),
             "selecting one entry must show the singular selection summary");
-    require(batchActions->isVisible() && batchActions->text() == QStringLiteral("Batch Actions") &&
+    require(batchActions->isVisible() && batchActions->text() == QStringLiteral("Batch actions") &&
                 !batchActions->toolTip().isEmpty() && !batchActions->accessibleName().isEmpty(),
             "one selected screenshot exposes an accessible Batch Actions menu");
     QVector<QVector<storage::CaptureHistoryRecord>> collageRequests;
@@ -932,7 +932,7 @@ void batchPinUsesEligibleSelectionAtActivation() {
             "keyboard opens Batch Actions without dispatching either action");
     auto* stitch = menu->actions()[0];
     auto* pin = menu->actions()[1];
-    require(stitch->text() == QStringLiteral("Stitch Image") &&
+    require(stitch->text() == QStringLiteral("Stitch image") &&
                 pin->text() == QStringLiteral("Pin to screen") && !stitch->icon().isNull() &&
                 !pin->icon().isNull() && !pin->isEnabled(),
             "batch menu has ordered themed actions and disables pin for unavailable records");
@@ -949,10 +949,10 @@ void batchPinUsesEligibleSelectionAtActivation() {
         QEvent language(QEvent::LanguageChange);
         QApplication::sendEvent(&page, &language);
         require(trigger->text() ==
-                        translator.translate("ScreenshotHistoryPageWidget", "Batch Actions") &&
+                        translator.translate("ScreenshotHistoryPageWidget", "Batch actions") &&
                     trigger->accessibleName() == trigger->text() &&
                     stitch->text() ==
-                        translator.translate("ScreenshotHistoryPageWidget", "Stitch Image") &&
+                        translator.translate("ScreenshotHistoryPageWidget", "Stitch image") &&
                     pin->text() ==
                         translator.translate("ScreenshotHistoryPageWidget", "Pin to screen") &&
                     pin->toolTip() == pin->text(),
@@ -1217,7 +1217,7 @@ void entryStitchActionUsesOnlyItsRecord() {
         QStringLiteral("screenshotHistoryEntryMoreMenu"));
     require(menu && menu->isPopupVisible(), "More opens the history stitching menu");
     auto* stitch = menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntryStitch"));
-    require(stitch && stitch->isEnabled() && stitch->text() == QStringLiteral("Stitch Image") &&
+    require(stitch && stitch->isEnabled() && stitch->text() == QStringLiteral("Stitch image") &&
                 !stitch->icon().isNull() && menu->actionGeometry(stitch).isValid(),
             "More exposes the labeled stitching action with its icon");
     activateMenuAction(menu, stitch);
@@ -1260,8 +1260,8 @@ void entryStitchActionUsesOnlyItsRecord() {
     QCoreApplication::installTranslator(&translator);
     QEvent language(QEvent::LanguageChange);
     QApplication::sendEvent(entry, &language);
-    const QString translated = translator.translate("HistoryEntryWidget", "Stitch Image");
-    require(!translated.isEmpty() && translated != QStringLiteral("Stitch Image") &&
+    const QString translated = translator.translate("HistoryEntryWidget", "Stitch image");
+    require(!translated.isEmpty() && translated != QStringLiteral("Stitch image") &&
                 stitch->text() == translated && stitch->toolTip() == translated,
             "language changes translate the stitching action in an open More menu");
     QCoreApplication::removeTranslator(&translator);
@@ -1302,7 +1302,7 @@ void entrySplitActionUsesOnlyItsRecord() {
     auto* split = menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntrySplit"));
     auto* stitch = menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntryStitch"));
     require(split && stitch && split->isEnabled() &&
-                split->text() == QStringLiteral("Image Splitting") && !split->icon().isNull() &&
+                split->text() == QStringLiteral("Image splitting") && !split->icon().isNull() &&
                 menu->actions().indexOf(split) == menu->actions().indexOf(stitch) + 1,
             "Image Splitting follows Stitch Image with a themed icon");
     class SplitTranslator final : public QTranslator {
@@ -1310,8 +1310,8 @@ void entrySplitActionUsesOnlyItsRecord() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             return QByteArray(context) == "ImageSplitWindow" &&
-                           QByteArray(source) == "Image Splitting"
-                       ? QStringLiteral("Translated Image Splitting")
+                           QByteArray(source) == "Image splitting"
+                       ? QStringLiteral("Translated Image splitting")
                        : QString();
         }
     } translator;
@@ -1320,7 +1320,7 @@ void entrySplitActionUsesOnlyItsRecord() {
         qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
     QEvent language(QEvent::LanguageChange);
     QApplication::sendEvent(entry, &language);
-    require(split->text() == QStringLiteral("Translated Image Splitting") &&
+    require(split->text() == QStringLiteral("Translated Image splitting") &&
                 split->toolTip() == split->text(),
             "open history Image Splitting action uses the shared translation context");
     activateMenuAction(menu, split);
@@ -1433,7 +1433,7 @@ void moreMenuOffersPinStitchAndDelete() {
     auto* imageEditing =
         menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntryImageEditing"));
     require(imageEditing && menu->actions().at(3) == imageEditing && imageEditing->isEnabled() &&
-                imageEditing->text() == QStringLiteral("Image Editing") &&
+                imageEditing->text() == QStringLiteral("Image editing") &&
                 !imageEditing->icon().isNull(),
             "independent image editing follows Image Splitting in the record menu");
     require(reveal->objectName() == QStringLiteral("screenshotHistoryEntryReveal") &&
@@ -1443,8 +1443,8 @@ void moreMenuOffersPinStitchAndDelete() {
                 !reveal->icon().isNull(),
             "the platform reveal action follows Copy image path and precedes Delete");
     require(pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
-                stitch->text() == QStringLiteral("Stitch Image") && stitch->isEnabled() &&
-                split->text() == QStringLiteral("Image Splitting") && split->isEnabled() &&
+                stitch->text() == QStringLiteral("Stitch image") && stitch->isEnabled() &&
+                split->text() == QStringLiteral("Image splitting") && split->isEnabled() &&
                 remove->text() == QStringLiteral("Delete") && menu->actionDanger(remove) &&
                 menu->actionGeometry(pin).isValid(),
             "the More menu preserves its existing image actions and danger Delete");
@@ -1453,7 +1453,7 @@ void moreMenuOffersPinStitchAndDelete() {
     flushEvents();
     require(pin->text() == QStringLiteral("Pin to screen") &&
                 pin->toolTip() == QStringLiteral("Pin this screenshot to the screen") &&
-                stitch->text() == QStringLiteral("Stitch Image") &&
+                stitch->text() == QStringLiteral("Stitch image") &&
                 remove->text() == QStringLiteral("Delete"),
             "an open More menu must keep its own action labels when the language changes");
     activateMenuAction(menu, pin);

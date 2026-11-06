@@ -815,7 +815,7 @@ void recordingDeleteOnCloseTests(const QString& directory) {
             exportGate = release.get_future().share();
             exportEntered = &entered;
             if (action == 2)
-                recordingToolbarButton("Trim Video")->click();
+                recordingToolbarButton("Trim video")->click();
             else
                 require(controller.controlAutomation(action == 0 ? QStringLiteral("stop")
                                                                  : QStringLiteral("copy"),
@@ -1575,7 +1575,7 @@ class PreviewTestTranslator final : public QTranslator {
     }
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (QByteArray(context) == "CanvasStatusReadout" &&
-            QByteArray(source) == "Motion Preview in Progress") {
+            QByteArray(source) == "Motion preview in progress") {
             return QStringLiteral("Preview translated");
         }
         return {};
@@ -1818,7 +1818,7 @@ void effectsPreviewLifecycle() {
     require(readout && readout->message() == CanvasStatusReadout::Message::MotionPreview &&
                 !readout->dismissalTimer()->isActive(),
             "recording motion status must use the shared persistent hint component");
-    require(label->text() == QStringLiteral("Motion Preview in Progress"),
+    require(label->text() == QStringLiteral("Motion preview in progress"),
             "preview label must use requested text");
     require(label->testAttribute(Qt::WA_TransparentForMouseEvents),
             "readout must not intercept drawing");
@@ -1926,7 +1926,7 @@ void effectsPreviewLifecycle() {
     QCoreApplication::sendEvent(&area, &languageChange);
     pumpPreview();
     CanvasStatusReadout narrow(&area);
-    const QString complete = QStringLiteral("Motion Preview in Progress");
+    const QString complete = QStringLiteral("Motion preview in progress");
     narrow.setMessage(CanvasStatusReadout::Message::MotionPreview);
     narrow.layoutIn(QRect(0, 0, 80, 28));
     require(narrow.width() <= 64 && narrow.toolTip() == complete &&
@@ -4356,11 +4356,11 @@ void recordingSettingsDialog() {
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
                         ->options()
                         .first()
-                        .label == QStringLiteral("Translated: H.264 (Hardware)") &&
+                        .label == QStringLiteral("Translated: H.264 (hardware)") &&
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
                         ->options()
                         .at(1)
-                        .label == QStringLiteral("Translated: H.265 (Hardware)"),
+                        .label == QStringLiteral("Translated: H.265 (hardware)"),
             "open recording preferences must retranslate their title, labels and options");
     QCoreApplication::removeTranslator(&translator);
     QCoreApplication::processEvents();
@@ -5993,7 +5993,7 @@ void recordingExportNamingTests(const QString& directory) {
             popup.hide();
             popup.setParent(nullptr);
             desktopWindowNames = {QStringLiteral("Other App"), QStringLiteral("Changed title")};
-            recordingToolbarButton("Trim Video")->click();
+            recordingToolbarButton("Trim video")->click();
             auto* copy = recordingToolbarButton("Copy recording");
             {
                 QEventLoop ready;
@@ -6046,7 +6046,7 @@ void recordingExportNamingTests(const QString& directory) {
                 }
             });
             acceptSave.start(10);
-            exportAndWait([&] { recordingToolbarButton("Save to File")->click(); }, path(4),
+            exportAndWait([&] { recordingToolbarButton("Save to file")->click(); }, path(4),
                           "cached cropped Save");
             acceptSave.stop();
             requireNaming(copy->isEnabled(), "Save completion restores Copy");
@@ -6215,7 +6215,7 @@ void recordingTrimPlaybackTests(const QString& directory) {
                     &error),
                 "start play/pause fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         auto* copy = recordingToolbarButton("Copy recording");
         wait([&] { return copy->isEnabled(); });
         auto* panel = static_cast<RecordingTrimToolbar*>(palette()->recordingTrimPanel());
@@ -6733,7 +6733,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                            &error),
                 "start variable-speed trim fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         auto* copy = recordingToolbarButton("Copy recording");
         auto* close = recordingToolbarButton("Close recording");
         wait([&] { return copy->isEnabled(); });
@@ -6915,8 +6915,8 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
             require(captureActivity == QVector<bool>{true},
                     "recording suppresses floating surfaces before entering trim");
             auto* close = recordingToolbarButton("Close recording");
-            auto* trim = recordingToolbarButton("Trim Video");
-            auto* save = recordingToolbarButton("Save to File");
+            auto* trim = recordingToolbarButton("Trim video");
+            auto* save = recordingToolbarButton("Save to file");
             auto* copy = recordingToolbarButton("Copy recording");
             require(close && trim && save && copy && close->x() < trim->x() &&
                         trim->x() < save->x() && save->x() < copy->x(),
@@ -7169,7 +7169,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                                &error),
                     "start crop exit fixture");
             waitForRecording(controller);
-            auto* trim = recordingToolbarButton("Trim Video");
+            auto* trim = recordingToolbarButton("Trim video");
             trim->click();
             wait([&] { return trim->isEnabled(); });
             require(captureActivity == QVector<bool>({true, false}),
@@ -7214,7 +7214,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                                            {{QStringLiteral("post_processing"), deferred}}, &error),
                 "start detached trim export fixture");
         waitForRecording(controller);
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         wait([&] {
             return controller.automationState().value(QStringLiteral("state")) ==
                        QStringLiteral("trimming") &&
@@ -7263,7 +7263,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
         exportEntered = &entered;
         const int beforeRenders = renderStarts, beforeOpens = clipOpens,
                   beforeDiscards = sourceDiscards, beforeSessions = destroyedSessions;
-        recordingToolbarButton("Trim Video")->click();
+        recordingToolbarButton("Trim video")->click();
         require(reached.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
                 "trim finalization reaches its worker barrier");
         recordingToolbarButton("Close recording")->click();
@@ -7293,7 +7293,7 @@ void recordingTrimmingTests(const QString& directory, bool uiOnly = false) {
                 dialog->reject();
     });
     dismiss.start(10);
-    recordingToolbarButton("Save to File")->click();
+    recordingToolbarButton("Save to file")->click();
     wait([&] {
         return controller.automationState().value(QStringLiteral("state")) ==
                QStringLiteral("trimming");

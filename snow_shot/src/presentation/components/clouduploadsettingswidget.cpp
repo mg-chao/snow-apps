@@ -460,15 +460,15 @@ void CloudUploadSettingsWidget::translateEditor() {
                                       : tr("Add cloud upload configuration"));
     m_modal->setAcceptText(tr("Save"));
     m_modal->setRejectText(tr("Cancel"));
-    const char* labels[]{QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Configuration Name"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Service Endpoint"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Signing Region"),
+    const char* labels[]{QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Configuration name"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Service endpoint"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Signing region"),
                          QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Bucket"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Access Key ID"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Secret Access Key"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Session Token"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Object Key Prefix"),
-                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Public / CDN Base URL")};
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Access key ID"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Secret access key"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Session token"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Object key prefix"),
+                         QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Public / CDN base URL")};
     for (size_t i = 0; i < m_fields.size(); ++i) {
         auto metadata = m_fields[i]->metadata();
         metadata.label = {"CloudUploadSettingsWidget", labels[i]};
@@ -482,7 +482,7 @@ void CloudUploadSettingsWidget::translateEditor() {
     }
     auto metadata = m_addressing->metadata();
     metadata.label = {"CloudUploadSettingsWidget",
-                      QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Addressing Style")};
+                      QT_TRANSLATE_NOOP("CloudUploadSettingsWidget", "Addressing style")};
     m_addressing->setMetadata(metadata);
     m_addressing->setChoices({{QStringLiteral("path"), {}, tr("Path style")},
                               {QStringLiteral("virtual"), {}, tr("Virtual hosted")}});
@@ -498,7 +498,7 @@ void CloudUploadSettingsWidget::retranslateUi() {
     m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
                         "writable and try again"));
     m_add->setText(tr("Add configuration"));
-    m_title->setText(tr("Upload Configurations"));
+    m_title->setText(tr("Upload configurations"));
     m_default->retranslateUi();
     rebuild(true);
     translateEditor();

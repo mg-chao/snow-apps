@@ -2437,7 +2437,7 @@ void ScreenshotRecognitionWindow::populateOcrContextMenu(adqt::widgets::AdContex
     menu.setObjectName(QStringLiteral("screenshotOcrContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
     copy->setObjectName(QStringLiteral("screenshotOcrCopyAction"));
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
     const auto owner = m_sessionOwner;
     const auto token = m_attachmentToken;
     copy->setEnabled(commandAttachmentMatches(owner, token));
@@ -2466,7 +2466,7 @@ void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition
     adqt::widgets::AdContextMenu menu(this);
     menu.setObjectName(QStringLiteral("screenshotQrContextMenu"));
     QAction* copy = menu.addItem(tr("Copy"), adqt::icons::antd::outlined::Copy());
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
     const auto owner = m_sessionOwner;
     const auto token = m_attachmentToken;
     copy->setEnabled(commandAttachmentMatches(owner, token));
@@ -2503,7 +2503,7 @@ void ScreenshotRecognitionWindow::populateTextEditorContextMenu(
     QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
     QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
     menu.addSeparator();
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
 
     const QPointer<ScreenshotRecognitionWindow> lifetime(this);
     const auto owner = m_sessionOwner;

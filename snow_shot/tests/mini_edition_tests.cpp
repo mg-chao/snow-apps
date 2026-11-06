@@ -63,7 +63,7 @@ void settingsExcludeRemovedFeatures() {
                 snow_shot::presentation::GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop),
         "Mini exposes window-under-cursor topmost before the hotkey toggles without translation");
 #endif
-    require(index.search(QStringLiteral("API Key")).isEmpty(),
+    require(index.search(QStringLiteral("API key")).isEmpty(),
             "Mini search must not advertise credentials for unavailable online providers");
     for (const auto& entry : index.entries()) {
         const auto* item = catalog.item(entry.location);

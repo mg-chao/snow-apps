@@ -28,7 +28,7 @@ void startupFailuresStayInLogs() {
     const auto restoreHandler =
         qScopeGuard([previousHandler] { qInstallMessageHandler(previousHandler); });
     for (const QString& error :
-         {QStringLiteral("Elevated auto-start needs repair. Turn Launch as administrator off and "
+         {QStringLiteral("Elevated auto-start needs repair. Turn launch as administrator off and "
                          "on again"),
           QStringLiteral("An interrupted startup change needs administrator authorization. "
                          "Reapply your startup setting")}) {

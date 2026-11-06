@@ -19,7 +19,7 @@
             <translation>取消</translation>
         </message>
         <message>
-            <source>Language Detection Confidence Threshold</source>
+            <source>Language detection confidence threshold</source>
             <translation>语言检测置信度阈值</translation>
         </message>
         <message>
@@ -31,11 +31,11 @@
             <translation>确定</translation>
         </message>
         <message>
-            <source>Original Image Translation</source>
+            <source>Original image translation</source>
             <translation>原图翻译</translation>
         </message>
         <message>
-            <source>Primary Target Language</source>
+            <source>Primary target language</source>
             <translation>主要目标语言</translation>
         </message>
         <message>
@@ -43,7 +43,7 @@
             <translation>重试</translation>
         </message>
         <message>
-            <source>Secondary Target Language</source>
+            <source>Secondary target language</source>
             <translation>次要目标语言</translation>
         </message>
         <message>
@@ -133,7 +133,7 @@
     <context>
         <name>TranslationPageWidget</name>
         <message>
-            <source>Auto Detect</source>
+            <source>Auto detect</source>
             <translation>自动检测</translation>
         </message>
         <message>
@@ -141,7 +141,7 @@
             <translation>复制 (%1)</translation>
         </message>
         <message>
-            <source>Copy and Close (%1)</source>
+            <source>Copy and close (%1)</source>
             <translation>复制并关闭 (%1)</translation>
         </message>
         <message>
@@ -208,11 +208,11 @@
     <context>
         <name>TranslationService</name>
         <message>
-            <source>General Models</source>
+            <source>General models</source>
             <translation>通用模型</translation>
         </message>
         <message>
-            <source>Translation Models</source>
+            <source>Translation models</source>
             <translation>翻译模型</translation>
         </message>
     </context>
@@ -223,7 +223,7 @@
             <translation>关闭</translation>
         </message>
         <message>
-            <source>Copy and Close</source>
+            <source>Copy and close</source>
             <translation>复制并关闭</translation>
         </message>
         <message>
@@ -260,7 +260,7 @@
     <context>
         <name>snow_shot::translation::TranslationService</name>
         <message>
-            <source>Free Translation</source>
+            <source>Free translation</source>
             <translation>免费翻译</translation>
         </message>
         <message>

@@ -3678,8 +3678,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(saveAction, &QAction::triggered, this, &ScreenshotPinnedWindow::saveAsFile);
 
     if (isLiveWindow()) {
-        auto* convert = m_contextMenu->addItem(tr("Convert to Image"), outlined_icons::FileImage());
-        setActionTranslationSource(convert, "Convert to Image");
+        auto* convert = m_contextMenu->addItem(tr("Convert to image"), outlined_icons::FileImage());
+        setActionTranslationSource(convert, "Convert to image");
         convert->setObjectName(QStringLiteral("screenshotPinnedConvertToImageAction"));
         convert->setProperty("liveCommand", QStringLiteral("convert_to_image"));
         connect(convert, &QAction::triggered, this, &ScreenshotPinnedWindow::convertLiveToImage);
@@ -3920,7 +3920,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
             processMenu->addSeparator();
             m_splitImageAction = processMenu->addItem(
                 QCoreApplication::translate(
-                    "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting")),
+                    "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image splitting")),
                 custom_outlined_icons::ImageSplitting());
             m_splitImageAction->setObjectName(QStringLiteral("screenshotPinnedSplitImageAction"));
             m_splitImageAction->setProperty("liveCommand", QStringLiteral("split_image"));
@@ -3936,8 +3936,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
                 });
             });
             m_imageEditingAction =
-                processMenu->addItem(tr("Image Editing"), custom_outlined_icons::ImageEditing());
-            setActionTranslationSource(m_imageEditingAction, "Image Editing");
+                processMenu->addItem(tr("Image editing"), custom_outlined_icons::ImageEditing());
+            setActionTranslationSource(m_imageEditingAction, "Image editing");
             m_imageEditingAction->setObjectName(
                 QStringLiteral("screenshotPinnedImageEditingAction"));
             m_imageEditingAction->setProperty("liveCommand", QStringLiteral("image_editing"));
@@ -3957,8 +3957,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
         outlined_icons::Picture());
     setActionTranslationSource(processAction, "Process image");
     m_applyCropAction =
-        m_contextMenu->addItem(tr("Apply Crop"), custom_outlined_icons::ApplyCrop());
-    setActionTranslationSource(m_applyCropAction, "Apply Crop");
+        m_contextMenu->addItem(tr("Apply crop"), custom_outlined_icons::ApplyCrop());
+    setActionTranslationSource(m_applyCropAction, "Apply crop");
     m_applyCropAction->setObjectName(QStringLiteral("screenshotPinnedApplyCropAction"));
     m_applyCropAction->setProperty("liveCommand", QStringLiteral("apply_crop"));
     connect(m_applyCropAction, &QAction::triggered, this, &ScreenshotPinnedWindow::applyCrop);
@@ -3986,8 +3986,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
         connect(m_thumbnailAction, &QAction::toggled, this,
                 [this](bool enabled) { setThumbnailMode(enabled); });
 
-        m_hideToTopAction = m_contextMenu->addItem(tr("Hide to Top"), outlined_icons::ArrowUp());
-        setActionTranslationSource(m_hideToTopAction, "Hide to Top");
+        m_hideToTopAction = m_contextMenu->addItem(tr("Hide to top"), outlined_icons::ArrowUp());
+        setActionTranslationSource(m_hideToTopAction, "Hide to top");
         m_hideToTopAction->setObjectName(QStringLiteral("screenshotPinnedHideToTopAction"));
         m_hideToTopAction->setCheckable(true);
         connect(m_hideToTopAction, &QAction::triggered, this,
@@ -4009,13 +4009,13 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_lockAction, &QAction::toggled, this, &ScreenshotPinnedWindow::setLockedMode);
 
     auto* managementAction = m_contextMenu->addLazySubMenu(
-        tr("Window Management"),
+        tr("Window management"),
         [this](auto* windowManagementMenu) {
             windowManagementMenu->setObjectName(
                 QStringLiteral("screenshotPinnedWindowManagementMenu"));
             m_alwaysOnTopAction =
-                windowManagementMenu->addItem(tr("Always on Top"), outlined_icons::ToTop());
-            setActionTranslationSource(m_alwaysOnTopAction, "Always on Top");
+                windowManagementMenu->addItem(tr("Always on top"), outlined_icons::ToTop());
+            setActionTranslationSource(m_alwaysOnTopAction, "Always on top");
             m_alwaysOnTopAction->setObjectName(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
             m_alwaysOnTopAction->setCheckable(true);
             connect(m_alwaysOnTopAction, &QAction::triggered, this,
@@ -4037,9 +4037,9 @@ void ScreenshotPinnedWindow::createContextMenu() {
             if (!isLiveWindow()) {
                 windowManagementMenu->addSeparator();
                 auto* batch = windowManagementMenu->addLazySubMenu(
-                    tr("Batch Actions"), [this](auto* menu) { createBatchActionsMenu(menu); },
+                    tr("Batch actions"), [this](auto* menu) { createBatchActionsMenu(menu); },
                     outlined_icons::Appstore());
-                setActionTranslationSource(batch, "Batch Actions");
+                setActionTranslationSource(batch, "Batch actions");
                 batch->setObjectName(QStringLiteral("screenshotPinnedBatchActionsAction"));
                 m_loadContentAction = windowManagementMenu->addLazySubMenu(
                     tr("Load new content"),
@@ -4100,7 +4100,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
             refreshContextMenu();
         },
         outlined_icons::Apartment());
-    setActionTranslationSource(managementAction, "Window Management");
+    setActionTranslationSource(managementAction, "Window management");
     managementAction->setObjectName(QStringLiteral("screenshotPinnedWindowManagementAction"));
 
     m_contextMenu->addSeparator();
@@ -4206,7 +4206,7 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
                                                 : tr("Default")));
     }
     if (m_splitImageAction != nullptr) {
-        const QString label = QCoreApplication::translate("ImageSplitWindow", "Image Splitting");
+        const QString label = QCoreApplication::translate("ImageSplitWindow", "Image splitting");
         m_splitImageAction->setText(label);
         m_splitImageAction->setToolTip(label);
         m_splitImageAction->setEnabled(
@@ -4218,7 +4218,7 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
                                         !m_closing);
     }
     if (m_imageEditingAction != nullptr) {
-        const QString label = tr("Image Editing");
+        const QString label = tr("Image editing");
         m_imageEditingAction->setText(label);
         m_imageEditingAction->setToolTip(label);
         m_imageEditingAction->setEnabled(liveCommandAllowed(QStringLiteral("image_editing")) &&
@@ -4347,7 +4347,7 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     m_groupMenu->clear();
     snow_shot::presentation::PinnedWindowGroupManager* manager = m_groupManager;
     if (manager == nullptr) {
-        m_groupMenu->menuAction()->setText(tr("Group: Default"));
+        m_groupMenu->menuAction()->setText(tr("Group: default"));
         QAction* current = m_groupMenu->addItem(tr("Default"));
         current->setCheckable(true);
         current->setChecked(true);
@@ -4371,18 +4371,18 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
                 [this, manager, groupId = group.id]() { manager->moveWindow(this, groupId); });
     }
     m_groupMenu->addSeparator();
-    QAction* newGroup = m_groupMenu->addItem(tr("New Group"), outlined_icons::FolderAdd());
+    QAction* newGroup = m_groupMenu->addItem(tr("New group"), outlined_icons::FolderAdd());
     newGroup->setObjectName(QStringLiteral("screenshotPinnedNewGroupAction"));
     connect(newGroup, &QAction::triggered, this,
             [this, manager]() { manager->openCreateGroupModal(this, this); });
-    QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"), outlined_icons::Clear());
+    QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete empty groups"), outlined_icons::Clear());
     deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     deleteEmpty->setEnabled(hasDeletableEmptyGroups);
     connect(deleteEmpty, &QAction::triggered, this,
             [this, manager]() { manager->openDeleteEmptyGroupsConfirmation(this); });
 
     auto* deleteSpecified = m_groupMenu->addLazySubMenu(
-        tr("Delete Specified Group"),
+        tr("Delete specified group"),
         [this, manager](auto* menu) {
             menu->setObjectName(QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
             menu->setMinimumWidth(300);
@@ -9551,14 +9551,14 @@ void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu
         connect(action, &QAction::triggered, this, std::move(callback));
         return action;
     };
-    add(tr("Select All"), "Select All", "screenshotPinnedBatchSelectAllAction",
+    add(tr("Select all"), "Select all", "screenshotPinnedBatchSelectAllAction",
         [this] { selectAllDisplayedPinnedWindows(); });
-    add(tr("Image Stitching"), "Image Stitching", "screenshotPinnedBatchImageStitchingAction",
+    add(tr("Image stitching"), "Image stitching", "screenshotPinnedBatchImageStitchingAction",
         [this] { stitchDisplayedPinnedWindows(); });
-    add(tr("Copy Files to Clipboard"), "Copy Files to Clipboard",
+    add(tr("Copy files to clipboard"), "Copy files to clipboard",
         "screenshotPinnedBatchCopyFilesToClipboardAction",
         [this] { copyPinnedWindowFiles(displayedPinnedWindows()); });
-    add(tr("Save as File"), "Save as File", "screenshotPinnedBatchSaveAsFileAction",
+    add(tr("Save as file"), "Save as file", "screenshotPinnedBatchSaveAsFileAction",
         [this] { saveDisplayedPinnedWindows(); });
     menu->addSeparator();
     const auto apply = [this](auto operation) {
@@ -9567,33 +9567,33 @@ void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu
             if (window && !window->m_closing)
                 operation(*window);
     };
-    add(tr("Enable Thumbnail Mode"), "Enable Thumbnail Mode",
+    add(tr("Enable thumbnail mode"), "Enable thumbnail mode",
         "screenshotPinnedBatchEnableThumbnailAction", [apply] {
             apply([](auto& window) {
                 if (!window.m_thumbnailMode)
                     window.setThumbnailMode(true);
             });
         });
-    add(tr("Disable Thumbnail Mode"), "Disable Thumbnail Mode",
+    add(tr("Disable thumbnail mode"), "Disable thumbnail mode",
         "screenshotPinnedBatchDisableThumbnailAction",
         [apply] { apply([](auto& window) { window.setThumbnailMode(false); }); });
-    add(tr("Enable Hide to Top"), "Enable Hide to Top",
+    add(tr("Enable hide to top"), "Enable hide to top",
         "screenshotPinnedBatchEnableHideToTopAction", [apply] {
             apply([](auto& window) {
                 if (!window.hideToTopActive())
                     window.toggleHideToTop();
             });
         });
-    add(tr("Disable Hide to Top"), "Disable Hide to Top",
+    add(tr("Disable hide to top"), "Disable hide to top",
         "screenshotPinnedBatchDisableHideToTopAction", [apply] {
             apply([](auto& window) {
                 if (window.hideToTopActive())
                     window.toggleHideToTop();
             });
         });
-    add(tr("Enable Lock Mode"), "Enable Lock Mode", "screenshotPinnedBatchEnableLockAction",
+    add(tr("Enable lock mode"), "Enable lock mode", "screenshotPinnedBatchEnableLockAction",
         [apply] { apply([](auto& window) { window.setLockedMode(true); }); });
-    add(tr("Disable Lock Mode"), "Disable Lock Mode", "screenshotPinnedBatchDisableLockAction",
+    add(tr("Disable lock mode"), "Disable lock mode", "screenshotPinnedBatchDisableLockAction",
         [apply] { apply([](auto& window) { window.setLockedMode(false); }); });
     menu->addSeparator();
     add(tr("Close"), "Close", "screenshotPinnedBatchCloseAction",

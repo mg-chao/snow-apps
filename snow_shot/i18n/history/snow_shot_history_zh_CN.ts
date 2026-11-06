@@ -154,7 +154,7 @@
             <translation>删除图像</translation>
         </message>
         <message>
-            <source>Drag image files here, or choose Add images</source>
+            <source>Drag image files here, or choose add images</source>
             <translation>将图片文件拖到此处，或点击“添加图片”</translation>
         </message>
         <message>
@@ -392,7 +392,7 @@
             <translation>删除图像</translation>
         </message>
         <message>
-            <source>Drag image files here, or choose Add images</source>
+            <source>Drag image files here, or choose add images</source>
             <translation>将图像文件拖到此处，或选择“添加图像”</translation>
         </message>
         <message>
@@ -523,7 +523,7 @@
             <translation>身份证</translation>
         </message>
         <message>
-            <source>Image Size</source>
+            <source>Image size</source>
             <translation>图像大小</translation>
         </message>
         <message>
@@ -948,7 +948,7 @@ Files:
             <translation>焦点窗口</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>图片编辑</translation>
         </message>
         <message>
@@ -992,7 +992,7 @@ Files:
             <translation>截图结果</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
+            <source>Stitch image</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1011,7 +1011,7 @@ Files:
             <translation>复制图像路径</translation>
         </message>
         <message>
-            <source>Open Containing Folder</source>
+            <source>Open containing folder</source>
             <translation>打开所在文件夹</translation>
         </message>
         <message>
@@ -1108,7 +1108,7 @@ Files:
             <translation>列数</translation>
         </message>
         <message>
-            <source>Drag an image file here, or choose Select Image</source>
+            <source>Drag an image file here, or choose select image</source>
             <translation>将图像文件拖到此处，或点击“选择图像”</translation>
         </message>
         <message>
@@ -1132,11 +1132,11 @@ Files:
             <translation>请输入至少为 16 像素的整数</translation>
         </message>
         <message>
-            <source>Equal Split</source>
+            <source>Equal split</source>
             <translation>均等分割</translation>
         </message>
         <message>
-            <source>Fit to Canvas</source>
+            <source>Fit to canvas</source>
             <translation>适应画布</translation>
         </message>
         <message>
@@ -1144,7 +1144,7 @@ Files:
             <translation>网格</translation>
         </message>
         <message>
-            <source>Height per Image</source>
+            <source>Height per image</source>
             <translation>每张图像的高度</translation>
         </message>
         <message>
@@ -1152,7 +1152,7 @@ Files:
             <translation>水平</translation>
         </message>
         <message>
-            <source>Number of Images</source>
+            <source>Number of images</source>
             <translation>图像数量</translation>
         </message>
         <message>
@@ -1164,7 +1164,7 @@ Files:
             <translation>像素</translation>
         </message>
         <message>
-            <source>Precise Split</source>
+            <source>Precise split</source>
             <translation>精确分割</translation>
         </message>
         <message>
@@ -1180,12 +1180,12 @@ Files:
             <translation>行数</translation>
         </message>
         <message>
-            <source>Select Image</source>
-            <translation>选择图像</translation>
-        </message>
-        <message>
             <source>Select an image to split</source>
             <translation>选择要分割的图像</translation>
+        </message>
+        <message>
+            <source>Select image</source>
+            <translation>选择图像</translation>
         </message>
         <message>
             <source>Split direction</source>
@@ -1212,7 +1212,7 @@ Files:
             <translation>垂直</translation>
         </message>
         <message>
-            <source>Width per Image</source>
+            <source>Width per image</source>
             <translation>每张图像的宽度</translation>
         </message>
     </context>
@@ -1293,20 +1293,20 @@ Files:
             <translation>无法开始导出，请重试</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>图片分割</translation>
-        </message>
-        <message>
-            <source>Image Stitching is busy. Try again when it finishes</source>
-            <translation>图片拼接正忙。请等待完成后重试</translation>
-        </message>
-        <message>
             <source>Image loading could not be started. Try again</source>
             <translation>无法开始加载图像，请重试</translation>
         </message>
         <message>
             <source>Image processing failed. Try again</source>
             <translation>图像处理失败，请重试</translation>
+        </message>
+        <message>
+            <source>Image splitting</source>
+            <translation>图片分割</translation>
+        </message>
+        <message>
+            <source>Image stitching is busy. Try again when it finishes</source>
+            <translation>图片拼接正忙。请等待完成后重试</translation>
         </message>
         <message>
             <source>Images</source>
@@ -1317,7 +1317,7 @@ Files:
             <translation>正在加载图像…</translation>
         </message>
         <message>
-            <source>Replace Image</source>
+            <source>Replace image</source>
             <translation>替换图像</translation>
         </message>
         <message>
@@ -1325,7 +1325,7 @@ Files:
             <translation>替换图像将丢弃当前编辑</translation>
         </message>
         <message>
-            <source>Save All</source>
+            <source>Save all</source>
             <translation>全部保存</translation>
         </message>
         <message>
@@ -1341,11 +1341,11 @@ Files:
             <translation>正在保存图像：%1 / %2</translation>
         </message>
         <message>
-            <source>Select Destination Folder</source>
+            <source>Select destination folder</source>
             <translation>选择目标文件夹</translation>
         </message>
         <message>
-            <source>Select Image</source>
+            <source>Select image</source>
             <translation>选择图像</translation>
         </message>
         <message>
@@ -1480,7 +1480,7 @@ Files:
             <translation>所有来源</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批量操作</translation>
         </message>
         <message>
@@ -1558,11 +1558,11 @@ Files:
             <translation>已隐藏</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>图片编辑</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
+            <source>Image splitting</source>
             <translation>图片分割</translation>
         </message>
         <message>
@@ -1582,7 +1582,7 @@ Files:
             <translation>暂无固定到屏幕窗口</translation>
         </message>
         <message>
-            <source>Not Closed</source>
+            <source>Not closed</source>
             <translation>未关闭</translation>
         </message>
         <message>
@@ -1590,12 +1590,12 @@ Files:
             <translation>其他 / 旧记录</translation>
         </message>
         <message>
-            <source>Pin to Screen Management</source>
-            <translation>固定到屏幕管理</translation>
-        </message>
-        <message>
             <source>Pin to screen</source>
             <translation>固定到屏幕</translation>
+        </message>
+        <message>
+            <source>Pin to screen management</source>
+            <translation>固定到屏幕管理</translation>
         </message>
         <message>
             <source>Pinned images and text will appear here</source>
@@ -1664,7 +1664,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
+            <source>Stitch image</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1701,7 +1701,7 @@ Files:
             <translation>所有来源</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批量操作</translation>
         </message>
         <message>
@@ -1813,7 +1813,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
+            <source>Stitch image</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1846,7 +1846,7 @@ Files:
             <translation>隔空投送</translation>
         </message>
         <message>
-            <source>Always on Top</source>
+            <source>Always on top</source>
             <translation>始终置顶</translation>
         </message>
         <message>
@@ -1854,11 +1854,11 @@ Files:
             <translation>标注模式</translation>
         </message>
         <message>
-            <source>Apply Crop</source>
+            <source>Apply crop</source>
             <translation>应用裁剪</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
+            <source>Batch actions</source>
             <translation>批量操作</translation>
         </message>
         <message>
@@ -1898,7 +1898,7 @@ Files:
             <translation>已关闭</translation>
         </message>
         <message>
-            <source>Convert to Image</source>
+            <source>Convert to image</source>
             <translation>转换为图片</translation>
         </message>
         <message numerus="yes">
@@ -1912,7 +1912,7 @@ Files:
             <translation>已复制：%1；失败：%2</translation>
         </message>
         <message>
-            <source>Copy Files to Clipboard</source>
+            <source>Copy files to clipboard</source>
             <translation>复制文件到剪贴板</translation>
         </message>
         <message>
@@ -1940,11 +1940,11 @@ Files:
             <translation>默认</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
+            <source>Delete empty groups</source>
             <translation>删除空分组</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
+            <source>Delete specified group</source>
             <translation>删除指定分组</translation>
         </message>
         <message>
@@ -1964,32 +1964,32 @@ Files:
             <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销</translation>
         </message>
         <message>
-            <source>Disable Hide to Top</source>
+            <source>Disable hide to top</source>
             <translation>禁用顶部隐藏</translation>
         </message>
         <message>
-            <source>Disable Lock Mode</source>
+            <source>Disable lock mode</source>
             <translation>禁用锁定模式</translation>
         </message>
         <message>
-            <source>Disable Thumbnail Mode</source>
+            <source>Disable thumbnail mode</source>
             <translation>禁用缩略图模式</translation>
-        </message>
-        <message>
-            <source>Enable Hide to Top</source>
-            <translation>启用顶部隐藏</translation>
-        </message>
-        <message>
-            <source>Enable Lock Mode</source>
-            <translation>启用锁定模式</translation>
-        </message>
-        <message>
-            <source>Enable Thumbnail Mode</source>
-            <translation>启用缩略图模式</translation>
         </message>
         <message>
             <source>Enable annotation mode</source>
             <translation>启用标注模式</translation>
+        </message>
+        <message>
+            <source>Enable hide to top</source>
+            <translation>启用顶部隐藏</translation>
+        </message>
+        <message>
+            <source>Enable lock mode</source>
+            <translation>启用锁定模式</translation>
+        </message>
+        <message>
+            <source>Enable thumbnail mode</source>
+            <translation>启用缩略图模式</translation>
         </message>
         <message>
             <source>Exit click-through mode</source>
@@ -2008,7 +2008,7 @@ Files:
             <translation>分组：%1</translation>
         </message>
         <message>
-            <source>Group: Default</source>
+            <source>Group: default</source>
             <translation>分组：默认</translation>
         </message>
         <message>
@@ -2016,16 +2016,12 @@ Files:
             <translation>隐藏其他窗口</translation>
         </message>
         <message>
-            <source>Hide to Top</source>
+            <source>Hide to top</source>
             <translation>顶部隐藏</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>图片编辑</translation>
-        </message>
-        <message>
-            <source>Image Stitching</source>
-            <translation>图片拼接</translation>
         </message>
         <message>
             <source>Image file</source>
@@ -2034,6 +2030,10 @@ Files:
         <message>
             <source>Image size is too large</source>
             <translation>图像尺寸过大</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>图片拼接</translation>
         </message>
         <message>
             <source>Increase 10%</source>
@@ -2064,7 +2064,7 @@ Files:
             <translation>移动窗口</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新建分组</translation>
         </message>
         <message>
@@ -2144,10 +2144,6 @@ Files:
             <translation>逆时针旋转</translation>
         </message>
         <message>
-            <source>Save as File</source>
-            <translation>保存为文件</translation>
-        </message>
-        <message>
             <source>Save as file</source>
             <translation>保存为文件</translation>
         </message>
@@ -2174,7 +2170,7 @@ Files:
             <translation>缩放</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全选</translation>
         </message>
         <message>
@@ -2278,7 +2274,7 @@ Files:
             <translation>正在上传到云端… %1%</translation>
         </message>
         <message>
-            <source>Window Management</source>
+            <source>Window management</source>
             <translation>窗口管理</translation>
         </message>
     </context>
@@ -2301,7 +2297,7 @@ Files:
             <translation>松开所有快捷键或点击分组以切换，按 Esc 取消</translation>
         </message>
         <message>
-            <source>Switch Window Group</source>
+            <source>Switch window group</source>
             <translation>切换窗口分组</translation>
         </message>
         <message>
@@ -2316,15 +2312,15 @@ Files:
             <translation>上传图像前请先配置云上传</translation>
         </message>
         <message>
-            <source>Continue Editing</source>
+            <source>Continue editing</source>
             <translation>继续编辑</translation>
         </message>
         <message>
-            <source>Discard Changes</source>
+            <source>Discard changes</source>
             <translation>放弃更改</translation>
         </message>
         <message>
-            <source>Discard Changes?</source>
+            <source>Discard changes?</source>
             <translation>放弃更改？</translation>
         </message>
         <message>
@@ -2344,7 +2340,7 @@ Files:
             <translation>适应窗口</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>图片编辑</translation>
         </message>
         <message>
@@ -2391,7 +2387,7 @@ Files:
             <translation>取消</translation>
         </message>
         <message>
-            <source>Clear Default group</source>
+            <source>Clear default group</source>
             <translation>清空默认分组</translation>
         </message>
         <message>
@@ -2407,7 +2403,7 @@ Files:
             <translation>删除“%1”及其中所有固定到屏幕窗口（包括已关闭的窗口）？此操作无法撤销</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone</source>
+            <source>Delete all pinned windows in "%1", including closed windows? The default group will remain. This action cannot be undone</source>
             <translation>删除“%1”中的所有固定到屏幕窗口（包括已关闭的窗口）？默认分组将保留。此操作无法撤销</translation>
         </message>
         <message>
@@ -2435,7 +2431,7 @@ Files:
             <translation>分组名称</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新建分组</translation>
         </message>
         <message>
@@ -2460,16 +2456,16 @@ Files:
         </translation>
         </message>
         <message>
-            <source>Align Position</source>
-            <translation>对齐位置</translation>
-        </message>
-        <message>
             <source>Align bottom</source>
             <translation>底对齐</translation>
         </message>
         <message>
             <source>Align left</source>
             <translation>左对齐</translation>
+        </message>
+        <message>
+            <source>Align position</source>
+            <translation>对齐位置</translation>
         </message>
         <message>
             <source>Align right</source>
@@ -2496,19 +2492,19 @@ Files:
             <translation>关闭</translation>
         </message>
         <message>
-            <source>Close Other Windows</source>
+            <source>Close other windows</source>
             <translation>关闭其他窗口</translation>
         </message>
         <message>
-            <source>Copy Files to Clipboard</source>
+            <source>Copy files to clipboard</source>
             <translation>复制文件到剪贴板</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
+            <source>Delete empty groups</source>
             <translation>删除空分组</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
+            <source>Delete specified group</source>
             <translation>删除指定分组</translation>
         </message>
         <message>
@@ -2548,7 +2544,7 @@ Files:
             <translation>分组</translation>
         </message>
         <message>
-            <source>Image Stitching</source>
+            <source>Image stitching</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -2556,11 +2552,11 @@ Files:
             <translation>锁定</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新建分组</translation>
         </message>
         <message>
-            <source>Save as File</source>
+            <source>Save as file</source>
             <translation>保存为文件</translation>
         </message>
         <message>

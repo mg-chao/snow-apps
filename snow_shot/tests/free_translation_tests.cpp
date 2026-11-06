@@ -333,7 +333,7 @@ class Translator final : public QTranslator {
         return false;
     }
     QString translate(const char*, const char* source, const char*, int) const override {
-        if (QString::fromUtf8(source) == u"Free Translation")
+        if (QString::fromUtf8(source) == u"Free translation")
             return QStringLiteral("Localized free translation");
         if (QString::fromUtf8(source) == message)
             return QStringLiteral("Localized failure");

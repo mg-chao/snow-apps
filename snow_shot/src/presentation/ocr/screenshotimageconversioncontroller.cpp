@@ -496,7 +496,7 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
     auto* select = new AdSelect(form);
     select->setObjectName(QStringLiteral("screenshotVisionModel"));
     select->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
-    auto* field = form->addField(tr("Vision Model"), select, QStringLiteral("model"));
+    auto* field = form->addField(tr("Vision model"), select, QStringLiteral("model"));
     layout->addWidget(form);
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(select);
@@ -504,8 +504,8 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         modal->setWindowTitle(tr("Image conversion settings"));
         modal->setAcceptText(tr("OK"));
         modal->setRejectText(tr("Cancel"));
-        field->setLabel(tr("Vision Model"));
-        select->setAccessibleName(tr("Vision Model"));
+        field->setLabel(tr("Vision model"));
+        select->setAccessibleName(tr("Vision model"));
         retry->setText(tr("Retry"));
     };
     retranslate();

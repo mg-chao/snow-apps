@@ -514,7 +514,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Ellipse"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Diamond"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Thought Bubble"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Thought bubble"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Stroke color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Stroke color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Stroke width %1"),
@@ -560,8 +560,8 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "No templates yet"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Add"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Add template"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template Name"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template Value"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template name"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template value"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Template %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Please enter a template name"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Please enter a template value"),
@@ -631,7 +631,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brightness"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Erase"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
@@ -1614,7 +1614,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     };
     if (speechBubble) {
         shapeConfig.options.push_back(
-            {3, QStringLiteral("Thought Bubble"), custom_outlined_icons::ShapeThoughtBubble()});
+            {3, QStringLiteral("Thought bubble"), custom_outlined_icons::ShapeThoughtBubble()});
     }
     const char* signature = speechBubble ? kSignatureBubbleShapeKind : kSignatureShapeKind;
     shapeConfig.initialId = 0;
@@ -4277,11 +4277,11 @@ QWidget* ScreenshotToolPaletteStyleControls::buildEraserFamily(
                                         host);
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
     const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
-        {static_cast<int>(Tool::Eraser), QStringLiteral("Element Eraser"),
+        {static_cast<int>(Tool::Eraser), QStringLiteral("Element eraser"),
          custom_outlined_icons::ToolEraser()},
-        {static_cast<int>(Tool::RectangleEraser), QStringLiteral("Rectangle Eraser"),
+        {static_cast<int>(Tool::RectangleEraser), QStringLiteral("Rectangle eraser"),
          custom_outlined_icons::EraserTypeRectangle()},
-        {static_cast<int>(Tool::BrushEraser), QStringLiteral("Brush Eraser"),
+        {static_cast<int>(Tool::BrushEraser), QStringLiteral("Brush eraser"),
          custom_outlined_icons::EraserTypeBrush()},
     };
     QWidget* selector = takeReusableWidget(kRoleEraserMode, kSignatureEraserMode, layout, controls);
@@ -4348,7 +4348,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
          outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleFilter),
          QStringLiteral("Rectangle filter"), custom_outlined_icons::ShapeRectangle()},
-        {static_cast<int>(ScreenshotToolPalette::Tool::AutoFilter), QStringLiteral("Auto Filter"),
+        {static_cast<int>(ScreenshotToolPalette::Tool::AutoFilter), QStringLiteral("Auto filter"),
          custom_outlined_icons::MagicWand()},
     };
     QWidget* modeSelector =
@@ -4394,7 +4394,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         appendFilterType("Mosaic", 0);
         appendFilterType("Gaussian blur", 1);
         if (config.allowSmartErase)
-            appendFilterType("Smart Erase", 5);
+            appendFilterType("Smart erase", 5);
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
         appendFilterType("Emboss", 4);
@@ -6789,7 +6789,7 @@ void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
     nameInput->setAllowClear(true);
     nameInput->setMaxLength(80);
     nameInput->setText(watermarkTemplateText("Template %1").arg(m_watermarkTemplates.size() + 1));
-    auto* nameItem = form->addField(watermarkTemplateText("Template Name"), nameInput,
+    auto* nameItem = form->addField(watermarkTemplateText("Template name"), nameInput,
                                     QStringLiteral("templateName"));
     nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     nameItem->setRequired(true);
@@ -6807,7 +6807,7 @@ void ScreenshotToolPaletteStyleControls::openCreateWatermarkTemplateModal() {
     valueInput->setObjectName(QStringLiteral("screenshotWatermarkTemplateValueInput"));
     valueInput->setAllowClear(true);
     valueInput->setText(QStringLiteral("{text}"));
-    auto* valueItem = form->addField(watermarkTemplateText("Template Value"), valueInput,
+    auto* valueItem = form->addField(watermarkTemplateText("Template value"), valueInput,
                                      QStringLiteral("templateValue"));
     valueItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     valueItem->setRequired(true);
@@ -7016,7 +7016,7 @@ void ScreenshotToolPaletteStyleControls::retranslateWatermarkTemplateUi() {
         m_createWatermarkTemplateModal->setRejectText(watermarkTemplateText("Cancel"));
     }
     if (m_createWatermarkTemplateNameItem != nullptr) {
-        m_createWatermarkTemplateNameItem->setLabel(watermarkTemplateText("Template Name"));
+        m_createWatermarkTemplateNameItem->setLabel(watermarkTemplateText("Template name"));
         m_createWatermarkTemplateNameItem->setRequiredMessage(
             watermarkTemplateText("Please enter a template name"));
         if (m_createWatermarkTemplateNameItem->validateStatus() ==
@@ -7025,7 +7025,7 @@ void ScreenshotToolPaletteStyleControls::retranslateWatermarkTemplateUi() {
         }
     }
     if (m_createWatermarkTemplateValueItem != nullptr) {
-        m_createWatermarkTemplateValueItem->setLabel(watermarkTemplateText("Template Value"));
+        m_createWatermarkTemplateValueItem->setLabel(watermarkTemplateText("Template value"));
         m_createWatermarkTemplateValueItem->setRequiredMessage(
             watermarkTemplateText("Please enter a template value"));
         if (m_createWatermarkTemplateValueItem->validateStatus() ==

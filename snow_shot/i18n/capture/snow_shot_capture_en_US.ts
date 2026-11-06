@@ -23,8 +23,8 @@
     <context>
         <name>ScreenshotAutoFilterController</name>
         <message>
-            <source>Region identification failed. Try Auto Filter again</source>
-            <translation>Region identification failed. Try Auto Filter again</translation>
+            <source>Region identification failed. Try auto filter again</source>
+            <translation>Region identification failed. Try auto filter again</translation>
         </message>
     </context>
     <context>
@@ -106,8 +106,8 @@
             <translation>Scrolling capture stopped. Check screen permissions and display settings, then try again</translation>
         </message>
         <message>
-            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements</source>
-            <translation>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements</translation>
+            <source>Smart selection is using window mode. Enable Accessibility access in screenshot settings to select window elements</source>
+            <translation>Smart selection is using window mode. Enable Accessibility access in screenshot settings to select window elements</translation>
         </message>
         <message>
             <source>The clipboard content could not be pinned</source>
@@ -223,20 +223,20 @@
     <context>
         <name>ScreenshotQrController</name>
         <message>
-            <source>Copy Text</source>
-            <translation>Copy Text</translation>
+            <source>Copy text</source>
+            <translation>Copy text</translation>
         </message>
         <message>
             <source>Open URL</source>
             <translation>Open URL</translation>
         </message>
         <message>
-            <source>QR Code</source>
-            <translation>QR Code</translation>
+            <source>QR code</source>
+            <translation>QR code</translation>
         </message>
         <message>
-            <source>QR Code %1</source>
-            <translation>QR Code %1</translation>
+            <source>QR code %1</source>
+            <translation>QR code %1</translation>
         </message>
         <message>
             <source>QR code recognition failed</source>
@@ -542,12 +542,16 @@
             <translation>Maintain aspect ratio</translation>
         </message>
         <message>
+            <source>Mouse wheel</source>
+            <translation>Mouse wheel</translation>
+        </message>
+        <message>
             <source>Scale from center</source>
             <translation>Scale from center</translation>
         </message>
         <message>
-            <source>Selection Aspect Ratio Snap</source>
-            <translation>Selection Aspect Ratio Snap</translation>
+            <source>Selection aspect ratio snap</source>
+            <translation>Selection aspect ratio snap</translation>
         </message>
         <message>
             <source>Switch color format</source>
@@ -564,10 +568,6 @@
         <message>
             <source>Vertical scroll</source>
             <translation>Vertical scroll</translation>
-        </message>
-        <message>
-            <source>mouse wheel</source>
-            <translation>mouse wheel</translation>
         </message>
     </context>
     <context>

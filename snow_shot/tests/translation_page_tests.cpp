@@ -140,7 +140,7 @@ void additionalLanguageSelectors() {
             QApplication::sendEvent(&page, &languageChange);
             QApplication::sendEvent(modal->contentWidget(), &languageChange);
             flushEvents();
-            const QStringList freeLabels{QStringLiteral("Free Translation"),
+            const QStringList freeLabels{QStringLiteral("Free translation"),
                                          QStringLiteral("免费翻译"), QStringLiteral("免費翻譯")};
             const auto checkFreeLabel = [&](const auto& options) {
                 require(std::count_if(options.cbegin(), options.cend(),
@@ -473,7 +473,7 @@ void screenshotSettingsGeometry() {
                 "screenshot settings body fits its content without vertical blank space");
         const auto labels = body->findChildren<QLabel*>(QStringLiteral("ad-form-item-label"));
         require(labels.size() == 6 &&
-                    labels.at(5)->text() == QStringLiteral("Original Image Translation") &&
+                    labels.at(5)->text() == QStringLiteral("Original image translation") &&
                     !body->findChild<QWidget*>(
                         QStringLiteral("screenshotTranslationCopyResultsAsImage")),
                 "screenshot settings excludes the main-settings-only image copy option");
@@ -670,8 +670,8 @@ void selectedTextNavigation() {
         return false;
     };
     searchSelect->setSearchText(QStringLiteral("Translation"));
-    require(!hasSearchLabel(QStringLiteral("Translate Selected Text")) &&
-                hasSearchLabel(QStringLiteral("Translation Page")),
+    require(!hasSearchLabel(QStringLiteral("Translate selected text")) &&
+                hasSearchLabel(QStringLiteral("Translation page")),
             "disabled search hides shortcut but exposes the opt-in toggle");
     require(card->currentRoute() == QStringLiteral("/settings/text-recognition-translation") &&
                 window.findChild<TranslationPageWidget*>() == nullptr,
@@ -681,7 +681,7 @@ void selectedTextNavigation() {
             "disabled direct route is guarded");
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "enable translation page");
-    require(hasSearchLabel(QStringLiteral("Translate Selected Text")),
+    require(hasSearchLabel(QStringLiteral("Translate selected text")),
             "live enable restores selected text search result");
     window.showTranslation(QStringLiteral("first selection"));
     auto* page = window.findChild<TranslationPageWidget*>();
@@ -1138,7 +1138,7 @@ void navigationThemesLanguagesAndGeometry() {
                     return translated;
                 };
                 require(copyCloseAction->text() ==
-                            expectedMenuText("Copy and Close (%1)").arg(copyCloseShortcut),
+                            expectedMenuText("Copy and close (%1)").arg(copyCloseShortcut),
                         "floating actions retranslate immediately");
                 copyAction->setText(QStringLiteral("stale copy legend"));
                 copyCloseAction->setText(QStringLiteral("stale copy-and-close legend"));
@@ -1147,7 +1147,7 @@ void navigationThemesLanguagesAndGeometry() {
                     snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+C")));
                 require(copyAction->text() == expectedMenuText("Copy (%1)").arg(copyShortcut) &&
                             copyCloseAction->text() ==
-                                expectedMenuText("Copy and Close (%1)").arg(copyCloseShortcut),
+                                expectedMenuText("Copy and close (%1)").arg(copyCloseShortcut),
                         "a keyboard-layout refresh must update fixed translation shortcuts");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);

@@ -24,7 +24,7 @@
             <translation>移除換行</translation>
         </message>
         <message>
-            <source>Smart Typesetting</source>
+            <source>Smart typesetting</source>
             <translation>智慧排版</translation>
         </message>
     </context>
@@ -75,7 +75,7 @@
             <translation>無法載入視覺模型</translation>
         </message>
         <message>
-            <source>Vision Model</source>
+            <source>Vision model</source>
             <translation>視覺模型</translation>
         </message>
     </context>
@@ -102,7 +102,7 @@
             <translation>重試</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
     </context>
@@ -351,7 +351,7 @@
             <translation>重試辨識</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
         <message>
@@ -429,7 +429,7 @@
             <translation>重設表格</translation>
         </message>
         <message>
-            <source>Select All</source>
+            <source>Select all</source>
             <translation>全選</translation>
         </message>
         <message>

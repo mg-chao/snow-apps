@@ -188,13 +188,13 @@ void menuSelectionAndModes() {
     QEvent language(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&first, &language);
     require(action(first, "EnableLockAction").text() ==
-                    QStringLiteral("Translated Enable Lock Mode") &&
+                    QStringLiteral("Translated Enable lock mode") &&
                 action(first, "ImageStitchingAction")
                     .text()
-                    .startsWith(QStringLiteral("Translated Image Stitching")) &&
+                    .startsWith(QStringLiteral("Translated Image stitching")) &&
                 action(first, "CopyFilesToClipboardAction")
                     .text()
-                    .startsWith(QStringLiteral("Translated Copy Files to Clipboard")) &&
+                    .startsWith(QStringLiteral("Translated Copy files to clipboard")) &&
                 action(first, "DisplayedCount").text() == QStringLiteral("Displayed translation 5"),
             "materialized batch menus and count retranslate live");
     second.hide();

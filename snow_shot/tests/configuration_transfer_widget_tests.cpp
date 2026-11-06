@@ -306,7 +306,7 @@ void configurationItemsRenderAsButtons() {
     auto* styleSwitch = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
         QStringLiteral("includeToolbarStyles"));
     require(styleSwitch != nullptr, "export options must contain a switch field");
-    require(styleSwitch->accessibleName() == QStringLiteral("Canvas Style Configuration"),
+    require(styleSwitch->accessibleName() == QStringLiteral("Canvas style configuration"),
             "the switch field must use the canvas style configuration label");
     require(!styleSwitch->isChecked(), "toolbar style export must default to off");
     modal->reject();

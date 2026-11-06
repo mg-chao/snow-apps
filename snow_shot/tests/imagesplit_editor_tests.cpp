@@ -226,9 +226,9 @@ void emptyImageShowsUploadSurface() {
                                                              "Select an image to split") &&
                     description->text() == QCoreApplication::translate(
                                                "ImageSplitEditorWidget",
-                                               "Drag an image file here, or choose Select Image") &&
+                                               "Drag an image file here, or choose select image") &&
                     select->text() ==
-                        QCoreApplication::translate("ImageSplitEditorWidget", "Select Image") &&
+                        QCoreApplication::translate("ImageSplitEditorWidget", "Select image") &&
                     select->accessibleName() == select->text() &&
                     empty->accessibleName() == title->text() &&
                     empty->accessibleDescription() == description->text() &&
@@ -472,11 +472,11 @@ void defaultsConditionalControlsAndActions() {
                 child<AdInputNumber>(editor, "imageSplitSize")->exactValue() ==
                     QStringLiteral("50") &&
                 child<AdInputNumber>(editor, "imageSplitSize")->accessibleName() ==
-                    QStringLiteral("Height per Image"),
+                    QStringLiteral("Height per image"),
             "horizontal precise splitting must show a height and default fifty percent");
     const std::array<const char*, 4> names{"imageSplitUndo", "imageSplitRedo", "imageSplitFit",
                                            "imageSplitReload"};
-    const std::array<const char*, 4> labels{"Undo", "Redo", "Fit to Canvas", "Reload"};
+    const std::array<const char*, 4> labels{"Undo", "Redo", "Fit to canvas", "Reload"};
     auto* toolbar = child<QWidget>(editor, "imageSplitCanvasToolbar");
     require(toolbar->parentWidget() == editor.canvas() && toolbar->isVisible() &&
                 editor.canvas()->rect().contains(toolbar->geometry()),
@@ -501,9 +501,9 @@ class SizeLabelTranslator final : public QTranslator {
   public:
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (QByteArray(context) == "ImageSplitEditorWidget") {
-            if (QByteArray(source) == "Width per Image")
+            if (QByteArray(source) == "Width per image")
                 return QStringLiteral("每张图片宽度");
-            if (QByteArray(source) == "Height per Image")
+            if (QByteArray(source) == "Height per image")
                 return QStringLiteral("每张图片高度");
         }
         return {};
@@ -536,8 +536,8 @@ void preciseSizeUsesSharedFormLabel() {
             direction->setCurrentValue(value);
             pump();
             const auto expected = value == QStringLiteral("vertical")
-                                      ? QStringLiteral("Width per Image")
-                                      : QStringLiteral("Height per Image");
+                                      ? QStringLiteral("Width per image")
+                                      : QStringLiteral("Height per image");
             require(field->label() == expected && label->text() == expected &&
                         size->accessibleName() == expected && label->font() == reference->font() &&
                         label->palette().color(QPalette::WindowText) ==

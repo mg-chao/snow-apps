@@ -608,7 +608,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
 
 void CustomAiModelsSettingsWidget::translateModal() {
     if (m_modal != nullptr) {
-        m_modal->setWindowTitle(m_editing ? tr("Edit Model") : tr("Add Model"));
+        m_modal->setWindowTitle(m_editing ? tr("Edit model") : tr("Add model"));
         m_modal->setAcceptText(tr("Save"));
         m_modal->setRejectText(tr("Cancel"));
         if (m_modalError != nullptr && !m_modalError->isHidden()) {
@@ -619,14 +619,14 @@ void CustomAiModelsSettingsWidget::translateModal() {
                          "try again"));
         }
         const char* labels[] = {
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Model Name"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Model name"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API URL"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Key"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Model"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Vision Support"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Reasoning Support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API key"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API model"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Vision support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Reasoning support"),
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Concurrency"),
-            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Provider Type")};
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Provider type")};
         const char* descriptions[] = {
             QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
                               "The model name displayed in Snow Shot"),
@@ -676,7 +676,7 @@ void CustomAiModelsSettingsWidget::translateModal() {
             m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
     }
     if (m_deleteModal != nullptr) {
-        m_deleteModal->setWindowTitle(tr("Delete Model"));
+        m_deleteModal->setWindowTitle(tr("Delete model"));
         m_deleteModal->setAcceptText(tr("Delete"));
         m_deleteModal->setRejectText(tr("Cancel"));
         for (const auto& model : m_session.customAiModels()) {
@@ -692,8 +692,8 @@ void CustomAiModelsSettingsWidget::translateModal() {
 void CustomAiModelsSettingsWidget::retranslateUi() {
     m_error->setText(
         tr("Unable to save models. Check that configuration storage is writable and try again"));
-    m_add->setText(tr("Add Model"));
-    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom Models"));
+    m_add->setText(tr("Add model"));
+    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom models"));
     rebuild(true);
     translateModal();
     if (m_modal != nullptr &&

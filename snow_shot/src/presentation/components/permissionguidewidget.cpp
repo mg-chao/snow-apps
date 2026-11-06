@@ -239,7 +239,7 @@ void PermissionGuideWidget::retranslate() {
     m_row->setToolTip(m_row->accessibleName());
     m_request->setText(guideText(m_pending
                                      ? QT_TRANSLATE_NOOP("PermissionGuide", "Requesting…")
-                                     : QT_TRANSLATE_NOOP("PermissionGuide", "Request Access")));
+                                     : QT_TRANSLATE_NOOP("PermissionGuide", "Request access")));
     m_request->setVisible(microphone && m_status == AppPermissionStatus::NotDetermined);
     m_request->setEnabled(!m_pending);
     layout()->invalidate();

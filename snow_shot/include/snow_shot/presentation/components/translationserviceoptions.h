@@ -14,7 +14,7 @@ translationServiceOptions(const QVector<SnowShotChatModel>& models) {
         const QString label =
             model.id == translation::freeTranslationId
                 ? QCoreApplication::translate("snow_shot::translation::TranslationService",
-                                              "Free Translation")
+                                              "Free translation")
                 : model.name;
         options.append({model.id, label, false, translation::translationModelGroup(model)});
     }

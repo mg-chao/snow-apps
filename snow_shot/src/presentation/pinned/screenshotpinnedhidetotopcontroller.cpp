@@ -551,7 +551,7 @@ void ScreenshotPinnedHideToTopController::changed() {
 
 void ScreenshotPinnedHideToTopController::retranslate() {
     m_handle->setAccessibleName(
-        QCoreApplication::translate("ScreenshotPinnedWindow", "Hide to Top"));
+        QCoreApplication::translate("ScreenshotPinnedWindow", "Hide to top"));
 }
 
 bool ScreenshotPinnedHideToTopController::eventFilter(QObject* watched, QEvent* event) {

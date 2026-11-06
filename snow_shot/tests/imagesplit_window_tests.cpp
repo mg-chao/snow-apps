@@ -779,8 +779,8 @@ void exportAndRuntimeLanguage(const QString& directory) {
             "traditional Chinese uses the image splitting feature name");
     require(languages.setLanguage(QStringLiteral("en_US")), "restore English");
     flush();
-    require(saveButton(window)->text() == QStringLiteral("Save All") &&
-                window.modal()->windowTitle() == QStringLiteral("Image Splitting"),
+    require(saveButton(window)->text() == QStringLiteral("Save all") &&
+                window.modal()->windowTitle() == QStringLiteral("Image splitting"),
             "English source copy restored");
     require(window.lastError() == QStringLiteral("The output folder could not be created"),
             "existing error messages retranslate at runtime");
@@ -910,7 +910,7 @@ void renderPreview(const QString& path, bool dark, qreal dpr) {
     font.setPixelSize(48);
     painter.setFont(font);
     painter.drawText(QRect(50, 50, 1100, 800), Qt::AlignCenter,
-                     QStringLiteral("Snow Shot\nImage Splitting"));
+                     QStringLiteral("Snow Shot\nImage splitting"));
     painter.end();
     ImageSplitWindow window;
     window.presentImage(source, QStringLiteral("design.png"));

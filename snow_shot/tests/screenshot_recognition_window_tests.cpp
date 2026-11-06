@@ -3320,7 +3320,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     inspectContextMenu(window, window.rect().center(), [](adqt::widgets::AdContextMenu& menu) {
         require(menu.objectName() == QStringLiteral("screenshotOcrContextMenu") &&
                     contextMenuActionTexts(menu) ==
-                        QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                        QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                 "OCR context menu should expose Copy and Select All");
         requireContextMenuShortcutsHidden(menu);
         contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3341,7 +3341,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
     presentation->clearTextSelection();
     window.updateOcrSelection();
     inspectContextMenu(window, window.rect().center(), [](adqt::widgets::AdContextMenu& menu) {
-        contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+        contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
     });
     require(presentation->selectedText() == QStringLiteral("Alpha\nBeta"),
             "OCR context Select All should update the presentation selection");
@@ -3358,7 +3358,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
         *qr->viewport(), qr->viewport()->rect().center(), [](adqt::widgets::AdContextMenu& menu) {
             require(menu.objectName() == QStringLiteral("screenshotQrContextMenu") &&
                         contextMenuActionTexts(menu) ==
-                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                     "QR context menu should expose Copy and Select All");
             requireContextMenuShortcutsHidden(menu);
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3375,7 +3375,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "QR context Copy should fall back to all displayed payloads");
     inspectContextMenu(*qr->viewport(), qr->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(qr->textCursor().hasSelection() && qr->textCursor().selectionStart() == 0 &&
                 qr->textCursor().selectionEnd() == qr->document()->characterCount() - 1,
@@ -3396,7 +3396,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
         [](adqt::widgets::AdContextMenu& menu) {
             require(menu.objectName() == QStringLiteral("screenshotImageConversionContextMenu") &&
                         contextMenuActionTexts(menu) ==
-                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select All")},
+                            QStringList{QStringLiteral("Copy"), QStringLiteral("Select all")},
                     "conversion context menu should use Ant Design actions");
             requireContextMenuShortcutsHidden(menu);
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
@@ -3413,7 +3413,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "conversion context Copy should fall back to the full source");
     inspectContextMenu(*preview->viewport(), preview->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(preview->textCursor().hasSelection() && preview->textCursor().selectionStart() == 0 &&
                 preview->textCursor().selectionEnd() == preview->document()->characterCount() - 1,
@@ -3473,7 +3473,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         contextMenuActionTexts(menu) ==
                             QStringList{QStringLiteral("Copy"), QStringLiteral("Cut"),
                                         QStringLiteral("Paste"), QStringLiteral("Delete"),
-                                        QStringLiteral("|"), QStringLiteral("Select All")},
+                                        QStringLiteral("|"), QStringLiteral("Select all")},
                     "text editor menu should expose all requested actions");
             requireContextMenuShortcutsHidden(menu);
             require(contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
@@ -3518,7 +3518,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "text editor context Delete should remove selected text");
     inspectContextMenu(*textEditor->viewport(), textEditor->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(textEditor->textCursor().selectedText() == QStringLiteral(" !"),
             "text editor context Select All should select the document");
@@ -3530,7 +3530,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         !contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
                         !contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
                         !contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled() &&
-                        contextMenuAction(menu, QStringLiteral("Select All"))->isEnabled(),
+                        contextMenuAction(menu, QStringLiteral("Select all"))->isEnabled(),
                     "read-only translation should expose only Copy and Select All");
         });
 
@@ -3575,14 +3575,14 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                         contextMenuActionTexts(menu) ==
                             QStringList{QStringLiteral("Copy"), QStringLiteral("Cut"),
                                         QStringLiteral("Paste"), QStringLiteral("Delete"),
-                                        QStringLiteral("|"), QStringLiteral("Select All")},
+                                        QStringLiteral("|"), QStringLiteral("Select all")},
                     "inline table text should use the OCR-style Ant Design edit menu");
             requireContextMenuShortcutsHidden(menu);
             require(contextMenuAction(menu, QStringLiteral("Copy"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Cut"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Paste"))->isEnabled() &&
                         contextMenuAction(menu, QStringLiteral("Delete"))->isEnabled() &&
-                        contextMenuAction(menu, QStringLiteral("Select All"))->isEnabled(),
+                        contextMenuAction(menu, QStringLiteral("Select all"))->isEnabled(),
                     "selected inline table text should enable every edit command");
             contextMenuAction(menu, QStringLiteral("Copy"))->trigger();
         });
@@ -3625,7 +3625,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
             "inline table context Delete should remove the character selection");
     inspectContextMenu(*cellEditor->viewport(), cellEditor->viewport()->rect().center(),
                        [](adqt::widgets::AdContextMenu& menu) {
-                           contextMenuAction(menu, QStringLiteral("Select All"))->trigger();
+                           contextMenuAction(menu, QStringLiteral("Select all"))->trigger();
                        });
     require(cellEditor->textCursor().selectedText() == QStringLiteral(" cell"),
             "inline table context Select All should select the cell text");

@@ -98,7 +98,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>发现更多功能与使用方式</translation>
         </message>
         <message>
-            <source>Discussion and support · Group No. %1</source>
+            <source>Discussion and support · group no. %1</source>
             <translation>交流与答疑 · 群号 %1</translation>
         </message>
         <message>
@@ -138,7 +138,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>自由开源软件，不提供任何担保</translation>
         </message>
         <message>
-            <source>Free · Open source</source>
+            <source>Free · open source</source>
             <translation>自由 · 开源</translation>
         </message>
         <message>
@@ -182,7 +182,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>隐私政策</translation>
         </message>
         <message>
-            <source>QQ Group 3</source>
+            <source>QQ group 3</source>
             <translation>QQ 交流群 3</translation>
         </message>
         <message>
@@ -218,7 +218,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>Snow Shot 标志</translation>
         </message>
         <message>
-            <source>Snow Shot · Make expression clearer</source>
+            <source>Snow Shot · make expression clearer</source>
             <translation>Snow Shot · 让表达更清晰</translation>
         </message>
         <message>
@@ -300,7 +300,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>已锁定</translation>
         </message>
         <message>
-            <source>Motion Preview in Progress</source>
+            <source>Motion preview in progress</source>
             <translation>动效预览中</translation>
         </message>
         <message>
@@ -312,7 +312,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>正在渲染预览</translation>
         </message>
         <message>
-            <source>Result Preview in Progress</source>
+            <source>Result preview in progress</source>
             <translation>正在预览结果</translation>
         </message>
         <message>
@@ -649,7 +649,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>展开导航</translation>
         </message>
         <message>
-            <source>Search Function</source>
+            <source>Search function</source>
             <translation>搜索功能</translation>
         </message>
     </context>
@@ -811,19 +811,19 @@ so every moment on screen can be expressed clearly and shared easily</source>
     <context>
         <name>SystemTrayController</name>
         <message>
-            <source>Delete Empty Groups</source>
+            <source>Delete empty groups</source>
             <translation>删除空分组</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
+            <source>Delete specified group</source>
             <translation>删除指定分组</translation>
         </message>
         <message>
-            <source>New Group</source>
+            <source>New group</source>
             <translation>新建分组</translation>
         </message>
         <message>
-            <source>Window Group: %1</source>
+            <source>Window group: %1</source>
             <translation>窗口分组：%1</translation>
         </message>
     </context>

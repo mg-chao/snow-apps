@@ -820,7 +820,7 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
         const auto* pathField = registry.field(pathId);
         require(pathField->definition->title.translated() ==
                     (language == QStringLiteral("en_US")
-                         ? QStringLiteral("Main Interface Skin Path")
+                         ? QStringLiteral("Main interface skin path")
                      : language == QStringLiteral("zh_CN") ? QStringLiteral("主界面皮肤路径")
                                                            : QStringLiteral("主介面皮膚路徑")),
                 "the layout checks must use the real English, Simplified and Traditional copy");

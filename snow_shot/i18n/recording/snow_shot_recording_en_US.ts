@@ -77,8 +77,8 @@
             <translation>Finalizing recording...</translation>
         </message>
         <message>
-            <source>Keep Source</source>
-            <translation>Keep Source</translation>
+            <source>Keep source</source>
+            <translation>Keep source</translation>
         </message>
         <message>
             <source>Preparing recording...</source>
@@ -165,8 +165,8 @@
             <translation>Choose a different file to preserve the original recording</translation>
         </message>
         <message>
-            <source>Save to File</source>
-            <translation>Save to File</translation>
+            <source>Save to file</source>
+            <translation>Save to file</translation>
         </message>
         <message>
             <source>Unable to export recording: %1</source>

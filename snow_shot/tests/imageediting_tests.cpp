@@ -1636,12 +1636,12 @@ void runImageEditingTests() {
     EditorTranslator translator;
     QApplication::installTranslator(&translator);
     QApplication::processEvents();
-    require(rowButton->accessibleName() == QStringLiteral("[translated] Vertical Crop") &&
+    require(rowButton->accessibleName() == QStringLiteral("[translated] Vertical crop") &&
                 rowButton->toolTip() == rowButton->accessibleName() && rowButton->text().isEmpty(),
             "open editor retranslates at runtime");
     QApplication::removeTranslator(&translator);
     QApplication::processEvents();
-    require(rowButton->accessibleName() == QStringLiteral("Vertical Crop"),
+    require(rowButton->accessibleName() == QStringLiteral("Vertical crop"),
             "runtime language restored");
     rowButton->click();
     const auto map = window.canvas()->canvasToViewTransform();

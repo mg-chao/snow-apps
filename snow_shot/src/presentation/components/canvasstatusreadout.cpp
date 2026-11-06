@@ -168,9 +168,9 @@ QString CanvasStatusReadout::formattedMessage() const {
     case Message::Locked:
         return tr("Locked");
     case Message::MotionPreview:
-        return tr("Motion Preview in Progress");
+        return tr("Motion preview in progress");
     case Message::ResultPreview:
-        return tr("Result Preview in Progress");
+        return tr("Result preview in progress");
     case Message::RenderingPreview:
         return tr("Rendering preview");
     }

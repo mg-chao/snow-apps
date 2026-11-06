@@ -186,8 +186,8 @@ void contracts(QApplication& app) {
         require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("zh_CN")),
                 "Simplified Chinese");
         settle();
-        require(add->text() != QStringLiteral("Add Configuration") &&
-                    modal->windowTitle() != QStringLiteral("Add Configuration"),
+        require(add->text() != QStringLiteral("Add configuration") &&
+                    modal->windowTitle() != QStringLiteral("Add configuration"),
                 "open editor and page retranslate");
         require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("zh_TW")),
                 "Traditional Chinese");
@@ -267,7 +267,7 @@ void contracts(QApplication& app) {
                 if (field->metadata().id == QStringLiteral("apiKey"))
                     tokenField = field;
             }
-            require(tokenField && tokenField->item()->label() == QStringLiteral("API Key") &&
+            require(tokenField && tokenField->item()->label() == QStringLiteral("API key") &&
                         tokenField->metadata().description.translated() ==
                             QStringLiteral("Optional access token sent as a Bearer token"),
                     "DeepLX explains optional Bearer authentication");

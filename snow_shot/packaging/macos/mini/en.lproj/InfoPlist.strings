@@ -4,4 +4,4 @@
 "NSAppleEventsUsageDescription" = "Snow Shot Mini reads selected image files from Finder to pin them to the screen.";
 "NSMicrophoneUsageDescription" = "Snow Shot Mini records microphone audio when you enable it for a screen recording.";
 "NSAudioCaptureUsageDescription" = "Snow Shot Mini captures system audio when you enable it for a screen recording.";
-"NSCameraUsageDescription" = "Snow Shot Mini records webcam video when you enable Record webcam for a screen recording.";
+"NSCameraUsageDescription" = "Snow Shot Mini records webcam video when you enable record webcam for a screen recording.";

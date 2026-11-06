@@ -45,15 +45,15 @@ QString splitText(const char* source) {
     return QCoreApplication::translate("ImageSplitWindow", source);
 }
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Save All"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image splitting"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Save all"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Stitch to PDF"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Stitching is busy. Try again when it finishes"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Image stitching is busy. Try again when it finishes"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Cancel"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Images"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Select Image"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Select Destination Folder"),
-    QT_TRANSLATE_NOOP("ImageSplitWindow", "Replace Image"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Select image"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Select destination folder"),
+    QT_TRANSLATE_NOOP("ImageSplitWindow", "Replace image"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Replacing the image will discard the current edits"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "Discard these image splits?"),
     QT_TRANSLATE_NOOP("ImageSplitWindow", "The image and current split edits will be discarded"),
@@ -326,8 +326,8 @@ struct ImageSplitWindow::Impl final {
         editor->setExportBusy(exporting);
     }
     void retranslate() {
-        modal->setWindowTitle(splitText("Image Splitting"));
-        save->setText(splitText("Save All"));
+        modal->setWindowTitle(splitText("Image splitting"));
+        save->setText(splitText("Save all"));
         stitch->setText(splitText("Stitch to PDF"));
         cancel->setText(splitText("Cancel"));
         save->setAccessibleName(save->text());
@@ -339,7 +339,7 @@ struct ImageSplitWindow::Impl final {
         if (status == Status::LoadError && loadingErrorSource)
             error = splitText(loadingErrorSource);
         if (status == Status::StitchError)
-            error = splitText("Image Stitching is busy. Try again when it finishes");
+            error = splitText("Image stitching is busy. Try again when it finishes");
         if (status == Status::ExportError) {
             exportResult.error = windowExportErrorSource ? splitText(windowExportErrorSource)
                                                          : exportResult.errorMessage();
@@ -414,12 +414,12 @@ struct ImageSplitWindow::Impl final {
         installWindowCloseShortcut(editor->window(), [this] { q.requestClose(); });
     }
     void translateConfirmation() {
-        confirmation->setWindowTitle(replacing ? splitText("Replace Image")
+        confirmation->setWindowTitle(replacing ? splitText("Replace image")
                                                : splitText("Discard these image splits?"));
         confirmation->setText(
             replacing ? splitText("Replacing the image will discard the current edits")
                       : splitText("The image and current split edits will be discarded"));
-        confirmation->setAcceptText(replacing ? splitText("Replace Image") : splitText("Discard"));
+        confirmation->setAcceptText(replacing ? splitText("Replace image") : splitText("Discard"));
         confirmation->setRejectText(splitText("Cancel"));
     }
     void askConfirmation(bool replace, std::function<void(bool)> complete) {
@@ -582,8 +582,8 @@ struct ImageSplitWindow::Impl final {
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setObjectName(directory ? QStringLiteral("imageSplitFolderDialog")
                                         : QStringLiteral("imageSplitFileDialog"));
-        dialog->setWindowTitle(directory ? splitText("Select Destination Folder")
-                                         : splitText("Select Image"));
+        dialog->setWindowTitle(directory ? splitText("Select destination folder")
+                                         : splitText("Select image"));
         dialog->setFileMode(directory ? QFileDialog::Directory : QFileDialog::ExistingFile);
         dialog->setAcceptMode(QFileDialog::AcceptOpen);
         if (directory)
@@ -979,7 +979,7 @@ void ImageSplitWindow::stitchToPdf() {
         d.error.clear();
         d.status = Impl::Status::None;
     } else {
-        d.error = splitText("Image Stitching is busy. Try again when it finishes");
+        d.error = splitText("Image stitching is busy. Try again when it finishes");
         d.status = Impl::Status::StitchError;
     }
     d.showStatus();

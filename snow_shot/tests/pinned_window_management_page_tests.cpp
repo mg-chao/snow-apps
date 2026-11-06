@@ -396,7 +396,7 @@ void pinnedHiddenRecordsUseShowAction(const storage::PinnedWindowSummary& record
     require(source.shown == record.id, "showing a hidden record dispatches its persisted ID");
     source.items.first().hidden = false;
     emit source.changed();
-    require(!row.isNull() && status->text() == QStringLiteral("Not Closed") &&
+    require(!row.isNull() && status->text() == QStringLiteral("Not closed") &&
                 show->text() == QStringLiteral("Show"),
             "showing a hidden record refreshes its status in the existing row");
     source.items.first().hidden = true;
@@ -641,8 +641,8 @@ void pinnedCollageSelectionKeepsRecordOrder() {
             "collage includes selected pins across pages in displayed record order");
     QEvent language(QEvent::LanguageChange);
     QApplication::sendEvent(&page, &language);
-    require(batchActions->text() == QStringLiteral("Batch Actions") &&
-                batchActions->accessibleName() == QStringLiteral("Batch Actions"),
+    require(batchActions->text() == QStringLiteral("Batch actions") &&
+                batchActions->accessibleName() == QStringLiteral("Batch actions"),
             "language changes retranslate the pinned collage action");
     fixture.items.removeLast();
     emit fixture.changed();
@@ -770,7 +770,7 @@ void batchPinUsesExistingShowForEveryState() {
             "keyboard opens pinned Batch Actions without dispatch");
     auto* stitch = menu->actions()[0];
     auto* pin = menu->actions()[1];
-    require(stitch->text() == QStringLiteral("Stitch Image") &&
+    require(stitch->text() == QStringLiteral("Stitch image") &&
                 pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
                 !stitch->icon().isNull() && !pin->icon().isNull(),
             "pinned batch menu offers themed Stitch Image then Pin to screen");
@@ -782,10 +782,10 @@ void batchPinUsesExistingShowForEveryState() {
         QEvent language(QEvent::LanguageChange);
         QApplication::sendEvent(&page, &language);
         require(trigger->text() ==
-                        translator.translate("PinnedWindowManagementPageWidget", "Batch Actions") &&
+                        translator.translate("PinnedWindowManagementPageWidget", "Batch actions") &&
                     trigger->accessibleName() == trigger->text() &&
                     stitch->text() ==
-                        translator.translate("PinnedWindowManagementPageWidget", "Stitch Image") &&
+                        translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
                     pin->text() ==
                         translator.translate("PinnedWindowManagementPageWidget", "Pin to screen") &&
                     pin->toolTip() == pin->text(),
@@ -908,7 +908,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
             menu->findChild<QAction*>(QStringLiteral("pinnedManagementEntryImageEditing"));
         require(imageEditing && menu->actions().at(2) == imageEditing &&
                     imageEditing->isEnabled() &&
-                    imageEditing->text() == QStringLiteral("Image Editing") &&
+                    imageEditing->text() == QStringLiteral("Image editing") &&
                     !imageEditing->icon().isNull(),
                 "independent editor follows Image Splitting for open and closed pins");
         require(reveal->objectName() == QStringLiteral("pinnedManagementEntryReveal") &&
@@ -916,9 +916,9 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
                     reveal->toolTip() == reveal->text() && reveal->isEnabled() &&
                     !reveal->icon().isNull(),
                 "More offers a themed, platform-specific reveal action after Copy image path");
-        require(stitch->text() == QStringLiteral("Stitch Image") && stitch->isEnabled() &&
+        require(stitch->text() == QStringLiteral("Stitch image") && stitch->isEnabled() &&
                     !stitch->icon().isNull() &&
-                    split->text() == QStringLiteral("Image Splitting") && split->isEnabled() &&
+                    split->text() == QStringLiteral("Image splitting") && split->isEnabled() &&
                     !split->icon().isNull(),
                 "More offers Stitch Image followed by Image Splitting with their icons");
         activatePinnedMenuAction(menu, stitch);
@@ -998,10 +998,10 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
         require(
             menu && menu->isPopupVisible() &&
                 menu->actions().at(0)->text() ==
-                    translator.translate("PinnedWindowManagementPageWidget", "Stitch Image") &&
+                    translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
                 menu->actions().at(0)->toolTip() == menu->actions().at(0)->text() &&
                 menu->actions().at(1)->text() ==
-                    translator.translate("PinnedWindowManagementPageWidget", "Image Splitting") &&
+                    translator.translate("PinnedWindowManagementPageWidget", "Image splitting") &&
                 menu->actions().at(1)->toolTip() == menu->actions().at(1)->text(),
             "language changes retranslate both actions in the open menu");
         const QString revealLabel = presentation::components::history_page::revealActionText();

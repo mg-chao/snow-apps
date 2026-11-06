@@ -98,8 +98,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Discover more features and ways to use it</translation>
         </message>
         <message>
-            <source>Discussion and support · Group No. %1</source>
-            <translation>Discussion and support · Group No. %1</translation>
+            <source>Discussion and support · group no. %1</source>
+            <translation>Discussion and support · group no. %1</translation>
         </message>
         <message>
             <source>Download from GitHub</source>
@@ -138,8 +138,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Free and open-source software. Distributed without any warranty</translation>
         </message>
         <message>
-            <source>Free · Open source</source>
-            <translation>Free · Open source</translation>
+            <source>Free · open source</source>
+            <translation>Free · open source</translation>
         </message>
         <message>
             <source>GNU General Public License v3.0 or later</source>
@@ -182,8 +182,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Privacy policy</translation>
         </message>
         <message>
-            <source>QQ Group 3</source>
-            <translation>QQ Group 3</translation>
+            <source>QQ group 3</source>
+            <translation>QQ group 3</translation>
         </message>
         <message>
             <source>Ready to install %1</source>
@@ -218,8 +218,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Snow Shot logo</translation>
         </message>
         <message>
-            <source>Snow Shot · Make expression clearer</source>
-            <translation>Snow Shot · Make expression clearer</translation>
+            <source>Snow Shot · make expression clearer</source>
+            <translation>Snow Shot · make expression clearer</translation>
         </message>
         <message>
             <source>Text recognition</source>
@@ -300,8 +300,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Locked</translation>
         </message>
         <message>
-            <source>Motion Preview in Progress</source>
-            <translation>Motion Preview in Progress</translation>
+            <source>Motion preview in progress</source>
+            <translation>Motion preview in progress</translation>
         </message>
         <message>
             <source>Opacity: %1%</source>
@@ -312,8 +312,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Rendering preview</translation>
         </message>
         <message>
-            <source>Result Preview in Progress</source>
-            <translation>Result Preview in Progress</translation>
+            <source>Result preview in progress</source>
+            <translation>Result preview in progress</translation>
         </message>
         <message>
             <source>Scale: %1%</source>
@@ -649,8 +649,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Expand navigation</translation>
         </message>
         <message>
-            <source>Search Function</source>
-            <translation>Search Function</translation>
+            <source>Search function</source>
+            <translation>Search function</translation>
         </message>
     </context>
     <context>
@@ -811,20 +811,20 @@ so every moment on screen can be expressed clearly and shared easily</translatio
     <context>
         <name>SystemTrayController</name>
         <message>
-            <source>Delete Empty Groups</source>
-            <translation>Delete Empty Groups</translation>
+            <source>Delete empty groups</source>
+            <translation>Delete empty groups</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
-            <translation>Delete Specified Group</translation>
+            <source>Delete specified group</source>
+            <translation>Delete specified group</translation>
         </message>
         <message>
-            <source>New Group</source>
-            <translation>New Group</translation>
+            <source>New group</source>
+            <translation>New group</translation>
         </message>
         <message>
-            <source>Window Group: %1</source>
-            <translation>Window Group: %1</translation>
+            <source>Window group: %1</source>
+            <translation>Window group: %1</translation>
         </message>
     </context>
     <context>

@@ -120,7 +120,7 @@ void RecordingRenderDialog::refresh() {
             .arg(path));
     cancelButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Cancel")));
     retryButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Retry")));
-    keepButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Keep Source")));
+    keepButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Keep source")));
     discardButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Discard")));
     cancelButton->setVisible(!retained);
     cancelButton->setEnabled(!cancelRequested && !busy);

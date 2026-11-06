@@ -442,6 +442,10 @@
             <translation>Percentage</translation>
         </message>
         <message>
+            <source>Pixel</source>
+            <translation>Pixel</translation>
+        </message>
+        <message>
             <source>Please enter a name</source>
             <translation>Please enter a name</translation>
         </message>
@@ -564,10 +568,6 @@
         <message>
             <source>Width</source>
             <translation>Width</translation>
-        </message>
-        <message>
-            <source>pixel</source>
-            <translation>pixel</translation>
         </message>
     </context>
     <context>

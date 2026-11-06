@@ -211,7 +211,7 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
 
     void retranslate() {
         const QString names[] = {ScreenshotQuickTextAnnotationToolbar::tr("Highlight"),
-                                 ScreenshotQuickTextAnnotationToolbar::tr("Wavy Underline"),
+                                 ScreenshotQuickTextAnnotationToolbar::tr("Wavy underline"),
                                  ScreenshotQuickTextAnnotationToolbar::tr("Underline"),
                                  ScreenshotQuickTextAnnotationToolbar::tr("Strikethrough")};
         for (size_t i = 0; i < buttons.size(); ++i) {

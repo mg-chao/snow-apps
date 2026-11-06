@@ -871,7 +871,7 @@ void ScreenshotTableEditor::showCellEditorContextMenu(QPlainTextEdit* editor,
     QAction* paste = menu.addItem(tr("Paste"), adqt::icons::antd::outlined::Snippets());
     QAction* remove = menu.addItem(tr("Delete"), adqt::icons::antd::outlined::IconDelete());
     menu.addSeparator();
-    QAction* selectAll = menu.addItem(tr("Select All"), adqt::icons::antd::outlined::Select());
+    QAction* selectAll = menu.addItem(tr("Select all"), adqt::icons::antd::outlined::Select());
 
     const bool hasSelection = editor->textCursor().hasSelection();
     const bool writable = !editor->isReadOnly();

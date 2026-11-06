@@ -480,7 +480,7 @@ void widgetContracts(QApplication& app) {
         flushEvents();
     };
     auto* title = widget.findChild<QLabel*>(QStringLiteral("cloudUploadConfigurationsTitle"));
-    require(title && title->text() == QStringLiteral("Upload Configurations") &&
+    require(title && title->text() == QStringLiteral("Upload configurations") &&
                 title->font().pixelSize() == scheme.metricAlias.fontSize &&
                 title->font().weight() == QFont::DemiBold,
             "cloud configurations have the same subtitle style as translation configurations");

@@ -16,7 +16,7 @@
             <translation>底線</translation>
         </message>
         <message>
-            <source>Wavy Underline</source>
+            <source>Wavy underline</source>
             <translation>波浪底線</translation>
         </message>
     </context>
@@ -53,10 +53,6 @@
         <message>
             <source>Add</source>
             <translation>新增</translation>
-        </message>
-        <message>
-            <source>Add Template</source>
-            <translation>新增範本</translation>
         </message>
         <message>
             <source>Add screenshot region</source>
@@ -135,7 +131,7 @@
             <translation>動畫錄製格式不包含音訊</translation>
         </message>
         <message>
-            <source>Annotation Template</source>
+            <source>Annotation template</source>
             <translation>標註範本</translation>
         </message>
         <message>
@@ -191,7 +187,7 @@
             <translation>藝術家</translation>
         </message>
         <message>
-            <source>Auto Filter</source>
+            <source>Auto filter</source>
             <translation>自動濾鏡</translation>
         </message>
         <message>
@@ -251,7 +247,7 @@
             <translation>移至最上層</translation>
         </message>
         <message>
-            <source>Brush Eraser</source>
+            <source>Brush eraser</source>
             <translation>畫筆橡皮擦</translation>
         </message>
         <message>
@@ -439,7 +435,7 @@
             <translation>小數位數</translation>
         </message>
         <message>
-            <source>Dedicated Model</source>
+            <source>Dedicated model</source>
             <translation>專用模型</translation>
         </message>
         <message>
@@ -459,7 +455,7 @@
             <translation>刪除</translation>
         </message>
         <message>
-            <source>Delete Annotation Template</source>
+            <source>Delete annotation template</source>
             <translation>刪除標註範本</translation>
         </message>
         <message>
@@ -531,7 +527,7 @@
             <translation>編輯選取範圍</translation>
         </message>
         <message>
-            <source>Effect Settings</source>
+            <source>Effect settings</source>
             <translation>效果設定</translation>
         </message>
         <message>
@@ -539,7 +535,7 @@
             <translation>折線箭頭</translation>
         </message>
         <message>
-            <source>Element Eraser</source>
+            <source>Element eraser</source>
             <translation>元素橡皮擦</translation>
         </message>
         <message>
@@ -627,7 +623,7 @@
             <translation>結束</translation>
         </message>
         <message>
-            <source>Export Settings</source>
+            <source>Export settings</source>
             <translation>匯出設定</translation>
         </message>
         <message>
@@ -727,7 +723,7 @@
             <translation>醒目提示描邊寬度 %1 像素</translation>
         </message>
         <message>
-            <source>Horizontal Crop</source>
+            <source>Horizontal crop</source>
             <translation>水平裁切</translation>
         </message>
         <message>
@@ -743,11 +739,11 @@
             <translation>影像</translation>
         </message>
         <message>
-            <source>Image Editing</source>
+            <source>Image editing</source>
             <translation>圖片編輯</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
+            <source>Image splitting</source>
             <translation>圖片分割</translation>
         </message>
         <message>
@@ -763,27 +759,27 @@
             <translation>斜體</translation>
         </message>
         <message>
-            <source>Jump to Translation Page</source>
+            <source>Jump to translation page</source>
             <translation>跳轉至翻譯頁面</translation>
         </message>
         <message>
-            <source>Keyboard Background Color</source>
+            <source>Keyboard background color</source>
             <translation>鍵盤背景顏色</translation>
         </message>
         <message>
-            <source>Keyboard Foreground Color</source>
+            <source>Keyboard foreground color</source>
             <translation>鍵盤前景顏色</translation>
         </message>
         <message>
-            <source>Keyboard Size</source>
+            <source>Keyboard size</source>
             <translation>鍵盤大小</translation>
         </message>
         <message>
-            <source>LaTeX Formula Recognition</source>
+            <source>LaTeX formula recognition</source>
             <translation>LaTeX 公式辨識</translation>
         </message>
         <message>
-            <source>LaTeX-Specific Model</source>
+            <source>LaTeX-specific model</source>
             <translation>LaTeX 專用模型</translation>
         </message>
         <message>
@@ -819,7 +815,7 @@
             <translation>直線</translation>
         </message>
         <message>
-            <source>Logical Pixel Selection</source>
+            <source>Logical pixel selection</source>
             <translation>邏輯像素選取範圍</translation>
         </message>
         <message>
@@ -879,10 +875,6 @@
             <translation>馬賽克</translation>
         </message>
         <message>
-            <source>Mouse Trail Duration</source>
-            <translation>滑鼠軌跡持續時間</translation>
-        </message>
-        <message>
             <source>Mouse click color</source>
             <translation>滑鼠點擊顏色</translation>
         </message>
@@ -921,6 +913,10 @@
         <message>
             <source>Mouse trail color transparent</source>
             <translation>滑鼠軌跡顏色 透明</translation>
+        </message>
+        <message>
+            <source>Mouse trail duration</source>
+            <translation>滑鼠軌跡持續時間</translation>
         </message>
         <message>
             <source>Move selection horizontally (press and hold to drag)</source>
@@ -1007,7 +1003,7 @@
             <translation>畫筆醒目提示寬度 %1（%2 像素）</translation>
         </message>
         <message>
-            <source>Physical Pixel Selection</source>
+            <source>Physical pixel selection</source>
             <translation>實體像素選取範圍</translation>
         </message>
         <message>
@@ -1015,12 +1011,12 @@
             <translation>從畫布擷取色彩</translation>
         </message>
         <message>
-            <source>Pin Window to Screen</source>
-            <translation>固定視窗到螢幕</translation>
-        </message>
-        <message>
             <source>Pin to screen</source>
             <translation>固定到螢幕</translation>
+        </message>
+        <message>
+            <source>Pin window to screen</source>
+            <translation>固定視窗到螢幕</translation>
         </message>
         <message>
             <source>Plain shaft</source>
@@ -1055,7 +1051,7 @@
             <translation>列印</translation>
         </message>
         <message>
-            <source>Progress Bar Color</source>
+            <source>Progress bar color</source>
             <translation>進度條顏色</translation>
         </message>
         <message>
@@ -1119,7 +1115,7 @@
             <translation>矩形</translation>
         </message>
         <message>
-            <source>Rectangle Eraser</source>
+            <source>Rectangle eraser</source>
             <translation>矩形橡皮擦</translation>
         </message>
         <message>
@@ -1167,7 +1163,7 @@
             <translation>另存為檔案</translation>
         </message>
         <message>
-            <source>Save to File</source>
+            <source>Save to file</source>
             <translation>儲存至檔案</translation>
         </message>
         <message>
@@ -1255,20 +1251,12 @@
             <translation>圖形</translation>
         </message>
         <message>
-            <source>Show Cursor</source>
-            <translation>顯示游標</translation>
-        </message>
-        <message>
-            <source>Show Playback Time</source>
-            <translation>顯示播放時間</translation>
-        </message>
-        <message>
-            <source>Show Progress Bar</source>
-            <translation>顯示進度條</translation>
-        </message>
-        <message>
-            <source>Show QR Code</source>
+            <source>Show QR code</source>
             <translation>顯示二維碼</translation>
+        </message>
+        <message>
+            <source>Show cursor</source>
+            <translation>顯示游標</translation>
         </message>
         <message>
             <source>Show cursor in recording</source>
@@ -1283,7 +1271,15 @@
             <translation>顯示原圖</translation>
         </message>
         <message>
-            <source>Smart Erase</source>
+            <source>Show playback time</source>
+            <translation>顯示播放時間</translation>
+        </message>
+        <message>
+            <source>Show progress bar</source>
+            <translation>顯示進度條</translation>
+        </message>
+        <message>
+            <source>Smart erase</source>
             <translation>智慧擦除</translation>
         </message>
         <message>
@@ -1323,7 +1319,7 @@
             <translation>來源區域輪廓</translation>
         </message>
         <message>
-            <source>Speech Bubble</source>
+            <source>Speech bubble</source>
             <translation>對話氣泡</translation>
         </message>
         <message>
@@ -1435,7 +1431,7 @@
             <translation>表格辨識</translation>
         </message>
         <message>
-            <source>Table-Specific Model</source>
+            <source>Table-specific model</source>
             <translation>表格專用模型</translation>
         </message>
         <message>
@@ -1447,7 +1443,7 @@
             <translation>漸寬箭桿支援標準、三角形、空心三角形和內凹三角形箭頭</translation>
         </message>
         <message>
-            <source>Target Language</source>
+            <source>Target language</source>
             <translation>目標語言</translation>
         </message>
         <message>
@@ -1459,11 +1455,11 @@
             <translation>範本 %1</translation>
         </message>
         <message>
-            <source>Template Name</source>
+            <source>Template name</source>
             <translation>範本名稱</translation>
         </message>
         <message>
-            <source>Template Value</source>
+            <source>Template value</source>
             <translation>範本值</translation>
         </message>
         <message>
@@ -1539,7 +1535,7 @@
             <translation>文字翻譯</translation>
         </message>
         <message>
-            <source>Thought Bubble</source>
+            <source>Thought bubble</source>
             <translation>思考氣泡</translation>
         </message>
         <message>
@@ -1555,7 +1551,7 @@
             <translation>透明</translation>
         </message>
         <message>
-            <source>Trim Video</source>
+            <source>Trim video</source>
             <translation>裁剪影片</translation>
         </message>
         <message>
@@ -1567,7 +1563,7 @@
             <translation>復原</translation>
         </message>
         <message>
-            <source>Upload to Cloud</source>
+            <source>Upload to cloud</source>
             <translation>上傳至雲端</translation>
         </message>
         <message>
@@ -1575,7 +1571,7 @@
             <translation>大寫字母</translation>
         </message>
         <message>
-            <source>Vertical Crop</source>
+            <source>Vertical crop</source>
             <translation>垂直裁切</translation>
         </message>
         <message>
@@ -1583,7 +1579,7 @@
             <translation>垂直捲動</translation>
         </message>
         <message>
-            <source>Vision Model</source>
+            <source>Vision model</source>
             <translation>視覺模型</translation>
         </message>
         <message>
@@ -1619,11 +1615,11 @@
             <translation>浮水印文字</translation>
         </message>
         <message>
-            <source>Webcam Shape</source>
+            <source>Webcam shape</source>
             <translation>攝影機形狀</translation>
         </message>
         <message>
-            <source>Webcam Size</source>
+            <source>Webcam size</source>
             <translation>攝影機大小</translation>
         </message>
         <message>

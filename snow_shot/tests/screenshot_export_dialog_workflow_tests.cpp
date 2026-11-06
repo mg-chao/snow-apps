@@ -1914,7 +1914,7 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     auto* unit = child<AdSegmented>(dimensions, "saveSizeUnitSegmented");
     require(sizeLabel->text() == QStringLiteral("Size") && unit->count() == 2 &&
                 unit->currentValue() == QStringLiteral("pixels") &&
-                unit->optionLabel(0) == QStringLiteral("pixel") &&
+                unit->optionLabel(0) == QStringLiteral("Pixel") &&
                 unit->optionLabel(1) == QStringLiteral("Percentage") &&
                 sizeLabel->geometry().right() < unit->geometry().left() &&
                 unit->geometry().right() == dimensions->rect().right(),
