@@ -19,7 +19,7 @@ WindowGroupSwitcherController::WindowGroupSwitcherController(GlobalShortcutManag
     connect(&groups, &PinnedWindowGroupManager::activeGroupChanged, this, [this] { cancel(); });
     connect(&shortcuts, &GlobalShortcutManager::registrationsSuspended, this,
             &WindowGroupSwitcherController::cancel);
-    connect(&shortcuts, &GlobalShortcutManager::globalHotkeysEnabledChanged, this,
+    connect(&shortcuts, &GlobalShortcutManager::globalShortcutsEnabledChanged, this,
             [this](bool enabled) {
                 if (!enabled)
                     cancel();

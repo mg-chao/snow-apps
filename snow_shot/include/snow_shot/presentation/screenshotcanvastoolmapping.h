@@ -10,8 +10,8 @@ struct ScreenshotCanvasActiveToolDescriptor {
     SnowCanvasTool canvasTool;
     ScreenshotActiveTool activeTool;
 };
-#define SNOW_SHOT_CANVAS_TOOL(signal, tool)                                                        \
-    ScreenshotCanvasActiveToolDescriptor{SnowCanvasTool::tool, ScreenshotActiveTool::tool},
+#define SNOW_SHOT_CANVAS_TOOL(signal, appTool, canvasTool)                                         \
+    ScreenshotCanvasActiveToolDescriptor{SnowCanvasTool::canvasTool, ScreenshotActiveTool::appTool},
 inline constexpr std::array screenshotCanvasActiveTools{
 #include "snow_shot/presentation/screenshotcanvastools.inc"
 };

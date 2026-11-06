@@ -629,12 +629,14 @@ void entriesUseBordersAndSupportCrossPageSelection() {
     require(batchActions->isVisible() && batchActions->text() == QStringLiteral("Batch actions") &&
                 !batchActions->toolTip().isEmpty() && !batchActions->accessibleName().isEmpty(),
             "one selected screenshot exposes an accessible Batch Actions menu");
-    QVector<QVector<storage::CaptureHistoryRecord>> collageRequests;
-    QObject::connect(
-        &page, &ScreenshotHistoryPageWidget::collageRequested, &page,
-        [&collageRequests](const auto& selected) { collageRequests.append(selected); });
+    QVector<QVector<storage::CaptureHistoryRecord>> imageStitchingRequests;
+    QObject::connect(&page, &ScreenshotHistoryPageWidget::stitchImagesRequested, &page,
+                     [&imageStitchingRequests](const auto& selected) {
+                         imageStitchingRequests.append(selected);
+                     });
     triggerBatchStitch(batchActions);
-    require(collageRequests.size() == 1 && collageRequests.first() == QVector{records.first()},
+    require(imageStitchingRequests.size() == 1 &&
+                imageStitchingRequests.first() == QVector{records.first()},
             "Collage emits the selected complete history record");
     auto* countLabel = page.findChild<QLabel*>(QStringLiteral("screenshotHistoryCountLabel"));
     require(countLabel != nullptr &&
@@ -683,11 +685,11 @@ void entriesUseBordersAndSupportCrossPageSelection() {
             "cross-page selection count must include the newly selected entry");
     triggerBatchStitch(batchActions);
     triggerBatchStitch(batchActions);
-    require(collageRequests.size() == 3 && collageRequests.at(1).size() == 11 &&
-                collageRequests.at(2) == collageRequests.at(1),
+    require(imageStitchingRequests.size() == 3 && imageStitchingRequests.at(1).size() == 11 &&
+                imageStitchingRequests.at(2) == imageStitchingRequests.at(1),
             "each Stitch Image activation independently emits all selections across pages");
-    for (qsizetype index = 0; index < collageRequests.at(1).size(); ++index)
-        require(collageRequests.at(1).at(index) == records.at(index),
+    for (qsizetype index = 0; index < imageStitchingRequests.at(1).size(); ++index)
+        require(imageStitchingRequests.at(1).at(index) == records.at(index),
                 "collage inputs must preserve history list order and the complete record metadata");
     require(summary->text() == QStringLiteral("Selected 11 items") &&
                 checkboxes.first()->isChecked(),
@@ -920,7 +922,7 @@ void batchPinUsesEligibleSelectionAtActivation() {
                          }
                      });
     int stitched = 0;
-    QObject::connect(&page, &ScreenshotHistoryPageWidget::collageRequested, &page,
+    QObject::connect(&page, &ScreenshotHistoryPageWidget::stitchImagesRequested, &page,
                      [&](const auto&) { ++stitched; });
     QKeyEvent open(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
     QApplication::sendEvent(trigger, &open);
@@ -1194,7 +1196,7 @@ void entryStitchActionUsesOnlyItsRecord() {
 
     QVector<storage::CaptureHistoryRecord> requested;
     int requests = 0;
-    QObject::connect(&page, &ScreenshotHistoryPageWidget::collageRequested, &page,
+    QObject::connect(&page, &ScreenshotHistoryPageWidget::stitchImagesRequested, &page,
                      [&](const auto& selected) {
                          requested = selected;
                          ++requests;

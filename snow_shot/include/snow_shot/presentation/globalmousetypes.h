@@ -43,7 +43,7 @@ inline std::optional<GlobalMouseModifier> globalMouseModifier(const QString& key
 namespace snow_shot::presentation::settings {
 enum class SettingsGlobalMouseAction {
     ScreenshotCopy,
-    ScreenshotFixed,
+    ScreenshotPinToScreen,
     ScreenshotOcr,
     ScreenshotTranslation,
     ScreenshotQuickSave,

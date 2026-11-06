@@ -623,7 +623,7 @@ void noneClearsAssignedMouseBinding() {
             "clearing a binding must refresh its row");
 }
 
-void globalMouseAndGlobalHotkeyRowsSharePresentation() {
+void globalMouseAndGlobalShortcutRowsSharePresentation() {
     const auto& registry = settings::builtInSettingsRegistry();
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
@@ -631,8 +631,8 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     scheme.map.colorBgContainer = QColor(QStringLiteral("#e1eee5"));
     GlobalMouseRow mouse(QStringLiteral("Action"),
                          settings::SettingsGlobalMouseAction::ScreenshotCopy, session, scheme);
-    SettingsPageWidget globalHotkeysPage(registry, QStringLiteral("global-hotkeys"), session);
-    auto* quickRow = globalHotkeysPage.findChild<ShortcutKeyRow*>();
+    SettingsPageWidget globalShortcutsPage(registry, QStringLiteral("global-hotkeys"), session);
+    auto* quickRow = globalShortcutsPage.findChild<ShortcutKeyRow*>();
     require(quickRow != nullptr, "Quick Actions must provide an action row for comparison");
     // Isolate the real row from its page's layout and background during pixel comparison.
     quickRow->setParent(nullptr);
@@ -680,7 +680,7 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     }
 }
 
-void globalMouseAndHotkeyTitlesRenderIdentically() {
+void globalMouseAndShortcutTitlesRenderIdentically() {
     const auto& registry = settings::builtInSettingsRegistry();
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
@@ -964,7 +964,7 @@ void builtInGlobalMouseResetRestoresDefaults() {
                                      QStringLiteral("right_drag")};
 #endif
         require(backend.globalMouseCombination(Action::ScreenshotCopy) == copyDefault &&
-                    backend.globalMouseCombination(Action::ScreenshotFixed) == fixedDefault &&
+                    backend.globalMouseCombination(Action::ScreenshotPinToScreen) == fixedDefault &&
                     backend.globalMouseCombination(Action::ScreenshotOcr) == ocrDefault &&
                     backend.globalMouseCombination(Action::ScreenshotOcrCopy).isUnset() &&
                     backend.globalMouseCombination(Action::ScreenshotTranslation).isUnset() &&
@@ -1013,8 +1013,8 @@ int main(int argc, char** argv) {
     globalMousePermissionGuidance();
     globalMousePageRendersActionButtons();
     noneClearsAssignedMouseBinding();
-    globalMouseAndGlobalHotkeyRowsSharePresentation();
-    globalMouseAndHotkeyTitlesRenderIdentically();
+    globalMouseAndGlobalShortcutRowsSharePresentation();
+    globalMouseAndShortcutTitlesRenderIdentically();
     globalMouseModalEditsOnlyOnAcceptedUniquePairs();
     globalMouseLanguageAndThemeChangesRefreshOpenUi();
     globalMousePopupStaysAboveModalDuringLayout();

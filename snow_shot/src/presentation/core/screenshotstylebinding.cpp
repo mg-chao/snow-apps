@@ -94,7 +94,7 @@ bool stepScreenshotStyle(ScreenshotToolPalette& palette, SnowCanvasWidget& canva
     case SnowCanvasTool::AutoFilter:
         return palette.stepFilterIntensity(direction);
     case SnowCanvasTool::PenFilter:
-        return palette.stepPenFilterStrokeWidth(direction);
+        return palette.stepBrushFilterStrokeWidth(direction);
     case SnowCanvasTool::BrushEraser:
         return palette.stepBrushEraserStrokeWidth(direction);
     case SnowCanvasTool::Watermark:

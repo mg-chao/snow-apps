@@ -6588,7 +6588,7 @@ ScreenshotPinnedWindow::renderedImageSnapshot(ViewportExportMode mode) {
                 const QRectF rect = m_cropRect ? exportVisibleCanvasRect() : backgroundRect;
                 const QSize size(std::max(1, qRound(rect.width() * surfaceScale)),
                                  std::max(1, qRound(rect.height() * surfaceScale)));
-                QImage image = snow_shot::presentation::captureCollageImage(
+                QImage image = snow_shot::presentation::captureImageStitchingImage(
                     size,
                     [&] {
                         return m_recognitionContent->printViewportSnapshot(

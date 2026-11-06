@@ -581,7 +581,7 @@ void triggerBatchStitch(adqt::widgets::AdButton* trigger) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
-void pinnedCollageSelectionKeepsRecordOrder() {
+void pinnedImageStitchingSelectionKeepsRecordOrder() {
     Fixture fixture;
     for (int index = 0; index < 15; ++index) {
         storage::PinnedWindowSummary item;
@@ -611,7 +611,7 @@ void pinnedCollageSelectionKeepsRecordOrder() {
             "pinned Collage is unavailable before selection");
     QStringList requested;
     int requests = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const QStringList& ids) {
                          requested = ids;
                          ++requests;
@@ -758,7 +758,7 @@ void batchPinUsesExistingShowForEveryState() {
     pagination->setCurrentPage(2);
     selectAll->click();
     int stitched = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const auto&) { ++stitched; });
     QKeyEvent open(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
     QApplication::sendEvent(trigger, &open);
@@ -839,7 +839,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
     int requests = 0;
     QString splitId;
     int splitRequests = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const QStringList& ids) {
                          requested = ids;
                          ++requests;
@@ -1084,7 +1084,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     pinnedEntryMoreActionsUseOnlyTheirRecord();
-    pinnedCollageSelectionKeepsRecordOrder();
+    pinnedImageStitchingSelectionKeepsRecordOrder();
     batchPinRequiresSingleGroup();
     batchPinUsesExistingShowForEveryState();
     if (QApplication::arguments().contains(QStringLiteral("--collage-only"))) {

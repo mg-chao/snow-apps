@@ -12,10 +12,10 @@
 #include <limits>
 #include <mutex>
 
-namespace snow_shot::presentation::collage_detail {
+namespace snow_shot::presentation::image_stitching_detail {
 inline constexpr qint64 maximumTransformCacheBytes = 2 * 1024 * 1024;
 
-inline bool streamableTransform(const CollageItem& item) {
+inline bool streamableTransform(const ImageStitchingItem& item) {
     const auto& matrix = item.transform;
     const auto unit = [](qreal value) { return value == 0 || value == 1 || value == -1; };
     return !matrix.isIdentity() && matrix.isAffine() && matrix.dx() == 0 && matrix.dy() == 0 &&
@@ -27,18 +27,18 @@ inline bool streamableTransform(const CollageItem& item) {
            item.image.devicePixelRatio() == 1;
 }
 
-inline int transformCacheRows(const CollageItem& item) {
+inline int transformCacheRows(const ImageStitchingItem& item) {
     const auto size = transformedSize(item);
     const qint64 row = qint64(size.width()) * std::max(4, item.image.depth() / 8);
     return static_cast<int>(std::max<qint64>(
         1, std::min<qint64>({64, size.height(), maximumTransformCacheBytes / row})));
 }
 
-inline qint64 transformCacheBytes(const CollageItem& item) {
+inline qint64 transformCacheBytes(const ImageStitchingItem& item) {
     return qint64(transformedSize(item).width()) * transformCacheRows(item) * 4;
 }
 
-inline qint64 transformWorkingBytes(const CollageItem& item) {
+inline qint64 transformWorkingBytes(const ImageStitchingItem& item) {
     // Native crop and native transformed tile can coexist. The bounded color converter owns
     // additional temporary strips; the persistent RGBA tile is accounted for separately.
     return qint64(transformedSize(item).width()) * transformCacheRows(item) *
@@ -138,7 +138,7 @@ class TransformedRows final {
     int m_first = -1;
 };
 
-inline ScreenshotImageRowSource transformedRowSource(const CollageItem& item,
+inline ScreenshotImageRowSource transformedRowSource(const ImageStitchingItem& item,
                                                      std::function<bool()> cancelled) {
     ScreenshotImageRowSource result;
     result.size = transformedSize(item);
@@ -158,4 +158,4 @@ inline ScreenshotImageRowSource transformedRowSource(const CollageItem& item,
     };
     return result;
 }
-} // namespace snow_shot::presentation::collage_detail
+} // namespace snow_shot::presentation::image_stitching_detail

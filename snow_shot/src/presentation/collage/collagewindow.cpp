@@ -47,60 +47,65 @@ using adqt::widgets::AdMessageService;
 using adqt::widgets::AdModal;
 
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("CollageWindow", "%1: %2"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Add images"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Allow Snow Shot to access Finder in System Settings > "
-                                       "Privacy & Security > Automation, then try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "All images will be removed from this stitching session"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Cancel"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Clear all"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Clear all images?"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Clipboard image"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Image stitching"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Copy"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Copying stitched image…"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Copying could not be started. Try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Could not read the selected image files. Please try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Discard"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Discard this stitching session?"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Export could not be started. Try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Image loading could not be started. Try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Images"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Loading images: %1 of %2"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Pinned window %1"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Preparing stitched image…"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Reading selected image files…"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Replace image"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Save"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Save as file"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Saving stitched image…"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Save PDF document"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Select destination folder"),
-    QT_TRANSLATE_NOOP("CollageWindow", "PDF documents"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Exporting PDF page %1 of %2: %3%"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Canceling PDF export…"),
-    QT_TRANSLATE_NOOP("CollageWindow",
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "%1: %2"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Add images"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
+                      "Allow Snow Shot to access Finder in System Settings > "
+                      "Privacy & Security > Automation, then try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
+                      "All images will be removed from this stitching session"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Cancel"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Clear all"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Clear all images?"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Clipboard image"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Image stitching"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Copy"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Copying stitched image…"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Copying could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
+                      "Could not read the selected image files. Please try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Discard"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Discard this stitching session?"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Export could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Image loading could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Images"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Loading images: %1 of %2"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Pinned window %1"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Preparing stitched image…"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Reading selected image files…"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Replace image"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Save"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Save as file"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Saving stitched image…"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Save PDF document"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Select destination folder"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "PDF documents"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Exporting PDF page %1 of %2: %3%"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Canceling PDF export…"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
                       "PDF export was canceled. Your images and edits are preserved"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Saved pages: %1\nFiles:\n%2\n%3"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Pages %1–%2 were not saved"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Page %1 was not saved"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The PDFs could not be exported. Try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Saving could not be started. Try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Screenshot %1"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Some images could not be loaded:\n%1"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The final screenshot is unavailable"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The file manager is unavailable. Open it and try again"),
-    QT_TRANSLATE_NOOP("CollageWindow",
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Saved pages: %1\nFiles:\n%2\n%3"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Pages %1–%2 were not saved"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Page %1 was not saved"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "The PDFs could not be exported. Try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Saving could not be started. Try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Screenshot %1"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "Some images could not be loaded:\n%1"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "The final screenshot is unavailable"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
+                      "The file manager is unavailable. Open it and try again"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
                       "The file manager took too long to return the selected files. Please try "
                       "again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The image could not be decoded or is no longer available"),
-    QT_TRANSLATE_NOOP("CollageWindow",
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
+                      "The image could not be decoded or is no longer available"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow",
                       "The images and edits in this stitching session will be discarded"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The layout settings could not be remembered: %1"),
+    QT_TRANSLATE_NOOP("ImageStitchingWindow", "The layout settings could not be remembered: %1"),
 };
 
-QString collageText(const char* value) {
-    return QCoreApplication::translate("CollageWindow", value);
+QString imageStitchingText(const char* value) {
+    return QCoreApplication::translate("ImageStitchingWindow", value);
 }
 
 QString imageFilter() {
@@ -109,21 +114,22 @@ QString imageFilter() {
          ScreenshotClipboardContentReader::supportedImageFileExtensions())
         patterns.append(QStringLiteral("*.") + extension);
     // Qt requires ASCII parentheses around the patterns, regardless of the display language.
-    return QStringLiteral("%1 (%2)").arg(collageText("Images"), patterns.join(u' '));
+    return QStringLiteral("%1 (%2)").arg(imageStitchingText("Images"), patterns.join(u' '));
 }
 
 QString selectedFileErrorText(platform::SelectedFileError error) {
     switch (error) {
     case platform::SelectedFileError::PermissionDenied:
-        return collageText("Allow Snow Shot to access Finder in System Settings > Privacy & "
-                           "Security > Automation, then try again");
+        return imageStitchingText("Allow Snow Shot to access Finder in System Settings > Privacy & "
+                                  "Security > Automation, then try again");
     case platform::SelectedFileError::Timeout:
-        return collageText("The file manager took too long to return the selected files. Please "
-                           "try again");
+        return imageStitchingText(
+            "The file manager took too long to return the selected files. Please "
+            "try again");
     case platform::SelectedFileError::Unavailable:
-        return collageText("The file manager is unavailable. Open it and try again");
+        return imageStitchingText("The file manager is unavailable. Open it and try again");
     case platform::SelectedFileError::QueryFailed:
-        return collageText("Could not read the selected image files. Please try again");
+        return imageStitchingText("Could not read the selected image files. Please try again");
     case platform::SelectedFileError::None:
         return {};
     }
@@ -145,14 +151,14 @@ struct ImportItem {
     std::optional<SelectedFilesImport> selection = std::nullopt;
     std::optional<ScreenshotClipboardLocalImage> file = std::nullopt;
     std::optional<ScreenshotClipboardContentSnapshot> clipboard = std::nullopt;
-    std::shared_ptr<CollageImportReservation> reservation = {};
+    std::shared_ptr<ImageStitchingImportReservation> reservation = {};
     std::shared_ptr<const ImageSplitSnapshot> split = {};
     qint64 splitIndex = 0;
 };
 
 struct ImportedImage {
     QImage preview;
-    std::shared_ptr<CollageImportReservation> reservation;
+    std::shared_ptr<ImageStitchingImportReservation> reservation;
 };
 struct PdfProgressState final {
     std::atomic<qsizetype> completedPages{0};
@@ -162,7 +168,7 @@ struct PdfProgressState final {
 };
 } // namespace
 
-struct CollageWindow::Impl {
+struct ImageStitchingWindow::Impl {
     enum class Status : quint8 {
         None,
         Loading,
@@ -176,10 +182,10 @@ struct CollageWindow::Impl {
         PdfPartial,
         External
     };
-    CollageWindow& q;
-    CollageWindowServices services;
-    CollageDocument* document;
-    components::CollageEditorWidget* editor;
+    ImageStitchingWindow& q;
+    ImageStitchingWindowServices services;
+    ImageStitchingDocument* document;
+    components::ImageStitchingEditorWidget* editor;
     AdModal* modal;
     AdButton* cancelButton;
     AdButton* copyButton;
@@ -214,19 +220,19 @@ struct CollageWindow::Impl {
     QTimer* pdfProgressTimer;
     std::shared_ptr<PdfProgressState> pdfProgress;
     std::shared_ptr<std::atomic_bool> pdfCancellation;
-    CollagePdfExportResult lastPdfResult;
+    ImageStitchingPdfExportResult lastPdfResult;
     QSet<QString> pendingPdfSettingFields;
     WindowShortcutManager* pasteShortcuts = nullptr;
 
-    Impl(CollageWindow& owner, CollageWindowServices ports)
-        : q(owner), services(std::move(ports)), document(new CollageDocument(&q)),
-          editor(new components::CollageEditorWidget(document)), modal(new AdModal(&q)),
+    Impl(ImageStitchingWindow& owner, ImageStitchingWindowServices ports)
+        : q(owner), services(std::move(ports)), document(new ImageStitchingDocument(&q)),
+          editor(new components::ImageStitchingEditorWidget(document)), modal(new AdModal(&q)),
           pdfProgressTimer(new QTimer(&q)) {
         auto& storage = storage::ApplicationStorage::instance();
         if (!storage.isInitialized())
             static_cast<void>(storage.initialize());
-        document->setSettings(CollageSettingsStore(storage.configuration()).read());
-        document->setPdfSettings(CollageSettingsStore(storage.configuration()).readPdf());
+        document->setSettings(ImageStitchingSettingsStore(storage.configuration()).read());
+        document->setPdfSettings(ImageStitchingSettingsStore(storage.configuration()).readPdf());
         pdfProgressTimer->setInterval(100);
         QObject::connect(pdfProgressTimer, &QTimer::timeout, &q, [this] {
             if (pdfExporting && !choosingPdf && !pdfCancelRequested)
@@ -269,9 +275,9 @@ struct CollageWindow::Impl {
             layout->addWidget(button);
         }
         modal->setFooterWidget(footer);
-        QObject::connect(cancelButton, &AdButton::clicked, &q, &CollageWindow::requestClose);
-        QObject::connect(copyButton, &AdButton::clicked, &q, &CollageWindow::copy);
-        QObject::connect(saveButton, &AdButton::clicked, &q, &CollageWindow::save);
+        QObject::connect(cancelButton, &AdButton::clicked, &q, &ImageStitchingWindow::requestClose);
+        QObject::connect(copyButton, &AdButton::clicked, &q, &ImageStitchingWindow::copy);
+        QObject::connect(saveButton, &AdButton::clicked, &q, &ImageStitchingWindow::save);
         QObject::connect(modal, &AdModal::closeRequested, &q,
                          [this](AdModal::CloseReason) { q.requestClose(); });
         QObject::connect(modal, &AdModal::finished, &q, [this](AdModal::DialogCode) {
@@ -279,22 +285,23 @@ struct CollageWindow::Impl {
             closing = true;
             emit q.closed();
         });
-        QObject::connect(document, &CollageDocument::changed, &q, [this] { updateActions(); });
-        QObject::connect(editor, &components::CollageEditorWidget::addImagesRequested, &q,
+        QObject::connect(document, &ImageStitchingDocument::changed, &q,
+                         [this] { updateActions(); });
+        QObject::connect(editor, &components::ImageStitchingEditorWidget::addImagesRequested, &q,
                          [this] { chooseFiles(0); });
-        QObject::connect(editor, &components::CollageEditorWidget::imageFilesDropped, &q,
-                         &CollageWindow::addFiles);
-        QObject::connect(editor, &components::CollageEditorWidget::replaceImageRequested, &q,
+        QObject::connect(editor, &components::ImageStitchingEditorWidget::imageFilesDropped, &q,
+                         &ImageStitchingWindow::addFiles);
+        QObject::connect(editor, &components::ImageStitchingEditorWidget::replaceImageRequested, &q,
                          [this](quint64 id) { chooseFiles(id); });
-        QObject::connect(editor, &components::CollageEditorWidget::clearRequested, &q,
-                         &CollageWindow::requestClear);
-        QObject::connect(editor, &components::CollageEditorWidget::settingsEdited, &q,
+        QObject::connect(editor, &components::ImageStitchingEditorWidget::clearRequested, &q,
+                         &ImageStitchingWindow::requestClear);
+        QObject::connect(editor, &components::ImageStitchingEditorWidget::settingsEdited, &q,
                          [this](const QString& field) { persistSettings({field}); });
-        QObject::connect(document, &CollageDocument::customGridAdjusted, &q,
+        QObject::connect(document, &ImageStitchingDocument::customGridAdjusted, &q,
                          [this](const QStringList& fields) { persistSettings(fields); });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
                          [this] { retranslate(); });
-        QObject::connect(qApp, &QCoreApplication::aboutToQuit, &q, &CollageWindow::shutdown);
+        QObject::connect(qApp, &QCoreApplication::aboutToQuit, &q, &ImageStitchingWindow::shutdown);
         pasteShortcuts = new WindowShortcutManager(&q);
         WindowShortcutManager::Binding binding;
         binding.id = QStringLiteral("collagePaste");
@@ -323,30 +330,30 @@ struct CollageWindow::Impl {
             for (const auto& field : fields)
                 pendingPdfSettingFields.insert(field.mid(4));
             const auto settings = document->pdfSettings();
-            if (!validateCollagePdfSettings(settings).isEmpty())
+            if (!validateImageStitchingPdfSettings(settings).isEmpty())
                 return;
-            const auto persistable = CollageSettingsStore::persistablePdfFields(
+            const auto persistable = ImageStitchingSettingsStore::persistablePdfFields(
                 pendingPdfSettingFields.values(), settings);
             if (persistable.isEmpty())
                 return;
-            if (!CollageSettingsStore(configuration).writePdf(persistable, settings))
-                externalStatus(collageText("The layout settings could not be remembered: %1")
+            if (!ImageStitchingSettingsStore(configuration).writePdf(persistable, settings))
+                externalStatus(imageStitchingText("The layout settings could not be remembered: %1")
                                    .arg(configuration.lastError()));
             else
                 for (const auto& field : persistable)
                     pendingPdfSettingFields.remove(field);
             return;
         }
-        if (!CollageSettingsStore(configuration).write(fields, document->settings()))
-            externalStatus(collageText("The layout settings could not be remembered: %1")
+        if (!ImageStitchingSettingsStore(configuration).write(fields, document->settings()))
+            externalStatus(imageStitchingText("The layout settings could not be remembered: %1")
                                .arg(configuration.lastError()));
     }
 
     void retranslate() {
-        modal->setWindowTitle(collageText("Image stitching"));
-        cancelButton->setText(collageText("Cancel"));
-        copyButton->setText(collageText("Copy"));
-        saveButton->setText(collageText("Save"));
+        modal->setWindowTitle(imageStitchingText("Image stitching"));
+        cancelButton->setText(imageStitchingText("Cancel"));
+        copyButton->setText(imageStitchingText("Copy"));
+        saveButton->setText(imageStitchingText("Save"));
         editor->retranslateUi();
         for (auto* button : {cancelButton, copyButton, saveButton})
             button->setAccessibleName(button->text());
@@ -368,54 +375,56 @@ struct CollageWindow::Impl {
         QString message;
         switch (next) {
         case Status::Loading:
-            message = collageText("Loading images: %1 of %2").arg(importStarted).arg(importTotal);
+            message =
+                imageStitchingText("Loading images: %1 of %2").arg(importStarted).arg(importTotal);
             break;
         case Status::ReadingSelection:
-            message = collageText("Reading selected image files…");
+            message = imageStitchingText("Reading selected image files…");
             break;
         case Status::Preparing:
-            message = collageText("Preparing stitched image…");
+            message = imageStitchingText("Preparing stitched image…");
             break;
         case Status::Copying:
-            message = collageText("Copying stitched image…");
+            message = imageStitchingText("Copying stitched image…");
             break;
         case Status::Saving:
-            message = collageText("Saving stitched image…");
+            message = imageStitchingText("Saving stitched image…");
             break;
         case Status::ImportFailures:
-            message = collageText("Some images could not be loaded:\n%1")
+            message = imageStitchingText("Some images could not be loaded:\n%1")
                           .arg(importFailures().join(u'\n'));
             break;
         case Status::PdfSaving:
             if (pdfProgress)
-                message = collageText("Exporting PDF page %1 of %2: %3%")
+                message = imageStitchingText("Exporting PDF page %1 of %2: %3%")
                               .arg(std::max<qsizetype>(1, pdfProgress->pageNumber.load()))
                               .arg(pdfProgress->totalPages.load())
                               .arg(pdfProgress->pagePercent.load());
             break;
         case Status::PdfCancelling:
-            message = collageText("Canceling PDF export…");
+            message = imageStitchingText("Canceling PDF export…");
             break;
         case Status::PdfPartial: {
             QString reason =
                 lastPdfResult.cancelled
-                    ? collageText("PDF export was canceled. Your images and edits are preserved")
+                    ? imageStitchingText(
+                          "PDF export was canceled. Your images and edits are preserved")
                     : lastPdfResult.errorMessage();
             if (reason.isEmpty())
-                reason = collageText("The PDFs could not be exported. Try again");
+                reason = imageStitchingText("The PDFs could not be exported. Try again");
             if (!lastPdfResult.completedPages.isEmpty()) {
                 QStringList pages;
                 for (auto page : lastPdfResult.completedPages)
                     pages.append(QString::number(page));
                 const auto firstRemaining = lastPdfResult.completedPages.last() + 1;
                 if (firstRemaining <= lastPdfResult.totalCount)
-                    reason +=
-                        u'\n' + (firstRemaining == lastPdfResult.totalCount
-                                     ? collageText("Page %1 was not saved").arg(firstRemaining)
-                                     : collageText("Pages %1–%2 were not saved")
-                                           .arg(firstRemaining)
-                                           .arg(lastPdfResult.totalCount));
-                reason = collageText("Saved pages: %1\nFiles:\n%2\n%3")
+                    reason += u'\n' +
+                              (firstRemaining == lastPdfResult.totalCount
+                                   ? imageStitchingText("Page %1 was not saved").arg(firstRemaining)
+                                   : imageStitchingText("Pages %1–%2 were not saved")
+                                         .arg(firstRemaining)
+                                         .arg(lastPdfResult.totalCount));
+                reason = imageStitchingText("Saved pages: %1\nFiles:\n%2\n%3")
                              .arg(pages.join(QStringLiteral(", ")), lastPdfResult.paths.join(u'\n'),
                                   reason);
             }
@@ -460,22 +469,24 @@ struct CollageWindow::Impl {
 
     void translateConfirmation() {
         confirmation->setWindowTitle(confirmationClear
-                                         ? collageText("Clear all images?")
-                                         : collageText("Discard this stitching session?"));
+                                         ? imageStitchingText("Clear all images?")
+                                         : imageStitchingText("Discard this stitching session?"));
         confirmation->setText(
             confirmationClear
-                ? collageText("All images will be removed from this stitching session")
-                : collageText("The images and edits in this stitching session will be discarded"));
-        confirmation->setAcceptText(confirmationClear ? collageText("Clear all")
-                                                      : collageText("Discard"));
-        confirmation->setRejectText(collageText("Cancel"));
+                ? imageStitchingText("All images will be removed from this stitching session")
+                : imageStitchingText(
+                      "The images and edits in this stitching session will be discarded"));
+        confirmation->setAcceptText(confirmationClear ? imageStitchingText("Clear all")
+                                                      : imageStitchingText("Discard"));
+        confirmation->setRejectText(imageStitchingText("Cancel"));
     }
 
     void updateActions() {
-        const bool pdf = document->outputType() == CollageOutputType::PdfDocument;
-        const bool valid = pdf ? !document->items().isEmpty() &&
-                                     validateCollagePdfSettings(document->pdfSettings()).isEmpty()
-                               : document->layout().isValid();
+        const bool pdf = document->outputType() == ImageStitchingOutputType::PdfDocument;
+        const bool valid =
+            pdf ? !document->items().isEmpty() &&
+                      validateImageStitchingPdfSettings(document->pdfSettings()).isEmpty()
+                : document->layout().isValid();
         const bool ready = !closing && !importing && !exporting && !confirmationPending && valid;
         copyButton->setVisible(!pdf);
         copyButton->setEnabled(ready);
@@ -532,7 +543,7 @@ struct CollageWindow::Impl {
         artifact.reset();
         clipboardReservation.reset();
         showStatus(Status::None);
-        const QPointer<CollageWindow> guard(&q);
+        const QPointer<ImageStitchingWindow> guard(&q);
         const quint64 token = generation;
         emit q.exportFinished(success);
         if (!guard || token != generation)
@@ -553,7 +564,7 @@ struct CollageWindow::Impl {
         confirmationPending = true;
         const auto confirmationToken = ++confirmationGeneration;
         updateActions();
-        const QPointer<CollageWindow> guard(&q);
+        const QPointer<ImageStitchingWindow> guard(&q);
         auto complete = [guard, confirmationToken, accepted = std::move(accepted)](bool yes) {
             if (!guard || guard->m_impl->closing || !guard->m_impl->confirmationPending ||
                 confirmationToken != guard->m_impl->confirmationGeneration)
@@ -592,8 +603,8 @@ struct CollageWindow::Impl {
         fileDialog = dialog;
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setWindowModality(Qt::WindowModal);
-        dialog->setWindowTitle(replacement ? collageText("Replace image")
-                                           : collageText("Add images"));
+        dialog->setWindowTitle(replacement ? imageStitchingText("Replace image")
+                                           : imageStitchingText("Add images"));
         dialog->setNameFilter(imageFilter());
         dialog->setFileMode(replacement ? QFileDialog::ExistingFile : QFileDialog::ExistingFiles);
         QObject::connect(dialog, &QFileDialog::filesSelected, &q,
@@ -640,7 +651,7 @@ struct CollageWindow::Impl {
         importArtifact.reset();
         bool failed = !result.succeeded();
         if (!result.succeeded()) {
-            failures.append(collageText("%1: %2").arg(request.label, result.error));
+            failures.append(imageStitchingText("%1: %2").arg(request.label, result.error));
         } else {
             const bool accepted =
                 request.replacement
@@ -649,7 +660,8 @@ struct CollageWindow::Impl {
                     : document->append(std::move(result.image), request.label,
                                        std::move(decoded->preview)) != 0;
             if (!accepted)
-                failures.append(collageText("%1: %2").arg(request.label, document->lastError()));
+                failures.append(
+                    imageStitchingText("%1: %2").arg(request.label, document->lastError()));
             failed = !accepted;
         }
         if (failed)
@@ -682,17 +694,17 @@ struct CollageWindow::Impl {
             return;
         }
         if (!snapshot.source.isValid() || snapshot.outputSize.isEmpty()) {
-            fail(collageText("The image could not be decoded or is no longer available"));
+            fail(imageStitchingText("The image could not be decoded or is no longer available"));
             return;
         }
         QString error;
-        const qint64 bytes = collageImageImportBytes(snapshot.outputSize, &error);
+        const qint64 bytes = imageStitchingImageImportBytes(snapshot.outputSize, &error);
         if (bytes == 0) {
             fail(error);
             return;
         }
         decoded->reservation =
-            reserveCollageImport(std::max(bytes, snapshot.renderingBytes), &error);
+            reserveImageStitchingImport(std::max(bytes, snapshot.renderingBytes), &error);
         if (!decoded->reservation) {
             fail(error);
             return;
@@ -730,12 +742,13 @@ struct CollageWindow::Impl {
                         finishImport(request, decoded, token, std::move(result));
                     });
                 if (!job.isValid())
-                    finishImport(request, decoded, token,
-                                 ScreenshotExportTaskResult::failure(
-                                     ScreenshotExportFailureStage::Queue,
-                                     collageText("Image loading could not be started. Try again")));
+                    finishImport(
+                        request, decoded, token,
+                        ScreenshotExportTaskResult::failure(
+                            ScreenshotExportFailureStage::Queue,
+                            imageStitchingText("Image loading could not be started. Try again")));
             }))
-            fail(collageText("Image loading could not be started. Try again"));
+            fail(imageStitchingText("Image loading could not be started. Try again"));
     }
 
     void importSelection(const SelectedFilesImport& request, quint64 token) {
@@ -840,7 +853,7 @@ struct CollageWindow::Impl {
             return;
         }
         if (!request.pinnedId.isEmpty() && services.requestPinnedSnapshot) {
-            const QPointer<CollageWindow> guard(&q);
+            const QPointer<ImageStitchingWindow> guard(&q);
             const QString id = request.pinnedId;
             services.requestPinnedSnapshot(
                 id, [guard, request = std::move(request), decoded,
@@ -868,8 +881,8 @@ struct CollageWindow::Impl {
              preparation = captureScreenshotPinnedRenderPreparation()](
                 const ScreenshotExportCancellation& cancellation) {
                 QString error;
-                decoded->reservation =
-                    request.reservation ? request.reservation : reserveCollageImport(0, &error);
+                decoded->reservation = request.reservation ? request.reservation
+                                                           : reserveImageStitchingImport(0, &error);
                 if (!decoded->reservation)
                     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Source,
                                                                error);
@@ -879,7 +892,7 @@ struct CollageWindow::Impl {
                 QImage image;
                 if (request.split) {
                     const QRect region = request.split->layout.regionAt(request.splitIndex);
-                    const qint64 bytes = collageImageImportBytes(region.size(), &error);
+                    const qint64 bytes = imageStitchingImageImportBytes(region.size(), &error);
                     const qint64 nativeBytes =
                         ((qint64(region.width()) * request.split->image.depth() + 31) / 32) * 4 *
                         region.height();
@@ -897,12 +910,14 @@ struct CollageWindow::Impl {
                 } else if (request.record) {
                     const QSize size =
                         request.record->result ? request.record->result->imageSize : QSize();
-                    const qint64 bytes = size.isEmpty() ? 0 : collageImageImportBytes(size, &error);
+                    const qint64 bytes =
+                        size.isEmpty() ? 0 : imageStitchingImageImportBytes(size, &error);
                     if (bytes == 0 || !decoded->reservation->resize(bytes, &error))
                         return ScreenshotExportTaskResult::failure(
                             ScreenshotExportFailureStage::Source,
-                            error.isEmpty() ? collageText("The final screenshot is unavailable")
-                                            : error);
+                            error.isEmpty()
+                                ? imageStitchingText("The final screenshot is unavailable")
+                                : error);
                     const auto result = historyReader
                                             ? historyReader(*request.record)
                                             : storage::ApplicationStorage::instance()
@@ -933,7 +948,7 @@ struct CollageWindow::Impl {
                     return ScreenshotExportTaskResult::failure(
                         ScreenshotExportFailureStage::Source,
                         error.isEmpty()
-                            ? collageText(
+                            ? imageStitchingText(
                                   "The image could not be decoded or is no longer available")
                             : error);
                 decoded->preview =
@@ -950,8 +965,9 @@ struct CollageWindow::Impl {
                 finishImport(request, decoded, token, std::move(result));
             });
         if (!job.isValid()) {
-            failures.append(collageText("%1: %2").arg(
-                request.label, collageText("Image loading could not be started. Try again")));
+            failures.append(imageStitchingText("%1: %2").arg(
+                request.label,
+                imageStitchingText("Image loading could not be started. Try again")));
             discardRemainingSplit(request);
             QTimer::singleShot(0, &q, [this, token] {
                 if (token == generation)
@@ -962,7 +978,7 @@ struct CollageWindow::Impl {
 
     void publishCopy(quint64 token) {
         const storage::ScreenshotSettings settings;
-        const QPointer<CollageWindow> guard(&q);
+        const QPointer<ImageStitchingWindow> guard(&q);
         const auto complete = [guard, token](bool success, const QString& error) {
             if (guard && !guard->m_impl->closing && token == guard->m_impl->generation)
                 guard->m_impl->finishExport(success, error);
@@ -992,7 +1008,7 @@ struct CollageWindow::Impl {
                                                            std::move(prepared.payload), committed));
                     },
                     ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())}))
-                finishExport(false, collageText("Copying could not be started. Try again"));
+                finishExport(false, imageStitchingText("Copying could not be started. Try again"));
         } else if (!artifact->requestClipboard(&q, [this, token, committed](
                                                        ScreenshotExportClipboardResult result) {
                        if (closing || token != generation)
@@ -1004,12 +1020,12 @@ struct CollageWindow::Impl {
                        static_cast<void>(clipboard.commit(QApplication::clipboard(), &q,
                                                           std::move(result.payload), committed));
                    })) {
-            finishExport(false, collageText("Copying could not be started. Try again"));
+            finishExport(false, imageStitchingText("Copying could not be started. Try again"));
         }
     }
 
     void publishSave(quint64 token) {
-        const QPointer<CollageWindow> guard(&q);
+        const QPointer<ImageStitchingWindow> guard(&q);
         auto complete = [guard, token](bool success, const QString& error) {
             if (guard && token == guard->m_impl->generation)
                 guard->m_impl->finishExport(success, error);
@@ -1023,7 +1039,7 @@ struct CollageWindow::Impl {
             if (!ScreenshotSaveAsFileDialog::open(
                     &q, editor->window(), artifact, {},
                     [complete](bool success) { complete(success, {}); }, nullptr, Qt::WindowModal))
-                complete(false, collageText("Saving could not be started. Try again"));
+                complete(false, imageStitchingText("Saving could not be started. Try again"));
             return;
         }
         nativeSave = ScreenshotManualSaveService::open(
@@ -1037,10 +1053,10 @@ struct CollageWindow::Impl {
                     guard->m_impl->showStatus(Status::Saving);
             });
         if (!nativeSave.isValid())
-            complete(false, collageText("Saving could not be started. Try again"));
+            complete(false, imageStitchingText("Saving could not be started. Try again"));
     }
 
-    void finishPdfExport(CollagePdfExportResult result) {
+    void finishPdfExport(ImageStitchingPdfExportResult result) {
         if (closing || !pdfExporting)
             return;
         pdfProgressTimer->stop();
@@ -1052,7 +1068,7 @@ struct CollageWindow::Impl {
         lastPdfResult = std::move(result);
         const bool success = lastPdfResult.succeeded();
         showStatus(Status::None);
-        const QPointer<CollageWindow> guard(&q);
+        const QPointer<ImageStitchingWindow> guard(&q);
         const quint64 token = generation;
         emit q.pdfExportFinished(lastPdfResult);
         if (!guard || token != generation)
@@ -1078,9 +1094,9 @@ struct CollageWindow::Impl {
             pdfCancellation->store(true);
         if (choosingPdf) {
             // A chooser port may reply later; choosingPdf is cleared by the terminal completion.
-            CollagePdfExportResult result;
+            ImageStitchingPdfExportResult result;
             result.totalCount =
-                collagePdfPageCount(document->items().size(), document->pdfSettings());
+                imageStitchingPdfPageCount(document->items().size(), document->pdfSettings());
             result.cancelled = true;
             if (fileDialog)
                 fileDialog->reject();
@@ -1092,11 +1108,11 @@ struct CollageWindow::Impl {
         updateActions();
     }
 
-    void writePdf(QVector<CollageItem> items, CollagePdfSettings settings,
-                  CollagePdfDestination destination, quint64 token) {
+    void writePdf(QVector<ImageStitchingItem> items, ImageStitchingPdfSettings settings,
+                  ImageStitchingPdfDestination destination, quint64 token) {
         choosingPdf = false;
-        auto result = std::make_shared<CollagePdfExportResult>();
-        result->totalCount = collagePdfPageCount(items.size(), settings);
+        auto result = std::make_shared<ImageStitchingPdfExportResult>();
+        result->totalCount = imageStitchingPdfPageCount(items.size(), settings);
         const auto cancellation = pdfCancellation;
         const auto progress = pdfProgress;
         const auto writer = services.exportPdf;
@@ -1109,16 +1125,16 @@ struct CollageWindow::Impl {
                 const auto cancelled = [cancellation, jobCancellation] {
                     return cancellation->load() || jobCancellation.isCancellationRequested();
                 };
-                const auto report = [progress](const CollagePdfExportProgress& value) {
+                const auto report = [progress](const ImageStitchingPdfExportProgress& value) {
                     progress->completedPages.store(value.completedPages);
                     progress->totalPages.store(value.totalPages);
                     progress->pageNumber.store(value.pageNumber);
                     progress->pagePercent.store(
                         qRound(std::clamp(value.pageFraction, 0.0, 1.0) * 100));
                 };
-                *result = writer
-                              ? writer(items, settings, destination, cancelled, report)
-                              : exportCollagePdf(items, settings, destination, cancelled, report);
+                *result = writer ? writer(items, settings, destination, cancelled, report)
+                                 : exportImageStitchingPdf(items, settings, destination, cancelled,
+                                                           report);
                 return ScreenshotExportTaskResult{};
             },
             [this, result, token](const ScreenshotExportTaskResult& task) {
@@ -1130,13 +1146,13 @@ struct CollageWindow::Impl {
                     if (result->error.isEmpty() && !result->cancelled)
                         result->error =
                             task.error.isEmpty()
-                                ? collageText("The PDFs could not be exported. Try again")
+                                ? imageStitchingText("The PDFs could not be exported. Try again")
                                 : task.error;
                 }
                 finishPdfExport(std::move(*result));
             });
         if (!job.isValid()) {
-            result->error = collageText("Export could not be started. Try again");
+            result->error = imageStitchingText("Export could not be started. Try again");
             finishPdfExport(std::move(*result));
         }
     }
@@ -1144,7 +1160,7 @@ struct CollageWindow::Impl {
     void startPdfExport() {
         if (closing || exporting || importing || confirmationPending || fileDialog ||
             document->items().isEmpty() ||
-            !validateCollagePdfSettings(document->pdfSettings()).isEmpty())
+            !validateImageStitchingPdfSettings(document->pdfSettings()).isEmpty())
             return;
         pdfExporting = true;
         exporting = true;
@@ -1155,19 +1171,20 @@ struct CollageWindow::Impl {
         pdfProgress = std::make_shared<PdfProgressState>();
         const auto items = document->items();
         const auto settings = document->pdfSettings();
-        pdfProgress->totalPages.store(collagePdfPageCount(items.size(), settings));
+        pdfProgress->totalPages.store(imageStitchingPdfPageCount(items.size(), settings));
         const auto token = ++generation;
         updateActions();
-        const QPointer<CollageWindow> guard(&q);
-        auto chosen = [guard, items, settings, token](std::optional<CollagePdfDestination> choice) {
+        const QPointer<ImageStitchingWindow> guard(&q);
+        auto chosen = [guard, items, settings,
+                       token](std::optional<ImageStitchingPdfDestination> choice) {
             if (!guard)
                 return;
             auto& d = *guard->m_impl;
             if (d.closing || token != d.generation || !d.pdfExporting || !d.choosingPdf)
                 return;
             if (!choice || choice->path.isEmpty()) {
-                CollagePdfExportResult result;
-                result.totalCount = collagePdfPageCount(items.size(), settings);
+                ImageStitchingPdfExportResult result;
+                result.totalCount = imageStitchingPdfPageCount(items.size(), settings);
                 result.cancelled = true;
                 d.finishPdfExport(std::move(result));
                 return;
@@ -1182,14 +1199,15 @@ struct CollageWindow::Impl {
         fileDialog = dialog;
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setWindowModality(Qt::WindowModal);
-        const bool combined = settings.exportMode == CollagePdfExportMode::Combined;
-        dialog->setWindowTitle(combined ? collageText("Save PDF document")
-                                        : collageText("Select destination folder"));
+        const bool combined = settings.exportMode == ImageStitchingPdfExportMode::Combined;
+        dialog->setWindowTitle(combined ? imageStitchingText("Save PDF document")
+                                        : imageStitchingText("Select destination folder"));
         dialog->setDirectory(storage::ScreenshotSettings().lastManualSaveDirectory());
         if (combined) {
             dialog->setAcceptMode(QFileDialog::AcceptSave);
             dialog->setFileMode(QFileDialog::AnyFile);
-            dialog->setNameFilter(QStringLiteral("%1 (*.pdf)").arg(collageText("PDF documents")));
+            dialog->setNameFilter(
+                QStringLiteral("%1 (*.pdf)").arg(imageStitchingText("PDF documents")));
             dialog->setDefaultSuffix(QStringLiteral("pdf"));
             dialog->setOption(QFileDialog::DontConfirmOverwrite, false);
             dialog->selectFile(QStringLiteral("SnowShot_%1.pdf")
@@ -1212,15 +1230,15 @@ struct CollageWindow::Impl {
                         path += QStringLiteral(".pdf");
                     // Qt confirmed the exact typed path. A suffix adjustment never
                     // authorizes replacing a different destination.
-                    chosen(CollagePdfDestination{path, combined && path == files.first() &&
-                                                           QFileInfo::exists(path)});
+                    chosen(ImageStitchingPdfDestination{path, combined && path == files.first() &&
+                                                                  QFileInfo::exists(path)});
                 }
             });
         dialog->open();
     }
 
     void startExport(bool copy) {
-        if (document->outputType() == CollageOutputType::PdfDocument) {
+        if (document->outputType() == ImageStitchingOutputType::PdfDocument) {
             if (!copy)
                 startPdfExport();
             return;
@@ -1234,7 +1252,7 @@ struct CollageWindow::Impl {
         updateActions();
         showStatus(Status::Preparing);
         if (copy && !services.copy && !storage::ScreenshotSettings().copyImageFileToClipboard()) {
-            const auto capacity = estimateCollageClipboard(document->layout().size);
+            const auto capacity = estimateImageStitchingClipboard(document->layout().size);
             if (!capacity.isValid()) {
                 finishExport(false, capacity.error);
                 return;
@@ -1247,7 +1265,7 @@ struct CollageWindow::Impl {
             &q, ScreenshotExportCoordinator::Priority::Foreground,
             [items, settings, rows](const ScreenshotExportCancellation& cancellation) {
                 QString error;
-                *rows = prepareCollageRows(
+                *rows = prepareImageStitchingRows(
                     items, settings,
                     [cancellation] { return cancellation.isCancellationRequested(); }, &error);
                 return rows->isValid() ? ScreenshotExportTaskResult{}
@@ -1265,7 +1283,7 @@ struct CollageWindow::Impl {
                 if (copy && !storage::ScreenshotSettings().copyImageFileToClipboard() &&
                     !services.copy) {
                     QString error;
-                    clipboardReservation = reserveCollageClipboard(rows->size, &error);
+                    clipboardReservation = reserveImageStitchingClipboard(rows->size, &error);
                     if (!clipboardReservation) {
                         finishExport(false, error);
                         return;
@@ -1285,17 +1303,17 @@ struct CollageWindow::Impl {
                     publishSave(token);
             });
         if (!job.isValid())
-            finishExport(false, collageText("Export could not be started. Try again"));
+            finishExport(false, imageStitchingText("Export could not be started. Try again"));
     }
 };
 
-CollageWindow::CollageWindow(QObject* parent, CollageWindowServices services)
+ImageStitchingWindow::ImageStitchingWindow(QObject* parent, ImageStitchingWindowServices services)
     : QObject(parent), m_impl(std::make_unique<Impl>(*this, std::move(services))) {}
-CollageWindow::~CollageWindow() {
+ImageStitchingWindow::~ImageStitchingWindow() {
     shutdown();
 }
 
-void CollageWindow::present(const QVector<storage::CaptureHistoryRecord>& records) {
+void ImageStitchingWindow::present(const QVector<storage::CaptureHistoryRecord>& records) {
     if (m_impl->closing || m_impl->exporting)
         return;
     const bool firstPresentation = !m_impl->modal->isOpen();
@@ -1314,52 +1332,53 @@ void CollageWindow::present(const QVector<storage::CaptureHistoryRecord>& record
         installWindowCloseShortcut(m_impl->editor->window(), [this] { requestClose(); });
     QVector<ImportItem> requested;
     for (const auto& record : records)
-        requested.append({record, {}, {}, collageText("Screenshot %1").arg(record.id), 0});
+        requested.append({record, {}, {}, imageStitchingText("Screenshot %1").arg(record.id), 0});
     m_impl->beginImport(std::move(requested));
 }
 
-void CollageWindow::presentPinnedRecords(const QStringList& recordIds) {
+void ImageStitchingWindow::presentPinnedRecords(const QStringList& recordIds) {
     present();
     QVector<ImportItem> requested;
     for (const QString& id : recordIds)
-        requested.append({{}, id, {}, collageText("Pinned window %1").arg(id), 0});
+        requested.append({{}, id, {}, imageStitchingText("Pinned window %1").arg(id), 0});
     m_impl->beginImport(std::move(requested));
 }
 
-void CollageWindow::presentPinnedWindows(const QVector<ScreenshotPinnedImageSnapshot>& snapshots) {
+void ImageStitchingWindow::presentPinnedWindows(
+    const QVector<ScreenshotPinnedImageSnapshot>& snapshots) {
     present();
     QVector<ImportItem> requested;
     requested.reserve(snapshots.size());
     for (const auto& snapshot : snapshots) {
         ImportItem item;
-        item.label = collageText("Pinned window %1").arg(snapshot.label);
+        item.label = imageStitchingText("Pinned window %1").arg(snapshot.label);
         item.live = snapshot;
         requested.append(std::move(item));
     }
     m_impl->beginImport(std::move(requested));
 }
 
-bool CollageWindow::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
+bool ImageStitchingWindow::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
     if (m_impl->closing || m_impl->exporting || m_impl->confirmationPending ||
         snapshot.image.isNull() || snapshot.layout.size != snapshot.image.size() ||
         !snapshot.layout.isValid() || snapshot.layout.outputCount() <= 0)
         return false;
     ImportItem request;
     request.split = std::make_shared<const ImageSplitSnapshot>(std::move(snapshot));
-    m_impl->document->setOutputType(CollageOutputType::PdfDocument);
+    m_impl->document->setOutputType(ImageStitchingOutputType::PdfDocument);
     present();
     m_impl->beginImport({std::move(request)});
     return true;
 }
 
-void CollageWindow::addFiles(const QStringList& paths) {
+void ImageStitchingWindow::addFiles(const QStringList& paths) {
     QVector<ImportItem> requested;
     for (const QString& path : paths)
         requested.append({{}, {}, path, path, 0});
     m_impl->beginImport(std::move(requested));
 }
 
-void CollageWindow::paste() {
+void ImageStitchingWindow::paste() {
     auto& d = *m_impl;
     if (!d.canPaste())
         return;
@@ -1370,7 +1389,7 @@ void CollageWindow::paste() {
         return;
     }
     QString error;
-    auto reservation = reserveCollageImport(0, &error);
+    auto reservation = reserveImageStitchingImport(0, &error);
     bool rejected = !reservation;
     auto snapshot = ScreenshotClipboardContentReader::snapshotImage(
         clipboard, editor()->devicePixelRatioF(), [&](qint64 bytes) {
@@ -1385,24 +1404,24 @@ void CollageWindow::paste() {
     if (!snapshot)
         return;
     ImportItem item;
-    item.label = collageText("Clipboard image");
+    item.label = imageStitchingText("Clipboard image");
     item.clipboard = std::move(snapshot);
     item.reservation = std::move(reservation);
     d.beginImport({std::move(item)});
 }
 
-void CollageWindow::addSelectedFiles(std::shared_ptr<platform::SelectedFileBackend> backend,
-                                     platform::SelectedFileTarget target) {
+void ImageStitchingWindow::addSelectedFiles(std::shared_ptr<platform::SelectedFileBackend> backend,
+                                            platform::SelectedFileTarget target) {
     if (!backend)
         return;
     ImportItem request;
     request.selection = SelectedFilesImport{std::move(backend), target};
     m_impl->beginImport({std::move(request)});
 }
-void CollageWindow::replaceFile(quint64 id, const QString& path) {
+void ImageStitchingWindow::replaceFile(quint64 id, const QString& path) {
     m_impl->beginImport({ImportItem{{}, {}, path, path, id}});
 }
-void CollageWindow::requestClose() {
+void ImageStitchingWindow::requestClose() {
     if (m_impl->closing)
         return;
     if (m_impl->pdfExporting) {
@@ -1419,7 +1438,7 @@ void CollageWindow::requestClose() {
     else
         m_impl->askConfirmation(false, discard);
 }
-void CollageWindow::requestClear() {
+void ImageStitchingWindow::requestClear() {
     if (m_impl->exporting || m_impl->document->items().isEmpty())
         return;
     m_impl->askConfirmation(true, [this] {
@@ -1433,32 +1452,32 @@ void CollageWindow::requestClear() {
         m_impl->updateActions();
     });
 }
-void CollageWindow::copy() {
+void ImageStitchingWindow::copy() {
     m_impl->startExport(true);
 }
-void CollageWindow::save() {
+void ImageStitchingWindow::save() {
     m_impl->startExport(false);
 }
-void CollageWindow::shutdown() {
+void ImageStitchingWindow::shutdown() {
     if (!m_impl || m_impl->closing)
         return;
     m_impl->closing = true;
     m_impl->cancelWork();
     m_impl->modal->reject();
 }
-bool CollageWindow::busy() const {
+bool ImageStitchingWindow::busy() const {
     return m_impl->exporting;
 }
-bool CollageWindow::loading() const {
+bool ImageStitchingWindow::loading() const {
     return m_impl->importing;
 }
-CollageDocument* CollageWindow::document() const {
+ImageStitchingDocument* ImageStitchingWindow::document() const {
     return m_impl->document;
 }
-components::CollageEditorWidget* CollageWindow::editor() const {
+components::ImageStitchingEditorWidget* ImageStitchingWindow::editor() const {
     return m_impl->editor;
 }
-AdModal* CollageWindow::modal() const {
+AdModal* ImageStitchingWindow::modal() const {
     return m_impl->modal;
 }
 

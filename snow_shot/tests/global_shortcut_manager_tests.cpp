@@ -36,7 +36,7 @@ namespace shortcuts = snow_shot::shortcuts;
 constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::Screenshot,
     GlobalShortcutAction::ScreenshotDelay,
-    GlobalShortcutAction::ScreenshotFixed,
+    GlobalShortcutAction::ScreenshotPinToScreen,
     GlobalShortcutAction::ScreenshotOcr,
     GlobalShortcutAction::ScreenshotOcrCopy,
     GlobalShortcutAction::ScreenshotTranslation,
@@ -64,7 +64,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::HideShowAllWindows,
-    GlobalShortcutAction::ToggleGlobalHotkeys,
+    GlobalShortcutAction::ToggleGlobalShortcuts,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
 
@@ -365,19 +365,19 @@ void switchGroupShortcutPersistsAndReportsBinding() {
 }
 #ifdef Q_OS_WIN
 UINT observedModifiers = 0;
-BOOL WINAPI fakeRegisterGroupHotkey(HWND, int, UINT modifiers, UINT) {
+BOOL WINAPI fakeRegisterGroupShortcut(HWND, int, UINT modifiers, UINT) {
     observedModifiers = modifiers;
     return TRUE;
 }
-BOOL WINAPI fakeUnregisterGroupHotkey(HWND, int) {
+BOOL WINAPI fakeUnregisterGroupShortcut(HWND, int) {
     return TRUE;
 }
 void nativeGroupKeyStateUsesEveryShortcutKey() {
     QSet<int> down;
     bool available = true;
     WindowsHotKeyInputApi api;
-    api.registerHotKey = fakeRegisterGroupHotkey;
-    api.unregisterHotKey = fakeUnregisterGroupHotkey;
+    api.registerHotKey = fakeRegisterGroupShortcut;
+    api.unregisterHotKey = fakeUnregisterGroupShortcut;
     api.keyState = [&](int key) { return static_cast<SHORT>(down.contains(key) ? 0x8000 : 0); };
     api.available = [&] { return available; };
     auto backend = createWindowsGlobalShortcutBackend(api);
@@ -486,7 +486,7 @@ void hideShowAllWindowsShortcutCanBeAssignedAndRestored() {
     require(restored.setShortcuts(action, {}), "clear hide/show all windows hotkey fixture");
 }
 
-void hiddenFloatingToolsPreserveGlobalHotkeys() {
+void hiddenFloatingToolsPreserveGlobalShortcuts() {
     namespace storage = snow_shot::storage;
     const storage::ScreenshotToolbarSettings settings;
     constexpr auto kind = storage::ScreenshotToolbarLayoutKind::FloatingTools;
@@ -498,7 +498,7 @@ void hiddenFloatingToolsPreserveGlobalHotkeys() {
     constexpr std::array actions{
         GlobalShortcutAction::Screenshot,
         GlobalShortcutAction::ScreenshotDelay,
-        GlobalShortcutAction::ScreenshotFixed,
+        GlobalShortcutAction::ScreenshotPinToScreen,
         GlobalShortcutAction::ScreenshotOcr,
         GlobalShortcutAction::ScreenshotOcrCopy,
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -625,10 +625,10 @@ void selectedImagesShortcutsRegisterAndPersist(GlobalShortcutAction action) {
                     !manager.validateShortcut(GlobalShortcutAction::Screenshot, bindings.first())
                          .supported,
                 "both image bindings activate and participate in conflict detection");
-        manager.setGlobalHotkeysEnabled(false);
+        manager.setGlobalShortcutsEnabled(false);
         requireDisabled(manager, action, bindings);
         require(input->registrations.isEmpty(), "disabling hotkeys releases image bindings");
-        manager.setGlobalHotkeysEnabled(true);
+        manager.setGlobalShortcutsEnabled(true);
         require(manager.state(action).status == GlobalShortcutStatus::Registered,
                 "reenabling hotkeys restores image bindings");
     }
@@ -669,11 +669,11 @@ void globalCanvasFullscreenGateTracksSession() {
             "an active canvas reacquires its fullscreen-exempt shortcut");
     input->handler(activeId);
     require(activations == 1, "active canvas can toggle over fullscreen windows");
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     input->handler(activeId);
     require(input->registrations.isEmpty() && activations == 1,
             "manual disablement releases even the active canvas shortcut");
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     const int restoredId = registrationId(*input, QStringLiteral("Ctrl+F8"));
     require(restoredId != 0 && restoredId != activeId,
             "re-enabling an active canvas acquires a fresh registration");
@@ -850,7 +850,7 @@ void fullscreenGameFilterControlsRegistration() {
     manager.initialize();
     clearAll(manager);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
-                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts,
                                      {QStringLiteral("Ctrl+F11")}) &&
                 manager.setShortcuts(GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
                                      {QStringLiteral("Ctrl+F12")}),
@@ -876,7 +876,7 @@ void fullscreenGameFilterControlsRegistration() {
                             manager.state(GlobalShortcutAction::Screenshot)
                                     .bindings.first()
                                     .registered == !suppressed &&
-                            manager.state(GlobalShortcutAction::ToggleGlobalHotkeys)
+                            manager.state(GlobalShortcutAction::ToggleGlobalShortcuts)
                                 .bindings.first()
                                 .registered &&
                             manager
@@ -913,7 +913,7 @@ void fullscreenGameFilterControlsRegistration() {
     manager.refreshFocusedFullscreenState();
     require(!manager.focusedFullscreenSuppressionActive() && notifications > 0,
             "focus between fullscreen games and non-games updates suppression notifications");
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     game = true;
     manager.refreshFocusedFullscreenState();
     game = false;
@@ -924,7 +924,7 @@ void fullscreenGameFilterControlsRegistration() {
             "restore fullscreen game fixture settings");
 }
 
-void ownFullscreenFocusPreservesAndRestoresHotkeys() {
+void ownFullscreenFocusPreservesAndRestoresShortcuts() {
     auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
     const QString key = QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
     const auto previousSuppression = store.value(key);
@@ -1036,14 +1036,14 @@ void deterministicOwnershipPartialFailureAndSuspension() {
     require(activations == 1, "registered backend activation must dispatch its action");
 }
 
-void toggleShortcutSurvivesGlobalHotkeyDisablement() {
+void toggleShortcutSurvivesGlobalShortcutDisablement() {
     auto native = std::make_unique<FakeBackend>();
     FakeBackend* input = native.get();
     GlobalShortcutManager manager(std::move(native), nullptr, [] { return false; });
     manager.initialize();
     clearAll(manager);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
-                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts,
                                      {QStringLiteral("Ctrl+F12")}),
             "configure the toggle and a regular shortcut");
 
@@ -1053,13 +1053,13 @@ void toggleShortcutSurvivesGlobalHotkeyDisablement() {
                      [&screenshotActivations, &toggleActivations](GlobalShortcutAction action) {
                          if (action == GlobalShortcutAction::Screenshot) {
                              ++screenshotActivations;
-                         } else if (action == GlobalShortcutAction::ToggleGlobalHotkeys) {
+                         } else if (action == GlobalShortcutAction::ToggleGlobalShortcuts) {
                              ++toggleActivations;
                          }
                      });
     int enabledNotifications = 0;
     bool lastEnabledState = true;
-    QObject::connect(&manager, &GlobalShortcutManager::globalHotkeysEnabledChanged, &manager,
+    QObject::connect(&manager, &GlobalShortcutManager::globalShortcutsEnabledChanged, &manager,
                      [&enabledNotifications, &lastEnabledState](bool enabled) {
                          ++enabledNotifications;
                          lastEnabledState = enabled;
@@ -1077,9 +1077,9 @@ void toggleShortcutSurvivesGlobalHotkeyDisablement() {
             "both bindings must be registered before the disablement check");
 
     const int releasesBeforeDisable = input->unregisterCalls;
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     const int registrationsWhileDisabled = input->registerCalls;
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     require(enabledNotifications == 1 && !lastEnabledState &&
                 input->unregisterCalls == releasesBeforeDisable + 1 &&
                 input->registerCalls == registrationsWhileDisabled &&
@@ -1095,8 +1095,8 @@ void toggleShortcutSurvivesGlobalHotkeyDisablement() {
     require(screenshotActivations == 0 && toggleActivations == 1,
             "disabled hotkeys must stay silent except for the toggle shortcut");
 
-    manager.setGlobalHotkeysEnabled(true);
-    require(enabledNotifications == 2 && lastEnabledState && manager.globalHotkeysEnabled(),
+    manager.setGlobalShortcutsEnabled(true);
+    require(enabledNotifications == 2 && lastEnabledState && manager.globalShortcutsEnabled(),
             "re-enabling global hotkeys must announce the restored state");
     const int restoredId = registrationId(*input, QStringLiteral("Ctrl+F10"));
     require(restoredId != 0 && restoredId != screenshotRegistrationId &&
@@ -1127,18 +1127,18 @@ void focusedFullscreenSuppressionPublishesState() {
                      });
     manager.initialize();
     clearAll(manager);
-    require(manager.globalHotkeysEnabled() && manager.focusedFullscreenSuppressionActive() &&
+    require(manager.globalShortcutsEnabled() && manager.focusedFullscreenSuppressionActive() &&
                 notifications == QVector<bool>{true},
             "startup fullscreen suppression publishes independently of bindings and manual state");
     manager.refreshFocusedFullscreenState();
     manager.refreshFocusedFullscreenState();
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     require(notifications == QVector<bool>{true},
             "unchanged focus and manual toggles must not republish fullscreen suppression");
 
     focusedFullscreen = false;
     manager.refreshFocusedFullscreenState();
-    require(!manager.globalHotkeysEnabled() && !manager.focusedFullscreenSuppressionActive() &&
+    require(!manager.globalShortcutsEnabled() && !manager.focusedFullscreenSuppressionActive() &&
                 notifications == QVector<bool>{true, false},
             "leaving fullscreen clears suppression while preserving manual disablement");
     const auto suspension = manager.suspendRegistrations();
@@ -1153,7 +1153,7 @@ void focusedFullscreenSuppressionPublishesState() {
             "turning off the setting immediately publishes the cleared suppression state");
     require(store.setValue(key, true), "re-enable suppression while fullscreen remains focused");
     manager.resumeRegistrations(suspension);
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     require(manager.focusedFullscreenSuppressionActive() &&
                 notifications == QVector<bool>{true, false, true, false, true},
             "re-enabling suppression publishes once and survives manual and suspension changes");
@@ -1253,12 +1253,12 @@ void fullscreenToggleSurvivesFullscreenSuppression() {
             "restore the fullscreen suppression preference");
 }
 
-void gateControlShortcutsSurviveBothHotkeyGates() {
+void gateControlShortcutsSurviveBothShortcutGates() {
     for (const GlobalShortcutAction action : ALL_ACTIONS) {
         const bool expected =
-            action == GlobalShortcutAction::ToggleGlobalHotkeys ||
+            action == GlobalShortcutAction::ToggleGlobalShortcuts ||
             action == GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow;
-        require(controlsGlobalHotkeyGates(action) == expected,
+        require(controlsGlobalShortcutGates(action) == expected,
                 "only the hotkey-gate toggles may bypass activation gates");
     }
 
@@ -1270,7 +1270,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
     manager.initialize();
     clearAll(manager);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
-                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts,
                                      {QStringLiteral("Ctrl+F12")}) &&
                 manager.setShortcuts(GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
                                      {QStringLiteral("Ctrl+F11")}),
@@ -1290,7 +1290,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
                       &fullscreenToggleActivations](GlobalShortcutAction action) {
                          if (action == GlobalShortcutAction::Screenshot) {
                              ++screenshotActivations;
-                         } else if (action == GlobalShortcutAction::ToggleGlobalHotkeys) {
+                         } else if (action == GlobalShortcutAction::ToggleGlobalShortcuts) {
                              ++globalToggleActivations;
                          } else if (action ==
                                     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow) {
@@ -1319,7 +1319,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
         input->handler(fullscreenToggleId);
     };
 
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     focusedFullscreen = true;
     manager.refreshFocusedFullscreenState();
     require(input->registrations.size() == 2 && input->registrations.contains(globalToggleId) &&
@@ -1330,7 +1330,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
                 fullscreenToggleActivations == 1,
             "both gate-control shortcuts must stay usable when every hotkey gate is closed");
 
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     requireDisabled(manager, GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")});
     fireAll();
     require(screenshotActivations == 0 && globalToggleActivations == 2 &&
@@ -1339,7 +1339,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
             "suppression still applies");
 
     focusedFullscreen = false;
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     manager.refreshFocusedFullscreenState();
     requireDisabled(manager, GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")});
     fireAll();
@@ -1347,7 +1347,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
                 fullscreenToggleActivations == 3,
             "closing only the session gate must still silence regular shortcuts");
 
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     require(registrationId(*input, QStringLiteral("Ctrl+F10")) != screenshotId &&
                 input->registrations.size() == 3 && input->registrations.contains(globalToggleId) &&
                 input->registrations.contains(fullscreenToggleId),
@@ -1361,7 +1361,7 @@ void gateControlShortcutsSurviveBothHotkeyGates() {
             "restore the fullscreen suppression preference");
 }
 
-void hotkeyGatesApplyBeforeInitialRegistration() {
+void shortcutGatesApplyBeforeInitialRegistration() {
     auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
     const QString suppressionKey =
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
@@ -1374,7 +1374,7 @@ void hotkeyGatesApplyBeforeInitialRegistration() {
         clearAll(fixture);
         require(
             fixture.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
-                fixture.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                fixture.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts,
                                      {QStringLiteral("Ctrl+F12")}),
             "persist startup hotkey fixtures");
     }
@@ -1385,7 +1385,7 @@ void hotkeyGatesApplyBeforeInitialRegistration() {
         GlobalShortcutManager manager(std::move(backend), nullptr,
                                       [fullscreenAtStartup] { return fullscreenAtStartup; });
         if (!fullscreenAtStartup) {
-            manager.setGlobalHotkeysEnabled(false);
+            manager.setGlobalShortcutsEnabled(false);
         }
         manager.initialize();
         require(input->registerCalls == 1 && input->unregisterCalls == 0 &&
@@ -1409,34 +1409,34 @@ void disabledDuplicateBindingBecomesAvailableToGateControl() {
     clearAll(manager);
     const shortcuts::ShortcutBinding shared{QStringLiteral("Ctrl+F10")};
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {shared}) &&
-                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys, {shared}),
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts, {shared}),
             "configure a regular action sharing a gate-control binding");
     const int screenshotId = registrationId(*input, shared.portableText);
     require(screenshotId != 0 &&
                 manager.state(GlobalShortcutAction::Screenshot).status ==
                     GlobalShortcutStatus::Registered &&
-                manager.state(GlobalShortcutAction::ToggleGlobalHotkeys).status ==
+                manager.state(GlobalShortcutAction::ToggleGlobalShortcuts).status ==
                     GlobalShortcutStatus::Failed,
             "normal action ordering must determine duplicate binding ownership");
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     const int toggleId = registrationId(*input, shared.portableText);
     require(toggleId != 0 && toggleId != screenshotId && input->registrations.size() == 1 &&
-                manager.state(GlobalShortcutAction::ToggleGlobalHotkeys).status ==
+                manager.state(GlobalShortcutAction::ToggleGlobalShortcuts).status ==
                     GlobalShortcutStatus::Registered,
             "a disabled regular action must release duplicate ownership for gate control");
     requireDisabled(manager, GlobalShortcutAction::Screenshot, {shared});
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     const int restoredId = registrationId(*input, shared.portableText);
     require(restoredId != 0 && restoredId != toggleId && restoredId != screenshotId &&
                 input->registrations.size() == 1 &&
                 manager.state(GlobalShortcutAction::Screenshot).status ==
                     GlobalShortcutStatus::Registered &&
-                manager.state(GlobalShortcutAction::ToggleGlobalHotkeys).status ==
+                manager.state(GlobalShortcutAction::ToggleGlobalShortcuts).status ==
                     GlobalShortcutStatus::Failed,
             "reopening the gate must restore normal deterministic duplicate precedence");
 }
 
-void focusedFullscreenTimerReleasesAndRestoresHotkeys(const QString& filter) {
+void focusedFullscreenTimerReleasesAndRestoresShortcuts(const QString& filter) {
     auto backend = std::make_unique<FakeBackend>();
     auto* input = backend.get();
     bool focusedFullscreen = false;
@@ -1505,7 +1505,7 @@ void focusedFullscreenTimerReleasesAndRestoresHotkeys(const QString& filter) {
             "restore background fullscreen observation preference");
 }
 
-void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
+void disabledShortcutsReconcileEditsAvailabilityAndSuspension() {
     auto backend = std::make_unique<FakeBackend>();
     auto* input = backend.get();
     bool focusedFullscreen = false;
@@ -1514,7 +1514,7 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
     manager.initialize();
     clearAll(manager);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F10")}) &&
-                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalHotkeys,
+                manager.setShortcuts(GlobalShortcutAction::ToggleGlobalShortcuts,
                                      {QStringLiteral("Ctrl+F12")}),
             "configure disabled editing fixtures");
     auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
@@ -1524,7 +1524,7 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
     require(store.setValue(suppressionKey, true), "enable suspension fullscreen suppression");
     const int oldId = registrationId(*input, QStringLiteral("Ctrl+F10"));
     const int toggleId = registrationId(*input, QStringLiteral("Ctrl+F12"));
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     const int registrationsWhileDisabled = input->registerCalls;
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F9")}),
             "edit a disabled hotkey");
@@ -1536,7 +1536,7 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
             "edits and availability refreshes must not acquire disabled regular bindings");
     requireDisabled(manager, GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F9")});
 
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     const auto conflict = manager.state(GlobalShortcutAction::Screenshot);
     require(conflict.status == GlobalShortcutStatus::Failed && conflict.bindings.size() == 1 &&
                 !conflict.bindings.first().registered &&
@@ -1556,10 +1556,10 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
     bool suspensionObserved = false;
     QObject::connect(&manager, &GlobalShortcutManager::registrationsSuspended, &manager, [&] {
         const int registrationsBeforeCallback = input->registerCalls;
-        manager.setGlobalHotkeysEnabled(false);
+        manager.setGlobalShortcutsEnabled(false);
         require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F7")}),
                 "edit a shortcut from a synchronous suspension listener");
-        manager.setGlobalHotkeysEnabled(true);
+        manager.setGlobalShortcutsEnabled(true);
         require(input->registrations.isEmpty() &&
                     input->registerCalls == registrationsBeforeCallback,
                 "synchronous suspension listeners must not reacquire native registrations");
@@ -1568,7 +1568,7 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
     const auto suspension = manager.suspendRegistrations();
     require(suspensionObserved, "suspension listeners run before suspendRegistrations returns");
     const int registrationsWhileSuspended = input->registerCalls;
-    manager.setGlobalHotkeysEnabled(false);
+    manager.setGlobalShortcutsEnabled(false);
     require(manager.setShortcuts(GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F8")}),
             "edit a suspended and disabled hotkey");
     focusedFullscreen = true;
@@ -1581,7 +1581,7 @@ void disabledHotkeysReconcileEditsAvailabilityAndSuspension() {
                 registrationId(*input, QStringLiteral("Ctrl+F12")) != 0,
             "resuming while disabled restores only control hotkeys");
     requireDisabled(manager, GlobalShortcutAction::Screenshot, {QStringLiteral("Ctrl+F8")});
-    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalShortcutsEnabled(true);
     require(input->registrations.size() == 1,
             "manual re-enable must not override focused fullscreen suppression");
     focusedFullscreen = false;
@@ -1896,7 +1896,7 @@ void nativeRegistrationProbe() {
             focusedFullscreen = true;
             manager.refreshFocusedFullscreenState();
         } else {
-            manager.setGlobalHotkeysEnabled(false);
+            manager.setGlobalShortcutsEnabled(false);
         }
         probe = nullptr;
         require(RegisterEventHotKey(90, cmdKey | shiftKey, id, GetApplicationEventTarget(),
@@ -1908,7 +1908,7 @@ void nativeRegistrationProbe() {
             focusedFullscreen = false;
             manager.refreshFocusedFullscreenState();
         } else {
-            manager.setGlobalHotkeysEnabled(true);
+            manager.setGlobalShortcutsEnabled(true);
         }
         require(manager.state(GlobalShortcutAction::Screenshot).status ==
                     GlobalShortcutStatus::Registered,
@@ -1953,7 +1953,7 @@ void nativeRegistrationProbe() {
             focusedFullscreen = true;
             manager.refreshFocusedFullscreenState();
         } else {
-            manager.setGlobalHotkeysEnabled(false);
+            manager.setGlobalShortcutsEnabled(false);
         }
         require(RegisterHotKey(nullptr, probeId, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F20) !=
                     FALSE,
@@ -1963,7 +1963,7 @@ void nativeRegistrationProbe() {
             focusedFullscreen = false;
             manager.refreshFocusedFullscreenState();
         } else {
-            manager.setGlobalHotkeysEnabled(true);
+            manager.setGlobalShortcutsEnabled(true);
         }
         require(manager.state(GlobalShortcutAction::Screenshot).status ==
                     GlobalShortcutStatus::Registered,
@@ -2002,7 +2002,7 @@ int main(int argc, char** argv) {
             "legacy fullscreen fixtures explicitly test all-window suppression");
     validationCoversSupportedAndRejectedKeys();
     if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
-        hiddenFloatingToolsPreserveGlobalHotkeys();
+        hiddenFloatingToolsPreserveGlobalShortcuts();
         storage.shutdown();
         return 0;
     }
@@ -2025,17 +2025,17 @@ int main(int argc, char** argv) {
 #endif
     fullscreenClassificationUsesTheFocusedLayerZeroWindow();
     fullscreenClassificationIgnoresSnowShotWindows();
-    ownFullscreenFocusPreservesAndRestoresHotkeys();
+    ownFullscreenFocusPreservesAndRestoresShortcuts();
     deterministicOwnershipPartialFailureAndSuspension();
-    toggleShortcutSurvivesGlobalHotkeyDisablement();
+    toggleShortcutSurvivesGlobalShortcutDisablement();
     focusedFullscreenSuppressionPublishesState();
     fullscreenToggleSurvivesFullscreenSuppression();
-    gateControlShortcutsSurviveBothHotkeyGates();
-    hotkeyGatesApplyBeforeInitialRegistration();
+    gateControlShortcutsSurviveBothShortcutGates();
+    shortcutGatesApplyBeforeInitialRegistration();
     disabledDuplicateBindingBecomesAvailableToGateControl();
-    focusedFullscreenTimerReleasesAndRestoresHotkeys(QStringLiteral("all_windows"));
-    focusedFullscreenTimerReleasesAndRestoresHotkeys(QStringLiteral("game_windows"));
-    disabledHotkeysReconcileEditsAvailabilityAndSuspension();
+    focusedFullscreenTimerReleasesAndRestoresShortcuts(QStringLiteral("all_windows"));
+    focusedFullscreenTimerReleasesAndRestoresShortcuts(QStringLiteral("game_windows"));
+    disabledShortcutsReconcileEditsAvailabilityAndSuspension();
     if (application.arguments().contains(QStringLiteral("--native-registration-smoke"))) {
         nativeRegistrationProbe();
     }

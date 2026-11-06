@@ -1250,16 +1250,16 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
                 session.reset(settings::SettingsSectionReset::GeneralSettings),
             "restore language and appearance for subsequent checks");
 
-    SettingsPageWidget hotkeys(registry, QStringLiteral("global-hotkeys"), session);
-    hotkeys.resize(880, 760);
-    hotkeys.show();
-    hotkeys.reveal({QStringLiteral("global-hotkeys"), QStringLiteral("global-hotkeys"),
-                    QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window")});
+    SettingsPageWidget shortcuts(registry, QStringLiteral("global-hotkeys"), session);
+    shortcuts.resize(880, 760);
+    shortcuts.show();
+    shortcuts.reveal({QStringLiteral("global-hotkeys"), QStringLiteral("global-hotkeys"),
+                      QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window")});
     drainEvents();
-    require(hotkeys.findChild<adqt::widgets::AdSwitch*>(QStringLiteral(
+    require(shortcuts.findChild<adqt::widgets::AdSwitch*>(QStringLiteral(
                 "settings-control-global-hotkeys-disable-on-focused-fullscreen-window")) != nullptr,
             "Global Hotkeys materializes the relocated full-screen switch");
-    auto* filter = hotkeys.findChild<adqt::widgets::AdSelect*>(
+    auto* filter = shortcuts.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("settings-control-global-hotkeys-window-filter-type"));
     require(filter && filter->isEnabled() &&
                 filter->currentValue() == QStringLiteral("game_windows") &&
@@ -1270,10 +1270,10 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
     const auto screenshotShortcut =
         configuration.value(QStringLiteral("global_shortcuts/screenshot"));
     require(session.applySwitchValue(
-                settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen, true) &&
+                settings::SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen, true) &&
                 session.applySelectValue(settings::SettingsSelectBinding::FullscreenWindowFilter,
                                          QStringLiteral("all_windows")) &&
-                session.reset(settings::SettingsSectionReset::GlobalHotkeys) &&
+                session.reset(settings::SettingsSectionReset::GlobalShortcuts) &&
                 configuration.value(QStringLiteral("global_shortcuts/fullscreen_window_filter")) ==
                     QJsonValue(QStringLiteral("game_windows")) &&
                 configuration.value(
@@ -1294,7 +1294,7 @@ void reorganizedSettingsPreserveIndependentState(const settings::SettingsRegistr
         const auto options = filter->options();
         const QString title = QCoreApplication::translate("SettingsCatalog", "Window filter type");
         bool hasTitle = false;
-        for (const auto* label : hotkeys.findChildren<QLabel*>())
+        for (const auto* label : shortcuts.findChildren<QLabel*>())
             hasTitle = hasTitle || label->text() == title;
         require(
             hasTitle && options.size() == 2 &&

@@ -53,7 +53,7 @@ void everyCombinationMatchesExactlyAndLatchesItsAction() {
     const std::array buttons{QStringLiteral("left_drag"), QStringLiteral("right_drag"),
                              QStringLiteral("wheel_drag"), QStringLiteral("side_button_1_drag"),
                              QStringLiteral("side_button_2_drag")};
-    const std::array actions{Action::ScreenshotCopy,        Action::ScreenshotFixed,
+    const std::array actions{Action::ScreenshotCopy,        Action::ScreenshotPinToScreen,
                              Action::ScreenshotOcr,         Action::ScreenshotOcrCopy,
                              Action::ScreenshotTranslation, Action::ScreenshotQuickSave,
                              Action::ScreenshotSave,        Action::ScreenRecording};
@@ -181,7 +181,7 @@ void directButtonDragPreservesQtInputAndLatchesAction() {
     require(!gesture.handle({InputKind::Release, {60, 90}, Qt::LeftButton}, {}).event,
             "duplicate local releases must not execute twice");
     gesture.cancel(begin.event->id);
-    const auto next = gesture.beginButtonDrag(Action::ScreenshotFixed, {});
+    const auto next = gesture.beginButtonDrag(Action::ScreenshotPinToScreen, {});
     require(next.event.has_value(), "a completed local drag must allow another gesture");
     gesture.cancel(next.event->id);
     require(!gesture.handle({InputKind::Release, {}, Qt::LeftButton}, {}).consumed,
@@ -197,7 +197,7 @@ void suppressionAndCancellationPreserveInputPairs() {
     require(!gesture.handle(press, config).consumed, "busy capture must leave desktop input alone");
     config.captureAvailable = true;
     config.bindings.push_back(
-        {Action::ScreenshotFixed, GlobalMouseModifier::Control, Qt::LeftButton});
+        {Action::ScreenshotPinToScreen, GlobalMouseModifier::Control, Qt::LeftButton});
     require(!gesture.handle(press, config).event, "ambiguous persisted bindings must fail closed");
     config.bindings.removeLast();
     auto injected = press;
@@ -316,7 +316,7 @@ class FakeBackend final : public GlobalMouseBackend {
     int stops = 0;
 };
 
-class FakeHotkeyBackend final : public GlobalShortcutBackend {
+class FakeShortcutBackend final : public GlobalShortcutBackend {
   public:
     void setActivationHandler(ActivationHandler value) override {
         handler = std::move(value);
@@ -338,7 +338,7 @@ class FakeHotkeyBackend final : public GlobalShortcutBackend {
     QHash<int, snow_shot::shortcuts::ShortcutBinding> registrations;
 };
 
-void hotkeySuppressionNeverDisablesMouseGestures() {
+void shortcutSuppressionNeverDisablesMouseGestures() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "test storage directory must be available");
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -360,19 +360,19 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
         "configure a mouse binding independently of platform defaults");
     {
         bool fullscreen = true;
-        auto hotkeyBackend = std::make_unique<FakeHotkeyBackend>();
-        auto* hotkeyInput = hotkeyBackend.get();
-        GlobalShortcutManager hotkeys(std::move(hotkeyBackend), nullptr,
-                                      [&fullscreen]() { return fullscreen; });
+        auto shortcutBackend = std::make_unique<FakeShortcutBackend>();
+        auto* shortcutInput = shortcutBackend.get();
+        GlobalShortcutManager shortcuts(std::move(shortcutBackend), nullptr,
+                                        [&fullscreen]() { return fullscreen; });
         const snow_shot::shortcuts::ShortcutBinding screenshotKey{QStringLiteral("Ctrl+F9")};
-        require(hotkeys.setShortcuts(GlobalShortcutAction::Screenshot, {screenshotKey}),
+        require(shortcuts.setShortcuts(GlobalShortcutAction::Screenshot, {screenshotKey}),
                 "configure a screenshot hotkey while fullscreen is focused");
-        require(!hotkeyInput->registrations.values().contains(screenshotKey),
+        require(!shortcutInput->registrations.values().contains(screenshotKey),
                 "initial fullscreen suppression must leave the screenshot hotkey unregistered");
-        int hotkeyActivations = 0;
-        QObject::connect(&hotkeys, &GlobalShortcutManager::activated, &hotkeys,
-                         [&hotkeyActivations](GlobalShortcutAction action) {
-                             hotkeyActivations += action == GlobalShortcutAction::Screenshot;
+        int shortcutActivations = 0;
+        QObject::connect(&shortcuts, &GlobalShortcutManager::activated, &shortcuts,
+                         [&shortcutActivations](GlobalShortcutAction action) {
+                             shortcutActivations += action == GlobalShortcutAction::Screenshot;
                          });
         auto mouseBackend = std::make_unique<FakeBackend>();
         auto* mouseInput = mouseBackend.get();
@@ -397,31 +397,31 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
         requireMouseActivation();
         int lastScreenshotRegistrationId = 0;
         for (const bool enabled : {false, true}) {
-            hotkeys.setGlobalHotkeysEnabled(enabled);
+            shortcuts.setGlobalShortcutsEnabled(enabled);
             for (const bool suppressFullscreen : {false, true}) {
                 require(store.setValue(fullscreenKey, suppressFullscreen),
                         "fullscreen suppression changes must persist");
                 for (const bool focusedFullscreen : {false, true}) {
                     fullscreen = focusedFullscreen;
-                    hotkeys.refreshFocusedFullscreenState();
+                    shortcuts.refreshFocusedFullscreenState();
                     const bool expectedRegistered = enabled && !(suppressFullscreen && fullscreen);
-                    const int registrationId = hotkeyInput->registrations.key(screenshotKey);
+                    const int registrationId = shortcutInput->registrations.key(screenshotKey);
                     require((registrationId != 0) == expectedRegistered,
                             "hotkey suppression must release and restore the native binding");
-                    const int previousActivations = hotkeyActivations;
+                    const int previousActivations = shortcutActivations;
                     if (registrationId != 0) {
                         if (lastScreenshotRegistrationId != 0 &&
                             lastScreenshotRegistrationId != registrationId) {
-                            hotkeyInput->handler(lastScreenshotRegistrationId);
-                            require(hotkeyActivations == previousActivations,
+                            shortcutInput->handler(lastScreenshotRegistrationId);
+                            require(shortcutActivations == previousActivations,
                                     "restoring a hotkey must not reactivate its released ID");
                         }
-                        hotkeyInput->handler(registrationId);
+                        shortcutInput->handler(registrationId);
                         lastScreenshotRegistrationId = registrationId;
                     } else {
-                        hotkeyInput->handler(lastScreenshotRegistrationId);
+                        shortcutInput->handler(lastScreenshotRegistrationId);
                     }
-                    require(hotkeyActivations - previousActivations ==
+                    require(shortcutActivations - previousActivations ==
                                 static_cast<int>(expectedRegistered),
                             "global hotkeys must obey manual and fullscreen suppression");
                     requireMouseActivation();
@@ -465,7 +465,7 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
 #else
     require(input->starts == 1 && input->configuration.bindings.size() == 3,
             "initialization must be idempotent and load three default bindings");
-    const std::array defaultActions{Action::ScreenshotCopy, Action::ScreenshotFixed,
+    const std::array defaultActions{Action::ScreenshotCopy, Action::ScreenshotPinToScreen,
                                     Action::ScreenshotOcr};
     const std::array defaultButtons{Qt::LeftButton, Qt::MiddleButton, Qt::RightButton};
     for (qsizetype index = 0; index < 3; ++index) {
@@ -485,7 +485,7 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
     require(input->buttonDrags == 1 && input->buttonAction == Action::ScreenshotOcr,
             "direct button drags must work with unset bindings");
     manager.setCaptureAvailable(false);
-    manager.beginButtonDrag(Action::ScreenshotFixed);
+    manager.beginButtonDrag(Action::ScreenshotPinToScreen);
     require(input->buttonDrags == 1, "busy capture must reject a direct button drag");
     manager.setCaptureAvailable(true);
     auto& store = storage.configuration();
@@ -803,7 +803,7 @@ int main(int argc, char** argv) {
     suppressionAndCancellationPreserveInputPairs();
     selectionRetainsThePhysicalAnchorUntilReady();
     revealRefreshCatchesUpToLiveCursorOnlyWhileDragging();
-    hotkeySuppressionNeverDisablesMouseGestures();
+    shortcutSuppressionNeverDisablesMouseGestures();
     managerLoadsLiveSettingsAndCoalescesOnlyMovement();
     managerPacesSustainedMovementAndDeliversTerminalEventsImmediately();
     return 0;

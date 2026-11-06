@@ -75,12 +75,12 @@ class ScreenshotOverlayCanvasPresenter final {
                                 const SnowCanvasSpotlightConfig& config) const;
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
                       const SnowCanvasTextStyle& style, quint32 properties) const;
-    void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
-                              const SnowCanvasSerialNumberStyle& style,
-                              std::optional<quint32> properties = std::nullopt) const;
-    void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession,
-                                     qint64 delta) const;
-    void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession) const;
+    void setSequenceNumberStyle(const ScreenshotDisplaySession& displaySession,
+                                const SnowCanvasSerialNumberStyle& style,
+                                std::optional<quint32> properties = std::nullopt) const;
+    void adjustSelectedSequenceNumbers(const ScreenshotDisplaySession& displaySession,
+                                       qint64 delta) const;
+    void createTextForSelectedSequenceNumber(const ScreenshotDisplaySession& displaySession) const;
     void reorderSelectedElements(const ScreenshotDisplaySession& displaySession,
                                  SnowCanvasSelectionOrder order) const;
     void alignSelectedElements(const ScreenshotDisplaySession& displaySession,

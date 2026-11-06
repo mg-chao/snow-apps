@@ -6,20 +6,21 @@
 
 namespace snow_shot::presentation {
 
-CollageWindowCoordinator::CollageWindowCoordinator(QObject* parent, CollageWindowServices services)
+ImageStitchingWindowCoordinator::ImageStitchingWindowCoordinator(
+    QObject* parent, ImageStitchingWindowServices services)
     : QObject(parent), m_services(std::move(services)) {}
 
-CollageWindowCoordinator::~CollageWindowCoordinator() {
+ImageStitchingWindowCoordinator::~ImageStitchingWindowCoordinator() {
     shutdown();
 }
 
-CollageWindow* CollageWindowCoordinator::ensureWindow() {
+ImageStitchingWindow* ImageStitchingWindowCoordinator::ensureWindow() {
     if (m_shutdown || (m_window && m_window->busy()))
         return nullptr;
     if (!m_window) {
-        auto* window = new CollageWindow(this, m_services);
+        auto* window = new ImageStitchingWindow(this, m_services);
         m_window = window;
-        connect(window, &CollageWindow::closed, this, [this, window] {
+        connect(window, &ImageStitchingWindow::closed, this, [this, window] {
             if (m_window == window)
                 m_window.clear();
             window->deleteLater();
@@ -28,35 +29,36 @@ CollageWindow* CollageWindowCoordinator::ensureWindow() {
     return m_window;
 }
 
-void CollageWindowCoordinator::present(const QVector<storage::CaptureHistoryRecord>& records) {
+void ImageStitchingWindowCoordinator::present(
+    const QVector<storage::CaptureHistoryRecord>& records) {
     if (auto* window = ensureWindow())
         window->present(records);
 }
 
-void CollageWindowCoordinator::presentPinnedRecords(const QStringList& recordIds) {
+void ImageStitchingWindowCoordinator::presentPinnedRecords(const QStringList& recordIds) {
     if (auto* window = ensureWindow())
         window->presentPinnedRecords(recordIds);
 }
 
-void CollageWindowCoordinator::presentPinnedWindows(
+void ImageStitchingWindowCoordinator::presentPinnedWindows(
     const QVector<ScreenshotPinnedImageSnapshot>& snapshots) {
     if (auto* window = ensureWindow())
         window->presentPinnedWindows(snapshots);
 }
 
-void CollageWindowCoordinator::shutdown() {
+void ImageStitchingWindowCoordinator::shutdown() {
     m_shutdown = true;
     if (m_window)
         m_window->shutdown();
 }
 
-bool CollageWindowCoordinator::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
+bool ImageStitchingWindowCoordinator::presentSplitImagesAsPdf(ImageSplitSnapshot snapshot) {
     if (auto* window = ensureWindow())
         return window->presentSplitImagesAsPdf(std::move(snapshot));
     return false;
 }
 
-void CollageWindowCoordinator::presentSelectedFiles(
+void ImageStitchingWindowCoordinator::presentSelectedFiles(
     std::shared_ptr<platform::SelectedFileBackend> backend, platform::SelectedFileTarget target) {
     if (auto* window = ensureWindow()) {
         window->present();
@@ -64,7 +66,7 @@ void CollageWindowCoordinator::presentSelectedFiles(
     }
 }
 
-CollageWindow* CollageWindowCoordinator::window() const {
+ImageStitchingWindow* ImageStitchingWindowCoordinator::window() const {
     return m_window;
 }
 

@@ -1355,7 +1355,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
                         selected.append(record);
                 }
                 if (!selected.isEmpty())
-                    emit collageRequested(selected);
+                    emit stitchImagesRequested(selected);
             });
             connect(m_batchPinAction, &QAction::triggered, this, [this] {
                 QStringList selected;
@@ -1665,7 +1665,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 [this, id = record.id]() { emit editRequested(id); },
                 [this, record]() { copyEntry(record); },
                 [this, id = record.id]() { emit pinRequested(id); },
-                [this, record]() { emit collageRequested({record}); },
+                [this, record]() { emit stitchImagesRequested({record}); },
                 [this, record]() { emit splitRequested(record); },
                 [this, record]() { emit imageEditingRequested(record); },
                 [this, record]() {

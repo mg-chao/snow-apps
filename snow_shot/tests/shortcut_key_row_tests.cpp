@@ -1784,18 +1784,18 @@ void nativePrintScreenRecordingPreservesModifiers() {
 #endif
 }
 
-void printScreenHookRecordsBeforeRegisteredHotkeys() {
+void printScreenHookRecordsBeforeRegisteredShortcuts() {
 #ifdef Q_OS_WIN
     require(QGuiApplication::platformName() == QStringLiteral("windows"),
             "the native input test requires the Windows platform");
-    class RegisteredHotkey final : public QAbstractNativeEventFilter {
+    class RegisteredShortcut final : public QAbstractNativeEventFilter {
       public:
-        RegisteredHotkey() {
+        RegisteredShortcut() {
             require(RegisterHotKey(nullptr, id, MOD_CONTROL | MOD_NOREPEAT, VK_SNAPSHOT) != FALSE,
                     "Ctrl+Print Screen must be available for the native registration test");
             QCoreApplication::instance()->installNativeEventFilter(this);
         }
-        ~RegisteredHotkey() override {
+        ~RegisteredShortcut() override {
             UnregisterHotKey(nullptr, id);
             QCoreApplication::instance()->removeNativeEventFilter(this);
         }
@@ -1808,7 +1808,7 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
         }
         enum { id = 0x5A71 };
         int activations = 0;
-    } registeredHotkey;
+    } registeredShortcut;
 
     const auto waitUntil = [](auto condition) {
         QElapsedTimer timer;
@@ -1869,24 +1869,24 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
     require(waitUntil([&]() { return !session.validated.isEmpty(); }),
             "the keyboard hook must capture Print Screen even when RegisterHotKey owns it");
     require(session.validated == QStringList{QStringLiteral("Ctrl+Print")} &&
-                registeredHotkey.activations == 0,
+                registeredShortcut.activations == 0,
             "the hook must snapshot modifiers once and suppress the existing global action");
     sendChord(VK_RCONTROL, false, false);
     require(waitUntil([&]() { return session.validated.size() == 2; }) &&
                 session.validated.last() == QStringLiteral("Ctrl+Print") &&
-                registeredHotkey.activations == 0,
+                registeredShortcut.activations == 0,
             "right-hand modifiers must be captured without activating existing shortcuts");
 
     QWidget otherWindow;
     foreground(&otherWindow);
     sendChord(VK_LCONTROL, false, false);
-    require(waitUntil([&]() { return registeredHotkey.activations == 1; }) &&
+    require(waitUntil([&]() { return registeredShortcut.activations == 1; }) &&
                 session.validated.size() == 2,
             "a background recorder must not intercept Print Screen from another window");
     foreground(window);
     sendChord(VK_LCONTROL, false, false);
     require(waitUntil([&]() { return session.validated.size() == 3; }) &&
-                registeredHotkey.activations == 1,
+                registeredShortcut.activations == 1,
             "returning to the recorder must restore scoped Print Screen capture");
 
     session.flush();
@@ -1896,7 +1896,7 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
     commit->click();
     session.flush();
     sendChord(VK_LCONTROL, false, false);
-    require(waitUntil([&]() { return registeredHotkey.activations == 2; }) &&
+    require(waitUntil([&]() { return registeredShortcut.activations == 2; }) &&
                 session.validated.size() == 3,
             "finishing a row must restore normal global hotkey delivery immediately");
     session.modal->acceptButton()->click();
@@ -2243,7 +2243,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (nativePrintScreenOnly) {
-        printScreenHookRecordsBeforeRegisteredHotkeys();
+        printScreenHookRecordsBeforeRegisteredShortcuts();
         return 0;
     }
     if (titleAndKeyButtonOnly) {

@@ -22,8 +22,8 @@
 #include <vector>
 
 namespace snow_shot::presentation {
-struct CollageImageMetadata final {
-    explicit CollageImageMetadata(qint64 key) : cacheKey(key) {}
+struct ImageStitchingImageMetadata final {
+    explicit ImageStitchingImageMetadata(qint64 key) : cacheKey(key) {}
     const qint64 cacheKey;
     std::atomic<int> opacity{-1};
 };
@@ -34,18 +34,18 @@ constexpr qsizetype rowScratchBytes = 8 * 1024 * 1024;
 constexpr qint64 conversionCacheBytes = 2 * 1024 * 1024;
 
 QString resourceError() {
-    return QCoreApplication::translate("CollageDocument",
+    return QCoreApplication::translate("ImageStitchingDocument",
                                        "The stitched image exceeds the 8 GiB image limit. Try "
                                        "fewer images or smaller layout settings");
 }
 
 QString preparationError() {
-    return QCoreApplication::translate("CollageDocument",
+    return QCoreApplication::translate("ImageStitchingDocument",
                                        "The stitched image could not be prepared for export");
 }
 
 QString cancellationError() {
-    return QCoreApplication::translate("CollageDocument",
+    return QCoreApplication::translate("ImageStitchingDocument",
                                        "The image stitching export was canceled");
 }
 
@@ -55,25 +55,25 @@ void report(QString* destination, const QString& error) {
 }
 
 struct CapturedImageLifetime final {
-    std::shared_ptr<collage_detail::ResourceReservation> reservation;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> reservation;
     QImage image;
 };
 
 struct SourceLifetime final {
-    std::shared_ptr<collage_detail::ResourceReservation> source;
-    std::shared_ptr<collage_detail::ResourceReservation> preview;
-    std::shared_ptr<CollageImageMetadata> metadata;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> source;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> preview;
+    std::shared_ptr<ImageStitchingImageMetadata> metadata;
 };
 
 std::shared_ptr<SourceLifetime> sourceLifetime(const QImage& image, const QImage& preview,
                                                QString* error) {
     try {
         auto owner = std::make_shared<SourceLifetime>();
-        owner->metadata = std::make_shared<CollageImageMetadata>(image.cacheKey());
-        owner->source = collage_detail::reserve(image.sizeInBytes(), error);
+        owner->metadata = std::make_shared<ImageStitchingImageMetadata>(image.cacheKey());
+        owner->source = image_stitching_detail::reserve(image.sizeInBytes(), error);
         if (!owner->source)
             return {};
-        owner->preview = collage_detail::reservePreview(preview.sizeInBytes(), error);
+        owner->preview = image_stitching_detail::reservePreview(preview.sizeInBytes(), error);
         return owner->preview ? owner : nullptr;
     } catch (const std::bad_alloc&) {
         report(error, preparationError());
@@ -81,23 +81,23 @@ std::shared_ptr<SourceLifetime> sourceLifetime(const QImage& image, const QImage
     }
 }
 
-bool settingsValid(const CollageSettings& settings) {
+bool settingsValid(const ImageStitchingSettings& settings) {
     return settings.border >= 0 && settings.spacing >= 0 && settings.background.isValid() &&
            settings.rows >= 1 && settings.columns >= 1 &&
-           (settings.direction == CollageDirection::Vertical ||
-            settings.direction == CollageDirection::Horizontal ||
-            settings.direction == CollageDirection::Custom) &&
-           (settings.sizing == CollageSizing::Original ||
-            settings.sizing == CollageSizing::Uniform);
+           (settings.direction == ImageStitchingDirection::Vertical ||
+            settings.direction == ImageStitchingDirection::Horizontal ||
+            settings.direction == ImageStitchingDirection::Custom) &&
+           (settings.sizing == ImageStitchingSizing::Original ||
+            settings.sizing == ImageStitchingSizing::Uniform);
 }
 
 qint64 columnsForImages(qsizetype imageCount, int rows) {
     return imageCount / rows + (imageCount % rows != 0 ? 1 : 0);
 }
 
-QStringList normalizeCustomGrid(CollageSettings& settings, qsizetype imageCount) {
+QStringList normalizeCustomGrid(ImageStitchingSettings& settings, qsizetype imageCount) {
     QStringList fields;
-    if (settings.direction != CollageDirection::Custom)
+    if (settings.direction != ImageStitchingDirection::Custom)
         return fields;
     if (!settings.customGridInitialized) {
         const auto columns = std::max<qint64>(
@@ -149,15 +149,16 @@ bool outputBytes(QSize size, qint64* bytes) {
     if (size.isEmpty() || size.width() > std::numeric_limits<int>::max() / 4)
         return false;
     const qint64 pixels = qint64(size.width()) * size.height();
-    if (pixels > collage_detail::maximumRasterBytes / 4)
+    if (pixels > image_stitching_detail::maximumRasterBytes / 4)
         return false;
     *bytes = pixels * 4;
     return true;
 }
 
-CollageLayout calculateCustomGridLayout(const QVector<CollageItem>& items,
-                                        const CollageSettings& settings, QSize reference) {
-    CollageLayout result;
+ImageStitchingLayout calculateCustomGridLayout(const QVector<ImageStitchingItem>& items,
+                                               const ImageStitchingSettings& settings,
+                                               QSize reference) {
+    ImageStitchingLayout result;
     QVector<QSize> sizes;
     sizes.reserve(items.size());
     QSize cell = reference;
@@ -168,7 +169,7 @@ CollageLayout calculateCustomGridLayout(const QVector<CollageItem>& items,
             return result;
         }
         sizes.append(size);
-        if (settings.sizing == CollageSizing::Original) {
+        if (settings.sizing == ImageStitchingSizing::Original) {
             cell.setWidth(std::max(cell.width(), size.width()));
             cell.setHeight(std::max(cell.height(), size.height()));
         }
@@ -198,7 +199,7 @@ CollageLayout calculateCustomGridLayout(const QVector<CollageItem>& items,
     result.rects.reserve(items.size());
     for (qsizetype index = 0; index < sizes.size(); ++index) {
         QSize size = sizes[index];
-        if (settings.sizing == CollageSizing::Uniform) {
+        if (settings.sizing == ImageStitchingSizing::Uniform) {
             if (qint64(size.width()) * cell.height() >= qint64(size.height()) * cell.width()) {
                 const qint64 numerator = qint64(size.height()) * cell.width();
                 size = QSize(cell.width(), static_cast<int>(std::max<qint64>(
@@ -252,7 +253,7 @@ bool imageIsOpaque(const QImage& image, const std::function<bool()>& cancelled) 
     return true;
 }
 
-bool cachedImageIsOpaque(const CollageItem& item, const QImage& pixels,
+bool cachedImageIsOpaque(const ImageStitchingItem& item, const QImage& pixels,
                          const std::function<bool()>& cancelled) {
     const bool canCache = item.metadata && item.metadata->cacheKey == pixels.cacheKey();
     if (canCache) {
@@ -280,12 +281,12 @@ struct PreparedRows final {
     };
     // Declare leases first so reverse destruction retires readers, rasters and scratch
     // before their accounted capacity becomes available to another export.
-    std::shared_ptr<collage_detail::ResourceReservation> reservation;
-    std::shared_ptr<collage_detail::ResourceReservation> working;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> reservation;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> working;
     QVector<std::shared_ptr<void>> sourceOwners;
-    std::shared_ptr<collage_detail::ResourceReservation> previewOwner;
+    std::shared_ptr<image_stitching_detail::ResourceReservation> previewOwner;
     QVector<PreparedItem> items;
-    CollageLayout layout;
+    ImageStitchingLayout layout;
     QColor background;
     std::function<bool()> cancelled;
     QVector<QImage> inputImages;
@@ -532,7 +533,7 @@ struct PreparedRows final {
 };
 } // namespace
 
-bool operator==(const CollagePdfSettings& first, const CollagePdfSettings& second) {
+bool operator==(const ImageStitchingPdfSettings& first, const ImageStitchingPdfSettings& second) {
     const auto equalNumber = [](qreal a, qreal b) {
         return a == b || (std::isnan(a) && std::isnan(b));
     };
@@ -552,89 +553,89 @@ bool operator==(const CollagePdfSettings& first, const CollagePdfSettings& secon
 namespace {
 constexpr qreal maximumPdfDimensionMm = 381'000'000;
 
-QSizeF pdfPaperMillimeters(const CollagePdfSettings& settings) {
+QSizeF pdfPaperMillimeters(const ImageStitchingPdfSettings& settings) {
     QSizeF page;
     switch (settings.paperSize) {
-    case CollagePdfPaperSize::A3:
+    case ImageStitchingPdfPaperSize::A3:
         page = {297, 420};
         break;
-    case CollagePdfPaperSize::A4:
+    case ImageStitchingPdfPaperSize::A4:
         page = {210, 297};
         break;
-    case CollagePdfPaperSize::A5:
+    case ImageStitchingPdfPaperSize::A5:
         page = {148, 210};
         break;
-    case CollagePdfPaperSize::B5:
+    case ImageStitchingPdfPaperSize::B5:
         page = {176, 250};
         break;
-    case CollagePdfPaperSize::Letter:
+    case ImageStitchingPdfPaperSize::Letter:
         page = {215.9, 279.4};
         break;
-    case CollagePdfPaperSize::Legal:
+    case ImageStitchingPdfPaperSize::Legal:
         page = {215.9, 355.6};
         break;
-    case CollagePdfPaperSize::Custom:
+    case ImageStitchingPdfPaperSize::Custom:
         page = {settings.customWidthMm, settings.customHeightMm};
         break;
-    case CollagePdfPaperSize::ImageSize:
-        if (settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+    case ImageStitchingPdfPaperSize::ImageSize:
+        if (settings.stitchingMethod != ImageStitchingPdfStitchingMethod::TemplateBased)
             return {};
         page = {210, 297};
         break;
     default:
         return {};
     }
-    if (settings.orientation == CollagePdfOrientation::Landscape)
+    if (settings.orientation == ImageStitchingPdfOrientation::Landscape)
         page.transpose();
     return page;
 }
 
-QRectF pdfContentMillimeters(const CollagePdfSettings& settings) {
+QRectF pdfContentMillimeters(const ImageStitchingPdfSettings& settings) {
     const QSizeF page = pdfPaperMillimeters(settings);
     return {settings.marginLeftMm, settings.marginTopMm,
             page.width() - settings.marginLeftMm - settings.marginRightMm,
             page.height() - settings.marginTopMm - settings.marginBottomMm};
 }
 
-QVector<QRectF> pdfTemplateCells(const CollagePdfSettings& settings) {
+QVector<QRectF> pdfTemplateCells(const ImageStitchingPdfSettings& settings) {
     QVector<int> rows;
     switch (settings.templateType) {
-    case CollagePdfTemplateType::TwoImages:
-    case CollagePdfTemplateType::IdCard:
+    case ImageStitchingPdfTemplateType::TwoImages:
+    case ImageStitchingPdfTemplateType::IdCard:
         rows = {2};
         break;
-    case CollagePdfTemplateType::ThreeImages:
+    case ImageStitchingPdfTemplateType::ThreeImages:
         rows = {3};
         break;
-    case CollagePdfTemplateType::FourImages:
+    case ImageStitchingPdfTemplateType::FourImages:
         rows = {2, 2};
         break;
-    case CollagePdfTemplateType::FiveImages:
+    case ImageStitchingPdfTemplateType::FiveImages:
         rows = {2, 3};
         break;
-    case CollagePdfTemplateType::SixImages:
+    case ImageStitchingPdfTemplateType::SixImages:
         rows = {3, 3};
         break;
-    case CollagePdfTemplateType::SevenImages:
+    case ImageStitchingPdfTemplateType::SevenImages:
         rows = {3, 4};
         break;
-    case CollagePdfTemplateType::EightImages:
+    case ImageStitchingPdfTemplateType::EightImages:
         rows = {4, 4};
         break;
-    case CollagePdfTemplateType::NineImages:
+    case ImageStitchingPdfTemplateType::NineImages:
         rows = {3, 3, 3};
         break;
     default:
         return {};
     }
     const QRectF content = pdfContentMillimeters(settings);
-    const bool landscape = settings.orientation == CollagePdfOrientation::Landscape;
+    const bool landscape = settings.orientation == ImageStitchingPdfOrientation::Landscape;
     const QSizeF portrait = landscape ? QSizeF(content.height(), content.width()) : content.size();
     const qreal gap = settings.imageSpacingMm;
     const qreal columns = static_cast<qreal>(rows.size());
     const qreal width = (portrait.width() - (columns - 1) * gap) / columns;
     QVector<QRectF> result;
-    result.reserve(collagePdfTemplateCapacity(settings.templateType));
+    result.reserve(imageStitchingPdfTemplateCapacity(settings.templateType));
     const int maximumRows = *std::max_element(rows.cbegin(), rows.cend());
     for (int row = 0; row < maximumRows; ++row) {
         for (qsizetype column = 0; column < rows.size(); ++column) {
@@ -646,7 +647,7 @@ QVector<QRectF> pdfTemplateCells(const CollagePdfSettings& settings) {
             if (landscape)
                 cell = QRectF(cell.y(), cell.x(), cell.height(), cell.width());
             cell.translate(content.topLeft());
-            if (settings.templateType == CollagePdfTemplateType::IdCard) {
+            if (settings.templateType == ImageStitchingPdfTemplateType::IdCard) {
                 constexpr qreal cardRatio = 85.60 / 53.98;
                 const QSizeF paper = pdfPaperMillimeters(settings);
                 const qreal cardWidth =
@@ -658,8 +659,8 @@ QVector<QRectF> pdfTemplateCells(const CollagePdfSettings& settings) {
             result.append(cell);
         }
     }
-    if (landscape && settings.templateType != CollagePdfTemplateType::FiveImages &&
-        settings.templateType != CollagePdfTemplateType::SevenImages) {
+    if (landscape && settings.templateType != ImageStitchingPdfTemplateType::FiveImages &&
+        settings.templateType != ImageStitchingPdfTemplateType::SevenImages) {
         std::sort(result.begin(), result.end(), [](const QRectF& first, const QRectF& second) {
             return first.top() == second.top() ? first.left() < second.left()
                                                : first.top() < second.top();
@@ -674,14 +675,15 @@ bool finiteRectangle(const QRectF& rectangle) {
            rectangle.width() > 0 && rectangle.height() > 0;
 }
 
-bool validPlacement(const CollagePdfPlacement& placement) {
+bool validPlacement(const ImageStitchingPdfPlacement& placement) {
     return std::isfinite(placement.centerOffsetMillimeters.x()) &&
            std::isfinite(placement.centerOffsetMillimeters.y()) &&
            (!placement.millimetersPerPixel ||
             (std::isfinite(*placement.millimetersPerPixel) && *placement.millimetersPerPixel > 0));
 }
 
-bool pdfGeometryChanged(const CollagePdfSettings& previous, const CollagePdfSettings& next) {
+bool pdfGeometryChanged(const ImageStitchingPdfSettings& previous,
+                        const ImageStitchingPdfSettings& next) {
     return previous.templateType != next.templateType || previous.paperSize != next.paperSize ||
            previous.orientation != next.orientation ||
            pdfPaperMillimeters(previous) != pdfPaperMillimeters(next) ||
@@ -693,86 +695,92 @@ bool pdfGeometryChanged(const CollagePdfSettings& previous, const CollagePdfSett
 }
 } // namespace
 
-int collagePdfTemplateCapacity(CollagePdfTemplateType type) {
+int imageStitchingPdfTemplateCapacity(ImageStitchingPdfTemplateType type) {
     switch (type) {
-    case CollagePdfTemplateType::TwoImages:
-    case CollagePdfTemplateType::IdCard:
+    case ImageStitchingPdfTemplateType::TwoImages:
+    case ImageStitchingPdfTemplateType::IdCard:
         return 2;
-    case CollagePdfTemplateType::ThreeImages:
+    case ImageStitchingPdfTemplateType::ThreeImages:
         return 3;
-    case CollagePdfTemplateType::FourImages:
+    case ImageStitchingPdfTemplateType::FourImages:
         return 4;
-    case CollagePdfTemplateType::FiveImages:
+    case ImageStitchingPdfTemplateType::FiveImages:
         return 5;
-    case CollagePdfTemplateType::SixImages:
+    case ImageStitchingPdfTemplateType::SixImages:
         return 6;
-    case CollagePdfTemplateType::SevenImages:
+    case ImageStitchingPdfTemplateType::SevenImages:
         return 7;
-    case CollagePdfTemplateType::EightImages:
+    case ImageStitchingPdfTemplateType::EightImages:
         return 8;
-    case CollagePdfTemplateType::NineImages:
+    case ImageStitchingPdfTemplateType::NineImages:
         return 9;
     }
     return 0;
 }
 
-qsizetype collagePdfPageCount(qsizetype itemCount, const CollagePdfSettings& settings) {
+qsizetype imageStitchingPdfPageCount(qsizetype itemCount,
+                                     const ImageStitchingPdfSettings& settings) {
     if (itemCount <= 0)
         return 0;
-    if (settings.stitchingMethod == CollagePdfStitchingMethod::PageBased)
+    if (settings.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased)
         return itemCount;
-    if (settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
+    if (settings.stitchingMethod != ImageStitchingPdfStitchingMethod::TemplateBased)
         return 0;
-    const int capacity = collagePdfTemplateCapacity(settings.templateType);
+    const int capacity = imageStitchingPdfTemplateCapacity(settings.templateType);
     return capacity > 0 ? itemCount / capacity + (itemCount % capacity != 0 ? 1 : 0) : 0;
 }
 
-QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& settings) {
+QMap<QString, QString>
+validateImageStitchingPdfSettings(const ImageStitchingPdfSettings& settings) {
     QMap<QString, QString> errors;
     const auto positiveDimension = [&](const QString& key, qreal value) {
         if (!std::isfinite(value) || value <= 0)
-            errors.insert(key, QCoreApplication::translate("CollageDocument",
+            errors.insert(key, QCoreApplication::translate("ImageStitchingDocument",
                                                            "Enter a positive paper dimension"));
         // PDF 1.7 permits at most 14400 default user-space units and a UserUnit of 75000.
         // Reject unrepresentable physical paper before converting millimeters to points.
         else if (value > maximumPdfDimensionMm)
             errors.insert(
-                key, QCoreApplication::translate("CollageDocument",
+                key, QCoreApplication::translate("ImageStitchingDocument",
                                                  "The paper dimension exceeds the PDF size limit"));
     };
     const auto nonnegativeMargin = [&](const QString& key, qreal value) {
         if (!std::isfinite(value) || value < 0)
-            errors.insert(key, QCoreApplication::translate("CollageDocument",
+            errors.insert(key, QCoreApplication::translate("ImageStitchingDocument",
                                                            "Enter a nonnegative page margin"));
     };
-    if (settings.stitchingMethod != CollagePdfStitchingMethod::PageBased &&
-        settings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased)
-        errors.insert(QStringLiteral("stitching_method"),
-                      QCoreApplication::translate("CollageDocument", "Select a stitching method"));
-    if (collagePdfTemplateCapacity(settings.templateType) == 0)
-        errors.insert(QStringLiteral("template_type"),
-                      QCoreApplication::translate("CollageDocument", "Select a template"));
-    const bool templateBased = settings.stitchingMethod == CollagePdfStitchingMethod::TemplateBased;
-    if (templateBased && (!std::isfinite(settings.imageSpacingMm) || settings.imageSpacingMm < 0))
+    if (settings.stitchingMethod != ImageStitchingPdfStitchingMethod::PageBased &&
+        settings.stitchingMethod != ImageStitchingPdfStitchingMethod::TemplateBased)
         errors.insert(
-            QStringLiteral("image_spacing_mm"),
-            QCoreApplication::translate("CollageDocument", "Enter a nonnegative image spacing"));
-    if (settings.paperSize < CollagePdfPaperSize::A3 ||
-        settings.paperSize > CollagePdfPaperSize::ImageSize)
+            QStringLiteral("stitching_method"),
+            QCoreApplication::translate("ImageStitchingDocument", "Select a stitching method"));
+    if (imageStitchingPdfTemplateCapacity(settings.templateType) == 0)
+        errors.insert(QStringLiteral("template_type"),
+                      QCoreApplication::translate("ImageStitchingDocument", "Select a template"));
+    const bool templateBased =
+        settings.stitchingMethod == ImageStitchingPdfStitchingMethod::TemplateBased;
+    if (templateBased && (!std::isfinite(settings.imageSpacingMm) || settings.imageSpacingMm < 0))
+        errors.insert(QStringLiteral("image_spacing_mm"),
+                      QCoreApplication::translate("ImageStitchingDocument",
+                                                  "Enter a nonnegative image spacing"));
+    if (settings.paperSize < ImageStitchingPdfPaperSize::A3 ||
+        settings.paperSize > ImageStitchingPdfPaperSize::ImageSize)
         errors.insert(QStringLiteral("paper_size"),
-                      QCoreApplication::translate("CollageDocument", "Select a paper size"));
-    if ((settings.paperSize != CollagePdfPaperSize::ImageSize || templateBased) &&
-        settings.orientation != CollagePdfOrientation::Portrait &&
-        settings.orientation != CollagePdfOrientation::Landscape)
-        errors.insert(QStringLiteral("orientation"),
-                      QCoreApplication::translate("CollageDocument", "Select a paper orientation"));
-    if (settings.exportMode != CollagePdfExportMode::Combined &&
-        settings.exportMode != CollagePdfExportMode::PerPage)
-        errors.insert(QStringLiteral("export_mode"),
-                      QCoreApplication::translate("CollageDocument", "Select an export mode"));
-    if (settings.paperSize == CollagePdfPaperSize::ImageSize && !templateBased)
+                      QCoreApplication::translate("ImageStitchingDocument", "Select a paper size"));
+    if ((settings.paperSize != ImageStitchingPdfPaperSize::ImageSize || templateBased) &&
+        settings.orientation != ImageStitchingPdfOrientation::Portrait &&
+        settings.orientation != ImageStitchingPdfOrientation::Landscape)
+        errors.insert(
+            QStringLiteral("orientation"),
+            QCoreApplication::translate("ImageStitchingDocument", "Select a paper orientation"));
+    if (settings.exportMode != ImageStitchingPdfExportMode::Combined &&
+        settings.exportMode != ImageStitchingPdfExportMode::PerPage)
+        errors.insert(
+            QStringLiteral("export_mode"),
+            QCoreApplication::translate("ImageStitchingDocument", "Select an export mode"));
+    if (settings.paperSize == ImageStitchingPdfPaperSize::ImageSize && !templateBased)
         return errors;
-    if (settings.paperSize == CollagePdfPaperSize::Custom) {
+    if (settings.paperSize == ImageStitchingPdfPaperSize::Custom) {
         positiveDimension(QStringLiteral("custom_width_mm"), settings.customWidthMm);
         positiveDimension(QStringLiteral("custom_height_mm"), settings.customHeightMm);
     }
@@ -790,7 +798,7 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
         if (std::isfinite(remaining) && remaining > 0)
             return;
         const QString message = QCoreApplication::translate(
-            "CollageDocument", "The margins must leave a usable content area");
+            "ImageStitchingDocument", "The margins must leave a usable content area");
         errors.insert(beforeKey, message);
         errors.insert(afterKey, message);
     };
@@ -805,32 +813,33 @@ QMap<QString, QString> validateCollagePdfSettings(const CollagePdfSettings& sett
             }))
             errors.insert(
                 QStringLiteral("image_spacing_mm"),
-                QCoreApplication::translate("CollageDocument",
+                QCoreApplication::translate("ImageStitchingDocument",
                                             "The image spacing must leave usable template cells"));
     }
     return errors;
 }
 
-CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
-                                                   const CollagePdfSettings& settings) {
-    CollagePdfPageLayout layout;
-    layout.fieldErrors = validateCollagePdfSettings(settings);
+ImageStitchingPdfPageLayout
+calculateImageStitchingPdfPageLayout(QSize transformedPixels,
+                                     const ImageStitchingPdfSettings& settings) {
+    ImageStitchingPdfPageLayout layout;
+    layout.fieldErrors = validateImageStitchingPdfSettings(settings);
     if (!layout.fieldErrors.isEmpty()) {
-        layout.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
+        layout.error = QCoreApplication::translate("ImageStitchingDocument",
+                                                   "The PDF page settings are invalid");
         return layout;
     }
     if (transformedPixels.isEmpty()) {
         layout.error = preparationError();
         return layout;
     }
-    if (settings.paperSize == CollagePdfPaperSize::ImageSize &&
-        settings.stitchingMethod == CollagePdfStitchingMethod::PageBased) {
+    if (settings.paperSize == ImageStitchingPdfPaperSize::ImageSize &&
+        settings.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased) {
         layout.pageMillimeters = QSizeF(transformedPixels) * (25.4 / 96.0);
         if (layout.pageMillimeters.width() > maximumPdfDimensionMm ||
             layout.pageMillimeters.height() > maximumPdfDimensionMm) {
             layout.error = QCoreApplication::translate(
-                "CollageDocument", "The paper dimension exceeds the PDF size limit");
+                "ImageStitchingDocument", "The paper dimension exceeds the PDF size limit");
             return layout;
         }
         layout.contentMillimeters = QRectF(QPointF(0, 0), layout.pageMillimeters);
@@ -852,26 +861,27 @@ CollagePdfPageLayout calculateCollagePdfPageLayout(QSize transformedPixels,
                                fitted.width(), fitted.height()};
     if (layout.imageMillimeters.isEmpty() || !std::isfinite(fitted.width()) ||
         !std::isfinite(fitted.height()))
-        layout.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
+        layout.error = QCoreApplication::translate("ImageStitchingDocument",
+                                                   "The PDF page settings are invalid");
     return layout;
 }
 
-CollagePdfComposedPage calculateCollagePdfComposedPage(const QVector<CollageItem>& items,
-                                                       const CollagePdfSettings& settings,
-                                                       qsizetype pageIndex) {
-    CollagePdfComposedPage page;
+ImageStitchingPdfComposedPage
+calculateImageStitchingPdfComposedPage(const QVector<ImageStitchingItem>& items,
+                                       const ImageStitchingPdfSettings& settings,
+                                       qsizetype pageIndex) {
+    ImageStitchingPdfComposedPage page;
     const auto invalid = [&] {
-        page.error =
-            QCoreApplication::translate("CollageDocument", "The PDF page settings are invalid");
+        page.error = QCoreApplication::translate("ImageStitchingDocument",
+                                                 "The PDF page settings are invalid");
         return page;
     };
-    if (pageIndex < 0 || pageIndex >= collagePdfPageCount(items.size(), settings) ||
-        !validateCollagePdfSettings(settings).isEmpty())
+    if (pageIndex < 0 || pageIndex >= imageStitchingPdfPageCount(items.size(), settings) ||
+        !validateImageStitchingPdfSettings(settings).isEmpty())
         return invalid();
-    if (settings.stitchingMethod == CollagePdfStitchingMethod::PageBased) {
+    if (settings.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased) {
         const auto& item = items[pageIndex];
-        const auto layout = calculateCollagePdfPageLayout(transformedSize(item), settings);
+        const auto layout = calculateImageStitchingPdfPageLayout(transformedSize(item), settings);
         if (!layout.isValid())
             return invalid();
         page.pageMillimeters = layout.pageMillimeters;
@@ -885,7 +895,7 @@ CollagePdfComposedPage calculateCollagePdfComposedPage(const QVector<CollageItem
     const qsizetype first = pageIndex * cells.size();
     page.cells.reserve(cells.size());
     for (qsizetype index = 0; index < cells.size(); ++index) {
-        CollagePdfCell cell;
+        ImageStitchingPdfCell cell;
         cell.clipMillimeters = cells[index];
         const qsizetype itemIndex = first + index;
         if (itemIndex < items.size()) {
@@ -911,7 +921,7 @@ CollagePdfComposedPage calculateCollagePdfComposedPage(const QVector<CollageItem
     return page;
 }
 
-QSize transformedSize(const CollageItem& item) {
+QSize transformedSize(const ImageStitchingItem& item) {
     if (item.image.isNull())
         return {};
     const QRectF bounds = item.transform.mapRect(QRectF(QPointF(0, 0), item.image.size()));
@@ -922,28 +932,29 @@ QSize transformedSize(const CollageItem& item) {
     return {qRound(bounds.width()), qRound(bounds.height())};
 }
 
-QImage transformedPreview(const CollageItem& item) {
+QImage transformedPreview(const ImageStitchingItem& item) {
     return snowCanvasTransformImage(boundedPreview(item.image, item.preview), item.transform,
                                     Qt::FastTransformation);
 }
 
-static CollageLayout calculateAutomaticCollageLayout(const QVector<CollageItem>& items,
-                                                     const CollageSettings& settings) {
-    CollageLayout result;
+static ImageStitchingLayout
+calculateAutomaticImageStitchingLayout(const QVector<ImageStitchingItem>& items,
+                                       const ImageStitchingSettings& settings) {
+    ImageStitchingLayout result;
     if (items.isEmpty())
         return result;
     if (!settingsValid(settings)) {
         result.error = QCoreApplication::translate(
-            "CollageDocument", "The image stitching layout settings are invalid");
+            "ImageStitchingDocument", "The image stitching layout settings are invalid");
         return result;
     }
-    const bool vertical = settings.direction == CollageDirection::Vertical;
+    const bool vertical = settings.direction == ImageStitchingDirection::Vertical;
     const QSize reference = transformedSize(items.front());
     if (reference.isEmpty()) {
         result.error = preparationError();
         return result;
     }
-    if (settings.direction == CollageDirection::Custom)
+    if (settings.direction == ImageStitchingDirection::Custom)
         return calculateCustomGridLayout(items, settings, reference);
     QVector<QSize> sizes;
     sizes.reserve(items.size());
@@ -955,7 +966,7 @@ static CollageLayout calculateAutomaticCollageLayout(const QVector<CollageItem>&
             result.error = preparationError();
             return result;
         }
-        if (settings.sizing == CollageSizing::Uniform) {
+        if (settings.sizing == ImageStitchingSizing::Uniform) {
             const qint64 numerator = vertical ? qint64(size.height()) * reference.width()
                                               : qint64(size.width()) * reference.height();
             const int divisor = vertical ? size.width() : size.height();
@@ -1006,10 +1017,10 @@ static CollageLayout calculateAutomaticCollageLayout(const QVector<CollageItem>&
     return result;
 }
 
-QRect resolveCollageStaticImageRect(const CollageItem& item, const QRect& automaticBounds,
-                                    const QRect& clipBounds) {
+QRect resolveImageStitchingStaticImageRect(const ImageStitchingItem& item,
+                                           const QRect& automaticBounds, const QRect& clipBounds) {
     const auto& placement = item.staticPlacement;
-    if (placement == CollageStaticPlacement{})
+    if (placement == ImageStitchingStaticPlacement{})
         return automaticBounds;
     const auto offset = placement.centerOffsetPixels;
     const qreal scale = placement.pixelsPerPixel.value_or(1);
@@ -1032,15 +1043,15 @@ QRect resolveCollageStaticImageRect(const CollageItem& item, const QRect& automa
     return QRect(QPoint(qRound(origin.x()), qRound(origin.y())), raster);
 }
 
-CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
-                                     const CollageSettings& settings) {
-    auto result = calculateAutomaticCollageLayout(items, settings);
+ImageStitchingLayout calculateImageStitchingLayout(const QVector<ImageStitchingItem>& items,
+                                                   const ImageStitchingSettings& settings) {
+    auto result = calculateAutomaticImageStitchingLayout(items, settings);
     if (!result.isValid())
         return result;
     result.imageRects.reserve(items.size());
     for (qsizetype index = 0; index < items.size(); ++index) {
-        const auto image = resolveCollageStaticImageRect(items[index], result.rects[index],
-                                                         result.clipRects[index]);
+        const auto image = resolveImageStitchingStaticImageRect(items[index], result.rects[index],
+                                                                result.clipRects[index]);
         if (image.isEmpty()) {
             result.error = preparationError();
             return result;
@@ -1050,13 +1061,13 @@ CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
     return result;
 }
 
-struct CollageDocument::Impl final {
-    QVector<CollageItem> items;
+struct ImageStitchingDocument::Impl final {
+    QVector<ImageStitchingItem> items;
     QHash<quint64, int> indices;
-    CollageSettings settings;
-    CollageOutputType outputType = CollageOutputType::StaticImage;
-    CollagePdfSettings pdfSettings;
-    CollagePdfSettings lastValidPdfSettings;
+    ImageStitchingSettings settings;
+    ImageStitchingOutputType outputType = ImageStitchingOutputType::StaticImage;
+    ImageStitchingPdfSettings pdfSettings;
+    ImageStitchingPdfSettings lastValidPdfSettings;
     quint64 contentRevision = 0;
     quint64 selected = 0;
     quint64 nextId = 1;
@@ -1064,7 +1075,7 @@ struct CollageDocument::Impl final {
     qint64 sourceBytes = 0;
     qint64 previewBytes = 0;
     mutable bool layoutDirty = true;
-    mutable CollageLayout cachedLayout;
+    mutable ImageStitchingLayout cachedLayout;
 
     void rebuildIndices() {
         indices.clear();
@@ -1081,12 +1092,13 @@ struct CollageDocument::Impl final {
     }
 
     void freezePdfScale(int index) {
-        if (lastValidPdfSettings.stitchingMethod != CollagePdfStitchingMethod::TemplateBased ||
+        if (lastValidPdfSettings.stitchingMethod !=
+                ImageStitchingPdfStitchingMethod::TemplateBased ||
             items[index].pdfPlacement.millimetersPerPixel)
             return;
-        const int capacity = collagePdfTemplateCapacity(lastValidPdfSettings.templateType);
+        const int capacity = imageStitchingPdfTemplateCapacity(lastValidPdfSettings.templateType);
         const auto page =
-            calculateCollagePdfComposedPage(items, lastValidPdfSettings, index / capacity);
+            calculateImageStitchingPdfComposedPage(items, lastValidPdfSettings, index / capacity);
         if (!page.isValid())
             return;
         const auto& cell = page.cells[index % capacity];
@@ -1096,8 +1108,8 @@ struct CollageDocument::Impl final {
     }
 
     bool admit(qint64 sources, qint64 previews) {
-        if (sources < 0 || sources > collage_detail::maximumRasterBytes || previews < 0 ||
-            previews > collage_detail::maximumWindowPreviewBytes) {
+        if (sources < 0 || sources > image_stitching_detail::maximumRasterBytes || previews < 0 ||
+            previews > image_stitching_detail::maximumWindowPreviewBytes) {
             error = resourceError();
             return false;
         }
@@ -1108,27 +1120,27 @@ struct CollageDocument::Impl final {
     }
 };
 
-CollageDocument::CollageDocument(QObject* parent)
+ImageStitchingDocument::ImageStitchingDocument(QObject* parent)
     : QObject(parent), m_impl(std::make_unique<Impl>()) {}
-CollageDocument::~CollageDocument() = default;
+ImageStitchingDocument::~ImageStitchingDocument() = default;
 
-const QVector<CollageItem>& CollageDocument::items() const {
+const QVector<ImageStitchingItem>& ImageStitchingDocument::items() const {
     return m_impl->items;
 }
 
-int CollageDocument::indexOf(quint64 id) const {
+int ImageStitchingDocument::indexOf(quint64 id) const {
     return m_impl->indices.value(id, -1);
 }
 
-quint64 CollageDocument::contentRevision() const {
+quint64 ImageStitchingDocument::contentRevision() const {
     return m_impl->contentRevision;
 }
 
-CollageSettings CollageDocument::settings() const {
+ImageStitchingSettings ImageStitchingDocument::settings() const {
     return m_impl->settings;
 }
 
-void CollageDocument::setSettings(const CollageSettings& settings) {
+void ImageStitchingDocument::setSettings(const ImageStitchingSettings& settings) {
     if (!settingsValid(settings))
         return;
     auto normalized = settings;
@@ -1147,27 +1159,28 @@ void CollageDocument::setSettings(const CollageSettings& settings) {
         emit customGridAdjusted(adjustedFields);
 }
 
-CollageOutputType CollageDocument::outputType() const {
+ImageStitchingOutputType ImageStitchingDocument::outputType() const {
     return m_impl->outputType;
 }
 
-void CollageDocument::setOutputType(CollageOutputType type) {
-    if ((type != CollageOutputType::StaticImage && type != CollageOutputType::PdfDocument) ||
+void ImageStitchingDocument::setOutputType(ImageStitchingOutputType type) {
+    if ((type != ImageStitchingOutputType::StaticImage &&
+         type != ImageStitchingOutputType::PdfDocument) ||
         type == m_impl->outputType)
         return;
     m_impl->outputType = type;
     emit changed();
 }
 
-CollagePdfSettings CollageDocument::pdfSettings() const {
+ImageStitchingPdfSettings ImageStitchingDocument::pdfSettings() const {
     return m_impl->pdfSettings;
 }
 
-void CollageDocument::setPdfSettings(const CollagePdfSettings& settings) {
+void ImageStitchingDocument::setPdfSettings(const ImageStitchingPdfSettings& settings) {
     if (settings == m_impl->pdfSettings)
         return;
     m_impl->pdfSettings = settings;
-    if (validateCollagePdfSettings(settings).isEmpty()) {
+    if (validateImageStitchingPdfSettings(settings).isEmpty()) {
         if (pdfGeometryChanged(m_impl->lastValidPdfSettings, settings))
             for (auto& item : m_impl->items)
                 item.pdfPlacement = {};
@@ -1176,23 +1189,23 @@ void CollageDocument::setPdfSettings(const CollagePdfSettings& settings) {
     emit changed();
 }
 
-CollagePdfSettings CollageDocument::lastValidPdfSettings() const {
+ImageStitchingPdfSettings ImageStitchingDocument::lastValidPdfSettings() const {
     return m_impl->lastValidPdfSettings;
 }
 
-CollageLayout CollageDocument::layout() const {
+ImageStitchingLayout ImageStitchingDocument::layout() const {
     if (m_impl->layoutDirty) {
-        m_impl->cachedLayout = calculateCollageLayout(m_impl->items, m_impl->settings);
+        m_impl->cachedLayout = calculateImageStitchingLayout(m_impl->items, m_impl->settings);
         m_impl->layoutDirty = false;
     }
     return m_impl->cachedLayout;
 }
 
-QString CollageDocument::lastError() const {
+QString ImageStitchingDocument::lastError() const {
     return m_impl->error;
 }
 
-quint64 CollageDocument::append(QImage image, QString label, QImage preview) {
+quint64 ImageStitchingDocument::append(QImage image, QString label, QImage preview) {
     if (image.isNull()) {
         m_impl->error = preparationError();
         return 0;
@@ -1246,7 +1259,7 @@ quint64 CollageDocument::append(QImage image, QString label, QImage preview) {
     return id;
 }
 
-bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage preview) {
+bool ImageStitchingDocument::replace(quint64 id, QImage image, QString label, QImage preview) {
     const int index = indexOf(id);
     if (index < 0 || image.isNull()) {
         m_impl->error = preparationError();
@@ -1280,7 +1293,7 @@ bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage pr
     return true;
 }
 
-bool CollageDocument::remove(quint64 id) {
+bool ImageStitchingDocument::remove(quint64 id) {
     const int index = indexOf(id);
     if (index < 0)
         return false;
@@ -1303,7 +1316,7 @@ bool CollageDocument::remove(quint64 id) {
     return true;
 }
 
-void CollageDocument::clear() {
+void ImageStitchingDocument::clear() {
     if (m_impl->items.isEmpty())
         return;
     m_impl->items.clear();
@@ -1316,7 +1329,7 @@ void CollageDocument::clear() {
     emit selectionChanged();
 }
 
-bool CollageDocument::reverseItems() {
+bool ImageStitchingDocument::reverseItems() {
     if (m_impl->items.size() < 2)
         return false;
     std::reverse(m_impl->items.begin(), m_impl->items.end());
@@ -1330,7 +1343,7 @@ bool CollageDocument::reverseItems() {
     return true;
 }
 
-bool CollageDocument::swapItems(quint64 first, quint64 second) {
+bool ImageStitchingDocument::swapItems(quint64 first, quint64 second) {
     const int a = indexOf(first);
     const int b = indexOf(second);
     if (a < 0 || b < 0 || a == b)
@@ -1348,7 +1361,7 @@ bool CollageDocument::swapItems(quint64 first, quint64 second) {
     return true;
 }
 
-bool CollageDocument::moveItem(quint64 id, int finalIndex) {
+bool ImageStitchingDocument::moveItem(quint64 id, int finalIndex) {
     const int sourceIndex = indexOf(id);
     if (sourceIndex < 0 || finalIndex < 0 || finalIndex >= m_impl->items.size() ||
         sourceIndex == finalIndex)
@@ -1363,7 +1376,7 @@ bool CollageDocument::moveItem(quint64 id, int finalIndex) {
     return true;
 }
 
-bool CollageDocument::rotate(quint64 id, bool clockwise) {
+bool ImageStitchingDocument::rotate(quint64 id, bool clockwise) {
     const int index = indexOf(id);
     if (index < 0)
         return false;
@@ -1379,7 +1392,7 @@ bool CollageDocument::rotate(quint64 id, bool clockwise) {
     return true;
 }
 
-bool CollageDocument::flip(quint64 id, bool horizontal) {
+bool ImageStitchingDocument::flip(quint64 id, bool horizontal) {
     const int index = indexOf(id);
     if (index < 0)
         return false;
@@ -1394,14 +1407,14 @@ bool CollageDocument::flip(quint64 id, bool horizontal) {
     return true;
 }
 
-bool CollageDocument::resetTransform(quint64 id) {
+bool ImageStitchingDocument::resetTransform(quint64 id) {
     const int index = indexOf(id);
     if (index < 0)
         return false;
     auto& item = m_impl->items[index];
     const bool orientationChanged = !item.transform.isIdentity();
-    const bool placementChanged = item.pdfPlacement != CollagePdfPlacement{};
-    const bool staticChanged = item.staticPlacement != CollageStaticPlacement{};
+    const bool placementChanged = item.pdfPlacement != ImageStitchingPdfPlacement{};
+    const bool staticChanged = item.staticPlacement != ImageStitchingStaticPlacement{};
     if (!orientationChanged && !placementChanged && !staticChanged)
         return true;
     item.transform = {};
@@ -1422,7 +1435,8 @@ bool CollageDocument::resetTransform(quint64 id) {
     return true;
 }
 
-bool CollageDocument::setStaticPlacement(quint64 id, const CollageStaticPlacement& placement) {
+bool ImageStitchingDocument::setStaticPlacement(quint64 id,
+                                                const ImageStitchingStaticPlacement& placement) {
     const int index = indexOf(id);
     if (index < 0 || m_impl->items[index].staticPlacement == placement)
         return false;
@@ -1431,7 +1445,8 @@ bool CollageDocument::setStaticPlacement(quint64 id, const CollageStaticPlacemen
         return false;
     auto candidate = m_impl->items[index];
     candidate.staticPlacement = placement;
-    if (resolveCollageStaticImageRect(candidate, current.rects[index], current.clipRects[index])
+    if (resolveImageStitchingStaticImageRect(candidate, current.rects[index],
+                                             current.clipRects[index])
             .isEmpty())
         return false;
     m_impl->items[index].staticPlacement = placement;
@@ -1440,7 +1455,8 @@ bool CollageDocument::setStaticPlacement(quint64 id, const CollageStaticPlacemen
     return true;
 }
 
-bool CollageDocument::setPdfPlacement(quint64 id, const CollagePdfPlacement& placement) {
+bool ImageStitchingDocument::setPdfPlacement(quint64 id,
+                                             const ImageStitchingPdfPlacement& placement) {
     const int index = indexOf(id);
     if (index < 0 || !validPlacement(placement))
         return false;
@@ -1458,11 +1474,11 @@ bool CollageDocument::setPdfPlacement(quint64 id, const CollagePdfPlacement& pla
     return true;
 }
 
-quint64 CollageDocument::selectedId() const {
+quint64 ImageStitchingDocument::selectedId() const {
     return m_impl->selected;
 }
 
-void CollageDocument::select(quint64 id) {
+void ImageStitchingDocument::select(quint64 id) {
     const quint64 selected = indexOf(id) >= 0 ? id : 0;
     if (selected == m_impl->selected)
         return;
@@ -1470,9 +1486,10 @@ void CollageDocument::select(quint64 id) {
     emit selectionChanged();
 }
 
-ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
-                                            const CollageSettings& settings,
-                                            std::function<bool()> cancelled, QString* error) {
+ScreenshotImageRowSource prepareImageStitchingRows(const QVector<ImageStitchingItem>& items,
+                                                   const ImageStitchingSettings& settings,
+                                                   std::function<bool()> cancelled,
+                                                   QString* error) {
     if (error)
         error->clear();
     const auto stopped = [&] { return cancelled && cancelled(); };
@@ -1480,7 +1497,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
         report(error, cancellationError());
         return {};
     }
-    const CollageLayout layout = calculateCollageLayout(items, settings);
+    const ImageStitchingLayout layout = calculateImageStitchingLayout(items, settings);
     if (!layout.isValid()) {
         report(error, layout.error.isEmpty() ? preparationError() : layout.error);
         return {};
@@ -1494,7 +1511,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
         const auto& item = items[index];
         const bool transformed = !item.transform.isIdentity();
         const bool resized = transformedSize(item) != layout.imageRects[index].size();
-        const bool streamed = collage_detail::streamableTransform(item);
+        const bool streamed = image_stitching_detail::streamableTransform(item);
         qint64 itemScratchBytes = 0;
         if (transformed && !streamed)
             preparedBytes +=
@@ -1502,8 +1519,8 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
                  32) *
                 4 * transformedSize(item).height();
         if (streamed) {
-            readerCacheBytes += collage_detail::transformCacheBytes(item);
-            itemScratchBytes = collage_detail::transformWorkingBytes(item);
+            readerCacheBytes += image_stitching_detail::transformCacheBytes(item);
+            itemScratchBytes = image_stitching_detail::transformWorkingBytes(item);
         }
         if (!streamed && (item.image.format() != QImage::Format_RGBA8888 ||
                           (item.image.colorSpace().isValid() &&
@@ -1534,22 +1551,24 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
             unownedSourceBytes += item.image.sizeInBytes() + item.preview.sizeInBytes();
     }
     const qint64 transientBytes = readerCacheBytes + transformScratchBytes + maximumRowBytes;
-    if (transientBytes > collage_detail::maximumWorkingBytes) {
-        report(error, QCoreApplication::translate(
-                          "CollageDocument", "Image stitching requires too much temporary memory. "
-                                             "Try fewer images or smaller image sizes"));
+    if (transientBytes > image_stitching_detail::maximumWorkingBytes) {
+        report(error,
+               QCoreApplication::translate("ImageStitchingDocument",
+                                           "Image stitching requires too much temporary memory. "
+                                           "Try fewer images or smaller image sizes"));
         return {};
     }
-    if (preparedBytes > collage_detail::maximumRasterBytes) {
+    if (preparedBytes > image_stitching_detail::maximumRasterBytes) {
         report(error, resourceError());
         return {};
     }
     try {
         auto prepared = std::make_shared<PreparedRows>();
-        prepared->reservation = collage_detail::reserve(preparedBytes + unownedSourceBytes, error);
+        prepared->reservation =
+            image_stitching_detail::reserve(preparedBytes + unownedSourceBytes, error);
         if (!prepared->reservation)
             return {};
-        prepared->working = collage_detail::reserveWorking(transientBytes, error);
+        prepared->working = image_stitching_detail::reserveWorking(transientBytes, error);
         if (!prepared->working)
             return {};
         prepared->layout = layout;
@@ -1566,12 +1585,13 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
             const auto& item = items[index];
             prepared->sourceOwners.append(item.resourceOwner);
             prepared->inputImages.append(item.image);
-            const bool streamed = collage_detail::streamableTransform(item);
+            const bool streamed = image_stitching_detail::streamableTransform(item);
             QImage pixels = streamed ? item.image
                                      : snowCanvasTransformImage(item.image, item.transform,
                                                                 Qt::FastTransformation);
-            auto rows = streamed ? collage_detail::transformedRowSource(item, prepared->cancelled)
-                                 : image_codec::srgbRowSource(pixels);
+            auto rows =
+                streamed ? image_stitching_detail::transformedRowSource(item, prepared->cancelled)
+                         : image_codec::srgbRowSource(pixels);
             if (!rows.isValid()) {
                 report(error, preparationError());
                 return {};
@@ -1618,19 +1638,20 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
         };
         rows.reserveResources = [](qint64 retained, qint64 scratch,
                                    QString* admissionError) -> std::shared_ptr<void> {
-            if (retained < 0 || scratch < 0 || retained > collage_detail::maximumWorkingBytes ||
-                scratch > collage_detail::maximumWorkingBytes - retained) {
+            if (retained < 0 || scratch < 0 ||
+                retained > image_stitching_detail::maximumWorkingBytes ||
+                scratch > image_stitching_detail::maximumWorkingBytes - retained) {
                 report(admissionError, resourceError());
                 return {};
             }
-            return collage_detail::reserveWorking(retained + scratch, admissionError);
+            return image_stitching_detail::reserveWorking(retained + scratch, admissionError);
         };
         if ((layout.size.width() > 2048 || layout.size.height() > 2048) &&
             std::all_of(items.begin(), items.end(),
-                        [](const CollageItem& item) { return !item.preview.isNull(); })) {
+                        [](const ImageStitchingItem& item) { return !item.preview.isNull(); })) {
             QSize size = layout.size.scaled(2048, 2048, Qt::KeepAspectRatio).expandedTo({1, 1});
             prepared->previewOwner =
-                collage_detail::reservePreview(qint64(size.width()) * size.height() * 4);
+                image_stitching_detail::reservePreview(qint64(size.width()) * size.height() * 4);
             if (prepared->previewOwner) {
                 auto preview = snowCanvasAllocateImage(size, QImage::Format_ARGB32_Premultiplied);
                 if (!preview.isNull()) {
@@ -1665,7 +1686,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
     }
 }
 
-QImage materializeCollageRows(const ScreenshotImageRowSource& rows, qsizetype maximumBytes) {
+QImage materializeImageStitchingRows(const ScreenshotImageRowSource& rows, qsizetype maximumBytes) {
     qint64 bytes = 0;
     if (!rows.isValid() || !outputBytes(rows.size, &bytes) || bytes > maximumBytes ||
         (rows.cancellationRequested && rows.cancellationRequested()))
@@ -1678,8 +1699,8 @@ QImage materializeCollageRows(const ScreenshotImageRowSource& rows, qsizetype ma
     return image;
 }
 
-CollageClipboardEstimate estimateCollageClipboard(QSize outputSize) {
-    CollageClipboardEstimate result;
+ImageStitchingClipboardEstimate estimateImageStitchingClipboard(QSize outputSize) {
+    ImageStitchingClipboardEstimate result;
     qint64 rawBytes = 0;
     if (!outputBytes(outputSize, &rawBytes)) {
         result.error = resourceError();
@@ -1697,25 +1718,25 @@ CollageClipboardEstimate estimateCollageClipboard(QSize outputSize) {
     if (result.bytes > qint64{16} * 1024 * 1024 * 1024 ||
         result.dibBytes > std::numeric_limits<quint32>::max())
         result.error = QCoreApplication::translate(
-            "CollageDocument",
+            "ImageStitchingDocument",
             "The stitched image is too large for the clipboard. Save it to a file instead");
     return result;
 }
 
-std::shared_ptr<void> reserveCollageClipboard(QSize outputSize, QString* error) {
-    const auto estimate = estimateCollageClipboard(outputSize);
+std::shared_ptr<void> reserveImageStitchingClipboard(QSize outputSize, QString* error) {
+    const auto estimate = estimateImageStitchingClipboard(outputSize);
     if (!estimate.isValid()) {
         report(error, estimate.error);
         return {};
     }
-    return collage_detail::reserve(estimate.bytes, error);
+    return image_stitching_detail::reserve(estimate.bytes, error);
 }
 
-CollageResourceUsage collageResourceUsage() {
-    return {collage_detail::reservedBytes(), collage_detail::budgetLimit()};
+ImageStitchingResourceUsage imageStitchingResourceUsage() {
+    return {image_stitching_detail::reservedBytes(), image_stitching_detail::budgetLimit()};
 }
 
-qint64 collageImageImportBytes(QSize size, QString* error) {
+qint64 imageStitchingImageImportBytes(QSize size, QString* error) {
     if (error)
         error->clear();
     if (size.isEmpty()) {
@@ -1724,16 +1745,18 @@ qint64 collageImageImportBytes(QSize size, QString* error) {
     }
     qint64 bytes = 0;
     if (!outputBytes(size, &bytes)) {
-        report(error, QCoreApplication::translate(
-                          "CollageDocument", "Image stitching requires too much temporary memory. "
-                                             "Try fewer images or smaller image sizes"));
+        report(error,
+               QCoreApplication::translate("ImageStitchingDocument",
+                                           "Image stitching requires too much temporary memory. "
+                                           "Try fewer images or smaller image sizes"));
         return 0;
     }
     return bytes * 2;
 }
 
-QImage captureCollageImage(QSize size, const std::function<QImage()>& capture, QString* error) {
-    const qint64 bytes = collageImageImportBytes(size, error) / 2;
+QImage captureImageStitchingImage(QSize size, const std::function<QImage()>& capture,
+                                  QString* error) {
+    const qint64 bytes = imageStitchingImageImportBytes(size, error) / 2;
     if (bytes == 0)
         return {};
     if (!capture) {
@@ -1741,11 +1764,11 @@ QImage captureCollageImage(QSize size, const std::function<QImage()>& capture, Q
         return {};
     }
     try {
-        auto working = collage_detail::reserveWorking(bytes, error);
+        auto working = image_stitching_detail::reserveWorking(bytes, error);
         if (!working)
             return {};
         auto lifetime = std::make_unique<CapturedImageLifetime>();
-        lifetime->reservation = collage_detail::reserve(bytes, error);
+        lifetime->reservation = image_stitching_detail::reserve(bytes, error);
         if (!lifetime->reservation)
             return {};
         lifetime->image = capture();

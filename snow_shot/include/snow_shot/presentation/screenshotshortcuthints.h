@@ -461,7 +461,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Auto-align: Ctrl");
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Line));
         break;
-    case ScreenshotActiveTool::FreeDraw:
+    case ScreenshotActiveTool::Brush:
         append(rows, "Draw straight line: Shift");
         append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::FreeDraw));
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::FreeDraw));
@@ -477,7 +477,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Delete selected elements: Delete",
                !disabled(SnowCanvasTool::RectangleHighlight));
         break;
-    case ScreenshotActiveTool::PenHighlight:
+    case ScreenshotActiveTool::BrushHighlight:
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::PenHighlight));
         break;
     case ScreenshotActiveTool::Text:
@@ -486,13 +486,13 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Auto-align: Ctrl", !disabled(SnowCanvasTool::Text));
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Text));
         break;
-    case ScreenshotActiveTool::SerialNumber:
+    case ScreenshotActiveTool::SequenceNumber:
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Scale from center: Alt", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Auto-align: Ctrl", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::SerialNumber));
         break;
-    case ScreenshotActiveTool::PenFilter:
+    case ScreenshotActiveTool::BrushFilter:
         append(rows, "Draw straight line: Shift");
         append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::PenFilter));
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::PenFilter));

@@ -12,7 +12,7 @@ namespace snow_shot::presentation {
 enum class GlobalShortcutAction {
     Screenshot,
     ScreenshotDelay,
-    ScreenshotFixed,
+    ScreenshotPinToScreen,
     ScreenshotOcr,
     ScreenshotTranslation,
     ScreenshotCopy,
@@ -27,7 +27,7 @@ enum class GlobalShortcutAction {
     TranslateSelectedText,
     PinSelectedFiles,
     RestoreLastClosedWindows,
-    ToggleGlobalHotkeys,
+    ToggleGlobalShortcuts,
     ToggleDisableOnFocusedFullscreenWindow,
     OpenPinToScreenManagement,
     GlobalCanvas,
@@ -42,8 +42,8 @@ enum class GlobalShortcutAction {
     ScreenshotScrolling,
 };
 
-[[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {
-    return action == GlobalShortcutAction::ToggleGlobalHotkeys ||
+[[nodiscard]] constexpr bool controlsGlobalShortcutGates(GlobalShortcutAction action) {
+    return action == GlobalShortcutAction::ToggleGlobalShortcuts ||
            action == GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow;
 }
 

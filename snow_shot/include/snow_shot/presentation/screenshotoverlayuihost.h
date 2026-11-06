@@ -65,7 +65,7 @@ class ScreenshotOverlayUiHost final : public QObject {
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
     [[nodiscard]] bool stepToolbarSpotlightOpacity(int direction);
     [[nodiscard]] bool stepToolbarFilterIntensity(int direction);
-    [[nodiscard]] bool stepToolbarPenFilterStrokeWidth(int direction);
+    [[nodiscard]] bool stepToolbarBrushFilterStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarWatermarkFontSize(int direction);
     void resetToolbarForNewCapture();
     void hideToolbar();

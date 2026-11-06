@@ -67,8 +67,8 @@ namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlin
 namespace style_presets = snow_shot::presentation::style_presets;
 constexpr int kCornerRadiusLeadingSpacing = 4;
 constexpr int kTextStrokeColorTrailingSpacing = 4;
-constexpr int kSerialNumberTrailingSpacing = 4;
-constexpr int kSerialNumberInputWidth = 64;
+constexpr int kSequenceNumberTrailingSpacing = 4;
+constexpr int kSequenceNumberInputWidth = 64;
 constexpr int kWatermarkTextWidth = 135;
 constexpr int kWatermarkTemplateActionWidth = 32;
 constexpr int kWatermarkTemplateActionIconSize = 16;
@@ -275,7 +275,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
                 kRoleCornerRadius};
     case Tool::Line:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleLineType, kRoleShapeFill};
-    case Tool::FreeDraw:
+    case Tool::Brush:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleBrushMode, kRoleShapeFill};
     case Tool::Distance:
         return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceValue,   kRoleDistanceUnit,
@@ -294,20 +294,20 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
                 "start-arrowhead",  kRoleArrowShaft,   "end-arrowhead"};
     case Tool::RectangleHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleHighlightBorder};
-    case Tool::PenHighlight:
+    case Tool::BrushHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleBrushWidth};
     case Tool::Spotlight:
         return {kRoleShapeKind, kRoleMaskColor, kRoleOpacity, kRoleCornerRadius};
     case Tool::Text:
         return {kRoleForegroundColor, kRoleTextFont, kRoleTextEmphasis, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
-    case Tool::SerialNumber:
+    case Tool::SequenceNumber:
         return {kRoleForegroundColor, kRoleSerialType, kRoleSerialNumericType,
                 "serial-value",       kRoleTextFont,   kRoleTextFill};
     case Tool::AutoFilter:
     case Tool::RectangleFilter:
         return {"filter-mode", "filter-type", "filter-intensity"};
-    case Tool::PenFilter:
+    case Tool::BrushFilter:
         return {"filter-mode", "filter-type", kRoleBrushWidth, "filter-intensity"};
     case Tool::Eraser:
     case Tool::RectangleEraser:
@@ -950,9 +950,9 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_highlightColorEditor);
     append(m_spotlightColorEditor);
     append(m_highlightStrokeEditor);
-    append(m_penHighlightColorEditor);
-    append(m_penHighlightStrokeWidthEditor);
-    append(m_penFilterStrokeWidthEditor);
+    append(m_brushHighlightColorEditor);
+    append(m_brushHighlightStrokeWidthEditor);
+    append(m_brushFilterStrokeWidthEditor);
     append(m_brushEraserStrokeWidthEditor);
     append(m_distanceColorEditor);
     append(m_distanceWidthEditor);
@@ -977,9 +977,9 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_textStrokeEditor);
     append(m_textFillEditor);
     append(m_textAlignmentEditor);
-    append(m_serialNumberColorEditor);
-    append(m_serialNumberFillEditor);
-    append(m_serialNumberFontEditor);
+    append(m_sequenceNumberColorEditor);
+    append(m_sequenceNumberFillEditor);
+    append(m_sequenceNumberFontEditor);
     append(m_watermarkColorEditor);
     append(m_watermarkFontEditor);
 }
@@ -1006,7 +1006,7 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
     case Tool::SpeechBubble:
     case Tool::Shape:
     case Tool::Line:
-    case Tool::FreeDraw:
+    case Tool::Brush:
         park(kRoleOutlineStroke, kSignatureStroke, m_shapeStrokeEditor);
         park(kRoleOutlineWidth, kSignatureStrokeWidth, m_shapeStrokeWidthEditor);
         park(kRoleShapeFill, kSignatureShapeFill, m_shapeFillEditor);
@@ -1042,9 +1042,9 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
         park(kRoleHighlightColor, kSignatureHighlightColor, m_highlightColorEditor);
         park(kRoleHighlightBorder, kSignatureHighlightBorder, m_highlightStrokeEditor);
         break;
-    case Tool::PenHighlight:
-        park(kRoleHighlightColor, kSignatureHighlightColor, m_penHighlightColorEditor);
-        park(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
+    case Tool::BrushHighlight:
+        park(kRoleHighlightColor, kSignatureHighlightColor, m_brushHighlightColorEditor);
+        park(kRoleBrushWidth, kSignatureBrushWidth, m_brushHighlightStrokeWidthEditor);
         break;
     case Tool::Spotlight:
         park(kRoleMaskColor, kSignatureMaskColor, m_spotlightColorEditor);
@@ -1057,13 +1057,13 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
         park(kRoleTextStroke, kSignatureTextStroke, m_textStrokeEditor);
         park(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
         break;
-    case Tool::SerialNumber:
-        park(kRoleForegroundColor, kSignatureForegroundColor, m_serialNumberColorEditor);
-        park(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
-        park(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
+    case Tool::SequenceNumber:
+        park(kRoleForegroundColor, kSignatureForegroundColor, m_sequenceNumberColorEditor);
+        park(kRoleTextFont, kSignatureTextFont, m_sequenceNumberFontEditor);
+        park(kRoleTextFill, kSignatureTextFill, m_sequenceNumberFillEditor);
         break;
-    case Tool::PenFilter:
-        park(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
+    case Tool::BrushFilter:
+        park(kRoleBrushWidth, kSignatureBrushWidth, m_brushFilterStrokeWidthEditor);
         break;
     case Tool::BrushEraser:
         park(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
@@ -1101,7 +1101,7 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
     case Tool::SpeechBubble:
     case Tool::Shape:
     case Tool::Line:
-    case Tool::FreeDraw:
+    case Tool::Brush:
         restore(kRoleOutlineStroke, m_shapeStrokeEditor);
         restore(kRoleOutlineWidth, m_shapeStrokeWidthEditor);
         restore(kRoleShapeFill, m_shapeFillEditor);
@@ -1137,9 +1137,9 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         restore(kRoleHighlightColor, m_highlightColorEditor);
         restore(kRoleHighlightBorder, m_highlightStrokeEditor);
         break;
-    case Tool::PenHighlight:
-        restore(kRoleHighlightColor, m_penHighlightColorEditor);
-        restore(kRoleBrushWidth, m_penHighlightStrokeWidthEditor);
+    case Tool::BrushHighlight:
+        restore(kRoleHighlightColor, m_brushHighlightColorEditor);
+        restore(kRoleBrushWidth, m_brushHighlightStrokeWidthEditor);
         break;
     case Tool::Spotlight:
         restore(kRoleMaskColor, m_spotlightColorEditor);
@@ -1152,13 +1152,13 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         restore(kRoleTextStroke, m_textStrokeEditor);
         restore(kRoleTextFill, m_textFillEditor);
         break;
-    case Tool::SerialNumber:
-        restore(kRoleForegroundColor, m_serialNumberColorEditor);
-        restore(kRoleTextFont, m_serialNumberFontEditor);
-        restore(kRoleTextFill, m_serialNumberFillEditor);
+    case Tool::SequenceNumber:
+        restore(kRoleForegroundColor, m_sequenceNumberColorEditor);
+        restore(kRoleTextFont, m_sequenceNumberFontEditor);
+        restore(kRoleTextFill, m_sequenceNumberFillEditor);
         break;
-    case Tool::PenFilter:
-        restore(kRoleBrushWidth, m_penFilterStrokeWidthEditor);
+    case Tool::BrushFilter:
+        restore(kRoleBrushWidth, m_brushFilterStrokeWidthEditor);
         break;
     case Tool::BrushEraser:
         restore(kRoleBrushWidth, m_brushEraserStrokeWidthEditor);
@@ -1298,9 +1298,9 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
         stageComponent(kRoleShapeFill, kSignatureShapeFill, m_shapeFillEditor);
     }
     if (shared(kRoleHighlightColor)) {
-        if (source == ScreenshotToolPalette::Tool::PenHighlight) {
+        if (source == ScreenshotToolPalette::Tool::BrushHighlight) {
             stageComponent(kRoleHighlightColor, kSignatureHighlightColor,
-                           m_penHighlightColorEditor);
+                           m_brushHighlightColorEditor);
         } else {
             stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_highlightColorEditor);
         }
@@ -1308,18 +1308,19 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
     if (shared(kRoleBrushWidth)) {
         if (source == ScreenshotToolPalette::Tool::BrushEraser) {
             stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
-        } else if (source == ScreenshotToolPalette::Tool::PenFilter) {
-            stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
+        } else if (source == ScreenshotToolPalette::Tool::BrushFilter) {
+            stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushFilterStrokeWidthEditor);
         } else {
-            stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
+            stageComponent(kRoleBrushWidth, kSignatureBrushWidth,
+                           m_brushHighlightStrokeWidthEditor);
         }
     }
     if (shared(kRoleForegroundColor)) {
         if (source == ScreenshotToolPalette::Tool::Text) {
             stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_textColorEditor);
-        } else if (source == ScreenshotToolPalette::Tool::SerialNumber) {
+        } else if (source == ScreenshotToolPalette::Tool::SequenceNumber) {
             stageComponent(kRoleForegroundColor, kSignatureForegroundColor,
-                           m_serialNumberColorEditor);
+                           m_sequenceNumberColorEditor);
         } else {
             stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
         }
@@ -1328,14 +1329,14 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
         if (source == ScreenshotToolPalette::Tool::Text) {
             stageComponent(kRoleTextFont, kSignatureTextFont, m_textFontEditor);
         } else {
-            stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
+            stageComponent(kRoleTextFont, kSignatureTextFont, m_sequenceNumberFontEditor);
         }
     }
     if (shared(kRoleTextFill)) {
         if (source == ScreenshotToolPalette::Tool::Text) {
             stageComponent(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
         } else {
-            stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
+            stageComponent(kRoleTextFill, kSignatureTextFill, m_sequenceNumberFillEditor);
         }
     }
     if (shared(kRoleCornerRadius)) {
@@ -1420,7 +1421,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
     case Tool::SpeechBubble:
     case Tool::Shape:
     case Tool::Line:
-    case Tool::FreeDraw:
+    case Tool::Brush:
         stageComponent(kRoleOutlineStroke, kSignatureStroke, m_shapeStrokeEditor);
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_shapeStrokeWidthEditor);
         stageComponent(kRoleShapeFill, kSignatureShapeFill, m_shapeFillEditor);
@@ -1429,7 +1430,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
             stageWidget(kRoleCornerRadius);
         } else if (destination == Tool::Line) {
             stageWidget(kRoleLineType);
-        } else if (destination == Tool::FreeDraw) {
+        } else if (destination == Tool::Brush) {
             stageWidget(kRoleBrushMode);
         }
         break;
@@ -1479,10 +1480,10 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_highlightColorEditor);
         stageComponent(kRoleHighlightBorder, kSignatureHighlightBorder, m_highlightStrokeEditor);
         break;
-    case Tool::PenHighlight:
+    case Tool::BrushHighlight:
         stageWidget(kRoleHighlightMode);
-        stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_penHighlightColorEditor);
-        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
+        stageComponent(kRoleHighlightColor, kSignatureHighlightColor, m_brushHighlightColorEditor);
+        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushHighlightStrokeWidthEditor);
         break;
     case Tool::Spotlight:
         stageWidget(kRoleShapeKind);
@@ -1499,13 +1500,14 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
         stageWidget(kRoleCornerRadius);
         break;
-    case Tool::SerialNumber:
-        stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_serialNumberColorEditor);
+    case Tool::SequenceNumber:
+        stageComponent(kRoleForegroundColor, kSignatureForegroundColor,
+                       m_sequenceNumberColorEditor);
         stageWidget(kRoleSerialType);
         stageWidget(kRoleSerialNumericType);
         stageWidget(kRoleSerialValue);
-        stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
-        stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
+        stageComponent(kRoleTextFont, kSignatureTextFont, m_sequenceNumberFontEditor);
+        stageComponent(kRoleTextFill, kSignatureTextFill, m_sequenceNumberFillEditor);
         break;
     case Tool::AutoFilter:
         stageWidget(kRoleFilterMode);
@@ -1517,10 +1519,10 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleFilterType);
         stageWidget(kRoleFilterIntensity);
         break;
-    case Tool::PenFilter:
+    case Tool::BrushFilter:
         stageWidget(kRoleFilterMode);
         stageWidget(kRoleFilterType);
-        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
+        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushFilterStrokeWidthEditor);
         stageWidget(kRoleFilterIntensity);
         break;
     case Tool::Eraser:
@@ -1680,7 +1682,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     const bool includeLineTypeEditor = styleTool == ScreenshotToolPalette::Tool::Line;
     const QString controlsObjectName = styleTool == ScreenshotToolPalette::Tool::Line
                                            ? QStringLiteral("screenshotLineStyleControls")
-                                       : styleTool == ScreenshotToolPalette::Tool::FreeDraw
+                                       : styleTool == ScreenshotToolPalette::Tool::Brush
                                            ? QStringLiteral("screenshotFreeDrawStyleControls")
                                        : styleTool == ScreenshotToolPalette::Tool::SpeechBubble
                                            ? QStringLiteral("screenshotSpeechBubbleStyleControls")
@@ -1762,7 +1764,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     tagEditor(m_shapeStrokeWidthEditor.get(), kRoleOutlineWidth, kSignatureStrokeWidth);
     registerEditor(m_shapeStrokeWidthEditor.get());
 
-    if (styleTool == ScreenshotToolPalette::Tool::FreeDraw) {
+    if (styleTool == ScreenshotToolPalette::Tool::Brush) {
         if (host.addGroupSeparator) {
             host.addGroupSeparator(layout);
         }
@@ -3143,7 +3145,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         return result;
     }
     const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
-        {static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight),
+        {static_cast<int>(ScreenshotToolPalette::Tool::BrushHighlight),
          QStringLiteral("Brush highlight"), outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleHighlight),
          QStringLiteral("Rectangle highlight"), custom_outlined_icons::ShapeRectangle()},
@@ -3226,7 +3228,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         if (modeSelector == nullptr && host.createModeSelector) {
             modeSelector = host.createModeSelector(
                 rectangleControls, QStringLiteral("screenshotHighlightModeSelector"),
-                static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight), modes);
+                static_cast<int>(ScreenshotToolPalette::Tool::BrushHighlight), modes);
         }
         if (modeSelector != nullptr) {
             modeSelector->setObjectName(QStringLiteral("screenshotHighlightModeSelector"));
@@ -3243,69 +3245,69 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
     }
 
     if (static_cast<ScreenshotToolPalette::Tool>(tool) ==
-        ScreenshotToolPalette::Tool::PenHighlight) {
+        ScreenshotToolPalette::Tool::BrushHighlight) {
         QWidget* penControls =
             createRowWidget(panel, QStringLiteral("screenshotPenHighlightStyleControls"), host);
         auto* penLayout = static_cast<QHBoxLayout*>(penControls->layout());
 
-        ScreenshotToolPaletteColorEditorConfig penHighlightColorConfig;
-        penHighlightColorConfig.accessibleName = QStringLiteral("Brush highlight color");
-        penHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
-        penHighlightColorConfig.presetSource =
+        ScreenshotToolPaletteColorEditorConfig brushHighlightColorConfig;
+        brushHighlightColorConfig.accessibleName = QStringLiteral("Brush highlight color");
+        brushHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        brushHighlightColorConfig.presetSource =
             snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
-        penHighlightColorConfig.presetTooltip = [](const QColor& color) {
+        brushHighlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Brush highlight color %1")
                 .arg(color.name());
         };
         if (auto reused = takeReusableEditor(kRoleHighlightColor, kSignatureHighlightColor,
                                              penLayout, penControls)) {
-            m_penHighlightColorEditor.reset(
+            m_brushHighlightColorEditor.reset(
                 static_cast<ScreenshotToolPaletteColorEditor*>(reused.release()));
-            m_penHighlightColorEditor->rebind(
-                penHighlightColorConfig,
-                [this](const QColor& color) { setPenHighlightColor(color); }, {});
+            m_brushHighlightColorEditor->rebind(
+                brushHighlightColorConfig,
+                [this](const QColor& color) { setBrushHighlightColor(color); }, {});
         } else {
-            m_penHighlightColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
-            m_penHighlightColorEditor->build(
-                penLayout, penControls, penControls, penHighlightColorConfig,
-                m_state.m_penHighlightStyle.stroke,
-                [this](const QColor& color) { setPenHighlightColor(color); }, {}, editorServices(),
-                metrics);
+            m_brushHighlightColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
+            m_brushHighlightColorEditor->build(
+                penLayout, penControls, penControls, brushHighlightColorConfig,
+                m_state.m_brushHighlightStyle.stroke,
+                [this](const QColor& color) { setBrushHighlightColor(color); }, {},
+                editorServices(), metrics);
         }
-        tagEditor(m_penHighlightColorEditor.get(), kRoleHighlightColor, kSignatureHighlightColor);
-        registerEditor(m_penHighlightColorEditor.get());
+        tagEditor(m_brushHighlightColorEditor.get(), kRoleHighlightColor, kSignatureHighlightColor);
+        registerEditor(m_brushHighlightColorEditor.get());
 
         if (host.addGroupSeparator) {
             host.addGroupSeparator(penLayout);
         }
-        ScreenshotToolPaletteNumericPresetEditorConfig penHighlightWidthConfig =
+        ScreenshotToolPaletteNumericPresetEditorConfig brushHighlightWidthConfig =
             snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
                 QStringLiteral("Current brush highlight width"), QString(),
                 "Brush highlight width %1 (%2px)");
         if (auto reused =
                 takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, penLayout, penControls)) {
-            m_penHighlightStrokeWidthEditor.reset(
+            m_brushHighlightStrokeWidthEditor.reset(
                 static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
-            m_penHighlightStrokeWidthEditor->rebind(
-                penHighlightWidthConfig, {},
-                [this](double value) { setPenHighlightStrokeWidth(value); });
+            m_brushHighlightStrokeWidthEditor->rebind(
+                brushHighlightWidthConfig, {},
+                [this](double value) { setBrushHighlightStrokeWidth(value); });
         } else {
-            m_penHighlightStrokeWidthEditor =
+            m_brushHighlightStrokeWidthEditor =
                 std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
-            m_penHighlightStrokeWidthEditor->build(
-                penLayout, penControls, penControls, penHighlightWidthConfig,
-                m_state.m_penHighlightStyle.strokeWidth, {},
-                [this](double value) { setPenHighlightStrokeWidth(value); }, metrics);
+            m_brushHighlightStrokeWidthEditor->build(
+                penLayout, penControls, penControls, brushHighlightWidthConfig,
+                m_state.m_brushHighlightStyle.strokeWidth, {},
+                [this](double value) { setBrushHighlightStrokeWidth(value); }, metrics);
         }
-        tagEditor(m_penHighlightStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
-        registerEditor(m_penHighlightStrokeWidthEditor.get());
+        tagEditor(m_brushHighlightStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
+        registerEditor(m_brushHighlightStrokeWidthEditor.get());
 
         QWidget* modeSelector =
             takeReusableWidget(kRoleHighlightMode, kSignatureHighlightMode, penLayout, penControls);
         if (modeSelector == nullptr && host.createModeSelector) {
             modeSelector = host.createModeSelector(
                 penControls, QStringLiteral("screenshotHighlightModeSelector"),
-                static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight), modes);
+                static_cast<int>(ScreenshotToolPalette::Tool::BrushHighlight), modes);
         }
         if (modeSelector != nullptr) {
             modeSelector->setObjectName(QStringLiteral("screenshotHighlightModeSelector"));
@@ -3317,8 +3319,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         if (host.insertGroupSpacing) {
             host.insertGroupSpacing(penLayout, 1);
         }
-        registerPenHighlightEntries();
-        updatePenHighlightStyleControls();
+        registerBrushHighlightEntries();
+        updateBrushHighlightStyleControls();
         result.penControls = penControls;
     }
     return result;
@@ -3640,7 +3642,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     return controls;
 }
 
-QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
+QWidget* ScreenshotToolPaletteStyleControls::buildSequenceNumberFamily(
     QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.serial_number");
@@ -3651,42 +3653,43 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         createRowWidget(panel, QStringLiteral("screenshotSerialNumberStyleControls"), host);
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
 
-    ScreenshotToolPaletteColorEditorConfig serialNumberColorConfig;
-    serialNumberColorConfig.accessibleName = QStringLiteral("Sequence number color");
-    serialNumberColorConfig.presetValues = m_state.m_textStyle.colorValues();
-    serialNumberColorConfig.presetSource =
+    ScreenshotToolPaletteColorEditorConfig sequenceNumberColorConfig;
+    sequenceNumberColorConfig.accessibleName = QStringLiteral("Sequence number color");
+    sequenceNumberColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    sequenceNumberColorConfig.presetSource =
         snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
-    serialNumberColorConfig.observePopup = true;
-    serialNumberColorConfig.setRenderingStyle = [this](SnowCanvasStrokeRenderingStyle style) {
-        setSerialNumberStrokeRenderingStyle(style);
+    sequenceNumberColorConfig.observePopup = true;
+    sequenceNumberColorConfig.setRenderingStyle = [this](SnowCanvasStrokeRenderingStyle style) {
+        setSequenceNumberStrokeRenderingStyle(style);
     };
-    serialNumberColorConfig.presetTooltip = [](const QColor& color) {
+    sequenceNumberColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Sequence number color %1").arg(color.name());
     };
     if (auto reused =
             takeReusableEditor(kRoleForegroundColor, kSignatureForegroundColor, layout, controls)) {
-        m_serialNumberColorEditor.reset(
+        m_sequenceNumberColorEditor.reset(
             static_cast<ScreenshotToolPaletteColorEditor*>(reused.release()));
-        m_serialNumberColorEditor->rebind(
-            serialNumberColorConfig, [this](const QColor& color) { setSerialNumberColor(color); },
-            {});
+        m_sequenceNumberColorEditor->rebind(
+            sequenceNumberColorConfig,
+            [this](const QColor& color) { setSequenceNumberColor(color); }, {});
     } else {
-        m_serialNumberColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
-        m_serialNumberColorEditor->build(
-            layout, controls, controls, serialNumberColorConfig, m_state.m_serialNumberStyle.color,
-            [this](const QColor& color) { setSerialNumberColor(color); }, {}, editorServices(),
+        m_sequenceNumberColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
+        m_sequenceNumberColorEditor->build(
+            layout, controls, controls, sequenceNumberColorConfig,
+            m_state.m_sequenceNumberStyle.color,
+            [this](const QColor& color) { setSequenceNumberColor(color); }, {}, editorServices(),
             metrics);
     }
-    tagEditor(m_serialNumberColorEditor.get(), kRoleForegroundColor, kSignatureForegroundColor);
-    registerEditor(m_serialNumberColorEditor.get());
+    tagEditor(m_sequenceNumberColorEditor.get(), kRoleForegroundColor, kSignatureForegroundColor);
+    registerEditor(m_sequenceNumberColorEditor.get());
 
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
     }
 
-    ScreenshotToolPaletteRadioEditorConfig serialNumberTypeConfig;
-    serialNumberTypeConfig.objectName = QStringLiteral("screenshotSerialNumberTypeButtonGroup");
-    serialNumberTypeConfig.options = {
+    ScreenshotToolPaletteRadioEditorConfig sequenceNumberTypeConfig;
+    sequenceNumberTypeConfig.objectName = QStringLiteral("screenshotSerialNumberTypeButtonGroup");
+    sequenceNumberTypeConfig.options = {
         {static_cast<int>(SnowCanvasSerialNumberType::OutlinedCircle),
          ScreenshotToolPaletteTranslationText(
              QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Outlined circle")),
@@ -3707,33 +3710,34 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
          ScreenshotToolPaletteTranslationText(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Circle")),
          custom_outlined_icons::SequenceNumberCircle()},
     };
-    serialNumberTypeConfig.initialId = static_cast<int>(m_state.m_serialNumberStyle.type);
-    m_serialNumberTypeControlsContainer =
+    sequenceNumberTypeConfig.initialId = static_cast<int>(m_state.m_sequenceNumberStyle.type);
+    m_sequenceNumberTypeControlsContainer =
         takeReusableWidget(kRoleSerialType, kSignatureSerialType, layout, controls);
-    if (m_serialNumberTypeControlsContainer == nullptr) {
+    if (m_sequenceNumberTypeControlsContainer == nullptr) {
         const ScreenshotToolPaletteRadioEditor typeEditor =
-            createScreenshotToolPaletteRadioEditor(controls, serialNumberTypeConfig, metrics);
-        m_serialNumberTypeControlsContainer = typeEditor.container;
-        m_serialNumberTypeButtonGroup = typeEditor.group;
-        layout->addWidget(m_serialNumberTypeControlsContainer);
+            createScreenshotToolPaletteRadioEditor(controls, sequenceNumberTypeConfig, metrics);
+        m_sequenceNumberTypeControlsContainer = typeEditor.container;
+        m_sequenceNumberTypeButtonGroup = typeEditor.group;
+        layout->addWidget(m_sequenceNumberTypeControlsContainer);
     } else {
-        m_serialNumberTypeButtonGroup =
-            m_serialNumberTypeControlsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
+        m_sequenceNumberTypeButtonGroup =
+            m_sequenceNumberTypeControlsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
     }
-    m_serialNumberTypeControlsContainer->setObjectName(serialNumberTypeConfig.objectName);
-    m_serialNumberTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
-    m_serialNumberTypeControlsContainer->setProperty("screenshotStyleEditorRole", kRoleSerialType);
-    m_serialNumberTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
-                                                     kSignatureSerialType);
-    configureScreenshotToolPaletteTooltip(m_serialNumberTypeControlsContainer,
+    m_sequenceNumberTypeControlsContainer->setObjectName(sequenceNumberTypeConfig.objectName);
+    m_sequenceNumberTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
+    m_sequenceNumberTypeControlsContainer->setProperty("screenshotStyleEditorRole",
+                                                       kRoleSerialType);
+    m_sequenceNumberTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
+                                                       kSignatureSerialType);
+    configureScreenshotToolPaletteTooltip(m_sequenceNumberTypeControlsContainer,
                                           ScreenshotToolPaletteTranslationText(QT_TRANSLATE_NOOP(
                                               "ScreenshotToolPalette", "Sequence number type")));
-    QObject::connect(m_serialNumberTypeButtonGroup,
+    QObject::connect(m_sequenceNumberTypeButtonGroup,
                      &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
                      controlCallbackContext(controls), [this](int id) {
                          if (id >= static_cast<int>(SnowCanvasSerialNumberType::OutlinedCircle) &&
                              id <= static_cast<int>(SnowCanvasSerialNumberType::Circle)) {
-                             setSerialNumberType(static_cast<SnowCanvasSerialNumberType>(id));
+                             setSequenceNumberType(static_cast<SnowCanvasSerialNumberType>(id));
                          }
                      });
 
@@ -3741,10 +3745,10 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         host.addGroupSeparator(layout);
     }
 
-    ScreenshotToolPaletteRadioEditorConfig serialNumberNumericTypeConfig;
-    serialNumberNumericTypeConfig.objectName =
+    ScreenshotToolPaletteRadioEditorConfig sequenceNumberNumericTypeConfig;
+    sequenceNumberNumericTypeConfig.objectName =
         QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup");
-    serialNumberNumericTypeConfig.options = {
+    sequenceNumberNumericTypeConfig.options = {
         {static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic),
          ScreenshotToolPaletteTranslationText(
              QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arabic numerals")),
@@ -3766,137 +3770,138 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
              QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Chinese numerals")),
          custom_outlined_icons::SequenceNumberNumericChinese()},
     };
-    serialNumberNumericTypeConfig.initialId =
-        static_cast<int>(m_state.m_serialNumberStyle.numericType);
-    m_serialNumberNumericTypeControlsContainer =
+    sequenceNumberNumericTypeConfig.initialId =
+        static_cast<int>(m_state.m_sequenceNumberStyle.numericType);
+    m_sequenceNumberNumericTypeControlsContainer =
         takeReusableWidget(kRoleSerialNumericType, kSignatureSerialNumericType, layout, controls);
-    if (m_serialNumberNumericTypeControlsContainer == nullptr) {
+    if (m_sequenceNumberNumericTypeControlsContainer == nullptr) {
         const ScreenshotToolPaletteRadioEditor typeEditor = createScreenshotToolPaletteRadioEditor(
-            controls, serialNumberNumericTypeConfig, metrics);
-        m_serialNumberNumericTypeControlsContainer = typeEditor.container;
-        m_serialNumberNumericTypeButtonGroup = typeEditor.group;
-        layout->addWidget(m_serialNumberNumericTypeControlsContainer);
+            controls, sequenceNumberNumericTypeConfig, metrics);
+        m_sequenceNumberNumericTypeControlsContainer = typeEditor.container;
+        m_sequenceNumberNumericTypeButtonGroup = typeEditor.group;
+        layout->addWidget(m_sequenceNumberNumericTypeControlsContainer);
     } else {
-        m_serialNumberNumericTypeButtonGroup =
-            m_serialNumberNumericTypeControlsContainer
+        m_sequenceNumberNumericTypeButtonGroup =
+            m_sequenceNumberNumericTypeControlsContainer
                 ->findChild<adqt::widgets::AdRadioButtonGroup*>();
     }
-    m_serialNumberNumericTypeControlsContainer->setObjectName(
-        serialNumberNumericTypeConfig.objectName);
-    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
-    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRole",
-                                                            kRoleSerialNumericType);
-    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
-                                                            kSignatureSerialNumericType);
+    m_sequenceNumberNumericTypeControlsContainer->setObjectName(
+        sequenceNumberNumericTypeConfig.objectName);
+    m_sequenceNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
+    m_sequenceNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRole",
+                                                              kRoleSerialNumericType);
+    m_sequenceNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
+                                                              kSignatureSerialNumericType);
     configureScreenshotToolPaletteTooltip(
-        m_serialNumberNumericTypeControlsContainer,
+        m_sequenceNumberNumericTypeControlsContainer,
         ScreenshotToolPaletteTranslationText(
             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number numeric type")));
-    QObject::connect(
-        m_serialNumberNumericTypeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
-        controlCallbackContext(controls), [this](int id) {
-            if (id >= static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic) &&
-                id <= static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese)) {
-                setSerialNumberNumericType(static_cast<SnowCanvasSerialNumberNumericType>(id));
-            }
-        });
+    QObject::connect(m_sequenceNumberNumericTypeButtonGroup,
+                     &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+                     controlCallbackContext(controls), [this](int id) {
+                         if (id >= static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic) &&
+                             id <= static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese)) {
+                             setSequenceNumberNumericType(
+                                 static_cast<SnowCanvasSerialNumberNumericType>(id));
+                         }
+                     });
 
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
     }
 
-    m_serialNumberEditor = qobject_cast<adqt::widgets::AdLineEdit*>(
+    m_sequenceNumberEditor = qobject_cast<adqt::widgets::AdLineEdit*>(
         takeReusableWidget(kRoleSerialValue, kSignatureSerialValue, layout, controls));
-    if (m_serialNumberEditor == nullptr) {
-        m_serialNumberEditor = new adqt::widgets::AdLineEdit(controls);
-        m_serialNumberEditor->setValidator(new QRegularExpressionValidator(
-            QRegularExpression(QStringLiteral("[0-9]*")), m_serialNumberEditor));
-        layout->addWidget(m_serialNumberEditor);
+    if (m_sequenceNumberEditor == nullptr) {
+        m_sequenceNumberEditor = new adqt::widgets::AdLineEdit(controls);
+        m_sequenceNumberEditor->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("[0-9]*")), m_sequenceNumberEditor));
+        layout->addWidget(m_sequenceNumberEditor);
     }
     configureScreenshotToolPaletteTooltip(
-        m_serialNumberEditor,
+        m_sequenceNumberEditor,
         ScreenshotToolPaletteTranslationText("Sequence number (scroll to adjust)"));
-    setScreenshotToolPaletteAccessibleNameSource(m_serialNumberEditor,
+    setScreenshotToolPaletteAccessibleNameSource(m_sequenceNumberEditor,
                                                  "Sequence number (scroll to adjust)");
-    m_serialNumberEditor->setAccessibleName(
+    m_sequenceNumberEditor->setAccessibleName(
         QCoreApplication::translate("ScreenshotToolPalette", "Sequence number (scroll to adjust)"));
-    setScreenshotToolPalettePlaceholderSource(m_serialNumberEditor, "Mixed");
-    m_serialNumberEditor->setPlaceholderText(
+    setScreenshotToolPalettePlaceholderSource(m_sequenceNumberEditor, "Mixed");
+    m_sequenceNumberEditor->setPlaceholderText(
         QCoreApplication::translate("ScreenshotToolPalette", "Mixed"));
-    m_serialNumberEditor->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Small);
-    m_serialNumberEditor->setFocusPolicy(Qt::ClickFocus);
-    m_serialNumberEditor->setVariant(adqt::widgets::AdLineEdit::Variant::Underlined);
-    m_serialNumberEditor->setPrefixIconRef(outlined_icons::Number());
-    m_serialNumberEditor->setFixedSize(
-        qMax(1, qRound(kSerialNumberInputWidth * metrics.physicalScale)),
+    m_sequenceNumberEditor->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Small);
+    m_sequenceNumberEditor->setFocusPolicy(Qt::ClickFocus);
+    m_sequenceNumberEditor->setVariant(adqt::widgets::AdLineEdit::Variant::Underlined);
+    m_sequenceNumberEditor->setPrefixIconRef(outlined_icons::Number());
+    m_sequenceNumberEditor->setFixedSize(
+        qMax(1, qRound(kSequenceNumberInputWidth * metrics.physicalScale)),
         qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-    stampScreenshotToolbarReferenceWidth(m_serialNumberEditor, kSerialNumberInputWidth);
-    QObject::connect(m_serialNumberEditor, &QLineEdit::editingFinished,
+    stampScreenshotToolbarReferenceWidth(m_sequenceNumberEditor, kSequenceNumberInputWidth);
+    QObject::connect(m_sequenceNumberEditor, &QLineEdit::editingFinished,
                      controlCallbackContext(controls), [this]() {
-                         if (m_serialNumberEditor == nullptr) {
+                         if (m_sequenceNumberEditor == nullptr) {
                              return;
                          }
                          bool valid = false;
-                         const qint64 number = m_serialNumberEditor->text().toLongLong(&valid);
+                         const qint64 number = m_sequenceNumberEditor->text().toLongLong(&valid);
                          if (valid && number >= 0) {
-                             setSerialNumber(number);
+                             setSequenceNumber(number);
                          }
-                         updateSerialNumberStyleControls(SerialNumberValueRefresh);
+                         updateSequenceNumberStyleControls(SequenceNumberValueRefresh);
                      });
-    m_serialNumberEditor->setProperty("screenshotStyleEditorRoot", true);
-    m_serialNumberEditor->setProperty("screenshotStyleEditorRole", kRoleSerialValue);
-    m_serialNumberEditor->setProperty("screenshotStyleEditorSignature", kSignatureSerialValue);
-    addToolbarSpacing(layout, kSerialNumberTrailingSpacing, metrics);
+    m_sequenceNumberEditor->setProperty("screenshotStyleEditorRoot", true);
+    m_sequenceNumberEditor->setProperty("screenshotStyleEditorRole", kRoleSerialValue);
+    m_sequenceNumberEditor->setProperty("screenshotStyleEditorSignature", kSignatureSerialValue);
+    addToolbarSpacing(layout, kSequenceNumberTrailingSpacing, metrics);
 
-    ScreenshotToolPaletteFontEditorConfig serialNumberFontConfig;
-    serialNumberFontConfig.accessibleName = QStringLiteral("Sequence number font family");
-    serialNumberFontConfig.summaryTooltip = QStringLiteral("Current sequence number font size");
-    serialNumberFontConfig.sizeValues = m_state.m_textStyle.fontSizeValues();
-    serialNumberFontConfig.observePopup = true;
-    serialNumberFontConfig.presetTooltip = [](int, double value) {
+    ScreenshotToolPaletteFontEditorConfig sequenceNumberFontConfig;
+    sequenceNumberFontConfig.accessibleName = QStringLiteral("Sequence number font family");
+    sequenceNumberFontConfig.summaryTooltip = QStringLiteral("Current sequence number font size");
+    sequenceNumberFontConfig.sizeValues = m_state.m_textStyle.fontSizeValues();
+    sequenceNumberFontConfig.observePopup = true;
+    sequenceNumberFontConfig.presetTooltip = [](int, double value) {
         return ScreenshotToolPaletteTranslationText("Sequence number font size %1px")
             .arg(value, 0, 'g', 3);
     };
     if (auto reused = takeReusableEditor(kRoleTextFont, kSignatureTextFont, layout, controls)) {
-        m_serialNumberFontEditor.reset(
+        m_sequenceNumberFontEditor.reset(
             static_cast<ScreenshotToolPaletteFontEditor*>(reused.release()));
-        m_serialNumberFontEditor->rebind(
-            serialNumberFontConfig, [this]() { cycleSerialNumberFontSize(); },
-            [this](double value) { setSerialNumberFontSize(value); },
-            [this](const QString& value) { setSerialNumberFontFamily(value); });
+        m_sequenceNumberFontEditor->rebind(
+            sequenceNumberFontConfig, [this]() { cycleSequenceNumberFontSize(); },
+            [this](double value) { setSequenceNumberFontSize(value); },
+            [this](const QString& value) { setSequenceNumberFontFamily(value); });
     } else {
-        m_serialNumberFontEditor = std::make_unique<ScreenshotToolPaletteFontEditor>();
-        m_serialNumberFontEditor->build(
-            layout, controls, controls, serialNumberFontConfig,
-            m_state.m_serialNumberStyle.fontSize, m_state.m_serialNumberStyle.fontFamily,
-            [this]() { cycleSerialNumberFontSize(); },
-            [this](double value) { setSerialNumberFontSize(value); },
-            [this](const QString& value) { setSerialNumberFontFamily(value); }, editorServices(),
+        m_sequenceNumberFontEditor = std::make_unique<ScreenshotToolPaletteFontEditor>();
+        m_sequenceNumberFontEditor->build(
+            layout, controls, controls, sequenceNumberFontConfig,
+            m_state.m_sequenceNumberStyle.fontSize, m_state.m_sequenceNumberStyle.fontFamily,
+            [this]() { cycleSequenceNumberFontSize(); },
+            [this](double value) { setSequenceNumberFontSize(value); },
+            [this](const QString& value) { setSequenceNumberFontFamily(value); }, editorServices(),
             metrics);
     }
-    tagEditor(m_serialNumberFontEditor.get(), kRoleTextFont, kSignatureTextFont);
-    registerEditor(m_serialNumberFontEditor.get());
+    tagEditor(m_sequenceNumberFontEditor.get(), kRoleTextFont, kSignatureTextFont);
+    registerEditor(m_sequenceNumberFontEditor.get());
 
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
     }
-    ScreenshotToolPaletteFillEditorConfig serialNumberFillConfig;
-    serialNumberFillConfig.accessibleName = QStringLiteral("Sequence number background color");
-    serialNumberFillConfig.popupObjectName = QStringLiteral("screenshotSerialNumberFillOptions");
-    serialNumberFillConfig.presetRowObjectName =
+    ScreenshotToolPaletteFillEditorConfig sequenceNumberFillConfig;
+    sequenceNumberFillConfig.accessibleName = QStringLiteral("Sequence number background color");
+    sequenceNumberFillConfig.popupObjectName = QStringLiteral("screenshotSerialNumberFillOptions");
+    sequenceNumberFillConfig.presetRowObjectName =
         QStringLiteral("screenshotSerialNumberFillColorPresets");
-    serialNumberFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
-    serialNumberFillConfig.presetSource =
+    sequenceNumberFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    sequenceNumberFillConfig.presetSource =
         snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
-    serialNumberFillConfig.observePopup = true;
-    serialNumberFillConfig.colorTooltip = [](const QColor& color) {
+    sequenceNumberFillConfig.observePopup = true;
+    sequenceNumberFillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
                    ? ScreenshotToolPaletteTranslationText(
                          "Sequence number background color transparent")
                    : ScreenshotToolPaletteTranslationText("Sequence number background color %1")
                          .arg(color.name());
     };
-    serialNumberFillConfig.styleTooltip = [](SnowCanvasFillStyle style) {
+    sequenceNumberFillConfig.styleTooltip = [](SnowCanvasFillStyle style) {
         return style == SnowCanvasFillStyle::Border
                    ? ScreenshotToolPaletteTranslationText("No fill")
                : style == SnowCanvasFillStyle::CrossLine
@@ -3906,26 +3911,26 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
                    : ScreenshotToolPaletteTranslationText("Solid sequence number background");
     };
     if (auto reused = takeReusableEditor(kRoleTextFill, kSignatureTextFill, layout, controls)) {
-        m_serialNumberFillEditor.reset(
+        m_sequenceNumberFillEditor.reset(
             static_cast<ScreenshotToolPaletteFillEditor*>(reused.release()));
-        m_serialNumberFillEditor->rebind(
-            serialNumberFillConfig,
-            [this](const QColor& color) { setSerialNumberFillColor(color); },
-            [this](SnowCanvasFillStyle fillStyle) { setSerialNumberFillStyle(fillStyle); });
+        m_sequenceNumberFillEditor->rebind(
+            sequenceNumberFillConfig,
+            [this](const QColor& color) { setSequenceNumberFillColor(color); },
+            [this](SnowCanvasFillStyle fillStyle) { setSequenceNumberFillStyle(fillStyle); });
     } else {
-        m_serialNumberFillEditor = std::make_unique<ScreenshotToolPaletteFillEditor>();
-        m_serialNumberFillEditor->build(
-            layout, controls, controls, serialNumberFillConfig, m_state.m_serialNumberStyle.fill,
-            m_state.m_serialNumberStyle.fillStyle,
-            [this](const QColor& color) { setSerialNumberFillColor(color); },
-            [this](SnowCanvasFillStyle fillStyle) { setSerialNumberFillStyle(fillStyle); },
+        m_sequenceNumberFillEditor = std::make_unique<ScreenshotToolPaletteFillEditor>();
+        m_sequenceNumberFillEditor->build(
+            layout, controls, controls, sequenceNumberFillConfig,
+            m_state.m_sequenceNumberStyle.fill, m_state.m_sequenceNumberStyle.fillStyle,
+            [this](const QColor& color) { setSequenceNumberFillColor(color); },
+            [this](SnowCanvasFillStyle fillStyle) { setSequenceNumberFillStyle(fillStyle); },
             editorServices(), metrics);
     }
-    tagEditor(m_serialNumberFillEditor.get(), kRoleTextFill, kSignatureTextFill);
-    registerEditor(m_serialNumberFillEditor.get());
+    tagEditor(m_sequenceNumberFillEditor.get(), kRoleTextFill, kSignatureTextFill);
+    registerEditor(m_sequenceNumberFillEditor.get());
 
-    registerSerialNumberEntries();
-    updateSerialNumberStyleControls();
+    registerSequenceNumberEntries();
+    updateSequenceNumberStyleControls();
     return controls;
 }
 
@@ -4345,7 +4350,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     auto* layout = static_cast<QHBoxLayout*>(result.controls->layout());
 
     const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
-        {static_cast<int>(ScreenshotToolPalette::Tool::PenFilter), QStringLiteral("Brush filter"),
+        {static_cast<int>(ScreenshotToolPalette::Tool::BrushFilter), QStringLiteral("Brush filter"),
          outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleFilter),
          QStringLiteral("Rectangle filter"), custom_outlined_icons::ShapeRectangle()},
@@ -4357,7 +4362,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     if (modeSelector == nullptr && host.createModeSelector) {
         modeSelector = host.createModeSelector(
             result.controls, QStringLiteral("screenshotFilterModeSelector"),
-            static_cast<int>(ScreenshotToolPalette::Tool::PenFilter), modes);
+            static_cast<int>(ScreenshotToolPalette::Tool::BrushFilter), modes);
     }
     if (modeSelector != nullptr) {
         modeSelector->setObjectName(QStringLiteral("screenshotFilterModeSelector"));
@@ -4420,30 +4425,30 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     }
 
     if (config.includeStrokeWidth) {
-        ScreenshotToolPaletteNumericPresetEditorConfig penFilterWidthConfig =
+        ScreenshotToolPaletteNumericPresetEditorConfig brushFilterWidthConfig =
             snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
                 QStringLiteral("Current brush filter width"),
                 QStringLiteral("screenshotPenFilterStrokeWidthSummary"),
                 "Brush filter width %1 (%2px)");
-        penFilterWidthConfig.presetObjectName = [](double value) {
+        brushFilterWidthConfig.presetObjectName = [](double value) {
             return QStringLiteral("screenshotPenFilterStrokeWidth%1").arg(qRound(value));
         };
         if (auto reused = takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, layout,
                                              result.controls)) {
-            m_penFilterStrokeWidthEditor.reset(
+            m_brushFilterStrokeWidthEditor.reset(
                 static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
-            m_penFilterStrokeWidthEditor->rebind(penFilterWidthConfig, callbacks.cycleStrokeWidth,
-                                                 callbacks.setStrokeWidth);
+            m_brushFilterStrokeWidthEditor->rebind(
+                brushFilterWidthConfig, callbacks.cycleStrokeWidth, callbacks.setStrokeWidth);
         } else {
-            m_penFilterStrokeWidthEditor =
+            m_brushFilterStrokeWidthEditor =
                 std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
-            m_penFilterStrokeWidthEditor->build(layout, result.controls, result.controls,
-                                                penFilterWidthConfig, config.initialStrokeWidth,
-                                                callbacks.cycleStrokeWidth,
-                                                callbacks.setStrokeWidth, metrics);
+            m_brushFilterStrokeWidthEditor->build(layout, result.controls, result.controls,
+                                                  brushFilterWidthConfig, config.initialStrokeWidth,
+                                                  callbacks.cycleStrokeWidth,
+                                                  callbacks.setStrokeWidth, metrics);
         }
-        tagEditor(m_penFilterStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
-        registerEditor(m_penFilterStrokeWidthEditor.get());
+        tagEditor(m_brushFilterStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
+        registerEditor(m_brushFilterStrokeWidthEditor.get());
         if (host.addGroupSeparator) {
             host.addGroupSeparator(layout);
         }
@@ -4640,23 +4645,24 @@ void ScreenshotToolPaletteStyleControls::registerHighlightEntries() {
     };
 }
 
-void ScreenshotToolPaletteStyleControls::registerPenHighlightEntries() {
+void ScreenshotToolPaletteStyleControls::registerBrushHighlightEntries() {
     const auto mixed = [this](quint32 property) { return hasMixedProperty(property); };
-    m_penHighlightEntries = {
+    m_brushHighlightEntries = {
         {ShapeStrokeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.pen_highlight.color_refresh");
-             if (m_penHighlightColorEditor != nullptr) {
-                 m_penHighlightColorEditor->update(m_state.m_penHighlightStyle.stroke,
-                                                   mixed(SnowCanvasShapeStylePropertyStrokeColor));
+             if (m_brushHighlightColorEditor != nullptr) {
+                 m_brushHighlightColorEditor->update(
+                     m_state.m_brushHighlightStyle.stroke,
+                     mixed(SnowCanvasShapeStylePropertyStrokeColor));
              }
          }},
         {ShapeStrokeWidthRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.pen_highlight.width_refresh");
-             if (m_penHighlightStrokeWidthEditor != nullptr) {
-                 m_penHighlightStrokeWidthEditor->update(
-                     m_state.m_penHighlightStyle.strokeWidth,
+             if (m_brushHighlightStrokeWidthEditor != nullptr) {
+                 m_brushHighlightStrokeWidthEditor->update(
+                     m_state.m_brushHighlightStyle.strokeWidth,
                      mixed(SnowCanvasShapeStylePropertyStrokeWidth));
              }
          }},
@@ -4957,112 +4963,116 @@ void ScreenshotToolPaletteStyleControls::registerTextEntries() {
     };
 }
 
-void ScreenshotToolPaletteStyleControls::registerSerialNumberEntries() {
+void ScreenshotToolPaletteStyleControls::registerSequenceNumberEntries() {
     const auto mixed = [this](quint32 property) {
-        return (m_state.m_serialNumberStyleMixed & property) != 0;
+        return (m_state.m_sequenceNumberStyleMixed & property) != 0;
     };
-    m_serialNumberEntries = {
-        {SerialNumberColorRefresh,
+    m_sequenceNumberEntries = {
+        {SequenceNumberColorRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.color_refresh");
-             if (m_serialNumberColorEditor != nullptr) {
-                 m_serialNumberColorEditor->update(m_state.m_serialNumberStyle.color,
-                                                   mixed(SnowCanvasSerialNumberStyleMixedColor));
+             if (m_sequenceNumberColorEditor != nullptr) {
+                 m_sequenceNumberColorEditor->update(m_state.m_sequenceNumberStyle.color,
+                                                     mixed(SnowCanvasSerialNumberStyleMixedColor));
              }
          }},
-        {SerialNumberStrokeRenderingRefresh | SerialNumberTypeRefresh,
+        {SequenceNumberStrokeRenderingRefresh | SequenceNumberTypeRefresh,
          [this, mixed]() {
-             if (m_serialNumberColorEditor != nullptr) {
-                 const auto type = m_state.m_serialNumberStyle.type;
-                 m_serialNumberColorEditor->updateRenderingStyle(
-                     m_state.m_serialNumberStyle.strokeRenderingStyle,
+             if (m_sequenceNumberColorEditor != nullptr) {
+                 const auto type = m_state.m_sequenceNumberStyle.type;
+                 m_sequenceNumberColorEditor->updateRenderingStyle(
+                     m_state.m_sequenceNumberStyle.strokeRenderingStyle,
                      mixed(SnowCanvasSerialNumberStyleMixedStrokeRenderingStyle),
                      mixed(SnowCanvasSerialNumberStyleMixedType) ||
                          type == SnowCanvasSerialNumberType::OutlinedCircle ||
                          type == SnowCanvasSerialNumberType::OutlinedSquare);
              }
          }},
-        {SerialNumberNumericTypeRefresh,
+        {SequenceNumberNumericTypeRefresh,
          [this, mixed]() {
-             if (m_serialNumberNumericTypeButtonGroup != nullptr) {
-                 const QSignalBlocker blocker(m_serialNumberNumericTypeButtonGroup);
-                 m_serialNumberNumericTypeButtonGroup->setCheckedId(
+             if (m_sequenceNumberNumericTypeButtonGroup != nullptr) {
+                 const QSignalBlocker blocker(m_sequenceNumberNumericTypeButtonGroup);
+                 m_sequenceNumberNumericTypeButtonGroup->setCheckedId(
                      mixed(SnowCanvasSerialNumberStyleMixedNumericType)
                          ? -1
-                         : static_cast<int>(m_state.m_serialNumberStyle.numericType));
+                         : static_cast<int>(m_state.m_sequenceNumberStyle.numericType));
              }
          }},
-        {SerialNumberTypeRefresh,
+        {SequenceNumberTypeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.type_refresh");
              const bool typeMixed = mixed(SnowCanvasSerialNumberStyleMixedType);
-             const bool supportsNumber = typeMixed || m_state.m_serialNumberStyle.type !=
+             const bool supportsNumber = typeMixed || m_state.m_sequenceNumberStyle.type !=
                                                           SnowCanvasSerialNumberType::Circle;
-             if (m_serialNumberNumericTypeControlsContainer != nullptr) {
-                 m_serialNumberNumericTypeControlsContainer->setEnabled(supportsNumber);
+             if (m_sequenceNumberNumericTypeControlsContainer != nullptr) {
+                 m_sequenceNumberNumericTypeControlsContainer->setEnabled(supportsNumber);
              }
-             if (m_serialNumberEditor != nullptr) {
-                 m_serialNumberEditor->setEnabled(supportsNumber);
+             if (m_sequenceNumberEditor != nullptr) {
+                 m_sequenceNumberEditor->setEnabled(supportsNumber);
              }
-             if (m_serialNumberFontEditor != nullptr &&
-                 m_serialNumberFontEditor->familySelect() != nullptr) {
-                 m_serialNumberFontEditor->familySelect()->setEnabled(supportsNumber);
+             if (m_sequenceNumberFontEditor != nullptr &&
+                 m_sequenceNumberFontEditor->familySelect() != nullptr) {
+                 m_sequenceNumberFontEditor->familySelect()->setEnabled(supportsNumber);
              }
-             if (m_serialNumberTypeButtonGroup != nullptr) {
-                 const QSignalBlocker blocker(m_serialNumberTypeButtonGroup);
-                 m_serialNumberTypeButtonGroup->setCheckedId(
-                     typeMixed ? -1 : static_cast<int>(m_state.m_serialNumberStyle.type));
+             if (m_sequenceNumberTypeButtonGroup != nullptr) {
+                 const QSignalBlocker blocker(m_sequenceNumberTypeButtonGroup);
+                 m_sequenceNumberTypeButtonGroup->setCheckedId(
+                     typeMixed ? -1 : static_cast<int>(m_state.m_sequenceNumberStyle.type));
              }
-             if (m_serialNumberFillEditor != nullptr &&
-                 m_serialNumberFillEditor->rootWidget() != nullptr) {
+             if (m_sequenceNumberFillEditor != nullptr &&
+                 m_sequenceNumberFillEditor->rootWidget() != nullptr) {
                  const bool solid =
-                     m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::SolidCircle ||
-                     m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::SolidSquare;
-                 m_serialNumberFillEditor->rootWidget()->setEnabled(typeMixed || !solid);
+                     m_state.m_sequenceNumberStyle.type ==
+                         SnowCanvasSerialNumberType::SolidCircle ||
+                     m_state.m_sequenceNumberStyle.type == SnowCanvasSerialNumberType::SolidSquare;
+                 m_sequenceNumberFillEditor->rootWidget()->setEnabled(typeMixed || !solid);
              }
          }},
-        {SerialNumberFillRefresh,
+        {SequenceNumberFillRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.fill_refresh");
-             if (m_serialNumberFillEditor != nullptr) {
-                 m_serialNumberFillEditor->update(m_state.m_serialNumberStyle.fill,
-                                                  m_state.m_serialNumberStyle.fillStyle,
-                                                  mixed(SnowCanvasSerialNumberStyleMixedFill),
-                                                  mixed(SnowCanvasSerialNumberStyleMixedFillStyle));
+             if (m_sequenceNumberFillEditor != nullptr) {
+                 m_sequenceNumberFillEditor->update(
+                     m_state.m_sequenceNumberStyle.fill, m_state.m_sequenceNumberStyle.fillStyle,
+                     mixed(SnowCanvasSerialNumberStyleMixedFill),
+                     mixed(SnowCanvasSerialNumberStyleMixedFillStyle));
              }
          }},
-        {SerialNumberValueRefresh,
+        {SequenceNumberValueRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.value_refresh");
-             if (m_serialNumberEditor != nullptr) {
-                 const QSignalBlocker blocker(m_serialNumberEditor);
-                 m_serialNumberEditor->setText(
+             if (m_sequenceNumberEditor != nullptr) {
+                 const QSignalBlocker blocker(m_sequenceNumberEditor);
+                 m_sequenceNumberEditor->setText(
                      mixed(SnowCanvasSerialNumberStyleMixedNumber)
                          ? QString()
-                         : QString::number(m_state.m_serialNumberStyle.number));
+                         : QString::number(m_state.m_sequenceNumberStyle.number));
              }
          }},
-        {SerialNumberFontSizeRefresh,
+        {SequenceNumberFontSizeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.font_size_refresh");
-             if (m_serialNumberFontEditor != nullptr) {
-                 m_serialNumberFontEditor->update(
-                     m_state.m_serialNumberStyle.fontSize, m_state.m_serialNumberStyle.fontFamily,
-                     mixed(SnowCanvasSerialNumberStyleMixedFontSize),
-                     mixed(SnowCanvasSerialNumberStyleMixedFontFamily), SerialNumberFontSizeRefresh,
-                     SerialNumberFontSizeRefresh, SerialNumberFontFamilyRefresh);
-             }
-         }},
-        {SerialNumberFontFamilyRefresh,
-         [this, mixed]() {
-             SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.font_family_refresh");
-             if (m_serialNumberFontEditor != nullptr) {
-                 m_serialNumberFontEditor->update(
-                     m_state.m_serialNumberStyle.fontSize, m_state.m_serialNumberStyle.fontFamily,
+             if (m_sequenceNumberFontEditor != nullptr) {
+                 m_sequenceNumberFontEditor->update(
+                     m_state.m_sequenceNumberStyle.fontSize,
+                     m_state.m_sequenceNumberStyle.fontFamily,
                      mixed(SnowCanvasSerialNumberStyleMixedFontSize),
                      mixed(SnowCanvasSerialNumberStyleMixedFontFamily),
-                     SerialNumberFontFamilyRefresh, SerialNumberFontSizeRefresh,
-                     SerialNumberFontFamilyRefresh);
+                     SequenceNumberFontSizeRefresh, SequenceNumberFontSizeRefresh,
+                     SequenceNumberFontFamilyRefresh);
+             }
+         }},
+        {SequenceNumberFontFamilyRefresh,
+         [this, mixed]() {
+             SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.font_family_refresh");
+             if (m_sequenceNumberFontEditor != nullptr) {
+                 m_sequenceNumberFontEditor->update(
+                     m_state.m_sequenceNumberStyle.fontSize,
+                     m_state.m_sequenceNumberStyle.fontFamily,
+                     mixed(SnowCanvasSerialNumberStyleMixedFontSize),
+                     mixed(SnowCanvasSerialNumberStyleMixedFontFamily),
+                     SequenceNumberFontFamilyRefresh, SequenceNumberFontSizeRefresh,
+                     SequenceNumberFontFamilyRefresh);
              }
          }},
     };
@@ -5130,11 +5140,11 @@ void ScreenshotToolPaletteStyleControls::updateHighlightStyleControls(quint32 gr
     applyEditorEntries(m_highlightEntries, groups);
 }
 
-void ScreenshotToolPaletteStyleControls::updatePenHighlightStyleControls(quint32 groups) {
+void ScreenshotToolPaletteStyleControls::updateBrushHighlightStyleControls(quint32 groups) {
     if (groups == 0xffffffffu) {
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.pen_highlight.property_group_refresh");
     }
-    refreshEditorEntries(m_penHighlightEntries, groups, AllShapeRefreshes);
+    refreshEditorEntries(m_brushHighlightEntries, groups, AllShapeRefreshes);
 }
 
 void ScreenshotToolPaletteStyleControls::updateTextStyleControls(quint32 groups) {
@@ -5144,11 +5154,11 @@ void ScreenshotToolPaletteStyleControls::updateTextStyleControls(quint32 groups)
     refreshEditorEntries(m_textEntries, groups, AllTextRefreshes);
 }
 
-void ScreenshotToolPaletteStyleControls::updateSerialNumberStyleControls(quint32 groups) {
+void ScreenshotToolPaletteStyleControls::updateSequenceNumberStyleControls(quint32 groups) {
     if (groups == 0xffffffffu) {
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.property_group_refresh");
     }
-    refreshEditorEntries(m_serialNumberEntries, groups, AllSerialNumberRefreshes);
+    refreshEditorEntries(m_sequenceNumberEntries, groups, AllSequenceNumberRefreshes);
 }
 
 void ScreenshotToolPaletteStyleControls::updateWatermarkControls() {
@@ -5156,7 +5166,7 @@ void ScreenshotToolPaletteStyleControls::updateWatermarkControls() {
 }
 
 void ScreenshotToolPaletteStyleControls::updateRectangleOnlyControlsVisibility() {
-    const bool visible = !m_state.m_lineControlsActive && !m_state.m_freeDrawControlsActive;
+    const bool visible = !m_state.m_lineControlsActive && !m_state.m_brushControlsActive;
     if (m_shapeControlsContainer != nullptr) {
         m_shapeControlsContainer->setVisible(visible);
     }
@@ -5177,7 +5187,7 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateBracketStyleControls();
     updateTextStyleControls();
     updateWatermarkControls();
-    updateSerialNumberStyleControls();
+    updateSequenceNumberStyleControls();
 }
 
 void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
@@ -5192,9 +5202,9 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_state.bracketControlsActive = false;
     m_state.m_lineControlsActive = false;
     m_state.m_speechBubbleControlsActive = false;
-    m_state.m_freeDrawControlsActive = false;
+    m_state.m_brushControlsActive = false;
     m_state.m_highlightControlsActive = false;
-    m_state.m_penHighlightControlsActive = false;
+    m_state.m_brushHighlightControlsActive = false;
     m_state.m_textControlsActive = false;
 
     m_shapeStrokeWidthEditor.reset();
@@ -5209,9 +5219,9 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_spotlightShapeButtonGroup = nullptr;
     m_lineTypeButtonGroup = nullptr;
     m_highlightStrokeEditor.reset();
-    m_penHighlightColorEditor.reset();
-    m_penHighlightStrokeWidthEditor.reset();
-    m_penFilterStrokeWidthEditor.reset();
+    m_brushHighlightColorEditor.reset();
+    m_brushHighlightStrokeWidthEditor.reset();
+    m_brushFilterStrokeWidthEditor.reset();
     m_brushEraserStrokeWidthEditor.reset();
     m_distanceColorEditor.reset();
     m_distanceWidthEditor.reset();
@@ -5252,14 +5262,14 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_textFillEditor.reset();
     m_textCornerRadiusEditor = nullptr;
     m_textAlignmentEditor.reset();
-    m_serialNumberColorEditor.reset();
-    m_serialNumberTypeControlsContainer = nullptr;
-    m_serialNumberTypeButtonGroup = nullptr;
-    m_serialNumberNumericTypeControlsContainer = nullptr;
-    m_serialNumberNumericTypeButtonGroup = nullptr;
-    m_serialNumberFillEditor.reset();
-    m_serialNumberEditor = nullptr;
-    m_serialNumberFontEditor.reset();
+    m_sequenceNumberColorEditor.reset();
+    m_sequenceNumberTypeControlsContainer = nullptr;
+    m_sequenceNumberTypeButtonGroup = nullptr;
+    m_sequenceNumberNumericTypeControlsContainer = nullptr;
+    m_sequenceNumberNumericTypeButtonGroup = nullptr;
+    m_sequenceNumberFillEditor.reset();
+    m_sequenceNumberEditor = nullptr;
+    m_sequenceNumberFontEditor.reset();
     m_watermarkColorPreviewPending = false;
     m_watermarkColorEditor.reset();
     m_watermarkTextEdit = nullptr;
@@ -5278,13 +5288,13 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_registeredComponents.clear();
     m_shapeEntries.clear();
     m_highlightEntries.clear();
-    m_penHighlightEntries.clear();
+    m_brushHighlightEntries.clear();
     m_arrowEntries.clear();
     m_distanceEntries.clear();
     m_angleEntries.clear();
     m_bracketEntries.clear();
     m_textEntries.clear();
-    m_serialNumberEntries.clear();
+    m_sequenceNumberEntries.clear();
     m_watermarkEntries.clear();
     m_toolbarSpacingItems.clear();
 }
@@ -5295,18 +5305,18 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     using Tool = ScreenshotToolPalette::Tool;
     const Tool destination = static_cast<Tool>(destinationTool);
     const bool keepShape = destination == Tool::Shape || destination == Tool::SpeechBubble ||
-                           destination == Tool::Line || destination == Tool::FreeDraw;
+                           destination == Tool::Line || destination == Tool::Brush;
     const bool keepArrow = destination == Tool::Arrow;
     const bool keepDistance = destination == Tool::Distance;
     const bool keepAngle = destination == Tool::Angle;
     const bool keepBracket = destination == Tool::Bracket;
     const bool keepMagnifier = destination == Tool::Magnifier;
     const bool keepRectangleHighlight = destination == Tool::RectangleHighlight;
-    const bool keepPenHighlight = destination == Tool::PenHighlight;
+    const bool keepBrushHighlight = destination == Tool::BrushHighlight;
     const bool keepSpotlight = destination == Tool::Spotlight;
     const bool keepText = destination == Tool::Text;
-    const bool keepSerialNumber = destination == Tool::SerialNumber;
-    const bool keepPenFilter = destination == Tool::PenFilter;
+    const bool keepSequenceNumber = destination == Tool::SequenceNumber;
+    const bool keepBrushFilter = destination == Tool::BrushFilter;
     const bool keepBrushEraser = destination == Tool::BrushEraser;
     const bool keepWatermark = destination == Tool::Watermark;
 
@@ -5321,9 +5331,9 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepRectangleHighlight, m_highlightColorEditor);
     resetUnless(keepSpotlight, m_spotlightColorEditor);
     resetUnless(keepRectangleHighlight, m_highlightStrokeEditor);
-    resetUnless(keepPenHighlight, m_penHighlightColorEditor);
-    resetUnless(keepPenHighlight, m_penHighlightStrokeWidthEditor);
-    resetUnless(keepPenFilter, m_penFilterStrokeWidthEditor);
+    resetUnless(keepBrushHighlight, m_brushHighlightColorEditor);
+    resetUnless(keepBrushHighlight, m_brushHighlightStrokeWidthEditor);
+    resetUnless(keepBrushFilter, m_brushFilterStrokeWidthEditor);
     resetUnless(keepBrushEraser, m_brushEraserStrokeWidthEditor);
     resetUnless(keepDistance, m_distanceColorEditor);
     resetUnless(keepDistance, m_distanceWidthEditor);
@@ -5356,9 +5366,9 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepText, m_textStrokeEditor);
     resetUnless(keepText, m_textFillEditor);
     resetUnless(keepText, m_textAlignmentEditor);
-    resetUnless(keepSerialNumber, m_serialNumberColorEditor);
-    resetUnless(keepSerialNumber, m_serialNumberFillEditor);
-    resetUnless(keepSerialNumber, m_serialNumberFontEditor);
+    resetUnless(keepSequenceNumber, m_sequenceNumberColorEditor);
+    resetUnless(keepSequenceNumber, m_sequenceNumberFillEditor);
+    resetUnless(keepSequenceNumber, m_sequenceNumberFontEditor);
     resetUnless(keepWatermark, m_watermarkColorEditor);
     resetUnless(keepWatermark, m_watermarkFontEditor);
     m_parkedEditors.clear();
@@ -5377,7 +5387,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     if (destination != Tool::Line) {
         m_lineTypeButtonGroup = nullptr;
     }
-    if (destination != Tool::FreeDraw) {
+    if (destination != Tool::Brush) {
         m_brushModeButtonGroup = nullptr;
     }
     if (!keepDistance) {
@@ -5397,12 +5407,12 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     if (!keepText) {
         m_textCornerRadiusEditor = nullptr;
     }
-    if (!keepSerialNumber) {
-        m_serialNumberTypeControlsContainer = nullptr;
-        m_serialNumberTypeButtonGroup = nullptr;
-        m_serialNumberNumericTypeControlsContainer = nullptr;
-        m_serialNumberNumericTypeButtonGroup = nullptr;
-        m_serialNumberEditor = nullptr;
+    if (!keepSequenceNumber) {
+        m_sequenceNumberTypeControlsContainer = nullptr;
+        m_sequenceNumberTypeButtonGroup = nullptr;
+        m_sequenceNumberNumericTypeControlsContainer = nullptr;
+        m_sequenceNumberNumericTypeButtonGroup = nullptr;
+        m_sequenceNumberEditor = nullptr;
     }
     if (!keepWatermark) {
         releaseWatermarkTemplateBindings();
@@ -5469,10 +5479,10 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     updateAngleStyleControls();
     updateBracketStyleControls();
     updateHighlightStyleControls();
-    updatePenHighlightStyleControls();
+    updateBrushHighlightStyleControls();
     updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
     updateTextStyleControls();
-    updateSerialNumberStyleControls();
+    updateSequenceNumberStyleControls();
 }
 
 void ScreenshotToolPaletteStyleControls::setDistanceControlsActive(bool active) {
@@ -5538,11 +5548,11 @@ void ScreenshotToolPaletteStyleControls::setLineControlsActive(bool active) {
     }
 }
 
-void ScreenshotToolPaletteStyleControls::setFreeDrawControlsActive(bool active) {
-    if (m_state.m_freeDrawControlsActive == active) {
+void ScreenshotToolPaletteStyleControls::setBrushControlsActive(bool active) {
+    if (m_state.m_brushControlsActive == active) {
         return;
     }
-    m_state.m_freeDrawControlsActive = active;
+    m_state.m_brushControlsActive = active;
     updateRectangleOnlyControlsVisibility();
     if (active) {
         updateRectangleStyleControls();
@@ -5557,12 +5567,12 @@ void ScreenshotToolPaletteStyleControls::setHighlightControlsActive(bool active)
     updateHighlightStyleControls();
 }
 
-void ScreenshotToolPaletteStyleControls::setPenHighlightControlsActive(bool active) {
-    if (m_state.m_penHighlightControlsActive == active) {
+void ScreenshotToolPaletteStyleControls::setBrushHighlightControlsActive(bool active) {
+    if (m_state.m_brushHighlightControlsActive == active) {
         return;
     }
-    m_state.m_penHighlightControlsActive = active;
-    updatePenHighlightStyleControls();
+    m_state.m_brushHighlightControlsActive = active;
+    updateBrushHighlightStyleControls();
 }
 
 void ScreenshotToolPaletteStyleControls::setTextControlsActive(bool active) {
@@ -5627,12 +5637,12 @@ bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
     }
     if (m_state.angleControlsActive)
         return false;
-    if (m_state.m_penHighlightControlsActive) {
+    if (m_state.m_brushHighlightControlsActive) {
         if (direction == 0) {
             return false;
         }
-        setPenHighlightStrokeWidth(m_state.m_penHighlightStyle.strokeWidth +
-                                   (direction > 0 ? 1.0 : -1.0));
+        setBrushHighlightStrokeWidth(m_state.m_brushHighlightStyle.strokeWidth +
+                                     (direction > 0 ? 1.0 : -1.0));
         return true;
     }
 
@@ -5739,30 +5749,31 @@ bool ScreenshotToolPaletteStyleControls::handleTextCornerRadiusWheel(const QPoin
     return true;
 }
 
-bool ScreenshotToolPaletteStyleControls::handleSerialNumberWheel(const QPoint& globalPosition,
-                                                                 int direction) {
+bool ScreenshotToolPaletteStyleControls::handleSequenceNumberWheel(const QPoint& globalPosition,
+                                                                   int direction) {
     if (direction == 0) {
         return false;
     }
-    if (m_serialNumberEditor != nullptr && m_serialNumberEditor->isEnabled() &&
-        m_serialNumberEditor->rect().contains(
-            m_serialNumberEditor->mapFromGlobal(globalPosition))) {
+    if (m_sequenceNumberEditor != nullptr && m_sequenceNumberEditor->isEnabled() &&
+        m_sequenceNumberEditor->rect().contains(
+            m_sequenceNumberEditor->mapFromGlobal(globalPosition))) {
         bool valid = false;
-        const qint64 editedNumber = m_serialNumberEditor->text().toLongLong(&valid);
+        const qint64 editedNumber = m_sequenceNumberEditor->text().toLongLong(&valid);
         const qint64 number =
-            valid && editedNumber >= 0 ? editedNumber : m_state.m_serialNumberStyle.number;
+            valid && editedNumber >= 0 ? editedNumber : m_state.m_sequenceNumberStyle.number;
         const qint64 nextNumber =
             direction > 0 ? (number < std::numeric_limits<qint64>::max() ? number + 1 : number)
                           : std::max<qint64>(0, number - 1);
-        setSerialNumber(nextNumber);
-        updateSerialNumberStyleControls(SerialNumberValueRefresh);
+        setSequenceNumber(nextNumber);
+        updateSequenceNumberStyleControls(SequenceNumberValueRefresh);
         return true;
     }
-    if (m_serialNumberFontEditor != nullptr && m_serialNumberFontEditor->sizeSummary() != nullptr &&
-        m_serialNumberFontEditor->sizeSummary()->rect().contains(
-            m_serialNumberFontEditor->sizeSummary()->mapFromGlobal(globalPosition))) {
-        setSerialNumberFontSize(m_state.m_serialNumberStyle.fontSize +
-                                (direction > 0 ? 1.0 : -1.0));
+    if (m_sequenceNumberFontEditor != nullptr &&
+        m_sequenceNumberFontEditor->sizeSummary() != nullptr &&
+        m_sequenceNumberFontEditor->sizeSummary()->rect().contains(
+            m_sequenceNumberFontEditor->sizeSummary()->mapFromGlobal(globalPosition))) {
+        setSequenceNumberFontSize(m_state.m_sequenceNumberStyle.fontSize +
+                                  (direction > 0 ? 1.0 : -1.0));
         return true;
     }
     return false;
@@ -5826,7 +5837,7 @@ SnowCanvasShapeStyle ScreenshotToolPaletteStyleControls::rectangleStyle() const 
 
 ScreenshotToolPaletteRectangleStyleModel& ScreenshotToolPaletteStyleControls::activeShapeStyle() {
     return m_state.m_highlightControlsActive      ? m_state.m_highlightStyle
-           : m_state.m_freeDrawControlsActive     ? m_state.m_freeDrawStyle
+           : m_state.m_brushControlsActive        ? m_state.m_brushStyle
            : m_state.m_lineControlsActive         ? m_state.m_lineStyle
            : m_state.m_speechBubbleControlsActive ? m_state.m_speechBubbleStyle
                                                   : m_state.m_rectangleStyle;
@@ -5835,7 +5846,7 @@ ScreenshotToolPaletteRectangleStyleModel& ScreenshotToolPaletteStyleControls::ac
 const ScreenshotToolPaletteRectangleStyleModel&
 ScreenshotToolPaletteStyleControls::activeShapeStyle() const {
     return m_state.m_highlightControlsActive      ? m_state.m_highlightStyle
-           : m_state.m_freeDrawControlsActive     ? m_state.m_freeDrawStyle
+           : m_state.m_brushControlsActive        ? m_state.m_brushStyle
            : m_state.m_lineControlsActive         ? m_state.m_lineStyle
            : m_state.m_speechBubbleControlsActive ? m_state.m_speechBubbleStyle
                                                   : m_state.m_rectangleStyle;
@@ -5844,7 +5855,7 @@ ScreenshotToolPaletteStyleControls::activeShapeStyle() const {
 ScreenshotToolPaletteRectangleStyleModel&
 ScreenshotToolPaletteStyleControls::activeCreationShapeStyle() {
     return m_state.m_highlightControlsActive      ? m_state.m_creationHighlightStyle
-           : m_state.m_freeDrawControlsActive     ? m_state.m_creationFreeDrawStyle
+           : m_state.m_brushControlsActive        ? m_state.m_creationBrushStyle
            : m_state.m_lineControlsActive         ? m_state.m_creationLineStyle
            : m_state.m_speechBubbleControlsActive ? m_state.m_creationSpeechBubbleStyle
                                                   : m_state.m_creationRectangleStyle;
@@ -5852,7 +5863,7 @@ ScreenshotToolPaletteStyleControls::activeCreationShapeStyle() {
 
 SnowCanvasShapeKind ScreenshotToolPaletteStyleControls::activeShapeKind() const {
     return m_state.m_highlightControlsActive      ? SnowCanvasShapeKind::RectangleHighlight
-           : m_state.m_freeDrawControlsActive     ? SnowCanvasShapeKind::FreeDraw
+           : m_state.m_brushControlsActive        ? SnowCanvasShapeKind::FreeDraw
            : m_state.m_lineControlsActive         ? SnowCanvasShapeKind::Line
            : m_state.m_speechBubbleControlsActive ? SnowCanvasShapeKind::SpeechBubble
                                                   : SnowCanvasShapeKind::Rectangle;
@@ -5863,9 +5874,9 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.rectangle = m_state.m_creationRectangleStyle.rectangleStyle();
     defaults.speechBubble = m_state.m_creationSpeechBubbleStyle.rectangleStyle();
     defaults.line = m_state.m_creationLineStyle.rectangleStyle();
-    defaults.freeDraw = m_state.m_creationFreeDrawStyle.rectangleStyle();
+    defaults.freeDraw = m_state.m_creationBrushStyle.rectangleStyle();
     defaults.rectangleHighlight = m_state.m_creationHighlightStyle.rectangleStyle();
-    defaults.penHighlight = m_state.m_creationPenHighlightStyle;
+    defaults.penHighlight = m_state.m_creationBrushHighlightStyle;
     defaults.arrow.stroke = m_state.m_creationArrowStyle.stroke;
     defaults.arrow.strokeWidth = m_state.m_creationArrowStyle.strokeWidth;
     defaults.arrow.startArrowhead = m_state.m_creationArrowStyle.startArrowhead;
@@ -5882,9 +5893,9 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.bracket = m_state.creationBracketStyle;
     defaults.magnifier = m_state.creationMagnifierStyle;
     defaults.text = m_state.m_creationTextStyle.textStyle();
-    defaults.serialNumber = m_state.m_creationSerialNumberStyle;
+    defaults.serialNumber = m_state.m_creationSequenceNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
-    defaults.penFilter = m_state.creationPenFilterStyle;
+    defaults.penFilter = m_state.creationBrushFilterStyle;
     defaults.brushEraser = m_state.creationBrushEraserStyle;
     defaults.watermark = m_state.creationWatermarkConfig;
     defaults.spotlight = m_state.creationSpotlightConfig;
@@ -5907,18 +5918,18 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.m_creationRectangleStyle = remembered.m_creationRectangleStyle;
     m_state.m_creationSpeechBubbleStyle = remembered.m_creationSpeechBubbleStyle;
     m_state.m_creationLineStyle = remembered.m_creationLineStyle;
-    m_state.m_creationFreeDrawStyle = remembered.m_creationFreeDrawStyle;
+    m_state.m_creationBrushStyle = remembered.m_creationBrushStyle;
     m_state.m_creationHighlightStyle = remembered.m_creationHighlightStyle;
-    m_state.m_creationPenHighlightStyle = remembered.m_creationPenHighlightStyle;
+    m_state.m_creationBrushHighlightStyle = remembered.m_creationBrushHighlightStyle;
     m_state.m_creationArrowStyle = remembered.m_creationArrowStyle;
     m_state.creationDistanceStyle = remembered.creationDistanceStyle;
     m_state.creationAngleStyle = remembered.creationAngleStyle;
     m_state.creationBracketStyle = remembered.creationBracketStyle;
     m_state.creationMagnifierStyle = remembered.creationMagnifierStyle;
     m_state.m_creationTextStyle = remembered.m_creationTextStyle;
-    m_state.m_creationSerialNumberStyle = remembered.m_creationSerialNumberStyle;
+    m_state.m_creationSequenceNumberStyle = remembered.m_creationSequenceNumberStyle;
     m_state.creationRectangleFilterStyle = remembered.creationRectangleFilterStyle;
-    m_state.creationPenFilterStyle = remembered.creationPenFilterStyle;
+    m_state.creationBrushFilterStyle = remembered.creationBrushFilterStyle;
     m_state.creationBrushEraserStyle = remembered.creationBrushEraserStyle;
     m_state.creationWatermarkConfig = defaults.watermark;
     m_state.creationSpotlightConfig = defaults.spotlight;
@@ -5971,10 +5982,10 @@ QLabel* ScreenshotToolPaletteStyleControls::spotlightOpacityIcon() const {
     return m_spotlightOpacityEditor.icon;
 }
 
-void ScreenshotToolPaletteStyleControls::updatePenFilterStrokeWidthControls(double width,
-                                                                            bool mixed) {
-    if (m_penFilterStrokeWidthEditor != nullptr) {
-        m_penFilterStrokeWidthEditor->update(width, mixed);
+void ScreenshotToolPaletteStyleControls::updateBrushFilterStrokeWidthControls(double width,
+                                                                              bool mixed) {
+    if (m_brushFilterStrokeWidthEditor != nullptr) {
+        m_brushFilterStrokeWidthEditor->update(width, mixed);
     }
 }
 
@@ -6039,11 +6050,11 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
         configureScreenshotToolPaletteStyleButton(m_magnifierSourceOutlineToggle,
                                                   "Source region outline", metrics);
     configureScreenshotToolPaletteCornerRadiusEditor(m_textCornerRadiusEditor, metrics);
-    if (applies(m_serialNumberEditor)) {
-        m_serialNumberEditor->setFixedSize(
-            qMax(1, qRound(kSerialNumberInputWidth * metrics.physicalScale)),
+    if (applies(m_sequenceNumberEditor)) {
+        m_sequenceNumberEditor->setFixedSize(
+            qMax(1, qRound(kSequenceNumberInputWidth * metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-        stampScreenshotToolbarReferenceWidth(m_serialNumberEditor, kSerialNumberInputWidth);
+        stampScreenshotToolbarReferenceWidth(m_sequenceNumberEditor, kSequenceNumberInputWidth);
     }
     configureScreenshotToolPaletteIconNumericValueButton(m_watermarkAngleEditor, metrics);
     configureScreenshotToolPaletteIconNumericValueButton(m_watermarkGapEditor, metrics);
@@ -6089,9 +6100,10 @@ void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged(quint32 properti
     }
 }
 
-void ScreenshotToolPaletteStyleControls::notifySerialNumberStyleChanged(quint32 properties) const {
-    if (m_callbacks.serialNumberStyleChanged) {
-        m_callbacks.serialNumberStyleChanged(m_state.m_serialNumberStyle, properties);
+void ScreenshotToolPaletteStyleControls::notifySequenceNumberStyleChanged(
+    quint32 properties) const {
+    if (m_callbacks.sequenceNumberStyleChanged) {
+        m_callbacks.sequenceNumberStyleChanged(m_state.m_sequenceNumberStyle, properties);
     }
 }
 
@@ -6232,14 +6244,15 @@ void ScreenshotToolPaletteStyleControls::commitArrowProperty(quint32 property, A
 }
 
 template <typename Apply>
-void ScreenshotToolPaletteStyleControls::commitPenHighlightProperty(quint32 property, Apply apply) {
+void ScreenshotToolPaletteStyleControls::commitBrushHighlightProperty(quint32 property,
+                                                                      Apply apply) {
     const bool wasMixed = hasMixedProperty(property);
-    if (!apply(m_state.m_penHighlightStyle) && !wasMixed) {
+    if (!apply(m_state.m_brushHighlightStyle) && !wasMixed) {
         return;
     }
     clearMixedProperties(property);
-    updatePenHighlightStyleControls();
-    notifyShapeStyleChanged(m_state.m_penHighlightStyle, property,
+    updateBrushHighlightStyleControls();
+    notifyShapeStyleChanged(m_state.m_brushHighlightStyle, property,
                             SnowCanvasShapeKind::PenHighlight);
 }
 
@@ -6256,15 +6269,15 @@ void ScreenshotToolPaletteStyleControls::commitTextProperty(quint32 mixedFlag, A
 }
 
 template <typename Apply>
-void ScreenshotToolPaletteStyleControls::commitSerialNumberProperty(quint32 mixedFlag,
-                                                                    Apply apply) {
-    const bool wasMixed = (m_state.m_serialNumberStyleMixed & mixedFlag) != 0;
-    if (!apply(m_state.m_serialNumberStyle) && !wasMixed) {
+void ScreenshotToolPaletteStyleControls::commitSequenceNumberProperty(quint32 mixedFlag,
+                                                                      Apply apply) {
+    const bool wasMixed = (m_state.m_sequenceNumberStyleMixed & mixedFlag) != 0;
+    if (!apply(m_state.m_sequenceNumberStyle) && !wasMixed) {
         return;
     }
-    m_state.m_serialNumberStyleMixed &= ~mixedFlag;
-    updateSerialNumberStyleControls();
-    notifySerialNumberStyleChanged(mixedFlag);
+    m_state.m_sequenceNumberStyleMixed &= ~mixedFlag;
+    updateSequenceNumberStyleControls();
+    notifySequenceNumberStyleChanged(mixedFlag);
 }
 
 template <typename Apply>
@@ -6402,20 +6415,20 @@ void ScreenshotToolPaletteStyleControls::setSpotlightShape(SnowCanvasRectangleSh
                             SnowCanvasShapeKind::Spotlight);
 }
 
-void ScreenshotToolPaletteStyleControls::setPenHighlightColor(const QColor& color) {
-    commitPenHighlightProperty(SnowCanvasShapeStylePropertyStrokeColor,
-                               [color](SnowCanvasShapeStyle& style) {
-                                   if (!color.isValid() || style.stroke == color) {
-                                       return false;
-                                   }
-                                   style.stroke = color;
-                                   return true;
-                               });
+void ScreenshotToolPaletteStyleControls::setBrushHighlightColor(const QColor& color) {
+    commitBrushHighlightProperty(SnowCanvasShapeStylePropertyStrokeColor,
+                                 [color](SnowCanvasShapeStyle& style) {
+                                     if (!color.isValid() || style.stroke == color) {
+                                         return false;
+                                     }
+                                     style.stroke = color;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setPenHighlightStrokeWidth(double strokeWidth) {
+void ScreenshotToolPaletteStyleControls::setBrushHighlightStrokeWidth(double strokeWidth) {
     const double clampedStrokeWidth = std::clamp(strokeWidth, 1.0, 72.0);
-    commitPenHighlightProperty(
+    commitBrushHighlightProperty(
         SnowCanvasShapeStylePropertyStrokeWidth, [clampedStrokeWidth](SnowCanvasShapeStyle& style) {
             if (qFuzzyCompare(style.strokeWidth + 1.0, clampedStrokeWidth + 1.0)) {
                 return false;
@@ -7091,131 +7104,131 @@ void ScreenshotToolPaletteStyleControls::setWatermarkOpacity(double opacity) {
     });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberColor(const QColor& color) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedColor,
-                               [color](SnowCanvasSerialNumberStyle& style) {
-                                   if (!color.isValid() || style.color == color) {
-                                       return false;
-                                   }
-                                   style.color = color;
-                                   return true;
-                               });
+void ScreenshotToolPaletteStyleControls::setSequenceNumberColor(const QColor& color) {
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedColor,
+                                 [color](SnowCanvasSerialNumberStyle& style) {
+                                     if (!color.isValid() || style.color == color) {
+                                         return false;
+                                     }
+                                     style.color = color;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberStrokeRenderingStyle(
+void ScreenshotToolPaletteStyleControls::setSequenceNumberStrokeRenderingStyle(
     SnowCanvasStrokeRenderingStyle renderingStyle) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedStrokeRenderingStyle,
-                               [renderingStyle](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.strokeRenderingStyle == renderingStyle)
-                                       return false;
-                                   style.strokeRenderingStyle = renderingStyle;
-                                   return true;
-                               });
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedStrokeRenderingStyle,
+                                 [renderingStyle](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.strokeRenderingStyle == renderingStyle)
+                                         return false;
+                                     style.strokeRenderingStyle = renderingStyle;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberNumericType(
+void ScreenshotToolPaletteStyleControls::setSequenceNumberNumericType(
     SnowCanvasSerialNumberNumericType type) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedNumericType,
-                               [type](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.numericType == type) {
-                                       return false;
-                                   }
-                                   style.numericType = type;
-                                   return true;
-                               });
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedNumericType,
+                                 [type](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.numericType == type) {
+                                         return false;
+                                     }
+                                     style.numericType = type;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberType(SnowCanvasSerialNumberType type) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedType,
-                               [type](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.type == type) {
-                                       return false;
-                                   }
-                                   style.type = type;
-                                   return true;
-                               });
+void ScreenshotToolPaletteStyleControls::setSequenceNumberType(SnowCanvasSerialNumberType type) {
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedType,
+                                 [type](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.type == type) {
+                                         return false;
+                                     }
+                                     style.type = type;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberFillColor(const QColor& color) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFill,
-                               [color](SnowCanvasSerialNumberStyle& style) {
-                                   if (!color.isValid() || style.fill == color) {
-                                       return false;
-                                   }
-                                   style.fill = color;
-                                   return true;
-                               });
+void ScreenshotToolPaletteStyleControls::setSequenceNumberFillColor(const QColor& color) {
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedFill,
+                                 [color](SnowCanvasSerialNumberStyle& style) {
+                                     if (!color.isValid() || style.fill == color) {
+                                         return false;
+                                     }
+                                     style.fill = color;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberFillStyle(SnowCanvasFillStyle fillStyle) {
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFillStyle,
-                               [fillStyle](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.fillStyle == fillStyle) {
-                                       return false;
-                                   }
-                                   style.fillStyle = fillStyle;
-                                   return true;
-                               });
+void ScreenshotToolPaletteStyleControls::setSequenceNumberFillStyle(SnowCanvasFillStyle fillStyle) {
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedFillStyle,
+                                 [fillStyle](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.fillStyle == fillStyle) {
+                                         return false;
+                                     }
+                                     style.fillStyle = fillStyle;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumber(qint64 number) {
-    if (m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
-        (m_state.m_serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
+void ScreenshotToolPaletteStyleControls::setSequenceNumber(qint64 number) {
+    if (m_state.m_sequenceNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
+        (m_state.m_sequenceNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
         return;
     }
     number = std::max<qint64>(0, number);
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedNumber,
-                               [number](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.number == number) {
-                                       return false;
-                                   }
-                                   style.number = number;
-                                   return true;
-                               });
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedNumber,
+                                 [number](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.number == number) {
+                                         return false;
+                                     }
+                                     style.number = number;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberFontSize(double fontSize) {
+void ScreenshotToolPaletteStyleControls::setSequenceNumberFontSize(double fontSize) {
     if (!std::isfinite(fontSize))
         return;
     const double clamped = std::clamp(fontSize, snow_canvas_style_limits::minimumFontSize,
                                       snow_canvas_style_limits::maximumBadgeFontSize);
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFontSize,
-                               [clamped](SnowCanvasSerialNumberStyle& style) {
-                                   if (qFuzzyCompare(style.fontSize + 1.0, clamped + 1.0)) {
-                                       return false;
-                                   }
-                                   style.fontSize = clamped;
-                                   return true;
-                               });
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedFontSize,
+                                 [clamped](SnowCanvasSerialNumberStyle& style) {
+                                     if (qFuzzyCompare(style.fontSize + 1.0, clamped + 1.0)) {
+                                         return false;
+                                     }
+                                     style.fontSize = clamped;
+                                     return true;
+                                 });
 }
 
-void ScreenshotToolPaletteStyleControls::cycleSerialNumberFontSize() {
+void ScreenshotToolPaletteStyleControls::cycleSequenceNumberFontSize() {
     const QVector<double>& values = m_state.m_textStyle.fontSizeValues();
     for (double value : values) {
-        if (value > m_state.m_serialNumberStyle.fontSize) {
-            setSerialNumberFontSize(value);
+        if (value > m_state.m_sequenceNumberStyle.fontSize) {
+            setSequenceNumberFontSize(value);
             return;
         }
     }
     if (!values.isEmpty()) {
-        setSerialNumberFontSize(values.first());
+        setSequenceNumberFontSize(values.first());
     }
 }
 
-void ScreenshotToolPaletteStyleControls::setSerialNumberFontFamily(const QString& fontFamily) {
-    if (m_state.m_serialNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
-        (m_state.m_serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
+void ScreenshotToolPaletteStyleControls::setSequenceNumberFontFamily(const QString& fontFamily) {
+    if (m_state.m_sequenceNumberStyle.type == SnowCanvasSerialNumberType::Circle &&
+        (m_state.m_sequenceNumberStyleMixed & SnowCanvasSerialNumberStyleMixedType) == 0) {
         return;
     }
     const QString normalized = fontFamily.trimmed();
-    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFontFamily,
-                               [&normalized](SnowCanvasSerialNumberStyle& style) {
-                                   if (style.fontFamily == normalized) {
-                                       return false;
-                                   }
-                                   style.fontFamily = normalized;
-                                   return true;
-                               });
+    commitSequenceNumberProperty(SnowCanvasSerialNumberStyleMixedFontFamily,
+                                 [&normalized](SnowCanvasSerialNumberStyle& style) {
+                                     if (style.fontFamily == normalized) {
+                                         return false;
+                                     }
+                                     style.fontFamily = normalized;
+                                     return true;
+                                 });
 }
 
 void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
@@ -7350,69 +7363,69 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         updateSpotlightShapeControls();
         return;
     }
-    const bool serialNumberStyleSource =
+    const bool sequenceNumberStyleSource =
         state.source == SnowCanvasStyleToolbarSource::DefaultSerialNumber ||
         state.source == SnowCanvasStyleToolbarSource::SelectedSerialNumber;
-    if (serialNumberStyleSource) {
-        const bool selectedSerialNumber =
+    if (sequenceNumberStyleSource) {
+        const bool selectedSequenceNumber =
             state.source == SnowCanvasStyleToolbarSource::SelectedSerialNumber;
         SnowCanvasSerialNumberStyle displayedStyle = state.serialNumberStyle;
-        if (editorInteracting(m_serialNumberColorEditor)) {
-            displayedStyle.color = m_state.m_serialNumberStyle.color;
+        if (editorInteracting(m_sequenceNumberColorEditor)) {
+            displayedStyle.color = m_state.m_sequenceNumberStyle.color;
         }
-        if (editorInteracting(m_serialNumberFillEditor)) {
-            displayedStyle.fill = m_state.m_serialNumberStyle.fill;
+        if (editorInteracting(m_sequenceNumberFillEditor)) {
+            displayedStyle.fill = m_state.m_sequenceNumberStyle.fill;
         }
-        const quint32 mixed = selectedSerialNumber ? state.serialNumberStyleMixed : 0;
+        const quint32 mixed = selectedSequenceNumber ? state.serialNumberStyleMixed : 0;
         if (m_state.m_styleSource == state.source &&
-            m_state.m_serialNumberStyle == displayedStyle &&
-            m_state.m_serialNumberStyleMixed == mixed) {
+            m_state.m_sequenceNumberStyle == displayedStyle &&
+            m_state.m_sequenceNumberStyleMixed == mixed) {
 #if defined(SNOW_SHOT_TEST_HOOKS)
             ++m_styleStateNoopCount;
 #endif
             SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.state_noop");
             return;
         }
-        const quint32 mixedChanged = m_state.m_serialNumberStyleMixed ^ mixed;
+        const quint32 mixedChanged = m_state.m_sequenceNumberStyleMixed ^ mixed;
         quint32 groups = 0;
         if (m_state.m_styleSource != state.source) {
-            groups = AllSerialNumberRefreshes;
+            groups = AllSequenceNumberRefreshes;
         } else {
-            if (m_state.m_serialNumberStyle.number != displayedStyle.number ||
+            if (m_state.m_sequenceNumberStyle.number != displayedStyle.number ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedNumber) != 0)
-                groups |= SerialNumberValueRefresh;
-            if (m_state.m_serialNumberStyle.color != displayedStyle.color ||
+                groups |= SequenceNumberValueRefresh;
+            if (m_state.m_sequenceNumberStyle.color != displayedStyle.color ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedColor) != 0)
-                groups |= SerialNumberColorRefresh;
-            if (m_state.m_serialNumberStyle.strokeRenderingStyle !=
+                groups |= SequenceNumberColorRefresh;
+            if (m_state.m_sequenceNumberStyle.strokeRenderingStyle !=
                     displayedStyle.strokeRenderingStyle ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedStrokeRenderingStyle) != 0)
-                groups |= SerialNumberStrokeRenderingRefresh;
-            if (m_state.m_serialNumberStyle.numericType != displayedStyle.numericType ||
+                groups |= SequenceNumberStrokeRenderingRefresh;
+            if (m_state.m_sequenceNumberStyle.numericType != displayedStyle.numericType ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedNumericType) != 0)
-                groups |= SerialNumberNumericTypeRefresh;
-            if (m_state.m_serialNumberStyle.type != displayedStyle.type ||
+                groups |= SequenceNumberNumericTypeRefresh;
+            if (m_state.m_sequenceNumberStyle.type != displayedStyle.type ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedType) != 0)
-                groups |= SerialNumberTypeRefresh;
-            if (m_state.m_serialNumberStyle.fill != displayedStyle.fill ||
-                m_state.m_serialNumberStyle.fillStyle != displayedStyle.fillStyle ||
+                groups |= SequenceNumberTypeRefresh;
+            if (m_state.m_sequenceNumberStyle.fill != displayedStyle.fill ||
+                m_state.m_sequenceNumberStyle.fillStyle != displayedStyle.fillStyle ||
                 (mixedChanged & (SnowCanvasSerialNumberStyleMixedFill |
                                  SnowCanvasSerialNumberStyleMixedFillStyle)) != 0)
-                groups |= SerialNumberFillRefresh;
-            if (m_state.m_serialNumberStyle.fontSize != displayedStyle.fontSize ||
+                groups |= SequenceNumberFillRefresh;
+            if (m_state.m_sequenceNumberStyle.fontSize != displayedStyle.fontSize ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedFontSize) != 0)
-                groups |= SerialNumberFontSizeRefresh;
-            if (m_state.m_serialNumberStyle.fontFamily != displayedStyle.fontFamily ||
+                groups |= SequenceNumberFontSizeRefresh;
+            if (m_state.m_sequenceNumberStyle.fontFamily != displayedStyle.fontFamily ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedFontFamily) != 0)
-                groups |= SerialNumberFontFamilyRefresh;
+                groups |= SequenceNumberFontFamilyRefresh;
         }
         m_state.m_styleSource = state.source;
-        m_state.m_serialNumberStyleMixed = mixed;
-        m_state.m_serialNumberStyle = displayedStyle;
-        if (!selectedSerialNumber) {
-            m_state.m_creationSerialNumberStyle = displayedStyle;
+        m_state.m_sequenceNumberStyleMixed = mixed;
+        m_state.m_sequenceNumberStyle = displayedStyle;
+        if (!selectedSequenceNumber) {
+            m_state.m_creationSequenceNumberStyle = displayedStyle;
         }
-        updateSerialNumberStyleControls(groups);
+        updateSequenceNumberStyleControls(groups);
         return;
     }
 
@@ -7554,19 +7567,19 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         return;
     }
 
-    const bool penHighlightStyleSource =
+    const bool brushHighlightStyleSource =
         state.source == SnowCanvasStyleToolbarSource::DefaultPenHighlight ||
         state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight;
-    if (penHighlightStyleSource) {
-        const bool selectedPenHighlight =
+    if (brushHighlightStyleSource) {
+        const bool selectedBrushHighlight =
             state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight;
         SnowCanvasShapeStyle displayedStyle = state.shapeStyle;
-        if (editorInteracting(m_penHighlightColorEditor)) {
-            displayedStyle.stroke = m_state.m_penHighlightStyle.stroke;
+        if (editorInteracting(m_brushHighlightColorEditor)) {
+            displayedStyle.stroke = m_state.m_brushHighlightStyle.stroke;
         }
-        const quint32 mixed = selectedPenHighlight ? state.shapeStyleMixed : 0;
+        const quint32 mixed = selectedBrushHighlight ? state.shapeStyleMixed : 0;
         if (m_state.m_styleSource == state.source &&
-            m_state.m_penHighlightStyle == displayedStyle &&
+            m_state.m_brushHighlightStyle == displayedStyle &&
             m_state.m_selectedStyleMixed == mixed) {
 #if defined(SNOW_SHOT_TEST_HOOKS)
             ++m_styleStateNoopCount;
@@ -7579,29 +7592,28 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         if (m_state.m_styleSource != state.source)
             groups = AllShapeRefreshes;
         else {
-            if (m_state.m_penHighlightStyle.stroke != displayedStyle.stroke ||
+            if (m_state.m_brushHighlightStyle.stroke != displayedStyle.stroke ||
                 (mixedChanged & SnowCanvasShapeStyleMixedStroke) != 0)
                 groups |= ShapeStrokeRefresh;
-            if (m_state.m_penHighlightStyle.strokeWidth != displayedStyle.strokeWidth ||
+            if (m_state.m_brushHighlightStyle.strokeWidth != displayedStyle.strokeWidth ||
                 (mixedChanged & SnowCanvasShapeStyleMixedStrokeWidth) != 0)
                 groups |= ShapeStrokeWidthRefresh;
         }
         m_state.m_styleSource = state.source;
-        m_state.m_showingSelectedStyle = selectedPenHighlight;
+        m_state.m_showingSelectedStyle = selectedBrushHighlight;
         m_state.m_selectedStyleMixed = mixed;
-        m_state.m_penHighlightStyle = displayedStyle;
-        if (!selectedPenHighlight) {
-            m_state.m_creationPenHighlightStyle = displayedStyle;
+        m_state.m_brushHighlightStyle = displayedStyle;
+        if (!selectedBrushHighlight) {
+            m_state.m_creationBrushHighlightStyle = displayedStyle;
         }
-        updatePenHighlightStyleControls(groups);
+        updateBrushHighlightStyleControls(groups);
         return;
     }
 
     const bool lineStyleSource = state.source == SnowCanvasStyleToolbarSource::DefaultLine ||
                                  state.source == SnowCanvasStyleToolbarSource::SelectedLine;
-    const bool freeDrawStyleSource =
-        state.source == SnowCanvasStyleToolbarSource::DefaultFreeDraw ||
-        state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw;
+    const bool brushStyleSource = state.source == SnowCanvasStyleToolbarSource::DefaultFreeDraw ||
+                                  state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw;
     const bool highlightStyleSource =
         state.source == SnowCanvasStyleToolbarSource::DefaultRectangleHighlight ||
         state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight;
@@ -7612,7 +7624,7 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         state.source == SnowCanvasStyleToolbarSource::DefaultRectangle ||
         state.source == SnowCanvasStyleToolbarSource::SelectedRectangle;
     if (!rectangleStyleSource && !speechBubbleStyleSource && !lineStyleSource &&
-        !freeDrawStyleSource && !highlightStyleSource) {
+        !brushStyleSource && !highlightStyleSource) {
         return;
     }
     const bool selectedShape =
@@ -7622,12 +7634,12 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw ||
         state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight;
     auto& displayedModel = highlightStyleSource      ? m_state.m_highlightStyle
-                           : freeDrawStyleSource     ? m_state.m_freeDrawStyle
+                           : brushStyleSource        ? m_state.m_brushStyle
                            : lineStyleSource         ? m_state.m_lineStyle
                            : speechBubbleStyleSource ? m_state.m_speechBubbleStyle
                                                      : m_state.m_rectangleStyle;
     auto& creationModel = highlightStyleSource      ? m_state.m_creationHighlightStyle
-                          : freeDrawStyleSource     ? m_state.m_creationFreeDrawStyle
+                          : brushStyleSource        ? m_state.m_creationBrushStyle
                           : lineStyleSource         ? m_state.m_creationLineStyle
                           : speechBubbleStyleSource ? m_state.m_creationSpeechBubbleStyle
                                                     : m_state.m_creationRectangleStyle;
@@ -7657,7 +7669,7 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
     }
     m_state.m_lineControlsActive = lineStyleSource;
     m_state.m_speechBubbleControlsActive = speechBubbleStyleSource;
-    m_state.m_freeDrawControlsActive = freeDrawStyleSource;
+    m_state.m_brushControlsActive = brushStyleSource;
     m_state.m_highlightControlsActive = highlightStyleSource;
     m_state.m_showingSelectedStyle = selectedShape;
     updateRectangleOnlyControlsVisibility();

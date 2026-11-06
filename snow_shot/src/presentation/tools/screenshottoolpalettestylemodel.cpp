@@ -27,12 +27,12 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     }
     m_creationLineStyle.setRectangleStyle(lineStyle);
     m_lineStyle = m_creationLineStyle;
-    m_creationFreeDrawStyle.setRectangleStyle(defaults.freeDraw);
-    m_freeDrawStyle = m_creationFreeDrawStyle;
+    m_creationBrushStyle.setRectangleStyle(defaults.freeDraw);
+    m_brushStyle = m_creationBrushStyle;
     m_creationHighlightStyle.setRectangleStyle(defaults.rectangleHighlight);
     m_highlightStyle = m_creationHighlightStyle;
-    m_creationPenHighlightStyle = defaults.penHighlight;
-    m_penHighlightStyle = m_creationPenHighlightStyle;
+    m_creationBrushHighlightStyle = defaults.penHighlight;
+    m_brushHighlightStyle = m_creationBrushHighlightStyle;
     m_creationArrowStyle = SnowCanvasArrowStyle{
         defaults.arrow.stroke,         defaults.arrow.strokeWidth, defaults.arrow.startArrowhead,
         defaults.arrow.endArrowhead,   defaults.arrow.strokeStyle, defaults.arrow.arrowType,
@@ -63,12 +63,12 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     bracketControlsActive = false;
     m_creationTextStyle.setTextStyle(defaults.text);
     m_textStyle.setTextStyle(defaults.text);
-    m_creationSerialNumberStyle = defaults.serialNumber;
-    m_serialNumberStyle = defaults.serialNumber;
+    m_creationSequenceNumberStyle = defaults.serialNumber;
+    m_sequenceNumberStyle = defaults.serialNumber;
     creationRectangleFilterStyle = defaults.rectangleFilter;
     rectangleFilterStyle = creationRectangleFilterStyle;
-    creationPenFilterStyle = defaults.penFilter;
-    penFilterStyle = creationPenFilterStyle;
+    creationBrushFilterStyle = defaults.penFilter;
+    brushFilterStyle = creationBrushFilterStyle;
     creationBrushEraserStyle = defaults.brushEraser;
     brushEraserStyle = creationBrushEraserStyle;
     creationWatermarkConfig = defaults.watermark;
@@ -85,7 +85,7 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     m_showingSelectedTextStyle = false;
     m_selectedStyleMixed = 0;
     m_textStyleMixed = 0;
-    m_serialNumberStyleMixed = 0;
+    m_sequenceNumberStyleMixed = 0;
     m_styleSource.reset();
     filterStyleMixed = 0;
     filterStyleSource.reset();

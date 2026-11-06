@@ -47,12 +47,12 @@ enum class Item {
     Shape,
     Arrow,
     Line,
-    FreeDraw,
+    Brush,
     Highlighter,
     Spotlight,
     Magnifier,
     Text,
-    SerialNumber,
+    SequenceNumber,
     Filter,
     Eraser,
     Watermark,
@@ -69,12 +69,12 @@ enum class Icon {
     Shape,
     Arrow,
     Line,
-    FreeDraw,
+    Brush,
     Highlight,
     Spotlight,
     Magnifier,
     Text,
-    SerialNumber,
+    SequenceNumber,
     Filter,
     Eraser,
     Watermark,
@@ -148,8 +148,8 @@ struct EditorDescriptor {
          Icon::Bracket},
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
-        {Item::FreeDraw, "free-draw",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Brush"), Icon::FreeDraw},
+        {Item::Brush, "free-draw", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Brush"),
+         Icon::Brush},
         {Item::Highlighter, "highlighter",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlight"), Icon::Highlight},
         {Item::Spotlight, "spotlight",
@@ -158,9 +158,9 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Magnifier"), Icon::Magnifier},
         {Item::Text, "text", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Text"),
          Icon::Text},
-        {Item::SerialNumber, "serial-number",
+        {Item::SequenceNumber, "serial-number",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Sequence number"),
-         Icon::SerialNumber},
+         Icon::SequenceNumber},
         {Item::Filter, "filter", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Filter"),
          Icon::Filter},
         {Item::Eraser, "eraser", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Eraser"),
@@ -995,7 +995,7 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::BracketAnnotation();
     case Icon::Line:
         return custom::ToolLine();
-    case Icon::FreeDraw:
+    case Icon::Brush:
         return custom::ToolFreeDraw();
     case Icon::Highlight:
         return custom::ToolHighlight();
@@ -1005,7 +1005,7 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolMagnifier();
     case Icon::Text:
         return custom::ToolText();
-    case Icon::SerialNumber:
+    case Icon::SequenceNumber:
         return custom::ToolSerialNumber();
     case Icon::Filter:
         return custom::ToolFilter();

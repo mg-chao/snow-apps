@@ -117,17 +117,18 @@ void structure(const QByteArray& pdf, int pages) {
 }
 
 void publicationReleasesFiles(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("source.png")), "fixture must import");
-    for (const auto mode : {CollagePdfExportMode::Combined, CollagePdfExportMode::PerPage}) {
+    for (const auto mode :
+         {ImageStitchingPdfExportMode::Combined, ImageStitchingPdfExportMode::PerPage}) {
         const QDir output(
             QDir(directory).filePath(QStringLiteral("publication-%1").arg(static_cast<int>(mode))));
-        CollagePdfSettings settings;
+        ImageStitchingPdfSettings settings;
         settings.exportMode = mode;
-        const QString destination = mode == CollagePdfExportMode::Combined
+        const QString destination = mode == ImageStitchingPdfExportMode::Combined
                                         ? output.filePath(QStringLiteral("new.pdf"))
                                         : output.path();
-        const auto result = exportCollagePdf(document.items(), settings, {destination});
+        const auto result = exportImageStitchingPdf(document.items(), settings, {destination});
         require(result.succeeded(), qPrintable(result.errorMessage()));
         require(result.paths.size() == 1 && result.completedPages == QVector<qsizetype>{1},
                 "new combined and per-page exports must publish their completed PDF");
@@ -143,16 +144,16 @@ void publicationReleasesFiles(const QString& directory) {
 void combinedPublicationConflict(const QString& directory) {
     const QDir output(QDir(directory).filePath(QStringLiteral("combined-conflict")));
     const QString path = output.filePath(QStringLiteral("new.pdf"));
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("source.png")), "fixture must import");
     bool raced = false;
-    const auto result = exportCollagePdf(document.items(), {}, {path}, {},
-                                         [&](const CollagePdfExportProgress& value) {
-                                             if (!raced && value.pageFraction >= 0.99) {
-                                                 raced = true;
-                                                 write(path, "created during export");
-                                             }
-                                         });
+    const auto result = exportImageStitchingPdf(document.items(), {}, {path}, {},
+                                                [&](const ImageStitchingPdfExportProgress& value) {
+                                                    if (!raced && value.pageFraction >= 0.99) {
+                                                        raced = true;
+                                                        write(path, "created during export");
+                                                    }
+                                                });
     require(raced && !result.succeeded() && !result.cancelled && !result.error.isEmpty() &&
                 result.paths.isEmpty() && result.completedPages.isEmpty() &&
                 read(path) == "created during export",
@@ -160,26 +161,28 @@ void combinedPublicationConflict(const QString& directory) {
     require(output.entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot) ==
                 QStringList{QStringLiteral("new.pdf")},
             "failed publication must remove its staging file and directory");
-    require(QFile::remove(path) && exportCollagePdf(document.items(), {}, {path}).succeeded(),
+    require(QFile::remove(path) &&
+                exportImageStitchingPdf(document.items(), {}, {path}).succeeded(),
             "publication failure must allow export to the same destination on retry");
     structure(read(path), 1);
 }
 
 void cancellationCleansNewFiles(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("source.png")), "fixture must import");
-    for (const auto mode : {CollagePdfExportMode::Combined, CollagePdfExportMode::PerPage}) {
+    for (const auto mode :
+         {ImageStitchingPdfExportMode::Combined, ImageStitchingPdfExportMode::PerPage}) {
         const QDir output(
             QDir(directory).filePath(QStringLiteral("cancel-new-%1").arg(static_cast<int>(mode))));
-        CollagePdfSettings settings;
+        ImageStitchingPdfSettings settings;
         settings.exportMode = mode;
-        const QString destination = mode == CollagePdfExportMode::Combined
+        const QString destination = mode == ImageStitchingPdfExportMode::Combined
                                         ? output.filePath(QStringLiteral("new.pdf"))
                                         : output.path();
         bool cancelled = false;
-        const auto result = exportCollagePdf(
+        const auto result = exportImageStitchingPdf(
             document.items(), settings, {destination}, [&] { return cancelled; },
-            [&](const CollagePdfExportProgress& value) {
+            [&](const ImageStitchingPdfExportProgress& value) {
                 if (value.pageFraction > 0.2)
                     cancelled = true;
             });
@@ -187,7 +190,7 @@ void cancellationCleansNewFiles(const QString& directory) {
                 "cancellation before publication must not report any completed PDF");
         require(output.entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).isEmpty(),
                 "canceled new exports must remove every staging file and directory");
-        require(exportCollagePdf(document.items(), settings, {destination}).succeeded(),
+        require(exportImageStitchingPdf(document.items(), settings, {destination}).succeeded(),
                 "canceled exports must release their staging handles before retry");
     }
 }
@@ -198,13 +201,13 @@ void lockedDestinationPreservesOriginal(const QString& directory) {
     require(QDir().mkpath(output.path()), "locked destination directory must exist");
     const QString path = output.filePath(QStringLiteral("locked.pdf"));
     write(path, "original locked PDF");
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("source.png")), "fixture must import");
     const HANDLE handle =
         CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), GENERIC_READ, FILE_SHARE_READ, nullptr,
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     require(handle != INVALID_HANDLE_VALUE, "fixture must lock the existing destination");
-    const auto result = exportCollagePdf(document.items(), {}, {path, true});
+    const auto result = exportImageStitchingPdf(document.items(), {}, {path, true});
     CloseHandle(handle);
     require(!result.succeeded() && !result.cancelled && !result.error.isEmpty() &&
                 result.paths.isEmpty() && result.completedPages.isEmpty() &&
@@ -213,7 +216,7 @@ void lockedDestinationPreservesOriginal(const QString& directory) {
     require(output.entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot) ==
                 QStringList{QStringLiteral("locked.pdf")},
             "a destination lock must not leave any temporary file or directory");
-    require(exportCollagePdf(document.items(), {}, {path, true}).succeeded(),
+    require(exportImageStitchingPdf(document.items(), {}, {path, true}).succeeded(),
             "authorized replacement must succeed after the destination lock is released");
     structure(read(path), 1);
 }
@@ -222,7 +225,7 @@ void lockedDestinationPreservesOriginal(const QString& directory) {
 void transformsAndSourceResolution(const QString& directory) {
     for (int rotation = 0; rotation < 4; ++rotation) {
         for (int flip = 0; flip < 4; ++flip) {
-            CollageDocument document;
+            ImageStitchingDocument document;
             QImage image = fixture();
             if ((rotation + flip) % 2) {
                 image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
@@ -237,12 +240,12 @@ void transformsAndSourceResolution(const QString& directory) {
             if (flip & 2)
                 require(document.flip(id, false), "vertical flip fixture must apply");
             const auto item = document.items().first();
-            const auto before = collageResourceUsage().reservedBytes;
+            const auto before = imageStitchingResourceUsage().reservedBytes;
             const QString path = QDir(directory).filePath(
                 QStringLiteral("transform-%1-%2.pdf").arg(rotation).arg(flip));
-            const auto result = exportCollagePdf(document.items(), {}, {path});
+            const auto result = exportImageStitchingPdf(document.items(), {}, {path});
             require(result.succeeded(), "all rotation and flip combinations must export");
-            require(collageResourceUsage().reservedBytes == before,
+            require(imageStitchingResourceUsage().reservedBytes == before,
                     "PDF scratch reservations must retire after export");
             const auto pdf = read(path);
             structure(pdf, 1);
@@ -265,7 +268,7 @@ void transformsAndSourceResolution(const QString& directory) {
 }
 
 void combinedOrderAndGeometry(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage red(19, 23, QImage::Format_RGB32);
     red.fill(Qt::red);
     QImage blue(1, 60000, QImage::Format_RGB32);
@@ -275,18 +278,19 @@ void combinedOrderAndGeometry(const QString& directory) {
             "combined originals must import");
     auto items = document.items();
     std::reverse(items.begin(), items.end());
-    CollagePdfSettings settings;
+    ImageStitchingPdfSettings settings;
     settings.marginTopMm = 17;
     settings.marginBottomMm = 13;
     settings.marginLeftMm = 23;
     settings.marginRightMm = 7;
-    for (auto orientation : {CollagePdfOrientation::Portrait, CollagePdfOrientation::Landscape}) {
+    for (auto orientation :
+         {ImageStitchingPdfOrientation::Portrait, ImageStitchingPdfOrientation::Landscape}) {
         settings.orientation = orientation;
         const QString path = QDir(directory).filePath(
             QStringLiteral("combined-%1.pdf").arg(static_cast<int>(orientation)));
         qsizetype progressedPage = 0;
-        const auto result = exportCollagePdf(
-            items, settings, {path}, {}, [&](const CollagePdfExportProgress& value) {
+        const auto result = exportImageStitchingPdf(
+            items, settings, {path}, {}, [&](const ImageStitchingPdfExportProgress& value) {
                 require(value.pageNumber >= progressedPage && value.totalPages == 2,
                         "progress must visit pages in current document order");
                 progressedPage = value.pageNumber;
@@ -296,7 +300,7 @@ void combinedOrderAndGeometry(const QString& directory) {
                 "combined export must return one finalized file for all completed pages");
         const auto pdf = read(path);
         structure(pdf, 2);
-        const QByteArray media = orientation == CollagePdfOrientation::Portrait
+        const QByteArray media = orientation == ImageStitchingPdfOrientation::Portrait
                                      ? "/MediaBox [0 0 595.27559055 841.88976378]"
                                      : "/MediaBox [0 0 841.88976378 595.27559055]";
         require(pdf.count(media) == 2, "all pages must share selected physical paper dimensions");
@@ -305,7 +309,8 @@ void combinedOrderAndGeometry(const QString& directory) {
                     images.first().pixelColor(0, 0) == QColor(Qt::blue) &&
                     images.last().pixelColor(0, 0) == QColor(Qt::red),
                 "long image tiles must remain on one page and preserve current image order");
-        const auto layout = calculateCollagePdfPageLayout(transformedSize(items.first()), settings);
+        const auto layout =
+            calculateImageStitchingPdfPageLayout(transformedSize(items.first()), settings);
         const auto number = [](qreal value) { return QByteArray::number(value, 'f', 8); };
         constexpr qreal points = 72.0 / 25.4;
         require(pdf.contains(number(layout.imageMillimeters.left() * points)),
@@ -314,21 +319,22 @@ void combinedOrderAndGeometry(const QString& directory) {
 }
 
 void imageSizedPages(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(fixture({96, 192}), QStringLiteral("portrait.png"));
     const auto second = document.append(fixture({48, 96}), QStringLiteral("rotated.png"));
     require(first && second && document.rotate(second, true),
             "image-sized PDF fixtures must import and rotate");
-    CollagePdfSettings settings;
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
-    settings.orientation = CollagePdfOrientation::Landscape;
+    ImageStitchingPdfSettings settings;
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     const QList<QSize> expected{QSize(96, 192), QSize(96, 48)};
-    for (const auto mode : {CollagePdfExportMode::Combined, CollagePdfExportMode::PerPage}) {
+    for (const auto mode :
+         {ImageStitchingPdfExportMode::Combined, ImageStitchingPdfExportMode::PerPage}) {
         settings.exportMode = mode;
-        const bool combined = mode == CollagePdfExportMode::Combined;
+        const bool combined = mode == ImageStitchingPdfExportMode::Combined;
         const QString path = QDir(directory).filePath(
             combined ? QStringLiteral("image-sized.pdf") : QStringLiteral("image-sized-pages"));
-        const auto result = exportCollagePdf(document.items(), settings, {path});
+        const auto result = exportImageStitchingPdf(document.items(), settings, {path});
         require(result.succeeded() && result.paths.size() == (combined ? 1 : 2),
                 "combined and per-page export support image-sized paper");
         QByteArray pdf;
@@ -368,24 +374,24 @@ void imageSizedPages(const QString& directory) {
 void namesAndConflicts(const QString& directory) {
     const QDir output(QDir(directory).filePath(QStringLiteral("pages")));
     require(QDir().mkpath(output.path()), "per-page fixture directory must exist");
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("C:\\images\\example<name>.png")) &&
                 document.append(fixture(), QStringLiteral("CON.png")) &&
                 document.append(fixture(), QString(200, QChar(0x96ea)) + QStringLiteral(".png")),
             "named originals must import");
     const QString existing = output.filePath(QStringLiteral("001_example_name_.pdf"));
     write(existing, "existing");
-    CollagePdfSettings settings;
-    settings.exportMode = CollagePdfExportMode::PerPage;
+    ImageStitchingPdfSettings settings;
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
     bool raced = false;
-    const auto result =
-        exportCollagePdf(document.items(), settings, {output.path()}, {},
-                         [&](const CollagePdfExportProgress& value) {
-                             if (!raced && value.pageNumber == 2 && value.pageFraction >= 0.99) {
-                                 raced = true;
-                                 write(output.filePath(QStringLiteral("002_CON.pdf")), "raced");
-                             }
-                         });
+    const auto result = exportImageStitchingPdf(
+        document.items(), settings, {output.path()}, {},
+        [&](const ImageStitchingPdfExportProgress& value) {
+            if (!raced && value.pageNumber == 2 && value.pageFraction >= 0.99) {
+                raced = true;
+                write(output.filePath(QStringLiteral("002_CON.pdf")), "raced");
+            }
+        });
     require(result.succeeded() && result.paths.size() == 3,
             "per-page export must complete every page independently");
     require(QFileInfo(result.paths[0]).fileName() == QStringLiteral("001_example_name__2.pdf") &&
@@ -400,7 +406,7 @@ void namesAndConflicts(const QString& directory) {
         structure(read(path), 1);
 }
 
-void exportNamesPreserveCollagePolicy(const QString& directory) {
+void exportNamesPreserveImageStitchingPolicy(const QString& directory) {
     const QDir output(QDir(directory).filePath(QStringLiteral("sanitized-pages")));
     require(QDir().mkpath(output.path()), "filename fixture directory exists");
     const QString emoji = QString::fromUcs4(U"\U0001f4f7");
@@ -410,12 +416,12 @@ void exportNamesPreserveCollagePolicy(const QString& directory) {
     const QStringList labels = {QStringLiteral("C:\\folder\\") + controls + QStringLiteral(".png"),
                                 QStringLiteral("  ...  .png"), exactLimit + QStringLiteral("x.png"),
                                 overLimit + QStringLiteral(".png")};
-    CollageDocument document;
+    ImageStitchingDocument document;
     for (const auto& label : labels)
         require(document.append(fixture(), label), "filename originals must import");
-    CollagePdfSettings settings;
-    settings.exportMode = CollagePdfExportMode::PerPage;
-    const auto result = exportCollagePdf(document.items(), settings, {output.path()});
+    ImageStitchingPdfSettings settings;
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
+    const auto result = exportImageStitchingPdf(document.items(), settings, {output.path()});
     require(result.succeeded() && result.paths.size() == 4,
             "filename originals must export independently");
     const QStringList expected = {QStringLiteral("001_name___.pdf"),
@@ -429,7 +435,7 @@ void exportNamesPreserveCollagePolicy(const QString& directory) {
 }
 
 void cancellationAndPartialFailure(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture({2051, 2063}), QStringLiteral("first.png")) &&
                 document.append(fixture(), QStringLiteral("second.png")),
             "cancellation originals must import");
@@ -437,24 +443,24 @@ void cancellationAndPartialFailure(const QString& directory) {
     const QString path = QDir(directory).filePath(QStringLiteral("cancelled.pdf"));
     write(path, "preserved");
     bool cancelled = false;
-    const auto combined = exportCollagePdf(
+    const auto combined = exportImageStitchingPdf(
         snapshot, {}, {path, true}, [&] { return cancelled; },
-        [&](const CollagePdfExportProgress& value) {
+        [&](const ImageStitchingPdfExportProgress& value) {
             if (value.pageFraction > 0.2)
                 cancelled = true;
         });
     require(combined.cancelled && combined.completedPages.isEmpty() && read(path) == "preserved" &&
                 document.items().size() == 2,
             "combined cancellation must preserve the existing file and all editing content");
-    require(!exportCollagePdf(snapshot, {}, {path}).succeeded() && read(path) == "preserved",
+    require(!exportImageStitchingPdf(snapshot, {}, {path}).succeeded() && read(path) == "preserved",
             "combined replacement requires explicit overwrite authorization");
-    CollagePdfSettings settings;
-    settings.exportMode = CollagePdfExportMode::PerPage;
+    ImageStitchingPdfSettings settings;
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
     const QDir output(QDir(directory).filePath(QStringLiteral("partial-cancel")));
     cancelled = false;
-    const auto partial = exportCollagePdf(
+    const auto partial = exportImageStitchingPdf(
         snapshot, settings, {output.path()}, [&] { return cancelled; },
-        [&](const CollagePdfExportProgress& value) {
+        [&](const ImageStitchingPdfExportProgress& value) {
             if (value.completedPages == 1 && value.pageFraction == 0)
                 cancelled = true;
         });
@@ -466,18 +472,18 @@ void cancellationAndPartialFailure(const QString& directory) {
     const QDir failureOutput(QDir(directory).filePath(QStringLiteral("partial-failure")));
     auto invalidSource = snapshot;
     bool invalidated = false;
-    const auto failure = exportCollagePdf(invalidSource, settings, {failureOutput.path()}, {},
-                                          [&](const CollagePdfExportProgress& value) {
-                                              if (!invalidated && value.completedPages == 1 &&
-                                                  value.pageFraction == 0) {
-                                                  // Invalidate a test-owned source after admission
-                                                  // to exercise preparation failure after a
-                                                  // successful publication without
-                                                  // platform-specific disk permissions.
-                                                  invalidSource[1].image = {};
-                                                  invalidated = true;
-                                              }
-                                          });
+    const auto failure = exportImageStitchingPdf(
+        invalidSource, settings, {failureOutput.path()}, {},
+        [&](const ImageStitchingPdfExportProgress& value) {
+            if (!invalidated && value.completedPages == 1 && value.pageFraction == 0) {
+                // Invalidate a test-owned source after admission
+                // to exercise preparation failure after a
+                // successful publication without
+                // platform-specific disk permissions.
+                invalidSource[1].image = {};
+                invalidated = true;
+            }
+        });
     require(!failure.succeeded() && !failure.cancelled &&
                 failure.completedPages == QVector<qsizetype>{1} && failure.paths.size() == 1 &&
                 failure.error.contains(QStringLiteral("Page 2")),
@@ -485,39 +491,40 @@ void cancellationAndPartialFailure(const QString& directory) {
     require(
         failureOutput.entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).size() == 1,
         "failed export must clean up every incomplete staging file");
-    require(exportCollagePdf(snapshot, {}, {QDir(directory).filePath(QStringLiteral("retry.pdf"))})
+    require(exportImageStitchingPdf(snapshot, {},
+                                    {QDir(directory).filePath(QStringLiteral("retry.pdf"))})
                 .succeeded(),
             "preserved editing content must export successfully on retry");
 }
 
 void invalidInput(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("invalid.png")), "fixture must import");
     const QString path = QDir(directory).filePath(QStringLiteral("invalid.pdf"));
-    CollagePdfSettings settings;
+    ImageStitchingPdfSettings settings;
     settings.marginLeftMm = 300;
-    require(!exportCollagePdf(document.items(), settings, {path}).succeeded() &&
+    require(!exportImageStitchingPdf(document.items(), settings, {path}).succeeded() &&
                 !QFileInfo::exists(path),
             "invalid settings must fail before creating any output file");
-    require(!exportCollagePdf({}, {}, {path}).succeeded() &&
-                !exportCollagePdf(document.items(), {}, {}).succeeded(),
+    require(!exportImageStitchingPdf({}, {}, {path}).succeeded() &&
+                !exportImageStitchingPdf(document.items(), {}, {}).succeeded(),
             "empty document and missing destination must be rejected");
-    require(exportCollagePdf(document.items(), {}, {path}, [] { return true; }).cancelled &&
+    require(exportImageStitchingPdf(document.items(), {}, {path}, [] { return true; }).cancelled &&
                 !QFileInfo::exists(path),
             "pre-canceled exports must not create files");
 }
 
 void admittedLongImage(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage image(1, 1000001, QImage::Format_RGB32);
     image.fill(Qt::green);
     require(document.append(image, QStringLiteral("very-long.png")),
             "narrow long image must obey the existing pixel admission policy");
     const QString path = QDir(directory).filePath(QStringLiteral("very-long.pdf"));
-    CollagePdfExportProgress finalProgress;
-    const auto result =
-        exportCollagePdf(document.items(), {}, {path}, {},
-                         [&](const CollagePdfExportProgress& value) { finalProgress = value; });
+    ImageStitchingPdfExportProgress finalProgress;
+    const auto result = exportImageStitchingPdf(
+        document.items(), {}, {path}, {},
+        [&](const ImageStitchingPdfExportProgress& value) { finalProgress = value; });
     require(result.succeeded(), "an admitted image must not encounter a second PDF axis limit");
     require(finalProgress.completedPages == 1 && finalProgress.totalPages == 1 &&
                 finalProgress.pageNumber == 1 && finalProgress.pageFraction == 1,
@@ -526,29 +533,29 @@ void admittedLongImage(const QString& directory) {
 }
 
 void overwritePermissionBindsSelectedFilename(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("source.png")), "fixture must import");
     const QDir output(directory);
     const QString selected = output.filePath(QStringLiteral("report.txt"));
     const QString normalized = output.filePath(QStringLiteral("report.txt.pdf"));
     write(selected, "selected file");
     write(normalized, "another file");
-    const auto rejected = exportCollagePdf(document.items(), {}, {selected, true});
+    const auto rejected = exportImageStitchingPdf(document.items(), {}, {selected, true});
     require(!rejected.succeeded() && read(selected) == "selected file" &&
                 read(normalized) == "another file",
             "adding PDF suffix must not transfer overwrite permission to another filename");
-    require(exportCollagePdf(document.items(), {}, {normalized, true}).succeeded(),
+    require(exportImageStitchingPdf(document.items(), {}, {normalized, true}).succeeded(),
             "explicit permission for the actual PDF filename permits replacement");
     structure(read(normalized), 1);
     const QString uppercase = output.filePath(QStringLiteral("uppercase.PDF"));
     write(uppercase, "authorized uppercase extension");
-    const auto replaced = exportCollagePdf(document.items(), {}, {uppercase, true});
+    const auto replaced = exportImageStitchingPdf(document.items(), {}, {uppercase, true});
     require(replaced.succeeded() && replaced.paths == QStringList{uppercase},
             "case-insensitive PDF suffix recognition must retain exact filename permission");
     structure(read(uppercase), 1);
     const QString newSelected = output.filePath(QStringLiteral("new.txt"));
     write(newSelected, "preserved selected filename");
-    const auto appended = exportCollagePdf(document.items(), {}, {newSelected, true});
+    const auto appended = exportImageStitchingPdf(document.items(), {}, {newSelected, true});
     require(
         appended.succeeded() && read(newSelected) == "preserved selected filename" &&
             appended.paths == QStringList{newSelected + QStringLiteral(".pdf")},
@@ -556,10 +563,10 @@ void overwritePermissionBindsSelectedFilename(const QString& directory) {
 }
 
 void positiveTinyPaperKeepsNonzeroGeometry(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     require(document.append(fixture(), QStringLiteral("tiny-paper.png")), "fixture must import");
-    CollagePdfSettings settings;
-    settings.paperSize = CollagePdfPaperSize::Custom;
+    ImageStitchingPdfSettings settings;
+    settings.paperSize = ImageStitchingPdfPaperSize::Custom;
     settings.customWidthMm = 1e-10;
     settings.customHeightMm = 2e-10;
     settings.marginTopMm = 0;
@@ -567,7 +574,7 @@ void positiveTinyPaperKeepsNonzeroGeometry(const QString& directory) {
     settings.marginLeftMm = 0;
     settings.marginRightMm = 0;
     const QString path = QDir(directory).filePath(QStringLiteral("tiny-paper.pdf"));
-    require(exportCollagePdf(document.items(), settings, {path}).succeeded(),
+    require(exportImageStitchingPdf(document.items(), settings, {path}).succeeded(),
             "valid positive paper dimensions must export even below fixed decimal precision");
     const auto pdf = read(path);
     structure(pdf, 1);
@@ -596,10 +603,10 @@ void positiveTinyPaperKeepsNonzeroGeometry(const QString& directory) {
             "tiny paper must retain proportional image placement inside its page");
 }
 void templateCompositionAndPublication(const QString& directory) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     auto settings = document.pdfSettings();
-    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    settings.templateType = ImageStitchingPdfTemplateType::FiveImages;
     settings.imageSpacingMm = 7.5;
     document.setPdfSettings(settings);
     for (int index = 0; index < 7; ++index)
@@ -609,11 +616,11 @@ void templateCompositionAndPublication(const QString& directory) {
     const auto first = document.items().front().id;
     require(document.setPdfPlacement(first, {{-30, 20}, 4.5}) && document.rotate(first, true),
             "template fixture must preserve manual scale through rotation");
-    QVector<CollagePdfExportProgress> updates;
-    const auto combined =
-        exportCollagePdf(document.items(), settings,
-                         {QDir(directory).filePath(QStringLiteral("template-combined.pdf"))}, {},
-                         [&](const CollagePdfExportProgress& update) { updates.append(update); });
+    QVector<ImageStitchingPdfExportProgress> updates;
+    const auto combined = exportImageStitchingPdf(
+        document.items(), settings,
+        {QDir(directory).filePath(QStringLiteral("template-combined.pdf"))}, {},
+        [&](const ImageStitchingPdfExportProgress& update) { updates.append(update); });
     require(combined.succeeded() && combined.totalCount == 2 &&
                 combined.completedPages == QVector<qsizetype>({1, 2}),
             "combined template export counts composed pages instead of input images");
@@ -624,7 +631,8 @@ void templateCompositionAndPublication(const QString& directory) {
     constexpr qreal points = 72.0 / 25.4;
     const auto number = [](qreal value) { return QByteArray::number(value, 'f', 8); };
     for (qsizetype pageIndex = 0; pageIndex < 2; ++pageIndex) {
-        const auto page = calculateCollagePdfComposedPage(document.items(), settings, pageIndex);
+        const auto page =
+            calculateImageStitchingPdfComposedPage(document.items(), settings, pageIndex);
         require(page.isValid(), "export geometry must be available to the preview");
         for (const auto& cell : page.cells) {
             if (cell.itemIndex < 0)
@@ -662,8 +670,8 @@ void templateCompositionAndPublication(const QString& directory) {
                                        update.pageNumber <= 2;
                             }),
             "all export progress must refer to composed pages");
-    settings.exportMode = CollagePdfExportMode::PerPage;
-    const auto separate = exportCollagePdf(
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
+    const auto separate = exportImageStitchingPdf(
         document.items(), settings, {QDir(directory).filePath(QStringLiteral("template-pages"))});
     require(separate.succeeded() && separate.paths.size() == 2 &&
                 QFileInfo(separate.paths[0]).fileName() == QStringLiteral("001_page.pdf") &&
@@ -676,7 +684,7 @@ void templateCompositionAndPublication(const QString& directory) {
                 "per-page files must contain every image assigned to that page");
     }
     bool cancelled = false;
-    const auto partial = exportCollagePdf(
+    const auto partial = exportImageStitchingPdf(
         document.items(), settings, {QDir(directory).filePath(QStringLiteral("template-partial"))},
         [&] { return cancelled; },
         [&](const auto& update) {
@@ -706,7 +714,7 @@ int main(int argc, char** argv) {
         combinedOrderAndGeometry(temporary.path());
         imageSizedPages(temporary.path());
         namesAndConflicts(temporary.path());
-        exportNamesPreserveCollagePolicy(temporary.path());
+        exportNamesPreserveImageStitchingPolicy(temporary.path());
         cancellationAndPartialFailure(temporary.path());
         invalidInput(temporary.path());
         admittedLongImage(temporary.path());

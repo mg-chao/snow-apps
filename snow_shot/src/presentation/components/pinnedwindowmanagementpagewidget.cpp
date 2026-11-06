@@ -637,7 +637,7 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
             connect(m_batchStitchAction, &QAction::triggered, this, [this] {
                 const QStringList selected = selectedRecordIds();
                 if (!selected.isEmpty())
-                    emit collageRequested(selected);
+                    emit stitchImagesRequested(selected);
             });
             connect(m_batchPinAction, &QAction::triggered, this, [this] {
                 if (m_source && selectedGroupId())
@@ -957,7 +957,7 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                             history_page::showRevealFailure(this);
                     });
                     connect(stitch, &QAction::triggered, row,
-                            [this, id] { emit collageRequested({id}); });
+                            [this, id] { emit stitchImagesRequested({id}); });
                     connect(split, &QAction::triggered, row,
                             [this, id] { emit splitRequested(id); });
                     return menu;

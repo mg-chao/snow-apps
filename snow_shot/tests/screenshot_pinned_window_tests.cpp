@@ -3628,7 +3628,7 @@ void pinnedEditingRemembersLastFilterToolAcrossSessions() {
     {
         ScreenshotToolPalette* palette = controller.toolbarWindow()->palette();
         require(palette != nullptr && palette->activateDrawingShortcut(QStringLiteral("filter")) &&
-                    palette->activeToolForTests() == Tool::PenFilter,
+                    palette->activeToolForTests() == Tool::BrushFilter,
                 "a fresh pinned edit session must start from the persisted filter mode");
         // Picking rectangular blur in the filter style panel switches the canvas tool.
         adqt::widgets::AdRadioButtonGroup* filterModes = nullptr;
@@ -3822,11 +3822,11 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
             {&ScreenshotToolPalette::arrowRequested, SnowCanvasTool::Arrow, Tool::Arrow},
             {&ScreenshotToolPalette::lineRequested, SnowCanvasTool::Line, Tool::Line},
             {&ScreenshotToolPalette::angleToolRequested, SnowCanvasTool::Angle, Tool::Angle},
-            {&ScreenshotToolPalette::freeDrawRequested, SnowCanvasTool::FreeDraw, Tool::FreeDraw},
+            {&ScreenshotToolPalette::brushRequested, SnowCanvasTool::FreeDraw, Tool::Brush},
             {&ScreenshotToolPalette::highlightRequested, SnowCanvasTool::RectangleHighlight,
              Tool::RectangleHighlight},
-            {&ScreenshotToolPalette::penHighlightRequested, SnowCanvasTool::PenHighlight,
-             Tool::PenHighlight},
+            {&ScreenshotToolPalette::brushHighlightRequested, SnowCanvasTool::PenHighlight,
+             Tool::BrushHighlight},
             {&ScreenshotToolPalette::spotlightRequested, SnowCanvasTool::Spotlight,
              Tool::Spotlight},
             {&ScreenshotToolPalette::magnifierRequested, SnowCanvasTool::Magnifier,
@@ -3842,13 +3842,13 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
              Tool::RectangleFilter},
             {&ScreenshotToolPalette::autoFilterRequested, SnowCanvasTool::AutoFilter,
              Tool::AutoFilter},
-            {&ScreenshotToolPalette::penFilterRequested, SnowCanvasTool::PenFilter,
-             Tool::PenFilter},
+            {&ScreenshotToolPalette::brushFilterRequested, SnowCanvasTool::PenFilter,
+             Tool::BrushFilter},
             {&ScreenshotToolPalette::watermarkRequested, SnowCanvasTool::Watermark,
              Tool::Watermark},
             {&ScreenshotToolPalette::textRequested, SnowCanvasTool::Text, Tool::Text},
-            {&ScreenshotToolPalette::serialNumberRequested, SnowCanvasTool::SerialNumber,
-             Tool::SerialNumber},
+            {&ScreenshotToolPalette::sequenceNumberRequested, SnowCanvasTool::SerialNumber,
+             Tool::SequenceNumber},
         };
         for (const auto& request : requests) {
             require(palette->activateToolShortcut(recognitionTool) && session->active(),
@@ -21017,7 +21017,7 @@ void pinnedRightQuickSelection() {
     auto* editController = pin.findChild<ScreenshotPinnedEditController*>();
     require(editController != nullptr && editController->toolbarWindow() != nullptr,
             "pin owns annotation toolbar");
-    editController->toolbarWindow()->palette()->freeDrawRequested();
+    editController->toolbarWindow()->palette()->brushRequested();
     auto* canvas = pin.findChild<SnowCanvasWidget*>();
     require(canvas != nullptr, "pin owns drawing canvas");
     canvas_quick_selection_test::drawStroke(*canvas);
@@ -22758,7 +22758,7 @@ void pinnedPrintingPreservesVisibleToolbar(bool recognition) {
     auto* canvas = window.findChild<SnowCanvasWidget*>();
     require(toolbar && toolbar->isVisible() && canvas, "printing needs a visible toolbar");
     if (!recognition)
-        toolbar->palette()->freeDrawRequested();
+        toolbar->palette()->brushRequested();
     toolbar->moveContentTo(toolbar->contentPosition() + QPoint(24, 16));
     toolbar->dragFinished();
     window.activateWindow();
@@ -22979,7 +22979,7 @@ void pinnedAirDropLifecycle() {
         auto* edit = window.findChild<ScreenshotPinnedEditController*>();
         require(edit && edit->toolbarWindow(), "AirDrop fixture has an editing toolbar");
         const QPointer<ScreenshotToolPalette> palette(edit->toolbarWindow()->palette());
-        palette->freeDrawRequested();
+        palette->brushRequested();
         auto* canvas = window.findChild<SnowCanvasWidget*>();
         require(canvas, "AirDrop fixture has a canvas");
         canvas_quick_selection_test::drawStroke(*canvas);
@@ -23190,7 +23190,7 @@ void pinnedPrintMatchesTransformedViewport() {
         auto* editController = window.findChild<ScreenshotPinnedEditController*>();
         require(editController && editController->toolbarWindow(),
                 "annotated print fixture needs its drawing toolbar");
-        editController->toolbarWindow()->palette()->freeDrawRequested();
+        editController->toolbarWindow()->palette()->brushRequested();
         auto* drawingCanvas = window.findChild<SnowCanvasWidget*>();
         require(drawingCanvas, "annotated print fixture needs a canvas");
         canvas_quick_selection_test::drawStroke(*drawingCanvas);
@@ -23415,7 +23415,7 @@ void pinnedRightQuickSelectionPreservesWindowSelection() {
             auto* canvas = pin.findChild<SnowCanvasWidget*>();
             require(controller && controller->toolbarWindow() && canvas,
                     "registered pin owns its drawing canvas and toolbar");
-            controller->toolbarWindow()->palette()->freeDrawRequested();
+            controller->toolbarWindow()->palette()->brushRequested();
             canvas_quick_selection_test::drawStroke(*canvas);
 
             fixture.selection.toggleSelection(&peer);
@@ -23778,7 +23778,7 @@ void pinnedMultiSelectionPointerThresholds() {
     auto* edit = first.findChild<ScreenshotPinnedEditController*>();
     require(edit && edit->toolbarWindow(),
             "annotation threshold fixture opens its existing toolbar");
-    edit->toolbarWindow()->palette()->freeDrawRequested();
+    edit->toolbarWindow()->palette()->brushRequested();
     require(!Access::draggableAt(first, first.rect().center()),
             "annotation body retains content input instead of group movement");
     const QRect contentFirst = first.currentNativeGeometry();
@@ -24358,16 +24358,17 @@ void pinnedImageStitchingTextAndDeferredContent() {
     Access::recognition(text)->activate(ScreenshotRecognitionSessionController::Mode::Text);
     waitForUi(20);
     auto occupied =
-        snow_shot::presentation::collage_detail::reserveWorking(qint64{512} * 1024 * 1024);
+        snow_shot::presentation::image_stitching_detail::reserveWorking(qint64{512} * 1024 * 1024);
     require(occupied != nullptr, "occupy the shared rasterization budget before OCR capture");
     const auto rejected = text.stitchingSnapshot();
     require(!rejected.source.isValid() && !rejected.error.isEmpty(),
             "OCR stitching must reject memory admission before allocating its viewport raster");
     occupied.reset();
-    const qint64 captureBaseline = snow_shot::presentation::collageResourceUsage().reservedBytes;
+    const qint64 captureBaseline =
+        snow_shot::presentation::imageStitchingResourceUsage().reservedBytes;
     const auto frozen = text.stitchingSnapshot();
     require(frozen.source.isValid() && frozen.error.isEmpty() &&
-                snow_shot::presentation::collageResourceUsage().reservedBytes ==
+                snow_shot::presentation::imageStitchingResourceUsage().reservedBytes ==
                     captureBaseline + decoded->image.sizeInBytes(),
             "an OCR stitching source accounts for its raster before joining the import queue");
     const QImage before = pinnedStitchingPixels(frozen, fixture.selection);

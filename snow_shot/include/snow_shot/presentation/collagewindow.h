@@ -18,14 +18,14 @@ namespace adqt::widgets {
 class AdModal;
 }
 namespace snow_shot::presentation::components {
-class CollageEditorWidget;
+class ImageStitchingEditorWidget;
 }
 namespace snow_shot::presentation {
 
 struct ImageSplitSnapshot;
 
 // Narrow asynchronous ports make terminal publication/writer behavior deterministic in tests.
-struct CollageWindowServices final {
+struct ImageStitchingWindowServices final {
     using Completion = std::function<void(bool, QString)>;
     using Export = std::function<void(std::shared_ptr<ScreenshotExportArtifact>, QObject*, QWidget*,
                                       Completion)>;
@@ -34,19 +34,21 @@ struct CollageWindowServices final {
     std::function<void(QWidget*, bool clear, std::function<void(bool)>)> confirm;
     std::function<std::optional<QImage>(const storage::CaptureHistoryRecord&)> readHistory;
     ScreenshotPinnedImageSnapshotRequest requestPinnedSnapshot;
-    using PdfChoice = std::function<void(std::optional<CollagePdfDestination>)>;
-    std::function<void(QWidget*, CollagePdfExportMode, PdfChoice)> choosePdfDestination;
-    std::function<CollagePdfExportResult(const QVector<CollageItem>&, const CollagePdfSettings&,
-                                         const CollagePdfDestination&, std::function<bool()>,
-                                         std::function<void(const CollagePdfExportProgress&)>)>
+    using PdfChoice = std::function<void(std::optional<ImageStitchingPdfDestination>)>;
+    std::function<void(QWidget*, ImageStitchingPdfExportMode, PdfChoice)> choosePdfDestination;
+    std::function<ImageStitchingPdfExportResult(
+        const QVector<ImageStitchingItem>&, const ImageStitchingPdfSettings&,
+        const ImageStitchingPdfDestination&, std::function<bool()>,
+        std::function<void(const ImageStitchingPdfExportProgress&)>)>
         exportPdf;
 };
 
-class CollageWindow final : public QObject {
+class ImageStitchingWindow final : public QObject {
     Q_OBJECT
   public:
-    explicit CollageWindow(QObject* parent = nullptr, CollageWindowServices services = {});
-    ~CollageWindow() override;
+    explicit ImageStitchingWindow(QObject* parent = nullptr,
+                                  ImageStitchingWindowServices services = {});
+    ~ImageStitchingWindow() override;
     void present(const QVector<storage::CaptureHistoryRecord>& records = {});
     void presentPinnedRecords(const QStringList& recordIds);
     void presentPinnedWindows(const QVector<ScreenshotPinnedImageSnapshot>& snapshots);
@@ -63,15 +65,15 @@ class CollageWindow final : public QObject {
     void shutdown();
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool loading() const;
-    [[nodiscard]] CollageDocument* document() const;
-    [[nodiscard]] components::CollageEditorWidget* editor() const;
+    [[nodiscard]] ImageStitchingDocument* document() const;
+    [[nodiscard]] components::ImageStitchingEditorWidget* editor() const;
     [[nodiscard]] adqt::widgets::AdModal* modal() const;
 
   signals:
     void closed();
     void importFinished(const QStringList& failures);
     void exportFinished(bool success);
-    void pdfExportFinished(const CollagePdfExportResult& result);
+    void pdfExportFinished(const ImageStitchingPdfExportResult& result);
 
   private:
     struct Impl;

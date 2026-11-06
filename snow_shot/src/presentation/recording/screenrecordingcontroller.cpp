@@ -979,19 +979,19 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::lineRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Line); });
-        QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::FreeDraw); });
         QObject::connect(&palette, &ScreenshotToolPalette::highlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::RectangleHighlight); });
-        QObject::connect(&palette, &ScreenshotToolPalette::penHighlightRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushHighlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::PenHighlight); });
         QObject::connect(&palette, &ScreenshotToolPalette::rectangleFilterRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::RectangleFilter); });
-        QObject::connect(&palette, &ScreenshotToolPalette::penFilterRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::brushFilterRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::PenFilter); });
         QObject::connect(&palette, &ScreenshotToolPalette::autoFilterRequested,
@@ -1015,7 +1015,7 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::textRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Text); });
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::sequenceNumberRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::SerialNumber); });
         QObject::connect(&palette, &ScreenshotToolPalette::undoRequested,

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace snow_shot::presentation::collage_detail {
+namespace snow_shot::presentation::image_stitching_detail {
 inline void paintPreviewBorder(QPainter& painter, const QRectF& bounds, const QColor& color) {
     // Quantize the one-logical-pixel guide and its edges in device space, including
     // backing-store translations, so every side covers the same whole pixel count.
@@ -96,5 +96,5 @@ inline QRectF centeredResize(const QRectF& initialImage, SnowCanvasSelectionHand
     const auto size = initialImage.size() * scale;
     return {initialImage.center() - QPointF(size.width() / 2, size.height() / 2), size};
 }
-} // namespace snow_shot::presentation::collage_detail
+} // namespace snow_shot::presentation::image_stitching_detail
 #endif

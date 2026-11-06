@@ -105,25 +105,26 @@ QImage image(QSize size = {3, 2}, QColor color = Qt::red) {
 }
 
 void resetSettings() {
-    const CollageSettingsStore settings(storage::ApplicationStorage::instance().configuration());
+    const ImageStitchingSettingsStore settings(
+        storage::ApplicationStorage::instance().configuration());
     for (const auto* field :
          {"direction", "sizing_mode", "rows", "columns", "custom_grid_initialized", "border_px",
           "spacing_px", "background_color"})
         require(settings.write(QString::fromLatin1(field), {}), "reset isolated collage settings");
 }
 
-AdButton* button(CollageWindow& window, const char* name) {
+AdButton* button(ImageStitchingWindow& window, const char* name) {
     auto* result = window.editor()->window()->findChild<AdButton*>(QString::fromLatin1(name));
     require(result != nullptr, "collage action is discoverable");
     return result;
 }
 
-bool hasInlineStatus(CollageWindow& window) {
+bool hasInlineStatus(ImageStitchingWindow& window) {
     return window.editor()->findChild<QWidget*>(QStringLiteral("collageStatus")) ||
            window.editor()->findChild<QWidget*>(QStringLiteral("collageStatusScroll"));
 }
 
-AdMessageHandle* statusMessage(CollageWindow& window) {
+AdMessageHandle* statusMessage(ImageStitchingWindow& window) {
     auto* service = AdMessageService::instance(window.editor()->window());
     require(service != nullptr, "collage message service belongs to its window");
     for (auto* handle : service->findChildren<AdMessageHandle*>()) {
@@ -133,7 +134,7 @@ AdMessageHandle* statusMessage(CollageWindow& window) {
     return nullptr;
 }
 
-QString messageError(CollageWindow& window) {
+QString messageError(ImageStitchingWindow& window) {
     auto* message = statusMessage(window);
     require(message && message->type() == AdMessage::Type::Error && !hasInlineStatus(window),
             "errors use Message without an inline collage prompt");
@@ -172,7 +173,7 @@ struct PendingExport {
     std::shared_ptr<ScreenshotExportArtifact> artifact;
     QPointer<QObject> receiver;
     QPointer<QWidget> owner;
-    CollageWindowServices::Completion complete;
+    ImageStitchingWindowServices::Completion complete;
 };
 struct PendingConfirmation {
     bool clear = false;
@@ -186,8 +187,8 @@ struct Ports {
     QHash<QString, QImage> history;
     QStringList reads;
 
-    CollageWindowServices services() {
-        CollageWindowServices result;
+    ImageStitchingWindowServices services() {
+        ImageStitchingWindowServices result;
         result.copy = [this](auto artifact, QObject* receiver, QWidget* owner, auto complete) {
             copies.append({std::move(artifact), receiver, owner, std::move(complete)});
         };
@@ -234,7 +235,7 @@ void selectedFilesOpenAndAppendInOrder() {
     }
     Ports ports;
     ports.history.insert(QStringLiteral("queued"), image({4, 2}, Qt::green));
-    CollageWindowCoordinator coordinator(nullptr, ports.services());
+    ImageStitchingWindowCoordinator coordinator(nullptr, ports.services());
     auto backend = std::make_shared<SelectedFilesTestBackend>();
     backend->result.paths = {blue, text, folder, red, red, bad};
     backend->onCapture = [&] {
@@ -255,10 +256,11 @@ void selectedFilesOpenAndAppendInOrder() {
     window->document()->append(image({4, 4}, Qt::yellow), QStringLiteral("existing"));
     int completions = 0;
     QStringList failures;
-    QObject::connect(window, &CollageWindow::importFinished, &coordinator, [&](const auto& errors) {
-        ++completions;
-        failures = errors;
-    });
+    QObject::connect(window, &ImageStitchingWindow::importFinished, &coordinator,
+                     [&](const auto& errors) {
+                         ++completions;
+                         failures = errors;
+                     });
     waitUntil([&] { return started->load(); }, "selection enumeration starts in the background");
     coordinator.present({record(QStringLiteral("queued"), {4, 2})});
     coordinator.presentSelectedFiles(backend, target);
@@ -291,7 +293,7 @@ void emptySelectionsAndFailuresKeepWindowOpen() {
             "write a non-image selection fixture");
     file.close();
     for (const QStringList& paths : {QStringList{}, QStringList{text, directory.path()}}) {
-        CollageWindowCoordinator coordinator;
+        ImageStitchingWindowCoordinator coordinator;
         auto backend = std::make_shared<SelectedFilesTestBackend>();
         backend->result.paths = paths;
         coordinator.presentSelectedFiles(backend, backend->captureTarget());
@@ -311,7 +313,7 @@ void emptySelectionsAndFailuresKeepWindowOpen() {
     for (const auto error :
          {platform::SelectedFileError::PermissionDenied, platform::SelectedFileError::Timeout,
           platform::SelectedFileError::Unavailable, platform::SelectedFileError::QueryFailed}) {
-        CollageWindowCoordinator coordinator;
+        ImageStitchingWindowCoordinator coordinator;
         auto backend = std::make_shared<SelectedFilesTestBackend>();
         backend->result.error = error;
         coordinator.presentSelectedFiles(backend, backend->captureTarget());
@@ -327,7 +329,8 @@ void emptySelectionsAndFailuresKeepWindowOpen() {
                         "switch the selected-file error language");
                 flushEvents();
                 const auto translated = QCoreApplication::translate(
-                    "CollageWindow", "Could not read the selected image files. Please try again");
+                    "ImageStitchingWindow",
+                    "Could not read the selected image files. Please try again");
                 require(messageError(*window).contains(translated) &&
                             translated !=
                                 QStringLiteral(
@@ -350,7 +353,7 @@ void selectedFileQueriesCancelWithWindowLifecycle() {
         resetSettings();
         Ports ports;
         ports.history.insert(QStringLiteral("fresh"), image({2, 3}, Qt::green));
-        CollageWindowCoordinator coordinator(nullptr, ports.services());
+        ImageStitchingWindowCoordinator coordinator(nullptr, ports.services());
         auto backend = std::make_shared<SelectedFilesTestBackend>();
         backend->result.paths = {path};
         const auto started = std::make_shared<std::atomic_bool>(false);
@@ -442,7 +445,7 @@ void singletonImportsAppendMixedSourcesInRequestOrder() {
             return std::nullopt;
         return image();
     };
-    CollageWindowCoordinator coordinator(nullptr, std::move(services));
+    ImageStitchingWindowCoordinator coordinator(nullptr, std::move(services));
     require(coordinator.window() == nullptr, "the singleton collage is created lazily");
     coordinator.present({record(QStringLiteral("history"))});
     auto* window = coordinator.window();
@@ -451,10 +454,11 @@ void singletonImportsAppendMixedSourcesInRequestOrder() {
     auto* document = window->document();
     int completions = 0;
     QStringList failures;
-    QObject::connect(window, &CollageWindow::importFinished, &coordinator, [&](const auto& errors) {
-        ++completions;
-        failures += errors;
-    });
+    QObject::connect(window, &ImageStitchingWindow::importFinished, &coordinator,
+                     [&](const auto& errors) {
+                         ++completions;
+                         failures += errors;
+                     });
     waitUntil([&] { return started->load(std::memory_order_acquire); },
               "the first singleton import reaches its history reader");
     const QImage blue = image({2, 4}, Qt::blue);
@@ -467,7 +471,7 @@ void singletonImportsAppendMixedSourcesInRequestOrder() {
     require(coordinator.window() == window && window->document() == document &&
                 window->editor()->window() == surface && window->loading() &&
                 document->items().isEmpty() &&
-                coordinator.findChildren<CollageWindow*>().size() == 1,
+                coordinator.findChildren<ImageStitchingWindow*>().size() == 1,
             "requests during loading share one document and one native surface");
     release->store(true, std::memory_order_release);
     waitUntil([&] { return !window->loading(); }, "queued singleton imports complete");
@@ -490,7 +494,7 @@ void singletonReusePreservesEditingAndWindowPresentation() {
     resetSettings();
     Ports ports;
     ports.history.insert(QStringLiteral("additional"), image({2, 3}, Qt::green));
-    CollageWindowCoordinator coordinator(nullptr, ports.services());
+    ImageStitchingWindowCoordinator coordinator(nullptr, ports.services());
     coordinator.present();
     auto* window = coordinator.window();
     auto* document = window->document();
@@ -502,8 +506,8 @@ void singletonReusePreservesEditingAndWindowPresentation() {
             "prepare existing singleton image edits");
     document->select(first);
     auto settings = document->settings();
-    settings.direction = CollageDirection::Horizontal;
-    settings.sizing = CollageSizing::Original;
+    settings.direction = ImageStitchingDirection::Horizontal;
+    settings.sizing = ImageStitchingSizing::Original;
     settings.border = 7;
     settings.spacing = 9;
     settings.background = QColor(10, 20, 30, 128);
@@ -547,7 +551,7 @@ void singletonCloseClearsOwnershipBeforeDeferredDeletion() {
     Ports ports;
     ports.history.insert(QStringLiteral("after-cancel"), image({2, 3}, Qt::blue));
     ports.history.insert(QStringLiteral("fresh"), image({4, 2}, Qt::green));
-    CollageWindowCoordinator coordinator(nullptr, ports.services());
+    ImageStitchingWindowCoordinator coordinator(nullptr, ports.services());
     coordinator.present();
     auto* original = coordinator.window();
     original->document()->append(image(), QStringLiteral("original"));
@@ -558,7 +562,7 @@ void singletonCloseClearsOwnershipBeforeDeferredDeletion() {
     waitUntil([&] { return !original->loading(); }, "a canceled close retains the singleton");
     require(coordinator.window() == original && original->document()->items().size() == 2,
             "canceling discard keeps the same collage available for subsequent operations");
-    QPointer<CollageWindow> retiring(original);
+    QPointer<ImageStitchingWindow> retiring(original);
     original->requestClose();
     require(ports.confirmations.size() == 2, "a later close asks again for discard confirmation");
     ports.confirmations.last().complete(true);
@@ -602,12 +606,12 @@ void singletonCancellationDiscardsQueuedAndStaleImports() {
                 ++*queuedReads;
             return image({2, 3}, Qt::green);
         };
-        CollageWindowCoordinator coordinator(nullptr, std::move(services));
+        ImageStitchingWindowCoordinator coordinator(nullptr, std::move(services));
         coordinator.present();
         auto* original = coordinator.window();
         original->document()->append(image({4, 2}, Qt::yellow), QStringLiteral("existing"));
         int completions = 0;
-        QObject::connect(original, &CollageWindow::importFinished, &coordinator,
+        QObject::connect(original, &ImageStitchingWindow::importFinished, &coordinator,
                          [&](const auto&) { ++completions; });
         coordinator.present({record(QStringLiteral("slow"))});
         waitUntil([&] { return started->load(std::memory_order_acquire); },
@@ -647,7 +651,7 @@ void singletonCancellationDiscardsQueuedAndStaleImports() {
                     "shutdown closes and releases an importing singleton");
         }
 
-        CollageWindow* receiving = nullptr;
+        ImageStitchingWindow* receiving = nullptr;
         if (stop != Stop::Shutdown) {
             coordinator.present({record(QStringLiteral("fresh"), {2, 3})});
             receiving = coordinator.window();
@@ -694,7 +698,7 @@ void singletonExportsIgnoreNewOperationsWithoutPresenting() {
             ++*reads;
             return image({2, 3}, Qt::green);
         };
-        CollageWindowCoordinator coordinator(nullptr, std::move(services));
+        ImageStitchingWindowCoordinator coordinator(nullptr, std::move(services));
         coordinator.present();
         auto* window = coordinator.window();
         QWidget* surface = window->editor()->window();
@@ -744,11 +748,11 @@ void singletonExportsIgnoreNewOperationsWithoutPresenting() {
         waitUntil([&] { return exports.size() == 1; }, "singleton export reaches publication");
         requestWhileBusy();
         int notifications = 0;
-        const auto connection =
-            QObject::connect(window, &CollageWindow::exportFinished, &coordinator, [&](bool) {
-                ++notifications;
-                requestWhileBusy();
-            });
+        const auto connection = QObject::connect(window, &ImageStitchingWindow::exportFinished,
+                                                 &coordinator, [&](bool) {
+                                                     ++notifications;
+                                                     requestWhileBusy();
+                                                 });
         exports.first().complete(false, {});
         QObject::disconnect(connection);
         require(notifications == 1 && !window->busy() && coordinator.window() == window,
@@ -763,7 +767,7 @@ void singletonExportsIgnoreNewOperationsWithoutPresenting() {
         else
             window->save();
         waitUntil([&] { return exports.size() == 2; }, "a successful retry reaches publication");
-        QPointer<CollageWindow> retiring(window);
+        QPointer<ImageStitchingWindow> retiring(window);
         exports.last().complete(true, {});
         require(coordinator.window() == nullptr && retiring,
                 "successful export clears singleton ownership before deferred deletion");
@@ -789,7 +793,7 @@ void singletonWindowScenarios() {
 }
 
 void windowPinStartsEnabledAndPreservesEdits() {
-    CollageWindow window;
+    ImageStitchingWindow window;
     window.present();
     window.document()->append(image(), QStringLiteral("pin-test"));
     flushEvents();
@@ -826,7 +830,7 @@ void windowOpensCenteredOnCurrentScreen() {
         screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a screen is available for collage placement");
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     flushEvents();
     const QRect available = screen->availableGeometry();
@@ -843,12 +847,12 @@ void independentWindowsAndClosePolicy() {
     mainWindow.show();
     QObject lifetime(&mainWindow);
     Ports firstPorts, secondPorts;
-    CollageWindow first(&lifetime, firstPorts.services());
-    CollageWindow second(&lifetime, secondPorts.services());
+    ImageStitchingWindow first(&lifetime, firstPorts.services());
+    ImageStitchingWindow second(&lifetime, secondPorts.services());
     first.present();
     second.present();
     flushEvents();
-    require(first.document()->settings() == CollageSettings{} &&
+    require(first.document()->settings() == ImageStitchingSettings{} &&
                 first.document() != second.document(),
             "first-use defaults and editing documents are independent");
     QWidget* firstSurface = first.editor()->window();
@@ -903,7 +907,7 @@ void independentWindowsAndClosePolicy() {
 void outputDescriptionsInFooter() {
     resetSettings();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     flushEvents();
     auto* footer = window.modal()->footerWidget();
@@ -958,7 +962,8 @@ void outputDescriptionsInFooter() {
         QApplication::installTranslator(&translator);
         flushEvents();
         require(total->text() ==
-                    QCoreApplication::translate("CollageEditorWidget", "Total: %1 images").arg(2),
+                    QCoreApplication::translate("ImageStitchingEditorWidget", "Total: %1 images")
+                        .arg(2),
                 "footer image count retranslates after moving outside the editor");
         checkLayout();
         QApplication::removeTranslator(&translator);
@@ -985,13 +990,14 @@ void clearAndInitialImportFailures() {
     Ports ports;
     ports.history.insert(QStringLiteral("first"), image());
     ports.history.insert(QStringLiteral("last"), image({2, 3}, Qt::blue));
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     QStringList failures;
     int imports = 0;
-    QObject::connect(&window, &CollageWindow::importFinished, &window, [&](const auto& errors) {
-        ++imports;
-        failures = errors;
-    });
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
+                     [&](const auto& errors) {
+                         ++imports;
+                         failures = errors;
+                     });
     window.present({record(QStringLiteral("first")), record(QStringLiteral("missing")),
                     record(QStringLiteral("oversized"), {std::numeric_limits<int>::max(), 3}),
                     record(QStringLiteral("overflow"),
@@ -1034,7 +1040,7 @@ void clearAndInitialImportFailures() {
             "a cleared window closes directly");
 
     Ports failedPorts;
-    CollageWindow failed(nullptr, failedPorts.services());
+    ImageStitchingWindow failed(nullptr, failedPorts.services());
     failed.present({record(QStringLiteral("unavailable"))});
     waitUntil([&] { return !failed.loading(); }, "all-failed initial import completes");
     require(failed.modal()->isOpen() && failed.document()->items().isEmpty() &&
@@ -1097,10 +1103,10 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
             "saved pin reference includes zoom and opacity");
     const QString missing = QUuid::createUuid().toString(QUuid::WithoutBraces);
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     QStringList failures;
     int completions = 0;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const QStringList& errors) {
                          failures = errors;
                          ++completions;
@@ -1125,7 +1131,7 @@ void pinnedRecordsImportSavedPixelsAndText(const QString& directory) {
                 storage::ApplicationStorage::instance().captureHistory().records().size() ==
                     originalHistory,
             "stitching preserves pinned records and screenshot history");
-    CollageWindow unavailable(nullptr, ports.services());
+    ImageStitchingWindow unavailable(nullptr, ports.services());
     unavailable.presentPinnedRecords({missing});
     waitUntil([&] { return !unavailable.loading(); }, "all-missing pinned import completes");
     require(unavailable.modal()->isOpen() && unavailable.document()->items().isEmpty() &&
@@ -1157,12 +1163,12 @@ void pinnedRecordsPreferCurrentSnapshots() {
     using Completion = std::function<void(std::optional<ScreenshotPinnedImageSnapshot>)>;
     QVector<Completion> pending;
     QStringList requested;
-    CollageWindowServices services;
+    ImageStitchingWindowServices services;
     services.requestPinnedSnapshot = [&](const QString& id, Completion complete) {
         requested.append(id);
         pending.append(std::move(complete));
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     window.presentPinnedRecords({ids[0], ids[1], ids[2]});
     require(window.loading() && requested == QStringList{ids[0]},
             "management imports wait for each current pin snapshot");
@@ -1186,7 +1192,7 @@ void pinnedRecordsPreferCurrentSnapshots() {
                 messageError(window).contains(failed.error),
             "current pixels win, failed live pins never use stale donors, and order is preserved");
     window.shutdown();
-    CollageWindow abandoned(nullptr, services);
+    ImageStitchingWindow abandoned(nullptr, services);
     abandoned.presentPinnedRecords({ids[0]});
     require(pending.size() == 1, "hold a live snapshot beyond workflow shutdown");
     abandoned.shutdown();
@@ -1212,7 +1218,8 @@ void importFeedbackUsesMessagesWithoutLayoutChanges() {
         return input.id == QStringLiteral("missing") ? std::nullopt
                                                      : std::optional<QImage>(image());
     };
-    CollageWindow window(nullptr, std::move(services)), other(nullptr, otherPorts.services());
+    ImageStitchingWindow window(nullptr, std::move(services)),
+        other(nullptr, otherPorts.services());
     window.document()->append(image(), QStringLiteral("existing"));
     window.present();
     other.present();
@@ -1268,7 +1275,7 @@ void importFeedbackUsesMessagesWithoutLayoutChanges() {
 void livePinnedImportsPreserveOrderAndFailures() {
     resetSettings();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     QImage red = image({540, 270}, Qt::red);
     const QImage frozen = red;
     ScreenshotPinnedImageSnapshot first{
@@ -1299,7 +1306,7 @@ void livePinnedImportsPreserveOrderAndFailures() {
         {}, {3, 2}, QStringLiteral("admission"), QStringLiteral("Capture admission rejected"),
         {}, {}};
     QStringList failures;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const auto& errors) { failures = errors; });
     window.presentPinnedWindows({first,
                                  {{}, {}, QStringLiteral("missing"), {}, {}, {}},
@@ -1328,11 +1335,11 @@ void livePinnedImportsPreserveOrderAndFailures() {
 }
 
 void livePinnedImportsCancelAndRespectMemoryBudget() {
-    const qint64 before = collageResourceUsage().reservedBytes;
+    const qint64 before = imageStitchingResourceUsage().reservedBytes;
     const auto started = std::make_shared<std::atomic_bool>(false);
     const auto release = std::make_shared<std::atomic_bool>(false);
     {
-        CollageWindow window;
+        ImageStitchingWindow window;
         ScreenshotPinnedImageSnapshot slow{
             ScreenshotExportSource::fromProducer([started, release](const auto& cancellation) {
                 started->store(true, std::memory_order_release);
@@ -1347,7 +1354,7 @@ void livePinnedImportsCancelAndRespectMemoryBudget() {
             {},
             {}};
         int completions = 0;
-        QObject::connect(&window, &CollageWindow::importFinished, &window,
+        QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                          [&](const auto&) { ++completions; });
         window.presentPinnedWindows({slow});
         waitUntil([&] { return started->load(std::memory_order_acquire); },
@@ -1360,9 +1367,9 @@ void livePinnedImportsCancelAndRespectMemoryBudget() {
         require(window.document()->items().isEmpty() && completions == 0 && !window.loading(),
                 "closing an importing editor discards stale completion");
     }
-    waitUntil([&] { return collageResourceUsage().reservedBytes == before; },
+    waitUntil([&] { return imageStitchingResourceUsage().reservedBytes == before; },
               "cancellation releases the live import reservation");
-    CollageWindow window;
+    ImageStitchingWindow window;
     const auto renders = std::make_shared<std::atomic_int>(0);
     ScreenshotPinnedImageSnapshot source{
         ScreenshotExportSource::fromProducer([renders](const auto&) {
@@ -1375,7 +1382,7 @@ void livePinnedImportsCancelAndRespectMemoryBudget() {
         {},
         {}};
     QStringList failures;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const auto& errors) { failures = errors; });
     window.presentPinnedWindows({source});
     waitUntil([&] { return !window.loading(); }, "oversized live import completes");
@@ -1386,10 +1393,10 @@ void livePinnedImportsCancelAndRespectMemoryBudget() {
 
 void livePinnedImportsAdmitRenderingWorkingSet() {
     resetSettings();
-    const auto baseline = collageResourceUsage();
+    const auto baseline = imageStitchingResourceUsage();
     const auto renders = std::make_shared<std::atomic_int>(0);
     {
-        CollageWindow window;
+        ImageStitchingWindow window;
         ScreenshotPinnedImageSnapshot rejected;
         rejected.source = ScreenshotExportSource::fromProducer([renders](const auto&) {
             ++*renders;
@@ -1405,10 +1412,11 @@ void livePinnedImportsAdmitRenderingWorkingSet() {
         next.label = QStringLiteral("next");
         QStringList failures;
         int completions = 0;
-        QObject::connect(&window, &CollageWindow::importFinished, &window, [&](const auto& errors) {
-            failures = errors;
-            ++completions;
-        });
+        QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
+                         [&](const auto& errors) {
+                             failures = errors;
+                             ++completions;
+                         });
         window.presentPinnedWindows({rejected, next});
         waitUntil([&] { return completions == 1; },
                   "render admission advances the live import queue");
@@ -1421,17 +1429,17 @@ void livePinnedImportsAdmitRenderingWorkingSet() {
                 "later imports usable");
         window.shutdown();
     }
-    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline.reservedBytes; },
+    waitUntil([&] { return imageStitchingResourceUsage().reservedBytes == baseline.reservedBytes; },
               "render admission failures and completed imports release their reservations");
 }
 
 void livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation() {
-    const qint64 baseline = collageResourceUsage().reservedBytes;
+    const qint64 baseline = imageStitchingResourceUsage().reservedBytes;
     const auto started = std::make_shared<std::atomic_bool>(false);
     const auto release = std::make_shared<std::atomic_bool>(false);
     const auto unblock = qScopeGuard([&] { release->store(true, std::memory_order_release); });
     {
-        CollageWindow window;
+        ImageStitchingWindow window;
         auto owner = std::make_shared<int>(1);
         const std::weak_ptr<int> completedLifetime = owner;
         ScreenshotPinnedImageSnapshot first{
@@ -1448,7 +1456,8 @@ void livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation() {
         ScreenshotPinnedImageSnapshot slow{
             ScreenshotExportSource::fromProducer(
                 [started, release,
-                 pixels = captureCollageImage({8, 4}, [] { return image({8, 4}); })](const auto&) {
+                 pixels = captureImageStitchingImage({8, 4}, [] { return image({8, 4}); })](
+                    const auto&) {
                     started->store(true, std::memory_order_release);
                     // Ignore cancellation until released: admission must remain attached to
                     // pixels held by a worker after its window closes.
@@ -1461,14 +1470,15 @@ void livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation() {
             {},
             {},
             {}};
-        ScreenshotPinnedImageSnapshot queued{ScreenshotExportSource::fromImage(captureCollageImage(
-                                                 {96, 64}, [] { return image({96, 64}); })),
-                                             {96, 64},
-                                             QStringLiteral("queued"),
-                                             {},
-                                             {},
-                                             {}};
-        require(collageResourceUsage().reservedBytes == baseline + (8 * 4 + 96 * 64) * 4,
+        ScreenshotPinnedImageSnapshot queued{
+            ScreenshotExportSource::fromImage(
+                captureImageStitchingImage({96, 64}, [] { return image({96, 64}); })),
+            {96, 64},
+            QStringLiteral("queued"),
+            {},
+            {},
+            {}};
+        require(imageStitchingResourceUsage().reservedBytes == baseline + (8 * 4 + 96 * 64) * 4,
                 "queued captured rasters are admitted before the import worker starts");
         window.presentPinnedWindows({first, slow, queued});
         first = {};
@@ -1481,19 +1491,19 @@ void livePinnedQueueReleasesCompletedSnapshotsAndAccountsForCancellation() {
         require(window.document()->items().size() == 1 && window.loading(),
                 "retiring completed sources preserves their imported document image");
         window.shutdown();
-        require(collageResourceUsage().reservedBytes >= baseline + 8 * 4 * 4 &&
-                    collageResourceUsage().reservedBytes < baseline + 96 * 64 * 4,
+        require(imageStitchingResourceUsage().reservedBytes >= baseline + 8 * 4 * 4 &&
+                    imageStitchingResourceUsage().reservedBytes < baseline + 96 * 64 * 4,
                 "closure releases queued captures while accounting for the still-running worker");
         release->store(true, std::memory_order_release);
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
                   "the cancelled snapshot worker retires");
         flushEvents();
     }
-    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline; },
+    waitUntil([&] { return imageStitchingResourceUsage().reservedBytes == baseline; },
               "closing the window and retiring the worker releases every captured raster");
 }
 
-void droppedFilesUseCollageImporter() {
+void droppedFilesUseImageStitchingImporter() {
     resetSettings();
     QTemporaryDir directory;
     require(directory.isValid(), "drop fixture directory");
@@ -1506,12 +1516,12 @@ void droppedFilesUseCollageImporter() {
             "write corrupt drop fixture");
     malformed.close();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     flushEvents();
     QStringList failures;
     int completions = 0;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const QStringList& errors) {
                          failures = errors;
                          ++completions;
@@ -1586,7 +1596,7 @@ void localizedFileDialogsListAllSupportedImages() {
         QApplication::installTranslator(&translator);
         const auto removeTranslator =
             qScopeGuard([&] { QApplication::removeTranslator(&translator); });
-        CollageWindow window;
+        ImageStitchingWindow window;
         window.present();
         const quint64 target = window.document()->append(image(), QStringLiteral("existing"));
         for (const bool replacement : {false, true}) {
@@ -1654,7 +1664,7 @@ void fileImportDuplicatesAndReplacement() {
             "write an HTML import fixture");
     htmlFile.close();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     button(window, "collageAddImages")->click();
     auto* addDialog = window.editor()->window()->findChild<QFileDialog*>();
@@ -1664,7 +1674,7 @@ void fileImportDuplicatesAndReplacement() {
     addDialog->reject();
     flushEvents();
     QStringList failures;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const auto& errors) { failures = errors; });
     window.addFiles({red, invalid, text, blue, html, red});
     waitUntil([&] { return !window.loading(); }, "file batch completes");
@@ -1723,7 +1733,7 @@ void fileImportDuplicatesAndReplacement() {
             "write the existing partial-first-frame animation fixture");
     animatedFile.close();
     Ports animatedPorts;
-    CollageWindow animated(nullptr, animatedPorts.services());
+    ImageStitchingWindow animated(nullptr, animatedPorts.services());
     animated.present();
     animated.addFiles({animatedPath});
     waitUntil([&] { return !animated.loading(); }, "animated input import completes");
@@ -1748,10 +1758,10 @@ void clearingPendingImportDiscardsStaleCompletion() {
             QThread::msleep(1);
         return image();
     };
-    CollageWindow window(nullptr, std::move(services));
+    ImageStitchingWindow window(nullptr, std::move(services));
     window.document()->append(image(), QStringLiteral("existing"));
     int importCompletions = 0;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const auto&) { ++importCompletions; });
     window.present({record(QStringLiteral("pending"))});
     waitUntil([&] { return started->load(std::memory_order_acquire); },
@@ -1776,7 +1786,7 @@ void clearingPendingImportDiscardsStaleCompletion() {
 
 void rememberedSettingsMergeWithoutChangingOpenWindows(const QString& configurationFile) {
     resetSettings();
-    CollageWindow first, second;
+    ImageStitchingWindow first, second;
     first.present();
     second.present();
     auto* border = first.editor()->findChild<adqt::widgets::AdInputNumber*>(
@@ -1797,7 +1807,7 @@ void rememberedSettingsMergeWithoutChangingOpenWindows(const QString& configurat
                 second.document()->settings().spacing == 11 &&
                 second.document()->settings().background == QColor(Qt::white),
             "editing one window preserves the independent settings of another open window");
-    CollageWindow subsequentlyOpened;
+    ImageStitchingWindow subsequentlyOpened;
     subsequentlyOpened.present();
     const auto remembered = subsequentlyOpened.document()->settings();
     require(remembered.border == 7 && remembered.spacing == 11 &&
@@ -1806,7 +1816,7 @@ void rememberedSettingsMergeWithoutChangingOpenWindows(const QString& configurat
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     require(configuration.flushNow().success, "flush remembered collage settings");
     storage::ConfigurationStore reloaded(configurationFile, true, true, 60000);
-    require(CollageSettingsStore(reloaded).read() == remembered,
+    require(ImageStitchingSettingsStore(reloaded).read() == remembered,
             "collage settings and semitransparent background survive a fresh disk-backed "
             "configuration read");
 }
@@ -1821,7 +1831,7 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
         QApplication::installTranslator(&translator);
         const auto removeTranslator =
             qScopeGuard([&] { QApplication::removeTranslator(&translator); });
-        CollageWindow window;
+        ImageStitchingWindow window;
         window.present();
         window.document()->append(image({120, 60}), QStringLiteral("first"));
         window.document()->append(image({60, 120}), QStringLiteral("second"));
@@ -1842,7 +1852,7 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
         require(!grid->isVisible() && !rows->isVisible() && !columns->isVisible() &&
                     direction->option(2).value == QStringLiteral("custom") &&
                     direction->optionLabel(2) ==
-                        QCoreApplication::translate("CollageEditorWidget", "Custom"),
+                        QCoreApplication::translate("ImageStitchingEditorWidget", "Custom"),
                 "Custom has a stable translated option and hides its grid in vertical layout");
         const auto select = [&](adqt::widgets::AdSegmented* control, int index) {
             auto* option = control->childAt(control->optionRect(index).center());
@@ -1860,44 +1870,44 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
                         control->currentValue() == control->option(index).value,
                     "clicking the visible option center must select its stable value");
         };
-        const auto verify = [&](CollageDirection layoutDirection, CollageSizing imageSizing,
-                                QSize size) {
+        const auto verify = [&](ImageStitchingDirection layoutDirection,
+                                ImageStitchingSizing imageSizing, QSize size) {
             const auto settings = window.document()->settings();
             require(settings.direction == layoutDirection && settings.sizing == imageSizing &&
                         window.document()->layout().size == size &&
                         dimensions->text() ==
-                            QCoreApplication::translate("CollageEditorWidget", "%1 × %2 px")
+                            QCoreApplication::translate("ImageStitchingEditorWidget", "%1 × %2 px")
                                 .arg(size.width())
                                 .arg(size.height()),
                     "layout choices must update the document, preview layout, and output size");
         };
-        verify(CollageDirection::Vertical, CollageSizing::Uniform, {120, 300});
+        verify(ImageStitchingDirection::Vertical, ImageStitchingSizing::Uniform, {120, 300});
         select(direction, 1);
-        verify(CollageDirection::Horizontal, CollageSizing::Uniform, {150, 60});
+        verify(ImageStitchingDirection::Horizontal, ImageStitchingSizing::Uniform, {150, 60});
         require(!grid->isVisible(), "horizontal layout must hide custom grid fields");
         select(sizing, 1);
-        verify(CollageDirection::Horizontal, CollageSizing::Original, {180, 120});
-        CollageWindow reopened;
+        verify(ImageStitchingDirection::Horizontal, ImageStitchingSizing::Original, {180, 120});
+        ImageStitchingWindow reopened;
         reopened.present();
         const auto remembered = reopened.document()->settings();
-        require(remembered.direction == CollageDirection::Horizontal &&
-                    remembered.sizing == CollageSizing::Original,
+        require(remembered.direction == ImageStitchingDirection::Horizontal &&
+                    remembered.sizing == ImageStitchingSizing::Original,
                 "both layout choices must be remembered by subsequently opened windows");
         select(direction, 0);
-        verify(CollageDirection::Vertical, CollageSizing::Original, {120, 180});
+        verify(ImageStitchingDirection::Vertical, ImageStitchingSizing::Original, {120, 180});
         select(sizing, 0);
-        verify(CollageDirection::Vertical, CollageSizing::Uniform, {120, 300});
+        verify(ImageStitchingDirection::Vertical, ImageStitchingSizing::Uniform, {120, 300});
         require(reopened.document()->settings() == remembered,
                 "later layout edits must preserve the independent reopened window");
         select(direction, 2);
-        verify(CollageDirection::Custom, CollageSizing::Uniform, {240, 60});
+        verify(ImageStitchingDirection::Custom, ImageStitchingSizing::Uniform, {240, 60});
         require(grid->isVisible() && rows->isVisible() && columns->isVisible() &&
                     rows->value() == 1 && columns->value() == 2 && rows->minimum() == 1 &&
                     columns->minimum() == 1 && rows->decimals() == 0 && columns->decimals() == 0 &&
                     rows->accessibleName() ==
-                        QCoreApplication::translate("CollageEditorWidget", "Rows") &&
+                        QCoreApplication::translate("ImageStitchingEditorWidget", "Rows") &&
                     columns->accessibleName() ==
-                        QCoreApplication::translate("CollageEditorWidget", "Columns"),
+                        QCoreApplication::translate("ImageStitchingEditorWidget", "Columns"),
                 "Custom reveals positive integer inputs with localized accessible names");
         const auto rowRect = QRect(rows->mapTo(window.editor(), QPoint{}), rows->size());
         const auto columnRect = QRect(columns->mapTo(window.editor(), QPoint{}), columns->size());
@@ -1907,14 +1917,14 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
                     rowRect.top() > directionRect.bottom(),
                 "custom grid inputs must be side by side below layout direction");
         for (const auto* source : {"Rows", "Columns"}) {
-            const auto label = QCoreApplication::translate("CollageEditorWidget", source);
+            const auto label = QCoreApplication::translate("ImageStitchingEditorWidget", source);
             bool found = false;
             for (auto* candidate : grid->findChildren<QLabel*>())
                 found = found || candidate->text() == label;
             require(found, "custom grid must display localized Rows and Columns labels");
         }
         select(sizing, 1);
-        verify(CollageDirection::Custom, CollageSizing::Original, {240, 120});
+        verify(ImageStitchingDirection::Custom, ImageStitchingSizing::Original, {240, 120});
         select(sizing, 0);
         for (int index = 0; index < 3; ++index)
             window.document()->append(image({120, 60}), QStringLiteral("extra-%1").arg(index));
@@ -1922,12 +1932,13 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
                 "new images must expand columns while retaining custom rows");
         rows->setValue(2);
         columns->setValue(2);
-        verify(CollageDirection::Custom, CollageSizing::Uniform, {360, 120});
+        verify(ImageStitchingDirection::Custom, ImageStitchingSizing::Uniform, {360, 120});
         require(rows->value() == 2 && columns->value() == 3,
                 "a grid edit below capacity must expand columns and keep the requested rows");
         const auto expanded = window.document()->settings();
         int changes = 0;
-        QObject::connect(window.document(), &CollageDocument::changed, &window, [&] { ++changes; });
+        QObject::connect(window.document(), &ImageStitchingDocument::changed, &window,
+                         [&] { ++changes; });
         columns->setValue(1);
         require(columns->value() == 3 && window.document()->settings() == expanded && changes == 0,
                 "too-small column edits must rebound even when normalized settings are unchanged");
@@ -1940,7 +1951,7 @@ void localizedLayoutControlsUpdateAndRememberSettings() {
         require(rows->value() == 2 && columns->value() == 3 &&
                     window.document()->settings().customGridInitialized,
                 "returning to Custom must retain the initialized grid");
-        CollageWindow customReopened;
+        ImageStitchingWindow customReopened;
         customReopened.present();
         require(customReopened.document()->settings() == expanded &&
                     reopened.document()->settings() == remembered,
@@ -1960,7 +1971,7 @@ void customGridInitializesNearSquareAndPersists(const QString& configurationFile
     for (std::size_t caseIndex = 0; caseIndex < counts.size(); ++caseIndex) {
         // Every case starts from the uninitialized settings used by an existing installation.
         resetSettings();
-        CollageWindow window;
+        ImageStitchingWindow window;
         window.present();
         for (int index = 0; index < counts[caseIndex]; ++index)
             window.document()->append(image(), QString::number(index));
@@ -1973,16 +1984,16 @@ void customGridInitializesNearSquareAndPersists(const QString& configurationFile
                     settings.columns == grids[caseIndex].width(),
                 "first Custom selection initializes a near-square grid, including empty collages");
         require(
-            CollageSettingsStore(storage::ApplicationStorage::instance().configuration()).read() ==
-                settings,
+            ImageStitchingSettingsStore(storage::ApplicationStorage::instance().configuration())
+                    .read() == settings,
             "first-use grid initialization must persist direction, dimensions and status together");
     }
     resetSettings();
-    CollageWindow first, second;
+    ImageStitchingWindow first, second;
     first.present();
     second.present();
-    require(first.document()->settings() == CollageSettings{} &&
-                second.document()->settings() == CollageSettings{},
+    require(first.document()->settings() == ImageStitchingSettings{} &&
+                second.document()->settings() == ImageStitchingSettings{},
             "legacy collage defaults must remain Vertical with an uninitialized custom grid");
     auto* firstDirection =
         first.editor()->findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageDirection"));
@@ -2002,20 +2013,20 @@ void customGridInitializesNearSquareAndPersists(const QString& configurationFile
                 second.document()->settings().rows == 1 &&
                 second.document()->settings().columns == 5,
             "editing custom dimensions must preserve each open window's independent settings");
-    CollageWindow reopened;
+    ImageStitchingWindow reopened;
     reopened.present();
     const auto remembered = reopened.document()->settings();
-    require(remembered.direction == CollageDirection::Custom && remembered.rows == 4 &&
+    require(remembered.direction == ImageStitchingDirection::Custom && remembered.rows == 4 &&
                 remembered.columns == 5 && remembered.customGridInitialized,
             "custom dimensions merge per field for subsequently opened windows");
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     require(configuration.flushNow().success, "flush remembered custom grid settings");
     storage::ConfigurationStore reloaded(configurationFile, true, true, 60000);
-    require(CollageSettingsStore(reloaded).read() == remembered,
+    require(ImageStitchingSettingsStore(reloaded).read() == remembered,
             "Custom direction, dimensions and initialization survive a fresh disk-backed read");
     require(!configuration.setValue(QStringLiteral("collage/rows"), 0) &&
                 !configuration.setValue(QStringLiteral("collage/columns"), -1) &&
-                CollageSettingsStore(configuration).read() == remembered,
+                ImageStitchingSettingsStore(configuration).read() == remembered,
             "configuration validation must reject nonpositive grid dimensions without changing "
             "settings");
     resetSettings();
@@ -2041,7 +2052,7 @@ storage::CaptureHistoryRecord publishHistoryFixture() {
 void staticPlacementExportSnapshots() {
     resetSettings();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     auto* document = window.document();
     const auto id = document->append(image({120, 80}, Qt::red), QStringLiteral("placed"));
@@ -2070,7 +2081,7 @@ void staticPlacementExportSnapshots() {
                                            [&](ScreenshotImageRowSource rows, QString error) {
                                                require(error.isEmpty(),
                                                        "placed export row source is available");
-                                               result = materializeCollageRows(rows);
+                                               result = materializeImageStitchingRows(rows);
                                                done = true;
                                            }),
                 "request placed artifact pixels");
@@ -2093,7 +2104,8 @@ void staticPlacementExportSnapshots() {
 void exportFeedbackUsesMessagesAndBusyButtons() {
     resetSettings();
     Ports firstPorts, secondPorts;
-    CollageWindow first(nullptr, firstPorts.services()), second(nullptr, secondPorts.services());
+    ImageStitchingWindow first(nullptr, firstPorts.services()),
+        second(nullptr, secondPorts.services());
     first.present();
     second.present();
     first.document()->append(image(), QStringLiteral("first"));
@@ -2160,14 +2172,15 @@ void exportCompletionFailureCancellationAndHistoryIsolation(const QString& direc
     Ports ports;
     auto services = ports.services();
     services.readHistory = {};
-    CollageWindow window(nullptr, std::move(services));
+    ImageStitchingWindow window(nullptr, std::move(services));
     window.present({original});
     waitUntil([&] { return !window.loading(); }, "real repository final result import completes");
     require(window.document()->items().size() == 1 &&
                 window.document()->items().first().image.size() == QSize(5, 4),
             "collage imports the final screenshot result rather than the desktop image");
     int exports = 0;
-    QObject::connect(&window, &CollageWindow::exportFinished, &window, [&](bool) { ++exports; });
+    QObject::connect(&window, &ImageStitchingWindow::exportFinished, &window,
+                     [&](bool) { ++exports; });
     window.copy();
     window.copy();
     window.save();
@@ -2233,7 +2246,7 @@ void nativeClipboardLimitsRejectBeforePreparation() {
               "earlier export jobs retire before clipboard capacity admission");
     require(storage::ScreenshotSettings().setCopyImageFileToClipboard(false),
             "use native image publication for the clipboard capacity test");
-    CollageWindow window;
+    ImageStitchingWindow window;
     window.present();
     window.document()->append(image(), QStringLiteral("small image with wide padding"));
     auto settings = window.document()->settings();
@@ -2243,7 +2256,7 @@ void nativeClipboardLimitsRejectBeforePreparation() {
             "clipboard-limited geometry still fits the full-resolution file output limit");
     const int pending = ScreenshotExportCoordinator::shared().pendingJobCount();
     int failures = 0;
-    QObject::connect(&window, &CollageWindow::exportFinished, &window, [&](bool success) {
+    QObject::connect(&window, &ImageStitchingWindow::exportFinished, &window, [&](bool success) {
         require(!success, "clipboard admission reports a failed export");
         ++failures;
     });
@@ -2271,7 +2284,7 @@ void completedFileSaveUsesExistingWriter(const QString& directory) {
                 complete(result.succeeded(), result.error);
             });
     };
-    CollageWindow window(nullptr, std::move(services));
+    ImageStitchingWindow window(nullptr, std::move(services));
     window.present();
     window.document()->append(image({3, 2}, QColor(180, 40, 20, 128)), QStringLiteral("alpha"));
     auto layout = window.document()->settings();
@@ -2290,7 +2303,7 @@ void completedFileSaveUsesExistingWriter(const QString& directory) {
         "the existing writer saves full-resolution static alpha pixels before the window closes");
 }
 
-void saveResultDefersCollageCompletion(const QString& directory) {
+void saveResultDefersImageStitchingCompletion(const QString& directory) {
     resetSettings();
     const storage::ScreenshotSettings settings;
     const auto previousDialog = settings.saveAsFileDialog();
@@ -2310,12 +2323,12 @@ void saveResultDefersCollageCompletion(const QString& directory) {
                 settings.setLastManualSaveState(QStringLiteral("png"), {}),
             "enable the real custom save result for collage exports");
     for (const bool destroyOnCompletion : {false, true}) {
-        QPointer<CollageWindow> window = new CollageWindow;
+        QPointer<ImageStitchingWindow> window = new ImageStitchingWindow;
         const auto cleanup = qScopeGuard([&] { delete window.data(); });
         window->present();
         window->document()->append(image({40, 30}), QStringLiteral("save result"));
         int completions = 0;
-        QObject::connect(window, &CollageWindow::exportFinished, qApp, [&](bool success) {
+        QObject::connect(window, &ImageStitchingWindow::exportFinished, qApp, [&](bool success) {
             require(success, "dismissing a saved collage result reports success");
             ++completions;
             if (destroyOnCompletion)
@@ -2356,19 +2369,19 @@ void saveResultDefersCollageCompletion(const QString& directory) {
 void destroyedAndClosedWindowsIgnorePendingCallbacks() {
     resetSettings();
     Ports ports;
-    auto* window = new CollageWindow(nullptr, ports.services());
+    auto* window = new ImageStitchingWindow(nullptr, ports.services());
     window->present();
     window->document()->append(image(), QStringLiteral("pending"));
     window->copy();
     waitUntil([&] { return ports.copies.size() == 1; }, "pending copy reaches publication seam");
-    QPointer<CollageWindow> guard(window);
+    QPointer<ImageStitchingWindow> guard(window);
     delete window;
     flushEvents();
     require(!guard && !ports.copies.first().receiver && !ports.copies.first().owner,
             "destroying a collage disposes its independent native surface and receiver");
     ports.copies.first().complete(true, {});
 
-    auto* confirmed = new CollageWindow(nullptr, ports.services());
+    auto* confirmed = new ImageStitchingWindow(nullptr, ports.services());
     confirmed->present();
     confirmed->document()->append(image(), QStringLiteral("confirm"));
     confirmed->requestClose();
@@ -2376,11 +2389,11 @@ void destroyedAndClosedWindowsIgnorePendingCallbacks() {
     delete confirmed;
     ports.confirmations.first().complete(true);
 
-    CollageWindow manuallyClosed(nullptr, ports.services());
+    ImageStitchingWindow manuallyClosed(nullptr, ports.services());
     manuallyClosed.present();
     manuallyClosed.document()->append(image(), QStringLiteral("manual close"));
     int lateExports = 0;
-    QObject::connect(&manuallyClosed, &CollageWindow::exportFinished, &manuallyClosed,
+    QObject::connect(&manuallyClosed, &ImageStitchingWindow::exportFinished, &manuallyClosed,
                      [&](bool) { ++lateExports; });
     manuallyClosed.copy();
     waitUntil([&] { return ports.copies.size() == 2; },
@@ -2398,14 +2411,14 @@ void destroyedAndClosedWindowsIgnorePendingCallbacks() {
     require(lateExports == 0,
             "late publication success cannot complete an already discarded collage");
 
-    auto* terminal = new CollageWindow(nullptr, ports.services());
+    auto* terminal = new ImageStitchingWindow(nullptr, ports.services());
     terminal->present();
     terminal->document()->append(image(), QStringLiteral("terminal"));
     terminal->copy();
     waitUntil([&] { return ports.copies.size() == 3; },
               "terminal deletion fixture reaches publication seam");
-    QPointer<CollageWindow> terminalGuard(terminal);
-    QObject::connect(terminal, &CollageWindow::exportFinished, qApp,
+    QPointer<ImageStitchingWindow> terminalGuard(terminal);
+    QObject::connect(terminal, &ImageStitchingWindow::exportFinished, qApp,
                      [terminal](bool) { delete terminal; });
     ports.copies.last().complete(false, QStringLiteral("failure with observer teardown"));
     require(!terminalGuard, "a terminal observer can synchronously destroy the collage safely");
@@ -2414,7 +2427,7 @@ void destroyedAndClosedWindowsIgnorePendingCallbacks() {
 void renderWindowPreview(const QString& path) {
     resetSettings();
     Ports ports;
-    CollageWindow window(nullptr, ports.services());
+    ImageStitchingWindow window(nullptr, ports.services());
     window.present();
     const auto capture = [](QSize size, const QColor& color, const QString& label) {
         QImage result = image(size, QColor(250, 250, 250));
@@ -2576,7 +2589,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     if (arguments.contains(QStringLiteral("--drag-drop-only"))) {
-        timed("Dropped file imports", droppedFilesUseCollageImporter);
+        timed("Dropped file imports", droppedFilesUseImageStitchingImporter);
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
                   "drop tests drain export jobs");
         ScreenshotExportCoordinator::shared().shutdown();
@@ -2650,7 +2663,8 @@ int main(int argc, char* argv[]) {
     if (arguments.contains(QStringLiteral("--export-feedback-only"))) {
         timed("Static placement exports", staticPlacementExportSnapshots);
         timed("Export feedback", exportFeedbackUsesMessagesAndBusyButtons);
-        timed("Save result lifetime", [&] { saveResultDefersCollageCompletion(directory.path()); });
+        timed("Save result lifetime",
+              [&] { saveResultDefersImageStitchingCompletion(directory.path()); });
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
                   "export feedback tests drain export jobs");
         ScreenshotExportCoordinator::shared().shutdown();
@@ -2696,7 +2710,7 @@ int main(int argc, char* argv[]) {
     timed("Clear pending import", clearingPendingImportDiscardsStaleCompletion);
     timed("File imports and replacement", fileImportDuplicatesAndReplacement);
     timed("Localized file-dialog listings", localizedFileDialogsListAllSupportedImages);
-    timed("Dropped file imports", droppedFilesUseCollageImporter);
+    timed("Dropped file imports", droppedFilesUseImageStitchingImporter);
     timed("Owned live pin imports", livePinnedImportsPreserveOrderAndFailures);
     timed("Live pin cancellation and memory", livePinnedImportsCancelAndRespectMemoryBudget);
     timed("Live pin rendering memory", livePinnedImportsAdmitRenderingWorkingSet);
@@ -2720,7 +2734,8 @@ int main(int argc, char* argv[]) {
     timed("Native clipboard limits", nativeClipboardLimitsRejectBeforePreparation);
 #endif
     timed("Completed file save", [&] { completedFileSaveUsesExistingWriter(directory.path()); });
-    timed("Save result lifetime", [&] { saveResultDefersCollageCompletion(directory.path()); });
+    timed("Save result lifetime",
+          [&] { saveResultDefersImageStitchingCompletion(directory.path()); });
     timed("Destroyed and closed callback owners", destroyedAndClosedWindowsIgnorePendingCallbacks);
     timed("Native save service",
           [&] { nativeSaveServiceCompletesAndCancelsExactlyOnce(directory.path()); });

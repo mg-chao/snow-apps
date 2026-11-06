@@ -33,7 +33,7 @@ TranslatableText textToolsTitle() {
                : settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"));
 }
 
-constexpr auto GLOBAL_HOTKEYS_PAGE_ID = "global-hotkeys";
+constexpr auto GLOBAL_SHORTCUTS_PAGE_ID = "global-hotkeys";
 constexpr auto GLOBAL_MOUSE_PAGE_ID = "global-mouse";
 constexpr auto PINNED_PAGE_ID = "pin-to-screen-management";
 constexpr auto HISTORY_PAGE_ID = "screenshot-history";
@@ -103,7 +103,7 @@ SettingsItemDefinition screenshotDelayItem() {
         SettingsShortcutAdjustment::ScreenshotDelaySeconds);
 }
 
-SettingsItemDefinition screenshotFixedItem() {
+SettingsItemDefinition screenshotPinToScreenItem() {
     return quickActionItem(
         QStringLiteral("quick.screenshot-fixed"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen"),
@@ -111,7 +111,8 @@ SettingsItemDefinition screenshotFixedItem() {
                           "Pin the confirmed screenshot selection to the screen"),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned screenshot")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin selection to screen"))},
-        GlobalShortcutAction::ScreenshotFixed, QStringLiteral("global_shortcuts/screenshot_fixed"),
+        GlobalShortcutAction::ScreenshotPinToScreen,
+        QStringLiteral("global_shortcuts/screenshot_fixed"),
         []() { return custom_outlined_icons::PinToScreen(); });
 }
 
@@ -1260,7 +1261,7 @@ SettingsItemDefinition toggleWindowUnderCursorAlwaysOnTopItem() {
 }
 #endif
 
-SettingsItemDefinition toggleGlobalHotkeysItem() {
+SettingsItemDefinition toggleGlobalShortcutsItem() {
     return quickActionItem(
         QStringLiteral("quick.toggle-global-hotkeys"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Disable/enable global shortcuts"),
@@ -1269,7 +1270,7 @@ SettingsItemDefinition toggleGlobalHotkeysItem() {
             "Turn every global shortcut off or back on; this shortcut stays active while global "
             "shortcuts are disabled"),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toggle shortcuts"))},
-        GlobalShortcutAction::ToggleGlobalHotkeys,
+        GlobalShortcutAction::ToggleGlobalShortcuts,
         QStringLiteral("global_shortcuts/toggle_global_hotkeys"),
         []() { return custom_outlined_icons::Disabled(); }, SettingsShortcutAdjustment::None,
         {QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global shortcuts"), true});
@@ -2427,7 +2428,7 @@ SettingsItemDefinition screenRecordingDeleteFilesOnRecordingCloseItem() {
         SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose);
 }
 
-SettingsItemDefinition fullscreenHotkeySuppressionItem() {
+SettingsItemDefinition fullscreenShortcutSuppressionItem() {
     return switchItem(
         QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -2436,7 +2437,7 @@ SettingsItemDefinition fullscreenHotkeySuppressionItem() {
             "SettingsCatalog",
             "Ignore global shortcuts while a matching focused window occupies an entire monitor"),
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"),
-        SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+        SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen);
 }
 
 SettingsItemDefinition fullscreenWindowFilterItem() {
@@ -3263,7 +3264,7 @@ SettingsItemDefinition importConfigurationItem() {
 QVector<SettingsPageDefinition> builtInPages() {
     return {
         {
-            QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID),
+            QString::fromLatin1(GLOBAL_SHORTCUTS_PAGE_ID),
             QStringLiteral("/"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global shortcuts")),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global shortcuts page")),
@@ -3277,7 +3278,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         screenshotItem(),
                         screenshotDelayItem(),
-                        screenshotFixedItem(),
+                        screenshotPinToScreenItem(),
                         screenshotOcrItem(),
                         screenshotOcrCopyItem(),
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -3335,7 +3336,7 @@ QVector<SettingsPageDefinition> builtInPages() {
 #ifdef Q_OS_WIN
                         toggleWindowUnderCursorAlwaysOnTopItem(),
 #endif
-                        toggleGlobalHotkeysItem(),
+                        toggleGlobalShortcutsItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
                     },
                 },
@@ -3344,8 +3345,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Automatic disabling")),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "Global shortcut activation behavior")),
-                    SettingsSectionReset::GlobalHotkeys,
-                    {fullscreenHotkeySuppressionItem(), fullscreenWindowFilterItem()},
+                    SettingsSectionReset::GlobalShortcuts,
+                    {fullscreenShortcutSuppressionItem(), fullscreenWindowFilterItem()},
                 },
             },
         },
@@ -3387,7 +3388,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                                         QStringLiteral("global_mouse/screenshot_copy")),
                         globalMouseItem(QStringLiteral("global-mouse.screenshot-fixed"),
                                         QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen"),
-                                        SettingsGlobalMouseAction::ScreenshotFixed,
+                                        SettingsGlobalMouseAction::ScreenshotPinToScreen,
                                         QStringLiteral("global_mouse/screenshot_fixed")),
                         globalMouseItem(QStringLiteral("global-mouse.screenshot-ocr"),
                                         QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
@@ -4370,10 +4371,10 @@ QVector<SettingsPageDefinition> builtInPages() {
 }
 
 QVector<SettingsNavigationNode> builtInNavigation() {
-    SettingsNavigationPageDefinition globalHotkeys;
-    globalHotkeys.id = QStringLiteral("nav.global-hotkeys");
-    globalHotkeys.pageId = QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID);
-    globalHotkeys.iconFactory = []() { return outlined_icons::Thunderbolt(); };
+    SettingsNavigationPageDefinition globalShortcuts;
+    globalShortcuts.id = QStringLiteral("nav.global-hotkeys");
+    globalShortcuts.pageId = QString::fromLatin1(GLOBAL_SHORTCUTS_PAGE_ID);
+    globalShortcuts.iconFactory = []() { return outlined_icons::Thunderbolt(); };
 
     SettingsNavigationPageDefinition globalMouse;
     globalMouse.id = QStringLiteral("nav.global-mouse");
@@ -4433,11 +4434,11 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     pinned.id = QStringLiteral("nav.pin-to-screen-management");
     pinned.pageId = QString::fromLatin1(PINNED_PAGE_ID);
     pinned.iconFactory = []() { return custom_outlined_icons::PinToScreenManagement(); };
-    return {globalHotkeys, globalMouse, history, pinned,
+    return {globalShortcuts, globalMouse, history, pinned,
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             translation,
 #endif
-            settingsGroup, about};
+            settingsGroup,   about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -4468,7 +4469,7 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/screenshot");
     case GlobalShortcutAction::ScreenshotDelay:
         return QStringLiteral("global_shortcuts/screenshot_delay");
-    case GlobalShortcutAction::ScreenshotFixed:
+    case GlobalShortcutAction::ScreenshotPinToScreen:
         return QStringLiteral("global_shortcuts/screenshot_fixed");
     case GlobalShortcutAction::ScreenshotOcr:
         return QStringLiteral("global_shortcuts/screenshot_ocr");
@@ -4520,7 +4521,7 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/translate_selected_text");
     case GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop:
         return QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top");
-    case GlobalShortcutAction::ToggleGlobalHotkeys:
+    case GlobalShortcutAction::ToggleGlobalShortcuts:
         return QStringLiteral("global_shortcuts/toggle_global_hotkeys");
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
         return QStringLiteral("global_shortcuts/toggle_disable_on_focused_fullscreen_window");
@@ -4532,7 +4533,7 @@ QString globalMouseConfigurationKey(SettingsGlobalMouseAction action) {
     switch (action) {
     case SettingsGlobalMouseAction::ScreenshotCopy:
         return QStringLiteral("global_mouse/screenshot_copy");
-    case SettingsGlobalMouseAction::ScreenshotFixed:
+    case SettingsGlobalMouseAction::ScreenshotPinToScreen:
         return QStringLiteral("global_mouse/screenshot_fixed");
     case SettingsGlobalMouseAction::ScreenshotOcr:
         return QStringLiteral("global_mouse/screenshot_ocr");
@@ -4726,11 +4727,11 @@ QString SettingsCatalog::shortcutActionTitle(GlobalShortcutAction action,
 
 QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const {
     QVector<SettingsTrayMenuGroupDefinition> groups;
-    const SettingsPageDefinition* globalHotkeysPage =
-        page(QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID));
-    if (globalHotkeysPage != nullptr) {
-        groups.reserve(globalHotkeysPage->sections.size() + 1);
-        for (const SettingsSectionDefinition& sectionDefinition : globalHotkeysPage->sections) {
+    const SettingsPageDefinition* globalShortcutsPage =
+        page(QString::fromLatin1(GLOBAL_SHORTCUTS_PAGE_ID));
+    if (globalShortcutsPage != nullptr) {
+        groups.reserve(globalShortcutsPage->sections.size() + 1);
+        for (const SettingsSectionDefinition& sectionDefinition : globalShortcutsPage->sections) {
             SettingsTrayMenuGroupDefinition group;
             group.id = sectionDefinition.id;
             for (const SettingsItemDefinition& itemDefinition : sectionDefinition.items) {
@@ -4825,7 +4826,7 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
               SettingsShortcutAdjustment::ScreenshotDelaySeconds),
           quick(QStringLiteral("quick.screenshot-fixed"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen"),
-                GlobalShortcutAction::ScreenshotFixed,
+                GlobalShortcutAction::ScreenshotPinToScreen,
                 []() { return custom_outlined_icons::PinToScreen(); }),
           quick(QStringLiteral("quick.screenshot-ocr"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
@@ -4928,7 +4929,7 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(
               QStringLiteral("quick.toggle-global-hotkeys"),
               QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global shortcuts"),
-              GlobalShortcutAction::ToggleGlobalHotkeys,
+              GlobalShortcutAction::ToggleGlobalShortcuts,
               []() { return custom_outlined_icons::Disabled(); }, SettingsShortcutAdjustment::None,
               true),
           quick(
@@ -5495,7 +5496,7 @@ QStringList SettingsCatalog::validationErrors() const {
                         expectedKey =
                             QStringLiteral("screen_recording/delete_files_on_recording_close");
                         break;
-                    case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
+                    case SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen:
                         expectedKey =
                             QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
                         break;
@@ -6118,7 +6119,7 @@ SettingsCatalog buildBuiltInSettingsCatalog() {
     }
     return {std::move(pages),
             builtInNavigation(),
-            {QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID), QStringLiteral("screenshot"),
+            {QString::fromLatin1(GLOBAL_SHORTCUTS_PAGE_ID), QStringLiteral("screenshot"),
              QStringLiteral("quick.screenshot")}};
 }
 

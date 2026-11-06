@@ -2069,7 +2069,7 @@ void recordingStatusPrompts() {
     const RecordingSettings settings;
     const QString previousFormat = settings.outputFormat();
     const bool previousMicrophone = settings.microphoneEnabled();
-    const bool previousSpeaker = settings.systemAudioEnabled();
+    const bool previousSystemAudio = settings.systemAudioEnabled();
     const int previousDelay = settings.startDelaySeconds();
     require(settings.showStatusPrompts(), "status prompts are enabled by default");
     require(settings.setOutputFormat(QStringLiteral("mp4")) &&
@@ -2148,7 +2148,7 @@ void recordingStatusPrompts() {
     require(prompt->accessibleName() ==
                     QStringLiteral("Format: MP4; Microphone enabled; System audio enabled") &&
                 renderPrompt() != microphone,
-            "speaker toggles must immediately update the prompt text alternative and icon");
+            "system audio toggles must immediately update the prompt text alternative and icon");
     checkStatusColors(true, false);
     palette()->recordingMicrophoneToggled(false);
     pumpPreview();
@@ -2238,7 +2238,7 @@ void recordingStatusPrompts() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(settings.setOutputFormat(previousFormat) &&
                 settings.setMicrophoneEnabled(previousMicrophone) &&
-                settings.setSystemAudioEnabled(previousSpeaker) &&
+                settings.setSystemAudioEnabled(previousSystemAudio) &&
                 settings.setStartDelaySeconds(previousDelay),
             "restore recording prompt fixture preferences");
 }
@@ -5735,14 +5735,14 @@ void recordingActiveToolsReturnToSelect() {
         {"shape", "shape", Tool::Shape, SnowCanvasTool::Shape},
         {"arrow", "arrow", Tool::Arrow, SnowCanvasTool::Arrow},
         {"line", "line", Tool::Line, SnowCanvasTool::Line},
-        {"brush", "free-draw", Tool::FreeDraw, SnowCanvasTool::FreeDraw},
-        {"highlight", "highlighter", Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+        {"brush", "free-draw", Tool::Brush, SnowCanvasTool::FreeDraw},
+        {"highlight", "highlighter", Tool::BrushHighlight, SnowCanvasTool::PenHighlight},
         {"spotlight", "spotlight", Tool::Spotlight, SnowCanvasTool::Spotlight},
-        {"filter", "filter", Tool::PenFilter, SnowCanvasTool::PenFilter},
+        {"filter", "filter", Tool::BrushFilter, SnowCanvasTool::PenFilter},
         {"eraser", "eraser", Tool::Eraser, SnowCanvasTool::Eraser},
         {"watermark", "watermark", Tool::Watermark, SnowCanvasTool::Watermark},
         {"text", "text", Tool::Text, SnowCanvasTool::Text},
-        {"serial_number", "serial-number", Tool::SerialNumber, SnowCanvasTool::SerialNumber},
+        {"serial_number", "serial-number", Tool::SequenceNumber, SnowCanvasTool::SerialNumber},
     };
     ScreenRecordingController controller(testEffectsSource);
     controller.open(QRect(10, 10, 640, 480));
@@ -8486,24 +8486,25 @@ template <typename Application> int runRecordingControllerTests(Application& app
         int expectedHistoryEntries = 1;
         for (const auto& [tool, canvasTool] :
              {std::pair{Tool::RectangleHighlight, SnowCanvasTool::RectangleHighlight},
-              std::pair{Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+              std::pair{Tool::BrushHighlight, SnowCanvasTool::PenHighlight},
               std::pair{Tool::RectangleFilter, SnowCanvasTool::RectangleFilter},
-              std::pair{Tool::PenFilter, SnowCanvasTool::PenFilter},
+              std::pair{Tool::BrushFilter, SnowCanvasTool::PenFilter},
               std::pair{Tool::AutoFilter, SnowCanvasTool::AutoFilter}}) {
             const snow_shot::storage::ScreenshotToolbarSettings settings;
-            if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+            if (tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight) {
                 settings.setLastHighlightTool(tool == Tool::RectangleHighlight
                                                   ? QStringLiteral("rectangle-highlight")
                                                   : QStringLiteral("pen-highlight"));
             } else {
                 settings.setLastFilterTool(
                     tool == Tool::RectangleFilter ? QStringLiteral("rectangle-filter")
-                    : tool == Tool::PenFilter     ? QStringLiteral("pen-filter")
+                    : tool == Tool::BrushFilter   ? QStringLiteral("pen-filter")
                                                   : QStringLiteral("auto-filter"));
             }
-            const QString shortcut = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight
-                                         ? QStringLiteral("highlight")
-                                         : QStringLiteral("filter");
+            const QString shortcut =
+                tool == Tool::RectangleHighlight || tool == Tool::BrushHighlight
+                    ? QStringLiteral("highlight")
+                    : QStringLiteral("filter");
             auto* exportSettings = palette()->findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenRecordingExportSettings"));
             require(exportSettings != nullptr, "recording export settings button must exist");

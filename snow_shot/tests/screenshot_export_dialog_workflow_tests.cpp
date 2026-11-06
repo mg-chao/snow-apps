@@ -246,7 +246,7 @@ void centersOnDisplayOverlay() {
     }
 }
 
-void collageWindowModalityAndRetry(QWidget& owner) {
+void imageStitchingWindowModalityAndRetry(QWidget& owner) {
     QWidget neighbor;
     neighbor.show();
     for (int attempt = 0; attempt < 2; ++attempt) {
@@ -3620,7 +3620,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (QApplication::arguments().contains(QStringLiteral("--collage-modality"))) {
-            collageWindowModalityAndRetry(owner);
+            imageStitchingWindowModalityAndRetry(owner);
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
             std::cout << "Collage export dialog modality tests passed\n";

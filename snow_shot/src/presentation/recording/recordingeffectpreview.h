@@ -35,7 +35,7 @@ class RecordingEffectPreview final : public QObject, public SnowCanvasCustomRend
                    bool recordLettersAndSymbols = true, bool recordControlKeys = true,
                    bool preserveKeyboardShortcuts = true);
     void setEligible(bool eligible);
-    void setStatusPrompts(bool enabled, const QString& format, bool microphone, bool speaker);
+    void setStatusPrompts(bool enabled, const QString& format, bool microphone, bool systemAudio);
     void stopAndClear(bool present = false);
     void prepareForSessionEnd();
     [[nodiscard]] bool active() const;
