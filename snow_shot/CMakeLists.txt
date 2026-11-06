@@ -8631,6 +8631,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-toolbar-tooltip-tests
         COMMAND snow-shot-toolbar-main-panel-tests --tooltips-only -platform offscreen)
+    add_test(NAME snow-shot-toolbar-action-loading-tests
+        COMMAND snow-shot-toolbar-main-panel-tests --action-loading-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-action-loading-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     set_tests_properties(snow-shot-toolbar-tooltip-tests PROPERTIES
         LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
