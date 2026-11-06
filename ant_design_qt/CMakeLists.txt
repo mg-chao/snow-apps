@@ -388,6 +388,16 @@ if(ADQT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(adqt-input-number-layout-tests tests/input_number_layout_tests.cpp)
+    target_link_libraries(adqt-input-number-layout-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-input-number-layout-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-input-number-layout-tests COMMAND adqt-input-number-layout-tests)
+    set_tests_properties(adqt-input-number-layout-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(adqt-value-widget-lifetime-tests tests/value_widget_lifetime_tests.cpp)
     target_link_libraries(adqt-value-widget-lifetime-tests PRIVATE adqt::widgets Qt6::Widgets)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)
