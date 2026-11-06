@@ -2509,6 +2509,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::ScreenshotTranslation, "screenshot", "quick.screenshot-translation",
          "global_shortcuts/screenshot_translation",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::ScreenshotScrolling, "screenshot", "quick.screenshot-scrolling",
+         "global_shortcuts/screenshot_scrolling",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::ScreenshotCopy, "screenshot", "quick.screenshot-copy",
          "global_shortcuts/screenshot_copy", settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::ScreenshotSave, "screenshot", "quick.screenshot-save",
@@ -2607,7 +2610,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
     }
 
     require(actions.size() == expectations.size() &&
-                expectations.size() == 27 + WINDOW_TOPMOST_ACTION_COUNT,
+                expectations.size() == 28 + WINDOW_TOPMOST_ACTION_COUNT,
             "the global-hotkeys catalog must expose all shortcut actions exactly once");
     const auto* stitch = catalog.itemForShortcut(Action::StitchSelectedImages);
     const auto* stitchSchema = storage::ConfigurationSchema::entry(
@@ -2696,7 +2699,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* trayMenuSchema =
         storage::ConfigurationSchema::entry(QStringLiteral("tray/menu_options"));
     require(trayGroups.size() == 5 && trayGroups.at(0).id == QStringLiteral("screenshot") &&
-                trayGroups.at(0).options.size() == 11 &&
+                trayGroups.at(0).options.size() == 12 &&
                 trayGroups.at(1).id == QStringLiteral("pin-to-screen") &&
                 trayGroups.at(1).options.size() == 5 &&
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
@@ -2705,40 +2708,41 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(3).options.size() == 7 + WINDOW_TOPMOST_ACTION_COUNT &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
                 trayGroups.at(4).options.size() == 4 &&
-                trayOptionIds.size() == 30 + WINDOW_TOPMOST_ACTION_COUNT &&
-                trayOptionIds.at(7) == QStringLiteral("quick.screenshot-save") &&
-                trayOptionIds.at(8) == QStringLiteral("quick.screenshot-quick-save") &&
-                trayOptionIds.at(11) == QStringLiteral("quick.pin-clipboard-content") &&
-                trayOptionIds.at(12) == QStringLiteral("quick.pin-selected-files") &&
-                trayOptionIds.at(13) == QStringLiteral("quick.restore-last-closed-windows") &&
-                trayOptionIds.at(14) == QStringLiteral("quick.hide-show-all-windows") &&
-                trayOptionIds.at(15) == QStringLiteral("quick.open-pin-to-screen-management") &&
-                trayOptionIds.at(16) == QStringLiteral("quick.screen-record") &&
-                trayOptionIds.at(17) == QStringLiteral("quick.screen-record-copy") &&
-                trayOptionIds.at(18) == QStringLiteral("quick.open-screen-recording-folder") &&
-                trayOptionIds.at(19) == QStringLiteral("quick.open-capture-history") &&
-                trayOptionIds.at(20) == QStringLiteral("quick.global-canvas") &&
-                trayOptionIds.at(21) == QStringLiteral("quick.stitch-selected-images") &&
-                trayOptionIds.at(22) == QStringLiteral("quick.split-selected-images") &&
-                trayOptionIds.at(23) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(24 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                trayOptionIds.size() == 31 + WINDOW_TOPMOST_ACTION_COUNT &&
+                trayOptionIds.at(6) == QStringLiteral("quick.screenshot-scrolling") &&
+                trayOptionIds.at(8) == QStringLiteral("quick.screenshot-save") &&
+                trayOptionIds.at(9) == QStringLiteral("quick.screenshot-quick-save") &&
+                trayOptionIds.at(12) == QStringLiteral("quick.pin-clipboard-content") &&
+                trayOptionIds.at(13) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(14) == QStringLiteral("quick.restore-last-closed-windows") &&
+                trayOptionIds.at(15) == QStringLiteral("quick.hide-show-all-windows") &&
+                trayOptionIds.at(16) == QStringLiteral("quick.open-pin-to-screen-management") &&
+                trayOptionIds.at(17) == QStringLiteral("quick.screen-record") &&
+                trayOptionIds.at(18) == QStringLiteral("quick.screen-record-copy") &&
+                trayOptionIds.at(19) == QStringLiteral("quick.open-screen-recording-folder") &&
+                trayOptionIds.at(20) == QStringLiteral("quick.open-capture-history") &&
+                trayOptionIds.at(21) == QStringLiteral("quick.global-canvas") &&
+                trayOptionIds.at(22) == QStringLiteral("quick.stitch-selected-images") &&
+                trayOptionIds.at(23) == QStringLiteral("quick.split-selected-images") &&
+                trayOptionIds.at(24) == QStringLiteral("quick.translate-selected-text") &&
                 trayOptionIds.at(25 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                    QStringLiteral("quick.toggle-global-hotkeys") &&
                 trayOptionIds.at(26 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                trayOptionIds.at(27 + WINDOW_TOPMOST_ACTION_COUNT) ==
                     QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(27 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("tray.show-main-window") &&
                 trayOptionIds.at(28 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(29 + WINDOW_TOPMOST_ACTION_COUNT) ==
                     QStringLiteral("tray.restart-app") &&
                 trayGroups.at(4).options.at(2).kind ==
                     settings::SettingsTrayMenuOptionKind::RestartApp &&
                 trayGroups.at(4).options.at(2).iconFactory &&
                 trayGroups.at(4).options.at(2).iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::Restart() &&
-                trayOptionIds.at(29 + WINDOW_TOPMOST_ACTION_COUNT) == QStringLiteral("tray.exit") &&
+                trayOptionIds.at(30 + WINDOW_TOPMOST_ACTION_COUNT) == QStringLiteral("tray.exit") &&
                 trayMenuSchema != nullptr && trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -2836,11 +2840,25 @@ void globalHotkeyShortcutsHaveStableContracts() {
             : nullptr;
     const auto* screenshotSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"));
-    require(screenshotSection != nullptr && screenshotSection->items.size() >= 8 &&
-                screenshotSection->items.at(6).id == QStringLiteral("quick.screenshot-copy") &&
-                screenshotSection->items.at(7).id == QStringLiteral("quick.screenshot-save") &&
-                screenshotSection->items.at(8).id == QStringLiteral("quick.screenshot-quick-save"),
-            "Save as file and Quick save must immediately follow Copy to clipboard");
+    require(screenshotSection != nullptr && screenshotSection->items.size() >= 10 &&
+                screenshotSection->items.at(6).id == QStringLiteral("quick.screenshot-scrolling") &&
+                screenshotSection->items.at(7).id == QStringLiteral("quick.screenshot-copy") &&
+                screenshotSection->items.at(8).id == QStringLiteral("quick.screenshot-save") &&
+                screenshotSection->items.at(9).id == QStringLiteral("quick.screenshot-quick-save"),
+            "Scrolling screenshot must immediately precede Copy to clipboard and save actions");
+    const auto* scrolling = catalog.itemForShortcut(Action::ScreenshotScrolling);
+    const auto* scrollingSchema = storage::ConfigurationSchema::entry(scrolling->configurationKey);
+    const auto& scrollingShortcut =
+        std::get<settings::SettingsShortcutActionDefinition>(scrolling->payload);
+    require(scrolling->title.translated() == QStringLiteral("Scrolling screenshot") &&
+                scrollingSchema &&
+                scrollingSchema->valueKind == storage::ConfigurationValueKind::ShortcutList &&
+                scrollingSchema->maximumListItems == 2 &&
+                scrollingSchema->defaultValue.toArray().isEmpty() &&
+                scrollingShortcut.iconFactory &&
+                scrollingShortcut.iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ScrollingScreenshot(),
+            "scrolling screenshot reuses its toolbar icon and supports two unset hotkeys");
     for (const auto action : {Action::ScreenshotSave, Action::ScreenshotQuickSave}) {
         const auto* item = catalog.itemForShortcut(action);
         const auto* schema = storage::ConfigurationSchema::entry(item->configurationKey);
@@ -2916,7 +2934,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
     require(windowTopmost && otherShortcuts->items.at(5).id == windowTopmost->id &&
                 windowTopmost->title.translated() ==
                     QStringLiteral("Toggle Always on Top for the Window Under the Cursor") &&
-                trayOptionIds.at(24) == windowTopmost->id &&
+                trayOptionIds.at(25) == windowTopmost->id &&
                 !trayMenuSchema->defaultValue.toArray().contains(windowTopmost->id),
             "window-under-cursor topmost follows translation and starts hidden in the tray");
     const settings::SettingsSearchIndex topmostSearch(settings::builtInSettingsRegistry());
@@ -3068,6 +3086,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::ScreenshotFixed,
           presentation::GlobalShortcutAction::ScreenshotOcr,
           presentation::GlobalShortcutAction::ScreenshotTranslation,
+          presentation::GlobalShortcutAction::ScreenshotScrolling,
           presentation::GlobalShortcutAction::ScreenshotCopy,
           presentation::GlobalShortcutAction::ScreenshotFullScreen,
           presentation::GlobalShortcutAction::ScreenshotFocusedWindow,

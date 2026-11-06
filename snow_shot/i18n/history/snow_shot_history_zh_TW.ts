@@ -1839,7 +1839,7 @@ Files:
         </message>
         <message>
             <source>A pinned window is no longer available to save</source>
-            <translation>一個貼圖視窗已無法儲存</translation>
+            <translation>一個固定到螢幕視窗已無法儲存</translation>
         </message>
         <message>
             <source>AirDrop</source>

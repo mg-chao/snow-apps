@@ -27,6 +27,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::ScreenshotOcr, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotOcrCopy, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotTranslation, FeatureFamily::Screenshot},
+        {GlobalShortcutAction::ScreenshotScrolling, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotCopy, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotSave, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotQuickSave, FeatureFamily::Screenshot},

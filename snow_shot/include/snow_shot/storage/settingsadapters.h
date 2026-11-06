@@ -178,6 +178,8 @@ class ShortcutSettings final {
     bool setScreenshotTranslation(const shortcuts::ShortcutBindingList& bindings) const;
 #endif
 
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotScrolling() const;
+    bool setScreenshotScrolling(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
     bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotSave() const;
