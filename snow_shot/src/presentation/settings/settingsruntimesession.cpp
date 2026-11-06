@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/proxyconfiguration.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/serverconfiguration.h"
 #endif
@@ -771,6 +772,10 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
             next.enabled = next.enabled &&
                            m_backend.switchValue(SettingsSwitchBinding::OriginalImageTranslation);
         }
+        if (descriptor->configurationKey == QStringLiteral("network/http_proxy"))
+            next.enabled =
+                next.enabled && m_backend.selectValue(SettingsSelectBinding::Proxy).toString() ==
+                                    QStringLiteral("manual");
         const bool pinnedField =
             descriptor->reset == SettingsSectionReset::PinnedHistoryPolicy ||
             descriptor->configurationKey.startsWith(QStringLiteral("pinned_history/"));
@@ -1175,6 +1180,12 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
 }
 
 QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descriptor) const {
+    if (descriptor.configurationKey == QStringLiteral("network/http_proxy") &&
+        !normalizedHttpProxyUrl(state(descriptor.id).draftValue.toString())) {
+        return QCoreApplication::translate(
+            "SettingsBackend",
+            "Enter a valid HTTP proxy address, for example http://127.0.0.1:7890");
+    }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url") &&
         !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
@@ -1192,6 +1203,11 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,
                                          const QVariant& first, const QVariant& second) const {
+    if (descriptor.configurationKey == QStringLiteral("network/http_proxy")) {
+        const auto a = normalizedHttpProxyUrl(first.toString());
+        const auto b = normalizedHttpProxyUrl(second.toString());
+        return a && b && *a == *b;
+    }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url")) {
         const auto a = normalizedServerUrl(first.toString());

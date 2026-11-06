@@ -806,6 +806,49 @@ void translationPromptPreservesEditorContract() {
     }
 }
 
+void manualProxyRoutesHttpAndHttpsRequests() {
+    QTcpServer proxy;
+    require(proxy.listen(QHostAddress::LocalHost), "manual proxy fixture listens");
+    SnowShotApiClient client(QStringLiteral("http://proxy-target.invalid"));
+    client.setProxyConfiguration(QStringLiteral("manual"),
+                                 QStringLiteral("http://127.0.0.1:%1").arg(proxy.serverPort()));
+    bool completed = false;
+    QEventLoop completionLoop;
+    const auto token =
+        client.fetchChatModels(QStringLiteral("en-US"), &client, [&](SnowShotChatModelsResult) {
+            completed = true;
+            completionLoop.quit();
+        });
+    require(token != 0, "manual HTTP proxy request starts");
+    const auto request = waitForHttpRequest(
+        proxy,
+        QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          "11\r\nConnection: close\r\n\r\n{\"data\":[]}"));
+    require(request.startsWith("GET http://proxy-target.invalid/api/v2/chat/models HTTP/1.1"),
+            "HTTP requests reach the configured proxy with an absolute target URL");
+    if (!completed) {
+        QTimer::singleShot(5000, &completionLoop, &QEventLoop::quit);
+        completionLoop.exec();
+    }
+    require(completed, "proxied HTTP response is processed");
+    require(client.setBaseUrl(QStringLiteral("https://proxy-target.invalid")),
+            "select HTTPS server");
+    const auto secureToken =
+        client.fetchChatModels(QStringLiteral("en-US"), &client, [](SnowShotChatModelsResult) {});
+    require(secureToken != 0, "manual HTTPS proxy request starts");
+    const auto tunnel = waitForHttpRequest(
+        proxy, QByteArrayLiteral(
+                   "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+    require(tunnel.startsWith("CONNECT proxy-target.invalid:443 HTTP/1.1"),
+            "HTTPS requests establish a CONNECT tunnel through the configured HTTP proxy");
+    client.cancel(secureToken);
+    client.setProxyConfiguration(QStringLiteral("none"), {});
+    auto* manager = client.findChild<QNetworkAccessManager*>();
+    require(manager && manager->proxy().type() == QNetworkProxy::NoProxy &&
+                manager->proxyFactory() == nullptr,
+            "direct mode removes the manual proxy");
+}
+
 void apiClientUsesModelCatalogAndStreamingChatContracts() {
     QTcpServer server;
     require(server.listen(QHostAddress::LocalHost), "local API test server should listen");
@@ -3180,6 +3223,7 @@ int main(int argc, char** argv) {
     customModelsUseIndependentOpenAiConnections();
     customProvidersControlReasoningAcrossWorkflows();
     providerChangesCancelActiveQueuedAndPreparingRequests();
+    manualProxyRoutesHttpAndHttpsRequests();
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();
     failedRequestsIdentifyTheirKindWithoutContent();

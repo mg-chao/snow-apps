@@ -81,6 +81,7 @@ extern "C" void snow_diagnostics_install_panic_hook(void (*callback)(const unsig
 #ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
 int runScreenshotControllerLifetimeTests(int argc, char** argv);
 int runScreenshotControllerClipboardTests(int argc, char** argv);
+int runOcrProxyStartupTests(int argc, char** argv);
 #endif
 
 namespace {
@@ -188,6 +189,9 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
 #ifdef SNOW_SHOT_CONTROLLER_LIFETIME_TESTS
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--ocr-proxy-startup-tests") {
+        return runOcrProxyStartupTests(argc, argv);
+    }
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == u"--controller-lifetime-tests") {
         return runScreenshotControllerLifetimeTests(argc, argv);
     }
@@ -681,9 +685,11 @@ int main(int argc, char* argv[]) {
                                  snow_shot::presentation::styles::ThemeManager::instance()
                                      .updateProgressAppearance());
                          });
-        startupUpdate.setSystemProxy(
-            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
-            u"system");
+        startupUpdate.setProxyConfiguration(
+            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString(),
+            applicationStorage.configuration()
+                .value(QStringLiteral("network/http_proxy"))
+                .toString());
         bool foregroundRequested =
             administratorRestart || launchArguments.contains(QStringLiteral("--show-main-window"));
         const auto initialImageRequest =

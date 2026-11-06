@@ -1916,6 +1916,8 @@ bool BuiltInSettingsBackend::applyDirectoryPathValue(SettingsDirectoryPathBindin
 
 QString BuiltInSettingsBackend::textValue(SettingsTextBinding binding) const {
     switch (binding) {
+    case SettingsTextBinding::HttpProxy:
+        return storage::NetworkSettings().httpProxy();
     case SettingsTextBinding::ServerUrl:
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
         return storage::ApiConfigurationSettings().serverUrl();
@@ -1934,6 +1936,8 @@ QString BuiltInSettingsBackend::textValue(SettingsTextBinding binding) const {
 
 bool BuiltInSettingsBackend::applyTextValue(SettingsTextBinding binding, const QString& value) {
     switch (binding) {
+    case SettingsTextBinding::HttpProxy:
+        return storage::NetworkSettings().setHttpProxy(value);
     case SettingsTextBinding::ServerUrl:
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
         return storage::ApiConfigurationSettings().setServerUrl(value);
@@ -3143,9 +3147,12 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                  QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"))},
         });
     case SettingsSectionReset::Network:
-        return applySelectValue(
-            SettingsSelectBinding::Proxy,
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("network/proxy")));
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("network/proxy"),
+             storage::ConfigurationSchema::defaultValue(QStringLiteral("network/proxy"))},
+            {QStringLiteral("network/http_proxy"),
+             storage::ConfigurationSchema::defaultValue(QStringLiteral("network/http_proxy"))},
+        });
     case SettingsSectionReset::SystemSettings: {
 #ifdef Q_OS_MACOS
         return storage::ApplicationStorage::instance().configuration().setValues({

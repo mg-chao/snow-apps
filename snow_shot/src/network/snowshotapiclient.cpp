@@ -1,3 +1,4 @@
+#include "snow_shot/network/proxyconfiguration.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
@@ -22,7 +23,6 @@
 #include <QJsonValue>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
-#include <QNetworkProxyFactory>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
@@ -381,21 +381,6 @@ QString latexVisionPrompt() {
         "return an empty response.");
 }
 
-class SystemNetworkProxyFactory final : public QNetworkProxyFactory {
-  public:
-    QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override {
-        return systemProxyForQuery(query);
-    }
-};
-
-void configureProxy(QNetworkAccessManager& manager, bool useSystemProxy) {
-    if (useSystemProxy) {
-        manager.setProxyFactory(new SystemNetworkProxyFactory);
-    } else {
-        manager.setProxy(QNetworkProxy::NoProxy);
-    }
-}
-
 QString normalizedBaseUrl(QString value) {
     value = value.trimmed();
     while (value.endsWith(u'/')) {
@@ -634,24 +619,27 @@ bool SnowShotApiClient::setBaseUrl(const QString& baseUrl) {
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
-    return m_useSystemProxy;
+    return m_proxyMode == QStringLiteral("system");
 }
 
 void SnowShotApiClient::setUseSystemProxy(bool enabled) {
-    if (m_useSystemProxy == enabled) {
+    setProxyConfiguration(enabled ? QStringLiteral("system") : QStringLiteral("none"), {});
+}
+
+void SnowShotApiClient::setProxyConfiguration(const QString& mode, const QString& address) {
+    if (m_proxyMode == mode && m_proxyAddress == address)
         return;
-    }
-    m_useSystemProxy = enabled;
-    if (auto* manager = findChild<QNetworkAccessManager*>(); manager != nullptr) {
-        configureProxy(*manager, m_useSystemProxy);
-    }
+    m_proxyMode = mode;
+    m_proxyAddress = address;
+    if (auto* manager = findChild<QNetworkAccessManager*>(); manager != nullptr)
+        snow_shot::network::configureProxy(*manager, m_proxyMode, m_proxyAddress);
 }
 
 QNetworkAccessManager* SnowShotApiClient::networkAccessManager() {
     auto* manager = findChild<QNetworkAccessManager*>();
     if (manager == nullptr) {
         manager = new QNetworkAccessManager(this);
-        configureProxy(*manager, m_useSystemProxy);
+        snow_shot::network::configureProxy(*manager, m_proxyMode, m_proxyAddress);
     }
     return manager;
 }

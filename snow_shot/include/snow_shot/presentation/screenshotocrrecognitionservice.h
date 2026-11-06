@@ -128,7 +128,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         // Packaged descriptor/offline payload and writable online component cache.
         QString offlineRoot;
         QString cacheRoot;
-        // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
+        // Resolved proxy URL for component downloads. Empty means direct access.
         QString proxyUrl;
         ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
         ScreenshotOcrDetectorResizePolicy detectorResizePolicy =
@@ -164,6 +164,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;
     [[nodiscard]] ScreenshotOcrAssetStatus assetStatus() const override;
+    [[nodiscard]] QString proxyUrl() const;
     void setProxyUrl(const QString& proxyUrl);
     void setModelType(ScreenshotOcrModelType modelType);
     void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy);

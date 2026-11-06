@@ -1,3 +1,4 @@
+#include "snow_shot/proxyconfiguration.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/app/distribution.h"
@@ -531,6 +532,7 @@ struct UpdateService::Impl {
             command.insert(QStringLiteral("operation"), operationName(activeOperation));
             command.insert(QStringLiteral("trigger"), triggerName(activeTrigger));
             command.insert(QStringLiteral("systemProxy"), systemProxy);
+            command.insert(QStringLiteral("httpProxy"), httpProxy);
             send(QStringLiteral("execute"), command);
             if (cancelWhenRunning) {
                 cancelWhenRunning = false;
@@ -722,6 +724,7 @@ struct UpdateService::Impl {
     Operation pendingOperation = Operation::None;
     Trigger pendingTrigger = Trigger::Periodic;
     bool systemProxy = false;
+    QString httpProxy;
     bool started = false;
     bool handshakeComplete = false;
     bool helloSeen = false;
@@ -850,7 +853,14 @@ void UpdateService::setMode(const QString& mode) {
 }
 
 void UpdateService::setSystemProxy(bool enabled) {
-    m_impl->systemProxy = enabled;
+    setProxyConfiguration(enabled ? QStringLiteral("system") : QStringLiteral("none"), {});
+}
+
+void UpdateService::setProxyConfiguration(const QString& mode, const QString& address) {
+    m_impl->systemProxy = mode == QStringLiteral("system");
+    m_impl->httpProxy = mode == QStringLiteral("manual")
+                            ? normalizedHttpProxyUrl(address).value_or(QString())
+                            : QString();
 }
 
 void UpdateService::setProgressAppearance(const QJsonObject& appearance) {

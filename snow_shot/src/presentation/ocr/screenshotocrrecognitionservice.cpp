@@ -98,8 +98,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         : m_owner(owner),
           m_shutdownTimeoutMilliseconds(std::max(1, options.shutdownTimeoutMilliseconds)),
           m_retryTimeUnit(std::max(1, options.retryTimeUnitMilliseconds)),
-          m_beforeLocalRender(options.beforeLocalRender), m_proxyUrl(options.proxyUrl),
-          m_modelType(options.modelType) {
+          m_beforeLocalRender(options.beforeLocalRender), m_modelType(options.modelType) {
         m_configuration.modelType = options.modelType;
         m_configuration.detectorResizePolicy = options.detectorResizePolicy;
         m_configuration.textDetectionProcessing = options.textDetectionProcessing;
@@ -155,10 +154,6 @@ class ScreenshotOcrRecognitionService::Impl final {
     ScreenshotOcrRuntimeConfiguration configuration() const {
         return m_configuration;
     }
-    QString proxyUrl() const {
-        return m_proxyUrl;
-    }
-
     ~Impl() {
         shutdown();
     }
@@ -327,9 +322,6 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void setProxyUrl(const QString& proxyUrl) {
-        if (m_proxyUrl == proxyUrl)
-            return;
-        m_proxyUrl = proxyUrl;
         if (m_assetManager != nullptr)
             m_assetManager->setProxyUrl(proxyUrl);
     }
@@ -1364,7 +1356,6 @@ class ScreenshotOcrRecognitionService::Impl final {
     const int m_shutdownTimeoutMilliseconds;
     const int m_retryTimeUnit;
     const std::function<void()> m_beforeLocalRender;
-    QString m_proxyUrl;
     ScreenshotOcrModelType m_modelType = ScreenshotOcrModelType::Small;
     ScreenshotOcrResolvedAssets m_assets;
     ScreenshotOcrAssetStatus m_assetStatus;
@@ -1455,7 +1446,14 @@ ScreenshotOcrAssetStatus ScreenshotOcrRecognitionService::assetStatus() const {
     return m_impl != nullptr ? m_impl->assetStatus() : ScreenshotOcrAssetStatus{};
 }
 
+QString ScreenshotOcrRecognitionService::proxyUrl() const {
+    return m_storageOptions.proxyUrl;
+}
+
 void ScreenshotOcrRecognitionService::setProxyUrl(const QString& proxyUrl) {
+    if (m_storageOptions.proxyUrl == proxyUrl)
+        return;
+    m_storageOptions.proxyUrl = proxyUrl;
     if (m_impl != nullptr)
         m_impl->setProxyUrl(proxyUrl);
 }
@@ -1506,7 +1504,6 @@ void ScreenshotOcrRecognitionService::suspendStorage() {
     if (!m_impl)
         return;
     m_storageConfiguration = m_impl->configuration();
-    m_storageOptions.proxyUrl = m_impl->proxyUrl();
     m_impl->beginShutdown();
     m_suspendedImpl = std::move(m_impl);
 }

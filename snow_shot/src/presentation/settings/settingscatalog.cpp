@@ -1059,13 +1059,15 @@ SettingsItemDefinition proxyItem() {
         {QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "No proxy"))},
         {QStringLiteral("system"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Use system proxy"))},
+        {QStringLiteral("manual"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Manual configuration"))},
     };
     payload.binding = SettingsSelectBinding::Proxy;
     return {
         QStringLiteral("network.proxy"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Proxy")),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                       "Choose whether network requests use the system proxy")),
+                                       "Choose how network requests connect through a proxy")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Network proxy"))},
         QStringLiteral("network/proxy"),
         payload,
@@ -4273,7 +4275,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                 "Configure proxy use for network requests")),
                  SettingsSectionReset::Network,
-                 {proxyItem()},
+                 {proxyItem(),
+                  textFormatItem(QStringLiteral("network.http-proxy"),
+                                 QT_TRANSLATE_NOOP("SettingsCatalog", "HTTP/HTTPS proxy"),
+                                 QT_TRANSLATE_NOOP(
+                                     "SettingsCatalog",
+                                     "Use an HTTP proxy for HTTP and HTTPS requests, for example "
+                                     "http://127.0.0.1:7890"),
+                                 QStringLiteral("network/http_proxy"),
+                                 SettingsTextBinding::HttpProxy)},
              },
              {
                  QStringLiteral("mcp"),
@@ -5887,6 +5897,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         std::get_if<SettingsTextDefinition>(&itemDefinition.payload)) {
                     QString expectedKey;
                     switch (text->binding) {
+                    case SettingsTextBinding::HttpProxy:
+                        expectedKey = QStringLiteral("network/http_proxy");
+                        break;
                     case SettingsTextBinding::ServerUrl:
                         expectedKey = QStringLiteral("api_configuration/server_url");
                         break;

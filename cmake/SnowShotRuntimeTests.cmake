@@ -32,6 +32,7 @@ function(snow_shot_add_ocr_runtime_tests)
     add_executable(snow-shot-ocr-recognition-service-tests
         tests/screenshot_ocr_recognition_service_tests.cpp
         tests/screenshot_ocr_process_lifecycle_tests.cpp
+        tests/ocr_proxy_configuration_tests.cpp
         include/snow_shot/presentation/screenshotocrpresentation.h
         include/snow_shot/presentation/screenshotocrrecognitionservice.h
         include/snow_shot/presentation/screenshotocrassets.h
@@ -51,6 +52,7 @@ function(snow_shot_add_ocr_runtime_tests)
     endif()
     target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
         snow_shot_diagnostics
+        snow_shot_storage
         snow_draw_engine_qt_canvas
         Qt6::Core
         Qt6::Gui
@@ -79,6 +81,10 @@ function(snow_shot_add_ocr_runtime_tests)
     add_test(NAME snow-shot-ocr-storage-relocation-tests
         COMMAND snow-shot-ocr-recognition-service-tests --storage-relocation-only)
     set_tests_properties(snow-shot-ocr-storage-relocation-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-ocr-proxy-configuration-tests
+        COMMAND snow-shot-ocr-recognition-service-tests --proxy-configuration-only)
+    set_tests_properties(snow-shot-ocr-proxy-configuration-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-ocr-process-lifecycle-tests
         COMMAND snow-shot-ocr-recognition-service-tests --process-lifecycle)

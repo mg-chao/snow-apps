@@ -1224,8 +1224,14 @@ void downloadedRuntimeRecognizesText(const QString& archive) {
 }
 #endif
 
+void ocrProxyConfigurationTests();
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--proxy-configuration-only"))) {
+        ocrProxyConfigurationTests();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     for (const auto& argument : application.arguments()) {
         if (argument.startsWith(QStringLiteral("--downloaded-runtime="))) {

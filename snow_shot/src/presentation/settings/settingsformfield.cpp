@@ -235,10 +235,13 @@ struct SettingsFormField::Impl {
                         });
                 } else if constexpr (std::is_same_v<Payload, SettingsTextDefinition>) {
                     options.commitPolicy = fields::CommitPolicy::OnFinish;
-                    options.allowClear = payload.binding == SettingsTextBinding::ServerUrl;
+                    options.allowClear = payload.binding == SettingsTextBinding::ServerUrl ||
+                                         payload.binding == SettingsTextBinding::HttpProxy;
                     const auto handle = fields::text(metadata, options);
                     field = handle.field;
                     editor = handle.editor;
+                    if (payload.binding == SettingsTextBinding::HttpProxy)
+                        handle.editor->setPlaceholderText(QStringLiteral("http://127.0.0.1:7890"));
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     if (payload.binding == SettingsTextBinding::ServerUrl)
                         handle.editor->setPlaceholderText(SnowShotApiClient::configuredBaseUrl());

@@ -1588,9 +1588,10 @@ void builtInCatalogIsCompleteAndValid() {
                 proxy->configurationKey == QStringLiteral("network/proxy") &&
                 proxySelect != nullptr &&
                 proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
-                proxySelect->options.size() == 2 &&
+                proxySelect->options.size() == 3 &&
                 proxySelect->options.at(0).value == QStringLiteral("none") &&
                 proxySelect->options.at(1).value == QStringLiteral("system") &&
+                proxySelect->options.at(2).value == QStringLiteral("manual") &&
                 textRecognition != nullptr &&
                 textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
                 textRecognition->items.size() == 6 &&

@@ -56,6 +56,8 @@ pub struct Command {
     #[serde(default)]
     pub system_proxy: Option<bool>,
     #[serde(default)]
+    pub http_proxy: Option<String>,
+    #[serde(default)]
     pub proceed: Option<bool>,
     #[serde(default)]
     pub reason: Option<String>,
