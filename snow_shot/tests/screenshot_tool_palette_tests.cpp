@@ -1701,12 +1701,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
             "selecting a recording filter should activate drawing and close Export Settings");
     shapeButton->click();
     shapeButton->click();
-    require(!exportPanel->isVisible() &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
                 !palette.styleToolbarVisible() &&
                 shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 selectRequests == 2,
-            "clicking the active drawing button must return to Select");
+            "clicking the active drawing button must restore Export settings");
     exportButton->click();
 
     int formatChanges = 0;
@@ -1877,10 +1876,10 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         shapeButton->click();
         const int selectRequestsBeforeClick = selectRequests;
         shapeButton->click();
-        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
-                    !palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
+        require(!palette.activeToolForTests().has_value() &&
+                    palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
                     selectRequests == selectRequestsBeforeClick + 1,
-                "clicking active drawing during recording must return to Select");
+                "clicking active drawing during recording must restore Export settings");
         shapeButton->click();
         require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
                 "a deactivated drawing tool should activate on the next click");
@@ -3800,6 +3799,12 @@ void toolbarGroupsKeepFirstButtonWhenEnabled() {
         ScreenshotToolPalette::Options options;
         options.showLineTool = true;
         options.showRecordingControls = kind == ScreenshotToolbarLayoutKind::RecordingActionTools;
+        options.recordingDrawingMode = options.showRecordingControls;
+        options.showMoveTool = !options.showRecordingControls;
+        options.moveToolPresentation =
+            kind == ScreenshotToolbarLayoutKind::PinnedActionTools
+                ? ScreenshotToolPalette::MoveToolPresentation::ResizeWindow
+                : ScreenshotToolPalette::MoveToolPresentation::EditSelection;
         options.actionToolsLayoutKind = kind;
         options.enableStyleToolbar = false;
         options.toolbarLayout = ScreenshotToolbarLayout{
@@ -3825,8 +3830,10 @@ void toolbarGroupsKeepFirstButtonWhenEnabled() {
         require(palette.activeTool() == ScreenshotToolPalette::Tool::Shape,
                 "clicking the fixed group button must activate its displayed tool");
         trigger->click();
-        require(palette.activeTool() == ScreenshotToolPalette::Tool::Select,
-                "clicking the active first tool must still toggle back to selection");
+        require(options.recordingDrawingMode
+                    ? !palette.activeTool().has_value() && palette.recordingExportSettingsVisible()
+                    : palette.activeTool() == ScreenshotToolPalette::Tool::Move,
+                "clicking the active first tool must return to its toolbar's default");
         materializeLazyPopover(trigger);
         auto* line = popoverButtonWithTooltip(popoverForTrigger(trigger), "Line");
         require(line != nullptr, "the fixed group must still expose its other tools");
@@ -8390,7 +8397,99 @@ void repeatingDrawingShortcutsReturnsToSelect() {
             "unknown shortcuts should leave the active tool unchanged");
 }
 
-void repeatingActionShortcutsReturnsToSelect() {
+void repeatedToolsReturnToTheirToolbarDefault() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using Presentation = ScreenshotToolPalette::MoveToolPresentation;
+    struct ToolbarCase {
+        bool recording;
+        bool move;
+        Presentation presentation;
+    };
+    for (const auto& fixture : {ToolbarCase{false, true, Presentation::EditSelection},
+                                ToolbarCase{false, true, Presentation::ResizeWindow},
+                                ToolbarCase{true, false, Presentation::EditSelection},
+                                ToolbarCase{false, true, Presentation::Pan},
+                                ToolbarCase{false, false, Presentation::EditSelection}}) {
+        ScreenshotToolPalette::Options options;
+        options.showMoveTool = fixture.move;
+        options.moveToolPresentation = fixture.presentation;
+        options.showRecordingControls = fixture.recording;
+        options.recordingDrawingMode = fixture.recording;
+        options.showOcrTool = !fixture.recording;
+        options.enableStyleToolbar = false;
+        ScreenshotToolPalette palette(options);
+        const Tool defaultTool = fixture.move ? Tool::Move : Tool::Select;
+        const auto requireDefault = [&] {
+            require(fixture.recording ? !palette.activeTool().has_value() &&
+                                            palette.recordingExportSettingsVisible()
+                                      : palette.activeTool() == defaultTool,
+                    "repeated activation must restore the owning toolbar's default");
+        };
+        int moves = 0, selects = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::moveRequested, [&] { ++moves; });
+        QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, [&] { ++selects; });
+        for (const auto& [tool, tooltip] :
+             {std::pair{Tool::Select, "Select elements"}, std::pair{Tool::Shape, "Shape"},
+              std::pair{Tool::Ocr, "Text recognition"}}) {
+            if (tool == Tool::Ocr && fixture.recording)
+                continue;
+            auto* button =
+                qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, tooltip));
+            require(button != nullptr, "the tool toggle fixture must expose its command");
+            for (const bool shortcut : {false, true}) {
+                palette.clearActiveTool();
+                const auto activate = [&] {
+                    if (shortcut)
+                        require(palette.activateToolShortcut(tool), "tool shortcut must activate");
+                    else
+                        button->click();
+                };
+                activate();
+                require(palette.activeTool() == tool && !palette.recordingExportSettingsVisible(),
+                        "the first activation must select the requested tool");
+                const int previousMoves = moves, previousSelects = selects;
+                palette.setActiveTool(tool);
+                palette.setActiveTool(tool);
+                require(palette.activeTool() == tool && moves == previousMoves &&
+                            selects == previousSelects,
+                        "programmatic synchronization must not toggle or dispatch commands");
+                activate();
+                requireDefault();
+                require(moves == previousMoves + (defaultTool == Tool::Move ? 1 : 0) &&
+                            selects == previousSelects + (defaultTool == Tool::Move ? 0 : 1),
+                        "returning to the default must dispatch its existing command once");
+            }
+        }
+        if (fixture.recording) {
+            auto* settings = palette.findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenRecordingExportSettings"));
+            require(settings != nullptr, "recording must expose Export settings");
+            settings->click();
+            settings->click();
+            requireDefault();
+        } else if (defaultTool == Tool::Move) {
+            require(palette.activateToolShortcut(Tool::Move),
+                    "Move shortcut must remain available");
+            requireDefault();
+            const char* tooltip = fixture.presentation == Presentation::Pan ? "Pan"
+                                  : fixture.presentation == Presentation::EditSelection
+                                      ? "Edit selection"
+                                      : "Resize window";
+            auto* move =
+                qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, tooltip));
+            require(move != nullptr, "the toolbar must expose its default tool");
+            move->click();
+            requireDefault();
+        }
+        palette.setActiveTool(Tool::Shape);
+        auto* shape = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+        shape->setEnabled(false);
+        require(!palette.activateToolShortcut(Tool::Shape) && palette.activeTool() == Tool::Shape,
+                "a disabled active tool must not toggle through its shortcut");
+    }
+}
+
+void repeatingActionShortcutsReturnsToDefault() {
     using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
@@ -8401,21 +8500,20 @@ void repeatingActionShortcutsReturnsToSelect() {
     options.showScrollingScreenshotTool = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
-    int selectRequests = 0;
-    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested,
-                     [&selectRequests]() { ++selectRequests; });
+    int moveRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::moveRequested,
+                     [&moveRequests]() { ++moveRequests; });
     for (const Tool tool : {Tool::Move, Tool::Ocr, Tool::TextTranslation, Tool::Table, Tool::Qr,
                             Tool::ScrollingScreenshot}) {
         palette.setActiveTool(Tool::Select);
         require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == tool,
                 "an action shortcut should activate its tool");
-        const int previousSelectRequests = selectRequests;
-        require(palette.activateToolShortcut(tool) &&
-                    palette.activeToolForTests() == Tool::Select &&
-                    selectRequests == previousSelectRequests + 1,
-                "repeating an active action shortcut should request Select exactly once");
+        const int previousMoveRequests = moveRequests;
+        require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == Tool::Move &&
+                    moveRequests == previousMoveRequests + 1,
+                "repeating an active action shortcut should request Move exactly once");
         palette.setActiveTool(tool);
-        require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == Tool::Select,
+        require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == Tool::Move,
                 "shortcuts should toggle tools activated through another input path");
     }
 }
@@ -8433,6 +8531,7 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
                 settings.setLastFilterTool(QStringLiteral("pen-filter")),
             "grouped shortcut tests must start from known remembered drawing modes");
     ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
     options.showLineTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
@@ -8453,8 +8552,8 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
                 palette.activeToolForTests() == Tool::Arrow,
             "a shortcut should activate a different tool even when it shares the active button");
     require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
-                palette.activeToolForTests() == Tool::Select,
-            "repeating a grouped tool shortcut should return to Select");
+                palette.activeToolForTests() == Tool::Move,
+            "repeating a grouped tool shortcut should return to Edit selection");
 
     for (const auto& [id, sibling, tool] :
          {std::tuple{"highlight", Tool::Spotlight, Tool::BrushHighlight},
@@ -8469,17 +8568,18 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
                                    std::pair{"filter", Tool::RectangleFilter}}) {
         palette.setActiveTool(tool);
         require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
-                    palette.activeToolForTests() == Tool::Select,
+                    palette.activeToolForTests() == Tool::Move,
                 "shortcuts should toggle the active highlight or filter variant");
     }
 
     options.recordingDrawingMode = true;
+    options.showRecordingControls = true;
     ScreenshotToolPalette recordingPalette(options);
     require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
                 recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                recordingPalette.activeToolForTests() == Tool::Select &&
-                !recordingPalette.recordingExportSettingsVisible(),
-            "repeated recording shortcuts must return to Select");
+                !recordingPalette.activeToolForTests().has_value() &&
+                recordingPalette.recordingExportSettingsVisible(),
+            "repeated recording shortcuts must return to Export settings");
     recordingPalette.setActiveTool(Tool::Shape);
     recordingPalette.setActiveTool(Tool::Shape);
     require(recordingPalette.activeToolForTests() == Tool::Shape &&
@@ -8576,8 +8676,12 @@ void hiddenToolbarShortcutsPreserveToolsAndLayouts() {
             options.showTableTool = options.showQrTool = options.showScrollingScreenshotTool = true;
             options.showScreenRecordButton = options.showSaveButton = options.showHistoryActions =
                 true;
-            options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CopyAction |
-                              ScreenshotToolPalette::CancelAction;
+            options.actions =
+                ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::CancelAction;
+            // A Pin action with the pinned layout belongs to Image Editing and is fixed.
+            // The actual pinned toolbar does not expose that action.
+            if (actionKind == ScreenshotToolbarLayoutKind::ActionTools)
+                options.actions |= ScreenshotToolPalette::PinAction;
             options.actionToolsLayoutKind = actionKind;
             options.toolbarLayout = initiallyHidden ? hiddenDrawing : layout::normalizedLayout({});
             options.actionToolsLayout =
@@ -8627,8 +8731,8 @@ void hiddenToolbarShortcutsPreserveToolsAndLayouts() {
                     "each hidden drawing hotkey activates its remembered tool once with settings");
                 verifyHidden();
                 require(palette.activateDrawingShortcut(id) && requests == 1 &&
-                            palette.activeTool() == Tool::Select,
-                        "each hidden drawing hotkey retains toggle-to-Select behavior");
+                            palette.activeTool() == Tool::Move,
+                        "each hidden drawing hotkey returns to the default Move tool");
                 QObject::disconnect(connection);
             }
             struct ActionCommand {
@@ -8652,6 +8756,9 @@ void hiddenToolbarShortcutsPreserveToolsAndLayouts() {
                 {"redo", &ScreenshotToolPalette::redoRequested},
             };
             for (const auto& command : actionCommands) {
+                if (actionKind == ScreenshotToolbarLayoutKind::PinnedActionTools &&
+                    QLatin1String(command.id) == QLatin1String("pin_to_screen"))
+                    continue;
                 palette.setActiveTool(Tool::Select);
                 palette.setHistoryState({true, true});
                 int requests = 0;
@@ -9639,7 +9746,7 @@ void eraserToolsExposeRememberedModesAndIndependentWidth() {
             "rejected brush style commits leave creation preferences unchanged");
 }
 
-void recordingEraserActivationReturnsToSelect() {
+void recordingEraserActivationReturnsToExportSettings() {
     using Tool = ScreenshotToolPalette::Tool;
     const snow_shot::storage::ScreenshotToolbarSettings settings;
     const QString originalMode = settings.lastEraserTool();
@@ -9672,19 +9779,19 @@ void recordingEraserActivationReturnsToSelect() {
                 "recording secondary mode activation persists its variant");
         int previousSelectRequests = selectRequests;
         button->click();
-        require(palette.activeTool() == Tool::Select && !palette.recordingExportSettingsVisible() &&
-                    selectRequests == previousSelectRequests + 1 &&
-                    settings.lastEraserTool() == setting,
-                "repeated recording eraser click requests Select while preserving its mode");
+        require(
+            !palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
+                selectRequests == previousSelectRequests + 1 &&
+                settings.lastEraserTool() == setting,
+            "repeated recording eraser click restores Export settings while preserving its mode");
         button->click();
         require(palette.activeTool() == tool, "recording eraser click restores its last mode");
         previousSelectRequests = selectRequests;
         require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
-                    palette.activeTool() == Tool::Select &&
-                    !palette.recordingExportSettingsVisible() &&
+                    !palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
                     selectRequests == previousSelectRequests + 1 &&
                     settings.lastEraserTool() == setting,
-                "repeated recording eraser shortcut shares the Select toggle contract");
+                "repeated recording eraser shortcut restores Export settings");
         require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
                     palette.activeTool() == tool,
                 "recording eraser shortcut restores its last mode");
@@ -20605,7 +20712,7 @@ int main(int argc, char** argv) {
         eraserResetRemainsAvailableWithoutSelection();
         eraserStyleToolbarHeightMatchesOtherTools();
         eraserToolsExposeRememberedModesAndIndependentWidth();
-        recordingEraserActivationReturnsToSelect();
+        recordingEraserActivationReturnsToExportSettings();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--watermark-persistence-only"))) {
@@ -20714,8 +20821,9 @@ int main(int argc, char** argv) {
         canvasToolBindingsRespectCapabilitiesAndLifetime();
         screenshotShortcutsShareButtonCommandsAndAvailability();
         clickingActiveToolbarToolReturnsToSelect();
+        repeatedToolsReturnToTheirToolbarDefault();
         repeatingDrawingShortcutsReturnsToSelect();
-        repeatingActionShortcutsReturnsToSelect();
+        repeatingActionShortcutsReturnsToDefault();
         groupedToolShortcutsToggleOnlyTheRequestedTool();
         return 0;
     }
@@ -21077,9 +21185,10 @@ int main(int argc, char** argv) {
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     clickingActiveToolbarToolReturnsToSelect();
+    repeatedToolsReturnToTheirToolbarDefault();
     screenshotShortcutsShareButtonCommandsAndAvailability();
     repeatingDrawingShortcutsReturnsToSelect();
-    repeatingActionShortcutsReturnsToSelect();
+    repeatingActionShortcutsReturnsToDefault();
     groupedToolShortcutsToggleOnlyTheRequestedTool();
     tableToolExposesStructureActionsAndOwnHistoryState();
     toolbarGroupCommandsCanReplaceTheirOwningPopover();
@@ -21106,7 +21215,7 @@ int main(int argc, char** argv) {
     highlightStyleToolbarWidthTracksActiveMode();
     eraserStyleToolbarHeightMatchesOtherTools();
     eraserToolsExposeRememberedModesAndIndependentWidth();
-    recordingEraserActivationReturnsToSelect();
+    recordingEraserActivationReturnsToExportSettings();
     filterEditorsRestoreValuesAfterToolSwitch();
     filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
     filterToolExposesTypeAndIntensityControls();

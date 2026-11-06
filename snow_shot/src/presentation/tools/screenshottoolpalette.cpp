@@ -5310,8 +5310,8 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         return false;
     }
 
-    // Toolbar clicks and shortcuts toggle the active drawing/action tool back
-    // to selection mode. Programmatic setActiveTool() calls remain
+    // Toolbar clicks and shortcuts return the active drawing/action tool to
+    // the toolbar's default. Programmatic setActiveTool() calls remain
     // explicit so state synchronization does not unexpectedly toggle.
     adqt::widgets::AdButton* requestedButton = toolEntryButton(tool);
     const bool fixedGroupButton =
@@ -5322,9 +5322,22 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
-    const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
-    activateDrawingTool(requestedTool);
+    if (alreadyActive) {
+        activateDefaultToolbarTool();
+    } else {
+        activateDrawingTool(tool);
+    }
     return true;
+}
+
+void ScreenshotToolPalette::activateDefaultToolbarTool() {
+    if (m_options.showRecordingControls && m_options.recordingDrawingMode) {
+        setRecordingExportSettingsVisible(true);
+    } else if (m_options.showMoveTool) {
+        activateDrawingTool(Tool::Move);
+    } else {
+        activateDrawingTool(Tool::Select);
+    }
 }
 
 bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
@@ -6608,10 +6621,18 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         }
         addButton(m_cropRowsButton);
         addButton(m_cropColumnsButton);
-        connect(m_cropRowsButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::cropRowsRequested);
-        connect(m_cropColumnsButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::cropColumnsRequested);
+        connect(m_cropRowsButton, &adqt::widgets::AdButton::clicked, this, [this](bool checked) {
+            if (checked)
+                emit cropRowsRequested();
+            else
+                activateDefaultToolbarTool();
+        });
+        connect(m_cropColumnsButton, &adqt::widgets::AdButton::clicked, this, [this](bool checked) {
+            if (checked)
+                emit cropColumnsRequested();
+            else
+                activateDefaultToolbarTool();
+        });
     }
 
     if ((options.showTableTool && snow_shot::app::edition::tableRecognition) &&

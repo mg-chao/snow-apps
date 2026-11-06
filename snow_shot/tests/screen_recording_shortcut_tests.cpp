@@ -300,11 +300,10 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
         area.setDrawingBlocked(false);
         require(canvas.interactionEnabled(), "selection must resume after busy operations");
         select->click();
-        require(palette.activeTool() == ScreenshotToolPalette::Tool::Select &&
-                    canvas.interactionEnabled() &&
-                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
-                    !palette.recordingExportSettingsVisible(),
-                "clicking active Select must preserve annotation selection");
+        require(!palette.activeTool().has_value() && !canvas.interactionEnabled() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing &&
+                    palette.recordingExportSettingsVisible(),
+                "clicking active Select must restore Export settings and region editing");
         select->click();
         settings->click();
         require(!palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
@@ -322,10 +321,18 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
                     palette.activeTool() == ScreenshotToolPalette::Tool::Shape,
                 "drawing shortcut must activate its tool");
         require(palette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                    palette.activeTool() == ScreenshotToolPalette::Tool::Select &&
-                    !palette.recordingExportSettingsVisible() && canvas.interactionEnabled() &&
-                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing,
-                "repeating a drawing shortcut must return to annotation selection");
+                    !palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
+                    !canvas.interactionEnabled() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+                "repeating a drawing shortcut must restore Export settings and region editing");
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
+                    canvas.interactionEnabled() && !palette.recordingExportSettingsVisible(),
+                "Select shortcut must resume annotation interaction");
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
+                    !palette.activeTool().has_value() && !canvas.interactionEnabled() &&
+                    palette.recordingExportSettingsVisible() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+                "repeating the Select shortcut must restore Export settings");
         settings->click();
         settings->click();
         require(palette.recordingExportSettingsVisible(),
@@ -925,13 +932,12 @@ void hiddenRecordingToolsRetainShortcuts() {
                     palette->stylePanel()->isVisible(),
                 "hidden recording tool hotkey activates once from each recording surface");
         press(*receiver, Qt::Key_F6);
-        require(
-            shapes == before + 1 && palette->activeTool() == ScreenshotToolPalette::Tool::Select &&
-                area.canvas()->canvasTool() == SnowCanvasTool::Select &&
-                area.canvas()->interactionEnabled() &&
-                area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
-                !palette->recordingExportSettingsVisible(),
-            "hidden recording hotkeys return to selection without repeating the drawing command");
+        require(shapes == before + 1 && !palette->activeTool().has_value() &&
+                    !area.canvas()->interactionEnabled() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing &&
+                    palette->recordingExportSettingsVisible(),
+                "hidden recording hotkeys restore Export settings without repeating the drawing "
+                "command");
         require(settings.layout(kind) == savedLayout,
                 "recording hotkeys do not alter the saved hidden layout");
         for (auto* button : palette->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
@@ -1202,10 +1208,10 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     press(toolbar, Qt::Key_F10, Qt::NoModifier, true);
     require(shapes == before, "held drawing keys must not repeatedly activate tools");
     press(toolbar, Qt::Key_F10);
-    require(shapes == before && palette->activeTool() == ScreenshotToolPalette::Tool::Select &&
-                !palette->recordingExportSettingsVisible() &&
-                area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing,
-            "repeating a recording tool shortcut must return to selection like a button click");
+    require(shapes == before && !palette->activeTool().has_value() &&
+                palette->recordingExportSettingsVisible() &&
+                area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+            "repeating a recording tool shortcut must restore Export settings like a button click");
 
     area.setDrawingBlocked(true);
     press(toolbar, Qt::Key_F10);
@@ -1231,9 +1237,10 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     require(shapes == ++before && palette->activeTool() == ScreenshotToolPalette::Tool::Shape,
             "read-only text controls must allow drawing tool activation");
     press(editor, Qt::Key_F10);
-    require(shapes == before && !palette->recordingExportSettingsVisible() &&
-                palette->activeTool() == ScreenshotToolPalette::Tool::Select,
-            "read-only text controls must allow the active-tool shortcut to return to selection");
+    require(
+        shapes == before && palette->recordingExportSettingsVisible() &&
+            !palette->activeTool().has_value(),
+        "read-only text controls must allow the active-tool shortcut to restore Export settings");
     editor.hide();
     focus(toolbar);
 
@@ -1452,6 +1459,11 @@ int main(int argc, char* argv[]) {
             "isolated recording shortcut settings must initialize");
     if (app.arguments().contains(QStringLiteral("--modal-shortcuts-only"))) {
         recordingModalsBlockSessionShortcuts();
+        storage.shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--selection-tools-only"))) {
+        recordingSelectionEditsAnnotationsAndPreservesPassThrough();
         storage.shutdown();
         return 0;
     }

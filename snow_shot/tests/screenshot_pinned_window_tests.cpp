@@ -3379,8 +3379,9 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands(bool hiddenTools = fals
         }
         sendShortcut(canvas, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
         require(requests == before + 1 &&
-                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select,
-                "repeating pinned recognition must use the button's toggle-to-selection command");
+                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                    controller.resizeWindowToolActive() && !canvas.interactionEnabled(),
+                "repeating pinned recognition must restore Resize window and block canvas input");
     }
     require(settings.setAllShortcutsAtomic(original), "pinned shortcut restoration failed");
     controller.setEditMode(false);
@@ -3798,10 +3799,9 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
                         canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
                     "Shape must remain usable after leaving recognition");
             require(palette->activateToolShortcut(Tool::Shape) &&
-                        palette->activeTool() == Tool::Select &&
-                        canvas->canvasTool() == SnowCanvasTool::Select &&
-                        canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
-                    "repeating Shape must select without restoring Move");
+                        palette->activeTool() == Tool::Move && !canvas->interactionEnabled() &&
+                        controller->resizeWindowToolActive(),
+                    "repeating Shape must restore Resize window and block canvas input");
         }
         require(palette->activateToolShortcut(recognitionTool) && session->active(),
                 "recognition must remain usable after repeated drawing tool changes");
@@ -3871,8 +3871,9 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
                 "direct Resize window commands must also own recognition teardown");
         require(palette->activateToolShortcut(recognitionTool) && session->active() &&
                     palette->activateToolShortcut(recognitionTool) && !session->active() &&
-                    palette->activeTool() == Tool::Select && canvas->interactionEnabled(),
-                "toggling a recognition tool must commit Select after recognition exits");
+                    palette->activeTool() == Tool::Move && !canvas->interactionEnabled() &&
+                    controller->resizeWindowToolActive(),
+                "toggling a recognition tool must restore Resize window after recognition exits");
         QObject::disconnect(toolChanges);
         Access::editSelectionOffscreen(window, false);
     }
@@ -10313,7 +10314,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 HTRIGHT,
             "Resize window must preserve the native right-edge hit band");
 
-    require(editPalette->activateToolShortcut(ScreenshotToolPalette::Tool::Move) &&
+    require(editPalette->activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
                 editPalette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
                 !editController->resizeWindowToolActive() &&
                 nativeHitTest(editModeGeometry.center()) == HTCLIENT &&
@@ -10561,9 +10562,13 @@ void pinnedResizeWindowNativeInteractions() {
             "a no-motion native loop must re-anchor the toolbar and preserve geometry and tool");
 
     require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Move) &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                controller->resizeWindowToolActive() && !canvas->interactionEnabled(),
+            "repeating Resize window must preserve window resizing and keep canvas input disabled");
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
                 palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
                 canvas->interactionEnabled(),
-            "repeating Resize window must return to Select and enable canvas input");
+            "explicit Select must leave Resize window and enable canvas input");
     requireAllResizeHits(geometry, "Select must retain every native resize hit zone");
     require(nativeHitTest(geometry.center()) == HTCLIENT,
             "Select must retain client interaction inside the edge band");
@@ -15086,10 +15091,16 @@ void pinnedDrawingShortcutsToggleActiveTool(bool hiddenTools = false) {
                 canvas->canvasTool() == SnowCanvasTool::Select && !canvas->interactionEnabled(),
             "every drawing-mode entry must expose Resize window over an inactive Select canvas");
     pressKey(Qt::Key_M);
-    require(!controller->resizeWindowToolActive() &&
-                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
-                canvas->interactionEnabled(),
-            "repeating the active M shortcut must toggle Resize window back to Select");
+    require(controller->resizeWindowToolActive() &&
+                palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
+                !canvas->interactionEnabled(),
+            "repeating the active M shortcut must keep Resize window active");
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
+                !controller->resizeWindowToolActive() && canvas->interactionEnabled(),
+            "Select must explicitly enable pinned canvas interaction");
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
+                controller->resizeWindowToolActive() && !canvas->interactionEnabled(),
+            "repeating Select must return to Resize window");
     pressKey(Qt::Key_M);
     require(controller->resizeWindowToolActive() &&
                 palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
@@ -15101,7 +15112,8 @@ void pinnedDrawingShortcutsToggleActiveTool(bool hiddenTools = false) {
                 window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
             "the drawing Text shortcut must take precedence over Always on Top");
     pressKey(Qt::Key_T);
-    require(canvas->canvasTool() == SnowCanvasTool::Select &&
+    require(palette->activeTool() == ScreenshotToolPalette::Tool::Move &&
+                controller->resizeWindowToolActive() && !canvas->interactionEnabled() &&
                 window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
             "toggling the Text tool off must preserve the pin's stacking state");
     for (const auto& [key, tool] : {std::pair{Qt::Key_P, SnowCanvasTool::FreeDraw},
@@ -15110,9 +15122,9 @@ void pinnedDrawingShortcutsToggleActiveTool(bool hiddenTools = false) {
         require(canvas->canvasTool() == tool,
                 "the first shortcut press should activate the pinned canvas tool");
         pressKey(key);
-        require(canvas->canvasTool() == SnowCanvasTool::Select &&
-                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select,
-                "the second shortcut press should return both canvas and toolbar to Select");
+        require(controller->resizeWindowToolActive() && !canvas->interactionEnabled() &&
+                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move,
+                "the second shortcut press should return the toolbar and input to Resize window");
         pressKey(key);
         require(canvas->canvasTool() == tool,
                 "the third shortcut press should reactivate the pinned canvas tool");
