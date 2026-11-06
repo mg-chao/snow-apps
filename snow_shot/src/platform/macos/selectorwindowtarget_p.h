@@ -66,25 +66,37 @@ inline CGWindowID selectorWindowAtDesktopPoint(const QPointF& point,
     });
 }
 
-inline std::optional<std::uintptr_t>
-selectorWindowAtPhysicalPoint(const QPoint& point, quint32 displayId,
-                              const QVector<CapturedDisplayModel>& displays,
-                              std::span<const std::uintptr_t> excluded) {
-    if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
-        return std::nullopt;
+inline const CapturedDisplayModel*
+selectorDisplayAtPhysicalPoint(const QPoint& point, quint32 displayId,
+                               const QVector<CapturedDisplayModel>& displays) {
     for (const auto& display : displays) {
         const QRect& pixels = display.physicalRect;
         const QRect& desktop = display.capturedLogicalRect;
         if ((displayId && display.nativeDisplayId != displayId) || !display.canvasUsesPoints ||
             pixels.isEmpty() || desktop.isEmpty() || !pixels.contains(point))
             continue;
-        const QPointF position(
-            desktop.x() +
-                (point.x() - pixels.x()) * static_cast<qreal>(desktop.width()) / pixels.width(),
-            desktop.y() +
-                (point.y() - pixels.y()) * static_cast<qreal>(desktop.height()) / pixels.height());
-        return selectorWindowAtDesktopPoint(position, excluded);
+        return &display;
     }
+    return nullptr;
+}
+
+inline QPointF selectorDesktopPoint(const QPoint& point, const CapturedDisplayModel& display) {
+    const auto& pixels = display.physicalRect;
+    const auto& desktop = display.capturedLogicalRect;
+    return QPointF(desktop.x() + (point.x() - pixels.x()) * static_cast<qreal>(desktop.width()) /
+                                     pixels.width(),
+                   desktop.y() + (point.y() - pixels.y()) * static_cast<qreal>(desktop.height()) /
+                                     pixels.height());
+}
+
+inline std::optional<std::uintptr_t>
+selectorWindowAtPhysicalPoint(const QPoint& point, quint32 displayId,
+                              const QVector<CapturedDisplayModel>& displays,
+                              std::span<const std::uintptr_t> excluded) {
+    if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
+        return std::nullopt;
+    if (const auto* display = selectorDisplayAtPhysicalPoint(point, displayId, displays))
+        return selectorWindowAtDesktopPoint(selectorDesktopPoint(point, *display), excluded);
     // A missing/stale display cannot identify a window in the frozen snapshot.
     return 0;
 }

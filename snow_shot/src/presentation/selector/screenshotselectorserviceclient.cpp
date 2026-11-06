@@ -13,7 +13,7 @@
 #include <QByteArray>
 #include <QMetaObject>
 #ifdef Q_OS_MACOS
-#include "../../platform/macos/selectorwindowtarget_p.h"
+#include "../../platform/macos/selectorlocalelements_p.h"
 #endif
 
 #include <utility>
@@ -94,6 +94,7 @@ bool ScreenshotSelectorServiceClient::ensureService() {
 
 bool ScreenshotSelectorServiceClient::releaseCache() {
 #ifdef Q_OS_MACOS
+    m_snapshotEpoch.reset();
     m_excludedWindowIds.clear();
     m_displays.clear();
 #endif
@@ -106,6 +107,7 @@ bool ScreenshotSelectorServiceClient::releaseCache() {
 
 void ScreenshotSelectorServiceClient::destroyService() {
 #ifdef Q_OS_MACOS
+    m_snapshotEpoch.reset();
     m_excludedWindowIds.clear();
     m_displays.clear();
 #endif
@@ -135,6 +137,7 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
                                          static_cast<size_t>(excludedHwnds.size())) != 0;
     if (started) {
 #ifdef Q_OS_MACOS
+        m_snapshotEpoch = requestId;
         m_excludedWindowIds = excludedHwnds;
         m_displays = snow_shot::platform::detail::selectorDisplayGeometry();
 #endif
@@ -174,6 +177,7 @@ bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
             static_cast<size_t>(descriptors.size())) != 0;
     if (started) {
 #ifdef Q_OS_MACOS
+        m_snapshotEpoch = requestId;
         m_excludedWindowIds = excludedHwnds;
         m_displays = screenshotSelectorDisplayGeometry(displays);
 #endif
@@ -266,6 +270,11 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
     QMetaObject::invokeMethod(
         client,
         [client, result = std::move(result)]() mutable {
+#ifdef Q_OS_MACOS
+            if (client->m_snapshotEpoch == result.epoch)
+                snow_shot::platform::detail::resolveSelectorLocalElements(result,
+                                                                          client->m_displays);
+#endif
             result.canRefine =
                 (client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_UIA ||
                  client->m_serviceBackend == SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY) &&
