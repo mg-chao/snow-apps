@@ -28,6 +28,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -154,7 +155,7 @@ void emptyImageShowsUploadSurface() {
             "the empty action must recover after busy work");
 
     QMimeData files;
-    const auto path = QStringLiteral("C:/split.png");
+    const auto path = QDir::temp().filePath(QStringLiteral("split.png"));
     files.setUrls({QUrl::fromLocalFile(path)});
     QStringList received;
     QObject::connect(&editor, &ImageSplitEditorWidget::imageFilesDropped, &editor,
@@ -325,6 +326,7 @@ void overlayDamageMatchesFreshRendering() {
         settings.direction = ImageSplitDirection::Grid;
         settings.columns = dense ? 5001 : 3;
         settings.rows = 2;
+        settings.overlapWidth = 7;
         require(document.setSettings(settings), "overlay damage fixture must be valid");
         ImageSplitPreviewCanvas canvas(&document);
         canvas.resize(900, 640);
@@ -609,6 +611,141 @@ void floatingToolbarFollowsCanvas() {
         require(canvas->offset() == fittedOffset && document.state() == state,
                 "toolbar background gestures must not reach the image canvas");
     }
+}
+
+void overlapControlValidationAndHistory() {
+    ImageSplitDocument document;
+    document.setImage(image({400, 240}));
+    ImageSplitEditorWidget editor(&document);
+    show(editor);
+    auto* overlap = child<AdInputNumber>(editor, "imageSplitOverlapWidth");
+    auto* form = child<AdForm>(editor, "imageSplitSettingsForm");
+    auto* field = form->field(QStringLiteral("overlapWidth"));
+    require(overlap->value() == 0 && overlap->suffixText() == QStringLiteral(" px") &&
+                field->label() == QStringLiteral("Overlap width") &&
+                overlap->accessibleName() == field->label() && !overlap->toolTip().isEmpty() &&
+                overlap->accessibleDescription() == overlap->toolTip() &&
+                form->items().indexOf(field) ==
+                    form->items().indexOf(form->field(QStringLiteral("type"))) + 1,
+            "overlap defaults to zero pixels immediately beneath split type with accessibility");
+    require(document.createLine(true, 30), "add a manual guide before changing overlap");
+    const auto manual = document.state();
+    overlap->setValue(10);
+    require(document.settings().overlapWidth == 10 && document.state().manuallyEdited &&
+                document.state().verticalLines == manual.verticalLines,
+            "changing the overlap control preserves manually edited guides");
+    click(child<AdButton>(editor, "imageSplitUndo"));
+    require(document.state() == manual && overlap->value() == 0,
+            "undo restores the overlap control and original manual layout");
+    click(child<AdButton>(editor, "imageSplitRedo"));
+    require(overlap->value() == 10 && document.layout().overlapWidth == 10,
+            "redo restores overlapping crops and the control");
+    const auto committed = document.state();
+    overlap->clear();
+    require(!editor.configurationValid() && !field->errorMessages().isEmpty() &&
+                !editor.commitPendingSettings() && document.state() == committed,
+            "blank overlap drafts show inline errors without changing the layout");
+    for (const double invalid : {-1.0, 2.5, double(std::numeric_limits<int>::max()) + 1}) {
+        overlap->setValue(invalid);
+        require(!editor.configurationValid() && !field->errorMessages().isEmpty() &&
+                    !editor.commitPendingSettings() && document.state() == committed,
+                "negative, fractional and overflowing overlap drafts are rejected");
+    }
+    overlap->setValue(std::numeric_limits<int>::max());
+    require(editor.configurationValid() && document.layout().regionAt(0) == document.image().rect(),
+            "maximum integer overlap is accepted and clipped to the image");
+    overlap->setValue(0);
+    require(editor.configurationValid() && field->errorMessages().isEmpty(),
+            "zero overlap is valid and clears draft errors");
+    child<AdSegmented>(editor, "imageSplitDirection")->setCurrentValue(QStringLiteral("grid"));
+    require(overlap->isVisible() && !form->field(QStringLiteral("type"))->isVisible(),
+            "grid mode keeps overlap visible when split type is hidden");
+    editor.setLoading(true);
+    require(!overlap->isEnabled(), "loading disables overlap editing");
+    editor.setLoading(false);
+    editor.setExportBusy(true);
+    require(!overlap->isEnabled(), "exporting disables overlap editing");
+    editor.setExportBusy(false);
+    require(overlap->isEnabled(), "overlap editing resumes after busy operations");
+    for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(locale))),
+                "overlap translations must be available");
+        QApplication::installTranslator(&translator);
+        QEvent language(QEvent::LanguageChange);
+        QApplication::sendEvent(&editor, &language);
+        overlap->clear();
+        const auto label = QCoreApplication::translate("ImageSplitEditorWidget", "Overlap width");
+        require(field->label() == label && overlap->accessibleName() == label &&
+                    (QByteArray(locale) == "en_US" || label != QStringLiteral("Overlap width")) &&
+                    overlap->toolTip() ==
+                        QCoreApplication::translate(
+                            "ImageSplitEditorWidget",
+                            "Each image extends this many pixels past each split line") &&
+                    field->errorMessages().contains(QCoreApplication::translate(
+                        "ImageSplitEditorWidget", "Enter a non-negative integer")),
+                "overlap labels, descriptions and validation retranslate at runtime");
+        overlap->setValue(10);
+        QApplication::removeTranslator(&translator);
+        QApplication::sendEvent(&editor, &language);
+    }
+    document.setImage(image({400, 240}));
+    require(overlap->value() == 0 && document.layout().overlapWidth == 0 && !document.canUndo(),
+            "replacement resets overlap without creating history");
+}
+
+void overlapBandsFollowGeometry() {
+    ImageSplitDocument document;
+    QImage source({400, 240}, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::white);
+    document.setImage(source);
+    auto settings = document.settings();
+    settings.direction = ImageSplitDirection::Grid;
+    settings.overlapWidth = 10;
+    require(document.setSettings(settings), "configure grid overlap");
+    ImageSplitPreviewCanvas canvas(&document);
+    canvas.resize(900, 640);
+    canvas.show();
+    pump();
+    for (const qreal scale : {1.0, 1.5, 2.0}) {
+        const auto output = renderCanvas(canvas, scale);
+        const auto pixel = [&](QPointF point) {
+            point = canvas.imageToViewport(point) * scale;
+            return output.pixelColor(qFloor(point.x()), qFloor(point.y()));
+        };
+        require(pixel({180, 80}) == QColor(Qt::white) && pixel({220, 80}) == QColor(Qt::white),
+                "overlap shading stops at the expanded crop boundaries");
+        const auto shaded = pixel({195, 80});
+        require(shaded != QColor(Qt::white) && shaded == pixel({205, 80}) &&
+                    shaded == pixel({80, 115}) && shaded == pixel({195, 115}),
+                "both sides and grid intersections share one translucent fill");
+        require(std::abs(shaded.red() - 217) <= 1 && std::abs(shaded.green() - 234) <= 1 &&
+                    shaded.blue() == 255,
+                "overlap uses the guide blue at twenty percent opacity");
+    }
+    require(document.beginLineDrag(true, 0) && document.moveDraggedLine(250),
+            "move an overlapping guide");
+    document.endLineDrag();
+    const auto moved = renderCanvas(canvas, 1);
+    const auto oldBand = canvas.imageToViewport({195, 80});
+    const auto newBand = canvas.imageToViewport({245, 80});
+    require(moved.pixelColor(qFloor(oldBand.x()), qFloor(oldBand.y())) == QColor(Qt::white) &&
+                moved.pixelColor(qFloor(newBand.x()), qFloor(newBand.y())) != QColor(Qt::white),
+            "moving a guide erases old shading and paints its new overlap");
+    document.undo();
+    settings.overlapWidth = 0;
+    require(document.setSettings(settings), "disable overlap");
+    const auto plain = renderCanvas(canvas, 1);
+    require(plain.pixelColor(qFloor(oldBand.x()), qFloor(oldBand.y())) == QColor(Qt::white),
+            "zero overlap removes shading");
+    settings.overlapWidth = std::numeric_limits<int>::max();
+    require(document.setSettings(settings), "oversized overlap remains renderable");
+    const auto full = renderCanvas(canvas, 1);
+    const auto corner = canvas.imageToViewport({20, 80});
+    require(full.pixelColor(qFloor(corner.x()), qFloor(corner.y())) != QColor(Qt::white) &&
+                full.pixelColor(5, 5) == plain.pixelColor(5, 5) && document.image() == source,
+            "oversized bands clip to the image and never change source pixels");
 }
 
 void formValidationUnitsAndUndoableRegeneration() {
@@ -1226,6 +1363,7 @@ void sequenceNumbersUsePdfBadgeStyle() {
         settings.direction = ImageSplitDirection::Grid;
         settings.rows = 10;
         settings.columns = 10;
+        settings.overlapWidth = 3;
         require(document.setSettings(settings), "badge fixture must produce one hundred results");
         ImageSplitPreviewCanvas canvas(&document);
         canvas.resize(1120, 1080);
@@ -1244,7 +1382,7 @@ void sequenceNumbersUsePdfBadgeStyle() {
                     const QSize size(
                         std::max(24, canvas.fontMetrics().horizontalAdvance(label) + 12), 22);
                     const auto origin =
-                        canvas.imageToViewport(document.layout().regionAt(index).topLeft()) +
+                        canvas.imageToViewport(document.layout().baseRegionAt(index).topLeft()) +
                         QPointF(4, 4);
                     // Render the existing PDF page label independently as the visual reference.
                     QLabel reference;
@@ -1341,6 +1479,7 @@ void elongatedImagesKeepViewportAndLineInteractionsUsable() {
     document.setImage(source, preview);
     auto settings = document.settings();
     settings.count = count;
+    settings.overlapWidth = 1;
     require(document.setSettings(settings), "elongated fixture must allow one-pixel sections");
     ImageSplitEditorWidget editor(&document);
     show(editor);
@@ -2019,6 +2158,12 @@ int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--overlap-only"))) {
+            overlapControlValidationAndHistory();
+            overlapBandsFollowGeometry();
+            std::cout << "Image split overlap editor tests passed\n";
+            return 0;
+        }
         if (application.arguments().contains(QStringLiteral("--empty-state-only"))) {
             emptyImageShowsUploadSurface();
             std::cout << "Image split empty state tests passed\n";
@@ -2054,6 +2199,8 @@ int main(int argc, char** argv) {
         unchangedHoverDoesNotRepaint();
         overlayDamageMatchesFreshRendering();
         defaultsConditionalControlsAndActions();
+        overlapControlValidationAndHistory();
+        overlapBandsFollowGeometry();
         preciseSizeUsesSharedFormLabel();
         floatingToolbarFollowsCanvas();
         formValidationUnitsAndUndoableRegeneration();

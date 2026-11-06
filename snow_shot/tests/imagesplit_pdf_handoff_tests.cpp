@@ -162,6 +162,23 @@ void footerDraftsAndTranslations() {
     require(requests.size() == 2, "another operation cannot race a destination choice");
     directoryChoice({});
     require(button(window)->isEnabled(), "canceling destination choice restores handoff");
+    auto* overlap = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitOverlapWidth"));
+    auto* overlapInput = overlap ? overlap->findChild<QLineEdit*>() : nullptr;
+    require(overlapInput, "PDF handoff exposes the overlap draft editor");
+    overlapInput->setFocus();
+    overlapInput->selectAll();
+    QKeyEvent ten(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier, QStringLiteral("10"));
+    QApplication::sendEvent(overlapInput, &ten);
+    require(window.document()->settings().overlapWidth == 0, "overlap draft remains uncommitted");
+    window.stitchToPdf();
+    require(requests.size() == 3 && requests.last().layout.overlapWidth == 10 &&
+                requests.last().layout.regionAt(0).intersects(requests.last().layout.regionAt(1)),
+            "PDF handoff commits pending overlap into the immutable crop snapshot");
+    overlap->clear();
+    window.stitchToPdf();
+    require(requests.size() == 3 && !button(window)->isEnabled() && !save->isEnabled(),
+            "invalid overlap disables both output actions and cannot hand off stale geometry");
     window.shutdown();
 }
 
@@ -192,6 +209,7 @@ void piecesAppendAsPdfAndOwnTheirSource() {
         settings.count = 3;
         settings.rows = 2;
         settings.columns = 3;
+        settings.overlapWidth = 3;
         require(splitter.document()->setSettings(settings), "apply split settings");
         require(splitter.document()->createLine(direction != ImageSplitDirection::Horizontal, 11),
                 "add a manual guide to the current layout");

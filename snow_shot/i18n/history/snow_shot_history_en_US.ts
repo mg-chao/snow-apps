@@ -188,6 +188,10 @@
             <translation>Each image must be at least one pixel wide and high</translation>
         </message>
         <message>
+            <source>Enter a non-negative integer</source>
+            <translation>Enter a non-negative integer</translation>
+        </message>
+        <message>
             <source>Enter a percentage from 5% to 100%</source>
             <translation>Enter a percentage from 5% to 100%</translation>
         </message>
@@ -239,6 +243,14 @@
             <translation>Drop one image to split</translation>
         </message>
         <message>
+            <source>Each image extends this many pixels past each split line</source>
+            <translation>Each image extends this many pixels past each split line</translation>
+        </message>
+        <message>
+            <source>Enter a non-negative integer</source>
+            <translation>Enter a non-negative integer</translation>
+        </message>
+        <message>
             <source>Enter a positive integer</source>
             <translation>Enter a positive integer</translation>
         </message>
@@ -269,6 +281,10 @@
         <message>
             <source>Number of images</source>
             <translation>Number of images</translation>
+        </message>
+        <message>
+            <source>Overlap width</source>
+            <translation>Overlap width</translation>
         </message>
         <message>
             <source>Percentage</source>

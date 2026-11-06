@@ -619,6 +619,26 @@ void saveCommitsVisibleDraft() {
     window.saveAll();
     require(choices == 1 && window.document()->settings().count == 2,
             "invalid visible drafts prevent saving and retain valid geometry");
+    count->setValue(2);
+    auto* overlap = window.editor()->findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("imageSplitOverlapWidth"));
+    auto* overlapInput = overlap ? overlap->findChild<QLineEdit*>() : nullptr;
+    require(overlapInput, "overlap draft editor is discoverable");
+    overlapInput->setFocus();
+    overlapInput->selectAll();
+    QKeyEvent ten(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier, QStringLiteral("10"));
+    QApplication::sendEvent(overlapInput, &ten);
+    require(window.document()->settings().overlapWidth == 0,
+            "overlap draft is initially uncommitted");
+    window.saveAll();
+    require(choices == 2 && window.document()->layout().overlapWidth == 10,
+            "Save All commits pending overlap before opening the destination chooser");
+    chosen({});
+    overlap->clear();
+    window.saveAll();
+    require(choices == 2 && window.document()->settings().overlapWidth == 10 &&
+                !saveButton(window)->isEnabled(),
+            "an invalid overlap draft disables saving and preserves committed crops");
     window.shutdown();
 }
 
@@ -919,6 +939,7 @@ void renderPreview(const QString& path, bool dark, qreal dpr) {
     settings.direction = ImageSplitDirection::Grid;
     settings.rows = 2;
     settings.columns = 3;
+    settings.overlapWidth = qEnvironmentVariableIntValue("SNOW_TEST_IMAGE_SPLIT_OVERLAP");
     require(window.document()->setSettings(settings), "preview grid configured");
     window.editor()->window()->resize(1200, 800);
     flush();

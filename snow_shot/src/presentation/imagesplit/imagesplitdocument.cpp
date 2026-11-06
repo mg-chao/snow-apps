@@ -564,6 +564,7 @@ ImageSplitLines::const_iterator::operator-=(difference_type offset) {
 namespace {
 [[maybe_unused]] constexpr const char* labels[] = {
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a non-negative integer"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide and high"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage"),
@@ -747,18 +748,18 @@ std::optional<int> imageSplitPercentagePixels(int dimension, const QString& perc
 }
 
 bool ImageSplitLayout::isValid() const {
-    return size.isValid() && !size.isEmpty() && errors.isEmpty() &&
+    return size.isValid() && !size.isEmpty() && errors.isEmpty() && overlapWidth >= 0 &&
            verticalLines.isValid(size.width()) && horizontalLines.isValid(size.height());
 }
 
 qint64 ImageSplitLayout::outputCount() const {
-    if (size.isEmpty() || !errors.isEmpty() || verticalLines.size() >= size.width() ||
-        horizontalLines.size() >= size.height())
+    if (size.isEmpty() || !errors.isEmpty() || overlapWidth < 0 ||
+        verticalLines.size() >= size.width() || horizontalLines.size() >= size.height())
         return 0;
     return (qint64(verticalLines.size()) + 1) * (qint64(horizontalLines.size()) + 1);
 }
 
-QRect ImageSplitLayout::regionAt(qint64 index) const {
+QRect ImageSplitLayout::baseRegionAt(qint64 index) const {
     if (index < 0 || index >= outputCount())
         return {};
     const qint64 columnCount = qint64(verticalLines.size()) + 1;
@@ -771,9 +772,26 @@ QRect ImageSplitLayout::regionAt(qint64 index) const {
     return QRect(left, top, right - left, bottom - top);
 }
 
+QRect ImageSplitLayout::regionAt(qint64 index) const {
+    const auto base = baseRegionAt(index);
+    if (base.isEmpty() || overlapWidth == 0)
+        return base;
+    const int left = static_cast<int>(std::max(qint64(0), qint64(base.x()) - overlapWidth));
+    const int top = static_cast<int>(std::max(qint64(0), qint64(base.y()) - overlapWidth));
+    const int right = static_cast<int>(
+        std::min(qint64(size.width()), qint64(base.x()) + base.width() + overlapWidth));
+    const int bottom = static_cast<int>(
+        std::min(qint64(size.height()), qint64(base.y()) + base.height() + overlapWidth));
+    return QRect(left, top, right - left, bottom - top);
+}
+
 ImageSplitLayout calculateImageSplitLayout(QSize size, const ImageSplitSettings& settings) {
     ImageSplitLayout layout;
     layout.size = size;
+    layout.overlapWidth = settings.overlapWidth;
+    if (settings.overlapWidth < 0)
+        layout.errors.insert(QStringLiteral("overlapWidth"),
+                             splitText("Enter a non-negative integer"));
     if (size.isEmpty()) {
         layout.errors.insert(QStringLiteral("image"), splitText("The image is unavailable"));
         return layout;
@@ -834,6 +852,7 @@ struct ImageSplitDocument::Impl final {
     void synchronizeLines() {
         layout.verticalLines = state.verticalLines;
         layout.horizontalLines = state.horizontalLines;
+        layout.overlapWidth = state.settings.overlapWidth;
     }
 
     void restoreHistory() {
@@ -918,8 +937,17 @@ bool ImageSplitDocument::setSettings(const ImageSplitSettings& settings) {
     if (!next.isValid())
         return false;
     cancelLineDrag();
-    m_impl->layout = next;
-    if (!m_impl->commit({settings, next.verticalLines, next.horizontalLines, false}))
+    auto previousSettings = m_impl->state.settings;
+    previousSettings.overlapWidth = settings.overlapWidth;
+    auto nextState = m_impl->state;
+    if (!(previousSettings == settings)) {
+        m_impl->layout = next;
+        nextState = {settings, next.verticalLines, next.horizontalLines, false};
+    } else {
+        // Overlap changes crop margins, never the user's manually positioned guides.
+        nextState.settings = settings;
+    }
+    if (!m_impl->commit(std::move(nextState)))
         return false;
     emit changed();
     emit historyChanged();

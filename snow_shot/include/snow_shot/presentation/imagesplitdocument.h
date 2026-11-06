@@ -143,6 +143,7 @@ struct ImageSplitSettings final {
     int columns = 2;
     int pixels = 16;
     QString percentage = QStringLiteral("50");
+    int overlapWidth = 0;
 
     friend bool operator==(const ImageSplitSettings&, const ImageSplitSettings&) = default;
 };
@@ -163,9 +164,12 @@ struct ImageSplitLayout final {
     ImageSplitLines verticalLines;
     ImageSplitLines horizontalLines;
     QMap<QString, QString> errors;
+    int overlapWidth = 0;
 
     [[nodiscard]] bool isValid() const;
     [[nodiscard]] qint64 outputCount() const;
+    // Unexpanded cells anchor guides and preview numbering; output crops include overlap.
+    [[nodiscard]] QRect baseRegionAt(qint64 index) const;
     [[nodiscard]] QRect regionAt(qint64 index) const;
 };
 
