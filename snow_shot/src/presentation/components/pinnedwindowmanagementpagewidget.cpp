@@ -920,10 +920,10 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                     auto* menu = new adqt::widgets::AdContextMenu(row);
                     menu->setObjectName(QStringLiteral("pinnedManagementEntryMoreMenu"));
                     auto* stitch =
-                        menu->addItem(tr("Stitch image"),
+                        menu->addItem(tr("Stitch images"),
                                       presentation::icons::custom::outlined::ImageStitching());
                     stitch->setObjectName(QStringLiteral("pinnedManagementEntryStitch"));
-                    stitch->setToolTip(tr("Stitch image"));
+                    stitch->setToolTip(tr("Stitch images"));
                     const QString splitLabel = tr("Image splitting");
                     auto* split = menu->addItem(
                         splitLabel, presentation::icons::custom::outlined::ImageSplitting());
@@ -1044,8 +1044,8 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         }
         for (auto* stitch :
              row->findChildren<QAction*>(QStringLiteral("pinnedManagementEntryStitch"))) {
-            stitch->setText(tr("Stitch image"));
-            stitch->setToolTip(tr("Stitch image"));
+            stitch->setText(tr("Stitch images"));
+            stitch->setToolTip(tr("Stitch images"));
         }
         for (auto* action :
              row->findChildren<QAction*>(QStringLiteral("pinnedManagementEntryImageEditing"))) {
@@ -1129,7 +1129,7 @@ std::optional<QString> PinnedWindowManagementPageWidget::selectedGroupId() const
 void PinnedWindowManagementPageWidget::updateBatchActions() {
     m_batchActionsButton->setEnabled(!m_selected.isEmpty());
     if (m_batchStitchAction) {
-        m_batchStitchAction->setText(tr("Stitch image"));
+        m_batchStitchAction->setText(tr("Stitch images"));
         m_batchStitchAction->setToolTip(m_batchStitchAction->text());
         m_batchStitchAction->setEnabled(!m_selected.isEmpty());
     }

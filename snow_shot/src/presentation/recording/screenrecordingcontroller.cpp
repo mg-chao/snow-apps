@@ -1807,7 +1807,7 @@ struct ScreenRecordingController::Impl {
         if (existing.isEmpty() && !QFileInfo(folder).isDir())
             return;
         auto* notice =
-            new QMessageBox(QMessageBox::Information, tr("Recording recovery"),
+            new QMessageBox(QMessageBox::Information, tr("Screen recording recovery"),
                             tr("A recording was interrupted when Windows ended the "
                                "session. Recover the saved recording or open its folder"),
                             QMessageBox::NoButton, QApplication::activeWindow());

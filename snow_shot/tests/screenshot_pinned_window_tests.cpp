@@ -6988,7 +6988,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     materializePinnedMenuTree(window);
     auto* hideAll =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
-    require(hideAll && hideAll->text() == QStringLiteral("Enable hide to top"),
+    require(hideAll && hideAll->text() == QStringLiteral("Enable hide at top"),
             "the bulk Hide to Top action must use its English source label");
     const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
                                 QStringLiteral("screenshotPinnedScaleMenu"),
@@ -7008,7 +7008,7 @@ void pinnedLazyMenuHeadersRetranslate() {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
                 (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
                  QByteArray(source) == "Load new content" ||
-                 QByteArray(source) == "Enable hide to top")) {
+                 QByteArray(source) == "Enable hide at top")) {
                 return QStringLiteral("Translated ") + QString::fromUtf8(source);
             }
             return {};
@@ -7018,7 +7018,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Translated Enable hide to top"),
+    require(hideAll->text() == QStringLiteral("Translated Enable hide at top"),
             "an existing bulk Hide to Top action must follow LanguageChange");
     const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
                                        QStringLiteral("Translated Scale"),
@@ -7030,7 +7030,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     QCoreApplication::removeTranslator(&translator);
     removeTranslator.dismiss();
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Enable hide to top"),
+    require(hideAll->text() == QStringLiteral("Enable hide at top"),
             "the bulk Hide to Top action must restore its original language");
     for (int index = 0; index < headers.size(); ++index) {
         require(headers.at(index)->text() == originalLabels.at(index),

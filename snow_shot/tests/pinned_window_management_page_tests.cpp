@@ -770,7 +770,7 @@ void batchPinUsesExistingShowForEveryState() {
             "keyboard opens pinned Batch Actions without dispatch");
     auto* stitch = menu->actions()[0];
     auto* pin = menu->actions()[1];
-    require(stitch->text() == QStringLiteral("Stitch image") &&
+    require(stitch->text() == QStringLiteral("Stitch images") &&
                 pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
                 !stitch->icon().isNull() && !pin->icon().isNull(),
             "pinned batch menu offers themed Stitch Image then Pin to screen");
@@ -785,7 +785,7 @@ void batchPinUsesExistingShowForEveryState() {
                         translator.translate("PinnedWindowManagementPageWidget", "Batch actions") &&
                     trigger->accessibleName() == trigger->text() &&
                     stitch->text() ==
-                        translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
+                        translator.translate("PinnedWindowManagementPageWidget", "Stitch images") &&
                     pin->text() ==
                         translator.translate("PinnedWindowManagementPageWidget", "Pin to screen") &&
                     pin->toolTip() == pin->text(),
@@ -916,7 +916,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
                     reveal->toolTip() == reveal->text() && reveal->isEnabled() &&
                     !reveal->icon().isNull(),
                 "More offers a themed, platform-specific reveal action after Copy image path");
-        require(stitch->text() == QStringLiteral("Stitch image") && stitch->isEnabled() &&
+        require(stitch->text() == QStringLiteral("Stitch images") && stitch->isEnabled() &&
                     !stitch->icon().isNull() &&
                     split->text() == QStringLiteral("Image splitting") && split->isEnabled() &&
                     !split->icon().isNull(),
@@ -998,7 +998,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
         require(
             menu && menu->isPopupVisible() &&
                 menu->actions().at(0)->text() ==
-                    translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
+                    translator.translate("PinnedWindowManagementPageWidget", "Stitch images") &&
                 menu->actions().at(0)->toolTip() == menu->actions().at(0)->text() &&
                 menu->actions().at(1)->text() ==
                     translator.translate("PinnedWindowManagementPageWidget", "Image splitting") &&

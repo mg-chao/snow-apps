@@ -2101,7 +2101,7 @@ void exportFeedbackUsesMessagesAndBusyButtons() {
     first.copy();
     QPointer<AdMessageHandle> copying = statusMessage(first);
     require(copying && copying->type() == AdMessage::Type::Loading &&
-                copying->content() == QStringLiteral("Preparing collage…") &&
+                copying->content() == QStringLiteral("Preparing stitched image…") &&
                 !hasInlineStatus(first) && button(first, "collageCopy")->busy() &&
                 !button(first, "collageSave")->busy(),
             "copy preparation uses a loading Message and the Copy button without a bottom prompt");
@@ -2113,9 +2113,9 @@ void exportFeedbackUsesMessagesAndBusyButtons() {
     waitUntil([&] { return firstPorts.copies.size() == 1 && secondPorts.saves.size() == 1; },
               "both export workflows receive prepared artifacts");
     require(statusMessage(first) == copying && statusMessage(second) == saving &&
-                copying->content() == QStringLiteral("Copying collage…") &&
-                saving->content() == QStringLiteral("Saving collage…") && !hasInlineStatus(first) &&
-                !hasInlineStatus(second),
+                copying->content() == QStringLiteral("Copying stitched image…") &&
+                saving->content() == QStringLiteral("Saving stitched image…") &&
+                !hasInlineStatus(first) && !hasInlineStatus(second),
             "export phases update their existing Messages without a bottom status panel");
     firstPorts.copies.first().complete(false, QStringLiteral("clipboard failure"));
     require(messageError(first) == QStringLiteral("clipboard failure") &&

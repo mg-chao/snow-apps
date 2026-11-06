@@ -199,10 +199,6 @@
             <translation>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</translation>
         </message>
         <message>
-            <source>Available for multi-region selections</source>
-            <translation>Available for multi-region selections</translation>
-        </message>
-        <message>
             <source>Avatar</source>
             <translation>Avatar</translation>
         </message>
@@ -247,12 +243,40 @@
             <translation>Bring to front</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>Brush</translation>
+        </message>
+        <message>
             <source>Brush eraser</source>
             <translation>Brush eraser</translation>
         </message>
         <message>
             <source>Brush eraser width %1 (%2px)</source>
             <translation>Brush eraser width %1 (%2px)</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>Brush filter</translation>
+        </message>
+        <message>
+            <source>Brush filter width %1 (%2px)</source>
+            <translation>Brush filter width %1 (%2px)</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>Brush highlight</translation>
+        </message>
+        <message>
+            <source>Brush highlight color</source>
+            <translation>Brush highlight color</translation>
+        </message>
+        <message>
+            <source>Brush highlight color %1</source>
+            <translation>Brush highlight color %1</translation>
+        </message>
+        <message>
+            <source>Brush highlight width %1 (%2px)</source>
+            <translation>Brush highlight width %1 (%2px)</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -263,8 +287,8 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
-            <source>Capture interface during scrolling screenshot</source>
-            <translation>Capture interface during scrolling screenshot</translation>
+            <source>Capture UI during scrolling screenshots</source>
+            <translation>Capture UI during scrolling screenshots</translation>
         </message>
         <message>
             <source>Cartoonist</source>
@@ -375,20 +399,20 @@
             <translation>Current brush eraser width</translation>
         </message>
         <message>
+            <source>Current brush filter width</source>
+            <translation>Current brush filter width</translation>
+        </message>
+        <message>
+            <source>Current brush highlight width</source>
+            <translation>Current brush highlight width</translation>
+        </message>
+        <message>
             <source>Current distance stroke width</source>
             <translation>Current distance stroke width</translation>
         </message>
         <message>
             <source>Current magnifier stroke width</source>
             <translation>Current magnifier stroke width</translation>
-        </message>
-        <message>
-            <source>Current pen filter width</source>
-            <translation>Current pen filter width</translation>
-        </message>
-        <message>
-            <source>Current pen highlight width</source>
-            <translation>Current pen highlight width</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -947,6 +971,10 @@
             <translation>Number keys</translation>
         </message>
         <message>
+            <source>Only available for multi-region selections</source>
+            <translation>Only available for multi-region selections</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>Opacity</translation>
         </message>
@@ -973,34 +1001,6 @@
         <message>
             <source>Pause recording</source>
             <translation>Pause recording</translation>
-        </message>
-        <message>
-            <source>Pen</source>
-            <translation>Pen</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>Pen filter</translation>
-        </message>
-        <message>
-            <source>Pen filter width %1 (%2px)</source>
-            <translation>Pen filter width %1 (%2px)</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>Pen highlight</translation>
-        </message>
-        <message>
-            <source>Pen highlight color</source>
-            <translation>Pen highlight color</translation>
-        </message>
-        <message>
-            <source>Pen highlight color %1</source>
-            <translation>Pen highlight color %1</translation>
-        </message>
-        <message>
-            <source>Pen highlight width %1 (%2px)</source>
-            <translation>Pen highlight width %1 (%2px)</translation>
         </message>
         <message>
             <source>Physical pixel selection</source>
@@ -1091,8 +1091,8 @@
             <translation>Record screen</translation>
         </message>
         <message>
-            <source>Record speakers</source>
-            <translation>Record speakers</translation>
+            <source>Record system audio</source>
+            <translation>Record system audio</translation>
         </message>
         <message>
             <source>Record webcam</source>
@@ -1105,10 +1105,6 @@
         <message>
             <source>Recording format</source>
             <translation>Recording format</translation>
-        </message>
-        <message>
-            <source>Recording settings</source>
-            <translation>Recording settings</translation>
         </message>
         <message>
             <source>Rectangle</source>
@@ -1167,6 +1163,10 @@
             <translation>Save to file</translation>
         </message>
         <message>
+            <source>Screen recording settings</source>
+            <translation>Screen recording settings</translation>
+        </message>
+        <message>
             <source>Scrolling screenshot</source>
             <translation>Scrolling screenshot</translation>
         </message>
@@ -1197,6 +1197,10 @@
         <message>
             <source>Send to back</source>
             <translation>Send to back</translation>
+        </message>
+        <message>
+            <source>Sequence number</source>
+            <translation>Sequence number</translation>
         </message>
         <message>
             <source>Sequence number (scroll to adjust)</source>
@@ -1237,10 +1241,6 @@
         <message>
             <source>Sequence number type</source>
             <translation>Sequence number type</translation>
-        </message>
-        <message>
-            <source>Serial number</source>
-            <translation>Serial number</translation>
         </message>
         <message>
             <source>Settings</source>

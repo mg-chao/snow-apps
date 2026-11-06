@@ -196,10 +196,8 @@ void externalImageDrops() {
             "drop hint translations are available");
     QApplication::installTranslator(&translator);
     pump();
-    const auto title =
-        QCoreApplication::translate("CollageEditorWidget", "Drop images to add to collage");
-    require(title != QStringLiteral("Drop images to add to collage") &&
-                hint->accessibleName() == title &&
+    const auto title = QCoreApplication::translate("CollageEditorWidget", "Drop images to stitch");
+    require(title != QStringLiteral("Drop images to stitch") && hint->accessibleName() == title &&
                 hint->findChild<QLabel*>(QStringLiteral("collageDropTitle"))->text() == title,
             "visible drop hint and accessibility retranslate immediately");
     QApplication::removeTranslator(&translator);
@@ -2026,8 +2024,9 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     auto* prompt = editor.findChild<QLabel*>(QStringLiteral("collageEmptyPrompt"));
     auto* guide = button(&editor, "collageEmptyAddImages");
     require(prompt &&
-                prompt->text() == QCoreApplication::translate("CollageEditorWidget",
-                                                              "Add images to create a collage") &&
+                prompt->text() ==
+                    QCoreApplication::translate("CollageEditorWidget",
+                                                "Add images to start image stitching") &&
                 guide->text() == localized && guide->accessibleName() == localized,
             "language change must refresh the empty prompt and accessible guide button");
     require(button(editor.canvas(), "collageRotateClockwise")->accessibleName() ==
@@ -2056,9 +2055,9 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     for (const auto* name :
          {"collageOuterBorderUnitSegmented", "collageImageSpacingUnitSegmented"}) {
         auto* unit = editor.findChild<adqt::widgets::AdSegmented*>(QString::fromLatin1(name));
-        require(unit && unit->optionLabel(0) != QStringLiteral("Pixel") &&
+        require(unit && unit->optionLabel(0) != QStringLiteral("Pixels") &&
                     unit->optionLabel(0) ==
-                        QCoreApplication::translate("CollageEditorWidget", "Pixel") &&
+                        QCoreApplication::translate("CollageEditorWidget", "Pixels") &&
                     unit->optionLabel(1) ==
                         QCoreApplication::translate("CollageEditorWidget", "Percentage"),
                 "language change must refresh both unit switches");

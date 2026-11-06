@@ -641,7 +641,7 @@ void cachedToolbarIconsFollowThemeColors() {
     auto* microphoneButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Record microphone"));
     auto* systemAudioButton =
-        buttonWithTooltip(recordingToolbar, QStringLiteral("Record speakers"));
+        buttonWithTooltip(recordingToolbar, QStringLiteral("Record system audio"));
     auto* pauseButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Pause recording"));
     auto* copyRecordingButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Copy recording"));
@@ -771,7 +771,7 @@ void recordingAudioIconsFollowSettings() {
     prepare(toolbar);
     auto* microphone =
         toolbar.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingMicrophone"));
-    auto* speaker = buttonWithTooltip(toolbar, QStringLiteral("Record speakers"));
+    auto* speaker = buttonWithTooltip(toolbar, QStringLiteral("Record system audio"));
     require(microphone != nullptr && speaker != nullptr, "recording audio controls exist");
 
     QImage preview(480, 160, QImage::Format_ARGB32_Premultiplied);

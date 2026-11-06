@@ -328,11 +328,11 @@ void verifyFullscreenSuppressionBadge(snow_shot::presentation::SystemTrayControl
         controller.setQuickActionChecked(Action::ToggleGlobalHotkeys, true);
         controller.setFocusedFullscreenSuppressionActive(false);
         require(artwork() == disabled && manualToggle->isChecked(),
-                "leaving fullscreen must preserve the badge when hotkeys are manually disabled");
+                "leaving fullscreen must preserve the badge when shortcuts are manually disabled");
         controller.setFocusedFullscreenSuppressionActive(true);
         controller.setQuickActionChecked(Action::ToggleGlobalHotkeys, false);
         require(artwork() == disabled && !manualToggle->isChecked(),
-                "re-enabling manual hotkeys must retain the badge while fullscreen is focused");
+                "re-enabling manual shortcuts must retain the badge while fullscreen is focused");
         controller.setFocusedFullscreenSuppressionActive(false);
         require(artwork() == original, "clearing both disablement reasons restores tray artwork");
     };
@@ -1518,11 +1518,11 @@ int main(int argc, char* argv[]) {
             "the native screenshot menu icon must use menu foreground with only its fixed purple "
             "accent");
 #endif
-    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
+    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Run after 3 seconds"),
                       "Delayed screenshot should use the canonical shortcut title");
     requireActionText(recordingToggleMenuAction, QStringLiteral("Record/copy video"),
                       "Recording toggle should use the canonical shortcut title");
-    requireActionText(hotkeyToggleMenuAction, QStringLiteral("Disable global hotkeys"),
+    requireActionText(hotkeyToggleMenuAction, QStringLiteral("Disable global shortcuts"),
                       "the hotkey toggle should keep the historical tray label");
     const QStringList displayCases{
         QStringLiteral("+"),     QStringLiteral("Shift++"),        QStringLiteral("Num+1"),
@@ -1556,11 +1556,11 @@ int main(int argc, char* argv[]) {
     controller.setScreenshotDelaySeconds(7);
     require(controller.screenshotDelaySeconds() == 7,
             "the tray should retain a normalized screenshot delay value");
-    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 7s to execute"),
+    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Run after 7 seconds"),
                       "the tray should refresh the canonical delayed screenshot title");
     controller.setScreenshotDelaySeconds(3);
     requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
-                      "Show main interface should follow Disable global hotkeys");
+                      "Show main interface should follow Disable global shortcuts");
     requireActionText(restartMenuAction, QStringLiteral("Restart app"),
                       "Restart App should use its catalog label");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
@@ -1940,7 +1940,7 @@ int main(int argc, char* argv[]) {
                 !hotkeyToggleMenuAction->isChecked() && quickActions.size() == 3 &&
                 quickActions.last() ==
                     snow_shot::presentation::GlobalShortcutAction::ToggleGlobalHotkeys,
-            "hiding the checked toggle should re-enable hotkeys and collapse empty groups");
+            "hiding the checked toggle should re-enable shortcuts and collapse empty groups");
     controller.setMenuOptions(defaultMenuOptions);
     require(windowGroupMenuAction->isVisible() && hotkeyToggleMenuAction->isVisible() &&
                 !hotkeyToggleMenuAction->isChecked(),
@@ -2020,7 +2020,7 @@ int main(int argc, char* argv[]) {
                       "Show main interface should translate to Simplified Chinese");
     requireActionText(hotkeyToggleMenuAction,
                       QStringLiteral("\u7981\u7528\u5168\u5c40\u5feb\u6377\u952e"),
-                      "Disable global hotkeys should translate to Simplified Chinese");
+                      "Disable global shortcuts should translate to Simplified Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u9000\u51fa"),
                       "Exit should translate to Simplified Chinese");
     // The window group submenu title resolves through the SystemTrayController
@@ -2096,7 +2096,7 @@ int main(int argc, char* argv[]) {
                       "Show main interface should translate to Traditional Chinese");
     requireActionText(hotkeyToggleMenuAction,
                       QStringLiteral("\u505c\u7528\u5168\u57df\u5feb\u901f\u9375"),
-                      "Disable global hotkeys should translate to Traditional Chinese");
+                      "Disable global shortcuts should translate to Traditional Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u7d50\u675f"),
                       "Exit should translate to Traditional Chinese");
     requireActionText(windowGroupMenuAction,

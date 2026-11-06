@@ -30,7 +30,7 @@ void RecordingRegionDragHandle::cancelDrag() {
 }
 
 void RecordingRegionDragHandle::retranslateUi() {
-    const QString text = tr("Move recording area");
+    const QString text = tr("Move screen recording area");
     setToolTip(text);
     setAccessibleName(text);
 }

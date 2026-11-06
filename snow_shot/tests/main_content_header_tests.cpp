@@ -121,7 +121,7 @@ void sidebarPlacesSearchAboveNavigation() {
     const QString descriptionRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 101);
     const QString categoryRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 102);
     require(searchOptions.constFirst().metadata.value(descriptionRole).toString() ==
-                    QStringLiteral("Global hotkeys page") &&
+                    QStringLiteral("Global shortcuts page") &&
                 searchOptions.constFirst().metadata.value(categoryRole).toString() ==
                     QStringLiteral("Pages"),
             "search rows should expose their description and right-aligned category context");
@@ -146,23 +146,23 @@ void sidebarPlacesSearchAboveNavigation() {
 
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(7),
             "the delayed screenshot setting should be writable");
-    select->setSearchText(QStringLiteral("delay 7s"));
+    select->setSearchText(QStringLiteral("run after 7 seconds"));
     flushEvents();
     const auto delayOptions = select->options();
     require(
         !delayOptions.isEmpty() &&
             delayOptions.constFirst().value.toString() ==
                 QStringLiteral("item:quick.screenshot-delay") &&
-            delayOptions.constFirst().label == QStringLiteral("Delay 7s to execute") &&
+            delayOptions.constFirst().label == QStringLiteral("Run after 7 seconds") &&
             !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
         "global search should render the current delayed screenshot value without placeholders");
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(4),
             "the delayed screenshot setting should support live updates");
-    select->setSearchText(QStringLiteral("delay 4s"));
+    select->setSearchText(QStringLiteral("run after 4 seconds"));
     flushEvents();
     const auto updatedDelayOptions = select->options();
     require(!updatedDelayOptions.isEmpty() &&
-                updatedDelayOptions.constFirst().label == QStringLiteral("Delay 4s to execute"),
+                updatedDelayOptions.constFirst().label == QStringLiteral("Run after 4 seconds"),
             "global search should refresh delayed screenshot text when the setting changes");
     select->setSearchText(QString());
     flushEvents();

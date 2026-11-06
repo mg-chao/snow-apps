@@ -149,7 +149,7 @@ struct EditorDescriptor {
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
         {Item::FreeDraw, "free-draw",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Pen"), Icon::FreeDraw},
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Brush"), Icon::FreeDraw},
         {Item::Highlighter, "highlighter",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlight"), Icon::Highlight},
         {Item::Spotlight, "spotlight",
@@ -159,7 +159,7 @@ struct EditorDescriptor {
         {Item::Text, "text", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Text"),
          Icon::Text},
         {Item::SerialNumber, "serial-number",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Serial number"),
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Sequence number"),
          Icon::SerialNumber},
         {Item::Filter, "filter", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Filter"),
          Icon::Filter},
@@ -329,8 +329,7 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Save recording"),
          Icon::SaveAsFile},
         {"copy", "RecordingToolbarEditorSettingsWidget",
-         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Copy recording content"),
-         Icon::Copy},
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Copy recording"), Icon::Copy},
     };
     return value;
 }
@@ -356,19 +355,13 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
             return !ids.contains(QString::fromLatin1(item.id));
         });
         for (auto& item : result) {
-            if (QLatin1String(item.id) == QLatin1String("barcode-recognition")) {
-                item.translationContext = "FloatingToolbar";
-                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "QR code recognition");
-            } else if (QLatin1String(item.id) == QLatin1String("latex-recognition")) {
-                item.translationContext = "FloatingToolbar";
-                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Formula recognition");
-            } else if (QLatin1String(item.id) == QLatin1String("record-screen")) {
+            if (QLatin1String(item.id) == QLatin1String("record-screen")) {
                 item.translationContext = "FloatingToolbar";
                 item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Screen recording");
             }
         }
         result.prepend({"screenshot-delay", "FloatingToolbar",
-                        QT_TRANSLATE_NOOP("FloatingToolbar", "Delay %1 seconds to execute"),
+                        QT_TRANSLATE_NOOP("FloatingToolbar", "Run after %1 seconds"),
                         Icon::ScreenshotDelay});
         result.prepend({"screenshot", "FloatingToolbar",
                         QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot"), Icon::Screenshot});

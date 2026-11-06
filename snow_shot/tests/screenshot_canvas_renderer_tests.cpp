@@ -2139,8 +2139,7 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     QStringList selectionLines = cursorLines;
     selectionLines.append({
         keyLine(QStringLiteral("Move entire selection"), {QStringLiteral("Space")}),
-        keyLine(QStringLiteral("Keep selection width and height consistent"),
-                {QStringLiteral("Shift")}),
+        keyLine(QStringLiteral("Maintain selection aspect ratio"), {QStringLiteral("Shift")}),
         QStringLiteral("Selection aspect ratio snap: Q"),
     });
     selectionLines.append(commonLines);

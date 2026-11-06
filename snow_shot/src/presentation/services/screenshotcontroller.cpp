@@ -4705,7 +4705,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -5339,9 +5339,10 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
         if (m_ocrController->copyRecognitionToClipboard()) {
             return;
         }
-        m_messages->error(QString::fromLatin1(kCopyMessageKey),
-                          QCoreApplication::translate("ScreenshotController",
-                                                      "No recognized result is available to copy"));
+        m_messages->error(
+            QString::fromLatin1(kCopyMessageKey),
+            QCoreApplication::translate("ScreenshotController",
+                                        "No recognition result is available to copy"));
         return;
     }
     const snow_shot::storage::ScreenshotSettings settings;

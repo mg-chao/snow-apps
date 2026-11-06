@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
     require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
                     QString::fromUtf8("将重复内容固定到屏幕时") &&
                 QCoreApplication::translate("SettingsCatalog", "Shake window") ==
-                    QString::fromUtf8("晃动窗口") &&
+                    QString::fromUtf8("摇动窗口") &&
                 QCoreApplication::translate("SettingsCatalog", "Repeat action") ==
                     QString::fromUtf8("重复执行"),
             "language changes translate duplicate pin settings and option labels");
@@ -123,12 +123,12 @@ int main(int argc, char** argv) {
                 QCoreApplication::translate("CanvasStatusReadout", "Locked") ==
                     QString::fromUtf8("已鎖定") &&
                 QCoreApplication::translate("CanvasStatusReadout", "Rendering preview") ==
-                    QString::fromUtf8("正在繪製預覽"),
+                    QString::fromUtf8("正在算繪預覽"),
             "Traditional Chinese must load the shared canvas hint context");
     require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
                     QString::fromUtf8("將重複內容固定到螢幕時") &&
                 QCoreApplication::translate("SettingsCatalog", "Shake window") ==
-                    QString::fromUtf8("晃動視窗") &&
+                    QString::fromUtf8("搖動視窗") &&
                 QCoreApplication::translate("SettingsCatalog", "Repeat action") ==
                     QString::fromUtf8("重複執行"),
             "language changes translate duplicate pin settings and option labels");

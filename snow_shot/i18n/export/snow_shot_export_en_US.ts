@@ -442,8 +442,8 @@
             <translation>Percentage</translation>
         </message>
         <message>
-            <source>Pixel</source>
-            <translation>Pixel</translation>
+            <source>Pixels</source>
+            <translation>Pixels</translation>
         </message>
         <message>
             <source>Please enter a name</source>
@@ -530,8 +530,8 @@
             <translation>The image dimensions exceed the export limit</translation>
         </message>
         <message>
-            <source>The save paths could not be stored</source>
-            <translation>The save paths could not be stored</translation>
+            <source>The save path settings could not be saved</source>
+            <translation>The save path settings could not be saved</translation>
         </message>
         <message>
             <source>The saved file no longer exists</source>

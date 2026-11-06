@@ -92,7 +92,7 @@ class RecordingStatusPrompt final : public QWidget {
         setAccessibleName(
             tr("Format: %1; %2; %3")
                 .arg(m_text, m_microphone ? tr("Microphone enabled") : tr("Microphone disabled"),
-                     m_speaker ? tr("Speaker enabled") : tr("Speaker disabled")));
+                     m_speaker ? tr("System audio enabled") : tr("System audio disabled")));
         updateLayout();
         update();
     }

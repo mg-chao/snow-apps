@@ -808,7 +808,7 @@ void emptyStateRemainsVisibleAfterFilteringEmptyHistory() {
         require(title->isVisible() && description->isVisible() && icon->isVisible(), message);
         require(title->text() == QStringLiteral("No screenshot history") &&
                     description->text() ==
-                        QStringLiteral("Copied and pinned screenshots will appear here"),
+                        QStringLiteral("Copied or pinned screenshots will appear here"),
                 "an empty repository must retain its unfiltered empty-state wording");
     };
     requireCompleteEmptyState(
@@ -932,7 +932,7 @@ void batchPinUsesEligibleSelectionAtActivation() {
             "keyboard opens Batch Actions without dispatching either action");
     auto* stitch = menu->actions()[0];
     auto* pin = menu->actions()[1];
-    require(stitch->text() == QStringLiteral("Stitch image") &&
+    require(stitch->text() == QStringLiteral("Stitch images") &&
                 pin->text() == QStringLiteral("Pin to screen") && !stitch->icon().isNull() &&
                 !pin->icon().isNull() && !pin->isEnabled(),
             "batch menu has ordered themed actions and disables pin for unavailable records");
@@ -952,7 +952,7 @@ void batchPinUsesEligibleSelectionAtActivation() {
                         translator.translate("ScreenshotHistoryPageWidget", "Batch actions") &&
                     trigger->accessibleName() == trigger->text() &&
                     stitch->text() ==
-                        translator.translate("ScreenshotHistoryPageWidget", "Stitch image") &&
+                        translator.translate("ScreenshotHistoryPageWidget", "Stitch images") &&
                     pin->text() ==
                         translator.translate("ScreenshotHistoryPageWidget", "Pin to screen") &&
                     pin->toolTip() == pin->text(),
@@ -1217,7 +1217,7 @@ void entryStitchActionUsesOnlyItsRecord() {
         QStringLiteral("screenshotHistoryEntryMoreMenu"));
     require(menu && menu->isPopupVisible(), "More opens the history stitching menu");
     auto* stitch = menu->findChild<QAction*>(QStringLiteral("screenshotHistoryEntryStitch"));
-    require(stitch && stitch->isEnabled() && stitch->text() == QStringLiteral("Stitch image") &&
+    require(stitch && stitch->isEnabled() && stitch->text() == QStringLiteral("Stitch images") &&
                 !stitch->icon().isNull() && menu->actionGeometry(stitch).isValid(),
             "More exposes the labeled stitching action with its icon");
     activateMenuAction(menu, stitch);
@@ -1260,8 +1260,8 @@ void entryStitchActionUsesOnlyItsRecord() {
     QCoreApplication::installTranslator(&translator);
     QEvent language(QEvent::LanguageChange);
     QApplication::sendEvent(entry, &language);
-    const QString translated = translator.translate("HistoryEntryWidget", "Stitch image");
-    require(!translated.isEmpty() && translated != QStringLiteral("Stitch image") &&
+    const QString translated = translator.translate("HistoryEntryWidget", "Stitch images");
+    require(!translated.isEmpty() && translated != QStringLiteral("Stitch images") &&
                 stitch->text() == translated && stitch->toolTip() == translated,
             "language changes translate the stitching action in an open More menu");
     QCoreApplication::removeTranslator(&translator);
@@ -1443,7 +1443,7 @@ void moreMenuOffersPinStitchAndDelete() {
                 !reveal->icon().isNull(),
             "the platform reveal action follows Copy image path and precedes Delete");
     require(pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
-                stitch->text() == QStringLiteral("Stitch image") && stitch->isEnabled() &&
+                stitch->text() == QStringLiteral("Stitch images") && stitch->isEnabled() &&
                 split->text() == QStringLiteral("Image splitting") && split->isEnabled() &&
                 remove->text() == QStringLiteral("Delete") && menu->actionDanger(remove) &&
                 menu->actionGeometry(pin).isValid(),
@@ -1453,7 +1453,7 @@ void moreMenuOffersPinStitchAndDelete() {
     flushEvents();
     require(pin->text() == QStringLiteral("Pin to screen") &&
                 pin->toolTip() == QStringLiteral("Pin this screenshot to the screen") &&
-                stitch->text() == QStringLiteral("Stitch image") &&
+                stitch->text() == QStringLiteral("Stitch images") &&
                 remove->text() == QStringLiteral("Delete"),
             "an open More menu must keep its own action labels when the language changes");
     activateMenuAction(menu, pin);

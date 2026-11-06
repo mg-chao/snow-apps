@@ -34,18 +34,19 @@ constexpr qsizetype rowScratchBytes = 8 * 1024 * 1024;
 constexpr qint64 conversionCacheBytes = 2 * 1024 * 1024;
 
 QString resourceError() {
-    return QCoreApplication::translate(
-        "CollageDocument",
-        "The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings");
+    return QCoreApplication::translate("CollageDocument",
+                                       "The stitched image exceeds the 8 GiB image limit. Try "
+                                       "fewer images or smaller layout settings");
 }
 
 QString preparationError() {
     return QCoreApplication::translate("CollageDocument",
-                                       "The collage images could not be prepared for export");
+                                       "The stitched image could not be prepared for export");
 }
 
 QString cancellationError() {
-    return QCoreApplication::translate("CollageDocument", "The collage export was cancelled");
+    return QCoreApplication::translate("CollageDocument",
+                                       "The image stitching export was canceled");
 }
 
 void report(QString* destination, const QString& error) {
@@ -932,8 +933,8 @@ static CollageLayout calculateAutomaticCollageLayout(const QVector<CollageItem>&
     if (items.isEmpty())
         return result;
     if (!settingsValid(settings)) {
-        result.error = QCoreApplication::translate("CollageDocument",
-                                                   "The collage layout settings are invalid");
+        result.error = QCoreApplication::translate(
+            "CollageDocument", "The image stitching layout settings are invalid");
         return result;
     }
     const bool vertical = settings.direction == CollageDirection::Vertical;
@@ -1535,9 +1536,8 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
     const qint64 transientBytes = readerCacheBytes + transformScratchBytes + maximumRowBytes;
     if (transientBytes > collage_detail::maximumWorkingBytes) {
         report(error, QCoreApplication::translate(
-                          "CollageDocument",
-                          "This collage requires too much temporary memory. Try fewer images or "
-                          "smaller image sizes"));
+                          "CollageDocument", "Image stitching requires too much temporary memory. "
+                                             "Try fewer images or smaller image sizes"));
         return {};
     }
     if (preparedBytes > collage_detail::maximumRasterBytes) {
@@ -1698,7 +1698,7 @@ CollageClipboardEstimate estimateCollageClipboard(QSize outputSize) {
         result.dibBytes > std::numeric_limits<quint32>::max())
         result.error = QCoreApplication::translate(
             "CollageDocument",
-            "The collage is too large for the clipboard. Save it to a file instead");
+            "The stitched image is too large for the clipboard. Save it to a file instead");
     return result;
 }
 
@@ -1725,9 +1725,8 @@ qint64 collageImageImportBytes(QSize size, QString* error) {
     qint64 bytes = 0;
     if (!outputBytes(size, &bytes)) {
         report(error, QCoreApplication::translate(
-                          "CollageDocument",
-                          "This collage requires too much temporary memory. Try fewer images "
-                          "or smaller image sizes"));
+                          "CollageDocument", "Image stitching requires too much temporary memory. "
+                                             "Try fewer images or smaller image sizes"));
         return 0;
     }
     return bytes * 2;

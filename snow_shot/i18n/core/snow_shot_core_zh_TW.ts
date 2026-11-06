@@ -42,7 +42,7 @@
         <message>
             <source>Capture, annotate, recognize text, and record your screen,
 so every moment on screen can be expressed clearly and shared easily</source>
-            <translation>截圖、標註、文字辨識和螢幕錄影，
+            <translation>截圖、標註、文字辨識和螢幕錄製，
 讓螢幕上的每一刻都能清晰表達、輕鬆分享</translation>
         </message>
         <message>
@@ -195,7 +195,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Screen recording</source>
-            <translation>螢幕錄影</translation>
+            <translation>螢幕錄製</translation>
         </message>
         <message>
             <source>Screenshot capture</source>
@@ -278,7 +278,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Finish capturing, recording, exporting, or updating before restarting</source>
-            <translation>請完成擷取、錄製、匯出或更新後再重新啟動</translation>
+            <translation>請完成截圖、錄製、匯出或更新後再重新啟動</translation>
         </message>
         <message>
             <source>The replacement application did not acknowledge the restart</source>
@@ -309,7 +309,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Rendering preview</source>
-            <translation>正在繪製預覽</translation>
+            <translation>正在算繪預覽</translation>
         </message>
         <message>
             <source>Result preview in progress</source>
@@ -420,16 +420,8 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>自訂工具列</translation>
         </message>
         <message>
-            <source>Delay %1 seconds to execute</source>
-            <translation>延遲 %1 秒執行</translation>
-        </message>
-        <message>
-            <source>Formula recognition</source>
-            <translation>公式辨識</translation>
-        </message>
-        <message>
             <source>Hide during screenshots</source>
-            <translation>擷取螢幕時隱藏</translation>
+            <translation>截圖時隱藏</translation>
         </message>
         <message>
             <source>Hide in fullscreen</source>
@@ -444,8 +436,8 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>更多工具</translation>
         </message>
         <message>
-            <source>QR code recognition</source>
-            <translation>QR 碼辨識</translation>
+            <source>Run after %1 seconds</source>
+            <translation>延遲 %1 秒執行</translation>
         </message>
         <message>
             <source>Screen recording</source>
@@ -453,7 +445,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Screenshot</source>
-            <translation>螢幕擷取</translation>
+            <translation>截圖</translation>
         </message>
         <message>
             <source>Show toolbar</source>
@@ -501,7 +493,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>%1 cannot be used as a recording shortcut, try another key</source>
-            <translation>%1 無法用作錄影快捷鍵，請嘗試其他按鍵</translation>
+            <translation>%1 無法用作螢幕錄製快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>%1 cannot be used as a screenshot shortcut, try another key</source>
@@ -521,14 +513,14 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>%1 is already assigned to another recording action, try another key</source>
-            <translation>%1 已指派給其他錄影操作，請嘗試其他按鍵</translation>
+            <translation>%1 已指派給其他螢幕錄製操作，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>%1 is already assigned to another shortcut, try another key</source>
             <translation>%1 已指派給其他快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
-            <source>Add key config</source>
+            <source>Add key configuration</source>
             <translation>新增按鍵設定</translation>
         </message>
         <message>
@@ -553,7 +545,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Invalid recording shortcut</source>
-            <translation>無效的錄影快捷鍵</translation>
+            <translation>無效的螢幕錄製快速鍵</translation>
         </message>
         <message>
             <source>Invalid screenshot shortcut</source>
@@ -573,7 +565,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>This key cannot be used as a recording shortcut, try another key</source>
-            <translation>此按鍵無法用作錄影快捷鍵，請嘗試其他按鍵</translation>
+            <translation>此按鍵無法用作螢幕錄製快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>This key cannot be used as a screenshot shortcut, try another key</source>
@@ -593,7 +585,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>This key is already assigned to another recording action, try another key</source>
-            <translation>此按鍵已指派給其他錄影操作，請嘗試其他按鍵</translation>
+            <translation>此按鍵已指派給其他螢幕錄製操作，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>This key is already assigned to another shortcut, try another key</source>
@@ -873,7 +865,7 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>無法開啟所選檔案：%1</translation>
         </message>
         <message>
-            <source>Could not pin selected files</source>
+            <source>Could not pin selected files to screen</source>
             <translation>無法將所選檔案固定到螢幕</translation>
         </message>
         <message>
@@ -882,11 +874,11 @@ so every moment on screen can be expressed clearly and shared easily</source>
         </message>
         <message>
             <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage</source>
-            <translation>請先完成擷取、錄製、匯出、文字辨識或更新，再變更儲存目錄</translation>
+            <translation>請先完成截圖、錄製、匯出、文字辨識或更新，再變更儲存目錄</translation>
         </message>
         <message>
             <source>Finish capturing, recording, or exporting before updating</source>
-            <translation>請先完成擷取、錄影或匯出，再進行更新</translation>
+            <translation>請先完成截圖、螢幕錄製或匯出，再進行更新</translation>
         </message>
         <message>
             <source>Restart and update</source>

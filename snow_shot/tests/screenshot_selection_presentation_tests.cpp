@@ -1245,7 +1245,7 @@ void shortcutHintsFollowRegionOperationTransitions() {
             hints->accessibleName().contains(QStringLiteral("Copy color")) &&
                 hints->accessibleName().contains(QStringLiteral("Move entire selection")) &&
                 !hints->accessibleName().contains(
-                    QStringLiteral("Keep selection width and height consistent")) &&
+                    QStringLiteral("Maintain selection aspect ratio")) &&
                 !hints->accessibleName().contains(QStringLiteral("Selection aspect ratio snap")),
             "committing an operation must restore whole-selection movement without resize hints");
         fixture.selection.setSelectionRect(QRect(700, 100, 200, 150));

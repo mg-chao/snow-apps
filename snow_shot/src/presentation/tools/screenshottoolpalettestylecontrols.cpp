@@ -528,8 +528,8 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight outline width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight outline width %1px"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight outline color %1"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight color"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight color"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow width %1"),
@@ -582,8 +582,8 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number background color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mask color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mask color %1"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current pen filter width"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter width %1 (%2px)"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current brush filter width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush filter width %1 (%2px)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current stroke width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Dashed stroke"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Dotted stroke"),
@@ -596,8 +596,8 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Solid fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "No fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pick color from canvas"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current pen highlight width"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight width %1 (%2px)"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current brush highlight width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight width %1 (%2px)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Dashed arrow line"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Dotted arrow line"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Solid arrow line"),
@@ -634,9 +634,9 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrowhead scale (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Corner radius (scroll to adjust)"),
@@ -3144,7 +3144,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
     }
     const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
         {static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight),
-         QStringLiteral("Pen highlight"), outlined_icons::Highlight()},
+         QStringLiteral("Brush highlight"), outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleHighlight),
          QStringLiteral("Rectangle highlight"), custom_outlined_icons::ShapeRectangle()},
     };
@@ -3249,12 +3249,13 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         auto* penLayout = static_cast<QHBoxLayout*>(penControls->layout());
 
         ScreenshotToolPaletteColorEditorConfig penHighlightColorConfig;
-        penHighlightColorConfig.accessibleName = QStringLiteral("Pen highlight color");
+        penHighlightColorConfig.accessibleName = QStringLiteral("Brush highlight color");
         penHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
         penHighlightColorConfig.presetSource =
             snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         penHighlightColorConfig.presetTooltip = [](const QColor& color) {
-            return ScreenshotToolPaletteTranslationText("Pen highlight color %1").arg(color.name());
+            return ScreenshotToolPaletteTranslationText("Brush highlight color %1")
+                .arg(color.name());
         };
         if (auto reused = takeReusableEditor(kRoleHighlightColor, kSignatureHighlightColor,
                                              penLayout, penControls)) {
@@ -3279,8 +3280,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         }
         ScreenshotToolPaletteNumericPresetEditorConfig penHighlightWidthConfig =
             snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
-                QStringLiteral("Current pen highlight width"), QString(),
-                "Pen highlight width %1 (%2px)");
+                QStringLiteral("Current brush highlight width"), QString(),
+                "Brush highlight width %1 (%2px)");
         if (auto reused =
                 takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, penLayout, penControls)) {
             m_penHighlightStrokeWidthEditor.reset(
@@ -4344,7 +4345,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     auto* layout = static_cast<QHBoxLayout*>(result.controls->layout());
 
     const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
-        {static_cast<int>(ScreenshotToolPalette::Tool::PenFilter), QStringLiteral("Pen filter"),
+        {static_cast<int>(ScreenshotToolPalette::Tool::PenFilter), QStringLiteral("Brush filter"),
          outlined_icons::Highlight()},
         {static_cast<int>(ScreenshotToolPalette::Tool::RectangleFilter),
          QStringLiteral("Rectangle filter"), custom_outlined_icons::ShapeRectangle()},
@@ -4421,9 +4422,9 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
     if (config.includeStrokeWidth) {
         ScreenshotToolPaletteNumericPresetEditorConfig penFilterWidthConfig =
             snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
-                QStringLiteral("Current pen filter width"),
+                QStringLiteral("Current brush filter width"),
                 QStringLiteral("screenshotPenFilterStrokeWidthSummary"),
-                "Pen filter width %1 (%2px)");
+                "Brush filter width %1 (%2px)");
         penFilterWidthConfig.presetObjectName = [](double value) {
             return QStringLiteral("screenshotPenFilterStrokeWidth%1").arg(qRound(value));
         };

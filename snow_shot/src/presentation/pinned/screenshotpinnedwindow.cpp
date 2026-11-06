@@ -3936,8 +3936,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
         connect(m_thumbnailAction, &QAction::toggled, this,
                 [this](bool enabled) { setThumbnailMode(enabled); });
 
-        m_hideToTopAction = m_contextMenu->addItem(tr("Hide to top"), outlined_icons::ArrowUp());
-        setActionTranslationSource(m_hideToTopAction, "Hide to top");
+        m_hideToTopAction = m_contextMenu->addItem(tr("Hide at top"), outlined_icons::ArrowUp());
+        setActionTranslationSource(m_hideToTopAction, "Hide at top");
         m_hideToTopAction->setObjectName(QStringLiteral("screenshotPinnedHideToTopAction"));
         m_hideToTopAction->setCheckable(true);
         connect(m_hideToTopAction, &QAction::triggered, this,
@@ -3959,7 +3959,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_lockAction, &QAction::toggled, this, &ScreenshotPinnedWindow::setLockedMode);
 
     auto* managementAction = m_contextMenu->addLazySubMenu(
-        tr("Window management"),
+        tr("Pin to screen management"),
         [this](auto* windowManagementMenu) {
             windowManagementMenu->setObjectName(
                 QStringLiteral("screenshotPinnedWindowManagementMenu"));
@@ -4050,7 +4050,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
             refreshContextMenu();
         },
         outlined_icons::Apartment());
-    setActionTranslationSource(managementAction, "Window management");
+    setActionTranslationSource(managementAction, "Pin to screen management");
     managementAction->setObjectName(QStringLiteral("screenshotPinnedWindowManagementAction"));
 
     m_contextMenu->addSeparator();
@@ -6274,7 +6274,7 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
         showPinnedRecognitionMessage(
             this,
             QCoreApplication::translate("ScreenshotController",
-                                        "No recognized result is available to copy"),
+                                        "No recognition result is available to copy"),
             true);
         return;
     }
@@ -7625,7 +7625,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -9527,14 +9527,14 @@ void ScreenshotPinnedWindow::createBatchActionsMenu(adqt::widgets::AdContextMenu
     add(tr("Disable thumbnail mode"), "Disable thumbnail mode",
         "screenshotPinnedBatchDisableThumbnailAction",
         [apply] { apply([](auto& window) { window.setThumbnailMode(false); }); });
-    add(tr("Enable hide to top"), "Enable hide to top",
+    add(tr("Enable hide at top"), "Enable hide at top",
         "screenshotPinnedBatchEnableHideToTopAction", [apply] {
             apply([](auto& window) {
                 if (!window.hideToTopActive())
                     window.toggleHideToTop();
             });
         });
-    add(tr("Disable hide to top"), "Disable hide to top",
+    add(tr("Disable hide at top"), "Disable hide at top",
         "screenshotPinnedBatchDisableHideToTopAction", [apply] {
             apply([](auto& window) {
                 if (window.hideToTopActive())

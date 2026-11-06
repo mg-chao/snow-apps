@@ -60,9 +60,9 @@ QString templateText(const char* source) {
 
 [[maybe_unused]] constexpr std::array translations{
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Template stitching preview"),
-    QT_TRANSLATE_NOOP(
-        "CollagePdfTemplateWidget",
-        "Drag an image to move or swap it; drag its selection handles to scale around its center"),
+    QT_TRANSLATE_NOOP("CollagePdfTemplateWidget",
+                      "Drag an image to move or swap it; drag its selection handles to scale "
+                      "proportionally around its center"),
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Add images"),
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Clear all"),
     QT_TRANSLATE_NOOP("CollagePdfTemplateWidget", "Reverse image order"),
@@ -754,8 +754,8 @@ void CollagePdfTemplateCanvas::setExportBusy(bool busy) {
 void CollagePdfTemplateCanvas::retranslateUi() {
     auto& d = *m_impl;
     setAccessibleName(templateText("Template stitching preview"));
-    setAccessibleDescription(templateText(
-        "Drag an image to move or swap it; drag its selection handles to scale around its center"));
+    setAccessibleDescription(templateText("Drag an image to move or swap it; drag its selection "
+                                          "handles to scale proportionally around its center"));
     constexpr std::array<const char*, 8> labels{"Rotate clockwise by 90°",
                                                 "Rotate counterclockwise by 90°",
                                                 "Flip horizontally",

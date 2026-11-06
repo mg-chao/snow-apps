@@ -3391,7 +3391,7 @@ void ScreenshotRecognitionSessionController::startQrRecognition() {
     if (!hasTarget() || m_qrRecognition == nullptr || m_qrRequestToken != 0 ||
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
         if (m_qrRecognition == nullptr) {
-            if (!showStatus(tr("Barcode recognition is unavailable"), true))
+            if (!showStatus(tr("Barcode recognition service is unavailable"), true))
                 return;
         }
         return;

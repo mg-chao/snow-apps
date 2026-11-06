@@ -93,7 +93,7 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Image %1: %2"),
     QT_TRANSLATE_NOOP("CollageEditorWidget",
                       "Select to center this image; drag onto another image to swap"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Collage preview"),
+    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image stitching preview"),
     QT_TRANSLATE_NOOP("CollageEditorWidget",
                       "Drag an image to move or swap it; drag selection handles to scale around "
                       "its center. Drag with the middle mouse button to pan; scroll to zoom"),
@@ -103,9 +103,9 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Flip vertically"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Reset transform"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images to create a collage"),
+    QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images to start image stitching"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Drag image files here, or choose add images"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drop images to add to collage"),
+    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drop images to stitch"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Add multiple image files at once"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "%1 × %2 px"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Total: %1 images"),
@@ -132,7 +132,7 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing unit"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Outer border in percentage"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing in percentage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Pixel"),
+    QT_TRANSLATE_NOOP("CollageEditorWidget", "Pixels"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage of the widest image after sizing"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage of the tallest image after sizing"),
@@ -1157,7 +1157,7 @@ void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
     }
 }
 void CollagePreviewCanvas::retranslateUi() {
-    setAccessibleName(text("Collage preview"));
+    setAccessibleName(text("Image stitching preview"));
     setAccessibleDescription(
         text("Drag an image to move or swap it; drag selection handles to "
              "scale around its center. Drag with the middle mouse button to pan; scroll to zoom"));
@@ -2200,7 +2200,7 @@ void CollageEditorWidget::retranslateUi() {
     d.border.unit->setAccessibleName(text("Outer border unit"));
     d.spacing.unit->setAccessibleName(text("Image spacing unit"));
     for (auto* unit : {d.border.unit, d.spacing.unit}) {
-        unit->setOptionLabel(0, text("Pixel"));
+        unit->setOptionLabel(0, text("Pixels"));
         unit->setOptionLabel(1, text("Percentage"));
     }
     d.color->setAccessibleName(text("Background color"));
@@ -2215,9 +2215,9 @@ void CollageEditorWidget::retranslateUi() {
     d.add->setAccessibleName(d.add->toolTip());
     d.reverse->setToolTip(text("Reverse image order"));
     d.reverse->setAccessibleName(d.reverse->toolTip());
-    d.emptyPrompt->setText(text("Add images to create a collage"));
+    d.emptyPrompt->setText(text("Add images to start image stitching"));
     d.emptyState->description->setText(text("Drag image files here, or choose add images"));
-    d.dropHint->title->setText(text("Drop images to add to collage"));
+    d.dropHint->title->setText(text("Drop images to stitch"));
     d.dropHint->description->setText(text("Add multiple image files at once"));
     d.dropHint->setAccessibleName(d.dropHint->title->text());
     d.dropHint->setAccessibleDescription(d.dropHint->description->text());

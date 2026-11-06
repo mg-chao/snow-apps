@@ -24,7 +24,7 @@
         </message>
         <message>
             <source>Minimum confidence required to switch to the secondary target language</source>
-            <translation>切換至次目標語言所需的最低信心度</translation>
+            <translation>切換至次要目標語言所需的最低信心度</translation>
         </message>
         <message>
             <source>OK</source>
@@ -133,8 +133,8 @@
     <context>
         <name>TranslationPageWidget</name>
         <message>
-            <source>Auto detect</source>
-            <translation>自動偵測</translation>
+            <source>Auto-detect language</source>
+            <translation>自動偵測語言</translation>
         </message>
         <message>
             <source>Copy (%1)</source>
@@ -161,7 +161,7 @@
             <translation>重試</translation>
         </message>
         <message>
-            <source>Select a service</source>
+            <source>Select a translation service</source>
             <translation>選擇翻譯服務</translation>
         </message>
         <message>
@@ -209,7 +209,7 @@
         <name>TranslationService</name>
         <message>
             <source>General models</source>
-            <translation>一般模型</translation>
+            <translation>通用模型</translation>
         </message>
         <message>
             <source>Translation models</source>

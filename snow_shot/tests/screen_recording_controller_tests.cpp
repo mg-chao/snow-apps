@@ -2139,14 +2139,14 @@ void recordingStatusPrompts() {
     pumpPreview();
     const QImage microphone = renderPrompt();
     require(prompt->accessibleName() ==
-                    QStringLiteral("Format: MP4; Microphone enabled; Speaker disabled") &&
+                    QStringLiteral("Format: MP4; Microphone enabled; System audio disabled") &&
                 microphone != disabled,
             "microphone toggles must immediately update the prompt text alternative and icon");
     checkStatusColors(true, true);
     palette()->recordingSystemAudioToggled(true);
     pumpPreview();
     require(prompt->accessibleName() ==
-                    QStringLiteral("Format: MP4; Microphone enabled; Speaker enabled") &&
+                    QStringLiteral("Format: MP4; Microphone enabled; System audio enabled") &&
                 renderPrompt() != microphone,
             "speaker toggles must immediately update the prompt text alternative and icon");
     checkStatusColors(true, false);
@@ -2166,7 +2166,7 @@ void recordingStatusPrompts() {
         palette()->recordingOutputFormatChanged(format);
         pumpPreview();
         require(prompt->accessibleName() ==
-                    QStringLiteral("Format: %1; Microphone disabled; Speaker disabled")
+                    QStringLiteral("Format: %1; Microphone disabled; System audio disabled")
                         .arg(format == QStringLiteral("gif") ? QStringLiteral("GIF")
                                                              : QStringLiteral("WebP")),
                 "animated formats must show concise names and disabled audio icons");
@@ -2176,7 +2176,7 @@ void recordingStatusPrompts() {
     palette()->recordingOutputFormatChanged(QStringLiteral("mp4"));
     pumpPreview();
     require(prompt->accessibleName() ==
-                QStringLiteral("Format: MP4; Microphone enabled; Speaker enabled"),
+                QStringLiteral("Format: MP4; Microphone enabled; System audio enabled"),
             "switching back to video must restore the selected audio status");
     require(settings.setShowStatusPrompts(false), "disable status prompts in storage");
     pumpPreview();
@@ -4340,7 +4340,7 @@ void recordingSettingsDialog() {
     require(QCoreApplication::installTranslator(&translator),
             "install recording settings translations");
     QCoreApplication::processEvents();
-    require(modal->windowTitle() == QStringLiteral("Translated: Recording settings") &&
+    require(modal->windowTitle() == QStringLiteral("Translated: Screen recording settings") &&
                 form->field(QStringLiteral("screen-recording.auto-hide-toolbar"))->label() ==
                     QStringLiteral("Translated: Auto-hide toolbar") &&
                 form->field(QStringLiteral("screen-recording.auto-hide-toolbar"))->tooltipText() ==

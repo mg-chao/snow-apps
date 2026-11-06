@@ -51,29 +51,29 @@ using adqt::widgets::AdModal;
     QT_TRANSLATE_NOOP("CollageWindow", "Add images"),
     QT_TRANSLATE_NOOP("CollageWindow", "Allow Snow Shot to access Finder in System Settings > "
                                        "Privacy & Security > Automation, then try again"),
-    QT_TRANSLATE_NOOP("CollageWindow", "All images will be removed from this collage"),
+    QT_TRANSLATE_NOOP("CollageWindow", "All images will be removed from this stitching session"),
     QT_TRANSLATE_NOOP("CollageWindow", "Cancel"),
     QT_TRANSLATE_NOOP("CollageWindow", "Clear all"),
     QT_TRANSLATE_NOOP("CollageWindow", "Clear all images?"),
     QT_TRANSLATE_NOOP("CollageWindow", "Clipboard image"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Collage"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Image stitching"),
     QT_TRANSLATE_NOOP("CollageWindow", "Copy"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Copying collage…"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Copying stitched image…"),
     QT_TRANSLATE_NOOP("CollageWindow", "Copying could not be started. Try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Could not read the selected image files. Please try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Discard"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Discard this collage?"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Discard this stitching session?"),
     QT_TRANSLATE_NOOP("CollageWindow", "Export could not be started. Try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Image loading could not be started. Try again"),
     QT_TRANSLATE_NOOP("CollageWindow", "Images"),
     QT_TRANSLATE_NOOP("CollageWindow", "Loading images: %1 of %2"),
     QT_TRANSLATE_NOOP("CollageWindow", "Pinned window %1"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Preparing collage…"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Preparing stitched image…"),
     QT_TRANSLATE_NOOP("CollageWindow", "Reading selected image files…"),
     QT_TRANSLATE_NOOP("CollageWindow", "Replace image"),
     QT_TRANSLATE_NOOP("CollageWindow", "Save"),
     QT_TRANSLATE_NOOP("CollageWindow", "Save as file"),
-    QT_TRANSLATE_NOOP("CollageWindow", "Saving collage…"),
+    QT_TRANSLATE_NOOP("CollageWindow", "Saving stitched image…"),
     QT_TRANSLATE_NOOP("CollageWindow", "Save PDF document"),
     QT_TRANSLATE_NOOP("CollageWindow", "Select destination folder"),
     QT_TRANSLATE_NOOP("CollageWindow", "PDF documents"),
@@ -94,7 +94,8 @@ using adqt::widgets::AdModal;
                       "The file manager took too long to return the selected files. Please try "
                       "again"),
     QT_TRANSLATE_NOOP("CollageWindow", "The image could not be decoded or is no longer available"),
-    QT_TRANSLATE_NOOP("CollageWindow", "The images and edits in this collage will be discarded"),
+    QT_TRANSLATE_NOOP("CollageWindow",
+                      "The images and edits in this stitching session will be discarded"),
     QT_TRANSLATE_NOOP("CollageWindow", "The layout settings could not be remembered: %1"),
 };
 
@@ -342,7 +343,7 @@ struct CollageWindow::Impl {
     }
 
     void retranslate() {
-        modal->setWindowTitle(collageText("Collage"));
+        modal->setWindowTitle(collageText("Image stitching"));
         cancelButton->setText(collageText("Cancel"));
         copyButton->setText(collageText("Copy"));
         saveButton->setText(collageText("Save"));
@@ -373,13 +374,13 @@ struct CollageWindow::Impl {
             message = collageText("Reading selected image files…");
             break;
         case Status::Preparing:
-            message = collageText("Preparing collage…");
+            message = collageText("Preparing stitched image…");
             break;
         case Status::Copying:
-            message = collageText("Copying collage…");
+            message = collageText("Copying stitched image…");
             break;
         case Status::Saving:
-            message = collageText("Saving collage…");
+            message = collageText("Saving stitched image…");
             break;
         case Status::ImportFailures:
             message = collageText("Some images could not be loaded:\n%1")
@@ -458,12 +459,13 @@ struct CollageWindow::Impl {
     }
 
     void translateConfirmation() {
-        confirmation->setWindowTitle(confirmationClear ? collageText("Clear all images?")
-                                                       : collageText("Discard this collage?"));
+        confirmation->setWindowTitle(confirmationClear
+                                         ? collageText("Clear all images?")
+                                         : collageText("Discard this stitching session?"));
         confirmation->setText(
             confirmationClear
-                ? collageText("All images will be removed from this collage")
-                : collageText("The images and edits in this collage will be discarded"));
+                ? collageText("All images will be removed from this stitching session")
+                : collageText("The images and edits in this stitching session will be discarded"));
         confirmation->setAcceptText(confirmationClear ? collageText("Clear all")
                                                       : collageText("Discard"));
         confirmation->setRejectText(collageText("Cancel"));
@@ -696,44 +698,43 @@ struct CollageWindow::Impl {
             return;
         }
         importArtifact = std::make_shared<ScreenshotExportArtifact>(snapshot.source);
-        if (!importArtifact->requestImage(
-                &q, [this, request, decoded, token](ScreenshotExportImageResult rendered) {
-                    if (closing || token != generation)
-                        return;
-                    importArtifact.reset();
-                    if (!rendered.succeeded()) {
-                        finishImport(request, decoded, token,
-                                     ScreenshotExportTaskResult::failure(
-                                         ScreenshotExportFailureStage::Render, rendered.error));
-                        return;
-                    }
-                    job = ScreenshotExportCoordinator::shared().submit(
-                        &q, ScreenshotExportCoordinator::Priority::Background,
-                        [image = std::move(rendered.image),
-                         decoded](const ScreenshotExportCancellation& cancellation) {
-                            if (cancellation.isCancellationRequested())
-                                return ScreenshotExportTaskResult::failure(
-                                    ScreenshotExportFailureStage::Cancelled, {});
-                            decoded->preview =
-                                image.width() <= 256 && image.height() <= 256
-                                    ? image
-                                    : snowCanvasScaleImage(
-                                          image, image.size().scaled(256, 256, Qt::KeepAspectRatio),
-                                          Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                            ScreenshotExportTaskResult result;
-                            result.image = image;
-                            return result;
-                        },
-                        [this, request, decoded, token](ScreenshotExportTaskResult result) {
-                            finishImport(request, decoded, token, std::move(result));
-                        });
-                    if (!job.isValid())
-                        finishImport(
-                            request, decoded, token,
-                            ScreenshotExportTaskResult::failure(
-                                ScreenshotExportFailureStage::Queue,
-                                collageText("Image loading could not be started. Try again")));
-                }))
+        if (!importArtifact->requestImage(&q, [this, request, decoded,
+                                               token](ScreenshotExportImageResult rendered) {
+                if (closing || token != generation)
+                    return;
+                importArtifact.reset();
+                if (!rendered.succeeded()) {
+                    finishImport(request, decoded, token,
+                                 ScreenshotExportTaskResult::failure(
+                                     ScreenshotExportFailureStage::Render, rendered.error));
+                    return;
+                }
+                job = ScreenshotExportCoordinator::shared().submit(
+                    &q, ScreenshotExportCoordinator::Priority::Background,
+                    [image = std::move(rendered.image),
+                     decoded](const ScreenshotExportCancellation& cancellation) {
+                        if (cancellation.isCancellationRequested())
+                            return ScreenshotExportTaskResult::failure(
+                                ScreenshotExportFailureStage::Cancelled, {});
+                        decoded->preview =
+                            image.width() <= 256 && image.height() <= 256
+                                ? image
+                                : snowCanvasScaleImage(
+                                      image, image.size().scaled(256, 256, Qt::KeepAspectRatio),
+                                      Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                        ScreenshotExportTaskResult result;
+                        result.image = image;
+                        return result;
+                    },
+                    [this, request, decoded, token](ScreenshotExportTaskResult result) {
+                        finishImport(request, decoded, token, std::move(result));
+                    });
+                if (!job.isValid())
+                    finishImport(request, decoded, token,
+                                 ScreenshotExportTaskResult::failure(
+                                     ScreenshotExportFailureStage::Queue,
+                                     collageText("Image loading could not be started. Try again")));
+            }))
             fail(collageText("Image loading could not be started. Try again"));
     }
 

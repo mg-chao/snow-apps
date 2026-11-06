@@ -97,7 +97,8 @@ class DirectCaptureController::Impl {
                                                  repository->publish(std::move(draft));
                                              if (!future.valid())
                                                  return OutputResult{DirectCaptureController::tr(
-                                                     "History publication could not be queued")};
+                                                     "The history write operation could not be "
+                                                     "queued")};
                                              const auto result = future.get();
                                              return OutputResult{result.storage.success
                                                                      ? QString()
@@ -107,7 +108,7 @@ class DirectCaptureController::Impl {
                                              (*completion)(result.error);
                                          })) {
                                      (*completion)(DirectCaptureController::tr(
-                                         "History publication could not be queued"));
+                                         "The history write operation could not be queued"));
                                  }
                              });
               },
@@ -180,7 +181,7 @@ class DirectCaptureController::Impl {
                                });
                            if (!clipboard.isValid())
                                done(DirectCaptureController::tr(
-                                   "The clipboard publication could not be queued"));
+                                   "The clipboard write operation could not be queued"));
                        },
                        request.pdf, request.requestedAt);
         }
@@ -198,7 +199,7 @@ class DirectCaptureController::Impl {
                            });
                        if (!clipboard.isValid())
                            done(DirectCaptureController::tr(
-                               "The clipboard publication could not be queued"));
+                               "The clipboard write operation could not be queued"));
                    });
     }
 

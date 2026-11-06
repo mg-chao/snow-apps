@@ -360,7 +360,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     QCoreApplication::processEvents();
 
     const char* sources[] = {"Start recording",       "Stop recording",    "Pause recording",
-                             "Resume recording",      "Record microphone", "Record speakers",
+                             "Resume recording",      "Record microphone", "Record system audio",
                              "Open recording folder", "Close recording",   "Copy recording"};
     QVector<adqt::widgets::AdButton*> buttons;
     for (const char* source : sources) {
@@ -1351,7 +1351,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                      [&settingsRequests] { ++settingsRequests; });
     preferences->click();
     require(settingsRequests == 1 &&
-                preferences->accessibleName() == QStringLiteral("Recording settings"),
+                preferences->accessibleName() == QStringLiteral("Screen recording settings"),
             "recording settings must request its window with an accessible label");
     auto* format =
         palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenRecordingOutputFormat"));
@@ -1827,7 +1827,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         const QString source = button->property("snowShotTranslationTooltipSource").toString();
         if (source == QStringLiteral("Record microphone")) {
             microphone = button;
-        } else if (source == QStringLiteral("Record speakers")) {
+        } else if (source == QStringLiteral("Record system audio")) {
             systemAudio = button;
         }
     }
@@ -2299,7 +2299,7 @@ void sizePresetEditorsShareTheSizeCatalog() {
     };
 
     for (const QString& prefix :
-         {QStringLiteral("Pen highlight width "), QStringLiteral("Pen filter width "),
+         {QStringLiteral("Brush highlight width "), QStringLiteral("Brush filter width "),
           QStringLiteral("Text font size ")}) {
         const QStringList tooltips = presetTooltips(prefix);
         require(tooltips.size() == 4, "size preset editors should render the S/M/L/XL quartet");
@@ -3142,7 +3142,7 @@ void recordingAudioStacksUseVisibleAnchorsWithoutCompetingHoverPopovers() {
             "clicking selected stacked audio opens gain against the visible toolbar trigger");
     gain->close();
     materializeLazyPopover(trigger);
-    popoverButtonWithTooltip(groupPopover, "Record speakers")->click();
+    popoverButtonWithTooltip(groupPopover, "Record system audio")->click();
     require(trigger->property("screenshotToolbarItemId") == speakers &&
                 speakersGain->trigger() == trigger && gain->trigger() != trigger &&
                 speakersGain->popover()->isVisible() && !gain->popover()->isVisible(),
@@ -3223,8 +3223,8 @@ void scrollingScreenshotKeepsDrawingToolsAvailable() {
                 selectRequestCount == 1,
             "the Select drawing shortcut must activate the selection tool and request it");
     const char* const drawingTools[] = {
-        "Select elements", "Shape",  "Arrow",  "Line",      "Pen", "Text",
-        "Serial number",   "Filter", "Eraser", "Watermark",
+        "Select elements", "Shape",  "Arrow",  "Line",      "Brush", "Text",
+        "Sequence number", "Filter", "Eraser", "Watermark",
     };
     const char* const enabledDuringScrolling[] = {
         "Edit selection", "Text recognition", "Table recognition", "Scrolling screenshot",
@@ -3292,10 +3292,10 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
         shortcutTooltip(QStringLiteral("Select elements"), {QStringLiteral("V")}),
         shortcutTooltip(QStringLiteral("Shape"), {QStringLiteral("1")}),
         shortcutTooltip(QStringLiteral("Arrow"), {QStringLiteral("2")}),
-        shortcutTooltip(QStringLiteral("Pen"), {QStringLiteral("3"), QStringLiteral("P")}),
+        shortcutTooltip(QStringLiteral("Brush"), {QStringLiteral("3"), QStringLiteral("P")}),
         shortcutTooltip(QStringLiteral("Highlight"), {QStringLiteral("4"), QStringLiteral("H")}),
         shortcutTooltip(QStringLiteral("Text"), {QStringLiteral("5"), QStringLiteral("T")}),
-        shortcutTooltip(QStringLiteral("Serial number"),
+        shortcutTooltip(QStringLiteral("Sequence number"),
                         {QStringLiteral("6"), QStringLiteral("N")}),
         shortcutTooltip(QStringLiteral("Filter"), {QStringLiteral("7"), QStringLiteral("F")}),
         shortcutTooltip(QStringLiteral("Eraser"), {QStringLiteral("8"), QStringLiteral("E")}),
@@ -4086,7 +4086,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     materializeLazyPopover(firstTrigger);
     auto* shapeOption = popoverButtonWithTooltip(firstPopover, "Shape");
     auto* lineOption = popoverButtonWithTooltip(firstPopover, "Line");
-    auto* penOption = popoverButtonWithTooltip(firstPopover, "Pen");
+    auto* penOption = popoverButtonWithTooltip(firstPopover, "Brush");
     require(firstPopover != nullptr && shapeOption != nullptr && lineOption != nullptr &&
                 penOption != nullptr &&
                 qobject_cast<QHBoxLayout*>(firstPopover->contentWidget()->layout()) != nullptr &&
@@ -4112,12 +4112,12 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
                      [&spotlightRequests]() { ++spotlightRequests; });
     materializeLazyPopover(firstTrigger);
-    penOption = popoverButtonWithTooltip(firstPopover, "Pen");
+    penOption = popoverButtonWithTooltip(firstPopover, "Brush");
     require(penOption != nullptr, "reopening the first drawing group should recreate Pen");
     penOption->click();
     require(freeDrawRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::FreeDraw &&
-                firstTrigger->accessibleName() == QStringLiteral("Pen") &&
+                firstTrigger->accessibleName() == QStringLiteral("Brush") &&
                 firstTrigger->property("screenshotToolbarItemId").toString() ==
                     QStringLiteral("free-draw"),
             "selecting an arbitrary group option should activate it and replace the trigger");
@@ -4156,8 +4156,8 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
         materializeLazyPopover(updatedGroupTrigger);
     }
     require(updatedDrawingButtons.size() == 6 && updatedPopover != nullptr &&
-                updatedGroupTrigger->accessibleName() == QStringLiteral("Pen") &&
-                popoverButtonWithTooltip(updatedPopover, "Pen") != nullptr &&
+                updatedGroupTrigger->accessibleName() == QStringLiteral("Brush") &&
+                popoverButtonWithTooltip(updatedPopover, "Brush") != nullptr &&
                 popoverButtonWithTooltip(updatedPopover, "Highlight") != nullptr &&
                 std::none_of(updatedDrawingButtons.cbegin(), updatedDrawingButtons.cend(),
                              [](const adqt::widgets::AdButton* button) {
@@ -6851,7 +6851,7 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
     require(form && captureInterface && !captureInterface->isChecked() &&
                 form->formLayout() == AdForm::FormLayout::Vertical &&
                 form->field(QStringLiteral("captureInterface"))->label() ==
-                    QStringLiteral("Capture interface during scrolling screenshot"),
+                    QStringLiteral("Capture UI during scrolling screenshots"),
             "scrolling settings must expose the persisted option through a form switch");
     require(captureInterface->controlSize() == AdSwitch::ControlSize::Medium,
             "scrolling settings must use the generic form's medium-sized switch");
@@ -6933,7 +6933,7 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
         require(language.setLanguage(locale), "load scrolling settings language");
         QCoreApplication::processEvents();
         const QString label = QCoreApplication::translate(
-            "ScreenshotToolPalette", "Capture interface during scrolling screenshot");
+            "ScreenshotToolPalette", "Capture UI during scrolling screenshots");
         require(form->field(QStringLiteral("captureInterface"))->label() == label &&
                     captureInterface->accessibleName() == label &&
                     modal->windowTitle() ==
@@ -6941,7 +6941,7 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
                                                     "Scrolling screenshot settings"),
                 "open scrolling settings must retranslate its label and title");
         require(locale == QStringLiteral("en_US") ||
-                    label != QStringLiteral("Capture interface during scrolling screenshot"),
+                    label != QStringLiteral("Capture UI during scrolling screenshots"),
                 "each Chinese catalog must translate the new setting");
     }
     const QString snapshotDirectory =
@@ -8259,8 +8259,8 @@ void recognitionToolsKeepDrawingToolsAvailable() {
 
     ScreenshotToolPalette palette(options);
     const char* const drawingTools[] = {
-        "Select elements", "Shape",  "Arrow",  "Line",      "Pen", "Text",
-        "Serial number",   "Filter", "Eraser", "Watermark",
+        "Select elements", "Shape",  "Arrow",  "Line",      "Brush", "Text",
+        "Sequence number", "Filter", "Eraser", "Watermark",
     };
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
@@ -9173,7 +9173,7 @@ void pressureBrushToolbarPreservesStylesAndMixedSelection() {
         const char* pressure;
     } translations[] = {{"en_US", "Regular brush", "Pressure-sensitive brush"},
                         {"zh_CN", "普通画笔", "压感画笔"},
-                        {"zh_TW", "一般筆刷", "壓感筆刷"}};
+                        {"zh_TW", "一般畫筆", "壓感畫筆"}};
     for (const auto& translation : translations) {
         require(language.setLanguage(QString::fromLatin1(translation.locale)),
                 "brush translation catalog must load");
@@ -9272,7 +9272,7 @@ void freeDrawToolIsDistinctAndUsesIndependentPathStyleControls() {
     ScreenshotToolPalette palette(options);
 
     auto* freeDrawButton =
-        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Pen"));
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Brush"));
     require(freeDrawButton != nullptr, "Free Draw toolbar control should be present");
     int requestCount = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
@@ -9328,7 +9328,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     materializeLazyPopover(trigger);
     QWidget* content = popover != nullptr ? popover->contentWidget() : nullptr;
     auto* highlighterOption = popoverButtonWithTooltip(popover, "Highlight");
-    auto* penHighlightOption = popoverButtonWithTooltip(popover, "Pen highlight");
+    auto* penHighlightOption = popoverButtonWithTooltip(popover, "Brush highlight");
     auto* rectangleHighlightOption = popoverButtonWithTooltip(popover, "Rectangle highlight");
     auto* spotlightOption = popoverButtonWithTooltip(popover, "Spotlight");
     require(trigger != nullptr && trigger->accessibleName() == QStringLiteral("Highlight") &&
@@ -9355,7 +9355,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
         require(group != nullptr && group->buttons().size() == 2,
                 "highlight style mode selectors should contain only rectangle and pen");
         const QStringList expectedModes{
-            QStringLiteral("Pen highlight"),
+            QStringLiteral("Brush highlight"),
             QStringLiteral("Rectangle highlight"),
         };
         for (int index = 0; index < expectedModes.size(); ++index) {
@@ -9363,7 +9363,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
                     "highlight style mode selectors should place the default pen mode first");
         }
         require(group->checkedId() == static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight),
-                "highlight style mode selectors should default to Pen highlight");
+                "highlight style mode selectors should default to Brush highlight");
     }
     QWidget* spotlightControls =
         palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"));
@@ -9371,7 +9371,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
                                                 "screenshotHighlightModeSelector")) == nullptr,
             "Spotlight should remain deferred or exclude the rectangle and pen style selector");
 
-    QWidget* freeDrawButton = controlWithTooltip(palette, "Pen");
+    QWidget* freeDrawButton = controlWithTooltip(palette, "Brush");
     require(freeDrawButton != nullptr && freeDrawButton->mapTo(palette.mainPanel(), QPoint()).y() ==
                                              trigger->mapTo(palette.mainPanel(), QPoint()).y(),
             "the highlight group trigger should remain in the single main toolbar row");
@@ -10067,10 +10067,10 @@ void filterToolExposesTypeAndIntensityControls() {
     require(penTypeSelect != nullptr && penIntensity != nullptr && widthSummary != nullptr &&
                 width54 != nullptr,
             "Pen Filter should expose type, width presets, width summary, and intensity");
-    require(controlWithTooltip(palette, "Pen filter width S (24px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter width M (30px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter width L (42px)") != nullptr &&
-                controlWithTooltip(palette, "Pen filter width XL (54px)") != nullptr,
+    require(controlWithTooltip(palette, "Brush filter width S (24px)") != nullptr &&
+                controlWithTooltip(palette, "Brush filter width M (30px)") != nullptr &&
+                controlWithTooltip(palette, "Brush filter width L (42px)") != nullptr &&
+                controlWithTooltip(palette, "Brush filter width XL (54px)") != nullptr,
             "Pen Filter should use the same numeric stroke-width presets as Pen Highlight");
 
     SnowCanvasFilterStyle lastStyle;
@@ -18109,7 +18109,7 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
          [](SnowCanvasStyleDefaults& styles) -> QColor& {
              return styles.rectangleHighlight.stroke;
          }},
-        {Tool::PenHighlight, "Pen highlight color",
+        {Tool::PenHighlight, "Brush highlight color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.penHighlight.stroke; }},
         {Tool::Text, "Text color",
          [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.color; }},

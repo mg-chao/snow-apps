@@ -85,9 +85,8 @@ Budget& budget() {
 void setError(QString* error) {
     if (error)
         *error = QCoreApplication::translate(
-            "CollageDocument",
-            "There is not enough available memory for this collage operation. Try fewer images "
-            "or close other collage windows");
+            "CollageDocument", "There is not enough available memory for image stitching. Try "
+                               "fewer images or close other image stitching windows");
 }
 } // namespace
 
@@ -195,9 +194,8 @@ std::shared_ptr<CollageImportReservation> reserveCollageImport(qint64 bytes, QSt
     } catch (const std::bad_alloc&) {
         if (error)
             *error = QCoreApplication::translate(
-                "CollageDocument",
-                "There is not enough available memory for this collage operation. Try fewer images "
-                "or close other collage windows");
+                "CollageDocument", "There is not enough available memory for image stitching. Try "
+                                   "fewer images or close other image stitching windows");
         return {};
     }
 }

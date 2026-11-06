@@ -179,7 +179,7 @@ void sharedShortcutFieldTracksDraftAndCommitsOnAcceptance() {
             if (QByteArray(context) != QByteArrayLiteral("QObject")) {
                 return {};
             }
-            if (QByteArray(source) == QByteArrayLiteral("Add key config")) {
+            if (QByteArray(source) == QByteArrayLiteral("Add key configuration")) {
                 return QStringLiteral("Translated add key");
             }
             if (QByteArray(source) ==
@@ -728,9 +728,10 @@ void disabledStatusPreservesKeysAndRetranslates() {
                 return QStringLiteral("Localized disabled status");
             }
             if (QByteArray(source) ==
-                QByteArrayLiteral("This shortcut is temporarily disabled and released for use by "
-                                  "other applications. It will be restored when global hotkeys are "
-                                  "enabled and the focused window allows them")) {
+                QByteArrayLiteral(
+                    "This shortcut is temporarily disabled and released for use by "
+                    "other applications. It will be restored when global shortcuts are "
+                    "enabled and the focused window allows them")) {
                 return QStringLiteral("Localized disabled explanation");
             }
             return {};
@@ -1874,7 +1875,7 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
     require(waitUntil([&]() { return session.validated.size() == 2; }) &&
                 session.validated.last() == QStringLiteral("Ctrl+Print") &&
                 registeredHotkey.activations == 0,
-            "right-hand modifiers must be captured without activating existing hotkeys");
+            "right-hand modifiers must be captured without activating existing shortcuts");
 
     QWidget otherWindow;
     foreground(&otherWindow);
@@ -2107,7 +2108,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     int changeSignals = 0;
     bool acceptWrites = true;
     ShortcutKeyRowConfig config;
-    config.title = QStringLiteral("Delay %1s to execute");
+    config.title = QStringLiteral("Run after %1 seconds");
     config.adjustableDelay = true;
     config.delaySeconds = 3;
     config.delaySetter = [&persistedDelay, &setterCalls, &acceptWrites](int seconds) {
@@ -2133,7 +2134,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     auto* delayTitleWrap = delayTitleLabel != nullptr ? delayTitleLabel->parentWidget() : nullptr;
     bool titleShowsDefaultDelay = false;
     for (const QLabel* label : row.findChildren<QLabel*>()) {
-        if (label->text() == QStringLiteral("Delay 3s to execute")) {
+        if (label->text() == QStringLiteral("Run after 3 seconds")) {
             titleShowsDefaultDelay = true;
             break;
         }

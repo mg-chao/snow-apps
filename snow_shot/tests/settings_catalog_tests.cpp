@@ -1348,7 +1348,7 @@ void builtInCatalogIsCompleteAndValid() {
                 pinSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
                 pinSelect.options[2].label.translated() == QStringLiteral("Thumbnail mode") &&
                 pinSelect.options[3].value == QStringLiteral("hide_to_top") &&
-                pinSelect.options[3].label.translated() == QStringLiteral("Hide to top") &&
+                pinSelect.options[3].label.translated() == QStringLiteral("Hide at top") &&
                 pinSelect.options[4].value == QStringLiteral("show_text_recognition_results") &&
                 pinSelect.options[4].label.translated() ==
                     QStringLiteral("Show text recognition results") &&
@@ -1380,7 +1380,7 @@ void builtInCatalogIsCompleteAndValid() {
                 middleSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
                 middleSelect.options[2].label.translated() == QStringLiteral("Thumbnail mode") &&
                 middleSelect.options[3].value == QStringLiteral("hide_to_top") &&
-                middleSelect.options[3].label.translated() == QStringLiteral("Hide to top") &&
+                middleSelect.options[3].label.translated() == QStringLiteral("Hide at top") &&
                 middleSelect.options[4].value == QStringLiteral("show_text_recognition_results") &&
                 middleSelect.options[4].label.translated() ==
                     QStringLiteral("Show text recognition results") &&
@@ -1836,7 +1836,7 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotShortcuts->items.at(5).title.translated() ==
                 QStringLiteral("Move entire selection") &&
             screenshotShortcuts->items.at(6).title.translated() ==
-                QStringLiteral("Keep selection width and height consistent") &&
+                QStringLiteral("Maintain selection aspect ratio") &&
             screenshotShortcuts->items.at(7).title.translated() ==
                 QStringLiteral("Selection aspect ratio snap") &&
             screenshotShortcuts->items.at(8).title.translated() ==
@@ -2450,7 +2450,7 @@ void globalMouseSettingsHaveStableContracts() {
                 translation != nullptr && translation->pageId == QStringLiteral("translation") &&
                 translation->iconFactory && history != nullptr &&
                 history->pageId == QStringLiteral("screenshot-history"),
-            "navigation order must be Global hotkeys, Global mouse, Screenshot history, Pin to "
+            "navigation order must be Global shortcuts, Global mouse, Screenshot history, Pin to "
             "Screen Management, Translation");
 
     for (qsizetype index = 0; index < static_cast<qsizetype>(std::size(expectations)); ++index) {
@@ -2481,9 +2481,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* hotkeysPage =
         settings::builtInSettingsRegistry().catalog().page(QStringLiteral("global-hotkeys"));
     require(hotkeysPage != nullptr &&
-                hotkeysPage->title.translated() == QStringLiteral("Global hotkeys") &&
-                hotkeysPage->description.translated() == QStringLiteral("Global hotkeys page"),
-            "global hotkeys must expose the renamed page and description");
+                hotkeysPage->title.translated() == QStringLiteral("Global shortcuts") &&
+                hotkeysPage->description.translated() == QStringLiteral("Global shortcuts page"),
+            "global shortcuts must expose the renamed page and description");
 
     struct ShortcutExpectation {
         Action action;
@@ -2665,7 +2665,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
                     QStringLiteral("Full-screen canvas (enable/disable click-through)"),
             "global canvas label and empty default");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
-            "Open Interface settings must not appear in Global hotkeys");
+            "Open Interface settings must not appear in Global shortcuts");
 
     const auto trayGroups = catalog.trayMenuGroups();
     QStringList trayOptionIds;
@@ -2785,11 +2785,11 @@ void globalHotkeyShortcutsHaveStableContracts() {
         hotkeyToggleTrayOption != nullptr && hotkeyToggleItem != nullptr &&
             hotkeyToggleItem->title.source != nullptr &&
             QString::fromLatin1(hotkeyToggleItem->title.source) ==
-                QStringLiteral("Disable/enable global hotkeys") &&
+                QStringLiteral("Disable/enable global shortcuts") &&
             hotkeyToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
             hotkeyToggleTrayOption->label.source != nullptr &&
             QString::fromLatin1(hotkeyToggleTrayOption->label.source) ==
-                QStringLiteral("Disable global hotkeys") &&
+                QStringLiteral("Disable global shortcuts") &&
             hotkeyToggleTrayOption->checkable &&
             checkableOptionIds ==
                 QStringList{QStringLiteral("quick.toggle-global-hotkeys"),
@@ -2859,14 +2859,14 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 scrollingShortcut.iconFactory &&
                 scrollingShortcut.iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::ScrollingScreenshot(),
-            "scrolling screenshot reuses its toolbar icon and supports two unset hotkeys");
+            "scrolling screenshot reuses its toolbar icon and supports two unset shortcuts");
     for (const auto action : {Action::ScreenshotSave, Action::ScreenshotQuickSave}) {
         const auto* item = catalog.itemForShortcut(action);
         const auto* schema = storage::ConfigurationSchema::entry(item->configurationKey);
         const auto& shortcut = std::get<settings::SettingsShortcutActionDefinition>(item->payload);
         require(schema && schema->valueKind == storage::ConfigurationValueKind::ShortcutList &&
                     schema->maximumListItems == 2 && schema->defaultValue.toArray().isEmpty(),
-                "save hotkeys support two bindings and start unset");
+                "save shortcuts support two bindings and start unset");
         const bool saveAsFile = action == Action::ScreenshotSave;
         require(
             item->title.translated() ==
@@ -2875,7 +2875,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 shortcut.iconFactory() ==
                     (saveAsFile ? snow_shot::presentation::icons::custom::outlined::Save()
                                 : snow_shot::presentation::icons::custom::outlined::QuickSave()),
-            "save hotkeys reuse the screenshot save labels and icons");
+            "save shortcuts reuse the screenshot save labels and icons");
     }
     require(translationItem != nullptr && translationItem->title.source != nullptr &&
                 QString::fromLatin1(translationItem->title.source) ==
@@ -3330,7 +3330,7 @@ void searchIndexIsGeneratedAndRanked() {
                                     shortcut->shortcutAction ==
                                         presentation::GlobalShortcutAction::OpenSettings;
                          }),
-            "removed global hotkeys must not remain in search");
+            "removed global shortcuts must not remain in search");
     const auto option = index.search(QStringLiteral("dark"));
     require(std::any_of(option.cbegin(), option.cend(),
                         [](const auto& result) {
@@ -3402,11 +3402,11 @@ void searchIndexIsGeneratedAndRanked() {
     }
 
     index.setRuntimeValues({7});
-    const auto delayedScreenshot = index.search(QStringLiteral("delay 7s"));
+    const auto delayedScreenshot = index.search(QStringLiteral("run after 7 seconds"));
     require(!delayedScreenshot.isEmpty() &&
                 delayedScreenshot.constFirst().id ==
                     QStringLiteral("item:quick.screenshot-delay") &&
-                delayedScreenshot.constFirst().title == QStringLiteral("Delay 7s to execute") &&
+                delayedScreenshot.constFirst().title == QStringLiteral("Run after 7 seconds") &&
                 !delayedScreenshot.constFirst().title.contains(QStringLiteral("%1")),
             "search must resolve runtime placeholders before indexing and displaying item titles");
 }

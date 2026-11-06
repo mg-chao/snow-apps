@@ -772,8 +772,8 @@ class ApplicationController::Impl {
 
     void reportSelectedFilePinFailure(const QString& message) {
         if (!mainWindow || !mainWindow->isVisible() || mainWindow->isMinimized()) {
-            systemTray.showWarningMessage(ApplicationController::tr("Could not pin selected files"),
-                                          message);
+            systemTray.showWarningMessage(
+                ApplicationController::tr("Could not pin selected files to screen"), message);
             return;
         }
         MainWindow& window = ensureMainWindow();

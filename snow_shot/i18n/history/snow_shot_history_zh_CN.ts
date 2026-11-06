@@ -27,6 +27,10 @@
             <translation>请输入正数的纸张尺寸</translation>
         </message>
         <message>
+            <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像</translation>
+        </message>
+        <message>
             <source>Select a paper orientation</source>
             <translation>请选择纸张方向</translation>
         </message>
@@ -51,28 +55,16 @@
             <translation>PDF 页面设置无效</translation>
         </message>
         <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
-            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置</translation>
+            <source>The image spacing must leave usable template cells</source>
+            <translation>图像间距必须为模板区域留出可用空间</translation>
         </message>
         <message>
-            <source>The collage export was cancelled</source>
+            <source>The image stitching export was canceled</source>
             <translation>图片拼接导出已取消</translation>
         </message>
         <message>
-            <source>The collage images could not be prepared for export</source>
-            <translation>无法准备图片拼接图像以供导出</translation>
-        </message>
-        <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead</source>
-            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件</translation>
-        </message>
-        <message>
-            <source>The collage layout settings are invalid</source>
+            <source>The image stitching layout settings are invalid</source>
             <translation>图片拼接布局设置无效</translation>
-        </message>
-        <message>
-            <source>The image spacing must leave usable template cells</source>
-            <translation>图像间距必须为模板区域留出可用空间</translation>
         </message>
         <message>
             <source>The margins must leave a usable content area</source>
@@ -83,12 +75,20 @@
             <translation>纸张尺寸超过了 PDF 大小限制</translation>
         </message>
         <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</source>
-            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口</translation>
+            <source>The stitched image could not be prepared for export</source>
+            <translation>无法准备图片拼接图像以供导出</translation>
         </message>
         <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes</source>
-            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像</translation>
+            <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置</translation>
+        </message>
+        <message>
+            <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
+            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件</translation>
+        </message>
+        <message>
+            <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
+            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口</translation>
         </message>
     </context>
     <context>
@@ -110,7 +110,7 @@
             <translation>添加图像</translation>
         </message>
         <message>
-            <source>Add images to create a collage</source>
+            <source>Add images to start image stitching</source>
             <translation>添加图像以创建图片拼接</translation>
         </message>
         <message>
@@ -138,12 +138,8 @@
             <translation>全部清空</translation>
         </message>
         <message>
-            <source>Collage preview</source>
-            <translation>图片拼接预览</translation>
-        </message>
-        <message>
             <source>Columns</source>
-            <translation>列</translation>
+            <translation>列数</translation>
         </message>
         <message>
             <source>Custom</source>
@@ -158,7 +154,11 @@
             <translation>拖动图像以移动或交换；拖动选框控制点以围绕中心缩放。按住鼠标中键拖动以平移，滚动以缩放</translation>
         </message>
         <message>
-            <source>Drop images to add to collage</source>
+            <source>Drag image files here, or choose add images</source>
+            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
+        </message>
+        <message>
+            <source>Drop images to stitch</source>
             <translation>松开鼠标，将图片添加到图片拼接</translation>
         </message>
         <message>
@@ -210,6 +210,10 @@
             <translation>图像间距单位</translation>
         </message>
         <message>
+            <source>Image stitching preview</source>
+            <translation>图片拼接预览</translation>
+        </message>
+        <message>
             <source>Image type</source>
             <translation>图像类型</translation>
         </message>
@@ -258,7 +262,7 @@
             <translation>调整尺寸后最宽图像宽度的百分比</translation>
         </message>
         <message>
-            <source>Pixel</source>
+            <source>Pixels</source>
             <translation>像素</translation>
         </message>
         <message>
@@ -291,7 +295,7 @@
         </message>
         <message>
             <source>Rows</source>
-            <translation>行</translation>
+            <translation>行数</translation>
         </message>
         <message>
             <source>Select to center this image; drag onto another image to swap</source>
@@ -622,8 +626,8 @@
             <translation>删除图像</translation>
         </message>
         <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
-            <translation>拖动图像可移动或交换位置；拖动选框手柄可围绕中心等比例缩放</translation>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
+            <translation>拖动图像可移动或交换位置；拖动选框控制点可围绕中心等比例缩放</translation>
         </message>
         <message>
             <source>Flip horizontally</source>
@@ -713,7 +717,7 @@
             <translation>添加图像</translation>
         </message>
         <message>
-            <source>All images will be removed from this collage</source>
+            <source>All images will be removed from this stitching session</source>
             <translation>将从此图片拼接中移除全部图像</translation>
         </message>
         <message>
@@ -741,20 +745,16 @@
             <translation>剪贴板图像</translation>
         </message>
         <message>
-            <source>Collage</source>
-            <translation>图片拼接</translation>
-        </message>
-        <message>
             <source>Copy</source>
             <translation>复制</translation>
         </message>
         <message>
-            <source>Copying collage…</source>
-            <translation>正在复制图片拼接…</translation>
-        </message>
-        <message>
             <source>Copying could not be started. Try again</source>
             <translation>无法开始复制，请重试</translation>
+        </message>
+        <message>
+            <source>Copying stitched image…</source>
+            <translation>正在复制图片拼接…</translation>
         </message>
         <message>
             <source>Could not read the selected image files. Please try again</source>
@@ -765,7 +765,7 @@
             <translation>放弃</translation>
         </message>
         <message>
-            <source>Discard this collage?</source>
+            <source>Discard this stitching session?</source>
             <translation>放弃此图片拼接？</translation>
         </message>
         <message>
@@ -779,6 +779,10 @@
         <message>
             <source>Image loading could not be started. Try again</source>
             <translation>无法开始加载图像，请重试</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>图片拼接</translation>
         </message>
         <message>
             <source>Images</source>
@@ -809,7 +813,7 @@
             <translation>固定到屏幕窗口 %1</translation>
         </message>
         <message>
-            <source>Preparing collage…</source>
+            <source>Preparing stitched image…</source>
             <translation>正在准备图片拼接…</translation>
         </message>
         <message>
@@ -843,12 +847,12 @@ Files:
 %3</translation>
         </message>
         <message>
-            <source>Saving collage…</source>
-            <translation>正在保存图片拼接…</translation>
-        </message>
-        <message>
             <source>Saving could not be started. Try again</source>
             <translation>无法开始保存，请重试</translation>
+        </message>
+        <message>
+            <source>Saving stitched image…</source>
+            <translation>正在保存图片拼接…</translation>
         </message>
         <message>
             <source>Screenshot %1</source>
@@ -885,7 +889,7 @@ Files:
             <translation>无法解码图像，或图像已不可用</translation>
         </message>
         <message>
-            <source>The images and edits in this collage will be discarded</source>
+            <source>The images and edits in this stitching session will be discarded</source>
             <translation>将放弃此图片拼接中的图像和编辑</translation>
         </message>
         <message>
@@ -988,7 +992,7 @@ Files:
             <translation>截图结果</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1065,7 +1069,7 @@ Files:
             <translation>请选择像素或百分比</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high</source>
+            <source>Each image must be at least one pixel wide and high</source>
             <translation>每张图像的宽度和高度必须至少为 1 像素</translation>
         </message>
         <message>
@@ -1380,8 +1384,8 @@ Files:
             <translation>请在系统设置中允许辅助功能权限，以监测实时窗口的状态</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</source>
-            <translation>请在系统设置中允许屏幕与系统音频录制权限，以固定实时窗口</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</source>
+            <translation>请在系统设置中允许屏幕与系统音频录制权限，以将实时窗口固定到屏幕</translation>
         </message>
         <message>
             <source>The live window display could not be initialized</source>
@@ -1631,7 +1635,7 @@ Files:
         </message>
         <message>
             <source>Select pinned windows from the same group to pin them to the screen</source>
-            <translation>请选择同一分组中的固定窗口，以将它们固定到屏幕</translation>
+            <translation>请选择同一分组中的固定到屏幕窗口，以将它们固定到屏幕</translation>
         </message>
         <message>
             <source>Select record</source>
@@ -1660,7 +1664,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1713,7 +1717,7 @@ Files:
             <translation>更改来源或日期范围以查看更多历史记录</translation>
         </message>
         <message>
-            <source>Copied and pinned screenshots will appear here</source>
+            <source>Copied or pinned screenshots will appear here</source>
             <translation>已复制或固定到屏幕的截图会显示在这里</translation>
         </message>
         <message>
@@ -1809,7 +1813,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1960,7 +1964,7 @@ Files:
             <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销</translation>
         </message>
         <message>
-            <source>Disable hide to top</source>
+            <source>Disable hide at top</source>
             <translation>禁用顶部隐藏</translation>
         </message>
         <message>
@@ -1976,7 +1980,7 @@ Files:
             <translation>启用标注模式</translation>
         </message>
         <message>
-            <source>Enable hide to top</source>
+            <source>Enable hide at top</source>
             <translation>启用顶部隐藏</translation>
         </message>
         <message>
@@ -2008,12 +2012,12 @@ Files:
             <translation>分组：默认</translation>
         </message>
         <message>
-            <source>Hide other windows</source>
-            <translation>隐藏其他窗口</translation>
+            <source>Hide at top</source>
+            <translation>顶部隐藏</translation>
         </message>
         <message>
-            <source>Hide to top</source>
-            <translation>顶部隐藏</translation>
+            <source>Hide other windows</source>
+            <translation>隐藏其他窗口</translation>
         </message>
         <message>
             <source>Image editing</source>
@@ -2069,7 +2073,7 @@ Files:
         </message>
         <message>
             <source>No available output filename was found</source>
-            <translation>找不到可用的输出文件名</translation>
+            <translation>未找到可用的输出文件名</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -2092,8 +2096,12 @@ Files:
             <translation>暂停</translation>
         </message>
         <message>
+            <source>Pin to screen management</source>
+            <translation>固定到屏幕管理</translation>
+        </message>
+        <message>
             <source>Pinned content</source>
-            <translation>贴图内容</translation>
+            <translation>固定到屏幕的内容</translation>
         </message>
         <message>
             <source>Play</source>
@@ -2269,10 +2277,6 @@ Files:
             <source>Uploading to cloud... %1%</source>
             <translation>正在上传到云端… %1%</translation>
         </message>
-        <message>
-            <source>Window management</source>
-            <translation>窗口管理</translation>
-        </message>
     </context>
     <context>
         <name>WindowGroupSwitcher</name>
@@ -2353,7 +2357,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存为文件</translation>
+            <translation>保存为文件</translation>
         </message>
         <message>
             <source>Text files (*.txt)</source>

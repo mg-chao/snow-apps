@@ -433,7 +433,7 @@ class ShortcutKeyConfigContent final : public QWidget {
         m_keyListLayout->setSpacing(metric.margin);
         rootLayout->addLayout(m_keyListLayout);
 
-        m_addButton = new adqt::widgets::AdButton(QObject::tr("Add key config"), this);
+        m_addButton = new adqt::widgets::AdButton(QObject::tr("Add key configuration"), this);
         m_addButton->setObjectName(QStringLiteral("shortcutConfigAddButton"));
         m_addButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Dashed);
         m_addButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
@@ -520,7 +520,7 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     void retranslateUi() {
-        m_addButton->setText(QObject::tr("Add key config"));
+        m_addButton->setText(QObject::tr("Add key configuration"));
         if (!m_validationMessage.isEmpty()) {
             m_validationMessage = shortcutValidationMessage(m_rejectedValidation,
                                                             m_rejectedShortcut, m_validationScope);
@@ -1366,7 +1366,7 @@ void ShortcutKeyRow::syncRegistrationStatus() {
 QString ShortcutKeyRow::registrationTooltipText() const {
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Disabled) {
         return tr("This shortcut is temporarily disabled and released for use by other "
-                  "applications. It will be restored when global hotkeys are enabled and the "
+                  "applications. It will be restored when global shortcuts are enabled and the "
                   "focused window allows them");
     }
     if (m_registrationState.status == snow_shot::presentation::GlobalShortcutStatus::Registered ||

@@ -82,8 +82,8 @@
             <translation>No capturable window was found in the selection</translation>
         </message>
         <message>
-            <source>No recognized result is available to copy</source>
-            <translation>No recognized result is available to copy</translation>
+            <source>No recognition result is available to copy</source>
+            <translation>No recognition result is available to copy</translation>
         </message>
         <message>
             <source>Preparing cloud upload...</source>
@@ -227,8 +227,8 @@
             <translation>Copy text</translation>
         </message>
         <message>
-            <source>Open URL</source>
-            <translation>Open URL</translation>
+            <source>Open link</source>
+            <translation>Open link</translation>
         </message>
         <message>
             <source>QR code</source>
@@ -345,14 +345,6 @@
             <translation>Please enter a preset name</translation>
         </message>
         <message>
-            <source>Position X</source>
-            <translation>Position X</translation>
-        </message>
-        <message>
-            <source>Position Y</source>
-            <translation>Position Y</translation>
-        </message>
-        <message>
             <source>Preset</source>
             <translation>Preset</translation>
         </message>
@@ -391,6 +383,14 @@
         <message>
             <source>Width (points)</source>
             <translation>Width (points)</translation>
+        </message>
+        <message>
+            <source>X coordinate</source>
+            <translation>X coordinate</translation>
+        </message>
+        <message>
+            <source>Y coordinate</source>
+            <translation>Y coordinate</translation>
         </message>
     </context>
     <context>
@@ -610,16 +610,16 @@
             <translation>Capture failed: %1</translation>
         </message>
         <message>
-            <source>History publication could not be queued</source>
-            <translation>History publication could not be queued</translation>
-        </message>
-        <message>
             <source>The capture operation failed</source>
             <translation>The capture operation failed</translation>
         </message>
         <message>
-            <source>The clipboard publication could not be queued</source>
-            <translation>The clipboard publication could not be queued</translation>
+            <source>The clipboard write operation could not be queued</source>
+            <translation>The clipboard write operation could not be queued</translation>
+        </message>
+        <message>
+            <source>The history write operation could not be queued</source>
+            <translation>The history write operation could not be queued</translation>
         </message>
     </context>
 </TS>

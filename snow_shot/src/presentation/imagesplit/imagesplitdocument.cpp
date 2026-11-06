@@ -564,7 +564,7 @@ ImageSplitLines::const_iterator::operator-=(difference_type offset) {
 namespace {
 [[maybe_unused]] constexpr const char* labels[] = {
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a positive whole number"),
-    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide or high"),
+    QT_TRANSLATE_NOOP("ImageSplitDocument", "Each image must be at least one pixel wide and high"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter at least 16 pixels"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Choose pixels or percentage"),
     QT_TRANSLATE_NOOP("ImageSplitDocument", "Enter a percentage from 5% to 100%"),
@@ -675,7 +675,7 @@ bool equalLines(int dimension, int count, const QString& field, ImageSplitLayout
     }
     if (count > dimension) {
         layout.errors.insert(field,
-                             splitText("Each image must be at least one pixel wide or high"));
+                             splitText("Each image must be at least one pixel wide and high"));
         return false;
     }
     if (count == 1)
@@ -715,7 +715,7 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
     const QString denominator = percentage->denominator();
     if (compareDigits(multiplyDigits(percentage->digits, quint64(dimension)), denominator) < 0) {
         layout.errors.insert(QStringLiteral("percentage"),
-                             splitText("Each image must be at least one pixel wide or high"));
+                             splitText("Each image must be at least one pixel wide and high"));
         return false;
     }
     for (int multiple = 1; multiple <= 20; ++multiple) {
@@ -724,13 +724,13 @@ bool preciseLines(int dimension, const ImageSplitSettings& settings, ImageSplitL
         const auto boundary = percentageBoundary(*percentage, dimension, multiple);
         if (!boundary || *boundary >= dimension) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high"));
+                                 splitText("Each image must be at least one pixel wide and high"));
             return false;
         }
         const int coordinate = *boundary;
         if (coordinate <= 0 || (!destination.isEmpty() && coordinate <= destination.last())) {
             layout.errors.insert(QStringLiteral("percentage"),
-                                 splitText("Each image must be at least one pixel wide or high"));
+                                 splitText("Each image must be at least one pixel wide and high"));
             return false;
         }
         destination.append(coordinate);

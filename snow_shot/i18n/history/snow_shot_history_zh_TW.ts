@@ -20,11 +20,15 @@
         </message>
         <message>
             <source>Enter a nonnegative page margin</source>
-            <translation>請輸入非負的頁面邊界</translation>
+            <translation>請輸入非負的頁邊距</translation>
         </message>
         <message>
             <source>Enter a positive paper dimension</source>
             <translation>請輸入正數的紙張尺寸</translation>
+        </message>
+        <message>
+            <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>此圖片拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
         </message>
         <message>
             <source>Select a paper orientation</source>
@@ -51,44 +55,40 @@
             <translation>PDF 頁面設定無效</translation>
         </message>
         <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
-            <translation>圖片拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定</translation>
-        </message>
-        <message>
-            <source>The collage export was cancelled</source>
-            <translation>圖片拼接匯出已取消</translation>
-        </message>
-        <message>
-            <source>The collage images could not be prepared for export</source>
-            <translation>無法準備圖片拼接影像以供匯出</translation>
-        </message>
-        <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead</source>
-            <translation>圖片拼接過大，無法複製到剪貼簿。請儲存為檔案</translation>
-        </message>
-        <message>
-            <source>The collage layout settings are invalid</source>
-            <translation>圖片拼接版面設定無效</translation>
-        </message>
-        <message>
             <source>The image spacing must leave usable template cells</source>
             <translation>影像間距必須為範本區域留出可用空間</translation>
         </message>
         <message>
+            <source>The image stitching export was canceled</source>
+            <translation>圖片拼接匯出已取消</translation>
+        </message>
+        <message>
+            <source>The image stitching layout settings are invalid</source>
+            <translation>圖片拼接版面設定無效</translation>
+        </message>
+        <message>
             <source>The margins must leave a usable content area</source>
-            <translation>頁面邊界必須保留可用的內容區域</translation>
+            <translation>頁邊距必須保留可用的內容區域</translation>
         </message>
         <message>
             <source>The paper dimension exceeds the PDF size limit</source>
             <translation>紙張尺寸超過了 PDF 大小限制</translation>
         </message>
         <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</source>
-            <translation>可用記憶體不足，無法執行此圖片拼接操作。請減少影像數量或關閉其他圖片拼接視窗</translation>
+            <source>The stitched image could not be prepared for export</source>
+            <translation>無法準備圖片拼接影像以供匯出</translation>
         </message>
         <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes</source>
-            <translation>此圖片拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
+            <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>圖片拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定</translation>
+        </message>
+        <message>
+            <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
+            <translation>圖片拼接過大，無法複製到剪貼簿。請儲存為檔案</translation>
+        </message>
+        <message>
+            <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
+            <translation>可用記憶體不足，無法執行此圖片拼接操作。請減少影像數量或關閉其他圖片拼接視窗</translation>
         </message>
     </context>
     <context>
@@ -110,7 +110,7 @@
             <translation>新增影像</translation>
         </message>
         <message>
-            <source>Add images to create a collage</source>
+            <source>Add images to start image stitching</source>
             <translation>新增影像以建立圖片拼接</translation>
         </message>
         <message>
@@ -138,12 +138,8 @@
             <translation>全部清空</translation>
         </message>
         <message>
-            <source>Collage preview</source>
-            <translation>圖片拼接預覽</translation>
-        </message>
-        <message>
             <source>Columns</source>
-            <translation>欄</translation>
+            <translation>欄數</translation>
         </message>
         <message>
             <source>Custom</source>
@@ -158,7 +154,11 @@
             <translation>拖曳影像以移動或交換；拖曳選取框控制點以圍繞中心縮放。按住滑鼠中鍵拖曳以平移，捲動以縮放</translation>
         </message>
         <message>
-            <source>Drop images to add to collage</source>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Drop images to stitch</source>
             <translation>放開滑鼠，將圖片加入圖片拼接</translation>
         </message>
         <message>
@@ -210,6 +210,10 @@
             <translation>影像間距單位</translation>
         </message>
         <message>
+            <source>Image stitching preview</source>
+            <translation>圖片拼接預覽</translation>
+        </message>
+        <message>
             <source>Image type</source>
             <translation>影像類型</translation>
         </message>
@@ -231,11 +235,11 @@
         </message>
         <message>
             <source>Outer border in percentage</source>
-            <translation>外邊框（百分比）</translation>
+            <translation>外框（百分比）</translation>
         </message>
         <message>
             <source>Outer border unit</source>
-            <translation>外邊框單位</translation>
+            <translation>外框單位</translation>
         </message>
         <message>
             <source>PDF document</source>
@@ -258,7 +262,7 @@
             <translation>調整尺寸後最寬影像寬度的百分比</translation>
         </message>
         <message>
-            <source>Pixel</source>
+            <source>Pixels</source>
             <translation>像素</translation>
         </message>
         <message>
@@ -291,7 +295,7 @@
         </message>
         <message>
             <source>Rows</source>
-            <translation>列</translation>
+            <translation>列數</translation>
         </message>
         <message>
             <source>Select to center this image; drag onto another image to swap</source>
@@ -520,7 +524,7 @@
         </message>
         <message>
             <source>Image size</source>
-            <translation>圖像大小</translation>
+            <translation>影像大小</translation>
         </message>
         <message>
             <source>Image spacing</source>
@@ -622,8 +626,8 @@
             <translation>刪除影像</translation>
         </message>
         <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
-            <translation>拖曳影像可移動或交換位置；拖曳選取框控點可繞中心等比例縮放</translation>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
+            <translation>拖曳影像可移動或交換位置；拖曳選取框控制點可圍繞中心等比例縮放</translation>
         </message>
         <message>
             <source>Flip horizontally</source>
@@ -713,7 +717,7 @@
             <translation>新增影像</translation>
         </message>
         <message>
-            <source>All images will be removed from this collage</source>
+            <source>All images will be removed from this stitching session</source>
             <translation>將從此圖片拼接中移除全部影像</translation>
         </message>
         <message>
@@ -741,31 +745,27 @@
             <translation>剪貼簿影像</translation>
         </message>
         <message>
-            <source>Collage</source>
-            <translation>圖片拼接</translation>
-        </message>
-        <message>
             <source>Copy</source>
             <translation>複製</translation>
-        </message>
-        <message>
-            <source>Copying collage…</source>
-            <translation>正在複製圖片拼接…</translation>
         </message>
         <message>
             <source>Copying could not be started. Try again</source>
             <translation>無法開始複製，請重試</translation>
         </message>
         <message>
+            <source>Copying stitched image…</source>
+            <translation>正在複製圖片拼接…</translation>
+        </message>
+        <message>
             <source>Could not read the selected image files. Please try again</source>
-            <translation>無法讀取選取的圖片檔案，請再試一次</translation>
+            <translation>無法讀取選取的圖片檔案，請重試</translation>
         </message>
         <message>
             <source>Discard</source>
             <translation>捨棄</translation>
         </message>
         <message>
-            <source>Discard this collage?</source>
+            <source>Discard this stitching session?</source>
             <translation>捨棄此圖片拼接？</translation>
         </message>
         <message>
@@ -779,6 +779,10 @@
         <message>
             <source>Image loading could not be started. Try again</source>
             <translation>無法開始載入影像，請重試</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>圖片拼接</translation>
         </message>
         <message>
             <source>Images</source>
@@ -809,7 +813,7 @@
             <translation>固定到螢幕視窗 %1</translation>
         </message>
         <message>
-            <source>Preparing collage…</source>
+            <source>Preparing stitched image…</source>
             <translation>正在準備圖片拼接…</translation>
         </message>
         <message>
@@ -843,12 +847,12 @@ Files:
 %3</translation>
         </message>
         <message>
-            <source>Saving collage…</source>
-            <translation>正在儲存圖片拼接…</translation>
-        </message>
-        <message>
             <source>Saving could not be started. Try again</source>
             <translation>無法開始儲存，請重試</translation>
+        </message>
+        <message>
+            <source>Saving stitched image…</source>
+            <translation>正在儲存圖片拼接…</translation>
         </message>
         <message>
             <source>Screenshot %1</source>
@@ -874,7 +878,7 @@ Files:
         </message>
         <message>
             <source>The file manager took too long to return the selected files. Please try again</source>
-            <translation>檔案管理員傳回選取檔案的時間過長，請再試一次</translation>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
         </message>
         <message>
             <source>The final screenshot is unavailable</source>
@@ -885,7 +889,7 @@ Files:
             <translation>無法解碼影像，或影像已無法使用</translation>
         </message>
         <message>
-            <source>The images and edits in this collage will be discarded</source>
+            <source>The images and edits in this stitching session will be discarded</source>
             <translation>將捨棄此圖片拼接中的影像與編輯</translation>
         </message>
         <message>
@@ -945,7 +949,7 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>影像編輯</translation>
+            <translation>圖片編輯</translation>
         </message>
         <message>
             <source>Loading preview…</source>
@@ -977,7 +981,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Screenshot display</source>
@@ -988,7 +992,7 @@ Files:
             <translation>截圖結果</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>圖片拼接</translation>
         </message>
         <message>
@@ -1065,8 +1069,8 @@ Files:
             <translation>請選擇像素或百分比</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high</source>
-            <translation>每張圖像的寬度和高度必須至少為 1 像素</translation>
+            <source>Each image must be at least one pixel wide and high</source>
+            <translation>每張影像的寬度和高度必須至少為 1 像素</translation>
         </message>
         <message>
             <source>Enter a percentage from 5% to 100%</source>
@@ -1082,7 +1086,7 @@ Files:
         </message>
         <message>
             <source>The image is unavailable</source>
-            <translation>圖像無法使用</translation>
+            <translation>影像無法使用</translation>
         </message>
         <message>
             <source>The split lines require too much memory</source>
@@ -1105,19 +1109,19 @@ Files:
         </message>
         <message>
             <source>Drag an image file here, or choose select image</source>
-            <translation>將圖像檔案拖曳至此處，或點選「選擇圖像」</translation>
+            <translation>將影像檔案拖曳至此處，或點選「選擇影像」</translation>
         </message>
         <message>
             <source>Drop one image file at a time</source>
-            <translation>請一次拖入一個圖像檔案</translation>
+            <translation>請一次拖入一個影像檔案</translation>
         </message>
         <message>
             <source>Drop one image to replace the current image</source>
-            <translation>拖入一張圖像以取代目前圖像</translation>
+            <translation>拖入一張影像以取代目前影像</translation>
         </message>
         <message>
             <source>Drop one image to split</source>
-            <translation>拖入一張圖像進行分割</translation>
+            <translation>拖入一張影像進行分割</translation>
         </message>
         <message>
             <source>Enter a positive integer</source>
@@ -1141,7 +1145,7 @@ Files:
         </message>
         <message>
             <source>Height per image</source>
-            <translation>每張圖像的高度</translation>
+            <translation>每張影像的高度</translation>
         </message>
         <message>
             <source>Horizontal</source>
@@ -1149,7 +1153,7 @@ Files:
         </message>
         <message>
             <source>Number of images</source>
-            <translation>圖像數量</translation>
+            <translation>影像數量</translation>
         </message>
         <message>
             <source>Percentage</source>
@@ -1177,11 +1181,11 @@ Files:
         </message>
         <message>
             <source>Select an image to split</source>
-            <translation>選擇要分割的圖像</translation>
+            <translation>選擇要分割的影像</translation>
         </message>
         <message>
             <source>Select image</source>
-            <translation>選擇圖像</translation>
+            <translation>選擇影像</translation>
         </message>
         <message>
             <source>Split direction</source>
@@ -1197,7 +1201,7 @@ Files:
         </message>
         <message>
             <source>Total: %1 images</source>
-            <translation>共 %1 張圖像</translation>
+            <translation>共 %1 張影像</translation>
         </message>
         <message>
             <source>Undo</source>
@@ -1209,7 +1213,7 @@ Files:
         </message>
         <message>
             <source>Width per image</source>
-            <translation>每張圖像的寬度</translation>
+            <translation>每張影像的寬度</translation>
         </message>
     </context>
     <context>
@@ -1220,15 +1224,15 @@ Files:
         </message>
         <message>
             <source>Image %1 could not be saved: %2</source>
-            <translation>無法儲存第 %1 張圖像：%2</translation>
+            <translation>無法儲存第 %1 張影像：%2</translation>
         </message>
         <message>
             <source>The image could not be prepared for export</source>
-            <translation>無法準備要匯出的圖像</translation>
+            <translation>無法準備要匯出的影像</translation>
         </message>
         <message>
             <source>The image or split configuration is invalid</source>
-            <translation>圖像或分割設定無效</translation>
+            <translation>影像或分割設定無效</translation>
         </message>
         <message>
             <source>The output folder could not be created</source>
@@ -1236,7 +1240,7 @@ Files:
         </message>
         <message>
             <source>There is not enough memory to export the image</source>
-            <translation>記憶體不足，無法匯出圖像</translation>
+            <translation>記憶體不足，無法匯出影像</translation>
         </message>
     </context>
     <context>
@@ -1270,7 +1274,7 @@ Files:
         </message>
         <message>
             <source>Could not read the selected image files. Please try again</source>
-            <translation>無法讀取選取的圖片檔案，請再試一次</translation>
+            <translation>無法讀取選取的圖片檔案，請重試</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -1282,19 +1286,19 @@ Files:
         </message>
         <message>
             <source>Drop one image file at a time</source>
-            <translation>請一次拖入一個圖像檔案</translation>
+            <translation>請一次拖入一個影像檔案</translation>
         </message>
         <message>
             <source>Export could not be started. Try again</source>
-            <translation>無法開始匯出，請再試一次</translation>
+            <translation>無法開始匯出，請重試</translation>
         </message>
         <message>
             <source>Image loading could not be started. Try again</source>
-            <translation>無法開始載入圖像，請再試一次</translation>
+            <translation>無法開始載入影像，請重試</translation>
         </message>
         <message>
             <source>Image processing failed. Try again</source>
-            <translation>圖像處理失敗，請再試一次</translation>
+            <translation>影像處理失敗，請重試</translation>
         </message>
         <message>
             <source>Image splitting</source>
@@ -1306,19 +1310,19 @@ Files:
         </message>
         <message>
             <source>Images</source>
-            <translation>圖像</translation>
+            <translation>影像</translation>
         </message>
         <message>
             <source>Loading image…</source>
-            <translation>正在載入圖像…</translation>
+            <translation>正在載入影像…</translation>
         </message>
         <message>
             <source>Replace image</source>
-            <translation>取代圖像</translation>
+            <translation>取代影像</translation>
         </message>
         <message>
             <source>Replacing the image will discard the current edits</source>
-            <translation>取代圖像將捨棄目前的編輯</translation>
+            <translation>取代影像將捨棄目前的編輯</translation>
         </message>
         <message>
             <source>Save all</source>
@@ -1326,23 +1330,23 @@ Files:
         </message>
         <message>
             <source>Saved %1 images to %2</source>
-            <translation>已將 %1 張圖像儲存至 %2</translation>
+            <translation>已將 %1 張影像儲存至 %2</translation>
         </message>
         <message>
             <source>Saved %1 of %2 images to %3. %4</source>
-            <translation>已將 %2 張圖像中的 %1 張儲存至 %3。%4</translation>
+            <translation>已將 %2 張影像中的 %1 張儲存至 %3。%4</translation>
         </message>
         <message>
             <source>Saving images: %1 of %2</source>
-            <translation>正在儲存圖像：%1 / %2</translation>
+            <translation>正在儲存影像：%1 / %2</translation>
         </message>
         <message>
             <source>Select destination folder</source>
-            <translation>選擇目的資料夾</translation>
+            <translation>選擇目的地資料夾</translation>
         </message>
         <message>
             <source>Select image</source>
-            <translation>選擇圖像</translation>
+            <translation>選擇影像</translation>
         </message>
         <message>
             <source>Stitch to PDF</source>
@@ -1354,23 +1358,23 @@ Files:
         </message>
         <message>
             <source>The file manager took too long to return the selected files. Please try again</source>
-            <translation>檔案管理員傳回選取檔案的時間過長，請再試一次</translation>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
         </message>
         <message>
             <source>The image and current split edits will be discarded</source>
-            <translation>圖像與目前的分割編輯將被捨棄</translation>
+            <translation>影像與目前的分割編輯將被捨棄</translation>
         </message>
         <message>
             <source>The image could not be read or is no longer available</source>
-            <translation>無法讀取圖像，或圖像已無法使用</translation>
+            <translation>無法讀取影像，或影像已無法使用</translation>
         </message>
         <message>
             <source>The image is too large or there is not enough memory to load it</source>
-            <translation>圖像過大，或記憶體不足，無法載入</translation>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
         </message>
         <message>
             <source>The images could not be exported. Try again</source>
-            <translation>無法匯出圖像，請再試一次</translation>
+            <translation>無法匯出影像，請重試</translation>
         </message>
     </context>
     <context>
@@ -1380,8 +1384,8 @@ Files:
             <translation>請在系統設定中允許輔助使用權限，以監測即時視窗的狀態</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</source>
-            <translation>請在系統設定中允許螢幕與系統音訊錄製權限，以固定即時視窗</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</source>
+            <translation>請在系統設定中允許螢幕與系統音訊錄製權限，以將即時視窗固定到螢幕</translation>
         </message>
         <message>
             <source>The live window display could not be initialized</source>
@@ -1428,15 +1432,15 @@ Files:
         </message>
         <message>
             <source>Copy HEX color</source>
-            <translation>複製 HEX 色彩值</translation>
+            <translation>複製 HEX 顏色值</translation>
         </message>
         <message>
             <source>Copy HSL color</source>
-            <translation>複製 HSL 色彩值</translation>
+            <translation>複製 HSL 顏色值</translation>
         </message>
         <message>
             <source>Copy RGB color</source>
-            <translation>複製 RGB 色彩值</translation>
+            <translation>複製 RGB 顏色值</translation>
         </message>
         <message>
             <source>HEX:</source>
@@ -1555,7 +1559,7 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>影像編輯</translation>
+            <translation>圖片編輯</translation>
         </message>
         <message>
             <source>Image splitting</source>
@@ -1631,7 +1635,7 @@ Files:
         </message>
         <message>
             <source>Select pinned windows from the same group to pin them to the screen</source>
-            <translation>請選取同一群組中的固定視窗，以將它們固定到螢幕</translation>
+            <translation>請選取同一群組中的固定到螢幕視窗，以將它們固定到螢幕</translation>
         </message>
         <message>
             <source>Select record</source>
@@ -1660,7 +1664,7 @@ Files:
             <translation>開始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>圖片拼接</translation>
         </message>
         <message>
@@ -1713,7 +1717,7 @@ Files:
             <translation>變更來源或日期範圍以查看更多歷史記錄</translation>
         </message>
         <message>
-            <source>Copied and pinned screenshots will appear here</source>
+            <source>Copied or pinned screenshots will appear here</source>
             <translation>已複製或固定到螢幕的截圖會顯示在這裡</translation>
         </message>
         <message>
@@ -1784,7 +1788,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Screenshot history</source>
@@ -1809,7 +1813,7 @@ Files:
             <translation>開始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>圖片拼接</translation>
         </message>
         <message>
@@ -1960,7 +1964,7 @@ Files:
             <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原</translation>
         </message>
         <message>
-            <source>Disable hide to top</source>
+            <source>Disable hide at top</source>
             <translation>停用頂部隱藏</translation>
         </message>
         <message>
@@ -1976,7 +1980,7 @@ Files:
             <translation>啟用標註模式</translation>
         </message>
         <message>
-            <source>Enable hide to top</source>
+            <source>Enable hide at top</source>
             <translation>啟用頂部隱藏</translation>
         </message>
         <message>
@@ -2008,12 +2012,12 @@ Files:
             <translation>群組：預設</translation>
         </message>
         <message>
-            <source>Hide other windows</source>
-            <translation>隱藏其他視窗</translation>
+            <source>Hide at top</source>
+            <translation>頂部隱藏</translation>
         </message>
         <message>
-            <source>Hide to top</source>
-            <translation>頂部隱藏</translation>
+            <source>Hide other windows</source>
+            <translation>隱藏其他視窗</translation>
         </message>
         <message>
             <source>Image editing</source>
@@ -2069,7 +2073,7 @@ Files:
         </message>
         <message>
             <source>No available output filename was found</source>
-            <translation>找不到可用的輸出檔案名稱</translation>
+            <translation>找不到可用的輸出檔名</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -2092,8 +2096,12 @@ Files:
             <translation>暫停</translation>
         </message>
         <message>
+            <source>Pin to screen management</source>
+            <translation>固定到螢幕管理</translation>
+        </message>
+        <message>
             <source>Pinned content</source>
-            <translation>貼圖內容</translation>
+            <translation>固定到螢幕的內容</translation>
         </message>
         <message>
             <source>Play</source>
@@ -2141,7 +2149,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Save displayed windows</source>
@@ -2235,7 +2243,7 @@ Files:
         </message>
         <message>
             <source>The window changed while preparing the image. Please try again</source>
-            <translation>準備圖片時視窗發生變更，請再試一次</translation>
+            <translation>準備圖片時視窗發生變更，請重試</translation>
         </message>
         <message>
             <source>The window is closed. The latest content cannot be displayed</source>
@@ -2269,10 +2277,6 @@ Files:
             <source>Uploading to cloud... %1%</source>
             <translation>正在上傳至雲端… %1%</translation>
         </message>
-        <message>
-            <source>Window management</source>
-            <translation>視窗管理</translation>
-        </message>
     </context>
     <context>
         <name>WindowGroupSwitcher</name>
@@ -2290,7 +2294,7 @@ Files:
         </message>
         <message>
             <source>Release shortcut keys or click a group to switch. Esc to cancel</source>
-            <translation>放開所有快捷鍵或點擊群組以切換，按 Esc 取消</translation>
+            <translation>放開所有快速鍵或點擊群組以切換，按 Esc 取消</translation>
         </message>
         <message>
             <source>Switch window group</source>
@@ -2337,11 +2341,11 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>影像編輯</translation>
+            <translation>圖片編輯</translation>
         </message>
         <message>
             <source>Loading image…</source>
-            <translation>正在載入圖像…</translation>
+            <translation>正在載入影像…</translation>
         </message>
         <message>
             <source>No recognition result is available to export</source>
@@ -2353,7 +2357,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Text files (*.txt)</source>
@@ -2529,7 +2533,7 @@ Files:
         </message>
         <message>
             <source>Distribute horizontally</source>
-            <translation>水平分布</translation>
+            <translation>水平分佈</translation>
         </message>
         <message>
             <source>Distribute vertically</source>

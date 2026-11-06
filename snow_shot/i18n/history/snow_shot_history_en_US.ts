@@ -27,6 +27,10 @@
             <translation>Enter a positive paper dimension</translation>
         </message>
         <message>
+            <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</translation>
+        </message>
+        <message>
             <source>Select a paper orientation</source>
             <translation>Select a paper orientation</translation>
         </message>
@@ -51,28 +55,16 @@
             <translation>The PDF page settings are invalid</translation>
         </message>
         <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
-            <translation>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</translation>
-        </message>
-        <message>
-            <source>The collage export was cancelled</source>
-            <translation>The collage export was cancelled</translation>
-        </message>
-        <message>
-            <source>The collage images could not be prepared for export</source>
-            <translation>The collage images could not be prepared for export</translation>
-        </message>
-        <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead</source>
-            <translation>The collage is too large for the clipboard. Save it to a file instead</translation>
-        </message>
-        <message>
-            <source>The collage layout settings are invalid</source>
-            <translation>The collage layout settings are invalid</translation>
-        </message>
-        <message>
             <source>The image spacing must leave usable template cells</source>
             <translation>The image spacing must leave usable template cells</translation>
+        </message>
+        <message>
+            <source>The image stitching export was canceled</source>
+            <translation>The image stitching export was canceled</translation>
+        </message>
+        <message>
+            <source>The image stitching layout settings are invalid</source>
+            <translation>The image stitching layout settings are invalid</translation>
         </message>
         <message>
             <source>The margins must leave a usable content area</source>
@@ -83,12 +75,20 @@
             <translation>The paper dimension exceeds the PDF size limit</translation>
         </message>
         <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</source>
-            <translation>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</translation>
+            <source>The stitched image could not be prepared for export</source>
+            <translation>The stitched image could not be prepared for export</translation>
         </message>
         <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes</source>
-            <translation>This collage requires too much temporary memory. Try fewer images or smaller image sizes</translation>
+            <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</translation>
+        </message>
+        <message>
+            <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
+            <translation>The stitched image is too large for the clipboard. Save it to a file instead</translation>
+        </message>
+        <message>
+            <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
+            <translation>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</translation>
         </message>
     </context>
     <context>
@@ -110,8 +110,8 @@
             <translation>Add images</translation>
         </message>
         <message>
-            <source>Add images to create a collage</source>
-            <translation>Add images to create a collage</translation>
+            <source>Add images to start image stitching</source>
+            <translation>Add images to start image stitching</translation>
         </message>
         <message>
             <source>Add multiple image files at once</source>
@@ -138,10 +138,6 @@
             <translation>Clear all</translation>
         </message>
         <message>
-            <source>Collage preview</source>
-            <translation>Collage preview</translation>
-        </message>
-        <message>
             <source>Columns</source>
             <translation>Columns</translation>
         </message>
@@ -158,8 +154,12 @@
             <translation>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</translation>
         </message>
         <message>
-            <source>Drop images to add to collage</source>
-            <translation>Drop images to add to collage</translation>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
+        </message>
+        <message>
+            <source>Drop images to stitch</source>
+            <translation>Drop images to stitch</translation>
         </message>
         <message>
             <source>Fit to canvas</source>
@@ -210,6 +210,10 @@
             <translation>Image spacing unit</translation>
         </message>
         <message>
+            <source>Image stitching preview</source>
+            <translation>Image stitching preview</translation>
+        </message>
+        <message>
             <source>Image type</source>
             <translation>Image type</translation>
         </message>
@@ -258,8 +262,8 @@
             <translation>Percentage of the widest image after sizing</translation>
         </message>
         <message>
-            <source>Pixel</source>
-            <translation>Pixel</translation>
+            <source>Pixels</source>
+            <translation>Pixels</translation>
         </message>
         <message>
             <source>Purple</source>
@@ -622,8 +626,8 @@
             <translation>Delete image</translation>
         </message>
         <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
-            <translation>Drag an image to move or swap it; drag its selection handles to scale around its center</translation>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
+            <translation>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</translation>
         </message>
         <message>
             <source>Flip horizontally</source>
@@ -713,8 +717,8 @@
             <translation>Add images</translation>
         </message>
         <message>
-            <source>All images will be removed from this collage</source>
-            <translation>All images will be removed from this collage</translation>
+            <source>All images will be removed from this stitching session</source>
+            <translation>All images will be removed from this stitching session</translation>
         </message>
         <message>
             <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
@@ -741,20 +745,16 @@
             <translation>Clipboard image</translation>
         </message>
         <message>
-            <source>Collage</source>
-            <translation>Collage</translation>
-        </message>
-        <message>
             <source>Copy</source>
             <translation>Copy</translation>
         </message>
         <message>
-            <source>Copying collage…</source>
-            <translation>Copying collage…</translation>
-        </message>
-        <message>
             <source>Copying could not be started. Try again</source>
             <translation>Copying could not be started. Try again</translation>
+        </message>
+        <message>
+            <source>Copying stitched image…</source>
+            <translation>Copying stitched image…</translation>
         </message>
         <message>
             <source>Could not read the selected image files. Please try again</source>
@@ -765,8 +765,8 @@
             <translation>Discard</translation>
         </message>
         <message>
-            <source>Discard this collage?</source>
-            <translation>Discard this collage?</translation>
+            <source>Discard this stitching session?</source>
+            <translation>Discard this stitching session?</translation>
         </message>
         <message>
             <source>Export could not be started. Try again</source>
@@ -779,6 +779,10 @@
         <message>
             <source>Image loading could not be started. Try again</source>
             <translation>Image loading could not be started. Try again</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>Image stitching</translation>
         </message>
         <message>
             <source>Images</source>
@@ -809,8 +813,8 @@
             <translation>Pinned window %1</translation>
         </message>
         <message>
-            <source>Preparing collage…</source>
-            <translation>Preparing collage…</translation>
+            <source>Preparing stitched image…</source>
+            <translation>Preparing stitched image…</translation>
         </message>
         <message>
             <source>Reading selected image files…</source>
@@ -843,12 +847,12 @@ Files:
 %3</translation>
         </message>
         <message>
-            <source>Saving collage…</source>
-            <translation>Saving collage…</translation>
-        </message>
-        <message>
             <source>Saving could not be started. Try again</source>
             <translation>Saving could not be started. Try again</translation>
+        </message>
+        <message>
+            <source>Saving stitched image…</source>
+            <translation>Saving stitched image…</translation>
         </message>
         <message>
             <source>Screenshot %1</source>
@@ -885,8 +889,8 @@ Files:
             <translation>The image could not be decoded or is no longer available</translation>
         </message>
         <message>
-            <source>The images and edits in this collage will be discarded</source>
-            <translation>The images and edits in this collage will be discarded</translation>
+            <source>The images and edits in this stitching session will be discarded</source>
+            <translation>The images and edits in this stitching session will be discarded</translation>
         </message>
         <message>
             <source>The layout settings could not be remembered: %1</source>
@@ -988,8 +992,8 @@ Files:
             <translation>Screenshot result</translation>
         </message>
         <message>
-            <source>Stitch image</source>
-            <translation>Stitch image</translation>
+            <source>Stitch images</source>
+            <translation>Stitch images</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1065,8 +1069,8 @@ Files:
             <translation>Choose pixels or percentage</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high</source>
-            <translation>Each image must be at least one pixel wide or high</translation>
+            <source>Each image must be at least one pixel wide and high</source>
+            <translation>Each image must be at least one pixel wide and high</translation>
         </message>
         <message>
             <source>Enter a percentage from 5% to 100%</source>
@@ -1380,8 +1384,8 @@ Files:
             <translation>Allow Accessibility in System Settings to monitor the live window's state</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</source>
-            <translation>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</source>
+            <translation>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</translation>
         </message>
         <message>
             <source>The live window display could not be initialized</source>
@@ -1663,8 +1667,8 @@ Files:
             <translation>Start date</translation>
         </message>
         <message>
-            <source>Stitch image</source>
-            <translation>Stitch image</translation>
+            <source>Stitch images</source>
+            <translation>Stitch images</translation>
         </message>
         <message>
             <source>The saved record and its open window will be removed</source>
@@ -1717,8 +1721,8 @@ Files:
             <translation>Change the source or date range to see more history</translation>
         </message>
         <message>
-            <source>Copied and pinned screenshots will appear here</source>
-            <translation>Copied and pinned screenshots will appear here</translation>
+            <source>Copied or pinned screenshots will appear here</source>
+            <translation>Copied or pinned screenshots will appear here</translation>
         </message>
         <message>
             <source>Copy to clipboard</source>
@@ -1815,8 +1819,8 @@ Files:
             <translation>Start date</translation>
         </message>
         <message>
-            <source>Stitch image</source>
-            <translation>Stitch image</translation>
+            <source>Stitch images</source>
+            <translation>Stitch images</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1968,8 +1972,8 @@ Files:
             <translation>Destroy this pinned window? This action cannot be undone</translation>
         </message>
         <message>
-            <source>Disable hide to top</source>
-            <translation>Disable hide to top</translation>
+            <source>Disable hide at top</source>
+            <translation>Disable hide at top</translation>
         </message>
         <message>
             <source>Disable lock mode</source>
@@ -1984,8 +1988,8 @@ Files:
             <translation>Enable annotation mode</translation>
         </message>
         <message>
-            <source>Enable hide to top</source>
-            <translation>Enable hide to top</translation>
+            <source>Enable hide at top</source>
+            <translation>Enable hide at top</translation>
         </message>
         <message>
             <source>Enable lock mode</source>
@@ -2016,12 +2020,12 @@ Files:
             <translation>Group: default</translation>
         </message>
         <message>
-            <source>Hide other windows</source>
-            <translation>Hide other windows</translation>
+            <source>Hide at top</source>
+            <translation>Hide at top</translation>
         </message>
         <message>
-            <source>Hide to top</source>
-            <translation>Hide to top</translation>
+            <source>Hide other windows</source>
+            <translation>Hide other windows</translation>
         </message>
         <message>
             <source>Image editing</source>
@@ -2098,6 +2102,10 @@ Files:
         <message>
             <source>Pause</source>
             <translation>Pause</translation>
+        </message>
+        <message>
+            <source>Pin to screen management</source>
+            <translation>Pin to screen management</translation>
         </message>
         <message>
             <source>Pinned content</source>
@@ -2277,10 +2285,6 @@ Files:
         <message>
             <source>Uploading to cloud... %1%</source>
             <translation>Uploading to cloud... %1%</translation>
-        </message>
-        <message>
-            <source>Window management</source>
-            <translation>Window management</translation>
         </message>
     </context>
     <context>

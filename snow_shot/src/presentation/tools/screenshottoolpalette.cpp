@@ -106,7 +106,7 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
 [[maybe_unused]] constexpr const char* kScreenshotToolPaletteTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Print"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pin window to screen"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
@@ -148,13 +148,13 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Speech bubble"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Line"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Spotlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Magnifier"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Serial number"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Eraser"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Element eraser"),
@@ -190,7 +190,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pause recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Resume recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record microphone"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record speakers"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record system audio"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Open recording folder"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Close recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export settings"),
@@ -721,16 +721,16 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     if (source == QStringLiteral("Arrow")) {
         return QStringLiteral("arrow");
     }
-    if (source == QStringLiteral("Pen")) {
+    if (source == QStringLiteral("Brush")) {
         return QStringLiteral("brush");
     }
-    if (source == QStringLiteral("Highlight") || source == QStringLiteral("Pen highlight")) {
+    if (source == QStringLiteral("Highlight") || source == QStringLiteral("Brush highlight")) {
         return QStringLiteral("highlight");
     }
     if (source == QStringLiteral("Text")) {
         return QStringLiteral("text");
     }
-    if (source == QStringLiteral("Serial number")) {
+    if (source == QStringLiteral("Sequence number")) {
         return QStringLiteral("serial_number");
     }
     if (source == QStringLiteral("Filter")) {
@@ -2831,7 +2831,7 @@ void ScreenshotToolPalette::setLayoutCompactionState(ScreenshotLayoutCompaction 
         m_layoutCompactionButton->setEnabled(available);
         setScreenshotToolPaletteButtonActive(m_layoutCompactionButton, m_layoutCompaction.enabled);
         m_layoutCompactionButton->setAccessibleDescription(
-            !available                   ? tr("Available for multi-region selections")
+            !available                   ? tr("Only available for multi-region selections")
             : m_layoutCompaction.enabled ? tr("Layout compaction enabled")
                                          : tr("Layout compaction disabled"));
     }
@@ -2843,7 +2843,7 @@ void ScreenshotToolPalette::setLayoutCompactionState(ScreenshotLayoutCompaction 
                              : ScreenshotSelectionDisplayUnit::PhysicalPixels));
         m_layoutSpacingEditor->setAccessibleDescription(
             available ? m_layoutSpacingEditor->valueText()
-                      : tr("Available for multi-region selections"));
+                      : tr("Only available for multi-region selections"));
     }
 }
 
@@ -3992,7 +3992,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     }
     refreshRecordingPostProcessingOptions();
     if (m_recordPreferencesButton != nullptr) {
-        configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton, "Recording settings",
+        configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton,
+                                                  "Screen recording settings",
                                                   styleButtonMetrics(m_physicalScale));
     }
     if (m_backgroundOpacityEditor) {
@@ -5319,7 +5320,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         toolbar_settings::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     const bool alreadyActive =
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
-        : requestedButton != nullptr             ? m_activeToolButton == requestedButton
+        : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
     activateDrawingTool(requestedTool);
@@ -6434,7 +6435,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
     }
 
     if (options.showFreeDrawTool) {
-        m_freeDrawButton = addToolButton("Pen", custom_outlined_icons::ToolFreeDraw());
+        m_freeDrawButton = addToolButton("Brush", custom_outlined_icons::ToolFreeDraw());
         addButton(m_freeDrawButton);
         connect(m_freeDrawButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::FreeDraw); });
@@ -6472,7 +6473,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showSerialNumberTool) {
         m_serialNumberButton =
-            addToolButton("Serial number", custom_outlined_icons::ToolSerialNumber());
+            addToolButton("Sequence number", custom_outlined_icons::ToolSerialNumber());
         addButton(m_serialNumberButton);
         connect(m_serialNumberButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::SerialNumber); });
@@ -7644,7 +7645,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         m_recordSettingsModal->open();
     });
     m_recordPreferencesButton = createScreenshotToolPaletteStyleActionButton(
-        m_recordExportSettingsPanel, "Recording settings", outlined_icons::Setting(),
+        m_recordExportSettingsPanel, "Screen recording settings", outlined_icons::Setting(),
         styleButtonMetrics(m_physicalScale));
     m_recordPreferencesButton->setObjectName(QStringLiteral("screenRecordingSettings"));
     layout->addWidget(m_recordPreferencesButton);
@@ -8036,8 +8037,9 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     if (m_recordWebcamButton)
         configureScreenshotToolPaletteTooltip(m_recordWebcamButton, "Record webcam");
     if (m_recordPreferencesButton != nullptr) {
-        configureScreenshotToolPaletteTooltip(m_recordPreferencesButton, "Recording settings");
-        m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
+        configureScreenshotToolPaletteTooltip(m_recordPreferencesButton,
+                                              "Screen recording settings");
+        m_recordPreferencesButton->setAccessibleName(tr("Screen recording settings"));
     }
     refreshRecordingMouseOptions();
     refreshRecordingKeyboardOptions();
@@ -9920,12 +9922,11 @@ void ScreenshotToolPalette::openScrollingSettings() {
     options.parent = form;
     options.form = form;
     options.commitPolicy = fields::CommitPolicy::Explicit;
-    const auto captureInterfaceField =
-        fields::switchField({QStringLiteral("captureInterface"),
-                             {"ScreenshotToolPalette",
-                              QT_TRANSLATE_NOOP("ScreenshotToolPalette",
-                                                "Capture interface during scrolling screenshot")}},
-                            options);
+    const auto captureInterfaceField = fields::switchField(
+        {QStringLiteral("captureInterface"),
+         {"ScreenshotToolPalette",
+          QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Capture UI during scrolling screenshots")}},
+        options);
     auto* captureInterface = captureInterfaceField.editor;
     captureInterface->setObjectName(QStringLiteral("screenshotScrollingCaptureInterface"));
     captureInterfaceField.field->syncValue(
@@ -10374,7 +10375,7 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
         m_recordMicrophoneButton =
             addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
-        m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
+        m_recordSystemAudioButton = addActionButton("Record system audio", outlined_icons::Sound());
 
         m_recordOpenFolderButton =
             addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
@@ -10964,8 +10965,8 @@ void ScreenshotToolPalette::updateRecordingControls() {
         }
         m_recordSystemAudioButton->setToolTip(
             animatedFormat ? tr("Animated recording formats do not contain audio")
-                           : tr("Record speakers"));
-        m_recordSystemAudioButton->setAccessibleName(tr("Record speakers"));
+                           : tr("Record system audio"));
+        m_recordSystemAudioButton->setAccessibleName(tr("Record system audio"));
         m_recordSystemAudioButton->setAccessibleDescription(
             animatedFormat ? tr("Animated recording formats do not contain audio") : QString());
     }
