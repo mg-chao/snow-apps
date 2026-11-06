@@ -3678,6 +3678,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" TIMEOUT 30 RUN_SERIAL TRUE)
         add_executable(snow-shot-macos-smart-selection-smoke
             tests/macos_smart_selection_smoke_test.mm
+            src/presentation/selector/screenshotselectorserviceclient.cpp
             src/platform/macos/windowcaptureexclusion.mm)
         target_include_directories(snow-shot-macos-smart-selection-smoke PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -3687,6 +3688,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-macos-smart-selection-smoke COMMAND snow-shot-macos-smart-selection-smoke)
         set_tests_properties(snow-shot-macos-smart-selection-smoke PROPERTIES
             LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 30 RUN_SERIAL TRUE)
+        add_executable(snow-shot-macos-selector-local-elements-tests
+            tests/macos_selector_local_elements_tests.mm)
+        target_include_directories(snow-shot-macos-selector-local-elements-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_compile_options(snow-shot-macos-selector-local-elements-tests PRIVATE -fobjc-arc)
+        target_link_libraries(snow-shot-macos-selector-local-elements-tests PRIVATE
+            Qt6::Widgets "-framework AppKit")
+        add_test(NAME snow-shot-macos-selector-local-elements-tests
+            COMMAND snow-shot-macos-selector-local-elements-tests -platform offscreen)
+        set_tests_properties(snow-shot-macos-selector-local-elements-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
     endif()
 
     add_executable(snow-shot-selector-policy-tests
@@ -3714,6 +3726,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selector/screenshotselectorcoordinator.cpp
         src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
     )
     snow_shot_alias_test_rust_ffi(snow-shot-window-element-api-tests
         snow_ui_selector_service_create

@@ -1,7 +1,8 @@
 #include "snow_ui_selector.h"
 #include "snow_shot/platform/windowcaptureexclusion.h"
 #include "../src/platform/macos/selectorwindowtarget_p.h"
-#include <QAccessible>
+#include "../src/platform/macos/selectorlocalelements_p.h"
+#include "../src/presentation/selector/screenshotselectorserviceclient.h"
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -99,7 +100,6 @@ int main(int argc, char** argv) try {
         std::cout << "SKIP: no active macOS display (desktop may be asleep or headless)\n";
         return 77;
     }
-    QAccessible::setActive(true);
     QWidget window;
     window.setWindowTitle(QStringLiteral("Snow Shot Smart selection smoke fixture"));
     auto* layout = new QVBoxLayout(&window);
@@ -210,6 +210,99 @@ int main(int argc, char** argv) try {
                 state.rects.front().right == windowRect.right &&
                 state.rects.front().bottom == windowRect.bottom,
             "own-window element query must complete with snapshot bounds without entering AX");
+    ScreenshotSelectorResult local;
+    local.ok = true;
+    local.mode = ScreenshotSelectorHitTestMode::WindowSubElement;
+    local.nativeWindowId = query.window_id;
+    local.point = QPoint(query.x, query.y);
+    local.displayId = query.display_id;
+    local.rects = {QRectF(windowRect.left, windowRect.top, windowRect.right - windowRect.left,
+                          windowRect.bottom - windowRect.top)};
+    snow_shot::platform::detail::resolveSelectorLocalElements(local, displays);
+    require(local.rects.size() > 1 &&
+                std::abs(local.rects.front().width() - edit->width() * scaleX) <= 4 &&
+                std::abs(local.rects.front().height() - edit->height() * scaleY) <= 4,
+            "GUI-thread local selection must reach the Qt text field without AX permission");
+
+    // Exercise the actual worker -> queued GUI callback integration as well as the
+    // local provider. No accessibility object may be accessed by the Rust worker.
+    std::atomic<bool> clientRefreshed = false;
+    std::atomic<bool> clientDelivered = false;
+    ScreenshotSelectorResult clientResult;
+    ScreenshotSelectorServiceClient client(
+        {[&](quint64, bool ok) {
+             require(ok, "local client refresh failed");
+             clientRefreshed = true;
+         },
+         [&](const ScreenshotSelectorResult& result) {
+             require([NSThread isMainThread], "local results must be delivered on the GUI thread");
+             clientResult = result;
+             clientDelivered = true;
+         }});
+    require(client.startRefreshWithDisplays(1, {}, displays), "local client refresh rejected");
+    wait(clientRefreshed);
+    const auto submitLocal = [&](quint64 request, quint64 epoch = 1) {
+        clientDelivered = false;
+        require(client.startHitTest(epoch, request, request, QPoint(query.x, query.y),
+                                    ScreenshotSelectorHitTestMode::WindowSubElement,
+                                    query.display_id),
+                "local client query rejected");
+    };
+    submitLocal(1);
+    wait(clientDelivered);
+    require(clientResult.rects == local.rects && !clientResult.canRefine,
+            "service client must complete own-window results with local controls");
+    submitLocal(2);
+    clientRefreshed = false;
+    require(client.startRefreshWithDisplays(2, {}, displays),
+            "local client second refresh rejected");
+    wait(clientDelivered);
+    require(clientResult.rects.size() <= 1,
+            "new refresh epochs must not enrich results from the previous snapshot");
+    wait(clientRefreshed);
+    submitLocal(3, 2);
+    require(client.releaseCache(), "local client cache release failed");
+    wait(clientDelivered);
+    require(clientResult.rects.size() <= 1,
+            "released client must not enrich pending worker results with local controls");
+    client.destroyService();
+
+    // Direct AppKit controls use the same local path, without a Qt widget interface.
+    NSPanel* panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(100, 100, 300, 180)
+                                                styleMask:NSWindowStyleMaskTitled
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+    panel.releasedWhenClosed = NO;
+    panel.animationBehavior = NSWindowAnimationBehaviorNone;
+    NSButton* button = [NSButton buttonWithTitle:@"Local selection fixture" target:nil action:nil];
+    button.frame = NSMakeRect(30, 50, 180, 32);
+    [panel.contentView addSubview:button];
+    [panel orderFront:nil];
+    const qreal desktopTop = NSMaxY(NSScreen.screens.firstObject.frame);
+    const QRectF buttonFrame = snow_shot::platform::detail::selectorLocalDesktopFrame(
+        button.accessibilityFrame, desktopTop);
+    const auto* panelDisplay = &displays.front();
+    for (const auto& candidate : displays) {
+        if (QRectF(candidate.capturedLogicalRect).contains(buttonFrame.center())) {
+            panelDisplay = &candidate;
+            break;
+        }
+    }
+    const QRectF panelFrame = snow_shot::platform::detail::selectorLocalDesktopFrame(
+        panel.accessibilityFrame, desktopTop);
+    const QRectF buttonPixels =
+        snow_shot::platform::detail::selectorLocalPixelFrame(buttonFrame, *panelDisplay);
+    local.point = buttonPixels.center().toPoint();
+    local.displayId = panelDisplay->nativeDisplayId;
+    local.nativeWindowId = static_cast<std::uintptr_t>(panel.windowNumber);
+    local.rects = {snow_shot::platform::detail::selectorLocalPixelFrame(
+        panelFrame.intersected(QRectF(panelDisplay->capturedLogicalRect)), *panelDisplay)};
+    snow_shot::platform::detail::resolveSelectorLocalElements(local, displays);
+    require(local.rects.size() > 1 && local.rects.front() == buttonPixels,
+            "GUI-thread local selection must reach native AppKit controls");
+    [panel close];
+    [panel release];
+
     state.delivered = false;
     require(snow_ui_selector_service_refine(service.get(), &query),
             "own-window refinement rejected");
@@ -332,9 +425,8 @@ int main(int argc, char** argv) try {
                 state.rects.front().top == windowRect.top,
             "excluded overlay must not replace the selected window");
     service.reset();
-    std::cout << "Own-window safety, foreign AX ancestry, Retina geometry, click-through surfaces, "
-                 "and overlay "
-                 "exclusion passed\n";
+    std::cout << "Local Qt/AppKit selection, worker safety, foreign AX ancestry, Retina geometry, "
+                 "click-through surfaces, and overlay exclusion passed\n";
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

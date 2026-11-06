@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 typedef struct SnowUiSelectorServiceImpl SnowUiSelectorService;
 struct SnowUiSelectorEvent;
@@ -55,6 +56,7 @@ class ScreenshotSelectorServiceClient final : public QObject {
     int m_serviceBackend = -1;
     QHash<quint64, snow_shot::runtime::RuntimeActivityLease> m_refreshActivities;
 #ifdef Q_OS_MACOS
+    std::optional<quint64> m_snapshotEpoch;
     QVector<std::uintptr_t> m_excludedWindowIds;
     QVector<CapturedDisplayModel> m_displays;
 #endif

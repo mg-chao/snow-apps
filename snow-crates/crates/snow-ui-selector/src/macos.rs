@@ -127,7 +127,8 @@ impl ElementRegionService {
         } else if mode == HitTestMode::Window || window.pid == std::process::id() as i32 {
             // AX calls into our own process run synchronously on this worker,
             // entering AppKit/Qt outside the GUI thread. Keep our windows in the
-            // snapshot, but never activate or traverse their accessibility trees.
+            // snapshot, but never activate or traverse their accessibility trees here.
+            // The GUI client can complete this fallback with local NSAccessibility.
             QueryResult {
                 path: Some(vec![fallback]),
                 reason: StopReason::Complete,

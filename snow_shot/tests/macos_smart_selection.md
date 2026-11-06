@@ -41,6 +41,16 @@ and 500 ms for refinement (1.5 s total). Cancellation and provider errors retain
 a window fallback. A moved window or unsupported provider safely falls back to
 the cached window until the next refresh.
 
+For Snow Shot's own windows, workers return only the frozen window rectangle. The
+GUI client then uses local AppKit accessibility hit testing and walks the hit's
+ancestors on the main thread. Qt controls and native AppKit panels use this same
+path without an Accessibility permission check or in-process AX messaging. The
+path must reach the exact native window, and its visible bounds must still match
+the snapshot. Cycles, hidden or unrelated ancestry, invalid frames, and provider
+exceptions retain the window fallback. Traversal has a 64-ancestor / 48-frame limit
+and an 8 ms cooperative deadline; it never enumerates the whole local tree. Cache
+release and refresh epochs prevent obsolete results from inspecting local windows.
+
 Permission checks during capture never prompt. Missing Accessibility permission
 returns `PERMISSION_REQUIRED` with `ok=1` and the window rectangle; Qt applies that
 rectangle, skips refinement, and warns once per capture session. Function settings
@@ -58,12 +68,15 @@ ctest --preset test-snow-shot-macos-arm64-debug \
   -R 'snow-shot-(selector-policy|selector-phased|window-element-api|smart-selection-permission|settings-catalog|selection-geometry|capture-workflow)-tests'
 ctest --preset test-snow-shot-macos-arm64-debug \
   -R '^snow-shot-macos-smart-selection-smoke$' -LE '^$'
+ctest --preset test-snow-shot-macos-arm64-debug \
+  -R '^snow-shot-macos-selector-local-elements-tests$'
 ```
 
 Build those CTest targets first with the macOS debug preset. The native smoke test
-uses a visible Cocoa fixture, verifies physical window bounds, child traversal,
-Retina geometry, and excluded overlays. Without Accessibility permission it checks
-window fallback before returning skip code 77. It also skips when there is no
+uses visible Qt and AppKit fixtures and verifies local control selection before
+checking cross-process traversal, Retina geometry, and excluded overlays. Without
+Accessibility permission it still checks local selection and foreign window fallback
+before returning skip code 77. It also skips when there is no
 active desktop. It never requests or changes TCC permission. Grant permission to
 the test executable manually to exercise native AX traversal; deterministic tests
 cover denied permission without modifying TCC. Use the x64 presets on Intel Macs.
