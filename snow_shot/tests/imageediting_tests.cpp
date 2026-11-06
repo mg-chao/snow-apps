@@ -11,6 +11,7 @@
 #include "widgets/modal.h"
 #include "widgets/message.h"
 #include <QApplication>
+#include <QByteArrayView>
 #include <QFontDatabase>
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -74,6 +75,29 @@ void awaitCondition(const std::function<bool()>& condition, const char* message)
         QThread::msleep(1);
     }
     require(condition(), message);
+}
+QImage readCopiedImage() {
+#if defined(Q_OS_WIN)
+    // Image exports use the native clipboard even with the offscreen QPA plugin.
+    // Its QClipboard is separate, so inspect the published PNG directly on Windows.
+    const UINT pngFormat = RegisterClipboardFormatW(L"PNG");
+    require(pngFormat != 0, "register copied image PNG format");
+    bool opened = false;
+    awaitCondition([&] { return opened || (opened = OpenClipboard(nullptr) != FALSE); },
+                   "open native clipboard to inspect the copied image");
+    const auto close = qScopeGuard([] { CloseClipboard(); });
+    const auto handle = static_cast<HGLOBAL>(GetClipboardData(pngFormat));
+    require(handle != nullptr, "copied image publishes native PNG data");
+    const auto* bytes = static_cast<const char*>(GlobalLock(handle));
+    require(bytes != nullptr, "copied image PNG data can be read");
+    const auto unlock = qScopeGuard([handle] { GlobalUnlock(handle); });
+    const auto image =
+        QImage::fromData(QByteArrayView(bytes, static_cast<qsizetype>(GlobalSize(handle))), "PNG");
+    require(!image.isNull(), "copied image PNG data decodes successfully");
+    return image;
+#else
+    return QApplication::clipboard()->image();
+#endif
 }
 void sendWindowInteraction(snow_shot::presentation::ImageEditingWindow& window, bool active) {
 #if defined(Q_OS_WIN)
@@ -390,7 +414,7 @@ void verifyScrollingSourceImport() {
         });
         copy->click();
         awaitCondition([&] { return copied; }, "clicking copy exports the edited scrolling image");
-        require(QApplication::clipboard()->image().convertToFormat(QImage::Format_RGBA8888) ==
+        require(readCopiedImage().convertToFormat(QImage::Format_RGBA8888) ==
                         edited.convertToFormat(QImage::Format_RGBA8888) &&
                     !editor.dirty() && editor.modal()->isOpen(),
                 "copy publishes the full edited image and keeps the editor open");
