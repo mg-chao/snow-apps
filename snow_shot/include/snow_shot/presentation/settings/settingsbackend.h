@@ -61,6 +61,8 @@ struct SettingsActionState {
 struct SettingsFieldResetResult {
     bool accepted = false;
     QString error{};
+    // A valid value identifies async work admitted by this reset, not an older field write.
+    QVariant pendingValue{};
 };
 
 struct SettingsResetResult {
@@ -266,6 +268,12 @@ class SettingsBackend : public QObject {
         Q_UNUSED(fieldId);
         return {};
     }
+    // Native transactions report their own persistence errors; a concurrent settings write
+    // must not turn their successful completion into a failure.
+    [[nodiscard]] virtual bool fieldUsesStorageErrors(const QString& fieldId) const {
+        Q_UNUSED(fieldId);
+        return true;
+    }
     [[nodiscard]] virtual bool fieldPending(const QString& fieldId) const {
         Q_UNUSED(fieldId);
         return false;
@@ -390,6 +398,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
         std::shared_future<storage::StorageResult>* completion = nullptr) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshPlatformSettings() override;
+    QString fieldError(const QString& fieldId) const override;
+    bool fieldUsesStorageErrors(const QString& fieldId) const override;
     void refreshStorageStatus() override;
     storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) override;
     void refreshStorageStatusIfStale() override;
@@ -403,8 +413,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     void connectSkinControllerIfNeeded();
     [[nodiscard]] bool applyContextMenuSettings(const QJsonValue& mode,
                                                 const QJsonValue& shortcuts);
-    [[nodiscard]] platform::windows::AdministratorResult applyStartupSettings(bool enabled,
-                                                                              bool elevated);
+    [[nodiscard]] platform::windows::AdministratorResult
+    applyStartupSettings(bool enabled, bool elevated, bool reportError = true);
 
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
     AppPermissionService* m_permissions = nullptr;

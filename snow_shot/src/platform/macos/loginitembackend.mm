@@ -57,8 +57,8 @@ LoginItemSnapshot query() {
                                                   "Move the signed Snow Shot app to /Applications "
                                                   "or ~/Applications to use launch at login")))};
         }
-        // Registration enforces signing. Routine status refreshes must not revalidate
-        // the entire bundle on the GUI thread whenever a settings page is shown.
+        // Registration enforces signing. Both status (synchronous XPC) and registration
+        // run on the service's worker; routine refreshes need no extra signature scan.
         switch (SMAppService.mainAppService.status) {
         case SMAppServiceStatusNotRegistered:
             return {LoginItemStatus::Unregistered, {}};

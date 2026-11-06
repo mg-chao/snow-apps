@@ -1,3 +1,4 @@
+#include "login_item_test_support.h"
 #include "snow_shot/platform/macos/loginitemservice.h"
 #include "snow_shot/app/edition.h"
 #import <AppKit/AppKit.h>
@@ -60,10 +61,12 @@ class ClassMethodOverride {
 @end
 @implementation SnowLoginItemServiceFixture
 - (SMAppServiceStatus)status {
+    require(!NSThread.isMainThread, "native status runs off the main thread");
     ++_statusReads;
     return _nativeStatus;
 }
 - (BOOL)registerAndReturnError:(NSError**)error {
+    require(!NSThread.isMainThread, "native registration runs off the main thread");
     ++_registrations;
     *error = _failure;
     if (_failure != nil)
@@ -72,6 +75,7 @@ class ClassMethodOverride {
     return YES;
 }
 - (BOOL)unregisterAndReturnError:(NSError**)error {
+    require(!NSThread.isMainThread, "native unregistration runs off the main thread");
     ++_unregistrations;
     *error = _failure;
     if (_failure != nil)
@@ -145,6 +149,7 @@ void nativeStatusAndRegistration() {
                 return true;
             };
             LoginItemService service(std::move(operations));
+            login_item_test::idle(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         native.statusReads == 1,
@@ -154,7 +159,7 @@ void nativeStatusAndRegistration() {
                   SMAppServiceStatusNotRegistered, SMAppServiceStatusNotFound}) {
                 const int before = native.statusReads;
                 native.nativeStatus = status;
-                service.refresh();
+                login_item_test::refresh(service);
                 const auto expected = status == SMAppServiceStatusEnabled ? LoginItemStatus::Enabled
                                       : status == SMAppServiceStatusRequiresApproval
                                           ? LoginItemStatus::ApprovalRequired
@@ -165,7 +170,7 @@ void nativeStatusAndRegistration() {
                         "refresh observes changing native status without mutating registration");
             }
             native.nativeStatus = SMAppServiceStatusNotFound;
-            service.refresh();
+            login_item_test::refresh(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered &&
                         service.hint().isEmpty(),
@@ -173,41 +178,43 @@ void nativeStatusAndRegistration() {
             native.failure = [NSError errorWithDomain:SMAppServiceErrorDomain
                                                  code:kSMErrorInvalidSignature
                                              userInfo:nil];
-            const auto signatureFailure = service.initialize(true);
+            const auto signatureFailure = login_item_test::change(service, true, true);
             require(!signatureFailure.success &&
                         signatureFailure.error.contains(QStringLiteral("valid code signature")) &&
                         initialized && native.registrations == 1 && !preference &&
                         !service.pending() &&
                         service.snapshot().status == LoginItemStatus::Unregistered,
                     "registration signature failure is explained without falsely enabling login");
-            service.refresh();
-            require(service.available() && service.initialize(true).success &&
+            login_item_test::refresh(service);
+            require(service.available() && login_item_test::change(service, true, true).success &&
                         native.registrations == 1,
                     "status refresh neither prevalidates signing nor retries failed registration");
             native.failure =
                 [NSError errorWithDomain:NSPOSIXErrorDomain
                                     code:kSMErrorInvalidSignature
                                 userInfo:@{NSLocalizedDescriptionKey : @"native failure"}];
-            const auto otherFailure = service.setEnabled(true);
+            const auto otherFailure = login_item_test::change(service, true);
             require(!otherFailure.success &&
                         otherFailure.error == u"Could not change launch at login: native failure",
                     "same numeric code in another domain preserves the native error");
             native.failure = nil;
-            require(service.setEnabled(true).success && service.snapshot().requested() &&
-                        preference,
+            require(login_item_test::change(service, true).success &&
+                        service.snapshot().requested() && preference,
                     "explicit retry can register after signing is repaired");
-            require(service.setEnabled(false).success && !service.snapshot().requested() &&
-                        !preference && native.unregistrations == 1,
+            require(login_item_test::change(service, false).success &&
+                        !service.snapshot().requested() && !preference &&
+                        native.unregistrations == 1,
                     "unregistration continues to reflect native status");
             native.nativeStatus = SMAppServiceStatusNotFound;
-            service.refresh();
+            login_item_test::refresh(service);
             require(service.available() &&
                         service.snapshot().status == LoginItemStatus::Unregistered,
                     "notFound remains eligible after the item is removed");
             initialized = false;
             native.registrations = 0;
-            require(service.initialize(true).success && initialized && native.registrations == 1 &&
-                        preference && service.snapshot().status == LoginItemStatus::Enabled,
+            require(login_item_test::change(service, true, true).success && initialized &&
+                        native.registrations == 1 && preference &&
+                        service.snapshot().status == LoginItemStatus::Enabled,
                     "first eligible launch registers a notFound login item");
         }
         serviceFixture = nil;
@@ -256,7 +263,8 @@ int main(int argc, char** argv) {
         }
         [manager removeEventHandlerForEventClass:kCoreEventClass andEventID:kAEOpenApplication];
         [fixture release];
-        const auto& service = loginItemService();
+        auto& service = loginItemService();
+        login_item_test::idle(service);
         require(!service.available(), "test executable outside Applications cannot register");
         require(!service.hint().isEmpty(), "ineligible native bundle has actionable guidance");
         nativeStatusAndRegistration();
