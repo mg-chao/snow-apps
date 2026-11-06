@@ -154,8 +154,8 @@
             <translation>Delete image</translation>
         </message>
         <message>
-            <source>Drag image files here, or choose Add images</source>
-            <translation>Drag image files here, or choose Add images</translation>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
         </message>
         <message>
             <source>Drag with the middle mouse button to pan; scroll to zoom</source>
@@ -392,8 +392,8 @@
             <translation>Delete image</translation>
         </message>
         <message>
-            <source>Drag image files here, or choose Add images</source>
-            <translation>Drag image files here, or choose Add images</translation>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
         </message>
         <message>
             <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image</source>
@@ -523,8 +523,8 @@
             <translation>ID card</translation>
         </message>
         <message>
-            <source>Image Size</source>
-            <translation>Image Size</translation>
+            <source>Image size</source>
+            <translation>Image size</translation>
         </message>
         <message>
             <source>Image spacing</source>
@@ -948,8 +948,8 @@ Files:
             <translation>Focused window</translation>
         </message>
         <message>
-            <source>Image Editing</source>
-            <translation>Image Editing</translation>
+            <source>Image editing</source>
+            <translation>Image editing</translation>
         </message>
         <message>
             <source>Loading preview…</source>
@@ -992,8 +992,8 @@ Files:
             <translation>Screenshot result</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>Stitch Image</translation>
+            <source>Stitch image</source>
+            <translation>Stitch image</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1011,8 +1011,8 @@ Files:
             <translation>Copy image path</translation>
         </message>
         <message>
-            <source>Open Containing Folder</source>
-            <translation>Open Containing Folder</translation>
+            <source>Open containing folder</source>
+            <translation>Open containing folder</translation>
         </message>
         <message>
             <source>Open in Explorer</source>
@@ -1108,8 +1108,8 @@ Files:
             <translation>Columns</translation>
         </message>
         <message>
-            <source>Drag an image file here, or choose Select Image</source>
-            <translation>Drag an image file here, or choose Select Image</translation>
+            <source>Drag an image file here, or choose select image</source>
+            <translation>Drag an image file here, or choose select image</translation>
         </message>
         <message>
             <source>Drop one image file at a time</source>
@@ -1132,28 +1132,28 @@ Files:
             <translation>Enter an integer of at least 16 pixels</translation>
         </message>
         <message>
-            <source>Equal Split</source>
-            <translation>Equal Split</translation>
+            <source>Equal split</source>
+            <translation>Equal split</translation>
         </message>
         <message>
-            <source>Fit to Canvas</source>
-            <translation>Fit to Canvas</translation>
+            <source>Fit to canvas</source>
+            <translation>Fit to canvas</translation>
         </message>
         <message>
             <source>Grid</source>
             <translation>Grid</translation>
         </message>
         <message>
-            <source>Height per Image</source>
-            <translation>Height per Image</translation>
+            <source>Height per image</source>
+            <translation>Height per image</translation>
         </message>
         <message>
             <source>Horizontal</source>
             <translation>Horizontal</translation>
         </message>
         <message>
-            <source>Number of Images</source>
-            <translation>Number of Images</translation>
+            <source>Number of images</source>
+            <translation>Number of images</translation>
         </message>
         <message>
             <source>Percentage</source>
@@ -1164,8 +1164,8 @@ Files:
             <translation>Pixels</translation>
         </message>
         <message>
-            <source>Precise Split</source>
-            <translation>Precise Split</translation>
+            <source>Precise split</source>
+            <translation>Precise split</translation>
         </message>
         <message>
             <source>Redo</source>
@@ -1180,12 +1180,12 @@ Files:
             <translation>Rows</translation>
         </message>
         <message>
-            <source>Select Image</source>
-            <translation>Select Image</translation>
-        </message>
-        <message>
             <source>Select an image to split</source>
             <translation>Select an image to split</translation>
+        </message>
+        <message>
+            <source>Select image</source>
+            <translation>Select image</translation>
         </message>
         <message>
             <source>Split direction</source>
@@ -1212,8 +1212,8 @@ Files:
             <translation>Vertical</translation>
         </message>
         <message>
-            <source>Width per Image</source>
-            <translation>Width per Image</translation>
+            <source>Width per image</source>
+            <translation>Width per image</translation>
         </message>
     </context>
     <context>
@@ -1293,20 +1293,20 @@ Files:
             <translation>Export could not be started. Try again</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>Image Splitting</translation>
-        </message>
-        <message>
-            <source>Image Stitching is busy. Try again when it finishes</source>
-            <translation>Image Stitching is busy. Try again when it finishes</translation>
-        </message>
-        <message>
             <source>Image loading could not be started. Try again</source>
             <translation>Image loading could not be started. Try again</translation>
         </message>
         <message>
             <source>Image processing failed. Try again</source>
             <translation>Image processing failed. Try again</translation>
+        </message>
+        <message>
+            <source>Image splitting</source>
+            <translation>Image splitting</translation>
+        </message>
+        <message>
+            <source>Image stitching is busy. Try again when it finishes</source>
+            <translation>Image stitching is busy. Try again when it finishes</translation>
         </message>
         <message>
             <source>Images</source>
@@ -1317,16 +1317,16 @@ Files:
             <translation>Loading image…</translation>
         </message>
         <message>
-            <source>Replace Image</source>
-            <translation>Replace Image</translation>
+            <source>Replace image</source>
+            <translation>Replace image</translation>
         </message>
         <message>
             <source>Replacing the image will discard the current edits</source>
             <translation>Replacing the image will discard the current edits</translation>
         </message>
         <message>
-            <source>Save All</source>
-            <translation>Save All</translation>
+            <source>Save all</source>
+            <translation>Save all</translation>
         </message>
         <message>
             <source>Saved %1 images to %2</source>
@@ -1341,12 +1341,12 @@ Files:
             <translation>Saving images: %1 of %2</translation>
         </message>
         <message>
-            <source>Select Destination Folder</source>
-            <translation>Select Destination Folder</translation>
+            <source>Select destination folder</source>
+            <translation>Select destination folder</translation>
         </message>
         <message>
-            <source>Select Image</source>
-            <translation>Select Image</translation>
+            <source>Select image</source>
+            <translation>Select image</translation>
         </message>
         <message>
             <source>Stitch to PDF</source>
@@ -1481,8 +1481,8 @@ Files:
             <translation>All sources</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
-            <translation>Batch Actions</translation>
+            <source>Batch actions</source>
+            <translation>Batch actions</translation>
         </message>
         <message>
             <source>Bulk actions for selected pinned windows</source>
@@ -1560,12 +1560,12 @@ Files:
             <translation>Hidden</translation>
         </message>
         <message>
-            <source>Image Editing</source>
-            <translation>Image Editing</translation>
+            <source>Image editing</source>
+            <translation>Image editing</translation>
         </message>
         <message>
-            <source>Image Splitting</source>
-            <translation>Image Splitting</translation>
+            <source>Image splitting</source>
+            <translation>Image splitting</translation>
         </message>
         <message>
             <source>More</source>
@@ -1584,20 +1584,20 @@ Files:
             <translation>No pinned windows</translation>
         </message>
         <message>
-            <source>Not Closed</source>
-            <translation>Not Closed</translation>
+            <source>Not closed</source>
+            <translation>Not closed</translation>
         </message>
         <message>
             <source>Other / legacy</source>
             <translation>Other / legacy</translation>
         </message>
         <message>
-            <source>Pin to Screen Management</source>
-            <translation>Pin to Screen Management</translation>
-        </message>
-        <message>
             <source>Pin to screen</source>
             <translation>Pin to screen</translation>
+        </message>
+        <message>
+            <source>Pin to screen management</source>
+            <translation>Pin to screen management</translation>
         </message>
         <message>
             <source>Pinned images and text will appear here</source>
@@ -1667,8 +1667,8 @@ Files:
             <translation>Start date</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>Stitch Image</translation>
+            <source>Stitch image</source>
+            <translation>Stitch image</translation>
         </message>
         <message>
             <source>The saved record and its open window will be removed</source>
@@ -1705,8 +1705,8 @@ Files:
             <translation>All sources</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
-            <translation>Batch Actions</translation>
+            <source>Batch actions</source>
+            <translation>Batch actions</translation>
         </message>
         <message>
             <source>Bulk actions for selected screenshot history entries</source>
@@ -1819,8 +1819,8 @@ Files:
             <translation>Start date</translation>
         </message>
         <message>
-            <source>Stitch Image</source>
-            <translation>Stitch Image</translation>
+            <source>Stitch image</source>
+            <translation>Stitch image</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1853,20 +1853,20 @@ Files:
             <translation>AirDrop</translation>
         </message>
         <message>
-            <source>Always on Top</source>
-            <translation>Always on Top</translation>
+            <source>Always on top</source>
+            <translation>Always on top</translation>
         </message>
         <message>
             <source>Annotation mode</source>
             <translation>Annotation mode</translation>
         </message>
         <message>
-            <source>Apply Crop</source>
-            <translation>Apply Crop</translation>
+            <source>Apply crop</source>
+            <translation>Apply crop</translation>
         </message>
         <message>
-            <source>Batch Actions</source>
-            <translation>Batch Actions</translation>
+            <source>Batch actions</source>
+            <translation>Batch actions</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -1905,8 +1905,8 @@ Files:
             <translation>Closed</translation>
         </message>
         <message>
-            <source>Convert to Image</source>
-            <translation>Convert to Image</translation>
+            <source>Convert to image</source>
+            <translation>Convert to image</translation>
         </message>
         <message numerus="yes">
             <source>Copied %n file(s)</source>
@@ -1920,8 +1920,8 @@ Files:
             <translation>Copied: %1; failed: %2</translation>
         </message>
         <message>
-            <source>Copy Files to Clipboard</source>
-            <translation>Copy Files to Clipboard</translation>
+            <source>Copy files to clipboard</source>
+            <translation>Copy files to clipboard</translation>
         </message>
         <message>
             <source>Copy original content</source>
@@ -1948,12 +1948,12 @@ Files:
             <translation>Default</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
-            <translation>Delete Empty Groups</translation>
+            <source>Delete empty groups</source>
+            <translation>Delete empty groups</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
-            <translation>Delete Specified Group</translation>
+            <source>Delete specified group</source>
+            <translation>Delete specified group</translation>
         </message>
         <message>
             <source>Deselect window</source>
@@ -1972,32 +1972,32 @@ Files:
             <translation>Destroy this pinned window? This action cannot be undone</translation>
         </message>
         <message>
-            <source>Disable Hide to Top</source>
-            <translation>Disable Hide to Top</translation>
+            <source>Disable hide to top</source>
+            <translation>Disable hide to top</translation>
         </message>
         <message>
-            <source>Disable Lock Mode</source>
-            <translation>Disable Lock Mode</translation>
+            <source>Disable lock mode</source>
+            <translation>Disable lock mode</translation>
         </message>
         <message>
-            <source>Disable Thumbnail Mode</source>
-            <translation>Disable Thumbnail Mode</translation>
-        </message>
-        <message>
-            <source>Enable Hide to Top</source>
-            <translation>Enable Hide to Top</translation>
-        </message>
-        <message>
-            <source>Enable Lock Mode</source>
-            <translation>Enable Lock Mode</translation>
-        </message>
-        <message>
-            <source>Enable Thumbnail Mode</source>
-            <translation>Enable Thumbnail Mode</translation>
+            <source>Disable thumbnail mode</source>
+            <translation>Disable thumbnail mode</translation>
         </message>
         <message>
             <source>Enable annotation mode</source>
             <translation>Enable annotation mode</translation>
+        </message>
+        <message>
+            <source>Enable hide to top</source>
+            <translation>Enable hide to top</translation>
+        </message>
+        <message>
+            <source>Enable lock mode</source>
+            <translation>Enable lock mode</translation>
+        </message>
+        <message>
+            <source>Enable thumbnail mode</source>
+            <translation>Enable thumbnail mode</translation>
         </message>
         <message>
             <source>Exit click-through mode</source>
@@ -2016,24 +2016,20 @@ Files:
             <translation>Group: %1</translation>
         </message>
         <message>
-            <source>Group: Default</source>
-            <translation>Group: Default</translation>
+            <source>Group: default</source>
+            <translation>Group: default</translation>
         </message>
         <message>
             <source>Hide other windows</source>
             <translation>Hide other windows</translation>
         </message>
         <message>
-            <source>Hide to Top</source>
-            <translation>Hide to Top</translation>
+            <source>Hide to top</source>
+            <translation>Hide to top</translation>
         </message>
         <message>
-            <source>Image Editing</source>
-            <translation>Image Editing</translation>
-        </message>
-        <message>
-            <source>Image Stitching</source>
-            <translation>Image Stitching</translation>
+            <source>Image editing</source>
+            <translation>Image editing</translation>
         </message>
         <message>
             <source>Image file</source>
@@ -2042,6 +2038,10 @@ Files:
         <message>
             <source>Image size is too large</source>
             <translation>Image size is too large</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>Image stitching</translation>
         </message>
         <message>
             <source>Increase 10%</source>
@@ -2072,8 +2072,8 @@ Files:
             <translation>Move window</translation>
         </message>
         <message>
-            <source>New Group</source>
-            <translation>New Group</translation>
+            <source>New group</source>
+            <translation>New group</translation>
         </message>
         <message>
             <source>Next frame</source>
@@ -2152,10 +2152,6 @@ Files:
             <translation>Rotate counterclockwise</translation>
         </message>
         <message>
-            <source>Save as File</source>
-            <translation>Save as File</translation>
-        </message>
-        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
         </message>
@@ -2183,8 +2179,8 @@ Files:
             <translation>Scale</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
         <message>
             <source>Show all windows</source>
@@ -2287,8 +2283,8 @@ Files:
             <translation>Uploading to cloud... %1%</translation>
         </message>
         <message>
-            <source>Window Management</source>
-            <translation>Window Management</translation>
+            <source>Window management</source>
+            <translation>Window management</translation>
         </message>
     </context>
     <context>
@@ -2310,8 +2306,8 @@ Files:
             <translation>Release shortcut keys or click a group to switch. Esc to cancel</translation>
         </message>
         <message>
-            <source>Switch Window Group</source>
-            <translation>Switch Window Group</translation>
+            <source>Switch window group</source>
+            <translation>Switch window group</translation>
         </message>
         <message>
             <source>Windows · not closed / total</source>
@@ -2325,16 +2321,16 @@ Files:
             <translation>Configure cloud upload before uploading an image</translation>
         </message>
         <message>
-            <source>Continue Editing</source>
-            <translation>Continue Editing</translation>
+            <source>Continue editing</source>
+            <translation>Continue editing</translation>
         </message>
         <message>
-            <source>Discard Changes</source>
-            <translation>Discard Changes</translation>
+            <source>Discard changes</source>
+            <translation>Discard changes</translation>
         </message>
         <message>
-            <source>Discard Changes?</source>
-            <translation>Discard Changes?</translation>
+            <source>Discard changes?</source>
+            <translation>Discard changes?</translation>
         </message>
         <message>
             <source>Export completed</source>
@@ -2353,8 +2349,8 @@ Files:
             <translation>Fit image to window</translation>
         </message>
         <message>
-            <source>Image Editing</source>
-            <translation>Image Editing</translation>
+            <source>Image editing</source>
+            <translation>Image editing</translation>
         </message>
         <message>
             <source>Loading image…</source>
@@ -2400,8 +2396,8 @@ Files:
             <translation>Cancel</translation>
         </message>
         <message>
-            <source>Clear Default group</source>
-            <translation>Clear Default group</translation>
+            <source>Clear default group</source>
+            <translation>Clear default group</translation>
         </message>
         <message>
             <source>Clear group</source>
@@ -2416,8 +2412,8 @@ Files:
             <translation>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone</source>
-            <translation>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone</translation>
+            <source>Delete all pinned windows in "%1", including closed windows? The default group will remain. This action cannot be undone</source>
+            <translation>Delete all pinned windows in "%1", including closed windows? The default group will remain. This action cannot be undone</translation>
         </message>
         <message>
             <source>Delete empty groups</source>
@@ -2444,8 +2440,8 @@ Files:
             <translation>Group name</translation>
         </message>
         <message>
-            <source>New Group</source>
-            <translation>New Group</translation>
+            <source>New group</source>
+            <translation>New group</translation>
         </message>
         <message>
             <source>Please enter a group name</source>
@@ -2470,16 +2466,16 @@ Files:
         </translation>
         </message>
         <message>
-            <source>Align Position</source>
-            <translation>Align Position</translation>
-        </message>
-        <message>
             <source>Align bottom</source>
             <translation>Align bottom</translation>
         </message>
         <message>
             <source>Align left</source>
             <translation>Align left</translation>
+        </message>
+        <message>
+            <source>Align position</source>
+            <translation>Align position</translation>
         </message>
         <message>
             <source>Align right</source>
@@ -2506,20 +2502,20 @@ Files:
             <translation>Close</translation>
         </message>
         <message>
-            <source>Close Other Windows</source>
-            <translation>Close Other Windows</translation>
+            <source>Close other windows</source>
+            <translation>Close other windows</translation>
         </message>
         <message>
-            <source>Copy Files to Clipboard</source>
-            <translation>Copy Files to Clipboard</translation>
+            <source>Copy files to clipboard</source>
+            <translation>Copy files to clipboard</translation>
         </message>
         <message>
-            <source>Delete Empty Groups</source>
-            <translation>Delete Empty Groups</translation>
+            <source>Delete empty groups</source>
+            <translation>Delete empty groups</translation>
         </message>
         <message>
-            <source>Delete Specified Group</source>
-            <translation>Delete Specified Group</translation>
+            <source>Delete specified group</source>
+            <translation>Delete specified group</translation>
         </message>
         <message>
             <source>Destroy</source>
@@ -2560,20 +2556,20 @@ Files:
             <translation>Group</translation>
         </message>
         <message>
-            <source>Image Stitching</source>
-            <translation>Image Stitching</translation>
+            <source>Image stitching</source>
+            <translation>Image stitching</translation>
         </message>
         <message>
             <source>Lock</source>
             <translation>Lock</translation>
         </message>
         <message>
-            <source>New Group</source>
-            <translation>New Group</translation>
+            <source>New group</source>
+            <translation>New group</translation>
         </message>
         <message>
-            <source>Save as File</source>
-            <translation>Save as File</translation>
+            <source>Save as file</source>
+            <translation>Save as file</translation>
         </message>
         <message>
             <source>The displayed windows could not be destroyed</source>

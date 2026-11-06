@@ -185,7 +185,7 @@ void pinWindowShortcutPersistsValidatesAndResets(settings::SettingsRuntimeSessio
     const auto before = configuration.snapshot();
     const auto* field = settings::builtInSettingsRegistry().field(fieldId);
     require(field && field->configurationKey == QStringLiteral("screenshot_shortcuts/") + id &&
-                field->definition->title.translated() == QStringLiteral("Pin Window to Screen") &&
+                field->definition->title.translated() == QStringLiteral("Pin window to screen") &&
                 field->reset == settings::SettingsSectionReset::ScreenshotEditorShortcuts,
             "window pin must have a labeled, resettable setting in the screenshot shortcuts");
     require(session.localShortcuts(scope, id) == defaults &&

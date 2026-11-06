@@ -15,8 +15,8 @@ namespace snow_shot::translation {
                                         const QString& preferredId);
 [[nodiscard]] inline QString translationModelGroup(const SnowShotChatModel& model) {
     return model.translationMode == QStringLiteral("default")
-               ? QCoreApplication::translate("TranslationService", "General Models")
-               : QCoreApplication::translate("TranslationService", "Translation Models");
+               ? QCoreApplication::translate("TranslationService", "General models")
+               : QCoreApplication::translate("TranslationService", "Translation models");
 }
 } // namespace snow_shot::translation
 

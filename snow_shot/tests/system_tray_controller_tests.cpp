@@ -614,7 +614,7 @@ void verifyHideShowTrayAction(snow_shot::presentation::SystemTrayController& con
         if (action && action->data().toString() == id)
             hideShow = action;
     require(hideShow && !hideShow->isVisible() &&
-                hideShow->text() == QStringLiteral("Hide/Show All Windows"),
+                hideShow->text() == QStringLiteral("Hide/show all windows"),
             "hide/show is an optional tray action with the canonical title");
     auto customized = defaults;
     customized.append(id);
@@ -1520,7 +1520,7 @@ int main(int argc, char* argv[]) {
 #endif
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
                       "Delayed screenshot should use the canonical shortcut title");
-    requireActionText(recordingToggleMenuAction, QStringLiteral("Record/Copy Video"),
+    requireActionText(recordingToggleMenuAction, QStringLiteral("Record/copy video"),
                       "Recording toggle should use the canonical shortcut title");
     requireActionText(hotkeyToggleMenuAction, QStringLiteral("Disable global hotkeys"),
                       "the hotkey toggle should keep the historical tray label");
@@ -1561,7 +1561,7 @@ int main(int argc, char* argv[]) {
     controller.setScreenshotDelaySeconds(3);
     requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
                       "Show main interface should follow Disable global hotkeys");
-    requireActionText(restartMenuAction, QStringLiteral("Restart App"),
+    requireActionText(restartMenuAction, QStringLiteral("Restart app"),
                       "Restart App should use its catalog label");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
 

@@ -251,7 +251,7 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
         return static_cast<adqt::widgets::AdButton*>(nullptr);
     };
     auto* select = findButton(QStringLiteral("Select elements"));
-    auto* settings = findButton(QStringLiteral("Export Settings"));
+    auto* settings = findButton(QStringLiteral("Export settings"));
     require(select != nullptr && settings != nullptr && select->isVisible(),
             "the recording toolbar must expose Select elements");
     QLayout* layout = palette.mainPanel()->layout();

@@ -379,9 +379,9 @@ void duplicateContentSettings() {
     const QStringList values{QStringLiteral("none"), QStringLiteral("shake_window"),
                              QStringLiteral("restore_last_closed_window"),
                              QStringLiteral("repeat_action")};
-    const QStringList labels{QStringLiteral("None"), QStringLiteral("Shake Window"),
-                             QStringLiteral("Restore Last Closed Window"),
-                             QStringLiteral("Repeat Action")};
+    const QStringList labels{QStringLiteral("None"), QStringLiteral("Shake window"),
+                             QStringLiteral("Restore last closed window"),
+                             QStringLiteral("Repeat action")};
     require(select.options.size() == values.size(), "duplicate policy has four choices");
     for (int i = 0; i < values.size(); ++i) {
         require(select.options[i].value == values[i] &&

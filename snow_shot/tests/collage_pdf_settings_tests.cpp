@@ -240,12 +240,12 @@ void imageSizeSelection() {
     auto* custom = control<QWidget>(widget, "collagePdfCustomPaper");
     paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::ImageSize));
     settings.paperSize = CollagePdfPaperSize::ImageSize;
-    require(paper->currentText() == QStringLiteral("Image Size") &&
+    require(paper->currentText() == QStringLiteral("Image size") &&
                 document.pdfSettings() == settings && !custom->isVisible() &&
                 !orientation->isVisible() && !margin->isVisible(),
             "image size is selectable and hides inactive paper controls without changing values");
     const std::array<const char*, 3> locales{"en_US", "zh_CN", "zh_TW"};
-    const std::array expected{QStringLiteral("Image Size"), QStringLiteral("图像大小"),
+    const std::array expected{QStringLiteral("Image size"), QStringLiteral("图像大小"),
                               QStringLiteral("圖像大小")};
     for (std::size_t index = 0; index < locales.size(); ++index) {
         QTranslator translator;

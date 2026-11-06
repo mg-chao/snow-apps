@@ -120,7 +120,7 @@ class ToolbarEditorTranslator final : public QTranslator {
             if (source == QStringLiteral("Select elements")) {
                 return QStringLiteral("Translated select elements");
             }
-            if (source == QStringLiteral("Separator Component")) {
+            if (source == QStringLiteral("Separator component")) {
                 return QStringLiteral("Translated separator");
             }
             if (source == QStringLiteral("Shape")) {
@@ -634,8 +634,8 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
         editor->findChild<QWidget*>(QStringLiteral("settings-drawing-toolbar-hidden-zone"));
     require(separator != nullptr && selectSeparator != nullptr && select != nullptr &&
                 undo != nullptr && redo != nullptr && surface != nullptr && hidden != nullptr &&
-                separator->accessibleName() == QStringLiteral("Separator Component") &&
-                selectSeparator->accessibleName() == QStringLiteral("Separator Component") &&
+                separator->accessibleName() == QStringLiteral("Separator component") &&
+                selectSeparator->accessibleName() == QStringLiteral("Separator component") &&
                 selectSeparator->text() == separator->text() &&
                 select->accessibleName() == QStringLiteral("Select elements"),
             "drawing editor must expose Select, both separators and both history actions");
@@ -835,7 +835,7 @@ void recordingToolbarToolsCanMoveStackHideAndReset() {
     require(
         surface != nullptr && hidden != nullptr && guidance != nullptr &&
             surface->accessibleName() == QStringLiteral("Recording toolbar preview") &&
-            guidance->text().contains(QStringLiteral("Recording duration and Separator Component")),
+            guidance->text().contains(QStringLiteral("Recording duration and Separator component")),
         "recording editor must explain its two standalone controls");
     const auto buttonFor = [&editor](const QString& id) {
         auto* button = editor->findChild<QAbstractButton*>(
@@ -986,7 +986,7 @@ void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
     require(separator != nullptr && copy != nullptr && quickSave != nullptr && confirm != nullptr &&
                 confirm->accessibleName() == QStringLiteral("Confirm edit") && surface != nullptr &&
                 hidden != nullptr &&
-                separator->accessibleName() == QStringLiteral("Separator Component"),
+                separator->accessibleName() == QStringLiteral("Separator component"),
             "pinned editor must expose the separator and both export actions");
 
     const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
@@ -1065,7 +1065,7 @@ void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
     for (const QString& id : {QStringLiteral("separator"), QStringLiteral("confirm-separator")}) {
         auto* divider = editor->findChild<QAbstractButton*>(
             QStringLiteral("settings-pinned-toolbar-item-%1").arg(id));
-        require(divider && divider->accessibleName() == QStringLiteral("Separator Component"),
+        require(divider && divider->accessibleName() == QStringLiteral("Separator component"),
                 "pinned editor must expose the export and Confirm section dividers");
         require(drop(hidden, id, QPoint(1, 1)), "section divider must be hideable");
         flushEvents();

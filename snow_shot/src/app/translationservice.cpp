@@ -158,7 +158,7 @@ void TranslationService::publishModels(bool resolveSelection) {
         return;
     m_models = m_client->cachedChatModels();
     m_models.removeIf([](const auto& model) { return model.id == freeTranslationId; });
-    m_models.prepend({freeTranslationId, tr("Free Translation"), false,
+    m_models.prepend({freeTranslationId, tr("Free translation"), false,
                       QStringLiteral("free-translation"), false});
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.

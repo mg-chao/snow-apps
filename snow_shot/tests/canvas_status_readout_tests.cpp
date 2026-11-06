@@ -107,8 +107,8 @@ void messagesRemainPassiveAndAccessible() {
     const std::array expected{QStringLiteral("Scale: 125%"),
                               QStringLiteral("Opacity: 125%"),
                               QStringLiteral("Locked"),
-                              QStringLiteral("Motion Preview in Progress"),
-                              QStringLiteral("Result Preview in Progress"),
+                              QStringLiteral("Motion preview in progress"),
+                              QStringLiteral("Result preview in progress"),
                               QStringLiteral("Rendering preview")};
     for (size_t i = 0; i < messages.size(); ++i) {
         readout.setMessage(messages[i], 125);
@@ -125,7 +125,7 @@ void messagesRemainPassiveAndAccessible() {
     readout.setMessage(Message::MotionPreview);
     readout.layoutIn(QRectF(10.25, 20.25, 80.5, 28.5));
     require(readout.x() == 19 && readout.width() <= 63 && readout.text() != readout.toolTip() &&
-                readout.toolTip() == QStringLiteral("Motion Preview in Progress") &&
+                readout.toolTip() == QStringLiteral("Motion preview in progress") &&
                 readout.accessibleName() == readout.toolTip(),
             "fractional content bounds must round inward and elide only visible text");
     readout.layoutIn(QRectF(25, 30, 210, 150), Corner::TopLeft);

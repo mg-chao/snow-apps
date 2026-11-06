@@ -181,7 +181,7 @@ class WindowGroupSwitcherPopup::Impl {
         retranslate();
     }
     void retranslate() {
-        title->setText(pickerText(QT_TRANSLATE_NOOP("WindowGroupSwitcher", "Switch Window Group")));
+        title->setText(pickerText(QT_TRANSLATE_NOOP("WindowGroupSwitcher", "Switch window group")));
         q.setWindowTitle(title->text());
         q.setAccessibleName(title->text());
         list->setAccessibleName(title->text());

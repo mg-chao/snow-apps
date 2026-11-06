@@ -2535,7 +2535,7 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                                  QCoreApplication::translate(
                                      "ScreenshotController",
                                      "Smart selection is using window mode. Enable Accessibility "
-                                     "access in Screenshot settings to select window elements"));
+                                     "access in screenshot settings to select window elements"));
                      });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, &owner,
                      [this](bool ok) {

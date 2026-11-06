@@ -592,7 +592,7 @@ AdministratorPresentation administratorPresentation(AdministratorState state, bo
             "AdministratorLaunch", "This feature requires membership in the Administrators group"));
     else if (!autoStart)
         result.launchHint =
-            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Turn on Auto start at boot first"));
+            text(QT_TRANSLATE_NOOP("AdministratorLaunch", "Turn on auto start at boot first"));
     if (!allowed && !result.elevated)
         result.restartHint = result.launchHint;
     return result;
@@ -848,11 +848,11 @@ AdministratorResult reconcileStartupMode(StartupMode mode) {
             return task ? AdministratorResult{true, false, {}}
                         : failure(text(QT_TRANSLATE_NOOP(
                               "AdministratorLaunch", "Elevated auto-start needs repair. Turn "
-                                                     "Launch as administrator off and on again")));
+                                                     "launch as administrator off and on again")));
         }
         if (task)
             return failure(text(QT_TRANSLATE_NOOP("AdministratorLaunch",
-                                                  "Elevated auto-start needs repair. Turn Launch "
+                                                  "Elevated auto-start needs repair. Turn launch "
                                                   "as administrator off and on again")));
         QString error;
         if (mode == StartupMode::Registry && AutoStartRegistration::matchesExpectedCommand())

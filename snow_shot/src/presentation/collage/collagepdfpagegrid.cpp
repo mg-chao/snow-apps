@@ -87,7 +87,7 @@ QString imageName(const QString& label) {
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Clear"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add images to create a PDF document"),
-    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drag image files here, or choose Add images"),
+    QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drag image files here, or choose add images"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Drop images to add pages"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "Add multiple image files at once"),
     QT_TRANSLATE_NOOP("CollagePdfPageGrid", "The original image is unavailable"),
@@ -1273,7 +1273,7 @@ void CollagePdfPageGrid::retranslateUi() {
         d.selectionActions[index]->setAccessibleName(d.selectionActions[index]->toolTip());
     }
     d.empty->title->setText(gridText("Add images to create a PDF document"));
-    d.empty->description->setText(gridText("Drag image files here, or choose Add images"));
+    d.empty->description->setText(gridText("Drag image files here, or choose add images"));
     if (auto* add = findChild<AdButton*>(QStringLiteral("collagePdfEmptyAddImages"))) {
         add->setText(gridText("Add images"));
         add->setAccessibleName(add->text());

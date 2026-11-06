@@ -99,8 +99,8 @@ void sidebarPlacesSearchAboveNavigation() {
                 search->mapTo(&sidebar, QPoint()).x() == metric.paddingSM &&
                 search->mapTo(&sidebar, QPoint()).y() == metric.paddingXS,
             "sidebar search should have compact top spacing and balanced side spacing");
-    require(select->placeholder() == QStringLiteral("Search Function") &&
-                select->accessibleName() == QStringLiteral("Search Function"),
+    require(select->placeholder() == QStringLiteral("Search function") &&
+                select->accessibleName() == QStringLiteral("Search function"),
             "the search placeholder and accessible name should use the requested copy");
     require(header.findChild<ApplicationSearchWidget*>() == nullptr,
             "the page header should only contain page tabs");
@@ -336,7 +336,7 @@ void searchRetranslatesWithNavigation() {
         }
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
-            if (qstrcmp(context, "SidebarWidget") == 0 && qstrcmp(source, "Search Function") == 0) {
+            if (qstrcmp(context, "SidebarWidget") == 0 && qstrcmp(source, "Search function") == 0) {
                 return QStringLiteral("Translated search");
             }
             return {};

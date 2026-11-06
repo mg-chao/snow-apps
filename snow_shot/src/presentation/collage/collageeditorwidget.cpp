@@ -104,7 +104,7 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Reset transform"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images to create a collage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drag image files here, or choose Add images"),
+    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drag image files here, or choose add images"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Drop images to add to collage"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Add multiple image files at once"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "%1 × %2 px"),
@@ -2084,7 +2084,7 @@ void CollageEditorWidget::retranslateUi() {
     d.reverse->setToolTip(text("Reverse image order"));
     d.reverse->setAccessibleName(d.reverse->toolTip());
     d.emptyPrompt->setText(text("Add images to create a collage"));
-    d.emptyState->description->setText(text("Drag image files here, or choose Add images"));
+    d.emptyState->description->setText(text("Drag image files here, or choose add images"));
     d.dropHint->title->setText(text("Drop images to add to collage"));
     d.dropHint->description->setText(text("Add multiple image files at once"));
     d.dropHint->setAccessibleName(d.dropHint->title->text());

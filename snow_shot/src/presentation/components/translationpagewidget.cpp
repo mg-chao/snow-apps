@@ -469,7 +469,7 @@ void TranslationPageWidget::retranslateUi() {
         m_labels[index]->setText(labels[index]);
         m_selects[index]->setAccessibleName(labels[index]);
     }
-    QVector<AdSelect::Option> sourceOptions{{QStringLiteral("auto"), tr("Auto Detect")}};
+    QVector<AdSelect::Option> sourceOptions{{QStringLiteral("auto"), tr("Auto detect")}};
     QVector<AdSelect::Option> targetOptions;
     for (const auto& language : translation::translationLanguages()) {
         const QString code = QString::fromLatin1(language.code);
@@ -507,7 +507,7 @@ void TranslationPageWidget::retranslateActions() {
             tr("Copy (%1)").arg(snow_shot::shortcuts::formatShortcutDisplayText(copyBinding)));
     if (m_copyClose)
         m_copyClose->setText(
-            tr("Copy and Close (%1)")
+            tr("Copy and close (%1)")
                 .arg(snow_shot::shortcuts::formatShortcutDisplayText(copyCloseBinding)));
 }
 

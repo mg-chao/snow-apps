@@ -486,7 +486,7 @@ struct ImageEditingWindow::Impl {
         notice = value;
     }
     void retranslate() {
-        modal->setWindowTitle(ImageEditingWindow::tr("Image Editing"));
+        modal->setWindowTitle(ImageEditingWindow::tr("Image editing"));
         floating->setWindowTitle(modal->windowTitle());
         fit->setToolTip(ImageEditingWindow::tr("Fit image to window"));
         fit->setAccessibleName(fit->toolTip());
@@ -776,10 +776,10 @@ struct ImageEditingWindow::Impl {
     }
     void exportContent(ExportOperation operation);
     void translateConfirmation() {
-        confirmation->setWindowTitle(ImageEditingWindow::tr("Discard Changes?"));
+        confirmation->setWindowTitle(ImageEditingWindow::tr("Discard changes?"));
         confirmation->setText(ImageEditingWindow::tr("This editing window has unsaved changes"));
-        confirmation->setAcceptText(ImageEditingWindow::tr("Discard Changes"));
-        confirmation->setRejectText(ImageEditingWindow::tr("Continue Editing"));
+        confirmation->setAcceptText(ImageEditingWindow::tr("Discard changes"));
+        confirmation->setRejectText(ImageEditingWindow::tr("Continue editing"));
     }
 };
 

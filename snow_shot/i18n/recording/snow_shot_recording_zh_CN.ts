@@ -77,7 +77,7 @@
             <translation>正在完成录制导出...</translation>
         </message>
         <message>
-            <source>Keep Source</source>
+            <source>Keep source</source>
             <translation>保留源文件</translation>
         </message>
         <message>
@@ -165,7 +165,7 @@
             <translation>请选择其他文件，以保留原始录制</translation>
         </message>
         <message>
-            <source>Save to File</source>
+            <source>Save to file</source>
             <translation>保存到文件</translation>
         </message>
         <message>

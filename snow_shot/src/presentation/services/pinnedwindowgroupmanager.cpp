@@ -467,10 +467,10 @@ void PinnedWindowGroupManager::openDeleteSpecifiedGroupConfirmation(const QStrin
     auto* modal =
         createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
     const auto updateText = [this, modal, groupId, isDefault]() {
-        modal->setWindowTitle(isDefault ? tr("Clear Default group") : tr("Delete group"));
+        modal->setWindowTitle(isDefault ? tr("Clear default group") : tr("Delete group"));
         modal->setText(
             isDefault
-                ? tr("Delete all pinned windows in \"%1\", including closed windows? The Default "
+                ? tr("Delete all pinned windows in \"%1\", including closed windows? The default "
                      "group will remain. This action cannot be undone")
                       .arg(displayName(groupId))
                 : tr("Delete \"%1\" and all its pinned windows, including closed windows? This "
@@ -750,7 +750,7 @@ void PinnedWindowGroupManager::openCreateGroupModal(
         modal->setWindowScreen(screen != nullptr ? screen : QApplication::primaryScreen());
     }
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("New Group"));
+    modal->setWindowTitle(tr("New group"));
     modal->setCentered(true);
     modal->setPreferredWidth(400);
     modal->setMaskVisible(false);
@@ -769,7 +769,7 @@ void PinnedWindowGroupManager::openCreateGroupModal(
             [managerGuard, modal, itemGuard](const QString&, const QLocale&) {
                 if (!managerGuard || !itemGuard)
                     return;
-                modal->setWindowTitle(tr("New Group"));
+                modal->setWindowTitle(tr("New group"));
                 modal->setAcceptText(tr("Add"));
                 modal->setRejectText(tr("Cancel"));
                 itemGuard->setLabel(tr("Group name"));

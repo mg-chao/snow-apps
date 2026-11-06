@@ -861,10 +861,10 @@ void recordingPostProcessingOptionsBindState() {
         require(progress && playback &&
                     button->accessibleName() == translated("Post-processing effects") &&
                     button->toolTip() == translated("Post-processing effects") &&
-                    progress->text() == translated("Show Progress Bar") &&
-                    progress->accessibleName() == translated("Show Progress Bar") &&
-                    playback->text() == translated("Show Playback Time") &&
-                    playback->accessibleName() == translated("Show Playback Time") &&
+                    progress->text() == translated("Show progress bar") &&
+                    progress->accessibleName() == translated("Show progress bar") &&
+                    playback->text() == translated("Show playback time") &&
+                    playback->accessibleName() == translated("Show playback time") &&
                     playback->isChecked(),
                 "language changes must retranslate options and preserve their choice");
     }
@@ -1063,7 +1063,7 @@ void recordingEffectSettingsModal() {
                 modal->windowModality() == Qt::ApplicationModal && modal->centered() &&
                 !modal->maskVisible() && !modal->closeOnMaskClick() &&
                 modal->ownerWindow() == &recordingOwner &&
-                modal->windowTitle() == QStringLiteral("Effect Settings") &&
+                modal->windowTitle() == QStringLiteral("Effect settings") &&
                 modal->standardButtons() == adqt::widgets::AdModal::StandardButton::Ok,
             "settings must use the selection editor's Windows-style modal conventions");
     require((modal->contentWidget()->window()->frameGeometry().center() -
@@ -1144,7 +1144,7 @@ void recordingEffectSettingsModal() {
         require(language.setLanguage(locale), "progress bar color translation catalog must load");
         QCoreApplication::processEvents();
         const auto label =
-            QCoreApplication::translate("ScreenshotToolPalette", "Progress Bar Color");
+            QCoreApplication::translate("ScreenshotToolPalette", "Progress bar color");
         require(form->field(QStringLiteral("progressBarColor"))->label() == label &&
                     opened.progressBar->accessibleName() == label,
                 "progress bar color label and accessible name must retranslate in place");
@@ -1156,9 +1156,9 @@ void recordingEffectSettingsModal() {
                             ->accessibleName() == radiusLabel,
                 "highlight radius label and accessible name retranslate in place");
         const auto webcamSizeLabel =
-            QCoreApplication::translate("ScreenshotToolPalette", "Webcam Size");
+            QCoreApplication::translate("ScreenshotToolPalette", "Webcam size");
         const auto webcamShapeLabel =
-            QCoreApplication::translate("ScreenshotToolPalette", "Webcam Shape");
+            QCoreApplication::translate("ScreenshotToolPalette", "Webcam shape");
         require(form->field(QStringLiteral("webcamSize"))->label() == webcamSizeLabel &&
                     webcamSize->accessibleName() == webcamSizeLabel &&
                     form->field(QStringLiteral("webcamShape"))->label() == webcamShapeLabel &&
@@ -1273,7 +1273,7 @@ void recordingEffectSettingsModal() {
                 foregroundChanges == foregroundChangesBeforeRebuild,
             "rebuilding settings must not emit effect change signals");
     require(!reopened.form->disabled() &&
-                reopened.modal->windowTitle() == QStringLiteral("Effect Settings") &&
+                reopened.modal->windowTitle() == QStringLiteral("Effect settings") &&
                 !reopened.duration->suffixText().isEmpty() &&
                 reopened.keyboardSize->suffixText() == QStringLiteral("px"),
             "a rebuilt form must be enabled and retranslated before it is shown");
@@ -1420,8 +1420,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     require(filterButton->isEnabled() && (!filterIconColor.has_value() ||
                                           filterIconColor->rgba() != disabledIconColor.rgba()),
             "recording filters should be enabled and use the normal tool icon color");
-    require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
-                exportButton->accessibleName() == QStringLiteral("Export Settings") &&
+    require(exportButton->toolTip() == QStringLiteral("Export settings") &&
+                exportButton->accessibleName() == QStringLiteral("Export settings") &&
                 adqt::icons::describeIcon(exportButton->iconRef()).key.name ==
                     QStringLiteral("export-settings") &&
                 format->accessibleName() == QStringLiteral("Recording format") &&
@@ -1917,7 +1917,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
 
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&palette, &languageChange);
-    require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
+    require(exportButton->toolTip() == QStringLiteral("Export settings") &&
                 format->accessibleName() == QStringLiteral("Recording format") &&
                 cursor->accessibleName() == QStringLiteral("Show cursor in recording") &&
                 keyboard->accessibleName() == QStringLiteral("Show keystrokes in recording"),
@@ -2019,8 +2019,8 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
                     "dynamic toolbar labels must use the active translation catalog");
         }
         const QString cursorLabel =
-            QCoreApplication::translate("ScreenshotToolPalette", "Show Cursor");
-        require(cursorLabel != QStringLiteral("Show Cursor") &&
+            QCoreApplication::translate("ScreenshotToolPalette", "Show cursor");
+        require(cursorLabel != QStringLiteral("Show cursor") &&
                     cursorButton->toolTip().startsWith(cursorLabel),
                 "Show Cursor must retranslate with its configurable shortcut");
         cursorPalette.setCursorAvailable(false);
@@ -6065,7 +6065,7 @@ void cloudUploadToolbarContracts() {
                 "cloud tool retains initial Save primary action");
         materializeLazyPopover(trigger);
         auto* popover = popoverForTrigger(trigger);
-        auto* option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        auto* option = popoverButtonWithTooltip(popover, "Upload to cloud");
         const auto* optionLayout = popover->contentWidget()->layout();
         require(option && !option->isEnabled() &&
                     optionLayout->indexOf(option) == optionLayout->count() - 1,
@@ -6086,14 +6086,14 @@ void cloudUploadToolbarContracts() {
         require(!palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")),
                 "busy toolbar guards upload shortcut");
         materializeLazyPopover(trigger);
-        option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        option = popoverButtonWithTooltip(popover, "Upload to cloud");
         require(option && !option->isEnabled(), "busy toolbar disables cloud popover option");
         palette.setCloudUploadBusy(false);
         require(palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")) &&
                     requests == 2,
                 "cloud shortcut shares toolbar request");
         materializeLazyPopover(trigger);
-        option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        option = popoverButtonWithTooltip(popover, "Upload to cloud");
         auto& language = snow_shot::presentation::LanguageManager::instance();
         require(language.setLanguage(QStringLiteral("zh_CN")), "translate cloud toolbar");
         QCoreApplication::processEvents();
@@ -7017,8 +7017,8 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     require(splitButton && editingButton && settingsButton && splitButton->isVisible() &&
                 editingButton->isVisible() && !editingButton->icon().isNull() &&
                 editingButton->text().isEmpty() &&
-                editingButton->toolTip() == QStringLiteral("Image Editing") &&
-                splitButton->toolTip() == QStringLiteral("Image Splitting") &&
+                editingButton->toolTip() == QStringLiteral("Image editing") &&
+                splitButton->toolTip() == QStringLiteral("Image splitting") &&
                 editingButton->x() - (splitButton->x() + splitButton->width()) == 4 &&
                 settingsButton->x() - (editingButton->x() + editingButton->width()) == 4,
             "Image Editing must appear between Image Splitting and Settings");
@@ -7257,9 +7257,9 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     QCoreApplication::processEvents();
     require(interval->toolTip() == englishTooltip,
             "scaling a translated interval editor must preserve its translation source");
-    require(splitButton->toolTip() == QStringLiteral("Image Splitting"),
+    require(splitButton->toolTip() == QStringLiteral("Image splitting"),
             "Image Splitting must restore its English caption after language changes");
-    require(editingButton->toolTip() == QStringLiteral("Image Editing"),
+    require(editingButton->toolTip() == QStringLiteral("Image editing"),
             "Image Editing must restore its English caption after language changes");
 }
 
@@ -7459,13 +7459,13 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
         for (qsizetype index = 0; index < grouped.size(); ++index) {
             require(grouped[index].value.toString() == expectedIds[index] &&
                         grouped[index].label == expectedLabels[index] && !grouped[index].disabled &&
-                        grouped[index].group == (index == 0 ? QStringLiteral("Dedicated Model")
-                                                            : QStringLiteral("Vision Model")),
+                        grouped[index].group == (index == 0 ? QStringLiteral("Dedicated model")
+                                                            : QStringLiteral("Vision model")),
                     "each grouped recognition option must preserve its exact model identity and "
                     "name, including the first server vision model");
         }
     };
-    requireCatalogOptions(QStringLiteral("Table-Specific Model"));
+    requireCatalogOptions(QStringLiteral("Table-specific model"));
     auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
     require(layout != nullptr && layout->itemAt(layout->count() - 1)->widget() == select &&
                 select->accessibleName() == QStringLiteral("Recognition model"),
@@ -7493,7 +7493,7 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
                 !select->isHidden() && modelChanges == 2,
             "LaTeX must display the default server model's real identity without emitting a model "
             "choice");
-    requireCatalogOptions(QStringLiteral("LaTeX-Specific Model"));
+    requireCatalogOptions(QStringLiteral("LaTeX-specific model"));
     std::swap(latexState.models[1], latexState.models[2]);
     latexState.effectiveModel = QStringLiteral("vision-default");
     palette.setRecognitionModelState(Tool::Latex, latexState);
@@ -7552,7 +7552,7 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
     palette.setRecognitionModelState(Tool::Latex, latexState);
     const auto unavailableDefault = select->options();
     require(unavailableDefault.size() == 4 &&
-                unavailableDefault[0].label == QStringLiteral("LaTeX-Specific Model") &&
+                unavailableDefault[0].label == QStringLiteral("LaTeX-specific model") &&
                 unavailableDefault[1].value.toString() == QStringLiteral("custom:vision") &&
                 unavailableDefault[2].value.toString() == QStringLiteral("custom:vision-other") &&
                 unavailableDefault[3].value.toString() ==
@@ -7627,10 +7627,10 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
             "keyboard opening during model loading must show a usable popup inside screen bounds");
     input->selectAll();
     PhysicalKeyEvent search(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
-                            QStringLiteral("Table-Specific Model"));
+                            QStringLiteral("Table-specific model"));
     QApplication::sendEvent(input, &search);
     QCoreApplication::processEvents();
-    require(select->searchText() == QStringLiteral("Table-Specific Model") &&
+    require(select->searchText() == QStringLiteral("Table-specific model") &&
                 view->model()->rowCount() == 2 && keyboardSelections == 0,
             "typing while model loading must filter grouped options without committing a model");
     PhysicalKeyEvent home(QEvent::KeyPress, Qt::Key_Home, Qt::NoModifier);
@@ -7680,9 +7680,9 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
     require(
         translated.size() == 3 &&
             select->accessibleName() == QStringLiteral("Translated Recognition model") &&
-            translated[0].label == QStringLiteral("Translated Table-Specific Model") &&
-            translated[0].group == QStringLiteral("Translated Dedicated Model") &&
-            translated[1].group == QStringLiteral("Translated Vision Model") &&
+            translated[0].label == QStringLiteral("Translated Table-specific model") &&
+            translated[0].group == QStringLiteral("Translated Dedicated model") &&
+            translated[1].group == QStringLiteral("Translated Vision model") &&
             translated[1].value.toString() == QStringLiteral("custom:vision") &&
             translated[1].label == longName && translated[2].group == translated[1].group &&
             translated[2].label == QStringLiteral("Translated Snow Shot visual understanding") &&
@@ -7693,9 +7693,9 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
     palette.setActiveTool(Tool::Latex);
     const auto translatedLatex = select->options();
     require(translatedLatex.size() == 3 &&
-                translatedLatex[0].label == QStringLiteral("Translated LaTeX-Specific Model") &&
-                translatedLatex[0].group == QStringLiteral("Translated Dedicated Model") &&
-                translatedLatex[1].group == QStringLiteral("Translated Vision Model") &&
+                translatedLatex[0].label == QStringLiteral("Translated LaTeX-specific model") &&
+                translatedLatex[0].group == QStringLiteral("Translated Dedicated model") &&
+                translatedLatex[1].group == QStringLiteral("Translated Vision model") &&
                 translatedLatex[1].label == longName &&
                 translatedLatex[1].value.toString() == QStringLiteral("custom:vision") &&
                 translatedLatex[2].group == translatedLatex[1].group &&
@@ -7714,8 +7714,8 @@ void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
     palette.setRecognitionModelState(Tool::Latex, defaultState);
     const auto translatedCatalog = select->options();
     require(translatedCatalog.size() == 3 &&
-                translatedCatalog[0].label == QStringLiteral("Translated LaTeX-Specific Model") &&
-                translatedCatalog[1].group == QStringLiteral("Translated Vision Model") &&
+                translatedCatalog[0].label == QStringLiteral("Translated LaTeX-specific model") &&
+                translatedCatalog[1].group == QStringLiteral("Translated Vision model") &&
                 translatedCatalog[1].value.toString() == QStringLiteral("server-vision") &&
                 translatedCatalog[1].label == QStringLiteral("Actual server vision name") &&
                 translatedCatalog[2].value.toString() == QStringLiteral("custom:vision") &&
@@ -7857,7 +7857,7 @@ void imageConversionToolsExposeRecognitionActions() {
             "HTML switches format and retains the conversion sub-toolbar");
     palette.setLatexState(true, false);
     reopenConversionOptions();
-    auto* latex = popoverButtonWithTooltip(popover, "LaTeX Formula Recognition");
+    auto* latex = popoverButtonWithTooltip(popover, "LaTeX formula recognition");
     int latexRequests = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::latexRequested, &palette,
                      [&]() { ++latexRequests; });
@@ -8038,7 +8038,7 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     const QVector<SnowShotChatModel> services{
         {QStringLiteral("model-a"), QStringLiteral("Model A")},
         {QStringLiteral("custom:test"), QStringLiteral("Custom AI model")},
-        {QStringLiteral("free-translation"), QStringLiteral("Free Translation"), false,
+        {QStringLiteral("free-translation"), QStringLiteral("Free translation"), false,
          QStringLiteral("free-translation")},
         {QStringLiteral("translation:test"), QStringLiteral("Custom service"), false,
          QStringLiteral("text")},
@@ -8142,10 +8142,10 @@ void ocrToolReplacesSelectionActionToolbarContents() {
             const auto& model = services.at(row);
             const QString label =
                 row == 2 ? QCoreApplication::translate("snow_shot::translation::TranslationService",
-                                                       "Free Translation")
+                                                       "Free translation")
                          : model.name;
             const QString group = QCoreApplication::translate(
-                "TranslationService", row < 2 ? "General Models" : "Translation Models");
+                "TranslationService", row < 2 ? "General models" : "Translation models");
             require(option.value == model.id && option.label == label && option.group == group,
                     "quick services preserve the shared catalog order, names and model groups");
         }
@@ -9963,7 +9963,7 @@ void filterToolExposesTypeAndIntensityControls() {
     const FilterTypeRow filterTypeRows[] = {
         {0, SnowCanvasFilterType::Mosaic, QStringLiteral("Mosaic")},
         {1, SnowCanvasFilterType::GaussianBlur, QStringLiteral("Gaussian blur")},
-        {2, SnowCanvasFilterType::SmartErase, QStringLiteral("Smart Erase")},
+        {2, SnowCanvasFilterType::SmartErase, QStringLiteral("Smart erase")},
         {3, SnowCanvasFilterType::Grayscale, QStringLiteral("Grayscale")},
         {4, SnowCanvasFilterType::Inversion, QStringLiteral("Inversion")},
         {5, SnowCanvasFilterType::Emboss, QStringLiteral("Emboss")},
@@ -11297,7 +11297,7 @@ void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
     auto* layout =
         select == nullptr ? nullptr : qobject_cast<QBoxLayout*>(select->parentWidget()->layout());
     require(select != nullptr && opacity != nullptr && layout != nullptr &&
-                select->placeholder() == QStringLiteral("Annotation Template") &&
+                select->placeholder() == QStringLiteral("Annotation template") &&
                 select->searchEnabled() && select->isEnabled() &&
                 layout->indexOf(select) < layout->indexOf(opacity),
             "Draw Template should be an enabled searchable select left of opacity");
@@ -11330,7 +11330,7 @@ void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
     QCoreApplication::processEvents();
     add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotDrawTemplateAddButton"));
-    require(add != nullptr && add->isVisible() && add->text() == QStringLiteral("Add Template") &&
+    require(add != nullptr && add->isVisible() && add->text() == QStringLiteral("Add template") &&
                 add->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
             "an empty Draw Template popup should retain its Add Template footer");
     auto& language = snow_shot::presentation::LanguageManager::instance();
@@ -19843,7 +19843,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
         require(language.setLanguage(locale), "unit tooltip catalogs must load");
         QCoreApplication::processEvents();
         const auto tooltip =
-            QCoreApplication::translate("ScreenshotToolPalette", "Logical Pixel Selection");
+            QCoreApplication::translate("ScreenshotToolPalette", "Logical pixel selection");
         require(unitGroup->button(1)->toolTip() == tooltip &&
                     unitGroup->button(1)->accessibleName() == tooltip,
                 "unit tooltips and accessible names must retranslate live");

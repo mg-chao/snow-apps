@@ -968,7 +968,7 @@ void mainNavigationSearchThemesAndLanguages() {
         QCoreApplication::installTranslator(&translator);
         flushEvents();
         require(searchSelect->placeholder() ==
-                    expectedTranslation(translator, locale, "SidebarWidget", "Search Function"),
+                    expectedTranslation(translator, locale, "SidebarWidget", "Search function"),
                 "sidebar search retranslates with each application catalog");
         const QString translatedTitle =
             expectedTranslation(translator, locale, "AboutPageWidget", "About Snow Shot");
@@ -988,7 +988,7 @@ void mainNavigationSearchThemesAndLanguages() {
                 "license details retranslate");
         require(child<QLabel>(*page, "aboutOpenSource")->text() ==
                         expectedTranslation(translator, locale, "AboutPageWidget",
-                                            "Free · Open source") &&
+                                            "Free · open source") &&
                     child<QLabel>(*page, "aboutDescription")->text() ==
                         expectedTranslation(
                             translator, locale, "AboutPageWidget",
@@ -1002,7 +1002,7 @@ void mainNavigationSearchThemesAndLanguages() {
                 "the two-tone headline retranslates");
         require(child<QLabel>(*page, "aboutSlogan")->text() ==
                     expectedTranslation(translator, locale, "AboutPageWidget",
-                                        "Snow Shot · Make expression clearer"),
+                                        "Snow Shot · make expression clearer"),
                 "the footer slogan retranslates");
         const std::array<const char*, 6> features{"Screenshot capture", "Easy annotation",
                                                   "Text recognition",   "Screen recording",
@@ -1030,13 +1030,13 @@ void mainNavigationSearchThemesAndLanguages() {
             const char* number;
         };
         const std::array<QqGroupCopy, 1> qqGroups{{
-            {"aboutQqGroup3", "QQ Group 3", "1037819112"},
+            {"aboutQqGroup3", "QQ group 3", "1037819112"},
         }};
         for (const auto& group : qqGroups) {
             const QString title =
                 expectedTranslation(translator, locale, "AboutPageWidget", group.title);
             const QString description = expectedTranslation(translator, locale, "AboutPageWidget",
-                                                            "Discussion and support · Group No. %1")
+                                                            "Discussion and support · group no. %1")
                                             .arg(QString::fromLatin1(group.number));
             auto* button = child<QAbstractButton>(*page, group.objectName);
             require(button->accessibleName() == title &&

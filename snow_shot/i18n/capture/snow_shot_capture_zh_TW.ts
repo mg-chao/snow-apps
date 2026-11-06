@@ -23,7 +23,7 @@
     <context>
         <name>ScreenshotAutoFilterController</name>
         <message>
-            <source>Region identification failed. Try Auto Filter again</source>
+            <source>Region identification failed. Try auto filter again</source>
             <translation>區域識別失敗。請再次嘗試自動濾鏡</translation>
         </message>
     </context>
@@ -106,7 +106,7 @@
             <translation>捲動截圖已停止。請檢查螢幕錄製權限和顯示器設定，然後重試</translation>
         </message>
         <message>
-            <source>Smart selection is using window mode. Enable Accessibility access in Screenshot settings to select window elements</source>
+            <source>Smart selection is using window mode. Enable Accessibility access in screenshot settings to select window elements</source>
             <translation>智慧選取正在使用視窗模式。請在螢幕擷取設定中啟用輔助使用權限，以選取視窗元素</translation>
         </message>
         <message>
@@ -223,7 +223,7 @@
     <context>
         <name>ScreenshotQrController</name>
         <message>
-            <source>Copy Text</source>
+            <source>Copy text</source>
             <translation>複製文字</translation>
         </message>
         <message>
@@ -231,11 +231,11 @@
             <translation>開啟連結</translation>
         </message>
         <message>
-            <source>QR Code</source>
+            <source>QR code</source>
             <translation>二維碼</translation>
         </message>
         <message>
-            <source>QR Code %1</source>
+            <source>QR code %1</source>
             <translation>二維碼 %1</translation>
         </message>
         <message>
@@ -542,11 +542,15 @@
             <translation>保持長寬比</translation>
         </message>
         <message>
+            <source>Mouse wheel</source>
+            <translation>滑鼠滾輪</translation>
+        </message>
+        <message>
             <source>Scale from center</source>
             <translation>從中心縮放</translation>
         </message>
         <message>
-            <source>Selection Aspect Ratio Snap</source>
+            <source>Selection aspect ratio snap</source>
             <translation>選取範圍長寬比吸附</translation>
         </message>
         <message>
@@ -564,10 +568,6 @@
         <message>
             <source>Vertical scroll</source>
             <translation>垂直捲動</translation>
-        </message>
-        <message>
-            <source>mouse wheel</source>
-            <translation>滑鼠滾輪</translation>
         </message>
     </context>
     <context>

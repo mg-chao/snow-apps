@@ -378,7 +378,7 @@ void pageActionsAndLifecycle() {
                 surface->findChild<QToolButton*>(QStringLiteral("ad-modal-minimize")) &&
                 surface->findChild<QToolButton*>(QStringLiteral("ad-modal-always-on-top")),
             "standalone chrome exposes a taskbar window with minimize and pin buttons");
-    require(modal->acceptButton()->text() == QStringLiteral("Copy and Close") &&
+    require(modal->acceptButton()->text() == QStringLiteral("Copy and close") &&
                 modal->rejectButton()->text() == QStringLiteral("Close"),
             "footer buttons offer copy-and-close and close");
     const QRect available = qApp->primaryScreen()->availableGeometry().adjusted(16, 16, -16, -16);

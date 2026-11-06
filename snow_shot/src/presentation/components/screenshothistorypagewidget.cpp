@@ -1028,16 +1028,16 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                     : HistoryEntryWidget::tr("This screenshot cannot be pinned"));
         }
         if (m_stitchAction != nullptr) {
-            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch Image"));
-            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch Image"));
+            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch image"));
+            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch image"));
         }
         if (m_imageEditingAction != nullptr) {
-            m_imageEditingAction->setText(HistoryEntryWidget::tr("Image Editing"));
+            m_imageEditingAction->setText(HistoryEntryWidget::tr("Image editing"));
             m_imageEditingAction->setToolTip(m_imageEditingAction->text());
         }
         if (m_splitAction != nullptr) {
             const QString label = QCoreApplication::translate(
-                "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image Splitting"));
+                "ImageSplitWindow", QT_TRANSLATE_NOOP("ImageSplitWindow", "Image splitting"));
             m_splitAction->setText(label);
             m_splitAction->setToolTip(label);
         }
@@ -1063,7 +1063,7 @@ class HistoryEntryWidget final : public HistoryEntryCard {
         split->setObjectName(QStringLiteral("screenshotHistoryEntrySplit"));
         split->setEnabled(m_record.result.has_value());
         m_splitAction = split;
-        m_imageEditingAction = menu->addItem(HistoryEntryWidget::tr("Image Editing"),
+        m_imageEditingAction = menu->addItem(HistoryEntryWidget::tr("Image editing"),
                                              custom_outlined_icons::ImageEditing());
         m_imageEditingAction->setObjectName(QStringLiteral("screenshotHistoryEntryImageEditing"));
         connect(m_imageEditingAction, &QAction::triggered, this, [this] {
@@ -1808,7 +1808,7 @@ void ScreenshotHistoryPageWidget::selectCurrentPage() {
 void ScreenshotHistoryPageWidget::updateBatchActions() {
     m_batchActionsButton->setEnabled(!m_selectedRecordIds.isEmpty());
     if (m_batchStitchAction) {
-        m_batchStitchAction->setText(tr("Stitch Image"));
+        m_batchStitchAction->setText(tr("Stitch image"));
         m_batchStitchAction->setToolTip(m_batchStitchAction->text());
         m_batchStitchAction->setEnabled(!m_selectedRecordIds.isEmpty());
     }
@@ -1905,9 +1905,9 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
     m_deleteSelectedButton->setToolTip(tr("Delete selected history entries"));
     m_deleteSelectedButton->setAccessibleName(tr("Delete selected history entries"));
     m_selectAllButton->setText(tr("Select all"));
-    m_batchActionsButton->setText(tr("Batch Actions"));
-    m_batchActionsButton->setToolTip(tr("Batch Actions"));
-    m_batchActionsButton->setAccessibleName(tr("Batch Actions"));
+    m_batchActionsButton->setText(tr("Batch actions"));
+    m_batchActionsButton->setToolTip(tr("Batch actions"));
+    m_batchActionsButton->setAccessibleName(tr("Batch actions"));
     updateBatchActions();
     m_selectAllButton->setToolTip(tr("Select all entries on this page"));
     m_selectAllButton->setAccessibleName(tr("Select all entries on this page"));

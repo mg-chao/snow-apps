@@ -159,9 +159,9 @@ class ScreenshotQrPopover final : public QWidget {
                 this, [this] { applyTheme(); });
     }
     void retranslate() {
-        setAccessibleName(ScreenshotQrController::tr("QR Code"));
+        setAccessibleName(ScreenshotQrController::tr("QR code"));
         text->setAccessibleName(ScreenshotQrController::tr("QR code text"));
-        copy->setText(ScreenshotQrController::tr("Copy Text"));
+        copy->setText(ScreenshotQrController::tr("Copy text"));
         open->setText(ScreenshotQrController::tr("Open URL"));
         if (status->isVisible())
             status->setText(ScreenshotQrController::tr("Unable to open the recognized link"));
@@ -520,7 +520,7 @@ void ScreenshotQrController::refreshMarkers() {
         for (auto canvas : m_canvases) {
             for (qsizetype index = 0; index < m_detections.size(); ++index) {
                 auto* marker = new ScreenshotQrMarker(canvas, index);
-                marker->setAccessibleName(tr("QR Code %1").arg(index + 1));
+                marker->setAccessibleName(tr("QR code %1").arg(index + 1));
                 connect(marker, &QAbstractButton::clicked, this,
                         [this, marker] { showPopover(marker, true); });
                 m_markers.append(marker);
@@ -670,7 +670,7 @@ bool ScreenshotQrController::eventFilter(QObject* watched, QEvent* event) {
         } else if (event->type() == QEvent::Leave || event->type() == QEvent::HoverLeave) {
             scheduleDismiss();
         } else if (event->type() == QEvent::LanguageChange) {
-            marker->setAccessibleName(tr("QR Code %1").arg(marker->detection + 1));
+            marker->setAccessibleName(tr("QR code %1").arg(marker->detection + 1));
         }
         break;
     }

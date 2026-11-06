@@ -823,7 +823,7 @@ void AboutPageWidget::retranslateUi() {
     m_ui->logo->setAccessibleName(snow_shot::app::edition::isMini
                                       ? tr("%1 logo").arg(snow_shot::app::edition::productName())
                                       : tr("Snow Shot logo"));
-    m_ui->openSource->setText(tr("Free · Open source"));
+    m_ui->openSource->setText(tr("Free · open source"));
     const QColor violet(m_ui->scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec"
                                                                                  : "#7052d8");
     m_ui->tagline->setText(QStringLiteral("<span style=\"color:%1\">%2</span>%3")
@@ -865,8 +865,8 @@ void AboutPageWidget::retranslateUi() {
                                 tr("Make the next experience better"),
                                 aboutProjectUrl(QStringLiteral("/issues")));
     m_ui->resources[3]->setCopy(
-        tr("QQ Group 3"),
-        tr("Discussion and support · Group No. %1").arg(QStringLiteral("1037819112")),
+        tr("QQ group 3"),
+        tr("Discussion and support · group no. %1").arg(QStringLiteral("1037819112")),
         QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL)));
     m_ui->community->setText(tr("Built for daily work, and growing with the community"));
     m_ui->license->setText(
@@ -881,7 +881,7 @@ void AboutPageWidget::retranslateUi() {
     m_ui->slogan->setText(
         snow_shot::app::edition::isMini
             ? tr("%1 · Make expression clearer").arg(snow_shot::app::edition::productName())
-            : tr("Snow Shot · Make expression clearer"));
+            : tr("Snow Shot · make expression clearer"));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
                                  : tr("Could not open the link. Open %1 in your browser")

@@ -572,7 +572,7 @@ void statusPresentationUsesSemanticTokens() {
     require(shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Orange,
             "partial registrations should use the reference orange dashed-button role");
     require(statusTrigger->tooltipText().contains(QStringLiteral("Some shortcuts")) &&
-                statusTrigger->tooltipText().contains(QStringLiteral("already used")),
+                statusTrigger->tooltipText().contains(QStringLiteral("Already used")),
             "partial state should display an explanatory tooltip");
     require(statusTrigger->geometry().left() > 0 &&
                 statusTrigger->geometry().right() < shortcutButton->width(),
@@ -707,7 +707,7 @@ void disabledStatusPreservesKeysAndRetranslates() {
                 QStringLiteral("Global shortcut status: Temporarily disabled") &&
             statusTrigger->tooltipText().contains(QStringLiteral("released for use")) &&
             statusTrigger->tooltipText().contains(QStringLiteral("will be restored")) &&
-            !statusTrigger->tooltipText().contains(QStringLiteral("registration did not")) &&
+            !statusTrigger->tooltipText().contains(QStringLiteral("Registration did not")) &&
             statusTrigger->accessibleDescription() == statusTrigger->tooltipText() &&
             shortcutButton->accessibleDescription() == statusTrigger->tooltipText(),
         "disabled status must explain released registrations through tooltip and accessibility");
@@ -969,7 +969,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
 void guideShortcutRecorderAcceptsStandaloneAlt() {
     const auto scheme = styles::ThemeManager::instance().themeColorScheme();
     ShortcutKeyRowConfig config;
-    config.title = QStringLiteral("Toggle Guides");
+    config.title = QStringLiteral("Toggle guides");
     config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
     config.allowModifierOnlyAlt = true;
     config.shortcutValidator = [](const auto& candidate) {

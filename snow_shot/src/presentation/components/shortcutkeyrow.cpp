@@ -1391,22 +1391,22 @@ QString ShortcutKeyRow::registrationTooltipText() const {
         QString reason;
         switch (binding.failureReason) {
         case snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse:
-            reason = tr("already used by another application or action");
+            reason = tr("Already used by another application or action");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::InvalidShortcut:
-            reason = tr("not supported as a global shortcut");
+            reason = tr("Not supported as a global shortcut");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::UnsupportedPlatform:
-            reason = tr("global shortcuts are not supported on this platform");
+            reason = tr("Global shortcuts are not supported on this platform");
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::SystemError:
             reason = binding.nativeErrorCode == 0
-                         ? tr("the system rejected this shortcut")
-                         : tr("the system rejected this shortcut (error %1)")
+                         ? tr("The system rejected this shortcut")
+                         : tr("The system rejected this shortcut (error %1)")
                                .arg(binding.nativeErrorCode);
             break;
         case snow_shot::presentation::GlobalShortcutFailureReason::None:
-            reason = tr("registration did not complete");
+            reason = tr("Registration did not complete");
             break;
         }
         failedShortcuts.push_back(tr("%1: %2").arg(displayShortcut, reason));

@@ -24,8 +24,8 @@
             <translation>Remove line breaks</translation>
         </message>
         <message>
-            <source>Smart Typesetting</source>
-            <translation>Smart Typesetting</translation>
+            <source>Smart typesetting</source>
+            <translation>Smart typesetting</translation>
         </message>
     </context>
     <context>
@@ -75,8 +75,8 @@
             <translation>Unable to load vision models</translation>
         </message>
         <message>
-            <source>Vision Model</source>
-            <translation>Vision Model</translation>
+            <source>Vision model</source>
+            <translation>Vision model</translation>
         </message>
     </context>
     <context>
@@ -102,8 +102,8 @@
             <translation>Retry</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
     </context>
     <context>
@@ -351,8 +351,8 @@
             <translation>Retry recognition</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
         <message>
             <source>Unable to preview this formula. Check the LaTeX source</source>
@@ -429,8 +429,8 @@
             <translation>Reset table</translation>
         </message>
         <message>
-            <source>Select All</source>
-            <translation>Select All</translation>
+            <source>Select all</source>
+            <translation>Select all</translation>
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>

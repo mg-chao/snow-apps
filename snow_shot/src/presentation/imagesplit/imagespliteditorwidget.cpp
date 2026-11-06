@@ -76,13 +76,13 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Horizontal"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Grid"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Split type"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Equal Split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Precise Split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Number of Images"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Equal split"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Precise split"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Number of images"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Rows"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Columns"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Width per Image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Height per Image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Width per image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Height per image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Pixels"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Percentage"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", " px"),
@@ -91,13 +91,13 @@ QString canvasText(const char* source) {
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Enter an integer of at least 16 pixels"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Undo"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Redo"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Fit to Canvas"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Fit to canvas"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Reload"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "%1 × %2 px"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Total: %1 images"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select an image to split"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drag an image file here, or choose Select Image"),
-    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select Image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drag an image file here, or choose select image"),
+    QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Select image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to split"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image to replace the current image"),
     QT_TRANSLATE_NOOP("ImageSplitEditorWidget", "Drop one image file at a time"),
@@ -983,8 +983,8 @@ struct ImageSplitEditorWidget::Impl {
         rowsField->setItemHidden(!grid);
         columnsField->setItemHidden(!grid);
         sizeField->setLabel(direction->currentValue() == QStringLiteral("horizontal")
-                                ? editorText("Height per Image")
-                                : editorText("Width per Image"));
+                                ? editorText("Height per image")
+                                : editorText("Width per image"));
         size->setAccessibleName(sizeField->label());
     }
     void sync() {
@@ -1358,13 +1358,13 @@ void ImageSplitEditorWidget::retranslateUi() {
         d.direction->setOptionLabel(static_cast<int>(i), editorText(directions[i]));
     d.directionField->setLabel(editorText("Split direction"));
     d.direction->setAccessibleName(d.directionField->label());
-    d.type->setOptionLabel(0, editorText("Equal Split"));
-    d.type->setOptionLabel(1, editorText("Precise Split"));
+    d.type->setOptionLabel(0, editorText("Equal split"));
+    d.type->setOptionLabel(1, editorText("Precise split"));
     d.typeField->setLabel(editorText("Split type"));
     d.type->setAccessibleName(d.typeField->label());
     for (const auto& item : {std::pair{d.countField, d.count}, std::pair{d.rowsField, d.rows},
                              std::pair{d.columnsField, d.columns}}) {
-        const auto source = item.first == d.countField  ? "Number of Images"
+        const auto source = item.first == d.countField  ? "Number of images"
                             : item.first == d.rowsField ? "Rows"
                                                         : "Columns";
         item.first->setLabel(editorText(source));
@@ -1376,7 +1376,7 @@ void ImageSplitEditorWidget::retranslateUi() {
     d.size->setSuffixText(d.sizeKey() == QStringLiteral("pixels") ? editorText(" px")
                                                                   : QStringLiteral("%"));
     d.updateVisibility();
-    const std::array<const char*, 4> actions{"Undo", "Redo", "Fit to Canvas", "Reload"};
+    const std::array<const char*, 4> actions{"Undo", "Redo", "Fit to canvas", "Reload"};
     for (std::size_t i = 0; i < actions.size(); ++i) {
         const auto label = editorText(actions[i]);
         d.actions[i]->setToolTip(label);
@@ -1384,10 +1384,10 @@ void ImageSplitEditorWidget::retranslateUi() {
     }
     d.emptyState->title->setText(editorText("Select an image to split"));
     d.emptyState->description->setText(
-        editorText("Drag an image file here, or choose Select Image"));
+        editorText("Drag an image file here, or choose select image"));
     d.emptyState->setAccessibleName(d.emptyState->title->text());
     d.emptyState->setAccessibleDescription(d.emptyState->description->text());
-    d.emptySelect->setText(editorText("Select Image"));
+    d.emptySelect->setText(editorText("Select image"));
     d.emptySelect->setAccessibleName(d.emptySelect->text());
     d.dropHint->description->setText(editorText("Drop one image file at a time"));
     d.dropHint->setAccessibleDescription(d.dropHint->description->text());

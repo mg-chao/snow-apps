@@ -135,12 +135,12 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         retry->setText(text(QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Retry")));
         const char* labels[] = {
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Source language"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Primary Target Language"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Secondary Target Language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Primary target language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Secondary target language"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog",
-                              "Language Detection Confidence Threshold"),
+                              "Language detection confidence threshold"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Translation service"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original Image Translation")};
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original image translation")};
         fields::FormField* const fieldControllers[] = {
             sourceField.field,          targetField.field,
             secondaryTargetField.field, confidenceThresholdField.field,

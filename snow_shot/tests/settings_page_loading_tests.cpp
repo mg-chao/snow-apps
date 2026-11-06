@@ -646,7 +646,7 @@ void variableDescriptionLinks(const settings::SettingsRegistry& registry,
         auto* description =
             field->viewWidget()->findChild<QLabel*>(QStringLiteral("formFieldDescription"));
         require(description && description->wordWrap() &&
-                    description->text().endsWith(QStringLiteral("Variable Description</a>")) &&
+                    description->text().endsWith(QStringLiteral("Variable description</a>")) &&
                     description->textInteractionFlags().testFlag(Qt::LinksAccessibleByKeyboard) &&
                     !field->editor()->accessibleDescription().contains(QStringLiteral("<a")),
                 "help must follow the description and remain accessible without exposing markup");
@@ -670,9 +670,9 @@ void variableDescriptionLinks(const settings::SettingsRegistry& registry,
         require(QCoreApplication::installTranslator(&translator), "help translator must install");
         drainEvents();
         require(
-            modal->windowTitle() == QStringLiteral("Translated: Variable Description") &&
+            modal->windowTitle() == QStringLiteral("Translated: Variable description") &&
                 modal->text().startsWith(QStringLiteral("Translated: {YYYY}: Current time")) &&
-                description->text().contains(QStringLiteral("Translated: Variable Description")),
+                description->text().contains(QStringLiteral("Translated: Variable description")),
             "open modal and inline link must follow language changes");
         QCoreApplication::removeTranslator(&translator);
         drainEvents();
@@ -1406,11 +1406,11 @@ void selectedImagesSettings(const settings::SettingsRegistry& registry) {
         page.retranslateUi();
         drainEvents();
         require(stitch->accessibleName() ==
-                        QCoreApplication::translate("SettingsCatalog", "Stitch Selected Images") &&
-                    stitch->accessibleName() != QStringLiteral("Stitch Selected Images") &&
+                        QCoreApplication::translate("SettingsCatalog", "Stitch selected images") &&
+                    stitch->accessibleName() != QStringLiteral("Stitch selected images") &&
                     split->accessibleName() ==
-                        QCoreApplication::translate("SettingsCatalog", "Split Selected Images") &&
-                    split->accessibleName() != QStringLiteral("Split Selected Images"),
+                        QCoreApplication::translate("SettingsCatalog", "Split selected images") &&
+                    split->accessibleName() != QStringLiteral("Split selected images"),
                 "both selected-image actions retranslate in both Chinese catalogs");
     }
     require(languages.setLanguage(QStringLiteral("en_US")), "restore settings test language");
@@ -1496,14 +1496,14 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
     drainEvents();
     require(
         path->lineEdit()->accessibleName() ==
-                QStringLiteral("Translated: Main Interface Skin Path") &&
-            mode->accessibleName() == QStringLiteral("Translated: Skin Display Mode") &&
+                QStringLiteral("Translated: Main interface skin path") &&
+            mode->accessibleName() == QStringLiteral("Translated: Skin display mode") &&
             path->browseButtonText() == QStringLiteral("Translated: Browse") &&
             path->lineEdit()->accessibleDescription().startsWith(QStringLiteral("Translated: ")),
         "skin controls and descriptions must retranslate after LanguageChange");
     QCoreApplication::removeTranslator(&translator);
     drainEvents();
-    require(path->lineEdit()->accessibleName() == QStringLiteral("Main Interface Skin Path") &&
+    require(path->lineEdit()->accessibleName() == QStringLiteral("Main interface skin path") &&
                 session.reset(settings::SettingsSectionReset::Skin),
             "skin controls must restore English and the independent Skin defaults");
 }
@@ -1637,7 +1637,7 @@ void screenshotActionToolbarSettings(const settings::SettingsRegistry& registry,
          {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
         require(language.setLanguage(locale), "switch screenshot toolbar settings language");
         drainEvents();
-        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action toolbar")
                               : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
                                                    : QString::fromUtf8("操作工具列");
         bool hasTitle = false;
@@ -1676,7 +1676,7 @@ void recordingActionToolbarSettings(const settings::SettingsRegistry& registry,
          {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
         require(language.setLanguage(locale), "switch recording toolbar settings language");
         drainEvents();
-        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action toolbar")
                               : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
                                                    : QString::fromUtf8("操作工具列");
         bool hasTitle = false;
@@ -1710,7 +1710,7 @@ void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
         const QStringList titles =
             locale == u"en_US"
                 ? QStringList{QStringLiteral("Interaction"), QStringLiteral("Window interface"),
-                              QStringLiteral("Text Style"), QStringLiteral("Action Toolbar")}
+                              QStringLiteral("Text style"), QStringLiteral("Action toolbar")}
             : locale == u"zh_CN"
                 ? QStringList{QString::fromUtf8("操作方式"), QString::fromUtf8("窗口界面"),
                               QString::fromUtf8("文本样式"), QString::fromUtf8("操作工具栏")}

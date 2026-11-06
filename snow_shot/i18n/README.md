@@ -5,6 +5,11 @@ Edit the Qt Linguist `.ts` catalogs in the feature directories. Each feature has
 translations are identity strings, except for the native language name and
 language-specific plural forms.
 
+Use sentence case for all English UI text: capitalize the first word of each
+sentence and lowercase other ordinary words. Preserve acronyms, proper names,
+official system setting names, keyboard key names, and unit symbols (for example,
+`API`, `Snow Shot`, `macOS`, `System Settings`, `Ctrl`, `px`, and `mm`).
+
 User-visible messages do not end with a sentence-ending period (`.` or `。`). Keep
 punctuation between sentences and ellipses that indicate an ongoing operation.
 

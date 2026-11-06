@@ -89,9 +89,9 @@ int main(int argc, char** argv) {
             "Simplified Chinese must load the shared canvas hint context");
     require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
                     QString::fromUtf8("将重复内容固定到屏幕时") &&
-                QCoreApplication::translate("SettingsCatalog", "Shake Window") ==
+                QCoreApplication::translate("SettingsCatalog", "Shake window") ==
                     QString::fromUtf8("晃动窗口") &&
-                QCoreApplication::translate("SettingsCatalog", "Repeat Action") ==
+                QCoreApplication::translate("SettingsCatalog", "Repeat action") ==
                     QString::fromUtf8("重复执行"),
             "language changes translate duplicate pin settings and option labels");
     require(QCoreApplication::translate("ScreenshotPinnedWindow", "Decrease 10%") ==
@@ -107,10 +107,10 @@ int main(int argc, char** argv) {
     require(settings.language() == QStringLiteral("zh_CN"),
             "a selected locale should persist immediately");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget",
-                                        "Pin to Screen Management") ==
+                                        "Pin to screen management") ==
                 QString::fromUtf8("固定到屏幕管理"),
             "Simplified Chinese should use Pin to Screen terminology in management");
-    require(QCoreApplication::translate("SettingsCatalog", "Pin to Screen Management") ==
+    require(QCoreApplication::translate("SettingsCatalog", "Pin to screen management") ==
                 QString::fromUtf8("固定到屏幕管理"),
             "Simplified Chinese settings should use the same management title");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==
@@ -127,9 +127,9 @@ int main(int argc, char** argv) {
             "Traditional Chinese must load the shared canvas hint context");
     require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
                     QString::fromUtf8("將重複內容固定到螢幕時") &&
-                QCoreApplication::translate("SettingsCatalog", "Shake Window") ==
+                QCoreApplication::translate("SettingsCatalog", "Shake window") ==
                     QString::fromUtf8("晃動視窗") &&
-                QCoreApplication::translate("SettingsCatalog", "Repeat Action") ==
+                QCoreApplication::translate("SettingsCatalog", "Repeat action") ==
                     QString::fromUtf8("重複執行"),
             "language changes translate duplicate pin settings and option labels");
     require(QCoreApplication::translate("SettingsCatalog", "Mouse wheel opacity step") ==
@@ -143,10 +143,10 @@ int main(int argc, char** argv) {
                     QString::fromUtf8("縮放比例增加 10%"),
             "Traditional Chinese must translate pinned image adjustment commands");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget",
-                                        "Pin to Screen Management") ==
+                                        "Pin to screen management") ==
                 QString::fromUtf8("固定到螢幕管理"),
             "Traditional Chinese should use Pin to Screen terminology in management");
-    require(QCoreApplication::translate("SettingsCatalog", "Pin to Screen Management") ==
+    require(QCoreApplication::translate("SettingsCatalog", "Pin to screen management") ==
                 QString::fromUtf8("固定到螢幕管理"),
             "Traditional Chinese settings should use the same management title");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==

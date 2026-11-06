@@ -462,11 +462,11 @@ void pageAndAlerts() {
             service.refresh();
             flush();
             for (auto* button : {screen, accessibility, input}) {
-                require(button->text() == u"Go to Settings" &&
+                require(button->text() == u"Go to settings" &&
                             button->accentRole() == adqt::widgets::AdButton::AccentRole::Danger,
                         "unavailable core permissions use error actions");
             }
-            require(microphone->text() == u"Go to Settings" &&
+            require(microphone->text() == u"Go to settings" &&
                         microphone->accentRole() == adqt::widgets::AdButton::AccentRole::Orange,
                     "unavailable microphone uses a warning action");
             screen->click();

@@ -43,7 +43,7 @@ struct SettingsFormField::Impl {
               text->binding == SettingsTextBinding::ScreenRecordingVideoFilenameFormat))) {
             metadata.descriptionAction = {
                 "SettingsVariableHelp",
-                QT_TRANSLATE_NOOP("SettingsVariableHelp", "Variable Description")};
+                QT_TRANSLATE_NOOP("SettingsVariableHelp", "Variable description")};
         }
         options.allowClear = descriptor.kind == SettingsFieldKind::FilePath ||
                              descriptor.kind == SettingsFieldKind::DirectoryPath;
@@ -307,7 +307,7 @@ struct SettingsFormField::Impl {
         if (!variableModal)
             return;
         variableModal->setWindowTitle(
-            QCoreApplication::translate("SettingsVariableHelp", "Variable Description"));
+            QCoreApplication::translate("SettingsVariableHelp", "Variable description"));
         variableModal->setAcceptText(QCoreApplication::translate("SettingsVariableHelp", "OK"));
         QString text = QCoreApplication::translate("SettingsVariableHelp", "%1: Current time")
                            .arg(QStringLiteral("{YYYY}"));
@@ -324,10 +324,10 @@ struct SettingsFormField::Impl {
               filename->binding == SettingsTextBinding::ScreenRecordingVideoFilenameFormat));
         if (windowVariables) {
             text += QLatin1Char('\n') +
-                    QCoreApplication::translate("SettingsVariableHelp", "%1: Application Name")
+                    QCoreApplication::translate("SettingsVariableHelp", "%1: Application name")
                         .arg(QStringLiteral("{AN}"));
             text += QLatin1Char('\n') +
-                    QCoreApplication::translate("SettingsVariableHelp", "%1: Window Name")
+                    QCoreApplication::translate("SettingsVariableHelp", "%1: Window name")
                         .arg(QStringLiteral("{WN}"));
         }
         variableModal->setText(text);

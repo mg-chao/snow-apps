@@ -6988,7 +6988,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     materializePinnedMenuTree(window);
     auto* hideAll =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedBatchEnableHideToTopAction"));
-    require(hideAll && hideAll->text() == QStringLiteral("Enable Hide to Top"),
+    require(hideAll && hideAll->text() == QStringLiteral("Enable hide to top"),
             "the bulk Hide to Top action must use its English source label");
     const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
                                 QStringLiteral("screenshotPinnedScaleMenu"),
@@ -7008,7 +7008,7 @@ void pinnedLazyMenuHeadersRetranslate() {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
                 (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
                  QByteArray(source) == "Load new content" ||
-                 QByteArray(source) == "Enable Hide to Top")) {
+                 QByteArray(source) == "Enable hide to top")) {
                 return QStringLiteral("Translated ") + QString::fromUtf8(source);
             }
             return {};
@@ -7018,7 +7018,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Translated Enable Hide to Top"),
+    require(hideAll->text() == QStringLiteral("Translated Enable hide to top"),
             "an existing bulk Hide to Top action must follow LanguageChange");
     const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
                                        QStringLiteral("Translated Scale"),
@@ -7030,7 +7030,7 @@ void pinnedLazyMenuHeadersRetranslate() {
     QCoreApplication::removeTranslator(&translator);
     removeTranslator.dismiss();
     QCoreApplication::sendEvent(&window, &languageChange);
-    require(hideAll->text() == QStringLiteral("Enable Hide to Top"),
+    require(hideAll->text() == QStringLiteral("Enable hide to top"),
             "the bulk Hide to Top action must restore its original language");
     for (int index = 0; index < headers.size(); ++index) {
         require(headers.at(index)->text() == originalLabels.at(index),
@@ -24135,9 +24135,9 @@ void pinnedImageSplittingSnapshots() {
                 menu->actions().at(menu->actions().size() - 3)->isSeparator() &&
                 menu->actions().indexOf(reset) == menu->actions().size() - 4 &&
                 menu->actions().indexOf(editing) == menu->actions().indexOf(split) + 1 &&
-                editing->isEnabled() && editing->text() == QStringLiteral("Image Editing") &&
+                editing->isEnabled() && editing->text() == QStringLiteral("Image editing") &&
                 !editing->icon().isNull() && split->isEnabled() &&
-                split->text() == QStringLiteral("Image Splitting") && !split->icon().isNull(),
+                split->text() == QStringLiteral("Image splitting") && !split->icon().isNull(),
             "Process image ends with Image Splitting followed by Image Editing");
     int editingRequests = 0;
     snow_shot::presentation::ImageEditingWindowCoordinator editors({{}, &fixture.groups, nullptr});
@@ -24152,11 +24152,11 @@ void pinnedImageSplittingSnapshots() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             if (QByteArray(context) == "ScreenshotPinnedWindow" &&
-                QByteArray(source) == "Image Editing")
-                return QStringLiteral("Translated Image Editing");
+                QByteArray(source) == "Image editing")
+                return QStringLiteral("Translated Image editing");
             return QByteArray(context) == "ImageSplitWindow" &&
-                           QByteArray(source) == "Image Splitting"
-                       ? QStringLiteral("Translated Image Splitting")
+                           QByteArray(source) == "Image splitting"
+                       ? QStringLiteral("Translated Image splitting")
                        : QString();
         }
     } translator;
@@ -24165,10 +24165,10 @@ void pinnedImageSplittingSnapshots() {
         qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
     QEvent language(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &language);
-    require(split->text() == QStringLiteral("Translated Image Splitting") &&
+    require(split->text() == QStringLiteral("Translated Image splitting") &&
                 split->toolTip() == split->text(),
             "pinned Image Splitting action uses the shared translation context at runtime");
-    require(editing->text() == QStringLiteral("Translated Image Editing") &&
+    require(editing->text() == QStringLiteral("Translated Image editing") &&
                 editing->toolTip() == editing->text(),
             "pinned Image Editing retranslates its label and tooltip at runtime");
     editing->trigger();
@@ -24408,17 +24408,17 @@ void pinnedMultiSelectionMenuAndLocks() {
         actions.size() == 13 &&
             actions.at(0)->objectName() ==
                 QStringLiteral("screenshotPinnedSelectionImageStitching") &&
-            actions.at(0)->text() == QStringLiteral("Image Stitching") &&
+            actions.at(0)->text() == QStringLiteral("Image stitching") &&
             !actions.at(0)->icon().isNull() &&
             actions.at(1)->objectName() ==
                 QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard") &&
-            actions.at(1)->text() == QStringLiteral("Copy Files to Clipboard") &&
+            actions.at(1)->text() == QStringLiteral("Copy files to clipboard") &&
             !actions.at(1)->icon().isNull() &&
             actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSelectionSaveAsFile") &&
-            actions.at(2)->text() == QStringLiteral("Save as File") &&
+            actions.at(2)->text() == QStringLiteral("Save as file") &&
             !actions.at(2)->icon().isNull() && actions.at(3)->isSeparator() &&
             actions.at(4)->objectName() == QStringLiteral("screenshotPinnedSelectionCloseOthers") &&
-            actions.at(5)->menu() && actions.at(5)->text() == QStringLiteral("Align Position") &&
+            actions.at(5)->menu() && actions.at(5)->text() == QStringLiteral("Align position") &&
             actions.at(6)->menu() && actions.at(6)->text() == QStringLiteral("Group") &&
             actions.at(7)->objectName() == QStringLiteral("screenshotPinnedSelectionLock") &&
             actions.at(8)->isSeparator() &&
@@ -25000,12 +25000,12 @@ void pinnedMultiSelectionLiveLanguageAndTheme() {
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionLock")).text() ==
                 QStringLiteral("Translated Lock") &&
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionImageStitching"))
-                    .text() == QStringLiteral("Translated Image Stitching") &&
+                    .text() == QStringLiteral("Translated Image stitching") &&
             pinnedSelectionAction(menu,
                                   QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"))
-                    .text() == QStringLiteral("Translated Copy Files to Clipboard") &&
+                    .text() == QStringLiteral("Translated Copy files to clipboard") &&
             pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionSaveAsFile"))
-                    .text() == QStringLiteral("Translated Save as File") &&
+                    .text() == QStringLiteral("Translated Save as file") &&
             modal->windowTitle() == QStringLiteral("Translated Destroy selected windows") &&
             modal->text() == QStringLiteral("Translated confirmation 2") &&
             modal->acceptText() == QStringLiteral("Translated Destroy") &&

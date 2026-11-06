@@ -61,7 +61,7 @@ QString text(const char* source) {
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Letter"),
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Legal"),
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Custom"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Image Size"),
+    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Image size"),
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Portrait"),
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Landscape"),
     QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Width"),
@@ -472,7 +472,7 @@ void CollagePdfSettingsWidget::retranslateUi() {
         d.templates[index]->setAccessibleName(text(templates[index]));
     }
     constexpr std::array<const char*, 8> papers{"A3",     "A4",    "A5",     "B5",
-                                                "Letter", "Legal", "Custom", "Image Size"};
+                                                "Letter", "Legal", "Custom", "Image size"};
     QVector<AdSelect::Option> options;
     for (std::size_t index = 0; index < papers.size(); ++index)
         options.append({static_cast<int>(index), text(papers[index])});

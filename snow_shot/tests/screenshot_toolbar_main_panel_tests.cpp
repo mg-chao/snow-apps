@@ -2208,7 +2208,7 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
             QString translate(const char* context, const char* source, const char*,
                               int) const override {
                 if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
-                    qstrcmp(source, "Pin Window to Screen") == 0)
+                    qstrcmp(source, "Pin window to screen") == 0)
                     return QStringLiteral("Translated live pin");
                 return {};
             }
@@ -2238,7 +2238,7 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
                 !trigger->toolTip().contains(liveShortcut),
             "the selected window pin tooltip must refresh immediately after rebinding");
         require(shortcutSettings.setShortcuts(shortcutId, {}) &&
-                    trigger->toolTip() == QStringLiteral("Pin Window to Screen"),
+                    trigger->toolTip() == QStringLiteral("Pin window to screen"),
                 "disabling the shortcut must remove its hint from the window pin tooltip");
         require(shortcutSettings.setShortcuts(shortcutId, defaults),
                 "restore the window pin shortcut after tooltip checks");
@@ -2381,7 +2381,7 @@ void speechBubbleReusesShapeControlsWithIndependentStyles() {
     auto* thought = group->button(3);
     require(thought != nullptr && group->buttons().size() == 4,
             "Thought Bubble is the fourth Speech Bubble type after Diamond");
-    require(thought->accessibleName() == QStringLiteral("Thought Bubble"),
+    require(thought->accessibleName() == QStringLiteral("Thought bubble"),
             "Thought Bubble has an accessible English label");
     class BubbleTranslator final : public QTranslator {
       public:
@@ -2391,7 +2391,7 @@ void speechBubbleReusesShapeControlsWithIndependentStyles() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             if (qstrcmp(context, "ScreenshotToolPalette") == 0 &&
-                qstrcmp(source, "Thought Bubble") == 0)
+                qstrcmp(source, "Thought bubble") == 0)
                 return QStringLiteral("Translated thought bubble");
             return {};
         }

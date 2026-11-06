@@ -134,7 +134,7 @@ struct EditorDescriptor {
         {Item::Shape, "shape", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Shape"),
          Icon::Shape},
         {Item::SpeechBubble, "speech-bubble",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Speech Bubble"),
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Speech bubble"),
          Icon::SpeechBubble},
         {Item::Arrow, "arrow", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Arrow"),
          Icon::Arrow},
@@ -214,7 +214,7 @@ struct EditorDescriptor {
              Icon::Markdown},
             {"latex-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget",
-                               "LaTeX Formula Recognition"),
+                               "LaTeX formula recognition"),
              Icon::Latex},
             {"convert-to-html", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to HTML"),
@@ -226,7 +226,7 @@ struct EditorDescriptor {
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin to screen"),
              Icon::PinToScreen},
             {"pin-window-to-screen", "ScreenshotToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin Window to Screen"),
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Pin window to screen"),
              Icon::PinWindowToScreen},
             {"text-recognition", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Text recognition"),
@@ -245,7 +245,7 @@ struct EditorDescriptor {
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Quick save"),
              Icon::QuickSave},
             {"upload-to-cloud", "ScreenshotToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Upload to Cloud"),
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Upload to cloud"),
              Icon::UploadToCloud},
             {"save-as-file", "ScreenshotToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Save as file"),
@@ -277,13 +277,13 @@ struct EditorDescriptor {
             if (descriptor.item == Item::Select) {
                 result.push_back(
                     {"select-separator", "DrawingToolbarEditorSettingsWidget",
-                     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+                     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
                      Icon::Separator});
             }
         }
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         result.push_back({"undo", "DrawingToolbarEditorSettingsWidget",
                           QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Undo"),
@@ -314,7 +314,7 @@ struct EditorDescriptor {
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "System audio"),
          Icon::RecordingSystemAudio},
         {"separator", "RecordingToolbarEditorSettingsWidget",
-         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Separator Component"),
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Separator component"),
          Icon::Separator},
         {"open-folder", "RecordingToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Open recording folder"),
@@ -393,11 +393,11 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         }
         result.push_back(
             {"confirm-separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         return result;
     }
@@ -408,7 +408,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         });
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
-             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator component"),
              Icon::Separator});
         return result;
     }

@@ -2128,7 +2128,7 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     };
     const QStringList commonLines{
         QStringLiteral("Copy color: C"),
-        keyLine(QStringLiteral("Toggle Global/Relative Coordinates"), {QStringLiteral("Shift+P")}),
+        keyLine(QStringLiteral("Toggle global/relative coordinates"), {QStringLiteral("Shift+P")}),
         keyLine(QStringLiteral("Toggle cursor visibility"), {QStringLiteral("`")}),
         QStringLiteral("Switch color format: %1")
             .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
@@ -2141,14 +2141,14 @@ void shortcutHintStagesUseTheExactRequiredLines() {
         keyLine(QStringLiteral("Move entire selection"), {QStringLiteral("Space")}),
         keyLine(QStringLiteral("Keep selection width and height consistent"),
                 {QStringLiteral("Shift")}),
-        QStringLiteral("Selection Aspect Ratio Snap: Q"),
+        QStringLiteral("Selection aspect ratio snap: Q"),
     });
     selectionLines.append(commonLines);
     QStringList smartLines = cursorLines;
     smartLines.append({
-        QStringLiteral("Switch element level: mouse wheel"),
+        QStringLiteral("Switch element level: Mouse wheel"),
         keyLine(QStringLiteral("Select window/window sub-element"), {QStringLiteral("Tab")}),
-        QStringLiteral("Selection Aspect Ratio Snap: Q"),
+        QStringLiteral("Selection aspect ratio snap: Q"),
     });
     smartLines.append(commonLines);
 
@@ -7205,7 +7205,7 @@ void scrollingResultPreviewRestoresTransparencyAndReadout() {
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
             if (QByteArray(context) == "CanvasStatusReadout" &&
-                QByteArray(source) == "Result Preview in Progress") {
+                QByteArray(source) == "Result preview in progress") {
                 return QStringLiteral("Result preview translated");
             }
             return {};
@@ -7236,7 +7236,7 @@ void scrollingResultPreviewRestoresTransparencyAndReadout() {
     require(readout && readout->message() == CanvasStatusReadout::Message::ResultPreview &&
                 !readout->dismissalTimer()->isActive(),
             "scrolling result status must use the shared persistent hint component");
-    require(label->toolTip() == QStringLiteral("Result Preview in Progress") &&
+    require(label->toolTip() == QStringLiteral("Result preview in progress") &&
                 label->accessibleName() == label->toolTip(),
             "result preview status must retain complete accessible text");
     const QRect logicalAnchor = selection.translated(canvas->pos());

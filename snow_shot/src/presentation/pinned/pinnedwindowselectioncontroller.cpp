@@ -21,13 +21,13 @@ namespace customIcons = snow_shot::presentation::icons::custom::outlined;
 namespace {
 [[maybe_unused]] constexpr const char* translationSources[] = {
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
-                      "Image Stitching"),
+                      "Image stitching"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
-                      "Copy Files to Clipboard"),
-    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Save as File"),
+                      "Copy files to clipboard"),
+    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Save as file"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
-                      "Close Other Windows"),
-    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Align Position"),
+                      "Close other windows"),
+    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Align position"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Group"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Lock"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Close"),
@@ -44,11 +44,11 @@ namespace {
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "Align bottom"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
                       "Distribute vertically"),
-    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "New Group"),
+    QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController", "New group"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
-                      "Delete Empty Groups"),
+                      "Delete empty groups"),
     QT_TRANSLATE_NOOP("snow_shot::presentation::PinnedWindowSelectionController",
-                      "Delete Specified Group"),
+                      "Delete specified group"),
 };
 QString text(const char* source) {
     return PinnedWindowSelectionController::tr(source);
@@ -290,20 +290,20 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
         return action;
     };
     auto* stitching =
-        add("Image Stitching", QStringLiteral("screenshotPinnedSelectionImageStitching"),
+        add("Image stitching", QStringLiteral("screenshotPinnedSelectionImageStitching"),
             customIcons::ImageStitching());
     connect(stitching, &QAction::triggered, this, [this, targets, valid] {
         if (valid())
             stitchWindows(targets);
     });
     auto* copy =
-        add("Copy Files to Clipboard",
+        add("Copy files to clipboard",
             QStringLiteral("screenshotPinnedSelectionCopyFilesToClipboard"), outlined::Copy());
     connect(copy, &QAction::triggered, this, [owner, targets, valid] {
         if (valid() && !ScreenshotPinnedWindow::batchSavePending())
             owner->copyPinnedWindowFiles(targets);
     });
-    auto* save = add("Save as File", QStringLiteral("screenshotPinnedSelectionSaveAsFile"),
+    auto* save = add("Save as file", QStringLiteral("screenshotPinnedSelectionSaveAsFile"),
                      customIcons::Save());
     connect(save, &QAction::triggered, this, [owner, targets, valid] {
         if (valid() && !ScreenshotPinnedWindow::batchSavePending())
@@ -318,7 +318,7 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
     refreshExports();
     menu->addSeparator();
     auto* closeOthers =
-        add("Close Other Windows", QStringLiteral("screenshotPinnedSelectionCloseOthers"),
+        add("Close other windows", QStringLiteral("screenshotPinnedSelectionCloseOthers"),
             outlined::DeleteRow());
     bool hasOther = false;
     for (const auto& window : std::as_const(m_windows))
@@ -338,8 +338,8 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
                 window->requestUserClose();
     });
 
-    auto* alignment = menu->addSubMenu(text("Align Position"), customIcons::AlignLeft());
-    translateAction(alignment->menuAction(), "Align Position");
+    auto* alignment = menu->addSubMenu(text("Align position"), customIcons::AlignLeft());
+    translateAction(alignment->menuAction(), "Align position");
     alignment->setObjectName(QStringLiteral("screenshotPinnedSelectionAlignmentMenu"));
     const bool locked = std::any_of(targets.cbegin(), targets.cend(),
                                     [](const auto& w) { return !w || w->m_lockedMode; });
@@ -396,16 +396,16 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
                     });
         }
         group->addSeparator();
-        auto* create = group->addItem(text("New Group"), outlined::FolderAdd());
-        translateAction(create, "New Group");
+        auto* create = group->addItem(text("New group"), outlined::FolderAdd());
+        translateAction(create, "New group");
         create->setObjectName(QStringLiteral("screenshotPinnedSelectionNewGroup"));
         connect(create, &QAction::triggered, this,
                 [manager, targets, valid, owner = QPointer(owner)] {
                     if (valid() && manager && owner)
                         manager->openCreateGroupModal(owner, targets);
                 });
-        auto* empty = group->addItem(text("Delete Empty Groups"), outlined::Clear());
-        translateAction(empty, "Delete Empty Groups");
+        auto* empty = group->addItem(text("Delete empty groups"), outlined::Clear());
+        translateAction(empty, "Delete empty groups");
         empty->setEnabled(std::any_of(entries.cbegin(), entries.cend(), [](const auto& entry) {
             return entry.id != QStringLiteral("default") && entry.counts.nonIgnored == 0;
         }));
@@ -413,8 +413,8 @@ void PinnedWindowSelectionController::buildContextMenu(ScreenshotPinnedWindow* o
             if (valid() && manager && owner)
                 manager->openDeleteEmptyGroupsConfirmation(owner);
         });
-        auto* remove = group->addSubMenu(text("Delete Specified Group"), customIcons::Delete());
-        translateAction(remove->menuAction(), "Delete Specified Group");
+        auto* remove = group->addSubMenu(text("Delete specified group"), customIcons::Delete());
+        translateAction(remove->menuAction(), "Delete specified group");
         for (const auto& entry : entries) {
             auto* action = remove->addItem(entry.name);
             connect(action, &QAction::triggered, this,
