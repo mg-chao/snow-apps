@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "collagepreviewrows_p.h"
+#include "collageimageediting_p.h"
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
 #include "snow_shot/presentation/components/collagepdfsettingswidget.h"
 #include "snow_shot/presentation/components/collagepdftemplatewidget.h"
@@ -33,6 +34,8 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFocusEvent>
+#include <QHideEvent>
+#include <QShowEvent>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -81,10 +84,6 @@ constexpr int kSettingsFormRightMargin = 12;
 constexpr auto kDragType = "application/x-snow-shot-collage-item";
 const QSize kThumbnailSize{108, 84};
 constexpr int kThumbnailMargin = 2;
-constexpr qreal kSelectionFrameWidth = 3;
-// Match snow-draw-engine-editor's selection colors in geometry/handles.rs.
-const QColor kSelectionFrameColor{0x40, 0x96, 0xff};
-const QColor kReplacementFillColor{0x40, 0x96, 0xff, 0x33};
 constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C", "#FFCCC7",
                                                   "#D9F7BE", "#BAE0FF", "#FFF1B8", "#EFDBFF"};
 // These strings also supply labels constructed dynamically by the form and toolbar.
@@ -96,7 +95,8 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
                       "Select to center this image; drag onto another image to swap"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Collage preview"),
     QT_TRANSLATE_NOOP("CollageEditorWidget",
-                      "Drag with the middle mouse button to pan; scroll to zoom"),
+                      "Drag an image to move or swap it; drag selection handles to scale around "
+                      "its center. Drag with the middle mouse button to pan; scroll to zoom"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Rotate clockwise by 90°"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Rotate counterclockwise by 90°"),
     QT_TRANSLATE_NOOP("CollageEditorWidget", "Flip horizontally"),
@@ -439,7 +439,7 @@ class CollageThumbnail final : public QWidget {
         const QRectF outer = QRectF(rect()).adjusted(1, 1, -1, -1);
         painter.setBrush(theme.colorBgContainer);
         painter.setPen(
-            QPen(m_target ? kSelectionFrameColor : theme.colorBorderSecondary, m_target ? 3 : 1));
+            QPen(m_target ? theme.colorPrimary : theme.colorBorderSecondary, m_target ? 2 : 1));
         painter.drawRoundedRect(outer, theme.borderRadiusSM, theme.borderRadiusSM);
         const QRectF imageArea = outer.adjusted(5, 5, -5, -20);
         painter.fillRect(imageArea, QBrush(checkerboard(this)));
@@ -457,7 +457,7 @@ class CollageThumbnail final : public QWidget {
                          QString::number(m_ordinal));
         if (m_document->selectedId() == m_id || hasFocus()) {
             painter.setBrush(Qt::NoBrush);
-            painter.setPen(QPen(kSelectionFrameColor, 2));
+            painter.setPen(QPen(theme.colorPrimary, 2));
             painter.drawRoundedRect(outer, theme.borderRadiusSM, theme.borderRadiusSM);
         }
     }
@@ -614,6 +614,10 @@ struct CollagePreviewCanvas::Impl {
     quint64 targetId = 0;
     bool panning = false;
     bool dragging = false;
+    SnowCanvasSelectionHandle handle = SnowCanvasSelectionHandle::None;
+    QRectF initialImage;
+    QRectF pendingImage;
+    CollageStaticPlacement pendingPlacement;
     bool automaticFit = true;
     bool editing = true;
     bool rendering = true;
@@ -649,7 +653,10 @@ struct CollagePreviewCanvas::Impl {
         for (qsizetype index = 0; index < document->items().size(); ++index) {
             const auto& item = document->items()[index];
             const auto bounds = viewportRect(index);
-            const auto visible = bounds.intersected(owner->rect());
+            const auto visible =
+                bounds.intersected(owner->rect())
+                    .intersected(item.id == document->selectedId() ? QRectF(owner->rect())
+                                                                   : clipViewportRect(item.id));
             if (visible.isEmpty() || detailJobs.contains(item.id))
                 continue;
             const auto fullSize = transformedSize(item);
@@ -805,29 +812,71 @@ struct CollagePreviewCanvas::Impl {
         previewStatisticsChanged();
     }
 
-    QRectF itemRect(quint64 id) const {
-        const auto index = indexById.value(id, -1);
-        return index >= 0 && index < layout.rects.size() ? QRectF(layout.rects[index]) : QRectF{};
+    void cancelGesture() {
+        pressedId = 0;
+        targetId = 0;
+        dragging = false;
+        panning = false;
+        handle = SnowCanvasSelectionHandle::None;
+        pendingImage = {};
+        owner->unsetCursor();
+        owner->setProperty("swapTargetId", QVariant::fromValue(quint64{0}));
     }
-    QRectF viewportRect(quint64 id) const {
-        const auto rect = itemRect(id);
+    QRectF mapped(const QRectF& rect) const {
         return rect.isEmpty() ? QRectF{}
                               : QRectF(offset + rect.topLeft() * zoom, rect.size() * zoom);
     }
-    QRectF viewportRect(qsizetype index) const {
-        if (index < 0 || index >= layout.rects.size())
+    QRectF itemRect(quint64 id) const {
+        if (!layout.isValid())
             return {};
-        const QRectF rect(layout.rects[index]);
-        return {offset + rect.topLeft() * zoom, rect.size() * zoom};
+        if (id == pressedId && dragging)
+            return pendingImage;
+        const auto index = indexById.value(id, -1);
+        return index >= 0 && index < layout.imageRects.size() ? QRectF(layout.imageRects[index])
+                                                              : QRectF{};
     }
-    quint64 hit(QPointF position) const {
+    QRectF viewportRect(quint64 id) const {
+        return mapped(itemRect(id));
+    }
+    QRectF viewportRect(qsizetype index) const {
+        return index >= 0 && index < order.size() ? viewportRect(order[index]) : QRectF{};
+    }
+    QRectF clipViewportRect(quint64 id) const {
+        const auto index = indexById.value(id, -1);
+        return layout.isValid() && index >= 0 && index < layout.clipRects.size()
+                   ? mapped(layout.clipRects[index])
+                   : QRectF{};
+    }
+    quint64 hit(QPointF position, bool includeWhitespace = false) const {
         if (!layout.isValid() || zoom <= 0)
             return 0;
-        const QPointF output = (position - offset) / zoom;
-        for (qsizetype i = 0; i < layout.rects.size(); ++i)
-            if (QRectF(layout.rects[i]).contains(output))
-                return order[i];
+        for (const auto id : order)
+            if (clipViewportRect(id).contains(position) &&
+                (includeWhitespace || viewportRect(id).contains(position)))
+                return id;
         return 0;
+    }
+    void paintImage(QPainter& painter, quint64 id) const {
+        const auto bounds = viewportRect(id);
+        if (!bounds.intersects(owner->rect()))
+            return;
+        const auto detail = details.constFind(id);
+        if (detail != details.cend() && detail->revision == revisions.value(id)) {
+            const auto tileBounds = detailViewport(*detail, bounds);
+            QPainterPath imageArea;
+            imageArea.addRect(bounds);
+            QPainterPath tileArea;
+            tileArea.addRect(tileBounds);
+            painter.save();
+            painter.setClipPath(imageArea.subtracted(tileArea), Qt::IntersectClip);
+            drawTransformedPreview(painter, bounds, previews.value(id),
+                                   previewTransforms.value(id));
+            painter.restore();
+            painter.drawImage(tileBounds, detail->image);
+        } else {
+            drawTransformedPreview(painter, bounds, previews.value(id),
+                                   previewTransforms.value(id));
+        }
     }
     void geometryChanged() {
         owner->setProperty("zoom", zoom);
@@ -846,15 +895,15 @@ struct CollagePreviewCanvas::Impl {
             int x = layoutRecovery ? (owner->width() - toolbar->width()) / 2
                                    : qRound(selected.center().x() - toolbar->width() / 2.0);
             int y = layoutRecovery ? owner->height() - toolbar->height() - 16
-                                   : qRound(selected.top() - toolbar->height() - 8);
+                                   : qRound(selected.top() - toolbar->height() - 12);
             // Keep the image's top edge unobscured when a fitted image leaves a
             // useful side margin but no room above its floating controls.
-            if (!layoutRecovery && y < 8 && selected.left() >= toolbar->width() + 16) {
-                x = qRound(selected.left() - toolbar->width() - 8);
+            if (!layoutRecovery && y < 8 && selected.left() >= toolbar->width() + 20) {
+                x = qRound(selected.left() - toolbar->width() - 12);
                 y = qRound(selected.top());
             } else if (!layoutRecovery && y < 8 &&
-                       selected.right() + toolbar->width() + 16 <= owner->width()) {
-                x = qRound(selected.right() + 8);
+                       selected.right() + toolbar->width() + 20 <= owner->width()) {
+                x = qRound(selected.right() + 12);
                 y = qRound(selected.top());
             }
             x = qBound(8, x, maximumX);
@@ -871,6 +920,7 @@ struct CollagePreviewCanvas::Impl {
         detailTimer->start();
     }
     void refresh() {
+        cancelGesture();
         if (!rendering || document->outputType() == CollageOutputType::PdfDocument) {
             detailTimer->stop();
             cancelDetails();
@@ -882,7 +932,7 @@ struct CollagePreviewCanvas::Impl {
             sameLayoutSettings(nextSettings, cachedSettings) &&
             order.size() == document->items().size()) {
             cachedSettings = nextSettings;
-            owner->update();
+            geometryChanged();
             return;
         }
         cachedSettings = nextSettings;
@@ -894,6 +944,7 @@ struct CollagePreviewCanvas::Impl {
         const bool layoutChanged = nextLayout.size != layout.size ||
                                    nextLayout.rects != layout.rects ||
                                    nextLayout.error != layout.error;
+        const bool placementChanged = nextLayout.imageRects != layout.imageRects;
         layout = nextLayout;
         QVector<quint64> nextOrder;
         nextOrder.reserve(document->items().size());
@@ -955,7 +1006,7 @@ struct CollagePreviewCanvas::Impl {
             zoom = 1;
         }
         // Even an empty initial layout must project its state into newly created controls.
-        if (firstRefresh || layoutChanged || orderChanged)
+        if (firstRefresh || layoutChanged || orderChanged || placementChanged)
             this->geometryChanged();
         else {
             previewStatisticsChanged();
@@ -1018,8 +1069,15 @@ CollagePreviewCanvas::CollagePreviewCanvas(CollageDocument* document, QWidget* p
     d.fit->setFocusPolicy(Qt::StrongFocus);
     connect(d.fit, &QAbstractButton::clicked, this, &CollagePreviewCanvas::fitToCanvas);
     connect(document, &CollageDocument::changed, this, [this] { m_impl->refresh(); });
-    connect(document, &CollageDocument::selectionChanged, this,
-            [this] { m_impl->geometryChanged(); });
+    connect(document, &CollageDocument::selectionChanged, this, [this] {
+        m_impl->cancelGesture();
+        m_impl->geometryChanged();
+    });
+    connect(document, &CollageDocument::staticPlacementChanged, this, [this](quint64) {
+        m_impl->cancelGesture();
+        m_impl->layout = m_impl->document->layout();
+        m_impl->geometryChanged();
+    });
     connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
             [this] {
                 m_impl->checker = checkerboard(this);
@@ -1041,8 +1099,12 @@ QPointF CollagePreviewCanvas::offset() const {
 QRectF CollagePreviewCanvas::imageViewportRect(quint64 id) const {
     return m_impl->viewportRect(id);
 }
+QRectF CollagePreviewCanvas::cellViewportRect(quint64 id) const {
+    return m_impl->clipViewportRect(id);
+}
 void CollagePreviewCanvas::fitToCanvas() {
     auto& d = *m_impl;
+    d.cancelGesture();
     if (!d.layout.isValid())
         return;
     d.automaticFit = true;
@@ -1055,6 +1117,7 @@ void CollagePreviewCanvas::fitToCanvas() {
 }
 void CollagePreviewCanvas::centerImage(quint64 id) {
     auto& d = *m_impl;
+    d.cancelGesture();
     if (!d.indexById.contains(id))
         return;
     d.document->select(id);
@@ -1074,9 +1137,7 @@ void CollagePreviewCanvas::setEditingEnabled(bool enabled) {
     if (m_impl->editing == enabled)
         return;
     m_impl->editing = enabled;
-    m_impl->pressedId = 0;
-    m_impl->targetId = 0;
-    m_impl->dragging = false;
+    m_impl->cancelGesture();
     m_impl->geometryChanged();
 }
 void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
@@ -1084,6 +1145,7 @@ void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
     if (d.rendering == enabled)
         return;
     d.rendering = enabled;
+    d.cancelGesture();
     if (!enabled) {
         d.detailTimer->stop();
         d.cancelDetails();
@@ -1096,7 +1158,9 @@ void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
 }
 void CollagePreviewCanvas::retranslateUi() {
     setAccessibleName(text("Collage preview"));
-    setAccessibleDescription(text("Drag with the middle mouse button to pan; scroll to zoom"));
+    setAccessibleDescription(
+        text("Drag an image to move or swap it; drag selection handles to "
+             "scale around its center. Drag with the middle mouse button to pan; scroll to zoom"));
     const std::array<const char*, 6> labels{
         "Rotate clockwise by 90°", "Rotate counterclockwise by 90°",
         "Flip horizontally",       "Flip vertically",
@@ -1126,63 +1190,85 @@ void CollagePreviewCanvas::paintEvent(QPaintEvent*) {
     const QRectF output(d.offset, QSizeF(d.layout.size) * d.zoom);
     painter.fillRect(output, d.document->settings().background);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    for (qsizetype index = 0; index < d.order.size(); ++index) {
-        const auto id = d.order[index];
-        const auto bounds = d.viewportRect(index);
-        if (!bounds.intersects(rect()))
-            continue;
-        drawTransformedPreview(painter, bounds, d.previews.value(id),
-                               d.previewTransforms.value(id));
-        const auto detail = d.details.constFind(id);
-        if (detail != d.details.cend() && detail->revision == d.revisions.value(id)) {
-            const auto tileBounds = d.detailViewport(*detail, bounds);
-            painter.fillRect(tileBounds, QBrush(d.checker));
-            painter.fillRect(tileBounds, d.document->settings().background);
-            painter.drawImage(tileBounds, detail->image);
-        }
-    }
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(theme.colorBorder, 1));
-    painter.drawRect(output);
-    const auto selected = d.viewportRect(d.document->selectedId());
-    if (!selected.isEmpty()) {
+    const auto selectedId = d.document->selectedId();
+    if (!d.viewportRect(selectedId).isEmpty()) {
+        QPainterPath outside;
+        outside.addRect(QRectF(rect()));
+        QPainterPath inside;
+        inside.addRect(d.clipViewportRect(selectedId));
         painter.save();
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(kSelectionFrameColor, kSelectionFrameWidth));
-        painter.drawRect(selected);
+        painter.setClipPath(outside.subtracted(inside));
+        painter.setOpacity(.25);
+        d.paintImage(painter, selectedId);
         painter.restore();
     }
-    if (d.targetId && d.targetId != d.pressedId) {
-        const auto target = d.viewportRect(d.targetId);
+    for (const auto id : d.order) {
         painter.save();
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.fillRect(target, kReplacementFillColor);
-        painter.setPen(QPen(kSelectionFrameColor, kSelectionFrameWidth, Qt::DashLine));
-        const qreal inset = kSelectionFrameWidth / 2;
-        painter.drawRect(target.adjusted(inset, inset, -inset, -inset));
+        painter.setClipRect(d.clipViewportRect(id));
+        d.paintImage(painter, id);
         painter.restore();
     }
+    collage_detail::paintPreviewBorder(painter, output, theme.colorBorder);
+    for (const auto id : d.order)
+        collage_detail::paintPreviewBorder(painter, d.clipViewportRect(id),
+                                           QColor(0xf0, 0xf0, 0xf0));
+    if (d.targetId && d.targetId != d.pressedId)
+        snowCanvasPaintSelectionMarquee(painter, d.clipViewportRect(d.targetId));
+    snowCanvasPaintImageSelection(painter, d.viewportRect(selectedId));
 }
 void CollagePreviewCanvas::resizeEvent(QResizeEvent*) {
+    m_impl->cancelGesture();
     if (m_impl->automaticFit)
         fitToCanvas();
+    m_impl->geometryChanged();
+}
+void CollagePreviewCanvas::hideEvent(QHideEvent* event) {
+    // Hiding also occurs while the owning window destroys its document.
+    // Retire transient UI work without reading model state here.
+    m_impl->cancelGesture();
+    m_impl->detailTimer->stop();
+    m_impl->cancelDetails();
+    QWidget::hideEvent(event);
+}
+void CollagePreviewCanvas::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    m_impl->refresh();
     m_impl->geometryChanged();
 }
 void CollagePreviewCanvas::mousePressEvent(QMouseEvent* event) {
     auto& d = *m_impl;
     setFocus(Qt::MouseFocusReason);
     if (event->button() == Qt::MiddleButton) {
+        d.cancelGesture();
         d.panning = true;
         d.automaticFit = false;
         d.last = event->position();
         setCursor(Qt::ClosedHandCursor);
         event->accept();
     } else if (event->button() == Qt::LeftButton) {
+        d.cancelGesture();
         d.automaticFit = false;
-        const auto selected = d.hit(event->position());
-        d.pressedId = d.editing ? selected : 0;
-        d.press = event->position();
+        const auto handle =
+            d.editing ? snowCanvasImageSelectionHandleAt(d.viewportRect(d.document->selectedId()),
+                                                         event->position())
+                      : SnowCanvasSelectionHandle::None;
+        const auto selected = handle == SnowCanvasSelectionHandle::None ? d.hit(event->position())
+                                                                        : d.document->selectedId();
         d.document->select(selected);
+        if (d.editing && selected) {
+            d.initialImage = d.itemRect(selected);
+            d.pendingImage = d.initialImage;
+            d.pressedId = selected;
+            d.handle = handle;
+            d.press = event->position();
+            const int index = d.document->indexOf(selected);
+            d.pendingPlacement = {
+                d.initialImage.center() - QRectF(d.layout.clipRects[index]).center(),
+                d.initialImage.width() / transformedSize(d.document->items()[index]).width()};
+            setCursor(handle == SnowCanvasSelectionHandle::None
+                          ? Qt::ClosedHandCursor
+                          : collage_detail::resizeCursor(handle));
+        }
         event->accept();
     }
 }
@@ -1193,32 +1279,77 @@ void CollagePreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
         d.last = event->position();
         d.geometryChanged();
     } else if (d.pressedId && d.editing && (event->buttons() & Qt::LeftButton)) {
-        if ((event->position() - d.press).manhattanLength() >= QApplication::startDragDistance())
-            d.dragging = true;
-        d.targetId = d.dragging ? d.hit(event->position()) : 0;
-        if (d.dragging)
-            setCursor(d.targetId && d.targetId != d.pressedId ? Qt::DragMoveCursor
-                                                              : Qt::ForbiddenCursor);
-        update();
+        if (!d.dragging &&
+            (event->position() - d.press).manhattanLength() < QApplication::startDragDistance())
+            return;
+        const auto delta = (event->position() - d.press) / d.zoom;
+        const auto pending =
+            d.handle == SnowCanvasSelectionHandle::None
+                ? d.initialImage.translated(delta)
+                : collage_detail::centeredResize(d.initialImage, d.handle, delta, d.zoom);
+        const int index = d.document->indexOf(d.pressedId);
+        if (index < 0)
+            return;
+        auto candidate = d.document->items()[index];
+        candidate.staticPlacement = {pending.center() - QRectF(d.layout.clipRects[index]).center(),
+                                     pending.width() / transformedSize(candidate).width()};
+        const auto resolved = resolveCollageStaticImageRect(candidate, d.layout.rects[index],
+                                                            d.layout.clipRects[index]);
+        if (resolved.isEmpty())
+            return;
+        d.dragging = true;
+        d.pendingPlacement = candidate.staticPlacement;
+        d.pendingImage = resolved;
+        const auto target =
+            d.handle == SnowCanvasSelectionHandle::None ? d.hit(event->position(), true) : 0;
+        d.targetId = target != d.pressedId ? target : 0;
+        if (d.handle == SnowCanvasSelectionHandle::None)
+            setCursor(d.targetId ? Qt::DragMoveCursor : Qt::ClosedHandCursor);
+        setProperty("swapTargetId", QVariant::fromValue(d.targetId));
+        d.geometryChanged();
+    } else {
+        const auto handle =
+            d.editing ? snowCanvasImageSelectionHandleAt(d.viewportRect(d.document->selectedId()),
+                                                         event->position())
+                      : SnowCanvasSelectionHandle::None;
+        if (handle == SnowCanvasSelectionHandle::None)
+            unsetCursor();
+        else
+            setCursor(collage_detail::resizeCursor(handle));
     }
+    event->accept();
 }
 void CollagePreviewCanvas::mouseReleaseEvent(QMouseEvent* event) {
     auto& d = *m_impl;
-    if (event->button() == Qt::MiddleButton)
+    if (event->button() == Qt::MiddleButton) {
         d.panning = false;
-    if (event->button() == Qt::LeftButton) {
-        const auto target = d.hit(event->position());
-        if (d.dragging && d.editing && target && target != d.pressedId)
-            d.document->swapItems(d.pressedId, target);
-        d.pressedId = 0;
-        d.targetId = 0;
-        d.dragging = false;
+        unsetCursor();
     }
-    unsetCursor();
+    if (event->button() == Qt::LeftButton && d.pressedId) {
+        if (d.dragging && d.editing) {
+            QMouseEvent finalMove(QEvent::MouseMove, event->position(), event->globalPosition(),
+                                  Qt::NoButton, Qt::LeftButton, event->modifiers());
+            mouseMoveEvent(&finalMove);
+        }
+        const auto id = d.pressedId;
+        const auto target =
+            d.handle == SnowCanvasSelectionHandle::None ? d.hit(event->position(), true) : 0;
+        const auto placement = d.pendingPlacement;
+        const bool commit = d.dragging && d.editing;
+        d.cancelGesture();
+        if (commit) {
+            if (target && target != id)
+                d.document->swapItems(id, target);
+            else
+                d.document->setStaticPlacement(id, placement);
+        }
+    }
     d.geometryChanged();
+    event->accept();
 }
 void CollagePreviewCanvas::wheelEvent(QWheelEvent* event) {
     auto& d = *m_impl;
+    d.cancelGesture();
     if (!d.layout.isValid()) {
         event->accept();
         return;
@@ -1241,11 +1372,11 @@ void CollagePreviewCanvas::keyPressEvent(QKeyEvent* event) {
     } else if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) && d.editing) {
         d.document->remove(d.document->selectedId());
     } else if (event->key() == Qt::Key_Escape) {
-        d.pressedId = 0;
-        d.targetId = 0;
-        d.dragging = false;
-        d.document->select(0);
-        unsetCursor();
+        const bool active = d.pressedId != 0;
+        d.cancelGesture();
+        if (!active)
+            d.document->select(0);
+        d.geometryChanged();
     } else if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Up ||
                event->key() == Qt::Key_Right || event->key() == Qt::Key_Down) {
         const auto index = d.indexById.value(d.document->selectedId(), -1);
@@ -1259,11 +1390,12 @@ void CollagePreviewCanvas::keyPressEvent(QKeyEvent* event) {
     event->accept();
 }
 void CollagePreviewCanvas::dragEnterEvent(QDragEnterEvent* event) {
+    m_impl->cancelGesture();
     if (m_impl->editing && dragItem(event->mimeData(), m_impl->document))
         event->acceptProposedAction();
 }
 void CollagePreviewCanvas::dragMoveEvent(QDragMoveEvent* event) {
-    m_impl->targetId = m_impl->hit(event->position());
+    m_impl->targetId = m_impl->hit(event->position(), true);
     if (m_impl->targetId && m_impl->targetId != dragItem(event->mimeData(), m_impl->document))
         event->acceptProposedAction();
     else
@@ -1275,7 +1407,7 @@ void CollagePreviewCanvas::dragLeaveEvent(QDragLeaveEvent*) {
     update();
 }
 void CollagePreviewCanvas::dropEvent(QDropEvent* event) {
-    const auto target = m_impl->hit(event->position());
+    const auto target = m_impl->hit(event->position(), true);
     const auto source = dragItem(event->mimeData(), m_impl->document);
     m_impl->targetId = 0;
     if (m_impl->editing && target && source && m_impl->document->swapItems(source, target))
@@ -1435,7 +1567,7 @@ struct CollageEditorWidget::Impl {
         form->setEnabled(!exporting);
         for (auto* thumbnail : thumbnailById)
             thumbnail->setEditingEnabled(!exporting, !loading);
-        canvas->setEditingEnabled(!exporting);
+        canvas->setEditingEnabled(!exporting && !loading);
         emptyAdd->setEnabled(!loading && !exporting);
         emptyAdd->setBusy(loading);
         pdfGrid->setLoading(loading);

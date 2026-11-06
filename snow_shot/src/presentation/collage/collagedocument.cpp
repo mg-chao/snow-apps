@@ -216,6 +216,10 @@ CollageLayout calculateCustomGridLayout(const QVector<CollageItem>& items,
                          (index / columns) * (qint64(cell.height()) + settings.spacing) +
                          (cell.height() - size.height()) / 2;
         result.rects.append(QRect(QPoint(static_cast<int>(x), static_cast<int>(y)), size));
+        result.clipRects.append(
+            QRect(QPoint(static_cast<int>(x) - (cell.width() - size.width()) / 2,
+                         static_cast<int>(y) - (cell.height() - size.height()) / 2),
+                  cell));
     }
     return result;
 }
@@ -264,6 +268,7 @@ bool cachedImageIsOpaque(const CollageItem& item, const QImage& pixels,
 struct PreparedItem final {
     ScreenshotImageRowSource rows;
     QRect rect;
+    QPoint sourceOffset;
     bool opaque = false;
 };
 
@@ -440,12 +445,12 @@ struct PreparedRows final {
                 continue;
             const int begin = intersection.top();
             const int end = intersection.top() + intersection.height();
-            const qsizetype itemStride = qsizetype(item.rect.width()) * 4;
+            const qsizetype itemStride = qsizetype(item.rows.size.width()) * 4;
             if ((alpha == 0 || item.opaque) &&
-                (intersection.width() == item.rect.width() || item.rows.readRegion)) {
+                (intersection.width() == item.rows.size.width() || item.rows.readRegion)) {
                 const qsizetype offset = qsizetype(begin - first) * stride +
                                          qsizetype(intersection.left() - region.left()) * 4;
-                const QRect source(intersection.topLeft() - item.rect.topLeft(),
+                const QRect source(intersection.topLeft() - item.rect.topLeft() + item.sourceOffset,
                                    intersection.size());
                 const bool succeeded =
                     item.rows.readRegion
@@ -473,18 +478,23 @@ struct PreparedRows final {
                     return false;
                 }
                 const bool succeeded =
-                    croppedRead ? item.rows.readRegion(QRect(intersection.left() - item.rect.left(),
-                                                             start - item.rect.top(),
-                                                             intersection.width(), rows),
-                                                       scratchStride, scratch.data(), bytes)
-                                : item.rows.readRows(start - item.rect.top(), rows, scratchStride,
-                                                     scratch.data(), bytes);
+                    croppedRead
+                        ? item.rows.readRegion(
+                              QRect(intersection.left() - item.rect.left() + item.sourceOffset.x(),
+                                    start - item.rect.top() + item.sourceOffset.y(),
+                                    intersection.width(), rows),
+                              scratchStride, scratch.data(), bytes)
+                        : item.rows.readRows(start - item.rect.top() + item.sourceOffset.y(), rows,
+                                             scratchStride, scratch.data(), bytes);
                 if (!succeeded)
                     return false;
                 for (int row = 0; row < rows; ++row) {
                     const uchar* source =
                         scratch.data() + qsizetype(row) * scratchStride +
-                        (croppedRead ? 0 : qsizetype(intersection.left() - item.rect.left()) * 4);
+                        (croppedRead ? 0
+                                     : qsizetype(intersection.left() - item.rect.left() +
+                                                 item.sourceOffset.x()) *
+                                           4);
                     uchar* target = destination + qsizetype(start - first + row) * stride +
                                     qsizetype(intersection.left() - region.left()) * 4;
                     if (alpha == 0 || item.opaque) {
@@ -916,8 +926,8 @@ QImage transformedPreview(const CollageItem& item) {
                                     Qt::FastTransformation);
 }
 
-CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
-                                     const CollageSettings& settings) {
+static CollageLayout calculateAutomaticCollageLayout(const QVector<CollageItem>& items,
+                                                     const CollageSettings& settings) {
     CollageLayout result;
     if (items.isEmpty())
         return result;
@@ -987,7 +997,54 @@ CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
             settings.border + (cross - (vertical ? size.width() : size.height())) / 2;
         result.rects.append(vertical ? QRect(QPoint(centered, static_cast<int>(offset)), size)
                                      : QRect(QPoint(static_cast<int>(offset), centered), size));
+        result.clipRects.append(
+            vertical ? QRect(settings.border, static_cast<int>(offset), cross, size.height())
+                     : QRect(static_cast<int>(offset), settings.border, size.width(), cross));
         offset += (vertical ? size.height() : size.width()) + settings.spacing;
+    }
+    return result;
+}
+
+QRect resolveCollageStaticImageRect(const CollageItem& item, const QRect& automaticBounds,
+                                    const QRect& clipBounds) {
+    const auto& placement = item.staticPlacement;
+    if (placement == CollageStaticPlacement{})
+        return automaticBounds;
+    const auto offset = placement.centerOffsetPixels;
+    const qreal scale = placement.pixelsPerPixel.value_or(1);
+    if (!std::isfinite(offset.x()) || !std::isfinite(offset.y()) || !std::isfinite(scale) ||
+        scale <= 0 || automaticBounds.isEmpty() || clipBounds.isEmpty())
+        return {};
+    const QSizeF size = placement.pixelsPerPixel ? QSizeF(transformedSize(item)) * scale
+                                                 : QSizeF(automaticBounds.size());
+    // Leave headroom for rectangle intersections, row strides, and rounded edge arithmetic.
+    constexpr qreal limit = std::numeric_limits<int>::max() / 4;
+    if (!std::isfinite(size.width()) || !std::isfinite(size.height()) || size.width() > limit ||
+        size.height() > limit || size.width() <= 0 || size.height() <= 0)
+        return {};
+    const QSize raster(std::max(1, qRound(size.width())), std::max(1, qRound(size.height())));
+    const auto center = QRectF(clipBounds).center() + offset;
+    const auto origin = center - QPointF(raster.width() / 2.0, raster.height() / 2.0);
+    if (!std::isfinite(origin.x()) || !std::isfinite(origin.y()) || std::abs(origin.x()) > limit ||
+        std::abs(origin.y()) > limit)
+        return {};
+    return QRect(QPoint(qRound(origin.x()), qRound(origin.y())), raster);
+}
+
+CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
+                                     const CollageSettings& settings) {
+    auto result = calculateAutomaticCollageLayout(items, settings);
+    if (!result.isValid())
+        return result;
+    result.imageRects.reserve(items.size());
+    for (qsizetype index = 0; index < items.size(); ++index) {
+        const auto image = resolveCollageStaticImageRect(items[index], result.rects[index],
+                                                         result.clipRects[index]);
+        if (image.isEmpty()) {
+            result.error = preparationError();
+            return result;
+        }
+        result.imageRects.append(image);
     }
     return result;
 }
@@ -1016,8 +1073,10 @@ struct CollageDocument::Impl final {
     }
 
     void resetPlacements(qsizetype first, qsizetype end) {
-        for (qsizetype index = first; index < end; ++index)
+        for (qsizetype index = first; index < end; ++index) {
             items[index].pdfPlacement = {};
+            items[index].staticPlacement = {};
+        }
     }
 
     void freezePdfScale(int index) {
@@ -1075,6 +1134,11 @@ void CollageDocument::setSettings(const CollageSettings& settings) {
     const QStringList adjustedFields = normalizeCustomGrid(normalized, m_impl->items.size());
     if (normalized == m_impl->settings)
         return;
+    auto geometry = normalized;
+    geometry.background = m_impl->settings.background;
+    if (geometry != m_impl->settings)
+        for (auto& item : m_impl->items)
+            item.staticPlacement = {};
     m_impl->settings = normalized;
     m_impl->layoutDirty = true;
     emit changed();
@@ -1104,7 +1168,8 @@ void CollageDocument::setPdfSettings(const CollagePdfSettings& settings) {
     m_impl->pdfSettings = settings;
     if (validateCollagePdfSettings(settings).isEmpty()) {
         if (pdfGeometryChanged(m_impl->lastValidPdfSettings, settings))
-            m_impl->resetPlacements(0, m_impl->items.size());
+            for (auto& item : m_impl->items)
+                item.pdfPlacement = {};
         m_impl->lastValidPdfSettings = settings;
     }
     emit changed();
@@ -1206,6 +1271,7 @@ bool CollageDocument::replace(quint64 id, QImage image, QString label, QImage pr
     item.resourceOwner = std::move(owner);
     item.transform = {};
     item.pdfPlacement = {};
+    item.staticPlacement = {};
     ++item.revision;
     ++m_impl->contentRevision;
     m_impl->layoutDirty = true;
@@ -1271,6 +1337,8 @@ bool CollageDocument::swapItems(quint64 first, quint64 second) {
     std::swap(m_impl->items[a], m_impl->items[b]);
     m_impl->items[a].pdfPlacement = {};
     m_impl->items[b].pdfPlacement = {};
+    m_impl->items[a].staticPlacement = {};
+    m_impl->items[b].staticPlacement = {};
     m_impl->indices.insert(first, b);
     m_impl->indices.insert(second, a);
     ++m_impl->contentRevision;
@@ -1332,18 +1400,42 @@ bool CollageDocument::resetTransform(quint64 id) {
     auto& item = m_impl->items[index];
     const bool orientationChanged = !item.transform.isIdentity();
     const bool placementChanged = item.pdfPlacement != CollagePdfPlacement{};
-    if (!orientationChanged && !placementChanged)
+    const bool staticChanged = item.staticPlacement != CollageStaticPlacement{};
+    if (!orientationChanged && !placementChanged && !staticChanged)
         return true;
     item.transform = {};
     item.pdfPlacement = {};
+    item.staticPlacement = {};
+    m_impl->layoutDirty = true;
     if (orientationChanged) {
         ++item.revision;
         ++m_impl->contentRevision;
         m_impl->layoutDirty = true;
         emit changed();
     } else {
-        emit pdfPlacementChanged(id);
+        if (placementChanged)
+            emit pdfPlacementChanged(id);
+        if (staticChanged)
+            emit staticPlacementChanged(id);
     }
+    return true;
+}
+
+bool CollageDocument::setStaticPlacement(quint64 id, const CollageStaticPlacement& placement) {
+    const int index = indexOf(id);
+    if (index < 0 || m_impl->items[index].staticPlacement == placement)
+        return false;
+    const auto current = layout();
+    if (!current.isValid())
+        return false;
+    auto candidate = m_impl->items[index];
+    candidate.staticPlacement = placement;
+    if (resolveCollageStaticImageRect(candidate, current.rects[index], current.clipRects[index])
+            .isEmpty())
+        return false;
+    m_impl->items[index].staticPlacement = placement;
+    m_impl->layoutDirty = true;
+    emit staticPlacementChanged(id);
     return true;
 }
 
@@ -1400,7 +1492,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
     for (qsizetype index = 0; index < items.size(); ++index) {
         const auto& item = items[index];
         const bool transformed = !item.transform.isIdentity();
-        const bool resized = transformedSize(item) != layout.rects[index].size();
+        const bool resized = transformedSize(item) != layout.imageRects[index].size();
         const bool streamed = collage_detail::streamableTransform(item);
         qint64 itemScratchBytes = 0;
         if (transformed && !streamed)
@@ -1421,8 +1513,8 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
             itemScratchBytes += 8 * 1024 * 1024;
         }
         if (resized) {
-            const auto resources =
-                image_codec::resizeResources(transformedSize(item), layout.rects[index].size());
+            const auto resources = image_codec::resizeResources(transformedSize(item),
+                                                                layout.imageRects[index].size());
             if (!resources) {
                 report(error, resourceError());
                 return {};
@@ -1430,7 +1522,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
             readerCacheBytes += resources->retainedBytes;
             itemScratchBytes += resources->scratchBytes;
         }
-        maximumRowBytes = std::max(maximumRowBytes, qint64(layout.rects[index].width()) * 4);
+        maximumRowBytes = std::max(maximumRowBytes, qint64(layout.imageRects[index].width()) * 4);
         if (transformed && !streamed)
             itemScratchBytes +=
                 std::max(qint64(item.image.sizeInBytes()), qint64(transformedSize(item).width()) *
@@ -1486,7 +1578,7 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
             }
             if (!streamed && !item.transform.isIdentity())
                 prepared->inputImages.append(pixels);
-            const QSize size = layout.rects[index].size();
+            const QSize size = layout.imageRects[index].size();
             if (rows.size != size) {
                 rows.cancellationRequested = prepared->cancelled;
                 rows = image_codec::resizedRowSource(std::move(rows), size, error);
@@ -1502,7 +1594,11 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
                 report(error, cancellationError());
                 return {};
             }
-            prepared->items.append({std::move(rows), layout.rects[index], opaque});
+            const auto visible = layout.imageRects[index].intersected(layout.clipRects[index]);
+            if (!visible.isEmpty())
+                prepared->items.append({std::move(rows), visible,
+                                        visible.topLeft() - layout.imageRects[index].topLeft(),
+                                        opaque});
         }
         if (!prepared->indexRows()) {
             report(error, preparationError());
@@ -1548,7 +1644,11 @@ ScreenshotImageRowSource prepareCollageRows(const QVector<CollageItem>& items,
                             report(error, cancellationError());
                             return {};
                         }
-                        painter.drawImage(layout.rects[index], transformedPreview(items[index]));
+                        painter.save();
+                        painter.setClipRect(layout.clipRects[index]);
+                        painter.drawImage(layout.imageRects[index],
+                                          transformedPreview(items[index]));
+                        painter.restore();
                     }
                     painter.end();
                     preview.setColorSpace(QColorSpace(QColorSpace::SRgb));

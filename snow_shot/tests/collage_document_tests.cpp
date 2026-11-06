@@ -492,12 +492,16 @@ void transformedRowsPreserveNativePixelsAndBoundMemory() {
             "bounded transform resources retire with the final reader");
 }
 
-void regionReadsAndLazyResize() {
+void regionReadsAndLazyResize(bool manualPlacement = false) {
     CollageDocument document;
     const auto first = document.append(asymmetricFixture(), QStringLiteral("first"));
     document.append(fixture({7, 5}, QColor(20, 100, 200, 128)), QStringLiteral("resized"));
     document.append(fixture({4, 9}, QColor(100, 20, 60, 0)), QStringLiteral("transparent"));
     require(document.rotate(first, true), "region rotation fixture");
+    if (manualPlacement) {
+        document.setStaticPlacement(first, {{1, -1}, 3});
+        document.setStaticPlacement(document.items()[1].id, {{-2, 1}, .75});
+    }
     for (const auto direction :
          {CollageDirection::Vertical, CollageDirection::Horizontal, CollageDirection::Custom}) {
         auto settings = customSettings(2, 2);
@@ -550,6 +554,8 @@ void regionReadsAndLazyResize() {
                     "wrapped destination addresses fail before background fills");
         }
     }
+    if (manualPlacement)
+        return;
     {
         CollageSettings settings;
         settings.sizing = CollageSizing::Original;
@@ -789,6 +795,191 @@ void capturedImagesAdmitMemoryBeforePaintingAndOwnTheirReservation() {
             "imports reject dimensions that cannot be represented by the image bridge");
 }
 
+void staticPlacementGeometryAndLifecycle() {
+    for (const auto direction :
+         {CollageDirection::Vertical, CollageDirection::Horizontal, CollageDirection::Custom}) {
+        for (const auto sizing : {CollageSizing::Original, CollageSizing::Uniform}) {
+            CollageDocument document;
+            const auto first = document.append(fixture({80, 40}), QStringLiteral("first"));
+            const auto second =
+                document.append(fixture({40, 80}, Qt::blue), QStringLiteral("second"));
+            auto settings = customSettings(1, 2);
+            settings.direction = direction;
+            settings.sizing = sizing;
+            settings.border = 4;
+            settings.spacing = 6;
+            document.setSettings(settings);
+            const auto automatic = document.layout();
+            const auto revision = document.contentRevision();
+            const auto original = document.items()[0].image.cacheKey();
+            int changes = 0;
+            QObject::connect(&document, &CollageDocument::staticPlacementChanged, &document,
+                             [&](quint64) { ++changes; });
+            const CollageStaticPlacement placement{{3, -2}, .5};
+            require(document.setStaticPlacement(first, placement), "static placement is admitted");
+            const auto placed = document.layout();
+            require(placed.size == automatic.size && placed.rects == automatic.rects &&
+                        placed.clipRects == automatic.clipRects &&
+                        placed.imageRects[0].size() == QSize(40, 20) &&
+                        QRectF(placed.imageRects[0]).center() ==
+                            QRectF(placed.clipRects[0]).center() + QPointF(3, -2) &&
+                        placed.imageRects[1] == automatic.imageRects[1] && changes == 1 &&
+                        document.contentRevision() == revision &&
+                        document.items()[0].image.cacheKey() == original,
+                    "manual edits affect only placed bounds, never slots, neighbors or source "
+                    "revisions");
+            require(!document.setStaticPlacement(first, placement) && changes == 1,
+                    "unchanged placement emits no notification");
+            document.setOutputType(CollageOutputType::PdfDocument);
+            auto pdf = document.pdfSettings();
+            pdf.marginTopMm += 1;
+            document.setPdfSettings(pdf);
+            document.setOutputType(CollageOutputType::StaticImage);
+            settings.background = Qt::transparent;
+            document.setSettings(settings);
+            require(document.items()[0].staticPlacement == placement,
+                    "mode, PDF geometry and background changes preserve static placement");
+            document.rotate(first, true);
+            require(document.layout().imageRects[0].size() == QSize(20, 40) &&
+                        document.items()[0].staticPlacement == placement,
+                    "rotation preserves manual source scale and center offset");
+            document.flip(first, true);
+            require(document.items()[0].staticPlacement == placement, "flip preserves placement");
+            document.resetTransform(first);
+            require(document.items()[0].staticPlacement == CollageStaticPlacement{} &&
+                        document.layout().imageRects == automatic.imageRects,
+                    "reset restores orientation and automatic placement");
+            document.setStaticPlacement(first, placement);
+            document.resetTransform(first);
+            require(document.items()[0].staticPlacement == CollageStaticPlacement{},
+                    "reset clears placement even when orientation is already identity");
+            document.setStaticPlacement(first, placement);
+            document.swapItems(first, second);
+            require(document.items()[1].staticPlacement == CollageStaticPlacement{},
+                    "swapping clears the affected placement");
+            document.setStaticPlacement(first, placement);
+            settings.spacing += 1;
+            document.setSettings(settings);
+            require(document.items()[1].staticPlacement == CollageStaticPlacement{},
+                    "layout geometry edits restore automatic placements");
+            document.setStaticPlacement(first, placement);
+            document.replace(first, fixture({80, 40}), QStringLiteral("replacement"));
+            require(document.items()[1].staticPlacement == CollageStaticPlacement{},
+                    "replacement clears placement");
+            for (const qreal invalid : {qreal(0), qreal(-1), std::numeric_limits<qreal>::infinity(),
+                                        std::numeric_limits<qreal>::quiet_NaN(), qreal(1e20)}) {
+                require(!document.setStaticPlacement(first, {{}, invalid}),
+                        "invalid and unrepresentable scales are rejected");
+            }
+            require(!document.setStaticPlacement(first, {{1e20, 0}, 1}) &&
+                        !document.setStaticPlacement(999, placement),
+                    "invalid offsets and unknown IDs are rejected");
+        }
+    }
+}
+
+void staticPlacementPixelsAndRegions() {
+    const auto baseline = collageResourceUsage().reservedBytes;
+    {
+        CollageDocument document;
+        const auto first =
+            document.append(fixture({40, 20}, QColor(255, 0, 0, 128)), QStringLiteral("alpha"));
+        document.append(fixture({40, 20}, Qt::blue), QStringLiteral("neighbor"));
+        const auto output = [&] {
+            return materializeCollageRows(
+                prepareCollageRows(document.items(), document.settings()));
+        };
+        document.setStaticPlacement(first, {{}, .5});
+        auto pixels = output();
+        require(pixels.size() == QSize(40, 40) && pixels.pixelColor(0, 0) == Qt::white &&
+                    pixels.pixelColor(20, 10) == QColor(255, 127, 127) &&
+                    pixels.pixelColor(20, 30) == Qt::blue,
+                "shrink exposes background and composites source alpha exactly once");
+        document.setStaticPlacement(first, {{10, 0}, 2});
+        pixels = output();
+        require(pixels.pixelColor(0, 0) == QColor(255, 127, 127) &&
+                    pixels.pixelColor(39, 19) == QColor(255, 127, 127) &&
+                    pixels.pixelColor(20, 20) == Qt::blue,
+                "enlarged images are clipped before the neighboring slot");
+        auto settings = document.settings();
+        settings.background = Qt::transparent;
+        document.setSettings(settings);
+        document.setStaticPlacement(first, {{20, 0}, 1});
+        const auto rows = prepareCollageRows(document.items(), document.settings());
+        pixels = materializeCollageRows(rows);
+        require(pixels.pixelColor(19, 10).alpha() == 0 &&
+                    pixels.pixelColor(20, 10) == QColor(255, 0, 0, 128),
+                "translation crops the source and leaves transparent whitespace");
+        const QRect region(16, 7, 12, 21);
+        QImage partial(region.size(), QImage::Format_RGBA8888);
+        partial.setColorSpace(pixels.colorSpace());
+        require(
+            rows.readRegion(region, partial.bytesPerLine(), partial.bits(),
+                            partial.sizeInBytes()) &&
+                partial == pixels.copy(region),
+            "partial regions crossing cropped content, whitespace and neighbors match full export");
+        document.setStaticPlacement(first, {{100, 100}, 1});
+        pixels = output();
+        require(pixels.pixelColor(20, 10).alpha() == 0 && pixels.pixelColor(20, 30) == Qt::blue,
+                "an image wholly outside its slot exports only the remaining composition");
+        require(materializeCollageRows(rows).pixelColor(20, 10) == QColor(255, 0, 0, 128),
+                "prepared output owns an immutable placement snapshot");
+
+        // Asymmetric colors catch source-offset errors in both opaque and blending paths.
+        for (const auto background : {QColor(Qt::white), QColor(Qt::transparent)}) {
+            CollageDocument colors;
+            colors.append(asymmetricFixture(), QStringLiteral("colors"));
+            auto config = colors.settings();
+            config.background = background;
+            colors.setSettings(config);
+            colors.setStaticPlacement(colors.selectedId(), {{1, 0}, 1});
+            const auto result = materializeCollageRows(prepareCollageRows(colors.items(), config));
+            require(result.pixelColor(1, 0) == Qt::red && result.pixelColor(2, 0) == Qt::green &&
+                        result.pixelColor(1, 1) == Qt::yellow &&
+                        result.pixelColor(2, 1) == Qt::magenta,
+                    "cropped row readers retain the correct source origin");
+        }
+    }
+    require(collageResourceUsage().reservedBytes == baseline,
+            "placement row resources retire with their readers");
+}
+
+void enlargedPlacementUsesBoundedRowsAndPreview() {
+    const auto baseline = collageResourceUsage().reservedBytes;
+    {
+        CollageDocument document;
+        const auto id = document.append(fixture({3000, 1800}, Qt::red), QStringLiteral("large"));
+        require(document.setStaticPlacement(id, {{100, -20}, 4}), "large placement is admitted");
+        const auto owned = collageResourceUsage().reservedBytes;
+        auto rows = prepareCollageRows(document.items(), document.settings());
+        require(rows.isValid() && collageResourceUsage().reservedBytes - owned < 32 * 1024 * 1024,
+                "an enlarged virtual image uses bounded plans and tiles instead of a full scaled "
+                "raster");
+        uchar pixel[4]{};
+        require(rows.readRegion(QRect(0, 0, 1, 1), 4, pixel, 4) && pixel[0] == 255 &&
+                    pixel[3] == 255 && rows.readRegion(QRect(2999, 1799, 1, 1), 4, pixel, 4) &&
+                    pixel[0] == 255,
+                "cropped lazy rows cover both output edges without materializing overflow");
+        require(!rows.previewImage.isNull() && rows.previewImage.pixelColor(0, 0) == Qt::red,
+                "large export preview hints apply enlarged placement and clipping");
+        document.setStaticPlacement(id, {{}, .5});
+        auto smaller = prepareCollageRows(document.items(), document.settings());
+        require(!smaller.previewImage.isNull() &&
+                    smaller.previewImage.pixelColor(0, 0) == Qt::white &&
+                    smaller.previewImage.pixelColor(smaller.previewImage.width() / 2,
+                                                    smaller.previewImage.height() / 2) == Qt::red,
+                "large export preview hints show the same shrink whitespace as native rows");
+        bool cancelled = false;
+        auto cancellable =
+            prepareCollageRows(document.items(), document.settings(), [&] { return cancelled; });
+        cancelled = true;
+        require(!cancellable.readRegion(QRect(0, 0, 1, 1), 4, pixel, 4),
+                "placed row readers honor cancellation before accessing pixels");
+    }
+    require(collageResourceUsage().reservedBytes == baseline,
+            "all placed preview and export reservations retire");
+}
+
 void scalingAndLargeAxes() {
     CollageDocument document;
     document.append(fixture({2, 2}, Qt::blue), QStringLiteral("reference"));
@@ -853,9 +1044,13 @@ int main(int argc, char** argv) {
         transformations();
         transformedRowsPreserveNativePixelsAndBoundMemory();
         regionReadsAndLazyResize();
+        regionReadsAndLazyResize(true);
         alphaAndRowReads();
         snapshotsAndResources();
         capturedImagesAdmitMemoryBeforePaintingAndOwnTheirReservation();
+        staticPlacementGeometryAndLifecycle();
+        staticPlacementPixelsAndRegions();
+        enlargedPlacementUsesBoundedRowsAndPreview();
         scalingAndLargeAxes();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

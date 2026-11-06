@@ -154,12 +154,8 @@
             <translation>删除图像</translation>
         </message>
         <message>
-            <source>Drag image files here, or choose add images</source>
-            <translation>将图片文件拖到此处，或点击“添加图片”</translation>
-        </message>
-        <message>
-            <source>Drag with the middle mouse button to pan; scroll to zoom</source>
-            <translation>按住鼠标中键拖动以平移；滚动滚轮以缩放</translation>
+            <source>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>拖动图像以移动或交换；拖动选框控制点以围绕中心缩放。按住鼠标中键拖动以平移，滚动以缩放</translation>
         </message>
         <message>
             <source>Drop images to add to collage</source>

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdftemplatewidget.h"
+#include "collageimageediting_p.h"
 
 #include "snow_shot/presentation/components/canvasactiontoolbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -136,53 +137,6 @@ void paintImage(QPainter& painter, const QRectF& target, const CollageItem& item
         painter.drawImage(source, item.preview);
     }
     painter.restore();
-}
-
-void paintPreviewBorder(QPainter& painter, const QRectF& bounds, const QColor& color) {
-    // Quantize the one-logical-pixel guide and its edges in device space, including
-    // backing-store translations, so every side covers the same whole pixel count.
-    const auto deviceTransform = painter.deviceTransform();
-    const auto pixels = deviceTransform.mapRect(bounds);
-    const qreal stroke = std::max(1, qRound(deviceTransform.m11()));
-    const qreal halfStroke = stroke / 2;
-    const auto snapEdge = [halfStroke](qreal coordinate) {
-        const qreal edge = coordinate - halfStroke;
-        // Shared cell edges can differ by floating-point roundoff at a half-pixel tie.
-        const qreal tie = std::floor(edge) + .5;
-        return qFuzzyCompare(edge, tie) ? std::ceil(edge) : std::round(edge);
-    };
-    const QRectF outer(
-        QPointF(snapEdge(pixels.left()), snapEdge(pixels.top())),
-        QPointF(snapEdge(pixels.right()) + stroke, snapEdge(pixels.bottom()) + stroke));
-    QPainterPath border;
-    border.addRect(outer);
-    const auto inner = outer.adjusted(stroke, stroke, -stroke, -stroke);
-    if (!inner.isEmpty())
-        border.addRect(inner);
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing, false);
-    painter.fillPath(deviceTransform.inverted().map(border), color);
-    painter.restore();
-}
-
-Qt::CursorShape resizeCursor(SnowCanvasSelectionHandle handle) {
-    switch (handle) {
-    case SnowCanvasSelectionHandle::TopLeft:
-    case SnowCanvasSelectionHandle::BottomRight:
-        return Qt::SizeFDiagCursor;
-    case SnowCanvasSelectionHandle::TopRight:
-    case SnowCanvasSelectionHandle::BottomLeft:
-        return Qt::SizeBDiagCursor;
-    case SnowCanvasSelectionHandle::Top:
-    case SnowCanvasSelectionHandle::Bottom:
-        return Qt::SizeVerCursor;
-    case SnowCanvasSelectionHandle::Left:
-    case SnowCanvasSelectionHandle::Right:
-        return Qt::SizeHorCursor;
-    case SnowCanvasSelectionHandle::None:
-        return Qt::ArrowCursor;
-    }
-    return Qt::ArrowCursor;
 }
 
 class OriginalReply final : public adqt::widgets::AdImageReply {
@@ -863,11 +817,12 @@ void CollagePdfTemplateCanvas::paintEvent(QPaintEvent*) {
                        d.detailFor(d.document->items()[cell.itemIndex]));
         painter.restore();
     }
-    paintPreviewBorder(painter, d.paper, theme.colorBorder);
+    collage_detail::paintPreviewBorder(painter, d.paper, theme.colorBorder);
     const QColor cellBorderColor(0xf0, 0xf0, 0xf0);
     // Paint guides above every image so neighbors cannot cover a shared edge.
     for (const auto& cell : d.page.cells)
-        paintPreviewBorder(painter, d.mapped(cell.clipMillimeters), cellBorderColor);
+        collage_detail::paintPreviewBorder(painter, d.mapped(cell.clipMillimeters),
+                                           cellBorderColor);
     if (d.targetId && d.targetId != d.gestureId) {
         if (const auto* target = d.cellFor(d.targetId))
             snowCanvasPaintSelectionMarquee(painter, d.mapped(target->clipMillimeters));
@@ -913,7 +868,7 @@ void CollagePdfTemplateCanvas::mousePressEvent(QMouseEvent* event) {
         break;
     }
     setCursor(handle == SnowCanvasSelectionHandle::None ? Qt::ClosedHandCursor
-                                                        : resizeCursor(handle));
+                                                        : collage_detail::resizeCursor(handle));
     event->accept();
 }
 void CollagePdfTemplateCanvas::mouseMoveEvent(QMouseEvent* event) {
@@ -924,7 +879,7 @@ void CollagePdfTemplateCanvas::mouseMoveEvent(QMouseEvent* event) {
         if (handle == SnowCanvasSelectionHandle::None)
             unsetCursor();
         else
-            setCursor(resizeCursor(handle));
+            setCursor(collage_detail::resizeCursor(handle));
         return;
     }
     if (!d.moved &&
@@ -941,46 +896,11 @@ void CollagePdfTemplateCanvas::mouseMoveEvent(QMouseEvent* event) {
         d.targetId = target != d.gestureId ? target : 0;
         setCursor(d.targetId ? Qt::DragMoveCursor : Qt::ClosedHandCursor);
     } else {
-        const auto half = d.initialImage.size() / 2;
-        QPointF vector;
-        switch (d.handle) {
-        case SnowCanvasSelectionHandle::TopLeft:
-            vector = {-half.width(), -half.height()};
-            break;
-        case SnowCanvasSelectionHandle::TopRight:
-            vector = {half.width(), -half.height()};
-            break;
-        case SnowCanvasSelectionHandle::BottomRight:
-            vector = {half.width(), half.height()};
-            break;
-        case SnowCanvasSelectionHandle::BottomLeft:
-            vector = {-half.width(), half.height()};
-            break;
-        case SnowCanvasSelectionHandle::Top:
-            vector = {0, -half.height()};
-            break;
-        case SnowCanvasSelectionHandle::Right:
-            vector = {half.width(), 0};
-            break;
-        case SnowCanvasSelectionHandle::Bottom:
-            vector = {0, half.height()};
-            break;
-        case SnowCanvasSelectionHandle::Left:
-            vector = {-half.width(), 0};
-            break;
-        case SnowCanvasSelectionHandle::None:
-            break;
-        }
-        const qreal denominator = QPointF::dotProduct(vector, vector);
-        const qreal maximumEdge =
-            std::max(d.initialImage.width(), d.initialImage.height()) * d.viewScale;
-        const qreal scale = std::clamp(1 + QPointF::dotProduct(delta, vector) / denominator,
-                                       2.0 / maximumEdge, 1000000.0 / maximumEdge);
-        const auto size = d.initialImage.size() * scale;
-        cell.imageMillimeters = {
-            d.initialImage.center() - QPointF(size.width() / 2, size.height() / 2), size};
+        cell.imageMillimeters =
+            collage_detail::centeredResize(d.initialImage, d.handle, delta, d.viewScale);
         const auto& item = d.document->items()[cell.itemIndex];
-        d.pendingPlacement.millimetersPerPixel = size.width() / transformedSize(item).width();
+        d.pendingPlacement.millimetersPerPixel =
+            cell.imageMillimeters.width() / transformedSize(item).width();
         d.targetId = 0;
     }
     setProperty("swapTargetId", QVariant::fromValue(d.targetId));
@@ -1259,6 +1179,10 @@ CollagePdfTemplateWidget::CollagePdfTemplateWidget(CollageDocument* document, QW
     d.content = new QWidget;
     d.content->setObjectName(QStringLiteral("collagePdfTemplateThumbnails"));
     d.strip->setContentWidget(d.content);
+    d.strip->setAutoFillBackground(false);
+    d.strip->viewport()->setAutoFillBackground(false);
+    // QScrollArea::setWidget enables background filling on the content widget.
+    d.content->setAutoFillBackground(false);
     layout->addWidget(d.strip);
     d.viewer = new AdImageViewer(this);
     d.viewer->setObjectName(QStringLiteral("collagePdfTemplateOriginalViewer"));

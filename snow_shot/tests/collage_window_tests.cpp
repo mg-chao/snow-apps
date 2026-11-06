@@ -39,6 +39,7 @@
 #include <QFileSystemModel>
 #include <QLabel>
 #include <QMouseEvent>
+#include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include <QMimeData>
 #include <QPointer>
 #include <QPainter>
@@ -2037,6 +2038,58 @@ storage::CaptureHistoryRecord publishHistoryFixture() {
     return published.record;
 }
 
+void staticPlacementExportSnapshots() {
+    resetSettings();
+    Ports ports;
+    CollageWindow window(nullptr, ports.services());
+    window.present();
+    auto* document = window.document();
+    const auto id = document->append(image({120, 80}, Qt::red), QStringLiteral("placed"));
+    document->setStaticPlacement(id, {{}, .5});
+    flushEvents();
+    auto* canvas = window.editor()->canvas();
+    const auto bounds = canvas->imageViewportRect(id);
+    const auto handle = snowCanvasImageSelectionCorners(bounds)[2];
+    QMouseEvent press(QEvent::MouseButtonPress, handle, canvas->mapToGlobal(handle), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press);
+    QMouseEvent move(QEvent::MouseMove, handle + QPointF(30, 20),
+                     canvas->mapToGlobal(handle + QPointF(30, 20)), Qt::NoButton, Qt::LeftButton,
+                     Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move);
+    require(canvas->imageViewportRect(id).width() > bounds.width(),
+            "export fixture has a pending resize");
+    window.copy();
+    require(canvas->imageViewportRect(id) == bounds,
+            "starting copy cancels the pending edit before its snapshot");
+    waitUntil([&] { return ports.copies.size() == 1; }, "placed copy artifact is prepared");
+    const auto verify = [&](const std::shared_ptr<ScreenshotExportArtifact>& artifact) {
+        QImage result;
+        bool done = false;
+        require(artifact->requestRowSource(&window,
+                                           [&](ScreenshotImageRowSource rows, QString error) {
+                                               require(error.isEmpty(),
+                                                       "placed export row source is available");
+                                               result = materializeCollageRows(rows);
+                                               done = true;
+                                           }),
+                "request placed artifact pixels");
+        waitUntil([&] { return done; }, "placed artifact pixels complete");
+        require(
+            result.size() == QSize(120, 80) && result.pixelColor(0, 0) == Qt::white &&
+                result.pixelColor(60, 40) == Qt::red && result.pixelColor(29, 40) == Qt::white &&
+                result.pixelColor(30, 40) == Qt::red,
+            "copy and save artifacts use committed placement, background and original output size");
+    };
+    verify(ports.copies.first().artifact);
+    ports.copies.first().complete(false, {});
+    window.save();
+    waitUntil([&] { return ports.saves.size() == 1; }, "placed save artifact is prepared");
+    verify(ports.saves.first().artifact);
+    ports.saves.first().complete(false, {});
+    window.shutdown();
+}
+
 void exportFeedbackUsesMessagesAndBusyButtons() {
     resetSettings();
     Ports firstPorts, secondPorts;
@@ -2595,6 +2648,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     if (arguments.contains(QStringLiteral("--export-feedback-only"))) {
+        timed("Static placement exports", staticPlacementExportSnapshots);
         timed("Export feedback", exportFeedbackUsesMessagesAndBusyButtons);
         timed("Save result lifetime", [&] { saveResultDefersCollageCompletion(directory.path()); });
         waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
@@ -2635,6 +2689,7 @@ int main(int argc, char* argv[]) {
     timed("Selected-file cancellation", selectedFileQueriesCancelWithWindowLifecycle);
     timed("Independent windows and close", independentWindowsAndClosePolicy);
     timed("Footer output descriptions", outputDescriptionsInFooter);
+    timed("Static placement exports", staticPlacementExportSnapshots);
     timed("Export feedback", exportFeedbackUsesMessagesAndBusyButtons);
     timed("Import feedback", importFeedbackUsesMessagesWithoutLayoutChanges);
     timed("Clear and initial import failures", clearAndInitialImportFailures);
