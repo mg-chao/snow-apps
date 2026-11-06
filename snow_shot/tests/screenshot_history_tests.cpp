@@ -2435,6 +2435,10 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
             }
             return true;
         };
+        actions.showToolbar = [&] {
+            require(interaction.activeTool() == tool && interaction.editing(),
+                    "resized recognition must be restored before toolbar presentation");
+        };
         ScreenshotOverlayInputHandler handler({
             captureState,
             interaction,
@@ -2479,6 +2483,10 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
     actions.resumeScrollingCapture = [&resumeCount, &interaction]() {
         ++resumeCount;
         interaction.enterScrollingCapture();
+    };
+    actions.showToolbar = [&] {
+        require(interaction.scrollingCapture(),
+                "scrolling must resume before toolbar presentation after a resize");
     };
     ScreenshotOverlayInputHandler handler({
         captureState,
@@ -6097,6 +6105,66 @@ void selectionToolbarCommandsDoNotReopenRetiredCaptures() {
     }
 }
 
+void pendingSelectionCommandsDoNotPresentRetiredCaptures() {
+    enum class Confirmation { Direct, Drag, PreviousSelection, Silent };
+    for (const auto confirmation : {Confirmation::Direct, Confirmation::Drag,
+                                    Confirmation::PreviousSelection, Confirmation::Silent}) {
+        for (int completion = 0; completion < 3; ++completion) {
+            ScreenshotCaptureState capture;
+            capture.sessionState = ScreenshotSessionState::OverlayVisible;
+            capture.presentationSuppressed = confirmation == Confirmation::Silent;
+            ScreenshotDisplaySession displays;
+            displays.appendDisplay(display(QStringLiteral("confirmation"),
+                                           QStringLiteral("confirmation"), QRect(0, 0, 400, 300),
+                                           solidImage(QSize(400, 300), Qt::white)));
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            ScreenshotSelectionModel selection;
+            selection.setSelectionRect(QRectF(10, 20, 80, 60));
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            interaction.enterOverlayVisible(false);
+            int commands = 0;
+            int presentations = 0;
+            ScreenshotOverlayInputActions actions;
+            actions.showToolbar = [&] { ++presentations; };
+            actions.showSelectionToolbar = [&] { ++presentations; };
+            actions.updateOverlayState = [&] { ++presentations; };
+            actions.updateColorPickerForOverlay = [&](auto*, const auto&) { ++presentations; };
+            actions.selectionConfirmed = [&] {
+                require(!interaction.selecting() && !interaction.dragging() &&
+                            capture.sessionState == ScreenshotSessionState::Editing &&
+                            selection.hasPixelSelection() && presentations == 0,
+                        "pending capture commands must receive committed geometry before UI");
+                ++commands;
+                if (completion == 0)
+                    interaction.reset();
+                else if (completion == 1)
+                    ++capture.sessionId;
+                else
+                    capture.presentationSuppressed = true;
+            };
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            if (confirmation == Confirmation::Drag) {
+                handler.handleMousePress(nullptr, QPointF(10, 20));
+                handler.handleMouseMove(nullptr, QPointF(90, 80));
+                presentations = 0;
+                handler.handleMouseRelease(nullptr, QPointF(90, 80));
+            } else if (confirmation == Confirmation::PreviousSelection) {
+                ScreenshotSelectionParams params;
+                params.selection = QRect(10, 20, 80, 60);
+                require(handler.restorePreviousSelection(params),
+                        "previous selection should confirm through the shared command path");
+            } else {
+                handler.confirmSelection();
+            }
+            require(commands == 1 && presentations == 0,
+                    "retired, replaced, and silent captures must not show editing UI");
+        }
+    }
+}
+
 void canvasColorSamplingConsumesOneCanvasClick() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -8233,6 +8301,7 @@ int main(int argc, char** argv) {
         toolbarSelectionPreparationRejectsIncompleteRegions();
         explicitToolbarCommandFinishesCanvasResize();
         selectionToolbarCommandsDoNotReopenRetiredCaptures();
+        pendingSelectionCommandsDoNotPresentRetiredCaptures();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -8304,6 +8373,7 @@ int main(int argc, char** argv) {
     toolbarSelectionPreparationRejectsIncompleteRegions();
     explicitToolbarCommandFinishesCanvasResize();
     selectionToolbarCommandsDoNotReopenRetiredCaptures();
+    pendingSelectionCommandsDoNotPresentRetiredCaptures();
     canvasColorSamplingConsumesOneCanvasClick();
     storage::ApplicationStorage::instance().shutdown();
     return 0;

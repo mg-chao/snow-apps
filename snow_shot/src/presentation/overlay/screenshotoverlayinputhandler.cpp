@@ -773,18 +773,15 @@ void ScreenshotOverlayInputHandler::finishSelectionDrag(ScreenshotOverlayWindow*
     m_context.selection.setDraggedSelectionRect(dragged, m_context.interaction.dragMode());
     m_context.interaction.finishDrag();
     finishTransientDrag();
-    const bool restoringCanvasTool = m_toolBeforeSelectionResize.has_value();
     const bool resumingScrollingCapture = m_scrollingCaptureSelectionResize;
-    m_scrollingCaptureSelectionResize = false;
+    const quint64 sessionId = m_context.captureState.sessionId;
     confirmSelection();
-    restoreToolAfterSelectionResize();
-    if (m_context.interaction.manualSelecting() || restoringCanvasTool ||
-        resumingScrollingCapture) {
+    if (!canPresentSelection(sessionId))
+        return;
+    if (m_context.interaction.manualSelecting()) {
         m_context.actions.updateOverlayState();
     }
-    if (resumingScrollingCapture) {
-        m_context.actions.resumeScrollingCapture();
-    } else if (!m_context.interaction.manualSelecting()) {
+    if (!resumingScrollingCapture && !m_context.interaction.manualSelecting()) {
         m_context.actions.showSelectionToolbar();
         m_context.actions.setOverlayCursor(
             overlay, dragModeForVirtualPosition(virtualPosition, m_context.interaction.editing()));
@@ -1322,15 +1319,20 @@ bool ScreenshotOverlayInputHandler::restorePreviousSelection(
         return false;
     }
     m_context.intelligentSelection.clearTransientState();
-    confirmSelection();
-    m_context.actions.showSelectionToolbar();
+    if (confirmSelection({}))
+        m_context.actions.showSelectionToolbar();
     return true;
 }
 
-void ScreenshotOverlayInputHandler::confirmSelection(
+bool ScreenshotOverlayInputHandler::canPresentSelection(quint64 sessionId) const {
+    return m_context.captureState.sessionId == sessionId && !m_context.interaction.inactive() &&
+           !m_context.captureState.presentationSuppressed;
+}
+
+bool ScreenshotOverlayInputHandler::confirmSelection(
     const std::function<void()>& beforePresentation) {
     if (m_context.interaction.dragging() || m_context.selection.constructionActive()) {
-        return;
+        return false;
     }
     if (m_context.selection.regionOperationActive()) {
         m_context.selection.commitRegionOperation();
@@ -1339,7 +1341,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
             m_context.interaction.returnToSelectionMode(false);
             m_context.intelligentSelection.clearTransientState();
             m_context.actions.updateOverlayState();
-            return;
+            return false;
         }
         // Boolean region edits are exact replacements, even when their result
         // collapses to a single rectangle. Keep that operand authoritative
@@ -1351,7 +1353,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
         snow_shot::presentation::kScreenshotSelectionMinimumSize));
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
-        return;
+        return false;
     }
 
     if (m_context.interaction.intelligentSelecting()) {
@@ -1363,20 +1365,26 @@ void ScreenshotOverlayInputHandler::confirmSelection(
     m_angleWheelSteps.reset();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();
+    const quint64 sessionId = m_context.captureState.sessionId;
     if (beforePresentation) {
-        const quint64 sessionId = m_context.captureState.sessionId;
         beforePresentation();
         // Export and recording commands can retire the capture synchronously.
         // Never show its toolbar again, or notify a replacement capture session.
-        if (m_context.captureState.sessionId != sessionId || m_context.interaction.inactive() ||
-            m_context.captureState.presentationSuppressed) {
-            return;
-        }
+        if (!canPresentSelection(sessionId))
+            return false;
     }
+    restoreToolAfterSelectionResize();
+    if (std::exchange(m_scrollingCaptureSelectionResize, false))
+        m_context.actions.resumeScrollingCapture();
     restoreToolAfterReselection();
+    if (m_context.captureState.sessionId != sessionId || m_context.interaction.inactive())
+        return false;
+    m_context.actions.selectionConfirmed();
+    if (!canPresentSelection(sessionId))
+        return false;
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
-    m_context.actions.selectionConfirmed();
+    return canPresentSelection(sessionId);
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
@@ -1707,8 +1715,8 @@ bool ScreenshotOverlayInputHandler::duplicateLatestRegionAt(const QPointF& canva
     m_context.actions.pauseIntelligentSelection();
     m_context.intelligentSelection.clearTransientState();
     resetTransientShortcuts();
-    confirmSelection();
-    m_context.actions.showSelectionToolbar();
+    if (confirmSelection({}))
+        m_context.actions.showSelectionToolbar();
     return true;
 }
 
