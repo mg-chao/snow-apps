@@ -609,6 +609,70 @@ void toolbarSeparatorsKeepMinimumWidthAtCompactScale() {
             "toolbar separator should retain at least one pixel at compact scale");
 }
 
+void actionButtonsRecoverAfterLoading() {
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const QString copyAction = QStringLiteral("copy_to_clipboard");
+    for (const bool grouped : {false, true}) {
+        for (const bool disablePalette : {false, true}) {
+            QWidget owner;
+            auto options = snow_shot::presentation::screenshotDrawingToolbarOptions();
+            options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::PinAction;
+            // Stacks are stored top to bottom; the bottom action is the initial trigger.
+            options.actionToolsLayout = ScreenshotToolbarLayout{
+                grouped
+                    ? QVector<QStringList>{{QStringLiteral("save-as-file"), QStringLiteral("copy")}}
+                    : QVector<QStringList>{{QStringLiteral("copy")},
+                                           {QStringLiteral("save-as-file")}},
+                {}};
+            ScreenshotToolPalette palette(options, &owner);
+            prepare(palette);
+            owner.show();
+            palette.show();
+            flushEvents();
+            auto* copySource = buttonWithTooltip(palette, QStringLiteral("Copy to clipboard"));
+            auto* saveSource = buttonWithTooltip(palette, QStringLiteral("Save as file"));
+            require(copySource && saveSource, "editor loading fixture has copy and save actions");
+            int copies = 0;
+            QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, &palette,
+                             [&] { ++copies; });
+            // A locally unavailable action must stay disabled when its owner recovers.
+            saveSource->setEnabled(false);
+            QWidget* loadingOwner = disablePalette ? &palette : &owner;
+            for (int reload = 0; reload < 2; ++reload) {
+                loadingOwner->setEnabled(false);
+                // Image loading/recognition and toolbar scaling refresh the action groups.
+                palette.setOcrEnabled(false);
+                palette.setOcrEnabled(true);
+                palette.prepareForDisplay();
+                require(!palette.canActivateScreenshotShortcut(copyAction) &&
+                            !palette.activateScreenshotShortcut(copyAction) && copies == reload * 2,
+                        "copy shortcuts cannot bypass a temporarily disabled editor toolbar");
+                loadingOwner->setEnabled(true);
+                flushEvents();
+                require(copySource->isEnabled() && !saveSource->isEnabled() &&
+                            palette.canActivateScreenshotShortcut(copyAction),
+                        "copy recovers after loading without enabling unavailable actions");
+                adqt::widgets::AdButton* copyEntry = nullptr;
+                for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+                    if (button->property("screenshotToolbarItemId").toString() ==
+                            QStringLiteral("copy") &&
+                        !button->isHidden()) {
+                        copyEntry = button;
+                        break;
+                    }
+                }
+                require(copyEntry && copyEntry->isEnabled(),
+                        "both standalone and stacked copy buttons recover after loading");
+                copyEntry->click();
+                require(copies == reload * 2 + 1,
+                        "clicking the recovered copy button dispatches exactly one command");
+                require(palette.activateScreenshotShortcut(copyAction) && copies == reload * 2 + 2,
+                        "copy shortcut dispatches after the editor toolbar recovers");
+            }
+        }
+    }
+}
+
 void cachedToolbarIconsFollowThemeColors() {
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -2520,6 +2584,10 @@ int main(int argc, char** argv) {
             "initialize isolated toolbar test configuration");
     const auto shutdownStorage =
         qScopeGuard([] { snow_shot::storage::ApplicationStorage::instance().shutdown(); });
+    if (application.arguments().contains(QStringLiteral("--action-loading-only"))) {
+        actionButtonsRecoverAfterLoading();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--tooltips-only"))) {
         toolbarTooltipsUseApplicationBridge();
         mainToolbarTooltipsUseNormalHoverDelay();
@@ -2559,6 +2627,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     smallToolbarIconStaysVerticallyCentered();
+    actionButtonsRecoverAfterLoading();
     liveWindowPinToolbarGroupAndLayoutMigration();
     customToolbarWidgetsKeepCallerMetricsDuringScaling();
     hiddenToolbarPeersKeepVisibleReferenceMetrics();

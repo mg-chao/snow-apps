@@ -370,6 +370,30 @@ void verifyScrollingSourceImport() {
         require(editor.document()->image() == expected &&
                     editor.document()->bounds() == QRectF(QPointF(), QSizeF(expected.size())),
                 "editor imports exact stitched pixels and trim after scrolling session teardown");
+        require(editor.document()->crop(ImageEditingDocument::CropAxis::Rows, 4, 8),
+                "scrolling screenshot can be edited before copying");
+        const auto edited = editor.document()->image();
+        adqt::widgets::AdButton* copy = nullptr;
+        for (auto* button : editor.palette()->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("screenshotToolbarItemId").toString() == QStringLiteral("copy") &&
+                !button->isHidden()) {
+                copy = button;
+                break;
+            }
+        }
+        require(copy && copy->isEnabled(),
+                "copy button stays enabled after asynchronous scrolling import and editing");
+        bool copied = false;
+        QObject::connect(&editor, &ImageEditingWindow::exportFinished, &editor, [&](bool success) {
+            require(success, "edited scrolling screenshot copies successfully");
+            copied = true;
+        });
+        copy->click();
+        awaitCondition([&] { return copied; }, "clicking copy exports the edited scrolling image");
+        require(QApplication::clipboard()->image().convertToFormat(QImage::Format_RGBA8888) ==
+                        edited.convertToFormat(QImage::Format_RGBA8888) &&
+                    !editor.dirty() && editor.modal()->isOpen(),
+                "copy publishes the full edited image and keeps the editor open");
         editor.shutdown();
     }
 }
