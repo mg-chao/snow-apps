@@ -79,6 +79,38 @@ void verifyOutputs(const QImage& image, const ImageSplitLayout& layout,
                 "reassembled regions preserve every straight-alpha pixel exactly");
 }
 
+void overlappingPixelsAreExported() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "create overlap export destination");
+    const auto source = fixture();
+    for (const auto direction : {ImageSplitDirection::Vertical, ImageSplitDirection::Horizontal,
+                                 ImageSplitDirection::Grid}) {
+        ImageSplitSettings settings;
+        settings.direction = direction;
+        settings.overlapWidth = 2;
+        const auto layout = calculateImageSplitLayout(source.size(), settings);
+        const auto result =
+            exportSplitImages(source, layout, temporary.path(), QStringLiteral("overlap"));
+        verifyOutputs(source, layout, result);
+        const auto first = snow_shot::image_codec::decodeFile(
+            QDir(result.directory).filePath(QStringLiteral("1.png")), snow::image::Format::png);
+        const auto second = snow_shot::image_codec::decodeFile(
+            QDir(result.directory).filePath(QStringLiteral("2.png")), snow::image::Format::png);
+        if (direction == ImageSplitDirection::Horizontal) {
+            require(first.size() == QSize(7, 5) && second.size() == QSize(7, 4),
+                    "horizontal output dimensions include clipped overlap");
+            require(first.copy(0, 1, 7, 4) == second,
+                    "horizontal outputs repeat exactly the shared source rows");
+        } else {
+            const int height = direction == ImageSplitDirection::Grid ? 5 : source.height();
+            require(first.size() == QSize(6, height) && second.size() == QSize(5, height),
+                    "vertical and grid output dimensions include overlap");
+            require(first.copy(2, 0, 4, height) == second.copy(0, 0, 4, height),
+                    "adjacent outputs repeat exactly the shared source columns");
+        }
+    }
+}
+
 void orderingAndUniqueDirectories() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "export temporary directory exists");
@@ -453,7 +485,13 @@ void failuresRetranslate() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--overlap-only"))) {
+            overlappingPixelsAreExported();
+            std::cout << "Image split overlap export tests passed\n";
+            return 0;
+        }
         orderingAndUniqueDirectories();
+        overlappingPixelsAreExported();
         exportNamesPreserveSplitPolicy();
         std::cout << "Image split filename policy tests passed\n";
         failureAndCancellation();

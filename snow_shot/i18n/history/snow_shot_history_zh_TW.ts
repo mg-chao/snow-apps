@@ -188,6 +188,10 @@
             <translation>每張影像的寬度和高度必須至少為 1 像素</translation>
         </message>
         <message>
+            <source>Enter a non-negative integer</source>
+            <translation>請輸入非負整數</translation>
+        </message>
+        <message>
             <source>Enter a percentage from 5% to 100%</source>
             <translation>請輸入 5% 到 100% 的百分比</translation>
         </message>
@@ -239,6 +243,14 @@
             <translation>拖入一張影像進行分割</translation>
         </message>
         <message>
+            <source>Each image extends this many pixels past each split line</source>
+            <translation>每張圖片在每條分割線外額外保留指定像素寬度的區域</translation>
+        </message>
+        <message>
+            <source>Enter a non-negative integer</source>
+            <translation>請輸入非負整數</translation>
+        </message>
+        <message>
             <source>Enter a positive integer</source>
             <translation>請輸入正整數</translation>
         </message>
@@ -269,6 +281,10 @@
         <message>
             <source>Number of images</source>
             <translation>影像數量</translation>
+        </message>
+        <message>
+            <source>Overlap width</source>
+            <translation>重疊寬度</translation>
         </message>
         <message>
             <source>Percentage</source>
