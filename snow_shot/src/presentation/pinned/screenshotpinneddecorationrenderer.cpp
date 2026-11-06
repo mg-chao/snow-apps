@@ -5,6 +5,7 @@
 
 #include <QBrush>
 #include <QPainter>
+#include <QPainterPath>
 
 #include <algorithm>
 #include <array>
@@ -25,6 +26,19 @@ constexpr int kMaximumSpanHeight = 64;
 
 qreal boundedRadius(qreal radius, qreal maximum) {
     return std::isfinite(radius) ? std::clamp(radius, 0.0, maximum) : 0.0;
+}
+
+QSizeF boundedRadii(const QRect& outline, const QSizeF& radii) {
+    const QSizeF bounded(boundedRadius(radii.width(), outline.width() / 2.0),
+                         boundedRadius(radii.height(), outline.height() / 2.0));
+    return bounded.width() > 0.0 && bounded.height() > 0.0 ? bounded : QSizeF(0, 0);
+}
+
+void addOutline(QPainterPath& path, const QRectF& outline, const QSizeF& radii) {
+    if (radii.width() > 0.0 && radii.height() > 0.0)
+        path.addRoundedRect(outline, radii.width(), radii.height(), Qt::AbsoluteSize);
+    else
+        path.addRect(outline);
 }
 
 int firstPixel(qreal boundary) {
@@ -233,6 +247,76 @@ ScreenshotPinnedShadowDiagnostics ScreenshotPinnedShadowCache::diagnostics() con
     return result;
 }
 
+void ScreenshotPinnedDecorationRenderer::render(QPainter& painter,
+                                                const QRect& deviceContentOutline,
+                                                const QSizeF& physicalCornerRadii,
+                                                const ScreenshotPinnedDecorationStyle& style,
+                                                const QRect& deviceOuter,
+                                                ScreenshotPinnedShadowCache& cache) {
+    if (deviceContentOutline.isEmpty() || deviceOuter.isEmpty())
+        return;
+    const QSizeF radii = boundedRadii(deviceContentOutline, physicalCornerRadii);
+    renderShadow(painter, deviceContentOutline, radii, style.shadowWidth, style.shadowColor,
+                 deviceOuter, cache);
+    if (style.borderWidth <= 0)
+        return;
+
+    const int width = style.borderWidth;
+    const QRect outer = deviceContentOutline.adjusted(-width, -width, width, width);
+    const bool rounded = radii.width() > 0.0 && radii.height() > 0.0;
+    QPainterPath ring;
+    ring.setFillRule(Qt::OddEvenFill);
+    addOutline(ring, outer, rounded ? radii + QSizeF(width, width) : QSizeF(0, 0));
+    addOutline(ring, deviceContentOutline, radii);
+
+    painter.save();
+    painter.setClipRect(deviceOuter, Qt::IntersectClip);
+    painter.setRenderHint(QPainter::Antialiasing, rounded);
+    if (style.borderColor.isValid() && style.borderColor.alpha() > 0)
+        painter.fillPath(ring, style.borderColor);
+    if (style.cropMarkerExtent > 0 && style.cropMarkerColor.isValid() &&
+        style.cropMarkerColor.alpha() > 0) {
+        // Union the corners so small pins composite a translucent marker only once.
+        const int extentX =
+            std::min(qCeil(std::max<qreal>(style.cropMarkerExtent, radii.width() + 2 * width)),
+                     (outer.width() + 1) / 2);
+        const int extentY =
+            std::min(qCeil(std::max<qreal>(style.cropMarkerExtent, radii.height() + 2 * width)),
+                     (outer.height() + 1) / 2);
+        QRegion corners;
+        for (const auto& point :
+             {outer.topLeft(), QPoint(outer.x() + outer.width() - extentX, outer.y()),
+              QPoint(outer.x(), outer.y() + outer.height() - extentY),
+              QPoint(outer.x() + outer.width() - extentX, outer.y() + outer.height() - extentY)})
+            corners += QRect(point, QSize(extentX, extentY));
+        painter.setClipRegion(corners, Qt::IntersectClip);
+        painter.fillPath(ring, style.cropMarkerColor);
+    }
+    painter.restore();
+}
+
+QRegion ScreenshotPinnedDecorationRenderer::damageRegion(const QRect& deviceContentOutline,
+                                                         const QSizeF& physicalCornerRadii,
+                                                         int physicalBorderWidth,
+                                                         int physicalShadowWidth,
+                                                         const QRect& deviceOuter) {
+    if ((physicalBorderWidth <= 0 && physicalShadowWidth <= 0) || deviceContentOutline.isEmpty())
+        return {};
+    const QSizeF radii = boundedRadii(deviceContentOutline, physicalCornerRadii);
+    const int exterior = std::max(physicalBorderWidth, physicalShadowWidth) + 1;
+    QRegion damage(deviceContentOutline.adjusted(-exterior, -exterior, exterior, exterior));
+    // Allow a pixel each for antialiasing and integer region conversion, without
+    // invalidating the content area when only decoration state changes.
+    const QRectF inner = QRectF(deviceContentOutline).adjusted(2, 2, -2, -2);
+    if (!inner.isEmpty()) {
+        QPainterPath safeInterior;
+        addOutline(safeInterior, inner,
+                   QSizeF(std::max(0.0, radii.width() - 2), std::max(0.0, radii.height() - 2)));
+        damage -= QRegion(safeInterior.toFillPolygon().toPolygon());
+    }
+    return damage.intersected(deviceOuter);
+}
+
 void ScreenshotPinnedDecorationRenderer::renderShadow(QPainter& painter,
                                                       const QRect& deviceContentOutline,
                                                       const QSizeF& physicalCornerRadii,
@@ -244,10 +328,7 @@ void ScreenshotPinnedDecorationRenderer::renderShadow(QPainter& painter,
         return;
 
     const QRectF outline(deviceContentOutline);
-    QSizeF radii(boundedRadius(physicalCornerRadii.width(), outline.width() / 2.0),
-                 boundedRadius(physicalCornerRadii.height(), outline.height() / 2.0));
-    if (radii.width() == 0.0 || radii.height() == 0.0)
-        radii = {};
+    const QSizeF radii = boundedRadii(deviceContentOutline, physicalCornerRadii);
     const bool nineSlice = radii.width() == radii.height() &&
                            radii.width() <= kMaximumNineSliceRadius &&
                            radii.width() == std::floor(radii.width());

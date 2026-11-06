@@ -553,9 +553,9 @@ class PinnedFileDropRouting final : public QObject {
 };
 
 // Keep the rim in physical pixels and above the canvas, independent of image rendering.
-class PinnedBorderFrame final : public QFrame {
+class PinnedDecorationFrame final : public QFrame {
   public:
-    explicit PinnedBorderFrame(QWidget* parent = nullptr) : QFrame(parent) {}
+    explicit PinnedDecorationFrame(QWidget* parent = nullptr) : QFrame(parent) {}
 
     void clearShadowCache() {
         m_shadowCache.clear();
@@ -609,12 +609,7 @@ class PinnedBorderFrame final : public QFrame {
         const auto geometry =
             deviceGeometry(surfaceTransform, borderOutline, property("cornerRadii").toSizeF(),
                            property("showBorder").toBool(), property("showShadow").toBool());
-        const int borderDevicePixels =
-            std::min({geometry.borderWidth, geometry.content.width(), geometry.content.height()});
-        const QRect contentRect = geometry.content;
-        const QRect outline = geometry.outline;
-        const QSizeF outlineRadii = geometry.radii;
-        if (contentRect.isEmpty() || (!geometry.showBorder && !geometry.showShadow))
+        if (geometry.content.isEmpty() || (!geometry.showBorder && !geometry.showShadow))
             return;
 
         // Neutralize the whole combined transform (world transform plus the
@@ -627,48 +622,18 @@ class PinnedBorderFrame final : public QFrame {
             return;
         }
         painter.setTransform(painter.transform() * toSurface);
-        if (geometry.showShadow) {
-            ScreenshotPinnedDecorationRenderer::renderShadow(
-                painter, outline, outlineRadii, geometry.shadowWidth,
-                property(kPinnedShadowColorProperty).value<QColor>(), geometry.outer,
-                m_shadowCache);
-        }
-        if (!geometry.showBorder)
-            return;
-        const QRectF outer = outline;
-        const qreal rx = std::min(outlineRadii.width(), outer.width() / 2.0);
-        const qreal ry = std::min(outlineRadii.height(), outer.height() / 2.0);
-        QPainterPath ring;
-        ring.setFillRule(Qt::OddEvenFill);
-        ring.addRoundedRect(outer, rx, ry);
-        const QRectF inner = outer.adjusted(borderDevicePixels, borderDevicePixels,
-                                            -borderDevicePixels, -borderDevicePixels);
-        if (inner.isValid()) {
-            ring.addRoundedRect(inner, std::max(0.0, rx - borderDevicePixels),
-                                std::max(0.0, ry - borderDevicePixels));
-        }
-        painter.setClipRect(contentRect);
-        painter.setRenderHint(QPainter::Antialiasing, rx > 0 && ry > 0);
-        painter.fillPath(ring, color);
+        ScreenshotPinnedDecorationStyle style;
+        style.borderWidth = geometry.showBorder ? geometry.borderWidth : 0;
+        style.borderColor = color;
+        style.shadowWidth = geometry.showShadow ? geometry.shadowWidth : 0;
+        style.shadowColor = property(kPinnedShadowColorProperty).value<QColor>();
         if (property("cropped").toBool()) {
-            // Follow the same rim through rounded corners. Grow past large radii, and let
-            // opposite corners meet on small pins without painting translucent colors twice.
-            const qreal minimumExtent = 30 * devicePixelRatioF();
-            const int extentX = std::min(qCeil(std::max(minimumExtent, rx + borderDevicePixels)),
-                                         (outline.width() + 1) / 2);
-            const int extentY = std::min(qCeil(std::max(minimumExtent, ry + borderDevicePixels)),
-                                         (outline.height() + 1) / 2);
-            QRegion corners;
-            for (const auto& point :
-                 {outline.topLeft(), QPoint(outline.x() + outline.width() - extentX, outline.y()),
-                  QPoint(outline.x(), outline.y() + outline.height() - extentY),
-                  QPoint(outline.x() + outline.width() - extentX,
-                         outline.y() + outline.height() - extentY)})
-                corners += QRect(point, QSize(extentX, extentY));
+            style.cropMarkerExtent = qCeil(30 * devicePixelRatioF());
             const QColor marker = property("cropMarkerColor").value<QColor>();
-            painter.setClipRegion(corners, Qt::IntersectClip);
-            painter.fillPath(ring, marker.isValid() ? marker : QColor(128, 128, 128));
+            style.cropMarkerColor = marker.isValid() ? marker : QColor(128, 128, 128);
         }
+        ScreenshotPinnedDecorationRenderer::render(painter, geometry.outline, geometry.radii, style,
+                                                   geometry.outer, m_shadowCache);
     }
 
   private:
@@ -734,24 +699,9 @@ class PinnedBorderFrame final : public QFrame {
     }
 
     QRegion decorationDamage(const DecorationState& state) const {
-        if ((!state.showBorder && !state.showShadow) || state.outline.isEmpty())
-            return {};
-        const int exterior = (state.showShadow ? state.shadowWidth : 0) + 1;
-        const int interior = (state.showBorder ? state.borderWidth : 0) + 1;
-        QRegion deviceDamage(state.outline.adjusted(-exterior, -exterior, exterior, exterior));
-        const QRectF inner =
-            QRectF(state.outline).adjusted(interior, interior, -interior, -interior);
-        if (!inner.isEmpty()) {
-            QPainterPath safeInterior;
-            const qreal rx = std::max(0.0, state.radii.width() - interior);
-            const qreal ry = std::max(0.0, state.radii.height() - interior);
-            if (rx > 0 && ry > 0)
-                safeInterior.addRoundedRect(inner, rx, ry, Qt::AbsoluteSize);
-            else
-                safeInterior.addRect(inner);
-            deviceDamage -= QRegion(safeInterior.toFillPolygon().toPolygon());
-        }
-        deviceDamage &= state.outer;
+        const QRegion deviceDamage = ScreenshotPinnedDecorationRenderer::damageRegion(
+            state.outline, state.radii, state.showBorder ? state.borderWidth : 0,
+            state.showShadow ? state.shadowWidth : 0, state.outer);
         QRegion logicalDamage;
         for (const QRect& band : deviceDamage) {
             logicalDamage += QRectF(band.x() / state.dpr, band.y() / state.dpr,
@@ -1980,7 +1930,7 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
         m_cropRect.reset();
     m_recognitionEmptyViewportVisibility.reset();
     if (m_borderFrame != nullptr)
-        static_cast<PinnedBorderFrame*>(m_borderFrame)->clearShadowCache();
+        static_cast<PinnedDecorationFrame*>(m_borderFrame)->clearShadowCache();
     m_lockedMode = config.restorePersistentState && config.persistedLockedMode &&
                    !config.persistedThumbnailMode && !config.persistedHideToTopMode;
     if (m_scaleLabel) {
@@ -3368,7 +3318,7 @@ void ScreenshotPinnedWindow::createUi() {
     connect(m_canvas, &SnowCanvasWidget::spotlightPreviewApplied, this, invalidateEditedCopy);
     layout->addWidget(m_canvas);
 
-    m_borderFrame = new PinnedBorderFrame(this);
+    m_borderFrame = new PinnedDecorationFrame(this);
     m_borderFrame->setObjectName(QStringLiteral("screenshotPinnedBorder"));
     m_borderFrame->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_borderFrame->setGeometry(rect());
@@ -4158,7 +4108,7 @@ void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
                           : (m_windowActive || m_fileDragActive)
                               ? configuredPinnedShadowActiveColor()
                               : configuredPinnedShadowColor();
-    static_cast<PinnedBorderFrame*>(m_borderFrame)->updateColors(color, shadow);
+    static_cast<PinnedDecorationFrame*>(m_borderFrame)->updateColors(color, shadow);
 }
 
 void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
@@ -4553,7 +4503,7 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
         borderOutline = {};
         cornerRadii = QSizeF(0, 0);
     }
-    static_cast<PinnedBorderFrame*>(m_borderFrame)
+    static_cast<PinnedDecorationFrame*>(m_borderFrame)
         ->updateDecoration(borderOutline, cornerRadii, m_showBorder || m_cropRect.has_value(),
                            m_showShadow && !m_cropRect);
 
@@ -7675,7 +7625,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
