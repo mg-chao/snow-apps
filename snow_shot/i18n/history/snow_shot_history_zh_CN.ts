@@ -2096,6 +2096,10 @@ Files:
             <translation>暂停</translation>
         </message>
         <message>
+            <source>Pinned content</source>
+            <translation>贴图内容</translation>
+        </message>
+        <message>
             <source>Play</source>
             <translation>播放</translation>
         </message>

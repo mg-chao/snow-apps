@@ -2104,6 +2104,10 @@ Files:
             <translation>Pause</translation>
         </message>
         <message>
+            <source>Pinned content</source>
+            <translation>Pinned content</translation>
+        </message>
+        <message>
             <source>Play</source>
             <translation>Play</translation>
         </message>

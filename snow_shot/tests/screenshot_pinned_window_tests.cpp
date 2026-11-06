@@ -27867,6 +27867,8 @@ void pinnedAnimatedImages(bool transformsOnly = false) {
 #include "pinned_quick_text_annotation_tests.h"
 #include "pinned_shake_window_tests.h"
 #include "screenshot_pinned_crop_tests.h"
+#include "pinned_accessibility_tests.h"
+#include "pinned_accessibility_native_tests.h"
 #include "screenshot_pinned_menu_lifetime_tests.h"
 #include "pinned_export_snapshot_tests.h"
 #include "pinned_copy_ordering_tests.h"
@@ -27894,6 +27896,16 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--accessibility-only"))) {
+            pinned_accessibility_tests::run();
+            return 0;
+        }
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--accessibility-native-only"))) {
+            pinned_accessibility_tests::runNative();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--copy-ordering-only"))) {
             pinned_copy_ordering_tests::run();
             return 0;
