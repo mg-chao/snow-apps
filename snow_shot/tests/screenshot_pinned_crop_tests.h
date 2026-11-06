@@ -118,28 +118,33 @@ void cornerOutlines() {
     };
     const int extent = qCeil(30 * dpr);
     const int width = qCeil(dpr);
-    QRect content = contentPixels();
+    QRect rim = contentPixels().adjusted(-width, -width, width, width);
     const QImage square = render();
+    const QRect content = contentPixels();
+    for (int y = content.top(); y <= content.bottom(); ++y)
+        for (int x = content.left(); x <= content.right(); ++x)
+            require(square.pixelColor(x, y).alpha() == 0,
+                    "crop border and corner markers stay outside every content pixel");
     for (bool right : {false, true}) {
         for (bool bottom : {false, true}) {
             for (int distance = 0; distance < extent; ++distance) {
                 requireColorNear(
-                    square.pixelColor(mirroredPoint(content, distance, 0, right, bottom)), active,
-                    0, "every crop corner follows the horizontal rim for thirty logical pixels");
+                    square.pixelColor(mirroredPoint(rim, distance, 0, right, bottom)), active, 0,
+                    "every crop corner follows the horizontal rim for thirty logical pixels");
                 requireColorNear(
-                    square.pixelColor(mirroredPoint(content, 0, distance, right, bottom)), active,
-                    0, "every crop corner follows the vertical rim for thirty logical pixels");
+                    square.pixelColor(mirroredPoint(rim, 0, distance, right, bottom)), active, 0,
+                    "every crop corner follows the vertical rim for thirty logical pixels");
             }
             requireColorNear(
-                square.pixelColor(mirroredPoint(content, extent, 0, right, bottom)), base, 0,
+                square.pixelColor(mirroredPoint(rim, extent, 0, right, bottom)), base, 0,
                 "corner highlights stop after their minimum extent on a large square pin");
-            require(square.pixelColor(
-                        mirroredPoint(content, width + 1, width + 1, right, bottom)) != active,
+            require(square.pixelColor(mirroredPoint(rim, width + 1, width + 1, right, bottom)) !=
+                        active,
                     "crop corners leave image pixels inside the rim unobscured");
         }
     }
     border->setProperty("cropMarkerColor", QColor());
-    requireColorNear(render().pixelColor(content.topLeft()), QColor(128, 128, 128), 0,
+    requireColorNear(render().pixelColor(rim.topLeft()), QColor(128, 128, 128), 0,
                      "inactive crop corners keep their neutral outline color");
     border->setProperty("cropMarkerColor", active);
 
@@ -155,21 +160,21 @@ void cornerOutlines() {
         const QImage rounded = render();
         for (bool right : {false, true}) {
             for (bool bottom : {false, true}) {
-                const QPoint corner = mirroredPoint(content, 0, 0, right, bottom);
+                const QPoint corner = mirroredPoint(rim, 0, 0, right, bottom);
                 require(rounded.pixelColor(corner) == plain.pixelColor(corner),
                         "rounded crop corners leave the bounding-box corner clear");
                 requireColorNear(rounded.pixelColor(mirroredPoint(
-                                     content, qCeil(radii.width() * dpr), 0, right, bottom)),
+                                     rim, qCeil(radii.width() * dpr) + width, 0, right, bottom)),
                                  active, 1,
                                  "crop outlines cover the complete rounded horizontal corner");
                 requireColorNear(rounded.pixelColor(mirroredPoint(
-                                     content, 0, qCeil(radii.height() * dpr), right, bottom)),
+                                     rim, 0, qCeil(radii.height() * dpr) + width, right, bottom)),
                                  active, 1,
                                  "crop outlines cover the complete rounded vertical corner");
                 bool curvedHighlight = false;
                 for (int y = width; y < qFloor(radii.height() * dpr); ++y)
                     for (int x = width; x < qFloor(radii.width() * dpr); ++x) {
-                        const QPoint point = mirroredPoint(content, x, y, right, bottom);
+                        const QPoint point = mirroredPoint(rim, x, y, right, bottom);
                         const QColor highlighted = rounded.pixelColor(point);
                         curvedHighlight |= highlighted != plain.pixelColor(point) &&
                                            highlighted.blue() - highlighted.red() > 80;
@@ -183,7 +188,7 @@ void cornerOutlines() {
     border->setProperty("borderColor", base);
     const QColor translucent(30, 120, 240, 128);
     border->setProperty("cropMarkerColor", translucent);
-    content = contentPixels();
+    rim = contentPixels().adjusted(-width, -width, width, width);
     const QImage tiny = render();
     QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied);
     expected.fill(base);
@@ -191,8 +196,7 @@ void cornerOutlines() {
         QPainter painter(&expected);
         painter.fillRect(expected.rect(), translucent);
     }
-    for (const QPoint point :
-         {content.topLeft(), content.topRight(), content.bottomLeft(), content.bottomRight()})
+    for (const QPoint point : {rim.topLeft(), rim.topRight(), rim.bottomLeft(), rim.bottomRight()})
         requireColorNear(tiny.pixelColor(point), expected.pixelColor(0, 0), 0,
                          "tiny crop outlines fit the rim and composite each corner only once");
     window.hide();

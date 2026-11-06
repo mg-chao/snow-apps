@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QRect>
+#include <QRegion>
 #include <QSizeF>
 
 #include <cstddef>
@@ -42,10 +43,29 @@ class ScreenshotPinnedShadowCache final {
     ScreenshotPinnedShadowDiagnostics m_diagnostics;
 };
 
+struct ScreenshotPinnedDecorationStyle {
+    int borderWidth = 0;
+    QColor borderColor;
+    int shadowWidth = 0;
+    QColor shadowColor;
+    int cropMarkerExtent = 0;
+    QColor cropMarkerColor;
+};
+
 class ScreenshotPinnedDecorationRenderer final {
   public:
     // All coordinates are physical pixels. The caller supplies a painter in device coordinates,
     // including a unit device-pixel ratio, to keep fractional Windows DPI margins exact.
+    // The content outline is the inner edge of the border, shared with the shadow.
+    static void render(QPainter& painter, const QRect& deviceContentOutline,
+                       const QSizeF& physicalCornerRadii,
+                       const ScreenshotPinnedDecorationStyle& style, const QRect& deviceOuter,
+                       ScreenshotPinnedShadowCache& cache);
+    [[nodiscard]] static QRegion damageRegion(const QRect& deviceContentOutline,
+                                              const QSizeF& physicalCornerRadii,
+                                              int physicalBorderWidth, int physicalShadowWidth,
+                                              const QRect& deviceOuter);
+
     static void renderShadow(QPainter& painter, const QRect& deviceContentOutline,
                              const QSizeF& physicalCornerRadii, int physicalShadowWidth,
                              const QColor& color, const QRect& deviceOuter,
