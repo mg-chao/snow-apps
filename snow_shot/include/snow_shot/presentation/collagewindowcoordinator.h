@@ -9,12 +9,12 @@
 
 namespace snow_shot::presentation {
 
-class CollageWindowCoordinator final : public QObject {
+class ImageStitchingWindowCoordinator final : public QObject {
     Q_OBJECT
   public:
-    explicit CollageWindowCoordinator(QObject* parent = nullptr,
-                                      CollageWindowServices services = {});
-    ~CollageWindowCoordinator() override;
+    explicit ImageStitchingWindowCoordinator(QObject* parent = nullptr,
+                                             ImageStitchingWindowServices services = {});
+    ~ImageStitchingWindowCoordinator() override;
 
     void present(const QVector<storage::CaptureHistoryRecord>& records = {});
     void presentPinnedRecords(const QStringList& recordIds);
@@ -23,13 +23,13 @@ class CollageWindowCoordinator final : public QObject {
     void presentSelectedFiles(std::shared_ptr<platform::SelectedFileBackend> backend,
                               platform::SelectedFileTarget target);
     void shutdown();
-    [[nodiscard]] CollageWindow* window() const;
+    [[nodiscard]] ImageStitchingWindow* window() const;
 
   private:
-    CollageWindow* ensureWindow();
+    ImageStitchingWindow* ensureWindow();
 
-    CollageWindowServices m_services;
-    QPointer<CollageWindow> m_window;
+    ImageStitchingWindowServices m_services;
+    QPointer<ImageStitchingWindow> m_window;
     bool m_shutdown = false;
 };
 

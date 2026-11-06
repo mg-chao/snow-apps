@@ -434,14 +434,17 @@ void imageToolsPreferInlineClipboardPixels() {
                image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     };
     {
-        snow_shot::presentation::CollageWindow collage;
-        collage.present();
-        collage.paste();
-        waitUntil([&] { return !collage.loading() && collage.document()->items().size() == 1; },
-                  "collage must import the combined clipboard");
-        require(samePixels(collage.document()->items().constFirst().image),
+        snow_shot::presentation::ImageStitchingWindow imageStitching;
+        imageStitching.present();
+        imageStitching.paste();
+        waitUntil(
+            [&] {
+                return !imageStitching.loading() && imageStitching.document()->items().size() == 1;
+            },
+            "collage must import the combined clipboard");
+        require(samePixels(imageStitching.document()->items().constFirst().image),
                 "collage must use inline pixels instead of the exported file");
-        collage.shutdown();
+        imageStitching.shutdown();
     }
     {
         snow_shot::presentation::ImageSplitWindowServices services;

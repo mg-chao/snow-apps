@@ -128,8 +128,8 @@ void pump() {
 }
 
 QJsonObject gridScenario(int count) {
-    CollageDocument document;
-    document.setOutputType(CollageOutputType::PdfDocument);
+    ImageStitchingDocument document;
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
     QImage source(24, 36, QImage::Format_RGBA8888);
     source.fill(Qt::blue);
     source.setColorSpace(QColorSpace::SRgb);
@@ -142,7 +142,7 @@ QJsonObject gridScenario(int count) {
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler memory;
     timer.restart();
-    CollagePdfPageGrid grid(&document);
+    ImageStitchingPdfPageGrid grid(&document);
     grid.resize(1200, 780);
     grid.show();
     pump();
@@ -170,8 +170,8 @@ QJsonObject gridScenario(int count) {
             std::max(maximumThumbnailBytes, grid.property("pageThumbnailBytes").toLongLong());
 
         auto settings = document.pdfSettings();
-        settings.orientation =
-            sample % 2 == 0 ? CollagePdfOrientation::Portrait : CollagePdfOrientation::Landscape;
+        settings.orientation = sample % 2 == 0 ? ImageStitchingPdfOrientation::Portrait
+                                               : ImageStitchingPdfOrientation::Landscape;
         settings.marginLeftMm = 10 + (sample % 7) * 0.25;
         timer.restart();
         document.setPdfSettings(settings);
@@ -207,17 +207,17 @@ QJsonObject gridScenario(int count) {
 }
 
 QJsonObject layoutScenario() {
-    CollagePdfSettings settings;
+    ImageStitchingPdfSettings settings;
     std::vector<double> samples;
     qreal checksum = 0;
     for (int sample = 0; sample < 48; ++sample) {
-        settings.orientation =
-            sample % 2 == 0 ? CollagePdfOrientation::Portrait : CollagePdfOrientation::Landscape;
+        settings.orientation = sample % 2 == 0 ? ImageStitchingPdfOrientation::Portrait
+                                               : ImageStitchingPdfOrientation::Landscape;
         settings.marginTopMm = 10 + (sample % 5) * 0.25;
         QElapsedTimer timer;
         timer.start();
         for (int index = 0; index < 10000; ++index) {
-            const auto layout = calculateCollagePdfPageLayout({64, 32768 + index}, settings);
+            const auto layout = calculateImageStitchingPdfPageLayout({64, 32768 + index}, settings);
             require(layout.isValid(), "large layout measurements remain valid");
             checksum += layout.imageMillimeters.width();
         }
@@ -232,11 +232,11 @@ QJsonObject layoutScenario() {
 }
 
 QJsonObject templateScenario(int count) {
-    CollageDocument document;
-    document.setOutputType(CollageOutputType::PdfDocument);
+    ImageStitchingDocument document;
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
     auto settings = document.pdfSettings();
-    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    settings.templateType = CollagePdfTemplateType::NineImages;
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    settings.templateType = ImageStitchingPdfTemplateType::NineImages;
     document.setPdfSettings(settings);
     // Keep 10,000 retained preview charges below the document's 64 MiB preview limit.
     QImage source(40, 30, QImage::Format_RGBA8888);
@@ -251,7 +251,7 @@ QJsonObject templateScenario(int count) {
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler memory;
     timer.restart();
-    CollagePdfTemplateWidget widget(&document);
+    ImageStitchingPdfTemplateWidget widget(&document);
     widget.resize(1200, 780);
     widget.show();
     pump();
@@ -270,17 +270,17 @@ QJsonObject templateScenario(int count) {
         pump();
         render(widget, frame);
         selectionSamples.push_back(milliseconds(timer));
-        const int capacity = collagePdfTemplateCapacity(document.pdfSettings().templateType);
+        const int capacity = imageStitchingPdfTemplateCapacity(document.pdfSettings().templateType);
         require(widget.canvas()->pageIndex() == index / capacity,
                 "selecting a distant image resolves its template page directly");
         maximumThumbnails =
             std::max(maximumThumbnails, widget.property("materializedThumbnailCount").toInt());
 
-        const auto page = calculateCollagePdfComposedPage(document.items(), document.pdfSettings(),
-                                                          widget.canvas()->pageIndex());
+        const auto page = calculateImageStitchingPdfComposedPage(
+            document.items(), document.pdfSettings(), widget.canvas()->pageIndex());
         const auto& cell = page.cells.at(index % capacity);
         const qreal fillScale = cell.clipMillimeters.width() / source.width();
-        CollagePdfPlacement placement;
+        ImageStitchingPdfPlacement placement;
         placement.centerOffsetMillimeters = QPointF(sample % 7 - 3, sample % 5 - 2);
         placement.millimetersPerPixel = fillScale * (.6 + (sample % 6) * .09);
         timer.restart();
@@ -290,12 +290,12 @@ QJsonObject templateScenario(int count) {
         placementSamples.push_back(milliseconds(timer));
 
         settings = document.pdfSettings();
-        settings.orientation =
-            sample % 2 == 0 ? CollagePdfOrientation::Landscape : CollagePdfOrientation::Portrait;
-        settings.templateType = sample % 3 == 0 ? CollagePdfTemplateType::FiveImages
-                                                : CollagePdfTemplateType::NineImages;
+        settings.orientation = sample % 2 == 0 ? ImageStitchingPdfOrientation::Landscape
+                                               : ImageStitchingPdfOrientation::Portrait;
+        settings.templateType = sample % 3 == 0 ? ImageStitchingPdfTemplateType::FiveImages
+                                                : ImageStitchingPdfTemplateType::NineImages;
         settings.paperSize =
-            sample % 5 == 0 ? CollagePdfPaperSize::Letter : CollagePdfPaperSize::A4;
+            sample % 5 == 0 ? ImageStitchingPdfPaperSize::Letter : ImageStitchingPdfPaperSize::A4;
         settings.imageSpacingMm = 4 + (sample % 7) * .25;
         timer.restart();
         document.setPdfSettings(settings);
@@ -323,10 +323,10 @@ QJsonObject templateScenario(int count) {
 QJsonObject denseTemplateExportScenario() {
     QTemporaryDir destination;
     require(destination.isValid(), "create temporary dense-template PDF output directory");
-    CollageDocument document;
+    ImageStitchingDocument document;
     auto settings = document.pdfSettings();
-    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    settings.templateType = CollagePdfTemplateType::NineImages;
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    settings.templateType = ImageStitchingPdfTemplateType::NineImages;
     document.setPdfSettings(settings);
     QImage source(1536, 1024, QImage::Format_RGBA8888);
     require(!source.isNull(), "allocate a dense source-resolution export fixture");
@@ -348,7 +348,7 @@ QJsonObject denseTemplateExportScenario() {
         if (index % 3 == 2)
             require(document.flip(id, false), "flip dense template source");
         if (index % 2 == 0) {
-            CollagePdfPlacement placement;
+            ImageStitchingPdfPlacement placement;
             placement.centerOffsetMillimeters = QPointF(4, -3);
             require(document.setPdfPlacement(id, placement), "offset dense template source");
         }
@@ -356,7 +356,7 @@ QJsonObject denseTemplateExportScenario() {
     source = {};
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler memory;
-    const qint64 baselineReserved = collageResourceUsage().reservedBytes;
+    const qint64 baselineReserved = imageStitchingResourceUsage().reservedBytes;
     qint64 peakReserved = baselineReserved;
     std::vector<double> samples;
     qint64 outputBytes = 0;
@@ -364,16 +364,17 @@ QJsonObject denseTemplateExportScenario() {
         const auto path = destination.filePath(QStringLiteral("dense-%1.pdf").arg(sample));
         QElapsedTimer timer;
         timer.start();
-        const auto exported = exportCollagePdf(
-            document.items(), settings, {path, false}, {}, [&](const CollagePdfExportProgress&) {
-                peakReserved = std::max(peakReserved, collageResourceUsage().reservedBytes);
+        const auto exported = exportImageStitchingPdf(
+            document.items(), settings, {path, false}, {},
+            [&](const ImageStitchingPdfExportProgress&) {
+                peakReserved = std::max(peakReserved, imageStitchingResourceUsage().reservedBytes);
             });
         samples.push_back(milliseconds(timer));
         require(exported.succeeded() && exported.totalCount == 2 &&
                     exported.completedPages.size() == 2 && exported.paths.size() == 1,
                 "dense export counts composed pages rather than source images");
         outputBytes = QFileInfo(path).size();
-        require(outputBytes > 0 && collageResourceUsage().reservedBytes == baselineReserved,
+        require(outputBytes > 0 && imageStitchingResourceUsage().reservedBytes == baselineReserved,
                 "dense template export writes its PDF and releases scratch reservations");
     }
     QJsonObject result{{QStringLiteral("scenario"), QStringLiteral("dense_template_export")},
@@ -393,7 +394,7 @@ QJsonObject denseTemplateExportScenario() {
 QJsonObject longImageExportScenario() {
     QTemporaryDir destination;
     require(destination.isValid(), "create temporary PDF output directory");
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage source(64, 65536, QImage::Format_RGBA8888);
     require(!source.isNull(), "allocate a four-million-pixel long-image fixture");
     source.setColorSpace(QColorSpace::SRgb);
@@ -415,7 +416,7 @@ QJsonObject longImageExportScenario() {
     source = {};
     const auto baseline = snow::test_support::memorySnapshot();
     MemorySampler memory;
-    const qint64 baselineReserved = collageResourceUsage().reservedBytes;
+    const qint64 baselineReserved = imageStitchingResourceUsage().reservedBytes;
     qint64 peakReserved = baselineReserved;
     int callbacks = 0;
     std::vector<double> samples;
@@ -424,19 +425,18 @@ QJsonObject longImageExportScenario() {
         const auto path = destination.filePath(QStringLiteral("long-%1.pdf").arg(sample));
         QElapsedTimer timer;
         timer.start();
-        const auto result =
-            exportCollagePdf(document.items(), document.pdfSettings(), {path, false}, {},
-                             [&](const CollagePdfExportProgress&) {
-                                 ++callbacks;
-                                 peakReserved =
-                                     std::max(peakReserved, collageResourceUsage().reservedBytes);
-                             });
+        const auto result = exportImageStitchingPdf(
+            document.items(), document.pdfSettings(), {path, false}, {},
+            [&](const ImageStitchingPdfExportProgress&) {
+                ++callbacks;
+                peakReserved = std::max(peakReserved, imageStitchingResourceUsage().reservedBytes);
+            });
         samples.push_back(milliseconds(timer));
         require(result.succeeded() && result.completedPages.size() == 3 &&
                     result.paths.size() == 1 && QFileInfo(path).size() > 0,
                 "long-image export completes exactly one page per source using source resolution");
         outputBytes = QFileInfo(path).size();
-        require(collageResourceUsage().reservedBytes == baselineReserved,
+        require(imageStitchingResourceUsage().reservedBytes == baselineReserved,
                 "completed exports release all temporary image-resource reservations");
     }
     QJsonObject result{{QStringLiteral("scenario"), QStringLiteral("long_image_export")},

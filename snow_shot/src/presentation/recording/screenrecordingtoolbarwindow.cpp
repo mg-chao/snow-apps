@@ -162,9 +162,9 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     options.showDistanceTool = true;
     options.showAngleTool = true;
     options.showBracketTool = true;
-    options.showFreeDrawTool = true;
+    options.showBrushTool = true;
     options.showHighlightTool = true;
-    options.showPenHighlightTool = true;
+    options.showBrushHighlightTool = true;
     options.showSpotlightTool = true;
     // Magnifiers sample captured images; recording annotations have no image source.
     options.showMagnifierTool = false;
@@ -172,7 +172,7 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     options.showFilterTool = true;
     options.showWatermarkTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showHistoryActions = true;
     options.showRecordingControls = true;
     options.recordingDrawingMode = true;

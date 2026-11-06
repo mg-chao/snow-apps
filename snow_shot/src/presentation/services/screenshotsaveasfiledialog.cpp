@@ -570,7 +570,7 @@ class SaveContent final : public QWidget {
         m_height->setToolTip(tr("Height"));
         m_sizeLabel->setText(tr("Size"));
         m_sizeUnit->setAccessibleName(tr("Size unit"));
-        m_sizeUnit->setOptionLabel(0, tr("Pixel"));
+        m_sizeUnit->setOptionLabel(0, tr("Pixels"));
         m_sizeUnit->setOptionLabel(1, tr("Percentage"));
         updateSizeLabelTheme();
         updateOutputDescriptionTheme();
@@ -731,7 +731,7 @@ class SaveContent final : public QWidget {
             if (snow_shot::storage::ScreenshotSettings().setSavePathShortcuts(shortcuts))
                 rebuildShortcuts();
             else
-                showError(tr("The save paths could not be stored"));
+                showError(tr("The save path settings could not be saved"));
         });
         return menu;
     }
@@ -797,7 +797,8 @@ class SaveContent final : public QWidget {
                     else
                         shortcuts[index] = shortcut;
                     if (!snow_shot::storage::ScreenshotSettings().setSavePathShortcuts(shortcuts)) {
-                        pathItem->setErrorMessages({tr("The save paths could not be stored")});
+                        pathItem->setErrorMessages(
+                            {tr("The save path settings could not be saved")});
                         return;
                     }
                     rebuildShortcuts();

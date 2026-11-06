@@ -581,7 +581,7 @@ void triggerBatchStitch(adqt::widgets::AdButton* trigger) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
-void pinnedCollageSelectionKeepsRecordOrder() {
+void pinnedImageStitchingSelectionKeepsRecordOrder() {
     Fixture fixture;
     for (int index = 0; index < 15; ++index) {
         storage::PinnedWindowSummary item;
@@ -611,7 +611,7 @@ void pinnedCollageSelectionKeepsRecordOrder() {
             "pinned Collage is unavailable before selection");
     QStringList requested;
     int requests = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const QStringList& ids) {
                          requested = ids;
                          ++requests;
@@ -758,7 +758,7 @@ void batchPinUsesExistingShowForEveryState() {
     pagination->setCurrentPage(2);
     selectAll->click();
     int stitched = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const auto&) { ++stitched; });
     QKeyEvent open(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
     QApplication::sendEvent(trigger, &open);
@@ -770,7 +770,7 @@ void batchPinUsesExistingShowForEveryState() {
             "keyboard opens pinned Batch Actions without dispatch");
     auto* stitch = menu->actions()[0];
     auto* pin = menu->actions()[1];
-    require(stitch->text() == QStringLiteral("Stitch image") &&
+    require(stitch->text() == QStringLiteral("Stitch images") &&
                 pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
                 !stitch->icon().isNull() && !pin->icon().isNull(),
             "pinned batch menu offers themed Stitch Image then Pin to screen");
@@ -785,7 +785,7 @@ void batchPinUsesExistingShowForEveryState() {
                         translator.translate("PinnedWindowManagementPageWidget", "Batch actions") &&
                     trigger->accessibleName() == trigger->text() &&
                     stitch->text() ==
-                        translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
+                        translator.translate("PinnedWindowManagementPageWidget", "Stitch images") &&
                     pin->text() ==
                         translator.translate("PinnedWindowManagementPageWidget", "Pin to screen") &&
                     pin->toolTip() == pin->text(),
@@ -839,7 +839,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
     int requests = 0;
     QString splitId;
     int splitRequests = 0;
-    QObject::connect(&page, &PinnedWindowManagementPageWidget::collageRequested, &page,
+    QObject::connect(&page, &PinnedWindowManagementPageWidget::stitchImagesRequested, &page,
                      [&](const QStringList& ids) {
                          requested = ids;
                          ++requests;
@@ -916,7 +916,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
                     reveal->toolTip() == reveal->text() && reveal->isEnabled() &&
                     !reveal->icon().isNull(),
                 "More offers a themed, platform-specific reveal action after Copy image path");
-        require(stitch->text() == QStringLiteral("Stitch image") && stitch->isEnabled() &&
+        require(stitch->text() == QStringLiteral("Stitch images") && stitch->isEnabled() &&
                     !stitch->icon().isNull() &&
                     split->text() == QStringLiteral("Image splitting") && split->isEnabled() &&
                     !split->icon().isNull(),
@@ -998,7 +998,7 @@ void pinnedEntryMoreActionsUseOnlyTheirRecord() {
         require(
             menu && menu->isPopupVisible() &&
                 menu->actions().at(0)->text() ==
-                    translator.translate("PinnedWindowManagementPageWidget", "Stitch image") &&
+                    translator.translate("PinnedWindowManagementPageWidget", "Stitch images") &&
                 menu->actions().at(0)->toolTip() == menu->actions().at(0)->text() &&
                 menu->actions().at(1)->text() ==
                     translator.translate("PinnedWindowManagementPageWidget", "Image splitting") &&
@@ -1084,7 +1084,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     pinnedEntryMoreActionsUseOnlyTheirRecord();
-    pinnedCollageSelectionKeepsRecordOrder();
+    pinnedImageStitchingSelectionKeepsRecordOrder();
     batchPinRequiresSingleGroup();
     batchPinUsesExistingShowForEveryState();
     if (QApplication::arguments().contains(QStringLiteral("--collage-only"))) {

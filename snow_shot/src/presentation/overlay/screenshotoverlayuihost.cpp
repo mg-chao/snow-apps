@@ -728,7 +728,7 @@ bool ScreenshotOverlayUiHost::stepToolbarFilterIntensity(int direction) {
            snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
-bool ScreenshotOverlayUiHost::stepToolbarPenFilterStrokeWidth(int direction) {
+bool ScreenshotOverlayUiHost::stepToolbarBrushFilterStrokeWidth(int direction) {
     auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
     return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
            snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);

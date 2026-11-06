@@ -23,7 +23,7 @@ void shortcutFamiliesAreComplete() {
     const std::vector<Pair> expected{
         {GlobalShortcutAction::Screenshot, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotDelay, FeatureFamily::Screenshot},
-        {GlobalShortcutAction::ScreenshotFixed, FeatureFamily::PinToScreen},
+        {GlobalShortcutAction::ScreenshotPinToScreen, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::ScreenshotOcr, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotOcrCopy, FeatureFamily::Screenshot},
         {GlobalShortcutAction::ScreenshotTranslation, FeatureFamily::Screenshot},
@@ -46,7 +46,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},
         {GlobalShortcutAction::PinSelectedFiles, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::HideShowAllWindows, FeatureFamily::PinToScreen},
-        {GlobalShortcutAction::ToggleGlobalHotkeys, std::nullopt},
+        {GlobalShortcutAction::ToggleGlobalShortcuts, std::nullopt},
         {GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow, std::nullopt},
     };
     for (const auto& [action, family] : expected) {
@@ -59,7 +59,7 @@ void globalMouseFamiliesAreComplete() {
     using Pair = std::pair<SettingsGlobalMouseAction, FeatureFamily>;
     const std::vector<Pair> expected{
         {SettingsGlobalMouseAction::ScreenshotCopy, FeatureFamily::Screenshot},
-        {SettingsGlobalMouseAction::ScreenshotFixed, FeatureFamily::PinToScreen},
+        {SettingsGlobalMouseAction::ScreenshotPinToScreen, FeatureFamily::PinToScreen},
         {SettingsGlobalMouseAction::ScreenshotOcr, FeatureFamily::Screenshot},
         {SettingsGlobalMouseAction::ScreenshotOcrCopy, FeatureFamily::Screenshot},
         {SettingsGlobalMouseAction::ScreenshotTranslation, FeatureFamily::Screenshot},

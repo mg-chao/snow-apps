@@ -133,8 +133,8 @@
     <context>
         <name>TranslationPageWidget</name>
         <message>
-            <source>Auto detect</source>
-            <translation>Auto detect</translation>
+            <source>Auto-detect language</source>
+            <translation>Auto-detect language</translation>
         </message>
         <message>
             <source>Copy (%1)</source>
@@ -161,8 +161,8 @@
             <translation>Retry</translation>
         </message>
         <message>
-            <source>Select a service</source>
-            <translation>Select a service</translation>
+            <source>Select a translation service</source>
+            <translation>Select a translation service</translation>
         </message>
         <message>
             <source>Source language</source>

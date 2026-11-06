@@ -70,7 +70,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
     bool stepFilterIntensity(int direction);
-    bool stepPenFilterStrokeWidth(int direction);
+    bool stepBrushFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     void cancelDrag();
     bool physicalDragActive() const;

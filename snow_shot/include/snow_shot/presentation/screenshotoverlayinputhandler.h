@@ -53,7 +53,7 @@ struct ScreenshotOverlayInputActions {
     std::function<bool(int delta)> stepSelectionOpacity = [](int) { return false; };
     std::function<bool(int delta)> stepSpotlightOpacity = [](int) { return false; };
     std::function<bool(int delta)> stepFilterIntensity = [](int) { return false; };
-    std::function<bool(int delta)> stepPenFilterStrokeWidth = [](int) { return false; };
+    std::function<bool(int delta)> stepBrushFilterStrokeWidth = [](int) { return false; };
     std::function<bool(int delta)> stepWatermarkFontSize = [](int) { return false; };
     std::function<void()> copySelectionToClipboard = []() {};
     std::function<bool()> localShortcutInputAllowed = []() { return true; };

@@ -1070,7 +1070,7 @@ void triggerBatchAction(adqt::widgets::AdButton* trigger, int index) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
-void pinnedCollageRequestReachesMainWindow() {
+void pinnedImageStitchingRequestReachesMainWindow() {
     const auto& registry = settings::builtInSettingsRegistry();
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -1088,7 +1088,7 @@ void pinnedCollageRequestReachesMainWindow() {
     require(repository.upsert(record).success, "save the pinned navigation fixture");
     MainWindow window(registry, session);
     QStringList requested;
-    QObject::connect(&window, &MainWindow::pinnedWindowCollageRequested, &window,
+    QObject::connect(&window, &MainWindow::pinnedWindowStitchImagesRequested, &window,
                      [&](const QStringList& ids) { requested = ids; });
     window.showPinToScreenManagement();
     flushEvents();
@@ -1147,7 +1147,7 @@ int main(int argc, char** argv) {
             "initialize isolated font test storage");
     styles::ThemeManager::instance().initialize(application);
     if (QApplication::arguments().contains(QStringLiteral("--pinned-collage-only"))) {
-        pinnedCollageRequestReachesMainWindow();
+        pinnedImageStitchingRequestReachesMainWindow();
         storage.shutdown();
         return 0;
     }
@@ -1160,7 +1160,7 @@ int main(int argc, char** argv) {
     }
 #endif
     applicationTypographyCoversUnownedSurfaces();
-    pinnedCollageRequestReachesMainWindow();
+    pinnedImageStitchingRequestReachesMainWindow();
     customTitleBarUsesPlatformWindowControls();
 #ifdef Q_OS_WIN
     modalWindowSizeIconsMatchMainTitleBar();

@@ -56,7 +56,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showDistanceTool = true;
     options.showAngleTool = true;
     options.showBracketTool = true;
-    options.showFreeDrawTool = true;
+    options.showBrushTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
     // Magnifiers sample captured images; this live annotation surface has none.
@@ -65,7 +65,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showFilterTool = true;
     options.showWatermarkTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showGlobalCanvasActions = true;
     options.separatorAfterSelect = true;
     options.toolbarLayout = storage::ScreenshotToolbarSettings().layout(
@@ -768,11 +768,11 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             [](SnowCanvasTool tool) {
                 return tool != SnowCanvasTool::AutoFilter && tool != SnowCanvasTool::Magnifier;
             });
-        connect(palette, &ScreenshotToolPalette::serialNumberDecrementRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberDecrementRequested, this,
                 [this]() { drawing->adjustSelectedSerialNumbers(-1); });
-        connect(palette, &ScreenshotToolPalette::serialNumberIncrementRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberIncrementRequested, this,
                 [this]() { drawing->adjustSelectedSerialNumbers(1); });
-        connect(palette, &ScreenshotToolPalette::serialNumberCreateTextRequested, this,
+        connect(palette, &ScreenshotToolPalette::sequenceNumberCreateTextRequested, this,
                 [this]() { drawing->createSerialNumberText(); });
         connect(palette, &ScreenshotToolPalette::sendSelectionToBackRequested, this,
                 [this]() { drawing->reorderSelected(SnowCanvasSelectionOrder::SendToBack); });

@@ -3918,7 +3918,7 @@ void invalidTrayClickSettingsUseIndependentDefaults() {
             "invalid persisted click actions must be repaired to their independent defaults");
 }
 
-void legacyTrayHotkeyCommandMigratesToQuickAction() {
+void legacyTrayShortcutCommandMigratesToQuickAction() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create tray menu migration directory");
     const QString config = temporary.filePath(QStringLiteral("config.json"));
@@ -4436,7 +4436,7 @@ int main(int argc, char** argv) {
     previousSelectionStorageIsRetired();
     invalidTrayClickSettingsUseIndependentDefaults();
     trayDarkIconSettingsPersistAndValidate();
-    legacyTrayHotkeyCommandMigratesToQuickAction();
+    legacyTrayShortcutCommandMigratesToQuickAction();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();
     watermarkContentSettingsRepairAndSurviveRestart();

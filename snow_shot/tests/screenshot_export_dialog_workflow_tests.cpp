@@ -246,7 +246,7 @@ void centersOnDisplayOverlay() {
     }
 }
 
-void collageWindowModalityAndRetry(QWidget& owner) {
+void imageStitchingWindowModalityAndRetry(QWidget& owner) {
     QWidget neighbor;
     neighbor.show();
     for (int attempt = 0; attempt < 2; ++attempt) {
@@ -1914,7 +1914,7 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     auto* unit = child<AdSegmented>(dimensions, "saveSizeUnitSegmented");
     require(sizeLabel->text() == QStringLiteral("Size") && unit->count() == 2 &&
                 unit->currentValue() == QStringLiteral("pixels") &&
-                unit->optionLabel(0) == QStringLiteral("Pixel") &&
+                unit->optionLabel(0) == QStringLiteral("Pixels") &&
                 unit->optionLabel(1) == QStringLiteral("Percentage") &&
                 sizeLabel->geometry().right() < unit->geometry().left() &&
                 unit->geometry().right() == dimensions->rect().right(),
@@ -2260,7 +2260,7 @@ void sizeUnits(QWidget& owner, const QTemporaryDir& temp) {
     require(QApplication::installTranslator(&translator), "size translator unavailable");
     flush();
     require(child<QLabel>(content, "saveSizeLabel")->text() == QStringLiteral("Translated Size") &&
-                unit->optionLabel(0) == QStringLiteral("Translated pixel") &&
+                unit->optionLabel(0) == QStringLiteral("Translated Pixels") &&
                 unit->optionLabel(1) == QStringLiteral("Translated Percentage") &&
                 unit->accessibleName() == QStringLiteral("Translated Size unit") &&
                 width->toolTip() == QStringLiteral("Translated Width") &&
@@ -3620,7 +3620,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (QApplication::arguments().contains(QStringLiteral("--collage-modality"))) {
-            collageWindowModalityAndRetry(owner);
+            imageStitchingWindowModalityAndRetry(owner);
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
             std::cout << "Collage export dialog modality tests passed\n";

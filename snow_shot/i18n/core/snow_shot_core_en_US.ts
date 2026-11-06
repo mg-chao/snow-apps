@@ -420,14 +420,6 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Customize toolbar</translation>
         </message>
         <message>
-            <source>Delay %1 seconds to execute</source>
-            <translation>Delay %1 seconds to execute</translation>
-        </message>
-        <message>
-            <source>Formula recognition</source>
-            <translation>Formula recognition</translation>
-        </message>
-        <message>
             <source>Hide during screenshots</source>
             <translation>Hide during screenshots</translation>
         </message>
@@ -444,8 +436,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>More tools</translation>
         </message>
         <message>
-            <source>QR code recognition</source>
-            <translation>QR code recognition</translation>
+            <source>Run after %1 seconds</source>
+            <translation>Run after %1 seconds</translation>
         </message>
         <message>
             <source>Screen recording</source>
@@ -528,8 +520,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>%1 is already assigned to another shortcut, try another key</translation>
         </message>
         <message>
-            <source>Add key config</source>
-            <translation>Add key config</translation>
+            <source>Add key configuration</source>
+            <translation>Add key configuration</translation>
         </message>
         <message>
             <source>Global shortcuts are not supported on this platform</source>
@@ -873,8 +865,8 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Could not open the selected file: %1</translation>
         </message>
         <message>
-            <source>Could not pin selected files</source>
-            <translation>Could not pin selected files</translation>
+            <source>Could not pin selected files to screen</source>
+            <translation>Could not pin selected files to screen</translation>
         </message>
         <message>
             <source>Feature unavailable</source>

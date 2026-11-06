@@ -577,7 +577,7 @@ void sendCtrlCUp() {
             "could not inject the Ctrl+C release");
 }
 
-void sendHotkey() {
+void sendShortcut() {
     INPUT input[2]{};
     input[0].type = INPUT_KEYBOARD;
     input[0].ki.wVk = VK_F24;
@@ -706,7 +706,7 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
     // release below is deliberately routed away from the application (see the
     // release site for why).
     const HWND foregroundBeforeCapture = GetForegroundWindow();
-    sendHotkey();
+    sendShortcut();
     // The injected hotkey does not always hand the application the foreground
     // rights a physical keypress would; lend it the driver's rights (best
     // effort) so its own overlay activation behaves like real usage.

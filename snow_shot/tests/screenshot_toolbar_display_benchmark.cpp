@@ -165,18 +165,18 @@ const ToolInfo kDrawingTools[] = {
     {ScreenshotToolPalette::Tool::Shape, "shape", "screenshotRectangleStyleControls", true},
     {ScreenshotToolPalette::Tool::Arrow, "arrow", "screenshotArrowStyleControls", true},
     {ScreenshotToolPalette::Tool::Line, "line", "screenshotLineStyleControls", true},
-    {ScreenshotToolPalette::Tool::FreeDraw, "free-draw", "screenshotFreeDrawStyleControls", true},
+    {ScreenshotToolPalette::Tool::Brush, "free-draw", "screenshotFreeDrawStyleControls", true},
     {ScreenshotToolPalette::Tool::RectangleHighlight, "rect-highlight",
      "screenshotHighlightStyleControls", true},
-    {ScreenshotToolPalette::Tool::PenHighlight, "pen-highlight",
+    {ScreenshotToolPalette::Tool::BrushHighlight, "pen-highlight",
      "screenshotPenHighlightStyleControls", true},
     {ScreenshotToolPalette::Tool::Spotlight, "spotlight", "screenshotSpotlightStyleControls", true},
     {ScreenshotToolPalette::Tool::Text, "text", "screenshotTextStyleControls", true},
-    {ScreenshotToolPalette::Tool::SerialNumber, "serial-number",
+    {ScreenshotToolPalette::Tool::SequenceNumber, "serial-number",
      "screenshotSerialNumberStyleControls", true},
     {ScreenshotToolPalette::Tool::RectangleFilter, "rect-filter", "screenshotFilterStyleControls",
      true},
-    {ScreenshotToolPalette::Tool::PenFilter, "pen-filter", "screenshotPenFilterStyleControls",
+    {ScreenshotToolPalette::Tool::BrushFilter, "pen-filter", "screenshotPenFilterStyleControls",
      true},
     {ScreenshotToolPalette::Tool::Watermark, "watermark", "screenshotWatermarkStyleControls", true},
     {ScreenshotToolPalette::Tool::Eraser, "eraser", "screenshotEraserStyleControls", true},
@@ -197,14 +197,14 @@ struct ReusePairInfo {
 const ReusePairInfo kReusePairs[] = {
     {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Arrow, "shape-to-arrow"},
     {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Line, "shape-to-line"},
-    {ScreenshotToolPalette::Tool::Line, ScreenshotToolPalette::Tool::FreeDraw, "line-to-free-draw"},
-    {ScreenshotToolPalette::Tool::RectangleHighlight, ScreenshotToolPalette::Tool::PenHighlight,
+    {ScreenshotToolPalette::Tool::Line, ScreenshotToolPalette::Tool::Brush, "line-to-free-draw"},
+    {ScreenshotToolPalette::Tool::RectangleHighlight, ScreenshotToolPalette::Tool::BrushHighlight,
      "rect-highlight-to-pen-highlight"},
-    {ScreenshotToolPalette::Tool::RectangleFilter, ScreenshotToolPalette::Tool::PenFilter,
+    {ScreenshotToolPalette::Tool::RectangleFilter, ScreenshotToolPalette::Tool::BrushFilter,
      "rect-filter-to-pen-filter"},
-    {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::SerialNumber,
+    {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::SequenceNumber,
      "text-to-serial-number"},
-    {ScreenshotToolPalette::Tool::PenHighlight, ScreenshotToolPalette::Tool::PenFilter,
+    {ScreenshotToolPalette::Tool::BrushHighlight, ScreenshotToolPalette::Tool::BrushFilter,
      "pen-highlight-to-pen-filter"},
     {ScreenshotToolPalette::Tool::Spotlight, ScreenshotToolPalette::Tool::Watermark,
      "spotlight-to-watermark"},
@@ -227,9 +227,9 @@ class NullToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {}
     void setFilterTool() override {}
     void setWatermarkTool() override {}
@@ -237,7 +237,7 @@ class NullToolbarCommands final : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
@@ -247,10 +247,10 @@ class NullToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
 };

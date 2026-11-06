@@ -33,12 +33,12 @@ class RecordingStatusPrompt final : public QWidget {
                 [this] { update(); });
     }
 
-    void setStatus(const QString& format, bool microphone, bool speaker) {
-        if (m_format == format && m_microphone == microphone && m_speaker == speaker)
+    void setStatus(const QString& format, bool microphone, bool systemAudio) {
+        if (m_format == format && m_microphone == microphone && m_systemAudio == systemAudio)
             return;
         m_format = format;
         m_microphone = microphone;
-        m_speaker = speaker;
+        m_systemAudio = systemAudio;
         refresh();
     }
 
@@ -63,8 +63,8 @@ class RecordingStatusPrompt final : public QWidget {
             snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().map;
         const auto microphoneColor = adqt::icons::IconColors::primary(
             m_microphone ? colors.colorSuccess : colors.colorError);
-        const auto speakerColor =
-            adqt::icons::IconColors::primary(m_speaker ? colors.colorSuccess : colors.colorError);
+        const auto systemAudioColor = adqt::icons::IconColors::primary(
+            m_systemAudio ? colors.colorSuccess : colors.colorError);
         const QRect microphone(kPadding + textWidth + kGap, (height() - kIconSize) / 2, kIconSize,
                                kIconSize);
         adqt::icons::paintIcon(&painter,
@@ -72,8 +72,8 @@ class RecordingStatusPrompt final : public QWidget {
                                             : custom::RecordingMicrophoneOff(microphoneColor),
                                microphone);
         adqt::icons::paintIcon(&painter,
-                               m_speaker ? adqt::icons::antd::outlined::Sound(speakerColor)
-                                         : custom::RecordingSpeakerOff(speakerColor),
+                               m_systemAudio ? adqt::icons::antd::outlined::Sound(systemAudioColor)
+                                             : custom::RecordingSpeakerOff(systemAudioColor),
                                microphone.translated(kIconSize + kGap, 0));
     }
 
@@ -92,7 +92,7 @@ class RecordingStatusPrompt final : public QWidget {
         setAccessibleName(
             tr("Format: %1; %2; %3")
                 .arg(m_text, m_microphone ? tr("Microphone enabled") : tr("Microphone disabled"),
-                     m_speaker ? tr("Speaker enabled") : tr("Speaker disabled")));
+                     m_systemAudio ? tr("System audio enabled") : tr("System audio disabled")));
         updateLayout();
         update();
     }
@@ -117,7 +117,7 @@ class RecordingStatusPrompt final : public QWidget {
     QString m_format = QStringLiteral("mp4");
     QString m_text;
     bool m_microphone = false;
-    bool m_speaker = false;
+    bool m_systemAudio = false;
     bool m_visible = false;
     QRectF m_bounds;
 };
@@ -232,9 +232,9 @@ void RecordingEffectPreview::configure(
 }
 
 void RecordingEffectPreview::setStatusPrompts(bool enabled, const QString& format, bool microphone,
-                                              bool speaker) {
+                                              bool systemAudio) {
     m_showStatusPrompts = enabled;
-    m_statusPrompt->setStatus(format, microphone, speaker);
+    m_statusPrompt->setStatus(format, microphone, systemAudio);
     updateReadout();
 }
 

@@ -507,6 +507,10 @@
             <translation>括号标注</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>画笔</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>距离标注</translation>
         </message>
@@ -551,10 +555,6 @@
             <translation>没有隐藏的工具</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>画笔</translation>
-        </message>
-        <message>
             <source>Redo</source>
             <translation>重做</translation>
         </message>
@@ -567,7 +567,7 @@
             <translation>分隔组件</translation>
         </message>
         <message>
-            <source>Serial number</source>
+            <source>Sequence number</source>
             <translation>序号</translation>
         </message>
         <message>
@@ -650,7 +650,7 @@
         </message>
         <message>
             <source>Control</source>
-            <translation>控制</translation>
+            <translation>Control</translation>
         </message>
         <message>
             <source>Ctrl</source>
@@ -682,7 +682,7 @@
         </message>
         <message>
             <source>Option</source>
-            <translation>选项</translation>
+            <translation>Option</translation>
         </message>
         <message>
             <source>Right-button drag</source>
@@ -884,7 +884,7 @@
             <translation>关闭录制</translation>
         </message>
         <message>
-            <source>Copy recording content</source>
+            <source>Copy recording</source>
             <translation>复制录制内容</translation>
         </message>
         <message>
@@ -1192,12 +1192,12 @@
             <translation>API 配置</translation>
         </message>
         <message>
-            <source>API key</source>
-            <translation>API 密钥</translation>
+            <source>API for detecting window child elements</source>
+            <translation>用于控制获取窗口子元素的 API</translation>
         </message>
         <message>
-            <source>API used to control obtaining child elements of the window</source>
-            <translation>用于控制获取窗口子元素的 API</translation>
+            <source>API key</source>
+            <translation>API 密钥</translation>
         </message>
         <message>
             <source>AVIF</source>
@@ -1572,6 +1572,18 @@
             <translation>浏览、恢复和删除固定到屏幕窗口</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>画笔</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>画笔滤镜</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>画笔高亮</translation>
+        </message>
+        <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
             <translation>已缓存的历史缩略图将被删除，并在需要时重新生成</translation>
         </message>
@@ -1792,7 +1804,7 @@
             <translation>选择整个主题使用的主色</translation>
         </message>
         <message>
-            <source>Choose the primary language for translation</source>
+            <source>Choose the primary target language for translation</source>
             <translation>选择翻译的主要目标语言</translation>
         </message>
         <message>
@@ -1848,7 +1860,7 @@
             <translation>选择执行哪些操作时，同时以所选图像格式保存到指定目录</translation>
         </message>
         <message>
-            <source>Choose which fullscreen windows automatically disable global hotkeys</source>
+            <source>Choose which fullscreen windows automatically disable global shortcuts</source>
             <translation>选择哪些全屏窗口会自动禁用全局快捷键</translation>
         </message>
         <message>
@@ -1957,7 +1969,7 @@
         </message>
         <message>
             <source>Configure text recognition models and processing</source>
-            <translation>配置文字识别模型和处理方式</translation>
+            <translation>配置文本识别模型和处理方式</translation>
         </message>
         <message>
             <source>Configure the screenshot, pinned, and recording toolbars</source>
@@ -1993,7 +2005,7 @@
         </message>
         <message>
             <source>Copy after text recognition</source>
-            <translation>文字识别后复制</translation>
+            <translation>文本识别后复制</translation>
         </message>
         <message>
             <source>Copy application settings as a zip archive to the clipboard</source>
@@ -2208,14 +2220,6 @@
             <translation>为新固定到屏幕的文本设置默认样式，并保留源格式</translation>
         </message>
         <message>
-            <source>Delay %1s to execute</source>
-            <translation>延时 %1 秒执行</translation>
-        </message>
-        <message>
-            <source>Delay capture</source>
-            <translation>延时截图</translation>
-        </message>
-        <message>
             <source>Delayed screenshot</source>
             <translation>延时截图</translation>
         </message>
@@ -2272,15 +2276,15 @@
             <translation>销毁</translation>
         </message>
         <message>
-            <source>Disable global hotkeys</source>
+            <source>Disable global shortcuts</source>
             <translation>禁用全局快捷键</translation>
         </message>
         <message>
-            <source>Disable hotkeys in fullscreen windows</source>
+            <source>Disable shortcuts in fullscreen windows</source>
             <translation>在全屏窗口中禁用快捷键</translation>
         </message>
         <message>
-            <source>Disable/enable global hotkeys</source>
+            <source>Disable/enable global shortcuts</source>
             <translation>禁用/启用全局快捷键</translation>
         </message>
         <message>
@@ -2512,10 +2516,6 @@
             <translation>固定右上角</translation>
         </message>
         <message>
-            <source>Fixed screenshot</source>
-            <translation>固定到屏幕的截图</translation>
-        </message>
-        <message>
             <source>Flip horizontally</source>
             <translation>水平翻转</translation>
         </message>
@@ -2608,24 +2608,24 @@
             <translation>全局画布</translation>
         </message>
         <message>
-            <source>Global hotkey activation behavior</source>
-            <translation>全局快捷键启用行为</translation>
-        </message>
-        <message>
-            <source>Global hotkeys</source>
-            <translation>全局快捷键</translation>
-        </message>
-        <message>
-            <source>Global hotkeys page</source>
-            <translation>全局快捷键页面</translation>
-        </message>
-        <message>
             <source>Global mouse</source>
             <translation>全局鼠标</translation>
         </message>
         <message>
             <source>Global mouse gestures</source>
             <translation>全局鼠标手势</translation>
+        </message>
+        <message>
+            <source>Global shortcut activation behavior</source>
+            <translation>全局快捷键启用行为</translation>
+        </message>
+        <message>
+            <source>Global shortcuts</source>
+            <translation>全局快捷键</translation>
+        </message>
+        <message>
+            <source>Global shortcuts page</source>
+            <translation>全局快捷键页面</translation>
         </message>
         <message>
             <source>Group recognized text before translating</source>
@@ -2660,16 +2660,16 @@
             <translation>隐藏的工具</translation>
         </message>
         <message>
+            <source>Hide at top</source>
+            <translation>顶部隐藏</translation>
+        </message>
+        <message>
             <source>Hide or show all windows in the current group</source>
             <translation>隐藏或显示当前分组中的所有窗口</translation>
         </message>
         <message>
             <source>Hide the toolbar near the left or right screen edge. Hover over the edge control to show it again</source>
             <translation>工具栏靠近屏幕左边缘或右边缘时自动隐藏。将鼠标悬停在边缘控件上可再次显示工具栏</translation>
-        </message>
-        <message>
-            <source>Hide to top</source>
-            <translation>顶部隐藏</translation>
         </message>
         <message>
             <source>Hide when outside selection</source>
@@ -2688,15 +2688,11 @@
             <translation>高亮</translation>
         </message>
         <message>
-            <source>Hotkey hint opacity</source>
-            <translation>快捷键提示不透明度</translation>
-        </message>
-        <message>
             <source>Icon</source>
             <translation>图标</translation>
         </message>
         <message>
-            <source>Ignore global hotkeys while a matching focused window occupies an entire monitor</source>
+            <source>Ignore global shortcuts while a matching focused window occupies an entire monitor</source>
             <translation>符合筛选条件的焦点窗口占满整个显示器时忽略全局快捷键</translation>
         </message>
         <message>
@@ -2761,7 +2757,7 @@
         </message>
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving a screenshot selection</source>
-            <translation>保存截图选区时包含当前显示的文字识别或原图翻译结果</translation>
+            <translation>保存截图选区时包含当前显示的文本识别或原图翻译结果</translation>
         </message>
         <message>
             <source>Include the pointer and capture controls in screenshots</source>
@@ -2826,10 +2822,6 @@
         <message>
             <source>Keep screenshots available after the application closes</source>
             <translation>关闭应用程序后仍保留可用的截图</translation>
-        </message>
-        <message>
-            <source>Keep selection width and height consistent</source>
-            <translation>保持选区宽高一致</translation>
         </message>
         <message>
             <source>Keep the Snow Shot save dialog open after saving to show the result</source>
@@ -2972,6 +2964,10 @@
             <translation>主界面皮肤位置</translation>
         </message>
         <message>
+            <source>Maintain selection aspect ratio</source>
+            <translation>保持选区宽高比</translation>
+        </message>
+        <message>
             <source>Manage Snow Shot's login permission in macOS System Settings</source>
             <translation>在 macOS 系统设置中管理 Snow Shot 的登录权限</translation>
         </message>
@@ -3041,7 +3037,7 @@
         </message>
         <message>
             <source>Minimum confidence required to switch to the secondary target language</source>
-            <translation>切换到次目标语言所需的最低置信度</translation>
+            <translation>切换到次要目标语言所需的最低置信度</translation>
         </message>
         <message>
             <source>Model hot start</source>
@@ -3272,18 +3268,6 @@
             <translation>页面</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>画笔</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>画笔滤镜</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>画笔高亮</translation>
-        </message>
-        <message>
             <source>Permanently remove all saved screenshots</source>
             <translation>永久移除所有已保存的截图</translation>
         </message>
@@ -3298,10 +3282,6 @@
         <message>
             <source>Persistent screenshot history</source>
             <translation>持久化截图历史</translation>
-        </message>
-        <message>
-            <source>Pin clipboard</source>
-            <translation>将剪贴板内容固定到屏幕</translation>
         </message>
         <message>
             <source>Pin clipboard content to screen</source>
@@ -3328,7 +3308,7 @@
             <translation>将访达或桌面中选中的图像或文档文件固定到屏幕</translation>
         </message>
         <message>
-            <source>Pin selection</source>
+            <source>Pin selection to screen</source>
             <translation>将选区固定到屏幕</translation>
         </message>
         <message>
@@ -3360,12 +3340,8 @@
             <translation>固定窗口到屏幕</translation>
         </message>
         <message>
-            <source>Pin-to-screen management</source>
-            <translation>固定到屏幕管理</translation>
-        </message>
-        <message>
-            <source>Pinned screenshot window appearance settings</source>
-            <translation>固定到屏幕窗口外观设置</translation>
+            <source>Pinned screenshot</source>
+            <translation>固定到屏幕的截图</translation>
         </message>
         <message>
             <source>Pinned toolbar</source>
@@ -3378,6 +3354,14 @@
         <message>
             <source>Pinned window active shadow</source>
             <translation>固定到屏幕窗口激活阴影</translation>
+        </message>
+        <message>
+            <source>Pinned window appearance settings</source>
+            <translation>固定到屏幕窗口外观设置</translation>
+        </message>
+        <message>
+            <source>Pinned window behavior settings</source>
+            <translation>固定到屏幕窗口行为设置</translation>
         </message>
         <message>
             <source>Pinned window behavior, appearance and tools</source>
@@ -3584,10 +3568,6 @@
             <translation>屏幕录制临时文件</translation>
         </message>
         <message>
-            <source>Recording toggle</source>
-            <translation>开始/复制屏幕录制</translation>
-        </message>
-        <message>
             <source>Recording toolbar</source>
             <translation>屏幕录制工具栏</translation>
         </message>
@@ -3732,6 +3712,10 @@
             <translation>逆时针旋转</translation>
         </message>
         <message>
+            <source>Run after %1 seconds</source>
+            <translation>延时 %1 秒执行</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>保存为文件</translation>
         </message>
@@ -3756,8 +3740,8 @@
             <translation>将识别结果保存为图片</translation>
         </message>
         <message>
-            <source>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
-            <translation>将扬声器和麦克风音频保存为独立的 MP4 音轨，以便分别编辑。大多数播放器一次只播放一个音轨</translation>
+            <source>Save system audio and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
+            <translation>将系统音频和麦克风音频保存为独立的 MP4 音轨，以便分别编辑。大多数播放器一次只播放一个音轨</translation>
         </message>
         <message>
             <source>Save the confirmed screenshot selection to a file</source>
@@ -3773,7 +3757,7 @@
         </message>
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>
-            <translation>缩放超过所选最大分辨率的录制屏幕</translation>
+            <translation>缩放超过所选最大分辨率的录制内容</translation>
         </message>
         <message>
             <source>Scheduling</source>
@@ -3976,7 +3960,7 @@
             <translation>选区、截图辅助线与标注工具</translation>
         </message>
         <message>
-            <source>Serial number</source>
+            <source>Sequence number</source>
             <translation>序号</translation>
         </message>
         <message>
@@ -3985,7 +3969,7 @@
         </message>
         <message>
             <source>Set how much Ctrl+mouse wheel changes pinned window opacity</source>
-            <translation>设置 Ctrl+鼠标滚轮调整固定窗口不透明度的步长</translation>
+            <translation>设置 Ctrl+鼠标滚轮调整固定到屏幕窗口不透明度的步长</translation>
         </message>
         <message>
             <source>Set quality for image files saved outside the Snow Shot dialog</source>
@@ -4013,7 +3997,7 @@
         </message>
         <message>
             <source>Set the floating toolbar opacity when the mouse is not hovering over it</source>
-            <translation>设置鼠标未悬停时浮动工具栏的不透明度</translation>
+            <translation>设置鼠标未悬停时悬浮工具栏的不透明度</translation>
         </message>
         <message>
             <source>Set the frame rate of exported animated images</source>
@@ -4093,7 +4077,7 @@
         </message>
         <message>
             <source>Shake window</source>
-            <translation>晃动窗口</translation>
+            <translation>摇动窗口</translation>
         </message>
         <message>
             <source>Shape tool</source>
@@ -4169,7 +4153,7 @@
         </message>
         <message>
             <source>Show recording status prompts</source>
-            <translation>显示录屏状态提示</translation>
+            <translation>显示录制状态提示</translation>
         </message>
         <message>
             <source>Show save result</source>
@@ -4228,8 +4212,8 @@
             <translation>显示编辑选区工具的子工具栏</translation>
         </message>
         <message>
-            <source>Show the video format and microphone and speaker status in the center of the motion preview area</source>
-            <translation>在动效预览区域中央显示视频格式以及麦克风和扬声器状态</translation>
+            <source>Show the video format and microphone and system audio status in the center of the motion preview area</source>
+            <translation>在动效预览区域中央显示视频格式以及麦克风和系统音频状态</translation>
         </message>
         <message>
             <source>Show toolbar</source>
@@ -4388,6 +4372,10 @@
             <translation>在已确认的截图选区内开始滚动截图</translation>
         </message>
         <message>
+            <source>Start/copy screen recording</source>
+            <translation>开始/复制屏幕录制</translation>
+        </message>
+        <message>
             <source>Start/pause/resume recording</source>
             <translation>开始/暂停/继续屏幕录制</translation>
         </message>
@@ -4481,15 +4469,15 @@
         </message>
         <message>
             <source>Text recognition &amp; translation</source>
-            <translation>文字识别与翻译</translation>
+            <translation>文本识别与翻译</translation>
         </message>
         <message>
             <source>Text recognition appearance</source>
-            <translation>文字识别外观</translation>
+            <translation>文本识别外观</translation>
         </message>
         <message>
             <source>Text recognition output settings</source>
-            <translation>文字识别输出设置</translation>
+            <translation>文本识别输出设置</translation>
         </message>
         <message>
             <source>Text selection on recognition results</source>
@@ -4552,7 +4540,7 @@
             <translation>切换辅助线</translation>
         </message>
         <message>
-            <source>Toggle hotkeys</source>
+            <source>Toggle shortcuts</source>
             <translation>切换快捷键</translation>
         </message>
         <message>
@@ -4676,11 +4664,11 @@
             <translation>托盘菜单皮肤位置</translation>
         </message>
         <message>
-            <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
+            <source>Turn every global shortcut off or back on; this shortcut stays active while global shortcuts are disabled</source>
             <translation>关闭或重新开启所有全局快捷键；即使全局快捷键已被禁用，此快捷键仍然有效</translation>
         </message>
         <message>
-            <source>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
+            <source>Turn off or back on the suppression of global shortcuts while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
             <translation>关闭或重新开启焦点窗口全屏时对全局快捷键的抑制；即使全屏抑制已生效，此快捷键仍然有效</translation>
         </message>
         <message>
@@ -4741,7 +4729,7 @@
         </message>
         <message>
             <source>Use this language when local language detection matches the primary target language at the configured confidence</source>
-            <translation>当本地语言检测结果与主目标语言匹配且达到设置的置信度时，使用此语言</translation>
+            <translation>当本地语言检测结果与主要目标语言匹配且达到设置的置信度时，使用此语言</translation>
         </message>
         <message>
             <source>User initiated</source>
@@ -5072,7 +5060,7 @@ Unavailable: %2</source>
             <translation>系统拒绝了此快捷键（错误 %1）</translation>
         </message>
         <message>
-            <source>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global hotkeys are enabled and the focused window allows them</source>
+            <source>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global shortcuts are enabled and the focused window allows them</source>
             <translation>此快捷键已暂时禁用并解除注册，其他应用程序可以使用该组合键。启用全局快捷键且当前焦点窗口允许使用时，将恢复此快捷键</translation>
         </message>
     </context>

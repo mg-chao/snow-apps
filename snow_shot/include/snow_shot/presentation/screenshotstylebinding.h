@@ -39,9 +39,9 @@ void replicateScreenshotStyleEdit(SnowCanvasWidget& peer, const SnowCanvasStyleE
     case ScreenshotActiveTool::Bracket:
     case ScreenshotActiveTool::Arrow:
     case ScreenshotActiveTool::Line:
-    case ScreenshotActiveTool::FreeDraw:
+    case ScreenshotActiveTool::Brush:
     case ScreenshotActiveTool::RectangleHighlight:
-    case ScreenshotActiveTool::PenHighlight:
+    case ScreenshotActiveTool::BrushHighlight:
         return true;
     default:
         return false;

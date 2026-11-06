@@ -103,7 +103,7 @@ const char* selectedFileErrorSource(platform::SelectedFileError error) {
 struct LoadedImage final {
     QImage image;
     QImage preview;
-    std::shared_ptr<CollageImportReservation> reservation;
+    std::shared_ptr<ImageStitchingImportReservation> reservation;
     const char* errorSource = nullptr;
     QString originalFileName;
     QDateTime createdUtc;
@@ -120,7 +120,7 @@ QString imageMemoryError() {
 }
 bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64 nativeBytes = 0,
                   qint64 renderingBytes = 0) {
-    auto bytes = collageImageImportBytes(size);
+    auto bytes = imageStitchingImageImportBytes(size);
     if (bytes == 0)
         return false;
     if (nativeBytes > 0) {
@@ -135,7 +135,7 @@ bool reserveImage(QSize size, const std::shared_ptr<LoadedImage>& loaded, qint64
     }
     bytes = std::max(bytes, renderingBytes);
     if (!loaded->reservation)
-        loaded->reservation = reserveCollageImport(bytes);
+        loaded->reservation = reserveImageStitchingImport(bytes);
     else if (!loaded->reservation->resize(bytes))
         loaded->reservation.reset();
     return loaded->reservation != nullptr;
@@ -202,7 +202,7 @@ struct ImageSplitWindow::Impl final {
     QPointer<AdMessageHandle> message;
     ScreenshotExportJobHandle job;
     std::shared_ptr<ScreenshotExportArtifact> artifact;
-    std::shared_ptr<CollageImportReservation> imageReservation;
+    std::shared_ptr<ImageStitchingImportReservation> imageReservation;
     QString sourceName;
     QString error;
     const char* loadingErrorSource = nullptr;
@@ -760,7 +760,7 @@ void ImageSplitWindow::loadPinnedRecord(const QString& recordId, quint64 token) 
                 if (cancelled())
                     return false;
                 if (!loaded->reservation)
-                    loaded->reservation = reserveCollageImport(bytes);
+                    loaded->reservation = reserveImageStitchingImport(bytes);
                 else if (!loaded->reservation->resize(bytes))
                     loaded->reservation.reset();
                 if (!loaded->reservation)
@@ -880,7 +880,7 @@ void ImageSplitWindow::replaceFile(const QString& path) {
                 image = reader(path, cancelled).value_or(QImage());
             } else {
                 QString error;
-                loaded->reservation = reserveCollageImport(0, &error);
+                loaded->reservation = reserveImageStitchingImport(0, &error);
                 if (loaded->reservation)
                     image = readImageImportFile(
                         path, std::nullopt, cancelled, [loaded, &error](qint64 bytes) {
@@ -923,7 +923,7 @@ void ImageSplitWindow::paste() {
         return;
     }
     auto loaded = std::make_shared<LoadedImage>();
-    loaded->reservation = reserveCollageImport(0);
+    loaded->reservation = reserveImageStitchingImport(0);
     bool rejected = !loaded->reservation;
     auto snapshot = ScreenshotClipboardContentReader::snapshotImage(
         clipboard, editor()->devicePixelRatioF(), [loaded, &rejected](qint64 bytes) {

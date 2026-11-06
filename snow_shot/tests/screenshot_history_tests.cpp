@@ -2280,7 +2280,7 @@ void quickSelectionModificationControlsBorderResize() {
     require(settings.quickSelectionModification(), "quick selection modification defaults on");
     require(settings.setQuickSelectionModification(false), "disable quick selection modification");
     for (const auto tool :
-         {ScreenshotActiveTool::Shape, ScreenshotActiveTool::FreeDraw, ScreenshotActiveTool::Select,
+         {ScreenshotActiveTool::Shape, ScreenshotActiveTool::Brush, ScreenshotActiveTool::Select,
           ScreenshotActiveTool::Text, ScreenshotActiveTool::Ocr,
           ScreenshotActiveTool::TextTranslation, ScreenshotActiveTool::Table,
           ScreenshotActiveTool::Qr, ScreenshotActiveTool::Latex, ScreenshotActiveTool::Markdown,
@@ -2565,7 +2565,7 @@ void eraserWheelUsesBrushCreationWidthOnly() {
     interaction.confirmSelection();
     QList<int> directions;
     ScreenshotOverlayInputActions actions;
-    actions.stepPenFilterStrokeWidth = [&](int direction) {
+    actions.stepBrushFilterStrokeWidth = [&](int direction) {
         directions.append(direction);
         return true;
     };
@@ -2672,20 +2672,20 @@ void completionGesturesUseSharedEligibilityAcrossTools() {
             ScreenshotActiveTool::Shape,
             ScreenshotActiveTool::Arrow,
             ScreenshotActiveTool::Line,
-            ScreenshotActiveTool::FreeDraw,
+            ScreenshotActiveTool::Brush,
             ScreenshotActiveTool::RectangleHighlight,
-            ScreenshotActiveTool::PenHighlight,
+            ScreenshotActiveTool::BrushHighlight,
             ScreenshotActiveTool::Eraser,
             ScreenshotActiveTool::RectangleEraser,
             ScreenshotActiveTool::BrushEraser,
             ScreenshotActiveTool::RectangleFilter,
             ScreenshotActiveTool::Watermark,
             ScreenshotActiveTool::Text,
-            ScreenshotActiveTool::SerialNumber,
+            ScreenshotActiveTool::SequenceNumber,
             ScreenshotActiveTool::Ocr,
             ScreenshotActiveTool::Table,
             ScreenshotActiveTool::Qr,
-            ScreenshotActiveTool::PenFilter,
+            ScreenshotActiveTool::BrushFilter,
             ScreenshotActiveTool::Spotlight,
             ScreenshotActiveTool::Markdown,
             ScreenshotActiveTool::Html,
@@ -4784,18 +4784,18 @@ void nonMoveToolsReselectOnlyOutsideCaptureBounds() {
         ScreenshotActiveTool::Shape,
         ScreenshotActiveTool::Arrow,
         ScreenshotActiveTool::Line,
-        ScreenshotActiveTool::FreeDraw,
+        ScreenshotActiveTool::Brush,
         ScreenshotActiveTool::RectangleHighlight,
-        ScreenshotActiveTool::PenHighlight,
+        ScreenshotActiveTool::BrushHighlight,
         ScreenshotActiveTool::Eraser,
         ScreenshotActiveTool::RectangleFilter,
         ScreenshotActiveTool::Watermark,
         ScreenshotActiveTool::Text,
-        ScreenshotActiveTool::SerialNumber,
+        ScreenshotActiveTool::SequenceNumber,
         ScreenshotActiveTool::Ocr,
         ScreenshotActiveTool::Table,
         ScreenshotActiveTool::Qr,
-        ScreenshotActiveTool::PenFilter,
+        ScreenshotActiveTool::BrushFilter,
         ScreenshotActiveTool::Spotlight,
         ScreenshotActiveTool::Markdown,
         ScreenshotActiveTool::Html,
@@ -4857,7 +4857,7 @@ void nonMoveToolsReselectOnlyOutsideCaptureBounds() {
 
 void rightClickReselectionRestoresAfterManualAndSmartConfirmation() {
     for (const bool smart : {false, true}) {
-        RightClickReselectionFixture fixture(ScreenshotActiveTool::FreeDraw);
+        RightClickReselectionFixture fixture(ScreenshotActiveTool::Brush);
         fixture.smart = smart;
         fixture.beginReselection();
         fixture.input.confirmSelection();
@@ -4878,7 +4878,7 @@ void rightClickReselectionRestoresAfterManualAndSmartConfirmation() {
             fixture.input.handleMouseMove(nullptr, QPointF(229, 199));
             fixture.input.handleMouseRelease(nullptr, QPointF(229, 199));
         }
-        fixture.requireRestored(ScreenshotActiveTool::FreeDraw);
+        fixture.requireRestored(ScreenshotActiveTool::Brush);
         require(fixture.confirmations == 1 &&
                     fixture.selection.pixelSelection() == QRect(70, 60, 160, 140),
                 "manual and smart reselection must confirm the replacement exactly once");
@@ -4928,7 +4928,7 @@ void rightClickReselectionWaitsForCustomRegionCompletion() {
 
 void selectionShortcutsRestorePendingReselectionTool() {
     for (const bool previousSelection : {false, true}) {
-        RightClickReselectionFixture fixture(ScreenshotActiveTool::PenHighlight);
+        RightClickReselectionFixture fixture(ScreenshotActiveTool::BrushHighlight);
         fixture.beginReselection();
         const QRect expected = previousSelection ? QRect(70, 60, 160, 140) : QRect(0, 0, 400, 300);
         if (previousSelection) {
@@ -4940,7 +4940,7 @@ void selectionShortcutsRestorePendingReselectionTool() {
             require(fixture.input.selectCurrentScreen(),
                     "select-screen shortcut must confirm a pending reselection");
         }
-        fixture.requireRestored(ScreenshotActiveTool::PenHighlight);
+        fixture.requireRestored(ScreenshotActiveTool::BrushHighlight);
         fixture.input.resetTransientShortcuts();
         require(fixture.selection.pixelSelection() == expected && fixture.confirmations == 1 &&
                     fixture.activatedTools.size() == 2,
@@ -5316,18 +5316,18 @@ void cursorMovementShortcutsAreIndependentOfActiveTool() {
         ScreenshotActiveTool::Shape,
         ScreenshotActiveTool::Arrow,
         ScreenshotActiveTool::Line,
-        ScreenshotActiveTool::FreeDraw,
+        ScreenshotActiveTool::Brush,
         ScreenshotActiveTool::RectangleHighlight,
-        ScreenshotActiveTool::PenHighlight,
+        ScreenshotActiveTool::BrushHighlight,
         ScreenshotActiveTool::Eraser,
         ScreenshotActiveTool::RectangleFilter,
         ScreenshotActiveTool::Watermark,
         ScreenshotActiveTool::Text,
-        ScreenshotActiveTool::SerialNumber,
+        ScreenshotActiveTool::SequenceNumber,
         ScreenshotActiveTool::Ocr,
         ScreenshotActiveTool::Table,
         ScreenshotActiveTool::Qr,
-        ScreenshotActiveTool::PenFilter,
+        ScreenshotActiveTool::BrushFilter,
         ScreenshotActiveTool::Spotlight,
         ScreenshotActiveTool::Markdown,
         ScreenshotActiveTool::Html,
@@ -5596,7 +5596,7 @@ void selectionStagesActivateEveryToolbarShortcut() {
 
 using GlobalAction = snow_shot::presentation::GlobalShortcutAction;
 constexpr std::pair<GlobalAction, const char*> kGlobalScreenshotTools[] = {
-    {GlobalAction::ScreenshotFixed, "pin_to_screen"},
+    {GlobalAction::ScreenshotPinToScreen, "pin_to_screen"},
     {GlobalAction::ScreenshotOcr, "text_recognition"},
     {GlobalAction::ScreenshotTranslation, "text_translation"},
     {GlobalAction::ScreenshotScrolling, "scrolling_screenshot"},
@@ -5918,7 +5918,7 @@ void unrelatedGlobalShortcutsLeaveScreenshotToolsUntouched() {
           GlobalAction::OpenScreenRecordingFolder, GlobalAction::OpenCaptureHistory,
           GlobalAction::OpenSettings, GlobalAction::PinClipboardContent,
           GlobalAction::TranslateSelectedText, GlobalAction::PinSelectedFiles,
-          GlobalAction::RestoreLastClosedWindows, GlobalAction::ToggleGlobalHotkeys,
+          GlobalAction::RestoreLastClosedWindows, GlobalAction::ToggleGlobalShortcuts,
           GlobalAction::ToggleDisableOnFocusedFullscreenWindow,
           GlobalAction::OpenPinToScreenManagement, GlobalAction::GlobalCanvas,
           GlobalAction::SwitchWindowGroup})
@@ -5930,7 +5930,7 @@ void unrelatedGlobalShortcutsLeaveScreenshotToolsUntouched() {
 }
 
 void globalCompletionShortcutsDoNotReopenCapture() {
-    for (const auto action : {GlobalAction::ScreenshotFixed, GlobalAction::ScreenshotCopy,
+    for (const auto action : {GlobalAction::ScreenshotPinToScreen, GlobalAction::ScreenshotCopy,
                               GlobalAction::ScreenshotQuickSave, GlobalAction::ScreenRecord,
                               GlobalAction::ScreenRecordCopy}) {
         ScreenshotCaptureState capture;

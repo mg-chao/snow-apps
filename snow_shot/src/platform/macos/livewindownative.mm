@@ -145,9 +145,9 @@ class MacLiveWindow final : public live_window_detail::NativeWindowMonitor {
     bool initialize(QString* error) override {
         if (!CGPreflightScreenCaptureAccess()) {
             if (error)
-                *error = nativeText(QT_TRANSLATE_NOOP("LiveWindowSource",
-                                                      "Allow Screen & System Audio Recording in "
-                                                      "System Settings to pin a live window"));
+                *error = nativeText(QT_TRANSLATE_NOOP(
+                    "LiveWindowSource", "Allow Screen & System Audio Recording in System Settings "
+                                        "to pin a live window to the screen"));
             return false;
         }
         if (m_target.processId == NSProcessInfo.processInfo.processIdentifier) {

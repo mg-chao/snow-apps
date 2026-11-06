@@ -1028,8 +1028,8 @@ class HistoryEntryWidget final : public HistoryEntryCard {
                     : HistoryEntryWidget::tr("This screenshot cannot be pinned"));
         }
         if (m_stitchAction != nullptr) {
-            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch image"));
-            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch image"));
+            m_stitchAction->setText(HistoryEntryWidget::tr("Stitch images"));
+            m_stitchAction->setToolTip(HistoryEntryWidget::tr("Stitch images"));
         }
         if (m_imageEditingAction != nullptr) {
             m_imageEditingAction->setText(HistoryEntryWidget::tr("Image editing"));
@@ -1355,7 +1355,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
                         selected.append(record);
                 }
                 if (!selected.isEmpty())
-                    emit collageRequested(selected);
+                    emit stitchImagesRequested(selected);
             });
             connect(m_batchPinAction, &QAction::triggered, this, [this] {
                 QStringList selected;
@@ -1665,7 +1665,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 [this, id = record.id]() { emit editRequested(id); },
                 [this, record]() { copyEntry(record); },
                 [this, id = record.id]() { emit pinRequested(id); },
-                [this, record]() { emit collageRequested({record}); },
+                [this, record]() { emit stitchImagesRequested({record}); },
                 [this, record]() { emit splitRequested(record); },
                 [this, record]() { emit imageEditingRequested(record); },
                 [this, record]() {
@@ -1748,7 +1748,7 @@ void ScreenshotHistoryPageWidget::updateEmptyStateText() {
     }
     if (m_emptyDescription != nullptr) {
         m_emptyDescription->setText(
-            m_records.isEmpty() ? tr("Copied and pinned screenshots will appear here")
+            m_records.isEmpty() ? tr("Copied or pinned screenshots will appear here")
                                 : tr("Change the source or date range to see more history"));
     }
 }
@@ -1808,7 +1808,7 @@ void ScreenshotHistoryPageWidget::selectCurrentPage() {
 void ScreenshotHistoryPageWidget::updateBatchActions() {
     m_batchActionsButton->setEnabled(!m_selectedRecordIds.isEmpty());
     if (m_batchStitchAction) {
-        m_batchStitchAction->setText(tr("Stitch image"));
+        m_batchStitchAction->setText(tr("Stitch images"));
         m_batchStitchAction->setToolTip(m_batchStitchAction->text());
         m_batchStitchAction->setEnabled(!m_selectedRecordIds.isEmpty());
     }

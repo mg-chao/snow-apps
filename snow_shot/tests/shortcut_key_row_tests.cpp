@@ -179,7 +179,7 @@ void sharedShortcutFieldTracksDraftAndCommitsOnAcceptance() {
             if (QByteArray(context) != QByteArrayLiteral("QObject")) {
                 return {};
             }
-            if (QByteArray(source) == QByteArrayLiteral("Add key config")) {
+            if (QByteArray(source) == QByteArrayLiteral("Add key configuration")) {
                 return QStringLiteral("Translated add key");
             }
             if (QByteArray(source) ==
@@ -728,9 +728,10 @@ void disabledStatusPreservesKeysAndRetranslates() {
                 return QStringLiteral("Localized disabled status");
             }
             if (QByteArray(source) ==
-                QByteArrayLiteral("This shortcut is temporarily disabled and released for use by "
-                                  "other applications. It will be restored when global hotkeys are "
-                                  "enabled and the focused window allows them")) {
+                QByteArrayLiteral(
+                    "This shortcut is temporarily disabled and released for use by "
+                    "other applications. It will be restored when global shortcuts are "
+                    "enabled and the focused window allows them")) {
                 return QStringLiteral("Localized disabled explanation");
             }
             return {};
@@ -1783,18 +1784,18 @@ void nativePrintScreenRecordingPreservesModifiers() {
 #endif
 }
 
-void printScreenHookRecordsBeforeRegisteredHotkeys() {
+void printScreenHookRecordsBeforeRegisteredShortcuts() {
 #ifdef Q_OS_WIN
     require(QGuiApplication::platformName() == QStringLiteral("windows"),
             "the native input test requires the Windows platform");
-    class RegisteredHotkey final : public QAbstractNativeEventFilter {
+    class RegisteredShortcut final : public QAbstractNativeEventFilter {
       public:
-        RegisteredHotkey() {
+        RegisteredShortcut() {
             require(RegisterHotKey(nullptr, id, MOD_CONTROL | MOD_NOREPEAT, VK_SNAPSHOT) != FALSE,
                     "Ctrl+Print Screen must be available for the native registration test");
             QCoreApplication::instance()->installNativeEventFilter(this);
         }
-        ~RegisteredHotkey() override {
+        ~RegisteredShortcut() override {
             UnregisterHotKey(nullptr, id);
             QCoreApplication::instance()->removeNativeEventFilter(this);
         }
@@ -1807,7 +1808,7 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
         }
         enum { id = 0x5A71 };
         int activations = 0;
-    } registeredHotkey;
+    } registeredShortcut;
 
     const auto waitUntil = [](auto condition) {
         QElapsedTimer timer;
@@ -1868,24 +1869,24 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
     require(waitUntil([&]() { return !session.validated.isEmpty(); }),
             "the keyboard hook must capture Print Screen even when RegisterHotKey owns it");
     require(session.validated == QStringList{QStringLiteral("Ctrl+Print")} &&
-                registeredHotkey.activations == 0,
+                registeredShortcut.activations == 0,
             "the hook must snapshot modifiers once and suppress the existing global action");
     sendChord(VK_RCONTROL, false, false);
     require(waitUntil([&]() { return session.validated.size() == 2; }) &&
                 session.validated.last() == QStringLiteral("Ctrl+Print") &&
-                registeredHotkey.activations == 0,
-            "right-hand modifiers must be captured without activating existing hotkeys");
+                registeredShortcut.activations == 0,
+            "right-hand modifiers must be captured without activating existing shortcuts");
 
     QWidget otherWindow;
     foreground(&otherWindow);
     sendChord(VK_LCONTROL, false, false);
-    require(waitUntil([&]() { return registeredHotkey.activations == 1; }) &&
+    require(waitUntil([&]() { return registeredShortcut.activations == 1; }) &&
                 session.validated.size() == 2,
             "a background recorder must not intercept Print Screen from another window");
     foreground(window);
     sendChord(VK_LCONTROL, false, false);
     require(waitUntil([&]() { return session.validated.size() == 3; }) &&
-                registeredHotkey.activations == 1,
+                registeredShortcut.activations == 1,
             "returning to the recorder must restore scoped Print Screen capture");
 
     session.flush();
@@ -1895,7 +1896,7 @@ void printScreenHookRecordsBeforeRegisteredHotkeys() {
     commit->click();
     session.flush();
     sendChord(VK_LCONTROL, false, false);
-    require(waitUntil([&]() { return registeredHotkey.activations == 2; }) &&
+    require(waitUntil([&]() { return registeredShortcut.activations == 2; }) &&
                 session.validated.size() == 3,
             "finishing a row must restore normal global hotkey delivery immediately");
     session.modal->acceptButton()->click();
@@ -2107,7 +2108,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     int changeSignals = 0;
     bool acceptWrites = true;
     ShortcutKeyRowConfig config;
-    config.title = QStringLiteral("Delay %1s to execute");
+    config.title = QStringLiteral("Run after %1 seconds");
     config.adjustableDelay = true;
     config.delaySeconds = 3;
     config.delaySetter = [&persistedDelay, &setterCalls, &acceptWrites](int seconds) {
@@ -2133,7 +2134,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     auto* delayTitleWrap = delayTitleLabel != nullptr ? delayTitleLabel->parentWidget() : nullptr;
     bool titleShowsDefaultDelay = false;
     for (const QLabel* label : row.findChildren<QLabel*>()) {
-        if (label->text() == QStringLiteral("Delay 3s to execute")) {
+        if (label->text() == QStringLiteral("Run after 3 seconds")) {
             titleShowsDefaultDelay = true;
             break;
         }
@@ -2242,7 +2243,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (nativePrintScreenOnly) {
-        printScreenHookRecordsBeforeRegisteredHotkeys();
+        printScreenHookRecordsBeforeRegisteredShortcuts();
         return 0;
     }
     if (titleAndKeyButtonOnly) {

@@ -84,7 +84,7 @@ class MemorySampler final {
     std::thread m_thread;
 };
 
-void render(CollagePreviewCanvas* canvas, QImage& frame) {
+void render(ImageStitchingPreviewCanvas* canvas, QImage& frame) {
     const qreal ratio = canvas->devicePixelRatioF();
     const QSize size(qCeil(canvas->width() * ratio), qCeil(canvas->height() * ratio));
     if (frame.size() != size || frame.devicePixelRatio() != ratio) {
@@ -108,13 +108,13 @@ void drain() {
 }
 
 QJsonObject tinyItems(int count) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage source(32, 32, QImage::Format_ARGB32_Premultiplied);
     source.fill(Qt::red);
     source.setColorSpace(QColorSpace::SRgb);
     for (int index = 0; index < count; ++index)
         require(document.append(source, QString::number(index)) != 0, "tiny fixture admission");
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 700);
     editor.show();
     QApplication::processEvents(QEventLoop::AllEvents);
@@ -154,7 +154,7 @@ QJsonObject tinyItems(int count) {
 }
 
 QJsonObject highDepthDetail() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     QImage source(6000, 6000, QImage::Format_RGBA64_Premultiplied);
     require(!source.isNull(), "high-depth fixture allocation");
     source.fill(QColor(180, 70, 20, 128));
@@ -166,7 +166,7 @@ QJsonObject highDepthDetail() {
     result.insert(QStringLiteral("scenario"), QStringLiteral("high_depth_icc_detail"));
     result.insert(QStringLiteral("source_bytes"), double(source.sizeInBytes()));
     {
-        CollageEditorWidget editor(&document);
+        ImageStitchingEditorWidget editor(&document);
         editor.resize(1200, 700);
         editor.show();
         // Capture before delivering timers: constructing the complete editor can already take

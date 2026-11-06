@@ -31,46 +31,46 @@ using adqt::widgets::AdSegmented;
 using adqt::widgets::AdSelect;
 
 QString text(const char* source) {
-    return QCoreApplication::translate("CollagePdfSettingsWidget", source);
+    return QCoreApplication::translate("ImageStitchingPdfSettingsWidget", source);
 }
 
 [[maybe_unused]] constexpr const char* labels[] = {
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Stitching method"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Page-based stitching"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Template-based stitching"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Template"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Two images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "ID card"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Three images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Four images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Five images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Six images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Seven images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Eight images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Nine images"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Image spacing"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Paper size"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Paper orientation"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Custom paper"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Page margin"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Export mode"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "A3"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "A4"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "A5"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "B5"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Letter"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Legal"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Custom"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Image size"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Portrait"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Landscape"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Width"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Height"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Custom paper width"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Custom paper height"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Combined export"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "Per-page export"),
-    QT_TRANSLATE_NOOP("CollagePdfSettingsWidget", "mm"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Stitching method"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Page-based stitching"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Template-based stitching"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Template"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Two images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "ID card"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Three images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Four images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Five images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Six images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Seven images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Eight images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Nine images"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Image spacing"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Paper size"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Paper orientation"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Custom paper"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Page margin"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Export mode"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "A3"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "A4"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "A5"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "B5"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Letter"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Legal"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Custom"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Image size"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Portrait"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Landscape"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Width"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Height"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Custom paper width"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Custom paper height"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Combined export"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "Per-page export"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfSettingsWidget", "mm"),
 };
 
 struct NumberField final {
@@ -78,7 +78,7 @@ struct NumberField final {
     const char* name;
     const char* label;
     const char* accessibleName;
-    double CollagePdfSettings::* member;
+    double ImageStitchingPdfSettings::* member;
     AdFormItem* field = nullptr;
     AdLineEdit* input = nullptr;
 };
@@ -94,7 +94,8 @@ double inputValue(const AdLineEdit* input) {
 
 class TemplateButton final : public AdButton {
   public:
-    TemplateButton(CollagePdfTemplateType type, QWidget* parent) : AdButton(parent), m_type(type) {
+    TemplateButton(ImageStitchingPdfTemplateType type, QWidget* parent)
+        : AdButton(parent), m_type(type) {
         setCheckable(true);
         setCheckedUsesActiveStyle(false);
         setMinimumSize(42, 48);
@@ -126,7 +127,7 @@ class TemplateButton final : public AdButton {
                            size);
         painter.drawRoundedRect(paper, 1, 1);
         const QRectF content = paper.adjusted(3, 3, -3, -3);
-        if (m_type == CollagePdfTemplateType::IdCard) {
+        if (m_type == ImageStitchingPdfTemplateType::IdCard) {
             constexpr qreal ratio = 85.6 / 53.98;
             painter.setPen(Qt::NoPen);
             painter.setBrush(color);
@@ -153,35 +154,35 @@ class TemplateButton final : public AdButton {
                 cells.append(QRectF(index * (width + gap), row * (height + gap), width, height));
         };
         switch (m_type) {
-        case CollagePdfTemplateType::IdCard:
+        case ImageStitchingPdfTemplateType::IdCard:
             break;
-        case CollagePdfTemplateType::TwoImages:
+        case ImageStitchingPdfTemplateType::TwoImages:
             column(0, 1, 2);
             break;
-        case CollagePdfTemplateType::ThreeImages:
+        case ImageStitchingPdfTemplateType::ThreeImages:
             column(0, 1, 3);
             break;
-        case CollagePdfTemplateType::FourImages:
+        case ImageStitchingPdfTemplateType::FourImages:
             column(0, 2, 2);
             column(1, 2, 2);
             break;
-        case CollagePdfTemplateType::FiveImages:
+        case ImageStitchingPdfTemplateType::FiveImages:
             column(0, 2, 2);
             column(1, 2, 3);
             break;
-        case CollagePdfTemplateType::SixImages:
+        case ImageStitchingPdfTemplateType::SixImages:
             column(0, 2, 3);
             column(1, 2, 3);
             break;
-        case CollagePdfTemplateType::SevenImages:
+        case ImageStitchingPdfTemplateType::SevenImages:
             column(0, 2, 3);
             column(1, 2, 4);
             break;
-        case CollagePdfTemplateType::EightImages:
+        case ImageStitchingPdfTemplateType::EightImages:
             column(0, 2, 4);
             column(1, 2, 4);
             break;
-        case CollagePdfTemplateType::NineImages:
+        case ImageStitchingPdfTemplateType::NineImages:
             for (int index = 0; index < 3; ++index)
                 column(index, 3, 3);
             break;
@@ -198,14 +199,14 @@ class TemplateButton final : public AdButton {
     }
 
   private:
-    CollagePdfTemplateType m_type;
+    ImageStitchingPdfTemplateType m_type;
     bool m_landscape = false;
 };
 } // namespace
 
-struct CollagePdfSettingsWidget::Impl final {
-    CollagePdfSettingsWidget* owner;
-    CollageDocument* document;
+struct ImageStitchingPdfSettingsWidget::Impl final {
+    ImageStitchingPdfSettingsWidget* owner;
+    ImageStitchingDocument* document;
     AdForm* form;
     AdSelect* method;
     AdFormItem* methodField;
@@ -222,17 +223,17 @@ struct CollagePdfSettingsWidget::Impl final {
     AdFormItem* exportField;
     std::array<NumberField, 4> numbers{{
         {"custom_width_mm", "collagePdfCustomWidth", "Width", "Custom paper width",
-         &CollagePdfSettings::customWidthMm},
+         &ImageStitchingPdfSettings::customWidthMm},
         {"custom_height_mm", "collagePdfCustomHeight", "Height", "Custom paper height",
-         &CollagePdfSettings::customHeightMm},
+         &ImageStitchingPdfSettings::customHeightMm},
         {"margin_mm", "collagePdfMargin", "Page margin", "Page margin",
-         &CollagePdfSettings::marginTopMm},
+         &ImageStitchingPdfSettings::marginTopMm},
         {"image_spacing_mm", "collagePdfImageSpacing", "Image spacing", "Image spacing",
-         &CollagePdfSettings::imageSpacingMm},
+         &ImageStitchingPdfSettings::imageSpacingMm},
     }};
     bool syncing = false;
 
-    void edit(const QString& field, const std::function<void(CollagePdfSettings&)>& change) {
+    void edit(const QString& field, const std::function<void(ImageStitchingPdfSettings&)>& change) {
         if (syncing || !owner->isEnabled())
             return;
         auto settings = document->pdfSettings();
@@ -245,24 +246,24 @@ struct CollagePdfSettingsWidget::Impl final {
         syncing = true;
         const auto settings = document->pdfSettings();
         const bool templateBased =
-            settings.stitchingMethod == CollagePdfStitchingMethod::TemplateBased;
+            settings.stitchingMethod == ImageStitchingPdfStitchingMethod::TemplateBased;
         method->setCurrentValue(static_cast<int>(settings.stitchingMethod));
         templateField->setItemHidden(!templateBased);
         for (std::size_t index = 0; index < templates.size(); ++index)
-            templates[index]->setSelected(static_cast<int>(settings.templateType) ==
-                                              static_cast<int>(index),
-                                          settings.orientation == CollagePdfOrientation::Landscape);
+            templates[index]->setSelected(
+                static_cast<int>(settings.templateType) == static_cast<int>(index),
+                settings.orientation == ImageStitchingPdfOrientation::Landscape);
         paper->setCurrentValue(static_cast<int>(settings.paperSize));
         orientation->setCurrentValue(static_cast<int>(settings.orientation));
         exportMode->setCurrentValue(static_cast<int>(settings.exportMode));
-        customField->setItemHidden(settings.paperSize != CollagePdfPaperSize::Custom);
+        customField->setItemHidden(settings.paperSize != ImageStitchingPdfPaperSize::Custom);
         const bool imageSize =
-            settings.paperSize == CollagePdfPaperSize::ImageSize && !templateBased;
+            settings.paperSize == ImageStitchingPdfPaperSize::ImageSize && !templateBased;
         orientationField->setItemHidden(imageSize);
         spacingField->setItemHidden(imageSize);
         numbers[3].field->setItemHidden(!templateBased);
         spacingLayout->setColumnStretch(1, templateBased ? 1 : 0);
-        const auto errors = validateCollagePdfSettings(settings);
+        const auto errors = validateImageStitchingPdfSettings(settings);
         const auto showError = [&errors](AdFormItem* field, const QString& key) {
             const auto error = errors.value(key);
             field->setValidateStatus(error.isEmpty() ? AdFormItem::ValidateStatus::None
@@ -289,7 +290,7 @@ struct CollagePdfSettingsWidget::Impl final {
             else if (!std::isfinite(value) && std::isfinite(entered))
                 number.input->clear();
             QString error = errors.value(QString::fromLatin1(number.key));
-            if (number.member == &CollagePdfSettings::marginTopMm) {
+            if (number.member == &ImageStitchingPdfSettings::marginTopMm) {
                 number.field->setItemHidden(imageSize);
                 QStringList marginErrors;
                 for (const auto* key :
@@ -311,7 +312,8 @@ struct CollagePdfSettingsWidget::Impl final {
     }
 };
 
-CollagePdfSettingsWidget::CollagePdfSettingsWidget(CollageDocument* document, QWidget* parent)
+ImageStitchingPdfSettingsWidget::ImageStitchingPdfSettingsWidget(ImageStitchingDocument* document,
+                                                                 QWidget* parent)
     : QWidget(parent), m_impl(std::make_unique<Impl>()) {
     auto& d = *m_impl;
     d.owner = this;
@@ -337,15 +339,16 @@ CollagePdfSettingsWidget::CollagePdfSettingsWidget(CollageDocument* document, QW
                                                        "FourImages",  "FiveImages",  "SixImages",
                                                        "SevenImages", "EightImages", "NineImages"};
     for (std::size_t index = 0; index < d.templates.size(); ++index) {
-        const auto type = static_cast<CollagePdfTemplateType>(index);
+        const auto type = static_cast<ImageStitchingPdfTemplateType>(index);
         auto* button = new TemplateButton(type, templateButtons);
         button->setObjectName(QStringLiteral("collagePdfTemplate") +
                               QString::fromLatin1(templateNames[index]));
         d.templates[index] = button;
         templateGrid->addWidget(button, static_cast<int>(index / 3), static_cast<int>(index % 3));
         connect(button, &AdButton::clicked, this, [this, type] {
-            m_impl->edit(QStringLiteral("template_type"),
-                         [type](CollagePdfSettings& settings) { settings.templateType = type; });
+            m_impl->edit(
+                QStringLiteral("template_type"),
+                [type](ImageStitchingPdfSettings& settings) { settings.templateType = type; });
             m_impl->refresh();
         });
     }
@@ -371,20 +374,20 @@ CollagePdfSettingsWidget::CollagePdfSettingsWidget(CollageDocument* document, QW
         number.input = new AdLineEdit(parent);
         number.input->setObjectName(QString::fromLatin1(number.name));
         number.input->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
-        QObject::connect(number.input, &QLineEdit::textChanged, d.owner,
-                         [&d, index](const QString&) {
-                             auto& edited = d.numbers[index];
-                             const double value = inputValue(edited.input);
-                             d.edit(QString::fromLatin1(edited.key),
-                                    [&edited, value](CollagePdfSettings& settings) {
-                                        settings.*edited.member = value;
-                                        if (edited.member == &CollagePdfSettings::marginTopMm) {
-                                            settings.marginBottomMm = value;
-                                            settings.marginLeftMm = value;
-                                            settings.marginRightMm = value;
-                                        }
-                                    });
-                         });
+        QObject::connect(
+            number.input, &QLineEdit::textChanged, d.owner, [&d, index](const QString&) {
+                auto& edited = d.numbers[index];
+                const double value = inputValue(edited.input);
+                d.edit(QString::fromLatin1(edited.key),
+                       [&edited, value](ImageStitchingPdfSettings& settings) {
+                           settings.*edited.member = value;
+                           if (edited.member == &ImageStitchingPdfSettings::marginTopMm) {
+                               settings.marginBottomMm = value;
+                               settings.marginLeftMm = value;
+                               settings.marginRightMm = value;
+                           }
+                       });
+            });
         return number.input;
     };
     const auto customPaper = [&d, &input] {
@@ -429,38 +432,40 @@ CollagePdfSettingsWidget::CollagePdfSettingsWidget(CollageDocument* document, QW
     d.exportField = d.form->addField({}, d.exportMode, QStringLiteral("export_mode"));
     d.exportField->setValidateOnChange(false);
     connect(d.method, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->edit(QStringLiteral("stitching_method"), [&value](CollagePdfSettings& settings) {
-            settings.stitchingMethod = static_cast<CollagePdfStitchingMethod>(value.toInt());
-        });
+        m_impl->edit(QStringLiteral("stitching_method"),
+                     [&value](ImageStitchingPdfSettings& settings) {
+                         settings.stitchingMethod =
+                             static_cast<ImageStitchingPdfStitchingMethod>(value.toInt());
+                     });
     });
     connect(d.paper, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->edit(QStringLiteral("paper_size"), [&value](CollagePdfSettings& settings) {
-            settings.paperSize = static_cast<CollagePdfPaperSize>(value.toInt());
+        m_impl->edit(QStringLiteral("paper_size"), [&value](ImageStitchingPdfSettings& settings) {
+            settings.paperSize = static_cast<ImageStitchingPdfPaperSize>(value.toInt());
         });
     });
     connect(d.orientation, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->edit(QStringLiteral("orientation"), [&value](CollagePdfSettings& settings) {
-            settings.orientation = static_cast<CollagePdfOrientation>(value.toInt());
+        m_impl->edit(QStringLiteral("orientation"), [&value](ImageStitchingPdfSettings& settings) {
+            settings.orientation = static_cast<ImageStitchingPdfOrientation>(value.toInt());
         });
     });
     connect(d.exportMode, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->edit(QStringLiteral("export_mode"), [&value](CollagePdfSettings& settings) {
-            settings.exportMode = static_cast<CollagePdfExportMode>(value.toInt());
+        m_impl->edit(QStringLiteral("export_mode"), [&value](ImageStitchingPdfSettings& settings) {
+            settings.exportMode = static_cast<ImageStitchingPdfExportMode>(value.toInt());
         });
     });
-    connect(document, &CollageDocument::changed, this, [this] { m_impl->refresh(); });
+    connect(document, &ImageStitchingDocument::changed, this, [this] { m_impl->refresh(); });
     retranslateUi();
 }
 
-CollagePdfSettingsWidget::~CollagePdfSettingsWidget() = default;
+ImageStitchingPdfSettingsWidget::~ImageStitchingPdfSettingsWidget() = default;
 
-void CollagePdfSettingsWidget::retranslateUi() {
+void ImageStitchingPdfSettingsWidget::retranslateUi() {
     auto& d = *m_impl;
     d.syncing = true;
-    d.method->setOptions(
-        {{static_cast<int>(CollagePdfStitchingMethod::PageBased), text("Page-based stitching")},
-         {static_cast<int>(CollagePdfStitchingMethod::TemplateBased),
-          text("Template-based stitching")}});
+    d.method->setOptions({{static_cast<int>(ImageStitchingPdfStitchingMethod::PageBased),
+                           text("Page-based stitching")},
+                          {static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased),
+                           text("Template-based stitching")}});
     d.methodField->setLabel(text("Stitching method"));
     d.method->setAccessibleName(text("Stitching method"));
     d.templateField->setLabel(text("Template"));
@@ -497,7 +502,7 @@ void CollagePdfSettingsWidget::retranslateUi() {
     d.refresh();
 }
 
-void CollagePdfSettingsWidget::changeEvent(QEvent* event) {
+void ImageStitchingPdfSettingsWidget::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange)
         retranslateUi();
     QWidget::changeEvent(event);

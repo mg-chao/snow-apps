@@ -102,11 +102,11 @@ void toolMatrixMatchesRequestedVisibility() {
     QStringList penTransformHints = withDefaultCursorHints(
         {shortcutLine(QStringLiteral("Draw straight line"), {QStringLiteral("Shift")})});
     penTransformHints.append(transformHints.mid(4));
-    require(hintLines(ScreenshotActiveTool::FreeDraw) == penTransformHints,
+    require(hintLines(ScreenshotActiveTool::Brush) == penTransformHints,
             "free-draw hint matrix changed");
-    require(hintLines(ScreenshotActiveTool::PenFilter) == penTransformHints,
+    require(hintLines(ScreenshotActiveTool::BrushFilter) == penTransformHints,
             "pen-filter hint matrix changed");
-    require(hintLines(ScreenshotActiveTool::PenHighlight) ==
+    require(hintLines(ScreenshotActiveTool::BrushHighlight) ==
                 withDefaultCursorHints({shortcutLine(QStringLiteral("Delete selected elements"),
                                                      {QStringLiteral("Delete")})}),
             "pen-highlighter hint matrix changed");
@@ -119,7 +119,7 @@ void toolMatrixMatchesRequestedVisibility() {
     });
     require(hintLines(ScreenshotActiveTool::Text) == textTransformHints,
             "text hint matrix changed");
-    require(hintLines(ScreenshotActiveTool::SerialNumber) == textTransformHints,
+    require(hintLines(ScreenshotActiveTool::SequenceNumber) == textTransformHints,
             "serial-number hint matrix changed");
 
     require(
@@ -158,21 +158,21 @@ void toolMatrixMatchesRequestedVisibility() {
                 modifierLine(QStringLiteral("Auto-align"), Qt::ControlModifier),
             }),
         "rectangle-filter quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::FreeDraw, {SnowCanvasTool::FreeDraw}) ==
+    require(hintLines(ScreenshotActiveTool::Brush, {SnowCanvasTool::FreeDraw}) ==
                 withDefaultCursorHints({shortcutLine(QStringLiteral("Draw straight line"),
                                                      {QStringLiteral("Shift")})}),
             "free-draw quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::PenFilter, {SnowCanvasTool::PenFilter}) ==
+    require(hintLines(ScreenshotActiveTool::BrushFilter, {SnowCanvasTool::PenFilter}) ==
                 withDefaultCursorHints({shortcutLine(QStringLiteral("Draw straight line"),
                                                      {QStringLiteral("Shift")})}),
             "pen-filter quick-selection suppression changed");
-    require(hintLines(ScreenshotActiveTool::PenHighlight, {SnowCanvasTool::PenHighlight}) ==
+    require(hintLines(ScreenshotActiveTool::BrushHighlight, {SnowCanvasTool::PenHighlight}) ==
                 withDefaultCursorHints({}),
             "pen-highlighter delete hint should be suppressed");
     require(hintLines(ScreenshotActiveTool::Text, {SnowCanvasTool::Text}) ==
                 withDefaultCursorHints({}),
             "text hints should be suppressed when quick selection is disabled");
-    require(hintLines(ScreenshotActiveTool::SerialNumber, {SnowCanvasTool::SerialNumber}) ==
+    require(hintLines(ScreenshotActiveTool::SequenceNumber, {SnowCanvasTool::SerialNumber}) ==
                 withDefaultCursorHints({}),
             "serial-number hints should be suppressed when quick selection is disabled");
 
@@ -342,7 +342,7 @@ void defaultHistoryShortcutUsesSeparateChips() {
 
 void unassignedConfiguredShortcutIsNotHinted() {
     ScreenshotShortcutHintContext context;
-    context.activeTool = ScreenshotActiveTool::PenHighlight;
+    context.activeTool = ScreenshotActiveTool::BrushHighlight;
     context.captureMode = ScreenshotCaptureMode::Editing;
     context.configuredShortcuts = snow_shot::shortcuts::ShortcutBindingMap{
         {QStringLiteral("move_cursor_up"), shortcutBindings({QStringLiteral("I")})},
@@ -481,7 +481,7 @@ void emptyContextsUseHiddenMode() {
     require(screenshotShortcutHintModeForContext(context) == ScreenshotShortcutHintMode::Tool,
             "a populated drawing-tool context should use tool hint mode");
 
-    context.activeTool = ScreenshotActiveTool::PenHighlight;
+    context.activeTool = ScreenshotActiveTool::BrushHighlight;
     context.quickSelectionDisabledTools.insert(SnowCanvasTool::PenHighlight);
     require(screenshotShortcutHintModeForContext(context) == ScreenshotShortcutHintMode::Tool,
             "cursor movement should keep a conditionally empty tool context visible");

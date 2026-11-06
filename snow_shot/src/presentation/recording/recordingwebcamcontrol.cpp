@@ -92,9 +92,9 @@ RecordingWebcamControl::RecordingWebcamControl(QWidget* parent)
 }
 
 void RecordingWebcamControl::retranslateUi() {
-    setAccessibleName(tr("Move webcam"));
-    m_resize->setToolTip(tr("Resize webcam"));
-    m_resize->setAccessibleName(tr("Resize webcam"));
+    setAccessibleName(tr("Move webcam preview"));
+    m_resize->setToolTip(tr("Resize webcam preview"));
+    m_resize->setAccessibleName(tr("Resize webcam preview"));
     const std::array<QString, 4> labels{tr("Rotate clockwise"), tr("Rotate counterclockwise"),
                                         tr("Flip horizontally"), tr("Flip vertically")};
     for (std::size_t i = 0; i < labels.size(); ++i) {

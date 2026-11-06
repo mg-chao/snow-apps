@@ -17,7 +17,7 @@ inline ScreenshotToolPalette::Options screenshotDrawingToolbarOptions() {
     options.showDistanceTool = true;
     options.showAngleTool = true;
     options.showBracketTool = true;
-    options.showFreeDrawTool = true;
+    options.showBrushTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
     options.showMagnifierTool = true;
@@ -25,7 +25,7 @@ inline ScreenshotToolPalette::Options screenshotDrawingToolbarOptions() {
     options.showFilterTool = true;
     options.showWatermarkTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showOcrTool = true;
     options.showTextTranslationTool = true;
     options.showTableTool = true;

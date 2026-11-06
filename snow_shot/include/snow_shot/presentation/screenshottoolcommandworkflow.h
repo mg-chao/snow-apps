@@ -35,9 +35,9 @@ class ScreenshotToolCommandWorkflow final {
     void setDistanceTool();
     void setAngleTool();
     void setBracketTool();
-    void setFreeDrawTool();
+    void setBrushTool();
     void setHighlightTool();
-    void setPenHighlightTool();
+    void setBrushHighlightTool();
     void setSpotlightTool();
     void setMagnifierTool();
     void setEraserTool();
@@ -45,25 +45,25 @@ class ScreenshotToolCommandWorkflow final {
     void setBrushEraserTool();
     void setFilterTool();
     void setRectangleFilterTool();
-    void setPenFilterTool();
+    void setBrushFilterTool();
     void setAutoFilterTool();
     void setWatermarkTool();
     void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config);
     void setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config);
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle& style, quint32 properties);
     void setTextTool();
-    void setSerialNumberTool();
+    void setSequenceNumberTool();
 
-    void decrementSelectedSerialNumbers();
-    void incrementSelectedSerialNumbers();
-    void createTextForSelectedSerialNumber();
+    void decrementSelectedSequenceNumbers();
+    void incrementSelectedSequenceNumbers();
+    void createTextForSelectedSequenceNumber();
 
     [[nodiscard]] SnowCanvasShapeStyle currentRectangleStyle() const;
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties);
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style,
-                                         std::optional<quint32> properties = std::nullopt);
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style,
+                                           std::optional<quint32> properties = std::nullopt);
     [[nodiscard]] bool stepStrokeWidth(int delta);
 
   private:

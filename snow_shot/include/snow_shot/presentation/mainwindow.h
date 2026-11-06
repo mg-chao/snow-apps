@@ -55,12 +55,12 @@ class MainWindow : public QMainWindow {
     globalMouseDragRequested(snow_shot::presentation::settings::SettingsGlobalMouseAction action);
     void screenshotHistoryEditRequested(const QString& recordId);
     void screenshotHistoryPinRequested(const QString& recordId);
-    void screenshotHistoryCollageRequested(
+    void screenshotHistoryStitchImagesRequested(
         const QVector<snow_shot::storage::CaptureHistoryRecord>& records);
     void screenshotHistorySplitRequested(const snow_shot::storage::CaptureHistoryRecord& record);
     void
     screenshotHistoryImageEditingRequested(const snow_shot::storage::CaptureHistoryRecord& record);
-    void pinnedWindowCollageRequested(const QStringList& recordIds);
+    void pinnedWindowStitchImagesRequested(const QStringList& recordIds);
     void pinnedWindowSplitRequested(const QString& recordId);
     void pinnedWindowImageEditingRequested(const QString& recordId);
 

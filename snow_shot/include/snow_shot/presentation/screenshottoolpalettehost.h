@@ -43,7 +43,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
     bool stepFilterIntensity(int direction);
-    bool stepPenFilterStrokeWidth(int direction);
+    bool stepBrushFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     void setShadowMargins(const QMargins& margins);
     void setPhysicalScale(qreal scale);

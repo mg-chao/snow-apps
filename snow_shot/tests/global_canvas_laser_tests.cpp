@@ -205,7 +205,7 @@ void canvasLaserPointer(QApplication& app) {
     app.processEvents();
     require(canvas->grab().toImage() == empty, "an empty effects frame clears every expired tile");
 
-    palette->freeDrawRequested();
+    palette->brushRequested();
     mouse(canvas, QEvent::MouseButtonPress, {100, 100}, Qt::LeftButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseMove, {160, 130}, Qt::NoButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseButtonRelease, {180, 140}, Qt::LeftButton, Qt::NoButton);

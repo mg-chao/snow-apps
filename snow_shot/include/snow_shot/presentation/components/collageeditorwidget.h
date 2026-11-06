@@ -9,14 +9,15 @@
 #include <memory>
 
 namespace snow_shot::presentation::components {
-class CollagePdfPageGrid;
-class CollagePdfTemplateWidget;
+class ImageStitchingPdfPageGrid;
+class ImageStitchingPdfTemplateWidget;
 
-class CollagePreviewCanvas final : public QWidget {
+class ImageStitchingPreviewCanvas final : public QWidget {
     Q_OBJECT
   public:
-    explicit CollagePreviewCanvas(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollagePreviewCanvas() override;
+    explicit ImageStitchingPreviewCanvas(ImageStitchingDocument* document,
+                                         QWidget* parent = nullptr);
+    ~ImageStitchingPreviewCanvas() override;
     [[nodiscard]] qreal zoom() const;
     [[nodiscard]] QPointF offset() const;
     [[nodiscard]] QRectF imageViewportRect(quint64 id) const;
@@ -49,17 +50,18 @@ class CollagePreviewCanvas final : public QWidget {
     std::unique_ptr<Impl> m_impl;
 };
 
-class CollageEditorWidget final : public QWidget {
+class ImageStitchingEditorWidget final : public QWidget {
     Q_OBJECT
   public:
-    explicit CollageEditorWidget(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollageEditorWidget() override;
+    explicit ImageStitchingEditorWidget(ImageStitchingDocument* document,
+                                        QWidget* parent = nullptr);
+    ~ImageStitchingEditorWidget() override;
     void setLoading(bool loading);
     void setExportBusy(bool busy);
     void retranslateUi();
-    [[nodiscard]] CollagePreviewCanvas* canvas() const;
-    [[nodiscard]] CollagePdfPageGrid* pdfGrid() const;
-    [[nodiscard]] CollagePdfTemplateWidget* pdfTemplateWidget() const;
+    [[nodiscard]] ImageStitchingPreviewCanvas* canvas() const;
+    [[nodiscard]] ImageStitchingPdfPageGrid* pdfGrid() const;
+    [[nodiscard]] ImageStitchingPdfTemplateWidget* pdfTemplateWidget() const;
     [[nodiscard]] QWidget* outputDescriptionWidget() const;
 
   signals:

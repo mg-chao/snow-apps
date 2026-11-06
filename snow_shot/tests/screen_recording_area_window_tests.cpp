@@ -104,7 +104,7 @@ class RegionMoveTranslator final : public QTranslator {
     }
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (QByteArray(context) == "RecordingRegionDragHandle" &&
-            QByteArray(source) == "Move recording area")
+            QByteArray(source) == "Move screen recording area")
             return QStringLiteral("Translated recording move");
         return {};
     }
@@ -871,7 +871,7 @@ void childDragHandleOwnsCaptureAndPreservesAnnotations() {
             "the recording move button must be a child widget without an auxiliary window");
     require(button->size() == QSize(32, 32) && button->iconSize() == QSize(18, 18) &&
                 button->cursor().shape() == Qt::SizeAllCursor &&
-                button->accessibleName() == QStringLiteral("Move recording area"),
+                button->accessibleName() == QStringLiteral("Move screen recording area"),
             "the move control must use the pinned window's size, icon and drag affordance");
     RegionMoveTranslator translator;
     require(QCoreApplication::installTranslator(&translator),

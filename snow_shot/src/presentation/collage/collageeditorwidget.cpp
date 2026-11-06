@@ -88,75 +88,76 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
                                                   "#D9F7BE", "#BAE0FF", "#FFF1B8", "#EFDBFF"};
 // These strings also supply labels constructed dynamically by the form and toolbar.
 [[maybe_unused]] constexpr std::array kTranslations{
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Replace image"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Delete image"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image %1: %2"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget",
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Replace image"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Delete image"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image %1: %2"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget",
                       "Select to center this image; drag onto another image to swap"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Collage preview"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget",
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image stitching preview"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget",
                       "Drag an image to move or swap it; drag selection handles to scale around "
                       "its center. Drag with the middle mouse button to pan; scroll to zoom"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Rotate clockwise by 90°"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Rotate counterclockwise by 90°"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Flip horizontally"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Flip vertically"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Reset transform"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Add images to create a collage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drag image files here, or choose add images"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Drop images to add to collage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Add multiple image files at once"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "%1 × %2 px"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Total: %1 images"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Vertical"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Horizontal"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Custom"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Rows"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Columns"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Uniform size"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Original size"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Layout direction"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image type"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Static image"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "PDF document"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "%1 × %2 mm"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Total: %1 pages"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image sizing"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Outer border"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Background color"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Outer border in output pixels"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing in output pixels"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Outer border unit"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing unit"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Outer border in percentage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Image spacing in percentage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Pixel"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage of the widest image after sizing"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage of the tallest image after sizing"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Percentage of the grid cell width"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Choose a background color, including transparency"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "White"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Black"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Gray"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Red"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Green"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Blue"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Yellow"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Purple"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Fit to canvas"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Clear all"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", "Reverse image order"),
-    QT_TRANSLATE_NOOP("CollageEditorWidget", " px"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Rotate clockwise by 90°"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Rotate counterclockwise by 90°"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Flip horizontally"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Flip vertically"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Reset transform"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Add images"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Add images to start image stitching"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Drag image files here, or choose add images"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Drop images to stitch"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Add multiple image files at once"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "%1 × %2 px"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Total: %1 images"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Vertical"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Horizontal"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Custom"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Rows"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Columns"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Uniform size"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Original size"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Layout direction"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image type"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Static image"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "PDF document"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "%1 × %2 mm"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Total: %1 pages"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image sizing"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Outer border"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image spacing"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Background color"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Outer border in output pixels"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image spacing in output pixels"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Outer border unit"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image spacing unit"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Outer border in percentage"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image spacing in percentage"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Pixels"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Percentage"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Percentage of the widest image after sizing"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Percentage of the tallest image after sizing"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Percentage of the grid cell width"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget",
+                      "Choose a background color, including transparency"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "White"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Black"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Gray"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Red"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Green"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Blue"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Yellow"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Purple"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Fit to canvas"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Clear all"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Reverse image order"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", " px"),
 };
 
 QString text(const char* value) {
-    return QCoreApplication::translate("CollageEditorWidget", value);
+    return QCoreApplication::translate("ImageStitchingEditorWidget", value);
 }
 
-bool sameLayoutSettings(CollageSettings first, CollageSettings second) {
+bool sameLayoutSettings(ImageStitchingSettings first, ImageStitchingSettings second) {
     first.background = second.background;
     return first == second;
 }
@@ -240,7 +241,7 @@ class DetailWorkingLifetime final {
   public:
     DetailWorkingLifetime(std::shared_ptr<void> reservation,
                           std::shared_ptr<std::atomic<qint64>> total, qint64 bytes,
-                          CollagePreviewCanvas* owner)
+                          ImageStitchingPreviewCanvas* owner)
         : m_reservation(std::move(reservation)), m_total(std::move(total)), m_bytes(bytes),
           m_owner(owner) {
         m_total->fetch_add(m_bytes);
@@ -263,10 +264,10 @@ class DetailWorkingLifetime final {
     std::shared_ptr<void> m_reservation;
     std::shared_ptr<std::atomic<qint64>> m_total;
     qint64 m_bytes;
-    QPointer<CollagePreviewCanvas> m_owner;
+    QPointer<ImageStitchingPreviewCanvas> m_owner;
 };
 
-quint64 dragItem(const QMimeData* mime, const CollageDocument* document) {
+quint64 dragItem(const QMimeData* mime, const ImageStitchingDocument* document) {
     if (!mime || !mime->hasFormat(QString::fromLatin1(kDragType)))
         return 0;
     bool valid = false;
@@ -315,9 +316,9 @@ void drawTransformedPreview(QPainter& painter, const QRectF& target, const QImag
     painter.restore();
 }
 
-class CollageColorPresetButton final : public AdButton {
+class ImageStitchingColorPresetButton final : public AdButton {
   public:
-    CollageColorPresetButton(const QColor& color, QWidget* parent)
+    ImageStitchingColorPresetButton(const QColor& color, QWidget* parent)
         : AdButton(parent), m_color(color) {
         setSizeClass(AdButton::SizeClass::Small);
         setShape(AdButton::Shape::Rounded);
@@ -355,9 +356,9 @@ class CollageColorPresetButton final : public AdButton {
     QColor m_color;
 };
 
-class CollageThumbnail final : public QWidget {
+class ImageStitchingThumbnail final : public QWidget {
   public:
-    CollageThumbnail(CollageDocument* document, quint64 id, QWidget* parent)
+    ImageStitchingThumbnail(ImageStitchingDocument* document, quint64 id, QWidget* parent)
         : QWidget(parent), m_document(document), m_id(id) {
         setObjectName(QStringLiteral("collageThumbnail_%1").arg(id));
         setProperty("collageItemId", QVariant::fromValue(id));
@@ -407,7 +408,7 @@ class CollageThumbnail final : public QWidget {
         m_replace->setEnabled(enabled && replacementAllowed);
         m_remove->setEnabled(enabled);
     }
-    void setItem(const CollageItem& item, int ordinal, bool force = false) {
+    void setItem(const ImageStitchingItem& item, int ordinal, bool force = false) {
         if (!force && m_revision == item.revision && m_ordinal == ordinal && m_label == item.label)
             return;
         if (m_revision != item.revision || m_preview.isNull()) {
@@ -554,7 +555,7 @@ class CollageThumbnail final : public QWidget {
         m_replace->setVisible(visible);
         m_remove->setVisible(visible);
     }
-    CollageDocument* m_document;
+    ImageStitchingDocument* m_document;
     quint64 m_id;
     quint64 m_revision = std::numeric_limits<quint64>::max();
     QImage m_preview;
@@ -570,7 +571,7 @@ class CollageThumbnail final : public QWidget {
 };
 } // namespace
 
-struct CollagePreviewCanvas::Impl {
+struct ImageStitchingPreviewCanvas::Impl {
     struct Detail {
         QImage image;
         QRectF transformedPixels;
@@ -580,10 +581,10 @@ struct CollagePreviewCanvas::Impl {
         qreal resolution = 0;
         std::shared_ptr<void> reservation;
     };
-    CollagePreviewCanvas* owner;
-    CollageDocument* document;
-    CollageLayout layout;
-    CollageSettings cachedSettings;
+    ImageStitchingPreviewCanvas* owner;
+    ImageStitchingDocument* document;
+    ImageStitchingLayout layout;
+    ImageStitchingSettings cachedSettings;
     bool initialized = false;
     QVector<quint64> order;
     QHash<quint64, qsizetype> indexById;
@@ -617,7 +618,7 @@ struct CollagePreviewCanvas::Impl {
     SnowCanvasSelectionHandle handle = SnowCanvasSelectionHandle::None;
     QRectF initialImage;
     QRectF pendingImage;
-    CollageStaticPlacement pendingPlacement;
+    ImageStitchingStaticPlacement pendingPlacement;
     bool automaticFit = true;
     bool editing = true;
     bool rendering = true;
@@ -647,7 +648,7 @@ struct CollagePreviewCanvas::Impl {
             item.height() * detail.transformedPixels.height() / detail.fullSize.height()};
     }
     void requestDetails() {
-        if (!rendering || document->outputType() == CollageOutputType::PdfDocument ||
+        if (!rendering || document->outputType() == ImageStitchingOutputType::PdfDocument ||
             !layout.isValid())
             return;
         for (qsizetype index = 0; index < document->items().size(); ++index) {
@@ -708,7 +709,7 @@ struct CollagePreviewCanvas::Impl {
             }
             const qint64 bytes = qint64(unrotated.width()) * unrotated.height() * 4;
             while (!details.isEmpty() &&
-                   previewBytes() + bytes > collage_detail::maximumWindowPreviewBytes) {
+                   previewBytes() + bytes > image_stitching_detail::maximumWindowPreviewBytes) {
                 auto oldest = details.begin();
                 for (auto it = details.begin(); it != details.end(); ++it)
                     if (it->used < oldest->used)
@@ -716,7 +717,7 @@ struct CollagePreviewCanvas::Impl {
                 detailCacheBytes -= oldest->image.sizeInBytes();
                 details.erase(oldest);
             }
-            if (previewBytes() + bytes > collage_detail::maximumWindowPreviewBytes)
+            if (previewBytes() + bytes > image_stitching_detail::maximumWindowPreviewBytes)
                 continue;
             const int stripRows = areaStripRows(item.image, crop, unrotated);
             const auto resizeBytes = stripRows > 0
@@ -731,8 +732,8 @@ struct CollagePreviewCanvas::Impl {
                 stripRows > 0
                     ? maximumAreaStripBytes + bytes * 3 + qint64(unrotated.width()) * 32
                     : *resizeBytes + 6 * 1024 * 1024 + qint64(crop.width() + 7) * 4 + bytes;
-            auto reservation = reserveCollagePreview(bytes);
-            auto working = collage_detail::reserveWorking(scratchBytes);
+            auto reservation = reserveImageStitchingPreview(bytes);
+            auto working = image_stitching_detail::reserveWorking(scratchBytes);
             if (!reservation || !working)
                 continue;
             auto workLifetime = std::make_shared<DetailWorkingLifetime>(
@@ -759,7 +760,8 @@ struct CollagePreviewCanvas::Impl {
                         tile = areaDetail(image, crop, unrotated, stripRows, cancellation);
                     } else {
                         tile = snowCanvasAllocateImage(unrotated, QImage::Format_RGBA8888);
-                        const auto rows = collage_detail::croppedRows(image, crop, cancellation);
+                        const auto rows =
+                            image_stitching_detail::croppedRows(image, crop, cancellation);
                         if (!tile.isNull() &&
                             !image_codec::resizeToRgba8(rows, unrotated, tile.bits(),
                                                         tile.bytesPerLine(), tile.sizeInBytes()))
@@ -921,7 +923,7 @@ struct CollagePreviewCanvas::Impl {
     }
     void refresh() {
         cancelGesture();
-        if (!rendering || document->outputType() == CollageOutputType::PdfDocument) {
+        if (!rendering || document->outputType() == ImageStitchingOutputType::PdfDocument) {
             detailTimer->stop();
             cancelDetails();
             return;
@@ -1016,7 +1018,8 @@ struct CollagePreviewCanvas::Impl {
     }
 };
 
-CollagePreviewCanvas::CollagePreviewCanvas(CollageDocument* document, QWidget* parent)
+ImageStitchingPreviewCanvas::ImageStitchingPreviewCanvas(ImageStitchingDocument* document,
+                                                         QWidget* parent)
     : QWidget(parent), m_impl(std::make_unique<Impl>()) {
     auto& d = *m_impl;
     d.owner = this;
@@ -1067,13 +1070,13 @@ CollagePreviewCanvas::CollagePreviewCanvas(CollageDocument* document, QWidget* p
         new OverlayControlButton(OverlayControlButton::Intent::Primary, icons::Fullscreen(), this);
     d.fit->setObjectName(QStringLiteral("collageFitToCanvas"));
     d.fit->setFocusPolicy(Qt::StrongFocus);
-    connect(d.fit, &QAbstractButton::clicked, this, &CollagePreviewCanvas::fitToCanvas);
-    connect(document, &CollageDocument::changed, this, [this] { m_impl->refresh(); });
-    connect(document, &CollageDocument::selectionChanged, this, [this] {
+    connect(d.fit, &QAbstractButton::clicked, this, &ImageStitchingPreviewCanvas::fitToCanvas);
+    connect(document, &ImageStitchingDocument::changed, this, [this] { m_impl->refresh(); });
+    connect(document, &ImageStitchingDocument::selectionChanged, this, [this] {
         m_impl->cancelGesture();
         m_impl->geometryChanged();
     });
-    connect(document, &CollageDocument::staticPlacementChanged, this, [this](quint64) {
+    connect(document, &ImageStitchingDocument::staticPlacementChanged, this, [this](quint64) {
         m_impl->cancelGesture();
         m_impl->layout = m_impl->document->layout();
         m_impl->geometryChanged();
@@ -1087,22 +1090,22 @@ CollagePreviewCanvas::CollagePreviewCanvas(CollageDocument* document, QWidget* p
     d.refresh();
 }
 
-CollagePreviewCanvas::~CollagePreviewCanvas() {
+ImageStitchingPreviewCanvas::~ImageStitchingPreviewCanvas() {
     m_impl->cancelDetails();
 }
-qreal CollagePreviewCanvas::zoom() const {
+qreal ImageStitchingPreviewCanvas::zoom() const {
     return m_impl->zoom;
 }
-QPointF CollagePreviewCanvas::offset() const {
+QPointF ImageStitchingPreviewCanvas::offset() const {
     return m_impl->offset;
 }
-QRectF CollagePreviewCanvas::imageViewportRect(quint64 id) const {
+QRectF ImageStitchingPreviewCanvas::imageViewportRect(quint64 id) const {
     return m_impl->viewportRect(id);
 }
-QRectF CollagePreviewCanvas::cellViewportRect(quint64 id) const {
+QRectF ImageStitchingPreviewCanvas::cellViewportRect(quint64 id) const {
     return m_impl->clipViewportRect(id);
 }
-void CollagePreviewCanvas::fitToCanvas() {
+void ImageStitchingPreviewCanvas::fitToCanvas() {
     auto& d = *m_impl;
     d.cancelGesture();
     if (!d.layout.isValid())
@@ -1115,7 +1118,7 @@ void CollagePreviewCanvas::fitToCanvas() {
                2;
     d.geometryChanged();
 }
-void CollagePreviewCanvas::centerImage(quint64 id) {
+void ImageStitchingPreviewCanvas::centerImage(quint64 id) {
     auto& d = *m_impl;
     d.cancelGesture();
     if (!d.indexById.contains(id))
@@ -1130,17 +1133,17 @@ void CollagePreviewCanvas::centerImage(quint64 id) {
     d.offset = QPointF(width() / 2.0, height() / 2.0) - bounds.center() * d.zoom;
     d.geometryChanged();
 }
-void CollagePreviewCanvas::preserveViewport() {
+void ImageStitchingPreviewCanvas::preserveViewport() {
     m_impl->automaticFit = false;
 }
-void CollagePreviewCanvas::setEditingEnabled(bool enabled) {
+void ImageStitchingPreviewCanvas::setEditingEnabled(bool enabled) {
     if (m_impl->editing == enabled)
         return;
     m_impl->editing = enabled;
     m_impl->cancelGesture();
     m_impl->geometryChanged();
 }
-void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
+void ImageStitchingPreviewCanvas::setRenderingEnabled(bool enabled) {
     auto& d = *m_impl;
     if (d.rendering == enabled)
         return;
@@ -1156,8 +1159,8 @@ void CollagePreviewCanvas::setRenderingEnabled(bool enabled) {
         d.refresh();
     }
 }
-void CollagePreviewCanvas::retranslateUi() {
-    setAccessibleName(text("Collage preview"));
+void ImageStitchingPreviewCanvas::retranslateUi() {
+    setAccessibleName(text("Image stitching preview"));
     setAccessibleDescription(
         text("Drag an image to move or swap it; drag selection handles to "
              "scale around its center. Drag with the middle mouse button to pan; scroll to zoom"));
@@ -1173,7 +1176,7 @@ void CollagePreviewCanvas::retranslateUi() {
     m_impl->fit->setAccessibleName(m_impl->fit->toolTip());
     update();
 }
-void CollagePreviewCanvas::paintEvent(QPaintEvent*) {
+void ImageStitchingPreviewCanvas::paintEvent(QPaintEvent*) {
     const auto& d = *m_impl;
     const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
     QPainter painter(this);
@@ -1208,21 +1211,21 @@ void CollagePreviewCanvas::paintEvent(QPaintEvent*) {
         d.paintImage(painter, id);
         painter.restore();
     }
-    collage_detail::paintPreviewBorder(painter, output, theme.colorBorder);
+    image_stitching_detail::paintPreviewBorder(painter, output, theme.colorBorder);
     for (const auto id : d.order)
-        collage_detail::paintPreviewBorder(painter, d.clipViewportRect(id),
-                                           QColor(0xf0, 0xf0, 0xf0));
+        image_stitching_detail::paintPreviewBorder(painter, d.clipViewportRect(id),
+                                                   QColor(0xf0, 0xf0, 0xf0));
     if (d.targetId && d.targetId != d.pressedId)
         snowCanvasPaintSelectionMarquee(painter, d.clipViewportRect(d.targetId));
     snowCanvasPaintImageSelection(painter, d.viewportRect(selectedId));
 }
-void CollagePreviewCanvas::resizeEvent(QResizeEvent*) {
+void ImageStitchingPreviewCanvas::resizeEvent(QResizeEvent*) {
     m_impl->cancelGesture();
     if (m_impl->automaticFit)
         fitToCanvas();
     m_impl->geometryChanged();
 }
-void CollagePreviewCanvas::hideEvent(QHideEvent* event) {
+void ImageStitchingPreviewCanvas::hideEvent(QHideEvent* event) {
     // Hiding also occurs while the owning window destroys its document.
     // Retire transient UI work without reading model state here.
     m_impl->cancelGesture();
@@ -1230,12 +1233,12 @@ void CollagePreviewCanvas::hideEvent(QHideEvent* event) {
     m_impl->cancelDetails();
     QWidget::hideEvent(event);
 }
-void CollagePreviewCanvas::showEvent(QShowEvent* event) {
+void ImageStitchingPreviewCanvas::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     m_impl->refresh();
     m_impl->geometryChanged();
 }
-void CollagePreviewCanvas::mousePressEvent(QMouseEvent* event) {
+void ImageStitchingPreviewCanvas::mousePressEvent(QMouseEvent* event) {
     auto& d = *m_impl;
     setFocus(Qt::MouseFocusReason);
     if (event->button() == Qt::MiddleButton) {
@@ -1267,12 +1270,12 @@ void CollagePreviewCanvas::mousePressEvent(QMouseEvent* event) {
                 d.initialImage.width() / transformedSize(d.document->items()[index]).width()};
             setCursor(handle == SnowCanvasSelectionHandle::None
                           ? Qt::ClosedHandCursor
-                          : collage_detail::resizeCursor(handle));
+                          : image_stitching_detail::resizeCursor(handle));
         }
         event->accept();
     }
 }
-void CollagePreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
+void ImageStitchingPreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
     auto& d = *m_impl;
     if (d.panning) {
         d.offset += event->position() - d.last;
@@ -1286,15 +1289,15 @@ void CollagePreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
         const auto pending =
             d.handle == SnowCanvasSelectionHandle::None
                 ? d.initialImage.translated(delta)
-                : collage_detail::centeredResize(d.initialImage, d.handle, delta, d.zoom);
+                : image_stitching_detail::centeredResize(d.initialImage, d.handle, delta, d.zoom);
         const int index = d.document->indexOf(d.pressedId);
         if (index < 0)
             return;
         auto candidate = d.document->items()[index];
         candidate.staticPlacement = {pending.center() - QRectF(d.layout.clipRects[index]).center(),
                                      pending.width() / transformedSize(candidate).width()};
-        const auto resolved = resolveCollageStaticImageRect(candidate, d.layout.rects[index],
-                                                            d.layout.clipRects[index]);
+        const auto resolved = resolveImageStitchingStaticImageRect(candidate, d.layout.rects[index],
+                                                                   d.layout.clipRects[index]);
         if (resolved.isEmpty())
             return;
         d.dragging = true;
@@ -1315,11 +1318,11 @@ void CollagePreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
         if (handle == SnowCanvasSelectionHandle::None)
             unsetCursor();
         else
-            setCursor(collage_detail::resizeCursor(handle));
+            setCursor(image_stitching_detail::resizeCursor(handle));
     }
     event->accept();
 }
-void CollagePreviewCanvas::mouseReleaseEvent(QMouseEvent* event) {
+void ImageStitchingPreviewCanvas::mouseReleaseEvent(QMouseEvent* event) {
     auto& d = *m_impl;
     if (event->button() == Qt::MiddleButton) {
         d.panning = false;
@@ -1347,7 +1350,7 @@ void CollagePreviewCanvas::mouseReleaseEvent(QMouseEvent* event) {
     d.geometryChanged();
     event->accept();
 }
-void CollagePreviewCanvas::wheelEvent(QWheelEvent* event) {
+void ImageStitchingPreviewCanvas::wheelEvent(QWheelEvent* event) {
     auto& d = *m_impl;
     d.cancelGesture();
     if (!d.layout.isValid()) {
@@ -1365,7 +1368,7 @@ void CollagePreviewCanvas::wheelEvent(QWheelEvent* event) {
     }
     event->accept();
 }
-void CollagePreviewCanvas::keyPressEvent(QKeyEvent* event) {
+void ImageStitchingPreviewCanvas::keyPressEvent(QKeyEvent* event) {
     auto& d = *m_impl;
     if (event->key() == Qt::Key_F || event->key() == Qt::Key_Home) {
         fitToCanvas();
@@ -1389,12 +1392,12 @@ void CollagePreviewCanvas::keyPressEvent(QKeyEvent* event) {
     }
     event->accept();
 }
-void CollagePreviewCanvas::dragEnterEvent(QDragEnterEvent* event) {
+void ImageStitchingPreviewCanvas::dragEnterEvent(QDragEnterEvent* event) {
     m_impl->cancelGesture();
     if (m_impl->editing && dragItem(event->mimeData(), m_impl->document))
         event->acceptProposedAction();
 }
-void CollagePreviewCanvas::dragMoveEvent(QDragMoveEvent* event) {
+void ImageStitchingPreviewCanvas::dragMoveEvent(QDragMoveEvent* event) {
     m_impl->targetId = m_impl->hit(event->position(), true);
     if (m_impl->targetId && m_impl->targetId != dragItem(event->mimeData(), m_impl->document))
         event->acceptProposedAction();
@@ -1402,11 +1405,11 @@ void CollagePreviewCanvas::dragMoveEvent(QDragMoveEvent* event) {
         event->ignore();
     update();
 }
-void CollagePreviewCanvas::dragLeaveEvent(QDragLeaveEvent*) {
+void ImageStitchingPreviewCanvas::dragLeaveEvent(QDragLeaveEvent*) {
     m_impl->targetId = 0;
     update();
 }
-void CollagePreviewCanvas::dropEvent(QDropEvent* event) {
+void ImageStitchingPreviewCanvas::dropEvent(QDropEvent* event) {
     const auto target = m_impl->hit(event->position(), true);
     const auto source = dragItem(event->mimeData(), m_impl->document);
     m_impl->targetId = 0;
@@ -1414,25 +1417,25 @@ void CollagePreviewCanvas::dropEvent(QDropEvent* event) {
         event->acceptProposedAction();
     update();
 }
-void CollagePreviewCanvas::changeEvent(QEvent* event) {
+void ImageStitchingPreviewCanvas::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange)
         retranslateUi();
     QWidget::changeEvent(event);
 }
 
-struct CollageEditorWidget::Impl {
+struct ImageStitchingEditorWidget::Impl {
     struct LengthEditor {
         QLabel* label = nullptr;
         AdInputNumber* input = nullptr;
         AdSegmented* unit = nullptr;
         bool percentage = false;
     };
-    CollageEditorWidget* owner = nullptr;
-    CollageDocument* document = nullptr;
-    CollagePreviewCanvas* canvas = nullptr;
-    CollagePdfPageGrid* pdfGrid = nullptr;
-    CollagePdfTemplateWidget* pdfTemplate = nullptr;
-    CollagePdfSettingsWidget* pdfSettings = nullptr;
+    ImageStitchingEditorWidget* owner = nullptr;
+    ImageStitchingDocument* document = nullptr;
+    ImageStitchingPreviewCanvas* canvas = nullptr;
+    ImageStitchingPdfPageGrid* pdfGrid = nullptr;
+    ImageStitchingPdfTemplateWidget* pdfTemplate = nullptr;
+    ImageStitchingPdfSettingsWidget* pdfSettings = nullptr;
     AdSegmented* outputType = nullptr;
     AdFormItem* outputTypeField = nullptr;
     AdFormItem* pdfSettingsField = nullptr;
@@ -1451,7 +1454,7 @@ struct CollageEditorWidget::Impl {
     AdScrollArea* strip = nullptr;
     QWidget* thumbnails = nullptr;
     QHBoxLayout* thumbnailLayout = nullptr;
-    QHash<quint64, CollageThumbnail*> thumbnailById;
+    QHash<quint64, ImageStitchingThumbnail*> thumbnailById;
     quint64 selectedThumbnail = 0;
     AdForm* form = nullptr;
     AdSegmented* direction = nullptr;
@@ -1465,8 +1468,8 @@ struct CollageEditorWidget::Impl {
     LengthEditor spacing;
     AdColorPicker* color = nullptr;
     std::array<AdFormItem*, 5> fields{};
-    std::array<CollageColorPresetButton*, 8> presets{};
-    CollageSettings cachedSettings;
+    std::array<ImageStitchingColorPresetButton*, 8> presets{};
+    ImageStitchingSettings cachedSettings;
     int referencePixels = 0;
     bool initialized = false;
     bool syncing = false;
@@ -1474,9 +1477,9 @@ struct CollageEditorWidget::Impl {
     bool exporting = false;
 
     void positionDropHint() {
-        const auto* target = document->outputType() == CollageOutputType::PdfDocument
+        const auto* target = document->outputType() == ImageStitchingOutputType::PdfDocument
                                  ? (document->lastValidPdfSettings().stitchingMethod ==
-                                            CollagePdfStitchingMethod::TemplateBased
+                                            ImageStitchingPdfStitchingMethod::TemplateBased
                                         ? static_cast<QWidget*>(pdfTemplate)
                                         : static_cast<QWidget*>(pdfGrid))
                              : document->items().isEmpty() ? static_cast<QWidget*>(emptyState)
@@ -1486,7 +1489,7 @@ struct CollageEditorWidget::Impl {
         positionCanvasToolbar();
     }
     void positionCanvasToolbar() {
-        const bool pdf = document->outputType() == CollageOutputType::PdfDocument;
+        const bool pdf = document->outputType() == ImageStitchingOutputType::PdfDocument;
         canvasToolbar->setVisible(!pdf);
         if (pdf)
             return;
@@ -1506,19 +1509,20 @@ struct CollageEditorWidget::Impl {
         int reference = 0;
         for (const auto& item : document->items()) {
             const auto size = transformedSize(item);
-            reference = std::max(reference, settings.direction != CollageDirection::Horizontal
-                                                ? size.width()
-                                                : size.height());
-            if (settings.sizing == CollageSizing::Uniform)
+            reference =
+                std::max(reference, settings.direction != ImageStitchingDirection::Horizontal
+                                        ? size.width()
+                                        : size.height());
+            if (settings.sizing == ImageStitchingSizing::Uniform)
                 break;
         }
         return reference;
     }
     void syncLengthInputs(int reference) {
         const auto settings = document->settings();
-        const auto description = text(settings.direction == CollageDirection::Custom
+        const auto description = text(settings.direction == ImageStitchingDirection::Custom
                                           ? "Percentage of the grid cell width"
-                                      : settings.direction == CollageDirection::Vertical
+                                      : settings.direction == ImageStitchingDirection::Vertical
                                           ? "Percentage of the widest image after sizing"
                                           : "Percentage of the tallest image after sizing");
         const auto sync = [reference, &description](LengthEditor& editor, int pixels,
@@ -1576,7 +1580,8 @@ struct CollageEditorWidget::Impl {
         pdfTemplate->setExportBusy(exporting);
         positionCanvasToolbar();
     }
-    void settingsChanged(const QString& field, const std::function<void(CollageSettings&)>& edit) {
+    void settingsChanged(const QString& field,
+                         const std::function<void(ImageStitchingSettings&)>& edit) {
         if (syncing)
             return;
         canvas->preserveViewport();
@@ -1589,7 +1594,7 @@ struct CollageEditorWidget::Impl {
         if (current == previousSettings)
             refresh(true);
         if (current.direction != previousSettings.direction ||
-            (current.direction == CollageDirection::Custom &&
+            (current.direction == ImageStitchingDirection::Custom &&
              (field == QStringLiteral("rows") || field == QStringLiteral("columns"))))
             canvas->fitToCanvas();
         emit owner->settingsEdited(field);
@@ -1597,16 +1602,16 @@ struct CollageEditorWidget::Impl {
     void refreshPdfDescription() {
         const auto settings = document->lastValidPdfSettings();
         const bool templateMode =
-            settings.stitchingMethod == CollagePdfStitchingMethod::TemplateBased;
+            settings.stitchingMethod == ImageStitchingPdfStitchingMethod::TemplateBased;
         QSize pixels(1, 1);
-        if (!templateMode && settings.paperSize == CollagePdfPaperSize::ImageSize) {
+        if (!templateMode && settings.paperSize == ImageStitchingPdfPaperSize::ImageSize) {
             const auto selected = document->indexOf(document->selectedId());
             pixels = selected < 0 ? QSize{} : transformedSize(document->items()[selected]);
         }
-        const auto page = calculateCollagePdfPageLayout(pixels, settings);
-        const auto composed = templateMode
-                                  ? calculateCollagePdfComposedPage(document->items(), settings, 0)
-                                  : CollagePdfComposedPage{};
+        const auto page = calculateImageStitchingPdfPageLayout(pixels, settings);
+        const auto composed =
+            templateMode ? calculateImageStitchingPdfComposedPage(document->items(), settings, 0)
+                         : ImageStitchingPdfComposedPage{};
         const auto size =
             templateMode && composed.isValid() ? composed.pageMillimeters : page.pageMillimeters;
         dimensions->setText((templateMode ? composed.isValid() : page.isValid())
@@ -1615,22 +1620,23 @@ struct CollageEditorWidget::Impl {
                                       .arg(owner->locale().toString(size.height(), 'g', 6))
                                 : QString{});
         dimensions->setVisible(templateMode ? composed.isValid() : page.isValid());
-        total->setText(
-            text("Total: %1 pages").arg(collagePdfPageCount(document->items().size(), settings)));
+        total->setText(text("Total: %1 pages")
+                           .arg(imageStitchingPdfPageCount(document->items().size(), settings)));
     }
     void refresh(bool force = false) {
         syncing = true;
-        const bool pdf = document->outputType() == CollageOutputType::PdfDocument;
+        const bool pdf = document->outputType() == ImageStitchingOutputType::PdfDocument;
         outputType->setCurrentValue(pdf ? QStringLiteral("pdf") : QStringLiteral("static"));
         pdfSettingsField->setVisible(pdf);
         pdfSettings->setVisible(pdf);
         const bool templateMode = pdf && document->lastValidPdfSettings().stitchingMethod ==
-                                             CollagePdfStitchingMethod::TemplateBased;
+                                             ImageStitchingPdfStitchingMethod::TemplateBased;
         pdfGrid->setVisible(pdf && !templateMode);
         pdfTemplate->setVisible(templateMode);
         for (auto* field : fields)
             field->setVisible(!pdf);
-        gridField->setVisible(!pdf && document->settings().direction == CollageDirection::Custom);
+        gridField->setVisible(!pdf &&
+                              document->settings().direction == ImageStitchingDirection::Custom);
         canvas->setRenderingEnabled(!pdf);
         if (pdf) {
             canvas->hide();
@@ -1660,19 +1666,20 @@ struct CollageEditorWidget::Impl {
             return;
         }
         if (force || nextSettings.direction != cachedSettings.direction) {
-            direction->setCurrentValue(nextSettings.direction == CollageDirection::Vertical
+            direction->setCurrentValue(nextSettings.direction == ImageStitchingDirection::Vertical
                                            ? QStringLiteral("vertical")
-                                       : nextSettings.direction == CollageDirection::Horizontal
+                                       : nextSettings.direction ==
+                                               ImageStitchingDirection::Horizontal
                                            ? QStringLiteral("horizontal")
                                            : QStringLiteral("custom"));
-            gridField->setVisible(nextSettings.direction == CollageDirection::Custom);
+            gridField->setVisible(nextSettings.direction == ImageStitchingDirection::Custom);
         }
         if (force || nextSettings.rows != cachedSettings.rows)
             rows->setValue(nextSettings.rows);
         if (force || nextSettings.columns != cachedSettings.columns)
             columns->setValue(nextSettings.columns);
         if (force || nextSettings.sizing != cachedSettings.sizing)
-            sizing->setCurrentValue(nextSettings.sizing == CollageSizing::Uniform
+            sizing->setCurrentValue(nextSettings.sizing == ImageStitchingSizing::Uniform
                                         ? QStringLiteral("uniform")
                                         : QStringLiteral("original"));
         const int reference = lengthReference();
@@ -1708,7 +1715,7 @@ struct CollageEditorWidget::Impl {
         for (const auto& item : document->items()) {
             auto* thumbnail = thumbnailById.value(item.id);
             if (!thumbnail) {
-                thumbnail = new CollageThumbnail(document, item.id, thumbnails);
+                thumbnail = new ImageStitchingThumbnail(document, item.id, thumbnails);
                 thumbnail->selected = [this](quint64 id) { canvas->centerImage(id); };
                 thumbnail->editStarted = [this] { canvas->preserveViewport(); };
                 thumbnail->replaceRequested = [this](quint64 id) {
@@ -1782,7 +1789,8 @@ struct CollageEditorWidget::Impl {
     }
 };
 
-CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* parent)
+ImageStitchingEditorWidget::ImageStitchingEditorWidget(ImageStitchingDocument* document,
+                                                       QWidget* parent)
     : QWidget(parent), m_impl(std::make_unique<Impl>()) {
     auto& d = *m_impl;
     d.owner = this;
@@ -1815,11 +1823,11 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     body->setSpacing(theme.marginMD);
     auto* previewColumn = new QVBoxLayout;
     previewColumn->setSpacing(theme.marginXS);
-    d.canvas = new CollagePreviewCanvas(document, this);
+    d.canvas = new ImageStitchingPreviewCanvas(document, this);
     previewColumn->addWidget(d.canvas, 1);
-    d.pdfGrid = new CollagePdfPageGrid(document, this);
+    d.pdfGrid = new ImageStitchingPdfPageGrid(document, this);
     previewColumn->addWidget(d.pdfGrid, 1);
-    d.pdfTemplate = new CollagePdfTemplateWidget(document, this);
+    d.pdfTemplate = new ImageStitchingPdfTemplateWidget(document, this);
     previewColumn->addWidget(d.pdfTemplate, 1);
     d.emptyState = new ImageDropSurface(false, this);
     d.emptyState->setObjectName(QStringLiteral("collageEmptyState"));
@@ -1971,14 +1979,14 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     presetLayout->setContentsMargins(0, 0, 0, 0);
     presetLayout->setSpacing(theme.marginXXS);
     for (std::size_t i = 0; i < d.presets.size(); ++i) {
-        auto* button =
-            new CollageColorPresetButton(QColor(QString::fromLatin1(kColorValues[i])), presets);
+        auto* button = new ImageStitchingColorPresetButton(
+            QColor(QString::fromLatin1(kColorValues[i])), presets);
         d.presets[i] = button;
         button->setObjectName(QStringLiteral("collageColorPreset_%1").arg(i));
         presetLayout->addWidget(button);
         connect(button, &QAbstractButton::clicked, this, [this, i, button] {
             m_impl->settingsChanged(
-                QStringLiteral("background_color"), [i](CollageSettings& settings) {
+                QStringLiteral("background_color"), [i](ImageStitchingSettings& settings) {
                     settings.background = QColor(QString::fromLatin1(kColorValues[i]));
                 });
             button->setSelected(true);
@@ -1996,7 +2004,7 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     colorLayout->addWidget(d.color, 0, Qt::AlignVCenter);
     colorLayout->addStretch(1);
     d.fields[4] = d.form->addField({}, colors, QStringLiteral("background"));
-    d.pdfSettings = new CollagePdfSettingsWidget(document, d.form);
+    d.pdfSettings = new ImageStitchingPdfSettingsWidget(document, d.form);
     d.pdfSettingsField = d.form->addField({}, d.pdfSettings, QStringLiteral("pdf_settings"));
     d.pdfSettingsField->setNoStyle(true);
     d.form->layout()->setAlignment(Qt::AlignTop);
@@ -2038,9 +2046,11 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     d.emptyState->installEventFilter(this);
     previewColumn->addWidget(d.thumbnailRow);
 
-    connect(d.add, &QAbstractButton::clicked, this, &CollageEditorWidget::addImagesRequested);
-    connect(d.emptyAdd, &QAbstractButton::clicked, this, &CollageEditorWidget::addImagesRequested);
-    connect(d.clear, &QAbstractButton::clicked, this, &CollageEditorWidget::clearRequested);
+    connect(d.add, &QAbstractButton::clicked, this,
+            &ImageStitchingEditorWidget::addImagesRequested);
+    connect(d.emptyAdd, &QAbstractButton::clicked, this,
+            &ImageStitchingEditorWidget::addImagesRequested);
+    connect(d.clear, &QAbstractButton::clicked, this, &ImageStitchingEditorWidget::clearRequested);
     connect(d.reverse, &QAbstractButton::clicked, this, [this] {
         if (!m_impl->loading && !m_impl->exporting) {
             m_impl->canvas->preserveViewport();
@@ -2050,49 +2060,52 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     connect(d.outputType, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
         if (!m_impl->syncing && !m_impl->exporting)
             m_impl->document->setOutputType(value.toString() == QStringLiteral("pdf")
-                                                ? CollageOutputType::PdfDocument
-                                                : CollageOutputType::StaticImage);
+                                                ? ImageStitchingOutputType::PdfDocument
+                                                : ImageStitchingOutputType::StaticImage);
     });
-    connect(d.pdfSettings, &CollagePdfSettingsWidget::settingsEdited, this,
+    connect(d.pdfSettings, &ImageStitchingPdfSettingsWidget::settingsEdited, this,
             [this](const QString& field) { emit settingsEdited(QStringLiteral("pdf/") + field); });
-    connect(d.pdfGrid, &CollagePdfPageGrid::addImagesRequested, this,
-            &CollageEditorWidget::addImagesRequested);
-    connect(d.pdfGrid, &CollagePdfPageGrid::imageFilesDropped, this,
-            &CollageEditorWidget::imageFilesDropped);
-    connect(d.pdfGrid, &CollagePdfPageGrid::replaceImageRequested, this,
-            &CollageEditorWidget::replaceImageRequested);
-    connect(d.pdfGrid, &CollagePdfPageGrid::clearRequested, this,
-            &CollageEditorWidget::clearRequested);
-    connect(d.pdfTemplate, &CollagePdfTemplateWidget::addImagesRequested, this,
-            &CollageEditorWidget::addImagesRequested);
-    connect(d.pdfTemplate, &CollagePdfTemplateWidget::replaceImageRequested, this,
-            &CollageEditorWidget::replaceImageRequested);
-    connect(d.pdfTemplate, &CollagePdfTemplateWidget::clearRequested, this,
-            &CollageEditorWidget::clearRequested);
+    connect(d.pdfGrid, &ImageStitchingPdfPageGrid::addImagesRequested, this,
+            &ImageStitchingEditorWidget::addImagesRequested);
+    connect(d.pdfGrid, &ImageStitchingPdfPageGrid::imageFilesDropped, this,
+            &ImageStitchingEditorWidget::imageFilesDropped);
+    connect(d.pdfGrid, &ImageStitchingPdfPageGrid::replaceImageRequested, this,
+            &ImageStitchingEditorWidget::replaceImageRequested);
+    connect(d.pdfGrid, &ImageStitchingPdfPageGrid::clearRequested, this,
+            &ImageStitchingEditorWidget::clearRequested);
+    connect(d.pdfTemplate, &ImageStitchingPdfTemplateWidget::addImagesRequested, this,
+            &ImageStitchingEditorWidget::addImagesRequested);
+    connect(d.pdfTemplate, &ImageStitchingPdfTemplateWidget::replaceImageRequested, this,
+            &ImageStitchingEditorWidget::replaceImageRequested);
+    connect(d.pdfTemplate, &ImageStitchingPdfTemplateWidget::clearRequested, this,
+            &ImageStitchingEditorWidget::clearRequested);
     connect(d.direction, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->settingsChanged(QStringLiteral("direction"), [&value](CollageSettings& settings) {
-            settings.direction =
-                value.toString() == QStringLiteral("horizontal") ? CollageDirection::Horizontal
-                : value.toString() == QStringLiteral("custom")   ? CollageDirection::Custom
-                                                                 : CollageDirection::Vertical;
-        });
+        m_impl->settingsChanged(
+            QStringLiteral("direction"), [&value](ImageStitchingSettings& settings) {
+                settings.direction = value.toString() == QStringLiteral("horizontal")
+                                         ? ImageStitchingDirection::Horizontal
+                                     : value.toString() == QStringLiteral("custom")
+                                         ? ImageStitchingDirection::Custom
+                                         : ImageStitchingDirection::Vertical;
+            });
     });
     connect(d.rows, &AdInputNumber::valueChanged, this, [this](double value) {
-        m_impl->settingsChanged(QStringLiteral("rows"), [value](CollageSettings& settings) {
+        m_impl->settingsChanged(QStringLiteral("rows"), [value](ImageStitchingSettings& settings) {
             settings.rows = qRound(value);
         });
     });
     connect(d.columns, &AdInputNumber::valueChanged, this, [this](double value) {
-        m_impl->settingsChanged(QStringLiteral("columns"), [value](CollageSettings& settings) {
-            settings.columns = qRound(value);
-        });
+        m_impl->settingsChanged(
+            QStringLiteral("columns"),
+            [value](ImageStitchingSettings& settings) { settings.columns = qRound(value); });
     });
     connect(d.sizing, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
-        m_impl->settingsChanged(QStringLiteral("sizing_mode"), [&value](CollageSettings& settings) {
-            settings.sizing = value.toString() == QStringLiteral("original")
-                                  ? CollageSizing::Original
-                                  : CollageSizing::Uniform;
-        });
+        m_impl->settingsChanged(QStringLiteral("sizing_mode"),
+                                [&value](ImageStitchingSettings& settings) {
+                                    settings.sizing = value.toString() == QStringLiteral("original")
+                                                          ? ImageStitchingSizing::Original
+                                                          : ImageStitchingSizing::Uniform;
+                                });
     });
     connect(d.border.unit, &AdSegmented::currentValueChanged, this,
             [this](const QVariant& value) { m_impl->changeLengthUnit(m_impl->border, value); });
@@ -2100,13 +2113,15 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
             [this](const QVariant& value) { m_impl->changeLengthUnit(m_impl->spacing, value); });
     connect(d.border.input, &AdInputNumber::valueChanged, this, [this](double value) {
         const int pixels = m_impl->lengthPixels(m_impl->border, value);
-        m_impl->settingsChanged(QStringLiteral("border_px"),
-                                [pixels](CollageSettings& settings) { settings.border = pixels; });
+        m_impl->settingsChanged(
+            QStringLiteral("border_px"),
+            [pixels](ImageStitchingSettings& settings) { settings.border = pixels; });
     });
     connect(d.spacing.input, &AdInputNumber::valueChanged, this, [this](double value) {
         const int pixels = m_impl->lengthPixels(m_impl->spacing, value);
-        m_impl->settingsChanged(QStringLiteral("spacing_px"),
-                                [pixels](CollageSettings& settings) { settings.spacing = pixels; });
+        m_impl->settingsChanged(
+            QStringLiteral("spacing_px"),
+            [pixels](ImageStitchingSettings& settings) { settings.spacing = pixels; });
     });
     connect(d.color, &AdColorPicker::valueChanged, this, [this](const AdColorValue& value) {
         if (value.isGradient())
@@ -2115,11 +2130,11 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
         if (color.isValid())
             m_impl->settingsChanged(
                 QStringLiteral("background_color"),
-                [&color](CollageSettings& settings) { settings.background = color; });
+                [&color](ImageStitchingSettings& settings) { settings.background = color; });
     });
-    connect(document, &CollageDocument::changed, this, [this] { m_impl->refresh(); });
-    connect(document, &CollageDocument::selectionChanged, this, [this] {
-        if (m_impl->document->outputType() == CollageOutputType::PdfDocument)
+    connect(document, &ImageStitchingDocument::changed, this, [this] { m_impl->refresh(); });
+    connect(document, &ImageStitchingDocument::selectionChanged, this, [this] {
+        if (m_impl->document->outputType() == ImageStitchingOutputType::PdfDocument)
             m_impl->refreshPdfDescription();
         const auto selected = m_impl->document->selectedId();
         if (auto* thumbnail = m_impl->thumbnailById.value(m_impl->selectedThumbnail))
@@ -2148,28 +2163,28 @@ CollageEditorWidget::CollageEditorWidget(CollageDocument* document, QWidget* par
     d.refresh(true);
     d.theme();
 }
-CollageEditorWidget::~CollageEditorWidget() = default;
-void CollageEditorWidget::setLoading(bool loading) {
+ImageStitchingEditorWidget::~ImageStitchingEditorWidget() = default;
+void ImageStitchingEditorWidget::setLoading(bool loading) {
     m_impl->loading = loading;
     m_impl->enabled();
 }
-void CollageEditorWidget::setExportBusy(bool busy) {
+void ImageStitchingEditorWidget::setExportBusy(bool busy) {
     m_impl->exporting = busy;
     m_impl->enabled();
 }
-CollagePreviewCanvas* CollageEditorWidget::canvas() const {
+ImageStitchingPreviewCanvas* ImageStitchingEditorWidget::canvas() const {
     return m_impl->canvas;
 }
-CollagePdfPageGrid* CollageEditorWidget::pdfGrid() const {
+ImageStitchingPdfPageGrid* ImageStitchingEditorWidget::pdfGrid() const {
     return m_impl->pdfGrid;
 }
-CollagePdfTemplateWidget* CollageEditorWidget::pdfTemplateWidget() const {
+ImageStitchingPdfTemplateWidget* ImageStitchingEditorWidget::pdfTemplateWidget() const {
     return m_impl->pdfTemplate;
 }
-QWidget* CollageEditorWidget::outputDescriptionWidget() const {
+QWidget* ImageStitchingEditorWidget::outputDescriptionWidget() const {
     return m_impl->outputDescription;
 }
-void CollageEditorWidget::retranslateUi() {
+void ImageStitchingEditorWidget::retranslateUi() {
     auto& d = *m_impl;
     d.syncing = true;
     d.outputTypeField->setLabel(text("Image type"));
@@ -2200,7 +2215,7 @@ void CollageEditorWidget::retranslateUi() {
     d.border.unit->setAccessibleName(text("Outer border unit"));
     d.spacing.unit->setAccessibleName(text("Image spacing unit"));
     for (auto* unit : {d.border.unit, d.spacing.unit}) {
-        unit->setOptionLabel(0, text("Pixel"));
+        unit->setOptionLabel(0, text("Pixels"));
         unit->setOptionLabel(1, text("Percentage"));
     }
     d.color->setAccessibleName(text("Background color"));
@@ -2215,9 +2230,9 @@ void CollageEditorWidget::retranslateUi() {
     d.add->setAccessibleName(d.add->toolTip());
     d.reverse->setToolTip(text("Reverse image order"));
     d.reverse->setAccessibleName(d.reverse->toolTip());
-    d.emptyPrompt->setText(text("Add images to create a collage"));
+    d.emptyPrompt->setText(text("Add images to start image stitching"));
     d.emptyState->description->setText(text("Drag image files here, or choose add images"));
-    d.dropHint->title->setText(text("Drop images to add to collage"));
+    d.dropHint->title->setText(text("Drop images to stitch"));
     d.dropHint->description->setText(text("Add multiple image files at once"));
     d.dropHint->setAccessibleName(d.dropHint->title->text());
     d.dropHint->setAccessibleDescription(d.dropHint->description->text());
@@ -2229,13 +2244,13 @@ void CollageEditorWidget::retranslateUi() {
     d.syncing = false;
     d.refresh(true);
 }
-void CollageEditorWidget::changeEvent(QEvent* event) {
+void ImageStitchingEditorWidget::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange)
         retranslateUi();
     QWidget::changeEvent(event);
 }
 
-bool CollageEditorWidget::eventFilter(QObject* watched, QEvent* event) {
+bool ImageStitchingEditorWidget::eventFilter(QObject* watched, QEvent* event) {
     if ((watched == m_impl->canvas || watched == m_impl->emptyState) &&
         (event->type() == QEvent::Resize || event->type() == QEvent::Move ||
          event->type() == QEvent::Show))
@@ -2243,18 +2258,18 @@ bool CollageEditorWidget::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
-void CollageEditorWidget::resizeEvent(QResizeEvent* event) {
+void ImageStitchingEditorWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     layout()->activate();
     m_impl->positionDropHint();
 }
 
-void CollageEditorWidget::hideEvent(QHideEvent* event) {
+void ImageStitchingEditorWidget::hideEvent(QHideEvent* event) {
     m_impl->dropHint->hide();
     QWidget::hideEvent(event);
 }
 
-void CollageEditorWidget::dragEnterEvent(QDragEnterEvent* event) {
+void ImageStitchingEditorWidget::dragEnterEvent(QDragEnterEvent* event) {
     if (!m_impl->acceptsImageDrop(event->mimeData(), event->possibleActions())) {
         m_impl->dropHint->hide();
         event->ignore();
@@ -2266,7 +2281,7 @@ void CollageEditorWidget::dragEnterEvent(QDragEnterEvent* event) {
     event->accept();
 }
 
-void CollageEditorWidget::dragMoveEvent(QDragMoveEvent* event) {
+void ImageStitchingEditorWidget::dragMoveEvent(QDragMoveEvent* event) {
     if (!m_impl->acceptsImageDrop(event->mimeData(), event->possibleActions())) {
         m_impl->dropHint->hide();
         event->ignore();
@@ -2276,12 +2291,12 @@ void CollageEditorWidget::dragMoveEvent(QDragMoveEvent* event) {
     event->accept();
 }
 
-void CollageEditorWidget::dragLeaveEvent(QDragLeaveEvent* event) {
+void ImageStitchingEditorWidget::dragLeaveEvent(QDragLeaveEvent* event) {
     m_impl->dropHint->hide();
     event->accept();
 }
 
-void CollageEditorWidget::dropEvent(QDropEvent* event) {
+void ImageStitchingEditorWidget::dropEvent(QDropEvent* event) {
     m_impl->dropHint->hide();
     if (!m_impl->acceptsImageDrop(event->mimeData(), event->possibleActions())) {
         event->ignore();

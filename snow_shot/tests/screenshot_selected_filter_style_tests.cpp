@@ -80,7 +80,7 @@ void selectedFiltersRememberOnlyTheirCreationFamily(bool pen) {
     const auto tool = pen ? SnowCanvasTool::PenFilter : SnowCanvasTool::RectangleFilter;
     require(canvas.setCanvasTool(tool), "activate filter creation fixture");
     drag(canvas, {80, 100}, {180, 160});
-    palette.setActiveTool(pen ? ScreenshotToolPalette::Tool::PenFilter
+    palette.setActiveTool(pen ? ScreenshotToolPalette::Tool::BrushFilter
                               : ScreenshotToolPalette::Tool::RectangleFilter);
     mouse(canvas, QEvent::MouseButtonPress, {130, 130}, Qt::RightButton);
     mouse(canvas, QEvent::MouseButtonRelease, {130, 130}, Qt::RightButton);

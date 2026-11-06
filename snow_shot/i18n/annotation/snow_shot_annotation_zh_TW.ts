@@ -168,7 +168,7 @@
         </message>
         <message>
             <source>Arrow outline width %1px</source>
-            <translation>箭頭描邊寬度 %1px</translation>
+            <translation>箭頭描邊寬度 %1 像素</translation>
         </message>
         <message>
             <source>Arrow shaft type</source>
@@ -197,10 +197,6 @@
         <message>
             <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
             <translation>自動捲動間隔（滾輪調整；按一下重設為 200 ms）</translation>
-        </message>
-        <message>
-            <source>Available for multi-region selections</source>
-            <translation>僅適用於多區域選取範圍</translation>
         </message>
         <message>
             <source>Avatar</source>
@@ -247,12 +243,40 @@
             <translation>移至最上層</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>畫筆</translation>
+        </message>
+        <message>
             <source>Brush eraser</source>
             <translation>畫筆橡皮擦</translation>
         </message>
         <message>
             <source>Brush eraser width %1 (%2px)</source>
             <translation>畫筆橡皮擦寬度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>畫筆濾鏡</translation>
+        </message>
+        <message>
+            <source>Brush filter width %1 (%2px)</source>
+            <translation>畫筆濾鏡寬度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>畫筆醒目提示</translation>
+        </message>
+        <message>
+            <source>Brush highlight color</source>
+            <translation>畫筆醒目提示顏色</translation>
+        </message>
+        <message>
+            <source>Brush highlight color %1</source>
+            <translation>畫筆醒目提示顏色 %1</translation>
+        </message>
+        <message>
+            <source>Brush highlight width %1 (%2px)</source>
+            <translation>畫筆醒目提示寬度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -263,7 +287,7 @@
             <translation>取消截圖</translation>
         </message>
         <message>
-            <source>Capture interface during scrolling screenshot</source>
+            <source>Capture UI during scrolling screenshots</source>
             <translation>捲動截圖時擷取介面</translation>
         </message>
         <message>
@@ -348,7 +372,7 @@
         </message>
         <message>
             <source>Crosshatched fill</source>
-            <translation>交叉線填充</translation>
+            <translation>交叉線填滿</translation>
         </message>
         <message>
             <source>Crosshatched sequence number background</source>
@@ -375,20 +399,20 @@
             <translation>目前畫筆橡皮擦寬度</translation>
         </message>
         <message>
+            <source>Current brush filter width</source>
+            <translation>目前畫筆濾鏡寬度</translation>
+        </message>
+        <message>
+            <source>Current brush highlight width</source>
+            <translation>目前畫筆醒目提示寬度</translation>
+        </message>
+        <message>
             <source>Current distance stroke width</source>
             <translation>目前距離描邊寬度</translation>
         </message>
         <message>
             <source>Current magnifier stroke width</source>
             <translation>目前放大鏡描邊寬度</translation>
-        </message>
-        <message>
-            <source>Current pen filter width</source>
-            <translation>目前畫筆濾鏡寬度</translation>
-        </message>
-        <message>
-            <source>Current pen highlight width</source>
-            <translation>目前畫筆醒目提示寬度</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -408,7 +432,7 @@
         </message>
         <message>
             <source>Cursor data is unavailable for this screenshot</source>
-            <translation>此螢幕擷取沒有可用的游標資料</translation>
+            <translation>此截圖沒有可用的游標資料</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -500,7 +524,7 @@
         </message>
         <message>
             <source>Distribute horizontally</source>
-            <translation>水平分布</translation>
+            <translation>水平分佈</translation>
         </message>
         <message>
             <source>Distribute vertically</source>
@@ -628,19 +652,19 @@
         </message>
         <message>
             <source>Fill color</source>
-            <translation>填滿色彩</translation>
+            <translation>填滿顏色</translation>
         </message>
         <message>
             <source>Fill color %1</source>
-            <translation>填滿色彩 %1</translation>
+            <translation>填滿顏色 %1</translation>
         </message>
         <message>
             <source>Fill color transparent</source>
-            <translation>填滿色彩透明</translation>
+            <translation>填滿顏色透明</translation>
         </message>
         <message>
             <source>Fill regions</source>
-            <translation>填充區域</translation>
+            <translation>填滿區域</translation>
         </message>
         <message>
             <source>Filter</source>
@@ -684,7 +708,7 @@
         </message>
         <message>
             <source>Hatched fill</source>
-            <translation>線條填充</translation>
+            <translation>線條填滿</translation>
         </message>
         <message>
             <source>Hatched sequence number background</source>
@@ -704,11 +728,11 @@
         </message>
         <message>
             <source>Highlight color</source>
-            <translation>醒目提示色彩</translation>
+            <translation>醒目提示顏色</translation>
         </message>
         <message>
             <source>Highlight color %1</source>
-            <translation>醒目提示色彩 %1</translation>
+            <translation>醒目提示顏色 %1</translation>
         </message>
         <message>
             <source>Highlight outline color %1</source>
@@ -836,11 +860,11 @@
         </message>
         <message>
             <source>Magnifier stroke color</source>
-            <translation>放大鏡描邊色彩</translation>
+            <translation>放大鏡描邊顏色</translation>
         </message>
         <message>
             <source>Magnifier stroke color %1</source>
-            <translation>放大鏡描邊色彩 %1</translation>
+            <translation>放大鏡描邊顏色 %1</translation>
         </message>
         <message>
             <source>Magnifier stroke width %1</source>
@@ -892,7 +916,7 @@
         </message>
         <message>
             <source>Mouse highlight color</source>
-            <translation>滑鼠醒目提示色彩</translation>
+            <translation>滑鼠醒目提示顏色</translation>
         </message>
         <message>
             <source>Mouse highlight preview</source>
@@ -900,7 +924,7 @@
         </message>
         <message>
             <source>Mouse highlight radius</source>
-            <translation>滑鼠高亮半徑</translation>
+            <translation>滑鼠醒目提示半徑</translation>
         </message>
         <message>
             <source>Mouse trail color</source>
@@ -947,6 +971,10 @@
             <translation>數字鍵</translation>
         </message>
         <message>
+            <source>Only available for multi-region selections</source>
+            <translation>僅適用於多區域選取範圍</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
         </message>
@@ -975,40 +1003,12 @@
             <translation>暫停錄製</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>畫筆</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>畫筆濾鏡</translation>
-        </message>
-        <message>
-            <source>Pen filter width %1 (%2px)</source>
-            <translation>畫筆濾鏡寬度 %1（%2 像素）</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>畫筆醒目提示</translation>
-        </message>
-        <message>
-            <source>Pen highlight color</source>
-            <translation>畫筆醒目提示色彩</translation>
-        </message>
-        <message>
-            <source>Pen highlight color %1</source>
-            <translation>畫筆醒目提示色彩 %1</translation>
-        </message>
-        <message>
-            <source>Pen highlight width %1 (%2px)</source>
-            <translation>畫筆醒目提示寬度 %1（%2 像素）</translation>
-        </message>
-        <message>
             <source>Physical pixel selection</source>
             <translation>實體像素選取範圍</translation>
         </message>
         <message>
             <source>Pick color from canvas</source>
-            <translation>從畫布擷取色彩</translation>
+            <translation>從畫布擷取顏色</translation>
         </message>
         <message>
             <source>Pin to screen</source>
@@ -1044,7 +1044,7 @@
         </message>
         <message>
             <source>Pressure-sensitive brush</source>
-            <translation>壓感筆刷</translation>
+            <translation>壓感畫筆</translation>
         </message>
         <message>
             <source>Print</source>
@@ -1068,7 +1068,7 @@
         </message>
         <message>
             <source>Recapture</source>
-            <translation>重新擷取</translation>
+            <translation>重新截圖</translation>
         </message>
         <message>
             <source>Recognition model</source>
@@ -1091,8 +1091,8 @@
             <translation>錄製螢幕</translation>
         </message>
         <message>
-            <source>Record speakers</source>
-            <translation>錄製系統音效</translation>
+            <source>Record system audio</source>
+            <translation>錄製系統音訊</translation>
         </message>
         <message>
             <source>Record webcam</source>
@@ -1105,10 +1105,6 @@
         <message>
             <source>Recording format</source>
             <translation>錄製格式</translation>
-        </message>
-        <message>
-            <source>Recording settings</source>
-            <translation>錄影設定</translation>
         </message>
         <message>
             <source>Rectangle</source>
@@ -1140,7 +1136,7 @@
         </message>
         <message>
             <source>Regular brush</source>
-            <translation>一般筆刷</translation>
+            <translation>一般畫筆</translation>
         </message>
         <message>
             <source>Reset</source>
@@ -1160,11 +1156,15 @@
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存為檔案</translation>
+            <translation>儲存為檔案</translation>
         </message>
         <message>
             <source>Save to file</source>
             <translation>儲存至檔案</translation>
+        </message>
+        <message>
+            <source>Screen recording settings</source>
+            <translation>螢幕錄製設定</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -1199,6 +1199,10 @@
             <translation>移至最下層</translation>
         </message>
         <message>
+            <source>Sequence number</source>
+            <translation>序號</translation>
+        </message>
+        <message>
             <source>Sequence number (scroll to adjust)</source>
             <translation>序號（捲動調整）</translation>
         </message>
@@ -1216,11 +1220,11 @@
         </message>
         <message>
             <source>Sequence number color</source>
-            <translation>序號色彩</translation>
+            <translation>序號顏色</translation>
         </message>
         <message>
             <source>Sequence number color %1</source>
-            <translation>序號色彩 %1</translation>
+            <translation>序號顏色 %1</translation>
         </message>
         <message>
             <source>Sequence number font family</source>
@@ -1228,7 +1232,7 @@
         </message>
         <message>
             <source>Sequence number font size %1px</source>
-            <translation>序號文字大小 %1 像素</translation>
+            <translation>序號字型大小 %1 像素</translation>
         </message>
         <message>
             <source>Sequence number numeric type</source>
@@ -1237,10 +1241,6 @@
         <message>
             <source>Sequence number type</source>
             <translation>序號類型</translation>
-        </message>
-        <message>
-            <source>Serial number</source>
-            <translation>序號</translation>
         </message>
         <message>
             <source>Settings</source>
@@ -1252,7 +1252,7 @@
         </message>
         <message>
             <source>Show QR code</source>
-            <translation>顯示二維碼</translation>
+            <translation>顯示 QR 碼</translation>
         </message>
         <message>
             <source>Show cursor</source>
@@ -1296,7 +1296,7 @@
         </message>
         <message>
             <source>Solid fill</source>
-            <translation>純色填充</translation>
+            <translation>純色填滿</translation>
         </message>
         <message>
             <source>Solid sequence number background</source>
@@ -1412,15 +1412,15 @@
         </message>
         <message>
             <source>Stroke color</source>
-            <translation>筆畫色彩</translation>
+            <translation>描邊顏色</translation>
         </message>
         <message>
             <source>Stroke color %1</source>
-            <translation>筆畫色彩 %1</translation>
+            <translation>描邊顏色 %1</translation>
         </message>
         <message>
             <source>Stroke width %1</source>
-            <translation>筆畫寬度 %1</translation>
+            <translation>描邊寬度 %1</translation>
         </message>
         <message>
             <source>Subtract screenshot region</source>
@@ -1492,11 +1492,11 @@
         </message>
         <message>
             <source>Text color</source>
-            <translation>文字色彩</translation>
+            <translation>文字顏色</translation>
         </message>
         <message>
             <source>Text color %1</source>
-            <translation>文字色彩 %1</translation>
+            <translation>文字顏色 %1</translation>
         </message>
         <message>
             <source>Text font family</source>
@@ -1504,7 +1504,7 @@
         </message>
         <message>
             <source>Text font size %1 (%2px)</source>
-            <translation>文字大小 %1（%2 像素）</translation>
+            <translation>文字字型大小 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Text in box</source>
@@ -1592,11 +1592,11 @@
         </message>
         <message>
             <source>Watermark color</source>
-            <translation>浮水印色彩</translation>
+            <translation>浮水印顏色</translation>
         </message>
         <message>
             <source>Watermark color %1</source>
-            <translation>浮水印色彩 %1</translation>
+            <translation>浮水印顏色 %1</translation>
         </message>
         <message>
             <source>Watermark font family</source>
@@ -1604,7 +1604,7 @@
         </message>
         <message>
             <source>Watermark font size %1 (%2px)</source>
-            <translation>浮水印字型大小 %1 (%2px)</translation>
+            <translation>浮水印字型大小 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Watermark gap</source>

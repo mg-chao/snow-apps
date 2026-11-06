@@ -228,9 +228,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
-    void setFreeDrawTool() override {}
+    void setBrushTool() override {}
     void setHighlightTool() override {}
-    void setPenHighlightTool() override {}
+    void setBrushHighlightTool() override {}
     void setEraserTool() override {}
     void setFilterTool() override {}
     void setWatermarkTool() override {}
@@ -238,7 +238,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
     void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
     void setTextTool() override {}
-    void setSerialNumberTool() override {}
+    void setSequenceNumberTool() override {}
     void setOcrTool() override {}
     void openSpreadsheetFile() override {
         ++openSpreadsheetCount;
@@ -271,10 +271,10 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
-    void decrementSelectedSerialNumbers() override {}
-    void incrementSelectedSerialNumbers() override {}
-    void createTextForSelectedSerialNumber() override {}
+    void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSequenceNumbers() override {}
+    void incrementSelectedSequenceNumbers() override {}
+    void createTextForSelectedSequenceNumber() override {}
     void repositionToolbarForContentChange() override {
         ++repositionCount;
     }
@@ -1549,7 +1549,7 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.showMoveTool = true;
     options.showSelectTool = true;
     options.showTextTool = true;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showOcrTool = true;
     options.showScrollingScreenshotTool = true;
     options.showScreenRecordButton = true;
@@ -1558,9 +1558,9 @@ void styleToolChangesKeepThePresetWindowSize() {
                       ScreenshotToolPalette::CopyAction;
     ScreenshotFloatingToolPaletteWindow window(options);
     constexpr ScreenshotToolPalette::Tool tools[] = {
-        ScreenshotToolPalette::Tool::Select,       ScreenshotToolPalette::Tool::Shape,
-        ScreenshotToolPalette::Tool::Arrow,        ScreenshotToolPalette::Tool::Text,
-        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::Select,         ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Arrow,          ScreenshotToolPalette::Tool::Text,
+        ScreenshotToolPalette::Tool::SequenceNumber,
     };
     require(window.palette()->ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection),
             "preset test should materialize the inspected selection actions");
@@ -1588,12 +1588,12 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
         ScreenshotToolPalette::Tool::Shape,
         ScreenshotToolPalette::Tool::Arrow,
         ScreenshotToolPalette::Tool::RectangleHighlight,
-        ScreenshotToolPalette::Tool::PenHighlight,
+        ScreenshotToolPalette::Tool::BrushHighlight,
         ScreenshotToolPalette::Tool::Spotlight,
         ScreenshotToolPalette::Tool::Text,
-        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::SequenceNumber,
         ScreenshotToolPalette::Tool::RectangleFilter,
-        ScreenshotToolPalette::Tool::PenFilter,
+        ScreenshotToolPalette::Tool::BrushFilter,
         ScreenshotToolPalette::Tool::Watermark,
     };
     for (const ScreenshotToolPalette::Tool tool : referenceFamilies) {
@@ -2375,7 +2375,7 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     QWidget owner;
     owner.show();
     ScreenshotToolPalette::Options options;
-    options.showSerialNumberTool = true;
+    options.showSequenceNumberTool = true;
     options.showDistanceTool = true;
     ScreenshotFloatingToolPaletteWindow window(options);
     window.setTransientOwnerWindow(&owner);
@@ -2420,7 +2420,7 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     };
     for (const auto tool :
          {ScreenshotToolPalette::Tool::Distance, ScreenshotToolPalette::Tool::Watermark,
-          ScreenshotToolPalette::Tool::SerialNumber}) {
+          ScreenshotToolPalette::Tool::SequenceNumber}) {
         adqt::widgets::AdInputNumber* number = nullptr;
         palette->setActiveTool(tool);
         QCoreApplication::processEvents();
@@ -3060,7 +3060,7 @@ void borderCursorSurvivesToolRestoration() {
         QCoreApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     using Tool = ScreenshotToolPalette::Tool;
-    for (const auto tool : {Tool::FreeDraw, Tool::Arrow, Tool::Shape, Tool::Select}) {
+    for (const auto tool : {Tool::Brush, Tool::Arrow, Tool::Shape, Tool::Select}) {
         QWidget overlay(nullptr, Qt::Tool | Qt::FramelessWindowHint);
         overlay.resize(800, 600);
         SnowCanvasWidget canvas(&overlay);
@@ -3073,10 +3073,10 @@ void borderCursorSurvivesToolRestoration() {
         ScreenshotToolPalette& palette = *toolbar.palette();
         toolbar.setActiveTool(tool);
         toolbar.show();
-        const auto canvasTool = tool == Tool::FreeDraw ? SnowCanvasTool::FreeDraw
-                                : tool == Tool::Arrow  ? SnowCanvasTool::Arrow
-                                : tool == Tool::Shape  ? SnowCanvasTool::Shape
-                                                       : SnowCanvasTool::Select;
+        const auto canvasTool = tool == Tool::Brush   ? SnowCanvasTool::FreeDraw
+                                : tool == Tool::Arrow ? SnowCanvasTool::Arrow
+                                : tool == Tool::Shape ? SnowCanvasTool::Shape
+                                                      : SnowCanvasTool::Select;
         QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
                          [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
         require(canvas.setCanvasTool(canvasTool), "activate drawing tool");
