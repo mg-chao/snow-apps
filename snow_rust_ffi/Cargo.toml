@@ -23,6 +23,9 @@ snow-language-detection-c = { path = "../snow-crates/crates/snow-language-detect
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 snow-ui-selector-c = { path = "../snow-crates/crates/snow-ui-selector-c" }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+snow-recording-c = { path = "../snow-crates/crates/snow-recording-c", default-features = false, features = ["hdr-encoding"] }
+
 [features]
 perf-instrumentation = ["snow-stitch-images-c/perf-instrumentation"]
 selected-text = ["dep:snow-selected-text-c"]

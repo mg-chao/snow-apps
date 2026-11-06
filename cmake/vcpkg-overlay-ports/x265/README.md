@@ -1,5 +1,34 @@
 This overlay retains vcpkg x265 4.1 and its existing patches.
 
+Windows Snow Shot requests `x265[main8]`. It records and exports SDR with the
+8-bit software HEVC encoder; hardware HEVC and HEVC decoding remain in FFmpeg.
+The application profile builds no Main10/Main12 encoder archives and sets
+`ENABLE_DYNAMIC_DEPTH=OFF`, so capability queries cannot load another encoder
+from a DLL search path. The dynamic-depth patch affects both `x265_api_get` and
+`x265_api_query`; unavailable depths return null and the query reports
+`X265_API_QUERY_ERR_LIB_NOT_FOUND`.
+
+`main10` remains an independent feature. The Windows
+`ffmpeg[snow-recording-compat]` profile requests it for standalone HDR callers,
+and the macOS media/application profiles retain their existing Main10 settings.
+`main8` and `main10` can be selected together to build the combined API; this
+preserves the compatibility profile's inherited application codecs. The Windows
+application packaging audit rejects a prefix containing that combined encoder.
+
+The installed `share/x265/snow-encoder-capabilities.json` uses schema version 2.
+Its `bitDepth8`, `bitDepth10`, `bitDepth12`, `singlePublicApi`, and
+`dynamicDepthLoading` booleans come from the actual configured CMake caches,
+including triplet overrides. Release and Debug must agree. The `main8` feature
+without `main10` requires exactly the public 8-bit API with dynamic depth loading
+disabled. This replaces the old hardcoded `snow-main10-capability.json`; an old
+prefix cannot satisfy the new Windows application contract.
+
+For a native API/encode check, compile `encoder_api_check.cpp` against the
+selected prefix's x265 headers/library and run `--8bit-only` (the default) or
+`--combined`. Both modes encode three 64x64 frames at each expected depth and
+check API struct sizes. The 8-bit-only mode also checks that both get/query APIs
+reject 10/12-bit encoding. This is an encoding correctness check, not a benchmark.
+
 `short-propagation-row.patch` skips the SIMD loop when a CU-tree row
 contains fewer elements than a vector. The original do/while-style loop
 processed a full vector and then processed the remainder again, writing
@@ -28,7 +57,7 @@ four primitive test groups run with `--cpuid NEON --nobench`; the bitstream test
 run scalar and NEON encoders in separate processes to avoid x265's global
 primitive-table cache.
 
-To validate the production combined API locally, first build the private Main10
+To validate the standalone/macOS combined API locally, first build the private Main10
 archive with `EXPORT_C_API=OFF`, then pass it as `SNOW_X265_MAIN10_ARCHIVE` to the
 8-bit fixture. This sets the same `EXTRA_LIB` and `LINKED_10BIT=ON` options as the
 port. The combined API test compares `x265_api_get(10)` directly with the private

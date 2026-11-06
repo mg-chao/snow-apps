@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$HelperPath,
     [ValidateSet('Full', 'Mini')][string]$Edition = 'Full',
-    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64'
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$PayloadBuildDirectory
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -10,6 +11,11 @@ $repo = Split-Path -Parent $PSScriptRoot
 if ((Get-SnowWindowsHostArchitecture) -cne $Architecture) { throw 'Upgrade tests require the matching native host.' }
 $null = Add-SnowMsvcToolsToPath -Architecture $Architecture
 $helper = (Resolve-Path -LiteralPath $HelperPath).Path
+if ($PayloadBuildDirectory) {
+    $PayloadBuildDirectory = (Resolve-Path -LiteralPath $PayloadBuildDirectory).Path
+    . (Join-Path $PSScriptRoot 'snow-shot-nsis-payload.ps1')
+}
+$script:upgradePayloadArguments = $null
 $compiler = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
 $root = Join-Path $repo "build\installer-upgrade-tests-$([guid]::NewGuid().ToString('N'))"
 $executable = if ($Edition -eq 'Mini') { 'snow_shot_mini' } else { 'snow_shot' }
@@ -29,10 +35,31 @@ if ($LASTEXITCODE) { throw 'Legacy helper fixture compilation failed.' }
 
 function Compile-Installer([string]$Name, [string]$Destination, [string]$UpdaterPath, [string[]]$Options = @()) {
     $output = Join-Path $root "$Name.exe"
+    $payloadArguments = @()
+    if ($PayloadBuildDirectory -and $Options -contains '/DBOOTSTRAP') {
+        if ($null -eq $script:upgradePayloadArguments) {
+            # The real updater is archived once per run; legacy/baseline fixtures
+            # retain their original File bootstrap to reproduce the old failure.
+            $archive = Join-Path $root 'upgrade-bootstrap.7z'
+            $payload = New-SnowShotNsisPayload -BuildDirectory $PayloadBuildDirectory `
+                -Stage $bundled -Archive $archive -Architecture $Architecture
+            if (-not $payload.Report) {
+                throw 'PayloadBuildDirectory must have SNOW_SHOT_USE_7Z_PAYLOAD enabled.'
+            }
+            $extractor = Join-Path $PayloadBuildDirectory 'installer-payload/Release/snow-shot-payload-extractor.exe'
+            $script:upgradePayloadArguments = @(
+                "/DSNOW_SHOT_PAYLOAD_ARCHIVE=$archive",
+                "/DSNOW_SHOT_PAYLOAD_EXTRACTOR=$extractor",
+                "/DSNOW_SHOT_PAYLOAD_SHA256=$($payload.Report.Sha256)"
+            )
+        }
+        $payloadArguments = $script:upgradePayloadArguments
+    }
     & $compiler /V2 "/DOUTPUT=$output" "/DDESTINATION=$Destination" "/DUPDATER=$UpdaterPath" `
         "/DPAYLOAD=$repo\snow_shot\tests\installer_process_fixture.cpp" "/DPACKAGING=$repo\snow_shot\packaging" `
         "/DBUNDLED_DIRECTORY=$bundled" "/DSNOW_SHOT_INSTALLER_EXECUTABLE=$executable" `
-        "/DSNOW_SHOT_INSTALLER_UPDATER=$updater" @Options "$repo/snow_shot/tests/installer_upgrade_tests.nsi" | Out-Host
+        "/DSNOW_SHOT_INSTALLER_UPDATER=$updater" @Options @payloadArguments `
+        "$repo/snow_shot/tests/installer_upgrade_tests.nsi" | Out-Host
     if ($LASTEXITCODE) { throw "Installer fixture compilation failed: $Name" }
     return $output
 }
@@ -88,6 +115,7 @@ foreach ($case in 'in-place', 'moved', 'refused') {
         }
     }
     if ([IO.File]::ReadAllText($config) -cne 'preserve custom configuration') { throw 'Upgrade changed custom configuration.' }
-    Write-Output "PASS: $Edition $case upgrade preserves custom configuration and handles the previous helper correctly."
+    $bootstrap = if ($PayloadBuildDirectory) { 'payload' } else { 'legacy File' }
+    Write-Output "PASS: $Edition $case upgrade preserves custom configuration and handles the previous helper correctly ($bootstrap bootstrap)."
 }
 Write-Output "Upgrade test artifacts: $root"

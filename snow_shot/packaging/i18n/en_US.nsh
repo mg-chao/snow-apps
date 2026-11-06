@@ -21,3 +21,5 @@ LangString SnowShotEnvironmentCurrent 1033 "Selected environment for the current
 LangString SnowShotDownloadFailed 1033 "Download failed: $1"
 LangString SnowShotDesktopLaunchFailed 1033 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} could not be launched on your desktop. Start it from the Start menu."
 LangString SnowShotStartupCleanupFailed 1033 "Could not complete ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} cleanup. Close ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} and retry with administrator privileges."
+LangString SnowShotExtractingPayload 1033 "Extracting installation files..."
+LangString SnowShotPayloadExtractionFailed 1033 "The installation files could not be extracted. Please run the installer again."

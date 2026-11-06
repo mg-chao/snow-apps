@@ -25,6 +25,13 @@ share/snow-shot/licenses/third-party/
 every collected package and source license file. The bundle includes the Ant Design
 Icons MIT notice from `ant_design_qt/THIRD_PARTY_NOTICES.md`.
 
+Windows installers use the public-domain LZMA SDK 26.05 C decoder for their
+executable-filtered payload archives. The native extraction helper is temporary
+installer machinery and is not installed with the application. The SDK's pinned
+`7zr.exe` encoder runs only on the build host. `licenses/lzma-sdk/` preserves the
+original notice and source archive SHA-256; Windows notice collection includes
+both files in the consolidated license document.
+
 The Qt 6.12 LTS toolchain is pinned by `scripts/qt-toolchain.json`. The Qt notice
 bundle preserves the source archive version and digest, license texts, and
 upstream licensing metadata for Qt Base, Qt SVG, Qt Tools, and Qt Translations.

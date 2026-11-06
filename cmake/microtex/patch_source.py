@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import sys
 
+from compact_tables import compact
+
 
 root = Path(sys.argv[1])
 
@@ -442,3 +444,7 @@ def render_dimensions(text):
 
 
 edit("src/render.cpp", render_dimensions)
+
+# Compact only after the established integration/budget patches. The primitive
+# materializers are bounded registry construction, outside parser work budgets.
+compact(root)

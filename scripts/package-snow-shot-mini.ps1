@@ -116,6 +116,8 @@ function Invoke-SnowShotMiniPackaging {
             $baseConfig = $config.Replace('\', '/')
             $stagePath = $stage.Replace('\', '/')
             $nsisWork = $nsisWorkDirectory.Replace('\', '/')
+            $nsisPayload = New-SnowShotNsisPayload -BuildDirectory $buildDirectory `
+                -Stage $stage -Archive (Join-Path $nsisWorkDirectory "$base.7z") -Architecture $Architecture
             @"
 include("$baseConfig")
 set(CPACK_INSTALL_CMAKE_PROJECTS "")
@@ -124,6 +126,7 @@ set(CPACK_PACKAGE_DIRECTORY "$nsisWork")
 set(CPACK_PACKAGE_FILE_NAME "$base")
 string(REPLACE "snow-shot-mini-$packageVersion-$ocrPlatform.exe" "$base.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
 "@ | Set-Content $variantConfig -Encoding utf8NoBOM
+            Add-Content -LiteralPath $variantConfig -Value $nsisPayload.CPackDefinitions -Encoding utf8NoBOM
             & cpack --config $variantConfig -G NSIS -C Release
             if ($LASTEXITCODE -ne 0) { throw 'Mini NSIS packaging failed.' }
             $exe = Join-Path $buildDirectory "$base.exe"
@@ -138,6 +141,7 @@ string(REPLACE "snow-shot-mini-$packageVersion-$ocrPlatform.exe" "$base.exe" CPA
             "$exeHash  $base.exe" | Set-Content "$exe.sha256" -Encoding ascii
             $audit.Remove('Archive')
             $audit.Installer = [ordered]@{ Path = "$base.exe"; Bytes = (Get-Item $exe).Length; Sha256 = $exeHash }
+            $audit.InstallerPayload = $nsisPayload.Report
             $audit.NativeValidation = New-SnowNativeValidation $exe
             $audit | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $buildDirectory "$base.manifest.json") -Encoding utf8NoBOM
         }

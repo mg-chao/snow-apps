@@ -165,6 +165,7 @@ impl StreamingEncoderBuilder {
         self
     }
     /// CPU P010 input already rendered as BT.2020/PQ. No SDR relabeling.
+    /// Creation rejects this input when the `hdr-encoding` capability is disabled.
     pub fn hdr10_cpu_input(mut self) -> Self {
         #[cfg(target_os = "macos")]
         {
@@ -245,6 +246,17 @@ impl StreamingEncoderBuilder {
     }
 
     pub fn create(self) -> Result<StreamingEncoder> {
+        #[cfg(not(feature = "hdr-encoding"))]
+        {
+            let hdr_input = self.cpu_hdr_input;
+            #[cfg(target_os = "macos")]
+            let hdr_input = hdr_input || self.native_input == Some(snow_media::PixelFormat::P010);
+            if hdr_input {
+                return Err(RecordingExportError::InvalidConfig(
+                    "HDR encoding is not enabled in this recording profile".into(),
+                ));
+            }
+        }
         if self
             .audio_input_channels
             .is_some_and(|channels| channels == 0)
@@ -504,9 +516,11 @@ pub struct StreamingEncoder {
     scaler: Option<crate::output_scaler::OutputScaler>,
     #[cfg(target_os = "macos")]
     native_input: Option<snow_media::PixelFormat>,
+    #[cfg(feature = "hdr-encoding")]
     cpu_hdr_input: bool,
     #[cfg(windows)]
     hardware_frames: Option<crate::gpu::HardwareFrames>,
+    #[cfg(feature = "hdr-encoding")]
     hdr_source: Option<ffmpeg::frame::Video>,
     encode_frame: ffmpeg::frame::Video,
     width: u32,
@@ -527,6 +541,18 @@ pub struct StreamingEncoder {
 }
 
 impl StreamingEncoder {
+    #[inline]
+    fn uses_hdr_input(&self) -> bool {
+        #[cfg(feature = "hdr-encoding")]
+        {
+            self.cpu_hdr_input
+        }
+        #[cfg(not(feature = "hdr-encoding"))]
+        {
+            false
+        }
+    }
+
     #[cfg(target_os = "macos")]
     pub fn poll_native_packets(&mut self) -> Result<()> {
         if self.native_input.is_some() {
@@ -644,6 +670,9 @@ impl StreamingEncoder {
         cpu_hdr_input: bool,
         fragmented: bool,
     ) -> Result<Self> {
+        // Make HDR-only encoder selection, conversion and fallback branches
+        // unreachable in SDR builds, including callers inside recovery.
+        let cpu_hdr_input = cfg!(feature = "hdr-encoding") && cpu_hdr_input;
         let mut output = ffmpeg::format::output(&staging_path).map_err(|error| {
             RecordingExportError::Encode(format!(
                 "failed to create streaming output context {}: {error}",
@@ -1183,7 +1212,9 @@ impl StreamingEncoder {
             scaler,
             #[cfg(target_os = "macos")]
             native_input,
+            #[cfg(feature = "hdr-encoding")]
             cpu_hdr_input,
+            #[cfg(feature = "hdr-encoding")]
             hdr_source: None,
             #[cfg(windows)]
             hardware_frames,
@@ -1242,7 +1273,7 @@ impl StreamingEncoder {
     }
 
     pub(crate) fn configure_conversion_threads(&mut self, threads: u8) -> Result<()> {
-        if self.cpu_hdr_input {
+        if self.uses_hdr_input() {
             return if threads == 0 {
                 Ok(())
             } else {
@@ -1354,7 +1385,7 @@ impl StreamingEncoder {
         pts: u64,
         rgba: RasterBuffer,
     ) -> Result<RasterBuffer> {
-        if self.cpu_hdr_input {
+        if self.uses_hdr_input() {
             return Err(RecordingExportError::InvalidConfig(
                 "HDR encoder requires P010 BT.2020/PQ input".into(),
             ));
@@ -1618,15 +1649,15 @@ impl StreamingEncoder {
             .allocate()
     }
 
-    /// Submit an immutable CoreVideo lease without CPU readback.
     /// Explicit software HDR transport. Conversion preserves limited-range PQ
     /// code values; this never infers HDR from an SDR image or just changes tags.
+    #[cfg(feature = "hdr-encoding")]
     pub fn push_cpu_hdr_frame_at_pts(
         &mut self,
         pts: u64,
         image: &snow_media::CpuFrame,
     ) -> Result<()> {
-        if !self.cpu_hdr_input
+        if !self.uses_hdr_input()
             || self.finished
             || self.output.is_none()
             || image.format != snow_media::PixelFormat::P010
@@ -1684,6 +1715,17 @@ impl StreamingEncoder {
             ));
         }
         self.admit_prepared_frame(pts, frame)
+    }
+
+    #[cfg(not(feature = "hdr-encoding"))]
+    pub fn push_cpu_hdr_frame_at_pts(
+        &mut self,
+        _pts: u64,
+        _image: &snow_media::CpuFrame,
+    ) -> Result<()> {
+        Err(RecordingExportError::InvalidConfig(
+            "HDR encoding is not enabled in this recording profile".into(),
+        ))
     }
 
     #[cfg(target_os = "macos")]
@@ -1755,7 +1797,7 @@ impl StreamingEncoder {
     ) -> Result<ffmpeg::frame::Video> {
         if self.finished
             || self.output.is_none()
-            || self.cpu_hdr_input
+            || self.uses_hdr_input()
             || frame.format() != ffmpeg::format::Pixel::RGBA
             || frame.width() != self.width
             || frame.height() != self.height
@@ -1802,7 +1844,7 @@ impl StreamingEncoder {
             ));
         }
         validate_cpu_video_frame(&frame)?;
-        crate::hdr::frame(&mut frame, self.cpu_hdr_input);
+        crate::hdr::frame(&mut frame, self.uses_hdr_input());
         self.admit_prepared_frame(pts, frame)
     }
     /// Retain immutable prepared pixels while the caller reuses its frame shell.
@@ -1916,7 +1958,7 @@ impl StreamingEncoder {
         #[cfg(feature = "bench-timing")]
         {
             #[cfg(target_os = "macos")]
-            let stage = if self.cpu_hdr_input {
+            let stage = if self.uses_hdr_input() {
                 "encode.cpu_hdr_send"
             } else {
                 "encode.gpu_send"
@@ -3151,6 +3193,39 @@ fn is_direct_staging_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "hdr-encoding"))]
+    #[test]
+    fn sdr_profile_rejects_explicit_hdr_before_creating_output_or_staging() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("not-created");
+        let output = missing.join("hdr.mp4");
+        let mut config = encoder_config(output, ExportFormat::Mp4);
+        config.codec = VideoCodec::H265;
+        let result = StreamingEncoder::builder(config)
+            .hdr10_cpu_input()
+            .software_only()
+            .create();
+        assert!(matches!(
+            result,
+            Err(RecordingExportError::InvalidConfig(message))
+                if message.contains("HDR encoding is not enabled")
+        ));
+        assert!(!missing.exists());
+
+        let destination = directory.path().join("existing.mp4");
+        fs::write(&destination, b"existing recording").unwrap();
+        let mut config = encoder_config(destination.clone(), ExportFormat::Mp4);
+        config.codec = VideoCodec::H265;
+        assert!(
+            StreamingEncoder::builder(config)
+                .hdr10_cpu_input()
+                .create()
+                .is_err()
+        );
+        assert_eq!(fs::read(destination).unwrap(), b"existing recording");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
     use ffmpeg::Rescale;
     use ffmpeg::codec::packet::Mut;
     use std::sync::Arc;

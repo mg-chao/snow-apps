@@ -21,3 +21,5 @@ LangString SnowShotDesktopLaunchFailed 1028 "無法在您的桌面上啟動 ${SN
 LangString SnowShotStartupCleanupFailed 1028 "無法完成 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 清理。請關閉 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 並使用系統管理員權限重試。"
 LangString SnowShotArm64Required 1028 "此安裝程式需要 ARM64 版 Windows 11 或更新版本。"
 LangString SnowShot64BitRequired 1028 "此安裝程式需要 64 位元 Windows。"
+LangString SnowShotExtractingPayload 1028 "正在解壓縮安裝檔案..."
+LangString SnowShotPayloadExtractionFailed 1028 "無法解壓縮安裝檔案。請重新執行安裝程式。"

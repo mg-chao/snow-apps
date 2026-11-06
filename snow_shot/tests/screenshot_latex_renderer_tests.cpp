@@ -1,3 +1,17 @@
+#ifdef _MSC_VER
+#pragma warning(push)
+// Upstream inline lowercase helpers instantiate std::transform with ::tolower,
+// whose int result is assigned to char/wchar_t. Keep that diagnostic local to
+// the dependency headers while retaining strict warnings for the test itself.
+#pragma warning(disable : 4242)
+#endif
+#include "atom/atom_char.h"
+#include "core/formula.h"
+#include "core/macro.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #include "snow_shot/presentation/screenshotlatexrenderer.h"
 #include "snow_preview.h"
 
@@ -63,6 +77,62 @@ bool hasVisiblePixels(const QImage& image) {
         }
     }
     return false;
+}
+
+void builtinRegistriesArePreserved() {
+    require(tex::SymbolAtom::_symbols.size() == 620,
+            "builtin symbols must retain all names, including punctuation");
+    require(tex::Formula::_symbolFormulaMappings.size() == 773 &&
+                tex::Formula::_symbolMappings.size() == 65 &&
+                tex::Formula::_symbolTextMappings.size() == 56 &&
+                tex::Formula::_predefinedTeXFormulasAsString.size() == 128,
+            "builtin formula registries must retain every distinct key");
+    require(tex::Formula::_symbolFormulaMappings.at(10949) == "\\nsubseteqq",
+            "Unicode formula duplicates must retain the first negated-subset definition");
+    const auto bar = tex::SymbolAtom::get("|");
+    require(bar->getName() == "|" && bar->_type == tex::AtomType::ordinary,
+            "the punctuation symbol must preserve its name and type");
+    const auto unicode = bar->getUnicode();
+    bar->setUnicode(static_cast<wchar_t>(0x2223));
+    require(tex::SymbolAtom::get("|") == bar && tex::SymbolAtom::get("|")->getUnicode() == 0x2223,
+            "symbol lookup must retain shared identity and cached Unicode");
+    bar->setUnicode(unicode);
+    const auto replacement = std::make_shared<tex::SymbolAtom>("|", tex::AtomType::relation, false);
+    tex::SymbolAtom::addSymbolAtom(replacement);
+    require(tex::SymbolAtom::get("|") == replacement,
+            "the public symbol registry must still support replacement");
+    tex::SymbolAtom::_symbols["|"] = bar;
+    tex::Formula::_symbolFormulaMappings[-1] = "snow-test";
+    require(tex::Formula::_symbolFormulaMappings.at(-1) == "snow-test",
+            "formula registries must remain mutable");
+    tex::Formula::_symbolFormulaMappings.erase(-1);
+    require(tex::ColorAtom::getColor("greenyellow") == 0xffd8ff4fU &&
+                tex::ColorAtom::getColor("brown") == 0xff651300U &&
+                tex::ColorAtom::getColor("redviolet") == 0xff9c10a8U &&
+                tex::ColorAtom::getColor("magenta") == 0xffff00ffU,
+            "builtin CMYK colors and duplicate priority must preserve their exact channels");
+
+    // GRAPHICS_DEBUG can be enabled independently of the build configuration.
+    // Preserve its original two optional primitives without assuming Debug/Release.
+    const bool debugCommands = tex::MacroInfo::get(L"debug") != nullptr;
+    require((tex::MacroInfo::get(L"undebug") != nullptr) == debugCommands,
+            "debug macro registration must contain both optional commands");
+    const auto expectedCommands = std::size_t{294} + (debugCommands ? 2U : 0U);
+    require(tex::MacroInfo::_commands.size() == expectedCommands,
+            "builtin primitive macro count must preserve conditional debug commands");
+    for (const auto* name : {L"newenvironment", L"renewenvironment"}) {
+        const auto* command = tex::MacroInfo::get(name);
+        require(command != nullptr && command->_argc == 3 && command->_posOpts == 2,
+                "environment macros must preserve their optional argument position");
+    }
+    tex::MacroInfo::add(L"snowRegistryTest", new tex::MacroInfo(2, 1));
+    tex::MacroInfo::add(L"sqrt", new tex::MacroInfo(9));
+    tex::snowRebuildCommands();
+    require(tex::MacroInfo::_commands.size() == expectedCommands &&
+                tex::MacroInfo::get(L"snowRegistryTest") == nullptr &&
+                tex::MacroInfo::get(L"sqrt")->_argc == 1 &&
+                tex::MacroInfo::get(L"sqrt")->_posOpts == 1,
+            "macro reconstruction must delete custom entries and restore fresh builtin metadata");
 }
 
 void mathematicalAndUnicodeRendering() {
@@ -327,6 +397,7 @@ void checkedLongDivisionIsSafe() {
 int main(int argc, char** argv) {
     QGuiApplication application(argc, argv);
     try {
+        builtinRegistriesArePreserved();
         mathematicalAndUnicodeRendering();
         formulaStateIsIsolated();
         rasterCacheAndResources();

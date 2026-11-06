@@ -12,12 +12,13 @@ snow-capture = { path = "../snow-capture" }
 snow-screen-recorder = { path = "../snow-screen-recorder", default-features = false }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 anyhow.workspace = true
-snow-recording-export = { path = "../snow-recording-export" }
+snow-recording-export = { path = "../snow-recording-export", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 snow-macos = { path = "../snow-macos" }
 snow-media = { path = "../snow-media" }
 
 [features]
-default = ["legacy-capture"]
+default = ["legacy-capture", "hdr-encoding"]
+hdr-encoding = ["snow-screen-recorder/hdr-encoding", "snow-recording-export/hdr-encoding"]
 legacy-capture = ["snow-screen-recorder/legacy-capture"]
