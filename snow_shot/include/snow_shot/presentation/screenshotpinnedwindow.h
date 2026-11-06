@@ -110,6 +110,7 @@ class ScreenshotPinnedHideToTopController;
 class ScreenshotPinnedControlsPresence;
 struct ScreenshotPinnedShakeGesture;
 class ScreenshotPinnedNativeGeometryController;
+class ScreenshotPinnedAccessibility;
 class QTextDocument;
 class QAbstractButton;
 
@@ -334,6 +335,8 @@ class ScreenshotPinnedWindow final : public QWidget {
                                snow_shot::storage::PinnedWindowCloseIntent intent);
 
   private:
+    friend class ScreenshotPinnedAccessibility;
+    std::unique_ptr<ScreenshotPinnedAccessibility> m_accessibility;
     friend class ScreenshotPinnedEditController;
     friend class ScreenshotPinnedWindowTestAccess;
     friend class ScreenshotLivePinnedWindowTestAccess;

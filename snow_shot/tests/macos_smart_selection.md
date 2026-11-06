@@ -51,6 +51,22 @@ exceptions retain the window fallback. Traversal has a 64-ancestor / 48-frame li
 and an 8 ms cooperative deadline; it never enumerates the whole local tree. Cache
 release and refresh epochs prevent obsolete results from inspecting local windows.
 
+Pinned windows expose a named `Graphic` accessibility child for their content, excluding
+the permanent decoration margin. The child belongs to the pin, so it remains available
+when native live presentation hides the canvas. Canvas accessibility uses the same
+content bounds; decorative borders are omitted, and real controls retain hit-test priority.
+The local AppKit path must include this content rectangle before the full-window fallback.
+
+Build `snow-shot-pinned-window-tests` and run only the relevant checks:
+
+```sh
+ctest --preset test-snow-shot-macos-arm64-debug -R '^snow-shot-pinned-accessibility-(1|1.25|2)-tests$'
+ctest --test-dir build/snow-shot-macos-arm64-debug -R '^snow-shot-pinned-accessibility-native-tests$' --output-on-failure
+```
+
+The native check needs a desktop session and covers image pins and live pins with a
+hidden canvas through `resolveSelectorLocalElements`, without requesting AX permission.
+
 Permission checks during capture never prompt. Missing Accessibility permission
 returns `PERMISSION_REQUIRED` with `ok=1` and the window rectangle; Qt applies that
 rectangle, skips refinement, and warns once per capture session. Function settings

@@ -17,6 +17,7 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "screenshotpinnedaccessibility.h"
 #include "snow_shot/presentation/screenshotquicktextannotationtoolbar.h"
 #include "screenshotpinnedcropgeometry.h"
 #include "snow_shot/presentation/livewindowsource.h"
@@ -973,6 +974,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
       m_shortcutManager(std::make_unique<snow_shot::presentation::WindowShortcutManager>()),
       m_physicalCursor(std::make_unique<snow_shot::platform::PhysicalCursor>()), m_exportArtifact(),
       m_nativeGeometryController(std::make_unique<ScreenshotPinnedNativeGeometryController>()) {
+    m_accessibility = std::make_unique<ScreenshotPinnedAccessibility>(*this);
     snow_shot::presentation::installWindowCloseShortcut(this, [this] { requestUserClose(); });
     m_platform->setResizeInteractionState(&m_systemSizingActive);
     m_platform->stackingChanged = [this] {
@@ -1660,6 +1662,7 @@ ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
     m_platform->stackingActivated = {};
     stopLiveSource();
     m_destroying = true;
+    m_accessibility.reset();
     destroyQuickTextAnnotationToolbar();
     endWindowShake(true);
     if (m_scaleLabel)
@@ -2161,6 +2164,13 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
             static_cast<void>(setClickThroughMode(false));
         }
     }
+    if (m_accessibility && event &&
+        (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+         event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+         event->type() == QEvent::WindowStateChange ||
+         event->type() == QEvent::DevicePixelRatioChange ||
+         event->type() == QEvent::LanguageChange))
+        m_accessibility->update(event->type() == QEvent::LanguageChange);
     return handled;
 }
 
@@ -2661,6 +2671,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     }
     static_cast<void>(m_nativeGeometryController->commitTarget());
     m_presented = true;
+    m_accessibility->update();
     refreshColorSwatch();
     if (m_selectionController && !isLiveWindow())
         m_selectionController->registerWindow(this);
@@ -9359,6 +9370,8 @@ bool ScreenshotPinnedWindow::applyAndVerifyNativeGeometry(const QRect& target) {
 void ScreenshotPinnedWindow::commitNativeGeometry(bool adoptScale) {
     m_platformPlacement = m_platform->placement();
     const auto change = m_nativeGeometryController->commitTarget();
+    if (m_accessibility)
+        m_accessibility->update();
     if (change.sizeChanged || change.dpiChanged) {
         if (adoptScale)
             m_preserveScaleForSettledGeometry = false;
