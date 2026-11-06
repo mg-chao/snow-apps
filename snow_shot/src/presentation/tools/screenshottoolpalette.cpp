@@ -5613,12 +5613,16 @@ ScreenshotToolPalette::actionToolState(const QString& itemId) const {
         return {m_qrEnabled, m_qrBusy};
     }
     if (auto* source = actionToolSourceButton(itemId)) {
-        return {source->isEnabled(), source->busy()};
+        // Loading/cropping can disable the entire floating toolbar. Do not turn that
+        // inherited state into a command's explicit disabled state when refreshing groups.
+        return {source->isEnabledTo(this), source->busy()};
     }
     return {};
 }
 
 bool ScreenshotToolPalette::canActivateActionTool(const QString& itemId) const {
+    if (!isEnabled())
+        return false;
     if (const auto tool = actionTool(itemId))
         return canActivateToolShortcut(*tool);
     return actionToolAvailable(itemId) && actionToolState(itemId).enabled;
