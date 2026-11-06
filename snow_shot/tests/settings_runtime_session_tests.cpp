@@ -44,7 +44,7 @@ QString globalMouseFieldId(settings::SettingsGlobalMouseAction action) {
     switch (action) {
     case settings::SettingsGlobalMouseAction::ScreenshotCopy:
         return QStringLiteral("global-mouse.screenshot-copy");
-    case settings::SettingsGlobalMouseAction::ScreenshotFixed:
+    case settings::SettingsGlobalMouseAction::ScreenshotPinToScreen:
         return QStringLiteral("global-mouse.screenshot-fixed");
     case settings::SettingsGlobalMouseAction::ScreenshotOcr:
         return QStringLiteral("global-mouse.screenshot-ocr");
@@ -555,7 +555,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         } else if (fieldId.startsWith(QStringLiteral("global-mouse."))) {
             for (const auto action : {
                      settings::SettingsGlobalMouseAction::ScreenshotCopy,
-                     settings::SettingsGlobalMouseAction::ScreenshotFixed,
+                     settings::SettingsGlobalMouseAction::ScreenshotPinToScreen,
                      settings::SettingsGlobalMouseAction::ScreenshotOcr,
                      settings::SettingsGlobalMouseAction::ScreenshotTranslation,
                      settings::SettingsGlobalMouseAction::ScreenshotQuickSave,
@@ -1515,7 +1515,7 @@ void auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields() {
 void globalMouseCombinationsUseTypedStateAndRejectDuplicates() {
     using Action = settings::SettingsGlobalMouseAction;
     using Combination = settings::SettingsGlobalMouseCombination;
-    const Action actions[]{Action::ScreenshotCopy,        Action::ScreenshotFixed,
+    const Action actions[]{Action::ScreenshotCopy,        Action::ScreenshotPinToScreen,
                            Action::ScreenshotOcr,         Action::ScreenshotOcrCopy,
                            Action::ScreenshotTranslation, Action::ScreenshotQuickSave,
                            Action::ScreenshotSave};

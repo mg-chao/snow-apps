@@ -83,7 +83,7 @@ class MemorySampler final {
 };
 
 QJsonObject measure(bool transformed, bool legacy) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     for (int index = 0; index < 12; ++index) {
         const QSize size = index == 0 ? QSize(1024, 768) : QSize(1536, 1024);
         auto image = snowCanvasAllocateImage(size, QImage::Format_RGBA8888);
@@ -106,7 +106,7 @@ QJsonObject measure(bool transformed, bool legacy) {
         }
     }
     auto settings = document.settings();
-    settings.sizing = transformed ? CollageSizing::Uniform : CollageSizing::Original;
+    settings.sizing = transformed ? ImageStitchingSizing::Uniform : ImageStitchingSizing::Original;
     settings.background = Qt::transparent;
     QVector<double> total;
     QVector<double> preparation;
@@ -124,7 +124,7 @@ QJsonObject measure(bool transformed, bool legacy) {
         QElapsedTimer timer;
         timer.start();
         QString error;
-        auto rows = prepareCollageRows(document.items(), settings, {}, &error);
+        auto rows = prepareImageStitchingRows(document.items(), settings, {}, &error);
         require(rows.isValid(), qPrintable(error));
         const double prepared = double(timer.nsecsElapsed()) / 1'000'000;
         readRows = 0;

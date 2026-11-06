@@ -54,8 +54,8 @@
     <context>
         <name>RecordingRegionDragHandle</name>
         <message>
-            <source>Move recording area</source>
-            <translation>Move recording area</translation>
+            <source>Move screen recording area</source>
+            <translation>Move screen recording area</translation>
         </message>
     </context>
     <context>
@@ -65,8 +65,8 @@
             <translation>Cancel</translation>
         </message>
         <message>
-            <source>Cancelling rendering...</source>
-            <translation>Cancelling rendering...</translation>
+            <source>Canceling rendering...</source>
+            <translation>Canceling rendering...</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -77,12 +77,12 @@
             <translation>Finalizing recording...</translation>
         </message>
         <message>
-            <source>Keep source</source>
-            <translation>Keep source</translation>
+            <source>Keep source files</source>
+            <translation>Keep source files</translation>
         </message>
         <message>
-            <source>Preparing recording...</source>
-            <translation>Preparing recording...</translation>
+            <source>Preparing recording for export...</source>
+            <translation>Preparing recording for export...</translation>
         </message>
         <message>
             <source>Rendering canceled</source>
@@ -146,12 +146,12 @@
             <translation>Microphone enabled</translation>
         </message>
         <message>
-            <source>Speaker disabled</source>
-            <translation>Speaker disabled</translation>
+            <source>System audio disabled</source>
+            <translation>System audio disabled</translation>
         </message>
         <message>
-            <source>Speaker enabled</source>
-            <translation>Speaker enabled</translation>
+            <source>System audio enabled</source>
+            <translation>System audio enabled</translation>
         </message>
         <message>
             <source>WebP</source>
@@ -223,12 +223,12 @@
             <translation>Flip vertically</translation>
         </message>
         <message>
-            <source>Move webcam</source>
-            <translation>Move webcam</translation>
+            <source>Move webcam preview</source>
+            <translation>Move webcam preview</translation>
         </message>
         <message>
-            <source>Resize webcam</source>
-            <translation>Resize webcam</translation>
+            <source>Resize webcam preview</source>
+            <translation>Resize webcam preview</translation>
         </message>
         <message>
             <source>Rotate clockwise</source>
@@ -258,16 +258,16 @@
             <translation>Open folder</translation>
         </message>
         <message>
-            <source>Recording recovery</source>
-            <translation>Recording recovery</translation>
-        </message>
-        <message>
             <source>Recover</source>
             <translation>Recover</translation>
         </message>
         <message>
             <source>Screen recording</source>
             <translation>Screen recording</translation>
+        </message>
+        <message>
+            <source>Screen recording recovery</source>
+            <translation>Screen recording recovery</translation>
         </message>
         <message>
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
@@ -311,8 +311,8 @@ Keep this folder to recover the recording</translation>
             <translation>Done</translation>
         </message>
         <message>
-            <source>Recording settings</source>
-            <translation>Recording settings</translation>
+            <source>Screen recording settings</source>
+            <translation>Screen recording settings</translation>
         </message>
     </context>
     <context>

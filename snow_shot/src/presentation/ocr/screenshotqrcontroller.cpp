@@ -162,7 +162,7 @@ class ScreenshotQrPopover final : public QWidget {
         setAccessibleName(ScreenshotQrController::tr("QR code"));
         text->setAccessibleName(ScreenshotQrController::tr("QR code text"));
         copy->setText(ScreenshotQrController::tr("Copy text"));
-        open->setText(ScreenshotQrController::tr("Open URL"));
+        open->setText(ScreenshotQrController::tr("Open link"));
         if (status->isVisible())
             status->setText(ScreenshotQrController::tr("Unable to open the recognized link"));
     }

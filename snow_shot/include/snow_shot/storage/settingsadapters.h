@@ -167,8 +167,8 @@ class ShortcutSettings final {
     bool setScreenshot(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotDelay() const;
     bool setScreenshotDelay(const shortcuts::ShortcutBindingList& bindings) const;
-    [[nodiscard]] shortcuts::ShortcutBindingList screenshotFixed() const;
-    bool setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotPinToScreen() const;
+    bool setScreenshotPinToScreen(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcr() const;
     bool setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcrCopy() const;
@@ -226,8 +226,8 @@ class ShortcutSettings final {
     [[nodiscard]] shortcuts::ShortcutBindingList toggleWindowUnderCursorAlwaysOnTop() const;
     bool
     setToggleWindowUnderCursorAlwaysOnTop(const shortcuts::ShortcutBindingList& bindings) const;
-    [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
-    bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalShortcuts() const;
+    bool setToggleGlobalShortcuts(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;
     bool
     setToggleDisableOnFocusedFullscreenWindow(const shortcuts::ShortcutBindingList& bindings) const;

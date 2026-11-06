@@ -362,7 +362,7 @@ void drawingSelectsInheritScaleWhenMaterialized() {
         toolbar.setPhysicalScale(scale);
         for (const auto tool :
              {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::RectangleFilter,
-              ScreenshotToolPalette::Tool::SerialNumber, ScreenshotToolPalette::Tool::PenFilter,
+              ScreenshotToolPalette::Tool::SequenceNumber, ScreenshotToolPalette::Tool::BrushFilter,
               ScreenshotToolPalette::Tool::Text}) {
             toolbar.setActiveTool(tool);
             flushEvents();
@@ -641,7 +641,7 @@ void cachedToolbarIconsFollowThemeColors() {
     auto* microphoneButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Record microphone"));
     auto* systemAudioButton =
-        buttonWithTooltip(recordingToolbar, QStringLiteral("Record speakers"));
+        buttonWithTooltip(recordingToolbar, QStringLiteral("Record system audio"));
     auto* pauseButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Pause recording"));
     auto* copyRecordingButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Copy recording"));
@@ -771,8 +771,8 @@ void recordingAudioIconsFollowSettings() {
     prepare(toolbar);
     auto* microphone =
         toolbar.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingMicrophone"));
-    auto* speaker = buttonWithTooltip(toolbar, QStringLiteral("Record speakers"));
-    require(microphone != nullptr && speaker != nullptr, "recording audio controls exist");
+    auto* systemAudio = buttonWithTooltip(toolbar, QStringLiteral("Record system audio"));
+    require(microphone != nullptr && systemAudio != nullptr, "recording audio controls exist");
 
     QImage preview(480, 160, QImage::Format_ARGB32_Premultiplied);
     preview.fill(Qt::transparent);
@@ -785,7 +785,7 @@ void recordingAudioIconsFollowSettings() {
         const auto scheme = themeManager.themeColorScheme();
         painter.fillRect(0, row * 80, 480, 80, scheme.map.colorBgContainer);
         int column = 0;
-        for (auto* button : {microphone, speaker}) {
+        for (auto* button : {microphone, systemAudio}) {
             const bool isMicrophone = button == microphone;
             const auto setEnabled = [&](bool enabled) {
                 if (isMicrophone)
@@ -1585,15 +1585,15 @@ void toolbarSkinProfilesAndLifecycle() {
         options.showMoveTool = index < 2;
         options.enableMoveOptionsToolbar = index == 0;
         options.showLineTool = true;
-        options.showFreeDrawTool = true;
+        options.showBrushTool = true;
         options.showHighlightTool = true;
-        options.showPenHighlightTool = index == 3;
+        options.showBrushHighlightTool = index == 3;
         options.showSpotlightTool = true;
         options.showEraserTool = true;
         options.showFilterTool = true;
         options.showWatermarkTool = true;
         options.showTextTool = true;
-        options.showSerialNumberTool = true;
+        options.showSequenceNumberTool = true;
         options.showOcrTool = index < 2;
         options.showTextTranslationTool = index < 2;
         options.showTableTool = index < 2;
@@ -1666,20 +1666,20 @@ void toolbarSkinProfilesAndLifecycle() {
         {Tool::Shape, "shape"},
         {Tool::Arrow, "arrow"},
         {Tool::Line, "line"},
-        {Tool::FreeDraw, "free-draw"},
+        {Tool::Brush, "free-draw"},
         {Tool::RectangleHighlight, "rectangle-highlight"},
-        {Tool::PenHighlight, "pen-highlight"},
+        {Tool::BrushHighlight, "pen-highlight"},
         {Tool::Eraser, "eraser"},
         {Tool::RectangleFilter, "rectangle-filter"},
         {Tool::Watermark, "watermark"},
         {Tool::Text, "text"},
-        {Tool::SerialNumber, "serial-number"},
+        {Tool::SequenceNumber, "serial-number"},
         {Tool::Ocr, "ocr"},
         {Tool::TextTranslation, "text-translation"},
         {Tool::Table, "table"},
         {Tool::Qr, "qr"},
         {Tool::ScrollingScreenshot, "scrolling-screenshot"},
-        {Tool::PenFilter, "pen-filter"},
+        {Tool::BrushFilter, "pen-filter"},
         {Tool::Spotlight, "spotlight"},
         {Tool::Markdown, "markdown"},
         {Tool::Html, "html"},
@@ -2265,12 +2265,12 @@ void liveWindowPinToolbarGroupAndLayoutMigration() {
     }
 }
 
-void speechBubbleSharesSerialNumberToolbarGroup() {
+void speechBubbleSharesSequenceNumberToolbarGroup() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     const QStringList group{QStringLiteral("speech-bubble"), QStringLiteral("serial-number")};
     for (bool configured : {false, true}) {
         auto options = screenshotOptions();
-        options.showSerialNumberTool = true;
+        options.showSequenceNumberTool = true;
         if (configured)
             options.toolbarLayout =
                 snow_shot::storage::ScreenshotToolbarLayout{layout::defaultPositions(), {}};
@@ -2295,13 +2295,13 @@ void speechBubbleSharesSerialNumberToolbarGroup() {
                 "grouped Speech Bubble does not occupy a standalone toolbar position");
         int serialRequests = 0;
         int bubbleRequests = 0;
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberRequested,
+        QObject::connect(&palette, &ScreenshotToolPalette::sequenceNumberRequested,
                          [&] { ++serialRequests; });
         QObject::connect(&palette, &ScreenshotToolPalette::speechBubbleRequested,
                          [&] { ++bubbleRequests; });
         trigger->click();
         require(serialRequests == 1 && bubbleRequests == 0 &&
-                    palette.activeTool() == ScreenshotToolPalette::Tool::SerialNumber,
+                    palette.activeTool() == ScreenshotToolPalette::Tool::SequenceNumber,
                 "clicking the initial group button activates Serial Number once");
         auto* popover = trigger->findChild<adqt::widgets::AdPopover*>();
         require(popover != nullptr, "the shared group exposes a tool popup");
@@ -2325,7 +2325,7 @@ void speechBubbleSharesSerialNumberToolbarGroup() {
                 "the shared popup activates Speech Bubble once");
     }
     auto options = screenshotOptions();
-    options.showSerialNumberTool = false;
+    options.showSequenceNumberTool = false;
     ScreenshotToolPalette palette(options);
     prepare(palette);
     auto* bubble =
@@ -2530,7 +2530,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--speech-bubble-only"))) {
-        speechBubbleSharesSerialNumberToolbarGroup();
+        speechBubbleSharesSequenceNumberToolbarGroup();
         speechBubbleReusesShapeControlsWithIndependentStyles();
         return 0;
     }

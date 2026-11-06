@@ -34,9 +34,9 @@ struct ScreenshotToolCommandActions {
     std::function<void(const SnowCanvasSpotlightConfig& config)> setSpotlightConfig;
     std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> setTextStyle;
     std::function<void(const SnowCanvasSerialNumberStyle& style, std::optional<quint32> properties)>
-        setSerialNumberStyle;
-    std::function<void(qint64 delta)> adjustSelectedSerialNumbers;
-    std::function<void()> createCanvasTextForSelectedSerialNumber;
+        setSequenceNumberStyle;
+    std::function<void(qint64 delta)> adjustSelectedSequenceNumbers;
+    std::function<void()> createCanvasTextForSelectedSequenceNumber;
     std::function<bool(int direction)> stepToolbarStrokeWidth;
 
     std::function<void()> updateOverlayState;

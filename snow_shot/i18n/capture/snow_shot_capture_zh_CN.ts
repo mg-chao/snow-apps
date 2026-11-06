@@ -82,7 +82,7 @@
             <translation>选区内未找到可捕获的窗口</translation>
         </message>
         <message>
-            <source>No recognized result is available to copy</source>
+            <source>No recognition result is available to copy</source>
             <translation>没有可复制的识别结果</translation>
         </message>
         <message>
@@ -227,7 +227,7 @@
             <translation>复制文本</translation>
         </message>
         <message>
-            <source>Open URL</source>
+            <source>Open link</source>
             <translation>打开链接</translation>
         </message>
         <message>
@@ -345,14 +345,6 @@
             <translation>请输入预设名称</translation>
         </message>
         <message>
-            <source>Position X</source>
-            <translation>X 坐标</translation>
-        </message>
-        <message>
-            <source>Position Y</source>
-            <translation>Y 坐标</translation>
-        </message>
-        <message>
             <source>Preset</source>
             <translation>预设</translation>
         </message>
@@ -391,6 +383,14 @@
         <message>
             <source>Width (points)</source>
             <translation>宽度（点）</translation>
+        </message>
+        <message>
+            <source>X coordinate</source>
+            <translation>X 坐标</translation>
+        </message>
+        <message>
+            <source>Y coordinate</source>
+            <translation>Y 坐标</translation>
         </message>
     </context>
     <context>
@@ -496,11 +496,11 @@
         </message>
         <message>
             <source>X coordinate</source>
-            <translation> X 坐标</translation>
+            <translation>X 坐标</translation>
         </message>
         <message>
             <source>Y coordinate</source>
-            <translation> Y 坐标</translation>
+            <translation>Y 坐标</translation>
         </message>
         <message>
             <source>dp</source>
@@ -610,16 +610,16 @@
             <translation>捕获失败：%1</translation>
         </message>
         <message>
-            <source>History publication could not be queued</source>
-            <translation>无法将历史记录写入操作加入队列</translation>
-        </message>
-        <message>
             <source>The capture operation failed</source>
             <translation>捕获操作失败</translation>
         </message>
         <message>
-            <source>The clipboard publication could not be queued</source>
+            <source>The clipboard write operation could not be queued</source>
             <translation>无法将剪贴板写入操作加入队列</translation>
+        </message>
+        <message>
+            <source>The history write operation could not be queued</source>
+            <translation>无法将历史记录写入操作加入队列</translation>
         </message>
     </context>
 </TS>

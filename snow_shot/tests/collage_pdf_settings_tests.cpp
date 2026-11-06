@@ -92,7 +92,7 @@ void refresh() {
     QApplication::processEvents();
 }
 
-bool uniformMargins(const CollagePdfSettings& settings, qreal value) {
+bool uniformMargins(const ImageStitchingPdfSettings& settings, qreal value) {
     const auto equal = [value](qreal margin) {
         return margin == value || (std::isnan(margin) && std::isnan(value));
     };
@@ -101,8 +101,8 @@ bool uniformMargins(const CollagePdfSettings& settings, qreal value) {
 }
 
 void validSettingsUpdateAndValidation() {
-    CollageDocument document;
-    CollagePdfSettingsWidget widget(&document);
+    ImageStitchingDocument document;
+    ImageStitchingPdfSettingsWidget widget(&document);
     widget.resize(360, 850);
     widget.show();
     refresh();
@@ -120,40 +120,41 @@ void validSettingsUpdateAndValidation() {
     }
     require(marginInputs == 1 &&
                 margin->accessibleName() ==
-                    QCoreApplication::translate("CollagePdfSettingsWidget", "Page margin") &&
+                    QCoreApplication::translate("ImageStitchingPdfSettingsWidget", "Page margin") &&
                 fieldFor(margin)->label() ==
-                    QCoreApplication::translate("CollagePdfSettingsWidget", "Page margin"),
+                    QCoreApplication::translate("ImageStitchingPdfSettingsWidget", "Page margin"),
             "one singular, accessible Page margin field replaces the four directional inputs");
     require(!custom->isVisible() &&
-                paper->currentValue().toInt() == static_cast<int>(CollagePdfPaperSize::A4) &&
+                paper->currentValue().toInt() == static_cast<int>(ImageStitchingPdfPaperSize::A4) &&
                 uniformMargins(document.pdfSettings(), 10),
             "A4 with one ten-millimeter margin is selected by default and custom dimensions stay "
             "hidden");
     QStringList fields;
-    QObject::connect(&widget, &CollagePdfSettingsWidget::settingsEdited, &widget,
+    QObject::connect(&widget, &ImageStitchingPdfSettingsWidget::settingsEdited, &widget,
                      [&](const QString& field) { fields.append(field); });
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     width->setText(QStringLiteral("123.75"));
     height->setText(QStringLiteral("234.5"));
-    orientation->setCurrentValue(static_cast<int>(CollagePdfOrientation::Landscape));
+    orientation->setCurrentValue(static_cast<int>(ImageStitchingPdfOrientation::Landscape));
     int marginChanges = 0;
-    const auto changed = QObject::connect(&document, &CollageDocument::changed, &document, [&] {
-        ++marginChanges;
-        require(uniformMargins(document.pdfSettings(), 4.125),
-                "all four margins become visible in one atomic document update");
-    });
+    const auto changed =
+        QObject::connect(&document, &ImageStitchingDocument::changed, &document, [&] {
+            ++marginChanges;
+            require(uniformMargins(document.pdfSettings(), 4.125),
+                    "all four margins become visible in one atomic document update");
+        });
     margin->setText(QStringLiteral("4.125"));
     QObject::disconnect(changed);
     require(marginChanges == 1, "one margin edit emits one document change");
-    exportMode->setCurrentValue(static_cast<int>(CollagePdfExportMode::PerPage));
+    exportMode->setCurrentValue(static_cast<int>(ImageStitchingPdfExportMode::PerPage));
     const auto settings = document.pdfSettings();
     require(custom->isVisible() && settings.customWidthMm == 123.75 &&
                 settings.customHeightMm == 234.5 && uniformMargins(settings, 4.125) &&
-                settings.orientation == CollagePdfOrientation::Landscape &&
-                settings.exportMode == CollagePdfExportMode::PerPage &&
+                settings.orientation == ImageStitchingPdfOrientation::Landscape &&
+                settings.exportMode == ImageStitchingPdfExportMode::PerPage &&
                 document.lastValidPdfSettings() == settings,
             "valid decimal fields promptly update custom paper and one margin on every side");
-    const auto layout = calculateCollagePdfPageLayout({12, 8}, settings);
+    const auto layout = calculateImageStitchingPdfPageLayout({12, 8}, settings);
     require(layout.pageMillimeters == QSizeF(234.5, 123.75) &&
                 layout.contentMillimeters == QRectF(4.125, 4.125, 226.25, 115.5) &&
                 layout.imageMillimeters.center() == layout.contentMillimeters.center(),
@@ -200,17 +201,17 @@ void validSettingsUpdateAndValidation() {
     margin->setText(QStringLiteral("61.875"));
     require(margin->status() == AdLineEdit::Status::Error &&
                 !fieldFor(margin)->helpText().isEmpty() &&
-                validateCollagePdfSettings(document.pdfSettings())
+                validateImageStitchingPdfSettings(document.pdfSettings())
                     .contains(QStringLiteral("margin_top_mm")) &&
                 document.lastValidPdfSettings() == settings,
             "the single margin identifies an unusable content height at the exact boundary");
     margin->setText(QStringLiteral("118"));
     require(margin->status() == AdLineEdit::Status::Error &&
-                validateCollagePdfSettings(document.pdfSettings())
+                validateImageStitchingPdfSettings(document.pdfSettings())
                     .contains(QStringLiteral("margin_left_mm")),
             "the single margin also identifies an unusable content width");
     margin->setText(QStringLiteral("0"));
-    const auto borderless = calculateCollagePdfPageLayout({12, 8}, document.pdfSettings());
+    const auto borderless = calculateImageStitchingPdfPageLayout({12, 8}, document.pdfSettings());
     require(
         uniformMargins(document.pdfSettings(), 0) && margin->status() == AdLineEdit::Status::None &&
             fieldFor(margin)->helpText().isEmpty() && margin->accessibleDescription().isEmpty() &&
@@ -224,13 +225,13 @@ void validSettingsUpdateAndValidation() {
 }
 
 void imageSizeSelection() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     auto settings = document.pdfSettings();
-    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     settings.marginTopMm = settings.marginBottomMm = settings.marginLeftMm =
         settings.marginRightMm = 12.5;
     document.setPdfSettings(settings);
-    CollagePdfSettingsWidget widget(&document);
+    ImageStitchingPdfSettingsWidget widget(&document);
     widget.resize(360, 850);
     widget.show();
     refresh();
@@ -238,15 +239,15 @@ void imageSizeSelection() {
     auto* orientation = control<AdSegmented>(widget, "collagePdfOrientation");
     auto* margin = control<AdLineEdit>(widget, "collagePdfMargin");
     auto* custom = control<QWidget>(widget, "collagePdfCustomPaper");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::ImageSize));
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::ImageSize));
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
     require(paper->currentText() == QStringLiteral("Image size") &&
                 document.pdfSettings() == settings && !custom->isVisible() &&
                 !orientation->isVisible() && !margin->isVisible(),
             "image size is selectable and hides inactive paper controls without changing values");
     const std::array<const char*, 3> locales{"en_US", "zh_CN", "zh_TW"};
     const std::array expected{QStringLiteral("Image size"), QStringLiteral("图像大小"),
-                              QStringLiteral("圖像大小")};
+                              QStringLiteral("影像大小")};
     for (std::size_t index = 0; index < locales.size(); ++index) {
         QTranslator translator;
         require(
@@ -269,19 +270,19 @@ void imageSizeSelection() {
         require(!margin->isVisible(), "retranslating image size keeps the paper margin hidden");
         QApplication::removeTranslator(&translator);
     }
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::A4));
-    settings.paperSize = CollagePdfPaperSize::A4;
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::A4));
+    settings.paperSize = ImageStitchingPdfPaperSize::A4;
     require(document.pdfSettings() == settings && orientation->isVisible() && margin->isVisible() &&
                 orientation->currentValue().toInt() ==
-                    static_cast<int>(CollagePdfOrientation::Landscape) &&
+                    static_cast<int>(ImageStitchingPdfOrientation::Landscape) &&
                 margin->text() == QStringLiteral("12.5"),
             "returning to a paper size restores the saved orientation and margin controls");
 }
 
 void templateSettingsAndImageSize() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image(), QStringLiteral("original"));
-    CollagePdfSettingsWidget widget(&document);
+    ImageStitchingPdfSettingsWidget widget(&document);
     widget.resize(360, 1000);
     widget.show();
     refresh();
@@ -291,22 +292,22 @@ void templateSettingsAndImageSize() {
     auto* spacing = control<AdLineEdit>(widget, "collagePdfImageSpacing");
     auto* orientation = control<AdSegmented>(widget, "collagePdfOrientation");
     auto* paper = control<AdSelect>(widget, "collagePdfPaperSize");
-    require(document.pdfSettings().stitchingMethod == CollagePdfStitchingMethod::PageBased &&
-                document.pdfSettings().templateType == CollagePdfTemplateType::TwoImages &&
+    require(document.pdfSettings().stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased &&
+                document.pdfSettings().templateType == ImageStitchingPdfTemplateType::TwoImages &&
                 document.pdfSettings().imageSpacingMm == 5 && !templates->isVisible() &&
                 !spacing->isVisible(),
             "first use defaults to page stitching and remembers inactive template defaults");
     QStringList edits;
-    QObject::connect(&widget, &CollagePdfSettingsWidget::settingsEdited, &widget,
+    QObject::connect(&widget, &ImageStitchingPdfSettingsWidget::settingsEdited, &widget,
                      [&](const QString& field) { edits.append(field); });
-    method->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::TemplateBased));
+    method->setCurrentValue(static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased));
     control<AdButton>(widget, "collagePdfTemplateFiveImages")->click();
     spacing->setText(QStringLiteral("6.125"));
     refresh();
     require(
         templates->isVisible() && templates->findChildren<AdButton*>().size() == 9 &&
             spacing->isVisible() &&
-            document.pdfSettings().templateType == CollagePdfTemplateType::FiveImages &&
+            document.pdfSettings().templateType == ImageStitchingPdfTemplateType::FiveImages &&
             control<AdButton>(widget, "collagePdfTemplateFiveImages")->isChecked() &&
             !control<AdButton>(widget, "collagePdfTemplateTwoImages")->isChecked() &&
             document.pdfSettings().imageSpacingMm == 6.125 &&
@@ -316,13 +317,14 @@ void templateSettingsAndImageSize() {
             edits.contains(QStringLiteral("template_type")) &&
             edits.contains(QStringLiteral("image_spacing_mm")),
         "all nine templates are accessible and fractional millimeter spacing sits beside margin");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::ImageSize));
-    orientation->setCurrentValue(static_cast<int>(CollagePdfOrientation::Landscape));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::ImageSize));
+    orientation->setCurrentValue(static_cast<int>(ImageStitchingPdfOrientation::Landscape));
     refresh();
     const auto layout =
-        calculateCollagePdfComposedPage(document.items(), document.pdfSettings(), 0);
-    require(document.pdfSettings().paperSize == CollagePdfPaperSize::ImageSize &&
-                paper->currentValue().toInt() == static_cast<int>(CollagePdfPaperSize::ImageSize) &&
+        calculateImageStitchingPdfComposedPage(document.items(), document.pdfSettings(), 0);
+    require(document.pdfSettings().paperSize == ImageStitchingPdfPaperSize::ImageSize &&
+                paper->currentValue().toInt() ==
+                    static_cast<int>(ImageStitchingPdfPaperSize::ImageSize) &&
                 orientation->isVisible() && margin->isVisible() && spacing->isVisible() &&
                 layout.isValid() && layout.pageMillimeters == QSizeF(297, 210),
             "template Image Size stays selected while A4 orientation, margins and spacing remain "
@@ -334,22 +336,22 @@ void templateSettingsAndImageSize() {
                 document.lastValidPdfSettings() == valid,
             "invalid spacing retains its draft and the last valid composed layout");
     spacing->setText(QStringLiteral("6.125"));
-    method->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::PageBased));
+    method->setCurrentValue(static_cast<int>(ImageStitchingPdfStitchingMethod::PageBased));
     refresh();
     require(!templates->isVisible() && !spacing->isVisible() && !orientation->isVisible() &&
                 !margin->isVisible() &&
-                document.pdfSettings().templateType == CollagePdfTemplateType::FiveImages &&
+                document.pdfSettings().templateType == ImageStitchingPdfTemplateType::FiveImages &&
                 document.pdfSettings().imageSpacingMm == 6.125,
             "page stitching hides inactive template controls without discarding their choices");
 }
 
 void invalidSelectionsHaveFieldErrors() {
-    CollageDocument document;
-    CollagePdfSettingsWidget widget(&document);
+    ImageStitchingDocument document;
+    ImageStitchingPdfSettingsWidget widget(&document);
     widget.show();
     const auto invalid = [&](const char* name,
-                             const std::function<void(CollagePdfSettings&)>& edit) {
-        auto settings = CollagePdfSettings{};
+                             const std::function<void(ImageStitchingPdfSettings&)>& edit) {
+        auto settings = ImageStitchingPdfSettings{};
         edit(settings);
         document.setPdfSettings(settings);
         refresh();
@@ -363,20 +365,20 @@ void invalidSelectionsHaveFieldErrors() {
                     field->helpText().isEmpty(),
                 "correcting a selection clears its field error");
     };
-    invalid("collagePdfPaperSize", [](CollagePdfSettings& settings) {
-        settings.paperSize = static_cast<CollagePdfPaperSize>(-1);
+    invalid("collagePdfPaperSize", [](ImageStitchingPdfSettings& settings) {
+        settings.paperSize = static_cast<ImageStitchingPdfPaperSize>(-1);
     });
-    invalid("collagePdfOrientation", [](CollagePdfSettings& settings) {
-        settings.orientation = static_cast<CollagePdfOrientation>(-1);
+    invalid("collagePdfOrientation", [](ImageStitchingPdfSettings& settings) {
+        settings.orientation = static_cast<ImageStitchingPdfOrientation>(-1);
     });
-    invalid("collagePdfExportMode", [](CollagePdfSettings& settings) {
-        settings.exportMode = static_cast<CollagePdfExportMode>(-1);
+    invalid("collagePdfExportMode", [](ImageStitchingPdfSettings& settings) {
+        settings.exportMode = static_cast<ImageStitchingPdfExportMode>(-1);
     });
 }
 
 void rawInvalidDraftSurvivesRefresh() {
-    CollageDocument document;
-    CollageEditorWidget editor(&document);
+    ImageStitchingDocument document;
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
     auto* output = control<AdSegmented>(editor, "collageImageType");
@@ -384,7 +386,7 @@ void rawInvalidDraftSurvivesRefresh() {
     auto* width = control<AdLineEdit>(editor, "collagePdfCustomWidth");
     auto* margin = control<AdLineEdit>(editor, "collagePdfMargin");
     output->setCurrentValue(QStringLiteral("pdf"));
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     document.append(image(), QStringLiteral("original"));
     width->setText(QStringLiteral("not-a-number"));
     const auto valid = document.lastValidPdfSettings();
@@ -410,10 +412,10 @@ void rawInvalidDraftSurvivesRefresh() {
     width->clear();
     require(width->text().isEmpty() && std::isnan(document.pdfSettings().customWidthMm),
             "empty dimensions remain incomplete instead of clamping to a minimum");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::A4));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::A4));
     require(width->text().isEmpty(),
             "switching to a standard paper retains the hidden custom draft");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     require(width->text().isEmpty() && width->status() == AdLineEdit::Status::Error,
             "returning to custom paper restores validation of the incomplete custom draft");
     width->setText(QStringLiteral("100.25"));
@@ -424,21 +426,21 @@ void rawInvalidDraftSurvivesRefresh() {
 }
 
 void sidebarModesAndSelectedTransforms() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto id = document.append(image(), QStringLiteral("original"));
     const qint64 originalKey = document.items().first().image.cacheKey();
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
     refresh();
     auto* form = control<AdForm>(editor, "collageSettingsForm");
     auto* output = control<AdSegmented>(editor, "collageImageType");
-    auto* pdf = control<CollagePdfSettingsWidget>(editor, "collagePdfSettings");
+    auto* pdf = control<ImageStitchingPdfSettingsWidget>(editor, "collagePdfSettings");
     const auto formItems = form->items();
     require(formItems.indexOf(form->field(QStringLiteral("output_type"))) <
                 formItems.indexOf(form->field(QStringLiteral("collageDirection"))),
             "Image Type is placed before Layout Direction");
-    require(document.outputType() == CollageOutputType::StaticImage &&
+    require(document.outputType() == ImageStitchingOutputType::StaticImage &&
                 editor.canvas()->isVisible() && !editor.pdfGrid()->isVisible() && !pdf->isVisible(),
             "new editor windows retain the static canvas and default image output");
     auto* border = control<adqt::widgets::AdInputNumber>(editor, "collageOuterBorder");
@@ -446,7 +448,7 @@ void sidebarModesAndSelectedTransforms() {
     const auto rasterSettings = document.settings();
     output->setCurrentValue(QStringLiteral("pdf"));
     refresh();
-    require(document.outputType() == CollageOutputType::PdfDocument &&
+    require(document.outputType() == ImageStitchingOutputType::PdfDocument &&
                 !editor.canvas()->isVisible() && editor.pdfGrid()->isVisible() &&
                 pdf->isVisible() && !control<QWidget>(editor, "collageThumbnailRow")->isVisible(),
             "PDF mode displays the grid and PDF form and hides static canvas and thumbnails");
@@ -520,11 +522,12 @@ void fieldEditsMergeAndRetranslate() {
     require(temporary.isValid(), "create a settings configuration fixture");
     storage::ConfigurationStore configuration(temporary.filePath(QStringLiteral("settings.json")),
                                               true, true, 60000);
-    CollageSettingsStore store(configuration);
-    CollageDocument first, second;
-    CollageEditorWidget firstEditor(&first), secondEditor(&second);
-    const auto connectStore = [&](CollageEditorWidget& editor, CollageDocument& document) {
-        QObject::connect(&editor, &CollageEditorWidget::settingsEdited, &editor,
+    ImageStitchingSettingsStore store(configuration);
+    ImageStitchingDocument first, second;
+    ImageStitchingEditorWidget firstEditor(&first), secondEditor(&second);
+    const auto connectStore = [&](ImageStitchingEditorWidget& editor,
+                                  ImageStitchingDocument& document) {
+        QObject::connect(&editor, &ImageStitchingEditorWidget::settingsEdited, &editor,
                          [&document, &store](const QString& field) {
                              if (field.startsWith(QStringLiteral("pdf/")))
                                  static_cast<void>(
@@ -536,7 +539,7 @@ void fieldEditsMergeAndRetranslate() {
     connectStore(firstEditor, first);
     connectStore(secondEditor, second);
     control<AdSelect>(firstEditor, "collagePdfPaperSize")
-        ->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+        ->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     control<AdLineEdit>(firstEditor, "collagePdfCustomWidth")->setText(QStringLiteral("180.5"));
     control<AdLineEdit>(firstEditor, "collagePdfCustomHeight")->setText(QStringLiteral("260.25"));
     control<AdLineEdit>(firstEditor, "collagePdfMargin")->setText(QStringLiteral("12.5"));
@@ -544,9 +547,10 @@ void fieldEditsMergeAndRetranslate() {
     const auto merged = store.readPdf();
     require(uniformMargins(first.pdfSettings(), 12.5) &&
                 uniformMargins(second.pdfSettings(), 20.25) &&
-                second.pdfSettings().paperSize == CollagePdfPaperSize::A4 &&
-                merged.paperSize == CollagePdfPaperSize::Custom && merged.customWidthMm == 180.5 &&
-                merged.customHeightMm == 260.25 && uniformMargins(merged, 20.25),
+                second.pdfSettings().paperSize == ImageStitchingPdfPaperSize::A4 &&
+                merged.paperSize == ImageStitchingPdfPaperSize::Custom &&
+                merged.customWidthMm == 180.5 && merged.customHeightMm == 260.25 &&
+                uniformMargins(merged, 20.25),
             "one window's latest uniform margin merges without overwriting another window's paper "
             "dimensions");
     auto* margin = control<AdLineEdit>(firstEditor, "collagePdfMargin");
@@ -559,12 +563,13 @@ void fieldEditsMergeAndRetranslate() {
                 "load every supported PDF settings translation catalog");
         QApplication::installTranslator(&translator);
         refresh();
-        const auto label = QCoreApplication::translate("CollagePdfSettingsWidget", "Page margin");
+        const auto label =
+            QCoreApplication::translate("ImageStitchingPdfSettingsWidget", "Page margin");
         require(margin->text() == QStringLiteral("-2.25") &&
                     margin->status() == AdLineEdit::Status::Error &&
                     margin->accessibleName() == label && fieldFor(margin)->label() == label &&
                     fieldFor(margin)->helpText() ==
-                        QCoreApplication::translate("CollageDocument",
+                        QCoreApplication::translate("ImageStitchingDocument",
                                                     "Enter a nonnegative page margin") &&
                     store.readPdf() == persisted,
                 "language changes retranslate the singular margin and errors without losing drafts "
@@ -579,28 +584,28 @@ void templateSettingsPersistIndependently() {
     require(temporary.isValid(), "create isolated template preferences");
     storage::ConfigurationStore configuration(temporary.filePath(QStringLiteral("settings.json")),
                                               true, true, 60000);
-    CollageSettingsStore store(configuration);
+    ImageStitchingSettingsStore store(configuration);
     const auto defaults = store.readPdf();
-    require(defaults.stitchingMethod == CollagePdfStitchingMethod::PageBased &&
-                defaults.templateType == CollagePdfTemplateType::TwoImages &&
+    require(defaults.stitchingMethod == ImageStitchingPdfStitchingMethod::PageBased &&
+                defaults.templateType == ImageStitchingPdfTemplateType::TwoImages &&
                 defaults.imageSpacingMm == 5,
             "missing preferences use page-based stitching, two images and five millimeters");
     auto first = defaults;
-    first.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    first.templateType = CollagePdfTemplateType::SevenImages;
+    first.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    first.templateType = ImageStitchingPdfTemplateType::SevenImages;
     first.imageSpacingMm = 7.25;
     require(store.writePdf({QStringLiteral("stitching_method"), QStringLiteral("template_type"),
                             QStringLiteral("image_spacing_mm")},
                            first),
             "template choices persist together");
     auto second = defaults;
-    second.templateType = CollagePdfTemplateType::IdCard;
+    second.templateType = ImageStitchingPdfTemplateType::IdCard;
     require(store.writePdf(QStringLiteral("template_type"), second),
             "an older independent form can update only its edited template");
     const auto restored = store.readPdf();
     require(
-        restored.stitchingMethod == CollagePdfStitchingMethod::TemplateBased &&
-            restored.templateType == CollagePdfTemplateType::IdCard &&
+        restored.stitchingMethod == ImageStitchingPdfStitchingMethod::TemplateBased &&
+            restored.templateType == ImageStitchingPdfTemplateType::IdCard &&
             restored.imageSpacingMm == 7.25 &&
             configuration.value(QStringLiteral("collage/pdf_stitching_method")) ==
                 QJsonValue(QStringLiteral("template_based")) &&
@@ -618,8 +623,8 @@ void templateSettingsPersistIndependently() {
 }
 
 void renderPdfEditor(const QString& path) {
-    CollageDocument document;
-    document.setOutputType(CollageOutputType::PdfDocument);
+    ImageStitchingDocument document;
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
     const std::array<QSize, 8> sizes{QSize(480, 650), QSize(180, 2500), QSize(960, 360),
                                      QSize(500, 500), QSize(600, 800),  QSize(400, 560),
                                      QSize(720, 400), QSize(380, 700)};
@@ -668,7 +673,7 @@ void renderPdfEditor(const QString& path) {
     require(document.rotate(ids[2], true) && document.flip(ids[4], true),
             "visual fixture includes shared rotation and flip transformations");
     document.select(ids.first());
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 850);
     editor.show();
     QElapsedTimer timer;

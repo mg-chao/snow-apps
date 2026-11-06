@@ -128,7 +128,7 @@ void focus(QWidget* widget) {
     require(widget->hasFocus(), "shortcut fixture receives keyboard focus");
 }
 
-QWidget* pasteTarget(CollageWindow& window) {
+QWidget* pasteTarget(ImageStitchingWindow& window) {
     auto* target = window.editor()->window()->findChild<QWidget*>(QStringLiteral("collageCancel"));
     require(target, "stitching has a keyboard-focusable footer action");
     return target;
@@ -186,7 +186,7 @@ void splittingClipboardAndReplacement() {
 }
 
 void stitchingClipboardAndPdf() {
-    CollageWindow window;
+    ImageStitchingWindow window;
     window.present();
     const auto first = image();
     bitmap(first);
@@ -201,7 +201,7 @@ void stitchingClipboardAndPdf() {
     const auto id = window.document()->items().first().id;
     require(window.document()->rotate(id, true), "rotate existing image before paste");
     const auto transform = window.document()->items().first().transform;
-    window.document()->setOutputType(CollageOutputType::PdfDocument);
+    window.document()->setOutputType(ImageStitchingOutputType::PdfDocument);
     const auto second = image({20, 12});
     encoded(png(second));
     focus(pasteTarget(window));
@@ -212,7 +212,7 @@ void stitchingClipboardAndPdf() {
             "PDF paste appends while retaining existing transforms");
     sameImage(window.document()->items().last().image, second);
     QStringList errors;
-    QObject::connect(&window, &CollageWindow::importFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::importFinished, &window,
                      [&](const auto& failures) { errors = failures; });
     encoded(QByteArrayLiteral("invalid PNG"));
     window.paste();
@@ -242,7 +242,7 @@ void fileSelectionOrderAndFailures(const QString& directory) {
     idle(split);
     sameImage(split.document()->image(), first);
     require(split.imageName() == QStringLiteral("first"), "first copied image supplies filename");
-    CollageWindow stitch;
+    ImageStitchingWindow stitch;
     stitch.present();
     stitch.paste();
     idle(stitch);
@@ -251,7 +251,7 @@ void fileSelectionOrderAndFailures(const QString& directory) {
     sameImage(stitch.document()->items()[1].image, second);
     sameImage(stitch.document()->items()[2].image, first);
     QStringList errors;
-    QObject::connect(&stitch, &CollageWindow::importFinished, &stitch,
+    QObject::connect(&stitch, &ImageStitchingWindow::importFinished, &stitch,
                      [&](const auto& failures) { errors = failures; });
     files({missing, secondPath, corrupt});
     split.paste();
@@ -270,7 +270,7 @@ void fileSelectionOrderAndFailures(const QString& directory) {
 void ignoredContentAndTextFocus() {
     ImageSplitWindow split;
     split.presentSource({});
-    CollageWindow stitch;
+    ImageStitchingWindow stitch;
     stitch.present();
     for (int type = 0; type < 4; ++type) {
         auto* data = new QMimeData;
@@ -397,7 +397,7 @@ void scrollingExportFileImports(const QString& directory, QSize size = {2048, 32
             (format == snow::image::Format::png ? QStringLiteral(".bmp") : QStringLiteral(".png"));
         require(file.rename(mislabeledPath), "rename the large export to a misleading suffix");
         {
-            CollageWindow stitch;
+            ImageStitchingWindow stitch;
             stitch.present();
             stitch.addFiles({mislabeledPath});
             idle(stitch);
@@ -420,7 +420,7 @@ void animatedClipboardInitialFrames() {
         require(reference.has_value(), "animated clipboard reference decodes");
         ImageSplitWindow split;
         split.presentSource({});
-        CollageWindow stitch;
+        ImageStitchingWindow stitch;
         stitch.present();
         split.paste();
         stitch.paste();
@@ -455,7 +455,7 @@ void encodedCorruptionRetainsBitmapFallback() {
     QApplication::clipboard()->setMimeData(data);
     ImageSplitWindow split;
     split.presentSource({});
-    CollageWindow stitch;
+    ImageStitchingWindow stitch;
     stitch.present();
     split.paste();
     stitch.paste();
@@ -473,11 +473,11 @@ void admissionAndShutdown() {
     waitUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; },
               "prior canceled exports drain before measuring paste reservations");
     flush();
-    const auto baseline = collageResourceUsage().reservedBytes;
+    const auto baseline = imageStitchingResourceUsage().reservedBytes;
     {
         ImageSplitWindow split;
         split.presentSource({});
-        CollageWindow stitch;
+        ImageStitchingWindow stitch;
         stitch.present();
         QImage oversized(8001, 8000, QImage::Format_Mono);
         require(!oversized.isNull(), "allocate a compact bitmap beyond the clipboard pixel limit");
@@ -504,7 +504,7 @@ void admissionAndShutdown() {
         stitch.paste();
         require(!split.loading() && !stitch.loading(), "closed windows ignore Paste");
     }
-    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline; },
+    waitUntil([&] { return imageStitchingResourceUsage().reservedBytes == baseline; },
               "clipboard cancellation and rejection release reservations");
 }
 
@@ -550,11 +550,11 @@ void dialogsConfirmationAndExportBlockPaste(const QString& directory) {
     split.shutdown();
     release.store(true);
 
-    CollageWindowServices::Completion exported;
-    CollageWindowServices stitchServices;
+    ImageStitchingWindowServices::Completion exported;
+    ImageStitchingWindowServices stitchServices;
     stitchServices.confirm = [&](QWidget*, bool, auto done) { confirmation = std::move(done); };
     stitchServices.copy = [&](auto, QObject*, QWidget*, auto done) { exported = std::move(done); };
-    CollageWindow stitch(nullptr, stitchServices);
+    ImageStitchingWindow stitch(nullptr, stitchServices);
     stitch.present();
     bitmap();
     stitch.paste();

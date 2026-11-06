@@ -156,12 +156,12 @@
             <translation>Barcode recognition failed</translation>
         </message>
         <message>
-            <source>Barcode recognition is unavailable</source>
-            <translation>Barcode recognition is unavailable</translation>
-        </message>
-        <message>
             <source>Barcode recognition request could not be prepared</source>
             <translation>Barcode recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>Barcode recognition service is unavailable</source>
+            <translation>Barcode recognition service is unavailable</translation>
         </message>
         <message>
             <source>Converting to HTML</source>

@@ -11,7 +11,7 @@
 #include <limits>
 #include <mutex>
 
-namespace snow_shot::presentation::collage_detail {
+namespace snow_shot::presentation::image_stitching_detail {
 // Borrow only the crop's pixels. Set metadata before sharing its header so Qt does not detach
 // the raster. The caller retains the original and its resource owner throughout the resize.
 inline ScreenshotImageRowSource croppedRows(const QImage& image, const QRect& crop,
@@ -65,6 +65,6 @@ inline ScreenshotImageRowSource croppedRows(const QImage& image, const QRect& cr
     return result;
 }
 
-} // namespace snow_shot::presentation::collage_detail
+} // namespace snow_shot::presentation::image_stitching_detail
 
 #endif

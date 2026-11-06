@@ -100,8 +100,8 @@ class ScreenRecordingSettingsBody final : public QWidget {
 
   private:
     void retranslate() {
-        m_modal.setWindowTitle(
-            QCoreApplication::translate("ScreenRecordingSettingsDialog", "Recording settings"));
+        m_modal.setWindowTitle(QCoreApplication::translate("ScreenRecordingSettingsDialog",
+                                                           "Screen recording settings"));
         m_modal.setAcceptText(QCoreApplication::translate("ScreenRecordingSettingsDialog", "Done"));
         for (auto* field : m_fields)
             field->retranslateUi();

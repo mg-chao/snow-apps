@@ -43,7 +43,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     switch (action) {
     case Action::Screenshot:
     case Action::ScreenshotDelay:
-    case Action::ScreenshotFixed:
+    case Action::ScreenshotPinToScreen:
     case Action::ScreenshotOcr:
     case Action::ScreenshotOcrCopy:
     case Action::ScreenshotTranslation:
@@ -73,7 +73,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     case Action::RestoreLastClosedWindows:
     case Action::HideShowAllWindows:
     case Action::PinSelectedFiles:
-    case Action::ToggleGlobalHotkeys:
+    case Action::ToggleGlobalShortcuts:
     case Action::ToggleWindowUnderCursorAlwaysOnTop:
     case Action::ToggleDisableOnFocusedFullscreenWindow:
         return {};

@@ -53,7 +53,7 @@ void waitUntil(const std::function<bool()>& ready, const char* message) {
     require(ready(), message);
 }
 
-template <class T> T* control(CollageWindow& window, const char* name) {
+template <class T> T* control(ImageStitchingWindow& window, const char* name) {
     auto* result = window.editor()->window()->findChild<T*>(QString::fromLatin1(name));
     require(result != nullptr, "the expected window control is discoverable");
     return result;
@@ -66,17 +66,17 @@ QImage source(QColor color = Qt::red) {
     return image;
 }
 
-void prepare(CollageWindow& window) {
+void prepare(ImageStitchingWindow& window) {
     window.present();
     window.document()->append(source(), QStringLiteral("first.png"));
     window.document()->append(source(Qt::blue), QStringLiteral("second.png"));
-    window.document()->setOutputType(CollageOutputType::PdfDocument);
-    auto settings = CollagePdfSettings{};
+    window.document()->setOutputType(ImageStitchingOutputType::PdfDocument);
+    auto settings = ImageStitchingPdfSettings{};
     window.document()->setPdfSettings(settings);
     flush();
 }
 
-QString status(CollageWindow& window) {
+QString status(ImageStitchingWindow& window) {
     auto* service = adqt::widgets::AdMessageService::instance(window.editor()->window());
     for (auto* message : service->findChildren<adqt::widgets::AdMessageHandle*>())
         if (message->isOpen() && message->key() == QStringLiteral("collageStatus"))
@@ -88,25 +88,27 @@ void choosingLocksAndCancelPreservesContent() {
     int choices = 0;
     int writes = 0;
     int completions = 0;
-    CollageWindowServices::PdfChoice choice;
-    CollageWindowServices services;
-    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode mode, auto completion) {
-        require(mode == CollagePdfExportMode::Combined, "combined export is the default");
+    ImageStitchingWindowServices::PdfChoice choice;
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, ImageStitchingPdfExportMode mode,
+                                        auto completion) {
+        require(mode == ImageStitchingPdfExportMode::Combined, "combined export is the default");
         ++choices;
         choice = std::move(completion);
     };
     services.exportPdf = [&](const auto&, const auto&, const auto&, auto, auto) {
         ++writes;
-        return CollagePdfExportResult{};
+        return ImageStitchingPdfExportResult{};
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     const auto items = window.document()->items();
-    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
-        require(result.cancelled && !result.succeeded(),
-                "chooser cancellation reports one cancelled result");
-        ++completions;
-    });
+    QObject::connect(&window, &ImageStitchingWindow::pdfExportFinished, &window,
+                     [&](const auto& result) {
+                         require(result.cancelled && !result.succeeded(),
+                                 "chooser cancellation reports one cancelled result");
+                         ++completions;
+                     });
     require(!control<AdButton>(window, "collageCopy")->isVisible(), "PDF hides Copy");
     window.copy();
     require(!window.busy() && writes == 0, "programmatic Copy cannot export PDF mode");
@@ -123,7 +125,7 @@ void choosingLocksAndCancelPreservesContent() {
     window.requestClose();
     require(!window.busy() && window.modal()->isOpen() && completions == 1 && writes == 0,
             "Cancel during destination selection returns to the open editor");
-    choice(CollagePdfDestination{QStringLiteral("late.pdf"), false});
+    choice(ImageStitchingPdfDestination{QStringLiteral("late.pdf"), false});
     flush();
     require(writes == 0 && completions == 1 &&
                 window.document()->items().front().id == items.front().id,
@@ -134,13 +136,13 @@ void choosingLocksAndCancelPreservesContent() {
 void pendingClearConfirmationBlocksExport() {
     std::function<void(bool)> confirm;
     int choices = 0;
-    CollageWindowServices services;
+    ImageStitchingWindowServices services;
     services.confirm = [&](QWidget*, bool clear, auto complete) {
         require(clear, "the pending prompt is a Clear confirmation");
         confirm = std::move(complete);
     };
-    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto) { ++choices; };
-    CollageWindow window(nullptr, services);
+    services.choosePdfDestination = [&](QWidget*, ImageStitchingPdfExportMode, auto) { ++choices; };
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     const auto settings = window.document()->pdfSettings();
     window.requestClear();
@@ -167,9 +169,9 @@ void cancellationWaitsForCleanup() {
     const auto started = std::make_shared<std::atomic_bool>(false);
     const auto cancellationObserved = std::make_shared<std::atomic_bool>(false);
     const auto release = std::make_shared<std::atomic_bool>(false);
-    CollageWindowServices services;
-    services.choosePdfDestination = [](QWidget*, CollagePdfExportMode, auto complete) {
-        complete(CollagePdfDestination{QStringLiteral("unused.pdf"), false});
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [](QWidget*, ImageStitchingPdfExportMode, auto complete) {
+        complete(ImageStitchingPdfDestination{QStringLiteral("unused.pdf"), false});
     };
     services.exportPdf = [started, cancellationObserved, release](const auto& items, const auto&,
                                                                   const auto&, auto cancelled,
@@ -181,21 +183,22 @@ void cancellationWaitsForCleanup() {
         cancellationObserved->store(true);
         while (!release->load())
             QThread::msleep(1);
-        CollagePdfExportResult result;
+        ImageStitchingPdfExportResult result;
         result.totalCount = items.size();
         result.cancelled = true;
         return result;
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     window.document()->rotate(window.document()->items().front().id, true);
     const auto transform = window.document()->items().front().transform;
     int completions = 0;
-    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
-        require(window.busy() && result.cancelled,
-                "completion is delivered exactly once before unlocking");
-        ++completions;
-    });
+    QObject::connect(&window, &ImageStitchingWindow::pdfExportFinished, &window,
+                     [&](const auto& result) {
+                         require(window.busy() && result.cancelled,
+                                 "completion is delivered exactly once before unlocking");
+                         ++completions;
+                     });
     window.save();
     waitUntil([&] { return started->load(); }, "PDF worker starts");
     window.requestClose();
@@ -215,14 +218,14 @@ void cancellationWaitsForCleanup() {
 
 void partialFailureReportsAndRetryCloses() {
     const auto attempts = std::make_shared<std::atomic_int>(0);
-    CollageWindowServices services;
-    services.choosePdfDestination = [](QWidget*, CollagePdfExportMode mode, auto complete) {
-        require(mode == CollagePdfExportMode::PerPage, "per-page choice uses a folder");
-        complete(CollagePdfDestination{QStringLiteral("/output"), false});
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [](QWidget*, ImageStitchingPdfExportMode mode, auto complete) {
+        require(mode == ImageStitchingPdfExportMode::PerPage, "per-page choice uses a folder");
+        complete(ImageStitchingPdfDestination{QStringLiteral("/output"), false});
     };
     services.exportPdf = [attempts](const auto& items, const auto&, const auto&, auto,
                                     auto progress) {
-        CollagePdfExportResult result;
+        ImageStitchingPdfExportResult result;
         result.totalCount = items.size();
         result.completedPages = {1};
         result.paths = {QStringLiteral("/output/001_second.pdf")};
@@ -235,14 +238,14 @@ void partialFailureReportsAndRetryCloses() {
         }
         return result;
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     auto settings = window.document()->pdfSettings();
-    settings.exportMode = CollagePdfExportMode::PerPage;
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
     window.document()->setPdfSettings(settings);
     window.document()->moveItem(window.document()->items().front().id, 1);
     int completed = 0;
-    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window,
+    QObject::connect(&window, &ImageStitchingWindow::pdfExportFinished, &window,
                      [&](const auto&) { ++completed; });
     window.save();
     waitUntil([&] { return !window.busy(); }, "partial export completes");
@@ -256,16 +259,16 @@ void partialFailureReportsAndRetryCloses() {
     require(completed == 2 && attempts->load() == 2, "retry completes exactly once");
 }
 
-bool uniformMargins(const CollagePdfSettings& settings, qreal value) {
+bool uniformMargins(const ImageStitchingPdfSettings& settings, qreal value) {
     return settings.marginTopMm == value && settings.marginBottomMm == value &&
            settings.marginLeftMm == value && settings.marginRightMm == value;
 }
 
 void invalidSettingsAndPreferencePersistence() {
     int choices = 0;
-    CollageWindowServices services;
-    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto) { ++choices; };
-    CollageWindow first(nullptr, services);
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, ImageStitchingPdfExportMode, auto) { ++choices; };
+    ImageStitchingWindow first(nullptr, services);
     prepare(first);
     auto* margin = control<AdLineEdit>(first, "collagePdfMargin");
     for (const auto& draft : {QStringLiteral("400"), QStringLiteral("105"), QStringLiteral("-0.5"),
@@ -280,7 +283,7 @@ void invalidSettingsAndPreferencePersistence() {
     }
     margin->setText(QStringLiteral("0"));
     const auto borderless =
-        calculateCollagePdfPageLayout(source().size(), first.document()->pdfSettings());
+        calculateImageStitchingPdfPageLayout(source().size(), first.document()->pdfSettings());
     require(control<AdButton>(first, "collageSave")->isEnabled() &&
                 uniformMargins(first.document()->pdfSettings(), 0) &&
                 borderless.contentMillimeters == QRectF(QPointF{}, borderless.pageMillimeters),
@@ -290,16 +293,16 @@ void invalidSettingsAndPreferencePersistence() {
                 uniformMargins(first.document()->pdfSettings(), 15.25),
             "one corrected decimal margin updates every side and enables Save promptly");
     auto* paper = control<AdSelect>(first, "collagePdfPaperSize");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     control<AdLineEdit>(first, "collagePdfCustomWidth")->clear();
     require(!control<AdButton>(first, "collageSave")->isEnabled(),
             "empty custom dimensions disable Save");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::A4));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::A4));
     margin->setText(QStringLiteral("16.75"));
     {
-        CollageWindow standard;
+        ImageStitchingWindow standard;
         standard.present();
-        require(standard.document()->pdfSettings().paperSize == CollagePdfPaperSize::A4 &&
+        require(standard.document()->pdfSettings().paperSize == ImageStitchingPdfPaperSize::A4 &&
                     uniformMargins(standard.document()->pdfSettings(), 16.75),
                 "inactive custom drafts cannot prevent the uniform margin and active paper "
                 "preference being saved");
@@ -307,7 +310,7 @@ void invalidSettingsAndPreferencePersistence() {
     }
     require(control<AdLineEdit>(first, "collagePdfCustomWidth")->text().isEmpty(),
             "remembering active settings preserves the hidden custom draft");
-    paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::Custom));
+    paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::Custom));
     margin->setText(QStringLiteral("15.25"));
     control<AdSegmented>(first, "collageImageType")->setCurrentValue(QStringLiteral("static"));
     require(control<AdButton>(first, "collageCopy")->isVisible() &&
@@ -319,19 +322,19 @@ void invalidSettingsAndPreferencePersistence() {
                 !control<AdButton>(first, "collageSave")->isEnabled(),
             "mode switching preserves incomplete paper input and the shared margin");
     control<AdLineEdit>(first, "collagePdfCustomWidth")->setText(QStringLiteral("180.5"));
-    CollageWindow reopened;
+    ImageStitchingWindow reopened;
     reopened.present();
     require(
-        reopened.document()->outputType() == CollageOutputType::StaticImage &&
-            reopened.document()->pdfSettings().paperSize == CollagePdfPaperSize::Custom &&
+        reopened.document()->outputType() == ImageStitchingOutputType::StaticImage &&
+            reopened.document()->pdfSettings().paperSize == ImageStitchingPdfPaperSize::Custom &&
             reopened.document()->pdfSettings().customWidthMm == 180.5 &&
             uniformMargins(reopened.document()->pdfSettings(), 15.25),
         "valid paper preferences and the uniform margin persist while new windows start static");
     control<AdLineEdit>(first, "collagePdfCustomWidth")->setText(QStringLiteral("186.75"));
-    reopened.document()->setOutputType(CollageOutputType::PdfDocument);
+    reopened.document()->setOutputType(ImageStitchingOutputType::PdfDocument);
     control<AdLineEdit>(reopened, "collagePdfMargin")->setText(QStringLiteral("22.375"));
     {
-        CollageWindow merged;
+        ImageStitchingWindow merged;
         merged.present();
         require(merged.document()->pdfSettings().customWidthMm == 186.75 &&
                     uniformMargins(merged.document()->pdfSettings(), 22.375) &&
@@ -347,21 +350,21 @@ void invalidSettingsAndPreferencePersistence() {
 
 void uniformMarginReachesPdfExport() {
     const auto received = std::make_shared<std::atomic_bool>(false);
-    CollageWindowServices services;
-    services.choosePdfDestination = [](QWidget*, CollagePdfExportMode, auto completion) {
-        completion(CollagePdfDestination{QStringLiteral("/output/uniform.pdf"), false});
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [](QWidget*, ImageStitchingPdfExportMode, auto completion) {
+        completion(ImageStitchingPdfDestination{QStringLiteral("/output/uniform.pdf"), false});
     };
     services.exportPdf = [received](const auto& items, const auto& settings, const auto&, auto,
                                     auto) {
         received->store(uniformMargins(settings, 17.125));
-        CollagePdfExportResult result;
+        ImageStitchingPdfExportResult result;
         result.totalCount = items.size();
         for (qsizetype index = 0; index < items.size(); ++index)
             result.completedPages.append(index + 1);
         result.paths = {QStringLiteral("/output/uniform.pdf")};
         return result;
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     control<AdLineEdit>(window, "collagePdfMargin")->setText(QStringLiteral("17.125"));
     window.save();
@@ -373,17 +376,17 @@ void uniformMarginReachesPdfExport() {
 
 void imageSizeRemembersPreferencesWithInactiveDrafts() {
     auto& configuration = storage::ApplicationStorage::instance().configuration();
-    CollageSettingsStore store(configuration);
+    ImageStitchingSettingsStore store(configuration);
     const QStringList fields{QStringLiteral("paper_size"),      QStringLiteral("orientation"),
                              QStringLiteral("custom_width_mm"), QStringLiteral("custom_height_mm"),
                              QStringLiteral("margin_mm"),       QStringLiteral("export_mode")};
-    CollagePdfSettings baseline;
+    ImageStitchingPdfSettings baseline;
     baseline.marginTopMm = baseline.marginBottomMm = baseline.marginLeftMm =
         baseline.marginRightMm = 16.75;
     for (const auto& draft : {QStringLiteral(""), QStringLiteral("unfinished"),
                               QStringLiteral("-0.5"), QStringLiteral("400")}) {
         require(store.writePdf(fields, baseline), "reset the PDF preferences for each draft");
-        CollageWindow window;
+        ImageStitchingWindow window;
         prepare(window);
         auto* paper = control<AdSelect>(window, "collagePdfPaperSize");
         auto* margin = control<AdLineEdit>(window, "collagePdfMargin");
@@ -391,29 +394,29 @@ void imageSizeRemembersPreferencesWithInactiveDrafts() {
         auto* mode = control<AdSegmented>(window, "collagePdfExportMode");
         width->setText(QStringLiteral("unfinished"));
         margin->setText(draft);
-        paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::ImageSize));
-        mode->setCurrentValue(static_cast<int>(CollagePdfExportMode::PerPage));
+        paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::ImageSize));
+        mode->setCurrentValue(static_cast<int>(ImageStitchingPdfExportMode::PerPage));
         require(control<AdButton>(window, "collageSave")->isEnabled() && margin->text() == draft &&
                     width->text() == QStringLiteral("unfinished") && status(window).isEmpty(),
                 "inactive drafts neither block Image Size export nor produce persistence errors");
         {
-            CollageWindow reopened;
+            ImageStitchingWindow reopened;
             const auto settings = reopened.document()->pdfSettings();
-            require(settings.paperSize == CollagePdfPaperSize::ImageSize &&
-                        settings.exportMode == CollagePdfExportMode::PerPage &&
+            require(settings.paperSize == ImageStitchingPdfPaperSize::ImageSize &&
+                        settings.exportMode == ImageStitchingPdfExportMode::PerPage &&
                         settings.customWidthMm == baseline.customWidthMm &&
                         uniformMargins(settings, draft == QStringLiteral("400") ? 400 : 16.75),
                     "Image Size and export mode persist while invalid hidden fields retain their "
                     "previous stored values");
             reopened.shutdown();
         }
-        paper->setCurrentValue(static_cast<int>(CollagePdfPaperSize::A4));
+        paper->setCurrentValue(static_cast<int>(ImageStitchingPdfPaperSize::A4));
         require(!control<AdButton>(window, "collageSave")->isEnabled() && margin->text() == draft,
                 "returning to paper sizing restores validation of the untouched margin draft");
-        mode->setCurrentValue(static_cast<int>(CollagePdfExportMode::Combined));
+        mode->setCurrentValue(static_cast<int>(ImageStitchingPdfExportMode::Combined));
         margin->setText(QStringLiteral("11.625"));
-        require(store.readPdf().paperSize == CollagePdfPaperSize::A4 &&
-                    store.readPdf().exportMode == CollagePdfExportMode::Combined &&
+        require(store.readPdf().paperSize == ImageStitchingPdfPaperSize::A4 &&
+                    store.readPdf().exportMode == ImageStitchingPdfExportMode::Combined &&
                     uniformMargins(store.readPdf(), 11.625) &&
                     width->text() == QStringLiteral("unfinished"),
                 "correcting the margin persists deferred active edits without losing another "
@@ -423,7 +426,7 @@ void imageSizeRemembersPreferencesWithInactiveDrafts() {
 }
 
 void imageSizeFooterTracksSelectedPage() {
-    CollageWindow window;
+    ImageStitchingWindow window;
     window.present();
     window.editor()->setLocale(QLocale::c());
     auto& document = *window.document();
@@ -434,9 +437,9 @@ void imageSizeFooterTracksSelectedPage() {
     const auto first = document.append(tall, QStringLiteral("tall.png"));
     const auto second = document.append(wide, QStringLiteral("wide.png"));
     require(first && second, "image-sized footer sources import");
-    document.setOutputType(CollageOutputType::PdfDocument);
-    CollagePdfSettings settings;
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
+    ImageStitchingPdfSettings settings;
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
     document.setPdfSettings(settings);
     auto* dimensions = control<QLabel>(window, "collageOutputDimensions");
     auto* total = control<QLabel>(window, "collageImageTotal");
@@ -458,8 +461,8 @@ void imageSizeFooterTracksSelectedPage() {
     require(dimensions->text() == QStringLiteral("254 × 508 mm") && document.remove(first) &&
                 dimensions->text() == QStringLiteral("25.4 × 50.8 mm"),
             "removing the selected page describes its surviving selected neighbor");
-    settings.paperSize = CollagePdfPaperSize::A4;
-    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.paperSize = ImageStitchingPdfPaperSize::A4;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     document.setPdfSettings(settings);
     document.select(0);
     require(dimensions->isVisible() && dimensions->text() == QStringLiteral("297 × 210 mm"),
@@ -468,13 +471,13 @@ void imageSizeFooterTracksSelectedPage() {
     document.setPdfSettings(settings);
     require(dimensions->text() == QStringLiteral("297 × 210 mm"),
             "invalid paper drafts keep the dimensions of the last valid preview");
-    document.setOutputType(CollageOutputType::StaticImage);
+    document.setOutputType(ImageStitchingOutputType::StaticImage);
     require(dimensions->text().endsWith(QStringLiteral(" px")),
             "returning to static output restores pixel dimensions");
-    document.setOutputType(CollageOutputType::PdfDocument);
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
     require(dimensions->text() == QStringLiteral("297 × 210 mm"),
             "returning to PDF restores physical dimensions");
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
     document.setPdfSettings(settings);
     document.clear();
     require(dimensions->isHidden() && dimensions->text().isEmpty() &&
@@ -484,7 +487,7 @@ void imageSizeFooterTracksSelectedPage() {
 }
 
 void nativeDestinationDialog() {
-    CollageWindow window;
+    ImageStitchingWindow window;
     prepare(window);
     window.save();
     auto* dialog = window.editor()->window()->findChild<QFileDialog*>();
@@ -497,7 +500,7 @@ void nativeDestinationDialog() {
     flush();
     require(!window.busy() && window.modal()->isOpen(), "dialog rejection preserves the document");
     auto settings = window.document()->pdfSettings();
-    settings.exportMode = CollagePdfExportMode::PerPage;
+    settings.exportMode = ImageStitchingPdfExportMode::PerPage;
     window.document()->setPdfSettings(settings);
     window.save();
     dialog = window.editor()->window()->findChild<QFileDialog*>();
@@ -509,31 +512,31 @@ void nativeDestinationDialog() {
 }
 
 void templatePreferencesReopenAndMerge() {
-    CollageSettingsStore store(storage::ApplicationStorage::instance().configuration());
+    ImageStitchingSettingsStore store(storage::ApplicationStorage::instance().configuration());
     const auto previous = store.readPdf();
-    CollageWindow first;
+    ImageStitchingWindow first;
     first.present();
     control<AdSegmented>(first, "collageImageType")->setCurrentValue(QStringLiteral("pdf"));
     control<AdSelect>(first, "collagePdfStitchingMethod")
-        ->setCurrentValue(static_cast<int>(CollagePdfStitchingMethod::TemplateBased));
+        ->setCurrentValue(static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased));
     control<AdButton>(first, "collagePdfTemplateFiveImages")->click();
     control<AdLineEdit>(first, "collagePdfImageSpacing")->setText(QStringLiteral("6.375"));
-    CollageWindow reopened;
+    ImageStitchingWindow reopened;
     reopened.present();
     require(reopened.document()->pdfSettings().stitchingMethod ==
-                    CollagePdfStitchingMethod::TemplateBased &&
+                    ImageStitchingPdfStitchingMethod::TemplateBased &&
                 reopened.document()->pdfSettings().templateType ==
-                    CollagePdfTemplateType::FiveImages &&
+                    ImageStitchingPdfTemplateType::FiveImages &&
                 reopened.document()->pdfSettings().imageSpacingMm == 6.375,
             "reopening restores the last stitching method, template and fractional spacing");
     control<AdButton>(first, "collagePdfTemplateNineImages")->click();
     control<AdLineEdit>(reopened, "collagePdfImageSpacing")->setText(QStringLiteral("3.125"));
     const auto merged = store.readPdf();
-    require(merged.templateType == CollagePdfTemplateType::NineImages &&
+    require(merged.templateType == ImageStitchingPdfTemplateType::NineImages &&
                 merged.imageSpacingMm == 3.125 &&
                 first.document()->pdfSettings().imageSpacingMm == 6.375 &&
                 reopened.document()->pdfSettings().templateType ==
-                    CollagePdfTemplateType::FiveImages,
+                    ImageStitchingPdfTemplateType::FiveImages,
             "independent windows merge only their changed template preference fields");
     first.shutdown();
     reopened.shutdown();
@@ -546,35 +549,36 @@ void templatePreferencesReopenAndMerge() {
 void templateChooserCancellationCountsComposedPages() {
     int writes = 0;
     int completions = 0;
-    CollageWindowServices::PdfChoice choice;
-    CollageWindowServices services;
-    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto complete) {
+    ImageStitchingWindowServices::PdfChoice choice;
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, ImageStitchingPdfExportMode, auto complete) {
         choice = std::move(complete);
     };
     services.exportPdf = [&](const auto&, const auto&, const auto&, auto, auto) {
         ++writes;
-        return CollagePdfExportResult{};
+        return ImageStitchingPdfExportResult{};
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     for (int index = 0; index < 5; ++index)
         require(window.document()->append(source(), QStringLiteral("extra-%1.png").arg(index)),
                 "template cancellation sources import");
     auto settings = window.document()->pdfSettings();
-    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    settings.templateType = ImageStitchingPdfTemplateType::FiveImages;
     settings.imageSpacingMm = 6.75;
     window.document()->setPdfSettings(settings);
     const auto selected = window.document()->items().front().id;
-    const CollagePdfPlacement placement{{4.25, -3.5}, 0.375};
+    const ImageStitchingPdfPlacement placement{{4.25, -3.5}, 0.375};
     require(window.document()->setPdfPlacement(selected, placement),
             "template cancellation fixture has a manual placement");
-    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
-        require(result.cancelled && result.totalCount == 2 && result.completedPages.isEmpty() &&
-                    result.paths.isEmpty(),
-                "chooser cancellation counts composed pages rather than seven input images");
-        ++completions;
-    });
+    QObject::connect(
+        &window, &ImageStitchingWindow::pdfExportFinished, &window, [&](const auto& result) {
+            require(result.cancelled && result.totalCount == 2 && result.completedPages.isEmpty() &&
+                        result.paths.isEmpty(),
+                    "chooser cancellation counts composed pages rather than seven input images");
+            ++completions;
+        });
     window.save();
     require(window.busy() && bool(choice), "template export opens its destination chooser");
     const auto lateChoice = choice;
@@ -583,7 +587,7 @@ void templateChooserCancellationCountsComposedPages() {
         !window.busy() && completions == 1 && writes == 0 &&
             window.document()->items().front().pdfPlacement == placement,
         "Cancel during template destination selection preserves edits and reports composed pages");
-    lateChoice(CollagePdfDestination{QStringLiteral("late-template.pdf"), false});
+    lateChoice(ImageStitchingPdfDestination{QStringLiteral("late-template.pdf"), false});
     flush();
     require(writes == 0 && completions == 1,
             "late template destination callbacks cannot revive canceled exports");
@@ -597,23 +601,23 @@ void templateChooserCancellationCountsComposedPages() {
 
 void templateExportUsesComposedSnapshot() {
     struct Snapshot final {
-        QVector<CollageItem> items;
-        CollagePdfSettings settings;
+        QVector<ImageStitchingItem> items;
+        ImageStitchingPdfSettings settings;
         std::atomic_bool received{false};
         std::atomic_bool matches{false};
         std::atomic_bool release{false};
     };
     const auto snapshot = std::make_shared<Snapshot>();
-    CollageWindowServices::PdfChoice choice;
-    CollageWindowServices services;
-    services.choosePdfDestination = [&](QWidget*, CollagePdfExportMode, auto complete) {
+    ImageStitchingWindowServices::PdfChoice choice;
+    ImageStitchingWindowServices services;
+    services.choosePdfDestination = [&](QWidget*, ImageStitchingPdfExportMode, auto complete) {
         choice = std::move(complete);
     };
     services.exportPdf = [snapshot](const auto& items, const auto& settings,
                                     const auto& destination, auto cancelled, auto progress) {
         bool matches = settings == snapshot->settings && items.size() == snapshot->items.size() &&
                        destination.path == QStringLiteral("/output/template-snapshot.pdf") &&
-                       collagePdfPageCount(items.size(), settings) == 2;
+                       imageStitchingPdfPageCount(items.size(), settings) == 2;
         for (qsizetype index = 0; matches && index < items.size(); ++index) {
             const auto& item = items[index];
             const auto& expected = snapshot->items[index];
@@ -621,9 +625,9 @@ void templateExportUsesComposedSnapshot() {
                       item.pdfPlacement == expected.pdfPlacement && item.label == expected.label &&
                       item.image.constBits() == expected.image.constBits();
         }
-        const auto page = calculateCollagePdfComposedPage(items, settings, 0);
+        const auto page = calculateImageStitchingPdfComposedPage(items, settings, 0);
         const auto expectedPage =
-            calculateCollagePdfComposedPage(snapshot->items, snapshot->settings, 0);
+            calculateImageStitchingPdfComposedPage(snapshot->items, snapshot->settings, 0);
         matches =
             matches && page.isValid() && page.pageMillimeters == QSizeF(297, 210) &&
             page.cells.size() == 5 &&
@@ -634,7 +638,7 @@ void templateExportUsesComposedSnapshot() {
         snapshot->received.store(true);
         while (!snapshot->release.load() && !cancelled())
             QThread::msleep(1);
-        CollagePdfExportResult result;
+        ImageStitchingPdfExportResult result;
         result.totalCount = 2;
         if (cancelled()) {
             result.cancelled = true;
@@ -644,17 +648,17 @@ void templateExportUsesComposedSnapshot() {
         }
         return result;
     };
-    CollageWindow window(nullptr, services);
+    ImageStitchingWindow window(nullptr, services);
     prepare(window);
     for (int index = 0; index < 5; ++index)
         require(window.document()->append(source(), QStringLiteral("extra-%1.png").arg(index)),
                 "template snapshot sources import");
     auto settings = window.document()->pdfSettings();
-    settings.stitchingMethod = CollagePdfStitchingMethod::TemplateBased;
-    settings.templateType = CollagePdfTemplateType::FiveImages;
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::TemplateBased;
+    settings.templateType = ImageStitchingPdfTemplateType::FiveImages;
     settings.imageSpacingMm = 7.25;
-    settings.paperSize = CollagePdfPaperSize::ImageSize;
-    settings.orientation = CollagePdfOrientation::Landscape;
+    settings.paperSize = ImageStitchingPdfPaperSize::ImageSize;
+    settings.orientation = ImageStitchingPdfOrientation::Landscape;
     settings.marginTopMm = settings.marginBottomMm = settings.marginLeftMm =
         settings.marginRightMm = 14.5;
     window.document()->setPdfSettings(settings);
@@ -665,24 +669,25 @@ void templateExportUsesComposedSnapshot() {
     snapshot->items = window.document()->items();
     snapshot->settings = settings;
     int completions = 0;
-    QObject::connect(&window, &CollageWindow::pdfExportFinished, &window, [&](const auto& result) {
-        require(result.succeeded() && result.totalCount == 2 &&
-                    result.completedPages == QVector<qsizetype>({1, 2}),
-                "template completion reports fully composed pages");
-        ++completions;
-    });
+    QObject::connect(&window, &ImageStitchingWindow::pdfExportFinished, &window,
+                     [&](const auto& result) {
+                         require(result.succeeded() && result.totalCount == 2 &&
+                                     result.completedPages == QVector<qsizetype>({1, 2}),
+                                 "template completion reports fully composed pages");
+                         ++completions;
+                     });
     window.save();
     require(window.busy() && bool(choice), "template snapshot is captured before choosing output");
     // Direct document changes stress the immutable export snapshot while the normal UI is locked.
     require(window.document()->setPdfPlacement(first, {{90, 80}, 1.25}) &&
                 window.document()->reverseItems(),
             "later document edits differ from the pending snapshot");
-    settings.templateType = CollagePdfTemplateType::NineImages;
+    settings.templateType = ImageStitchingPdfTemplateType::NineImages;
     settings.imageSpacingMm = 3;
     window.document()->setPdfSettings(settings);
-    require(collagePdfPageCount(window.document()->items().size(), settings) == 1,
+    require(imageStitchingPdfPageCount(window.document()->items().size(), settings) == 1,
             "the live document now has a different composed page count");
-    choice(CollagePdfDestination{QStringLiteral("/output/template-snapshot.pdf"), false});
+    choice(ImageStitchingPdfDestination{QStringLiteral("/output/template-snapshot.pdf"), false});
     waitUntil([&] { return snapshot->received.load(); },
               "template export worker receives its snapshot");
     require(snapshot->matches.load(), "export receives the chosen template, spacing and every "

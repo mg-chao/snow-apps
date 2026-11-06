@@ -59,12 +59,12 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::Bracket;
     case ScreenshotActiveTool::Line:
         return ScreenshotToolPalette::Tool::Line;
-    case ScreenshotActiveTool::FreeDraw:
-        return ScreenshotToolPalette::Tool::FreeDraw;
+    case ScreenshotActiveTool::Brush:
+        return ScreenshotToolPalette::Tool::Brush;
     case ScreenshotActiveTool::RectangleHighlight:
         return ScreenshotToolPalette::Tool::RectangleHighlight;
-    case ScreenshotActiveTool::PenHighlight:
-        return ScreenshotToolPalette::Tool::PenHighlight;
+    case ScreenshotActiveTool::BrushHighlight:
+        return ScreenshotToolPalette::Tool::BrushHighlight;
     case ScreenshotActiveTool::Eraser:
         return ScreenshotToolPalette::Tool::Eraser;
     case ScreenshotActiveTool::RectangleEraser:
@@ -75,12 +75,12 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::AutoFilter;
     case ScreenshotActiveTool::RectangleFilter:
         return ScreenshotToolPalette::Tool::RectangleFilter;
-    case ScreenshotActiveTool::PenFilter:
-        return ScreenshotToolPalette::Tool::PenFilter;
+    case ScreenshotActiveTool::BrushFilter:
+        return ScreenshotToolPalette::Tool::BrushFilter;
     case ScreenshotActiveTool::Text:
         return ScreenshotToolPalette::Tool::Text;
-    case ScreenshotActiveTool::SerialNumber:
-        return ScreenshotToolPalette::Tool::SerialNumber;
+    case ScreenshotActiveTool::SequenceNumber:
+        return ScreenshotToolPalette::Tool::SequenceNumber;
     case ScreenshotActiveTool::Ocr:
         return ScreenshotToolPalette::Tool::Ocr;
     case ScreenshotActiveTool::TextTranslation:

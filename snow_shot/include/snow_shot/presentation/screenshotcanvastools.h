@@ -12,9 +12,9 @@ struct ScreenshotCanvasToolDescriptor {
     ScreenshotActiveTool activeTool;
     ScreenshotToolPalette::Tool paletteTool;
 };
-#define SNOW_SHOT_CANVAS_TOOL(signal, tool)                                                        \
-    ScreenshotCanvasToolDescriptor{SnowCanvasTool::tool, ScreenshotActiveTool::tool,               \
-                                   ScreenshotToolPalette::Tool::tool},
+#define SNOW_SHOT_CANVAS_TOOL(signal, appTool, canvasTool)                                         \
+    ScreenshotCanvasToolDescriptor{SnowCanvasTool::canvasTool, ScreenshotActiveTool::appTool,      \
+                                   ScreenshotToolPalette::Tool::appTool},
 inline constexpr std::array screenshotCanvasTools{
 
 #include "snow_shot/presentation/screenshotcanvastools.inc"
@@ -25,8 +25,8 @@ struct ScreenshotCanvasToolRequest {
     void (ScreenshotToolPalette::*requested)();
     SnowCanvasTool canvasTool;
 };
-#define SNOW_SHOT_CANVAS_TOOL(signal, tool)                                                        \
-    ScreenshotCanvasToolRequest{&ScreenshotToolPalette::signal, SnowCanvasTool::tool},
+#define SNOW_SHOT_CANVAS_TOOL(signal, appTool, canvasTool)                                         \
+    ScreenshotCanvasToolRequest{&ScreenshotToolPalette::signal, SnowCanvasTool::canvasTool},
 inline constexpr std::array screenshotCanvasToolRequests{
 
 #include "snow_shot/presentation/screenshotcanvastools.inc"

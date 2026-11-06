@@ -281,21 +281,23 @@ int macPinnedContentDragTests(
                 "A pin must decode external image pixels without a file URL");
     } else {
         using namespace snow_shot::presentation;
-        CollageDocument document;
-        components::CollageEditorWidget collage(&document);
-        collage.setGeometry(QRect(origin + QPoint(350, 0), QSize(650, 450)));
-        collage.show();
+        ImageStitchingDocument document;
+        components::ImageStitchingEditorWidget imageStitching(&document);
+        imageStitching.setGeometry(QRect(origin + QPoint(350, 0), QSize(650, 450)));
+        imageStitching.show();
         QStringList paths;
-        QObject::connect(&collage, &components::CollageEditorWidget::imageFilesDropped, &collage,
-                         [&](const QStringList& files) { paths = files; });
-        dragTo(source, readExporter(source), collage.mapToGlobal(collage.rect().center()),
+        QObject::connect(&imageStitching,
+                         &components::ImageStitchingEditorWidget::imageFilesDropped,
+                         &imageStitching, [&](const QStringList& files) { paths = files; });
+        dragTo(source, readExporter(source),
+               imageStitching.mapToGlobal(imageStitching.rect().center()),
                [&] { return !paths.isEmpty(); });
         require(paths.size() == 1 && !QImage(paths.first()).isNull(),
                 "Image Stitching must receive a readable image file from a pin");
-        collage.hide();
+        imageStitching.hide();
         ImageSplitDocument splitDocument;
         components::ImageSplitEditorWidget split(&splitDocument);
-        split.setGeometry(collage.geometry());
+        split.setGeometry(imageStitching.geometry());
         split.show();
         paths.clear();
         QObject::connect(&split, &components::ImageSplitEditorWidget::imageFilesDropped, &split,

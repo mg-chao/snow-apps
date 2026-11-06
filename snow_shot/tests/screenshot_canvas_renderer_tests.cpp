@@ -2139,8 +2139,7 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     QStringList selectionLines = cursorLines;
     selectionLines.append({
         keyLine(QStringLiteral("Move entire selection"), {QStringLiteral("Space")}),
-        keyLine(QStringLiteral("Keep selection width and height consistent"),
-                {QStringLiteral("Shift")}),
+        keyLine(QStringLiteral("Maintain selection aspect ratio"), {QStringLiteral("Shift")}),
         QStringLiteral("Selection aspect ratio snap: Q"),
     });
     selectionLines.append(commonLines);
@@ -8651,7 +8650,7 @@ void overlayRightQuickSelection() {
     display.logicalToPhysicalScale = 2.0;
     displays.appendDisplay(display, &overlay);
     selection.setSelectionRect(QRectF(-600, 420, 280, 280));
-    interaction.setCanvasTool(ScreenshotActiveTool::FreeDraw);
+    interaction.setCanvasTool(ScreenshotActiveTool::Brush);
     enterSelectionOnFallback = true;
 
     require(canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {120, 135},
@@ -8660,7 +8659,7 @@ void overlayRightQuickSelection() {
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {120, 135},
                                        Qt::RightButton, Qt::NoButton);
     require(fallbacks == 1 && toolActivations == 0 &&
-                interaction.activeTool() == ScreenshotActiveTool::FreeDraw &&
+                interaction.activeTool() == ScreenshotActiveTool::Brush &&
                 canvas->canvasStyleToolbarState().source ==
                     SnowCanvasStyleToolbarSource::SelectedFreeDraw,
             "inside annotation selection preserves the annotation tool and capture region");
@@ -8670,7 +8669,7 @@ void overlayRightQuickSelection() {
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {130, 80},
                                        Qt::RightButton, Qt::NoButton);
     require(fallbacks == 1 && toolActivations == 0 &&
-                interaction.activeTool() == ScreenshotActiveTool::FreeDraw,
+                interaction.activeTool() == ScreenshotActiveTool::Brush,
             "empty space inside the capture must not reselect while an annotation tool is active");
     for (const QPointF point : {QPointF(100, 60), QPointF(240, 200)}) {
         require(handler.handleRightClick(&overlay, point) ==
@@ -8690,7 +8689,7 @@ void overlayRightQuickSelection() {
     require(handler.handleRightClick(&overlay, {300, 220}) ==
                     ScreenshotOverlayRightClickResult::Ignored &&
                 QWidget::mouseGrabber() == canvas && fallbacks == 1 && toolActivations == 0 &&
-                interaction.activeTool() == ScreenshotActiveTool::FreeDraw,
+                interaction.activeTool() == ScreenshotActiveTool::Brush,
             "an outside right-click must preserve an active drawing gesture and its tool");
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {320, 220},
                                        Qt::LeftButton, Qt::NoButton);

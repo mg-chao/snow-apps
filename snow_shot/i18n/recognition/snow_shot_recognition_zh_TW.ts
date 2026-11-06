@@ -156,12 +156,12 @@
             <translation>條碼辨識失敗</translation>
         </message>
         <message>
-            <source>Barcode recognition is unavailable</source>
-            <translation>條碼辨識無法使用</translation>
-        </message>
-        <message>
             <source>Barcode recognition request could not be prepared</source>
             <translation>無法準備條碼辨識請求</translation>
+        </message>
+        <message>
+            <source>Barcode recognition service is unavailable</source>
+            <translation>條碼辨識服務無法使用</translation>
         </message>
         <message>
             <source>Converting to HTML</source>
@@ -233,7 +233,7 @@
         </message>
         <message>
             <source>Some text could not be translated</source>
-            <translation>部分文字無法翻譯</translation>
+            <translation>部分文字未能翻譯</translation>
         </message>
         <message>
             <source>Some text could not be translated: %1</source>
@@ -434,7 +434,7 @@
         </message>
         <message>
             <source>Select the complete merged cell before pasting into this area</source>
-            <translation>請先選取完整的合併儲存格，再貼到此區域</translation>
+            <translation>請先選取完整的合併儲存格，再貼上至此區域</translation>
         </message>
         <message>
             <source>Split cells</source>

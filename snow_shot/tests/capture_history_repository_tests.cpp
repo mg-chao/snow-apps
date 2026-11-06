@@ -878,7 +878,7 @@ void resultReadDoesNotInspectOtherPayloads() {
     require(repository->records().isEmpty(), "invalid canvas was not removed");
 }
 
-void collageResultReadsPreserveHistoryOnFailure() {
+void imageStitchingResultReadsPreserveHistoryOnFailure() {
     QTemporaryDir temporary;
     auto repository = storage::makeCaptureHistoryRepository(temporary.path());
     auto draft = draftAt(QDateTime::currentDateTimeUtc());
@@ -1352,7 +1352,7 @@ void revisionCheckedMutations() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--collage-only"))) {
-        collageResultReadsPreserveHistoryOnFailure();
+        imageStitchingResultReadsPreserveHistoryOnFailure();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
@@ -1390,7 +1390,7 @@ int main(int argc, char** argv) {
     traversalManifestIsRejected();
     startupReadsOnlyIndexAndWorkersStartOnDemand();
     resultReadDoesNotInspectOtherPayloads();
-    collageResultReadsPreserveHistoryOnFailure();
+    imageStitchingResultReadsPreserveHistoryOnFailure();
     indexFailurePreservesFilesUntilClear();
     openPayloadDoesNotPreventHistoryPublication();
     failedPayloadWriteDoesNotPublishPartialHistory();

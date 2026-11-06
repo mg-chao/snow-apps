@@ -23,7 +23,7 @@ void require(bool condition, const char* message) {
 }
 
 QJsonObject measure(int count, QSize size, bool transformed, int batch) {
-    CollageDocument document;
+    ImageStitchingDocument document;
     for (int i = 0; i < count; ++i) {
         auto image = snowCanvasAllocateImage(size, QImage::Format_RGB32);
         require(!image.isNull(), "source allocation failed");
@@ -36,9 +36,9 @@ QJsonObject measure(int count, QSize size, bool transformed, int batch) {
         }
     }
     auto settings = document.settings();
-    settings.sizing = CollageSizing::Original;
+    settings.sizing = ImageStitchingSizing::Original;
     document.setSettings(settings);
-    const auto baseline = collageResourceUsage().reservedBytes;
+    const auto baseline = imageStitchingResourceUsage().reservedBytes;
     QVector<double> preparation;
     QVector<double> composition;
     qint64 retained = 0;
@@ -47,10 +47,10 @@ QJsonObject measure(int count, QSize size, bool transformed, int batch) {
         QElapsedTimer timer;
         timer.start();
         QString error;
-        auto rows = prepareCollageRows(document.items(), settings, {}, &error);
+        auto rows = prepareImageStitchingRows(document.items(), settings, {}, &error);
         require(rows.isValid(), qPrintable(error));
         preparation.append(double(timer.nsecsElapsed()) / 1'000'000.0);
-        retained = std::max(retained, collageResourceUsage().reservedBytes - baseline);
+        retained = std::max(retained, imageStitchingResourceUsage().reservedBytes - baseline);
         const qsizetype stride = qsizetype(rows.size.width()) * 4;
         QByteArray storage(stride * batch, Qt::Uninitialized);
         timer.restart();

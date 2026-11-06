@@ -103,8 +103,8 @@ AdButton* button(QWidget* parent, const char* name) {
 }
 
 void externalImageDrops() {
-    CollageDocument document;
-    CollageEditorWidget editor(&document);
+    ImageStitchingDocument document;
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -113,7 +113,7 @@ void externalImageDrops() {
     require(hint && empty && hint->isHidden(), "drop hint starts hidden");
     QStringList received;
     int drops = 0;
-    QObject::connect(&editor, &CollageEditorWidget::imageFilesDropped, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::imageFilesDropped, &editor,
                      [&](const QStringList& paths) {
                          received = paths;
                          ++drops;
@@ -197,9 +197,8 @@ void externalImageDrops() {
     QApplication::installTranslator(&translator);
     pump();
     const auto title =
-        QCoreApplication::translate("CollageEditorWidget", "Drop images to add to collage");
-    require(title != QStringLiteral("Drop images to add to collage") &&
-                hint->accessibleName() == title &&
+        QCoreApplication::translate("ImageStitchingEditorWidget", "Drop images to stitch");
+    require(title != QStringLiteral("Drop images to stitch") && hint->accessibleName() == title &&
                 hint->findChild<QLabel*>(QStringLiteral("collageDropTitle"))->text() == title,
             "visible drop hint and accessibility retranslate immediately");
     QApplication::removeTranslator(&translator);
@@ -236,7 +235,7 @@ void externalImageDrops() {
     leave();
 }
 
-QImage renderCanvas(CollagePreviewCanvas& canvas, qreal dpr = 1) {
+QImage renderCanvas(ImageStitchingPreviewCanvas& canvas, qreal dpr = 1) {
     QImage result(QSize(qCeil(canvas.width() * dpr), qCeil(canvas.height() * dpr)),
                   QImage::Format_ARGB32_Premultiplied);
     result.setDevicePixelRatio(dpr);
@@ -251,9 +250,9 @@ void selectionOutlineMatchesPdfHandles() {
     const auto originalConfig = themes.config();
     for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
         themes.setPreset(theme);
-        CollageDocument document;
+        ImageStitchingDocument document;
         const auto id = document.append(image({120, 80}), QStringLiteral("selected"));
-        CollagePreviewCanvas canvas(&document);
+        ImageStitchingPreviewCanvas canvas(&document);
         canvas.resize(500, 400);
         canvas.show();
         pump();
@@ -289,14 +288,14 @@ void replacementHighlightMatchesDrawEngineMarquee() {
     const auto originalConfig = themes.config();
     for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
         themes.setPreset(theme);
-        CollageDocument document;
+        ImageStitchingDocument document;
         const auto first = document.append(image({120, 80}), QStringLiteral("first"));
         const auto second = document.append(image({120, 80}, Qt::green), QStringLiteral("second"));
         auto settings = document.settings();
         settings.border = 20;
         settings.spacing = 20;
         document.setSettings(settings);
-        CollagePreviewCanvas canvas(&document);
+        ImageStitchingPreviewCanvas canvas(&document);
         canvas.resize(500, 400);
         canvas.show();
         pump();
@@ -324,7 +323,7 @@ void replacementHighlightMatchesDrawEngineMarquee() {
                 mouse(&canvas, QEvent::MouseButtonRelease, target.center(), Qt::LeftButton,
                       Qt::NoButton);
                 require(document.items()[0].id == first &&
-                            document.items()[0].staticPlacement == CollageStaticPlacement{},
+                            document.items()[0].staticPlacement == ImageStitchingStaticPlacement{},
                         "cancelling a replacement preview preserves ordering and placement");
             }
         }
@@ -333,13 +332,13 @@ void replacementHighlightMatchesDrawEngineMarquee() {
 }
 
 void staticPlacementOverflowAndDetailAlpha() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto id =
         document.append(image({1200, 800}, QColor(255, 0, 0, 128)), QStringLiteral("alpha"));
     auto settings = document.settings();
     settings.border = 160;
     document.setSettings(settings);
-    CollagePreviewCanvas canvas(&document);
+    ImageStitchingPreviewCanvas canvas(&document);
     canvas.resize(900, 760);
     canvas.show();
     pump();
@@ -381,13 +380,13 @@ void staticPlacementOverflowAndDetailAlpha() {
 }
 
 void centeredStaticResizeMoveAndCancellation() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({240, 160}), QStringLiteral("first"));
     const auto second = document.append(image({240, 160}, Qt::blue), QStringLiteral("second"));
     auto settings = document.settings();
     settings.spacing = 20;
     document.setSettings(settings);
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1100, 800);
     editor.show();
     pump();
@@ -397,7 +396,7 @@ void centeredStaticResizeMoveAndCancellation() {
     const auto originalSize = document.layout().size;
     const auto revision = document.contentRevision();
     int commits = 0;
-    QObject::connect(&document, &CollageDocument::staticPlacementChanged, &editor,
+    QObject::connect(&document, &ImageStitchingDocument::staticPlacementChanged, &editor,
                      [&](quint64) { ++commits; });
     const auto press = [&](QPointF point) {
         mouse(canvas, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
@@ -438,7 +437,7 @@ void centeredStaticResizeMoveAndCancellation() {
         press(handles[index]);
         move(handles[index] - vector * .25);
         require(commits == before &&
-                    document.items()[0].staticPlacement == CollageStaticPlacement{},
+                    document.items()[0].staticPlacement == ImageStitchingStaticPlacement{},
                 "resize preview is transient until release");
         release(finish);
         const auto smaller = canvas->imageViewportRect(first);
@@ -524,10 +523,10 @@ void centeredStaticResizeMoveAndCancellation() {
 }
 
 void thumbnailScrollBarOverlaysTheList() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     for (int i = 0; i < 10; ++i)
         document.append(image({32, 24}), QString::number(i));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 700);
     editor.show();
     pump();
@@ -642,15 +641,15 @@ void thumbnailActionsUseTranslucentOverlays() {
     const auto originalConfig = themes.config();
     for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
         themes.setPreset(theme);
-        CollageDocument document;
+        ImageStitchingDocument document;
         const auto first = document.append(image({108, 84}), QStringLiteral("first"));
         const auto second = document.append(image({108, 84}, Qt::blue), QStringLiteral("second"));
-        CollageEditorWidget editor(&document);
+        ImageStitchingEditorWidget editor(&document);
         editor.resize(1000, 700);
         editor.show();
         pump();
         quint64 replacement = 0;
-        QObject::connect(&editor, &CollageEditorWidget::replaceImageRequested, &editor,
+        QObject::connect(&editor, &ImageStitchingEditorWidget::replaceImageRequested, &editor,
                          [&](quint64 id) { replacement = id; });
         for (const auto id : {first, second}) {
             auto* thumbnail =
@@ -709,8 +708,8 @@ void thumbnailActionsUseTranslucentOverlays() {
 }
 
 void floatingBottomToolbarControlsCollection() {
-    CollageDocument document;
-    CollageEditorWidget editor(&document);
+    ImageStitchingDocument document;
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -746,9 +745,10 @@ void floatingBottomToolbarControlsCollection() {
             "floating collection icons expose translated names to keyboard and assistive input");
     int additions = 0;
     int clears = 0;
-    QObject::connect(&editor, &CollageEditorWidget::addImagesRequested, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::addImagesRequested, &editor,
                      [&] { ++additions; });
-    QObject::connect(&editor, &CollageEditorWidget::clearRequested, &editor, [&] { ++clears; });
+    QObject::connect(&editor, &ImageStitchingEditorWidget::clearRequested, &editor,
+                     [&] { ++clears; });
     add->click();
     require(additions == 1, "the floating add action requests import");
     QVector<quint64> ids;
@@ -788,9 +788,9 @@ void floatingBottomToolbarControlsCollection() {
     editor.setExportBusy(false);
     require(add->isEnabled() && clear->isEnabled() && reverse->isEnabled(),
             "collection actions recover after export");
-    document.setOutputType(CollageOutputType::PdfDocument);
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
     require(!toolbar->isVisible(), "PDF previews use their own floating collection toolbar");
-    document.setOutputType(CollageOutputType::StaticImage);
+    document.setOutputType(ImageStitchingOutputType::StaticImage);
     require(toolbar->isVisible(), "returning to static output restores its floating toolbar");
     document.clear();
     pump();
@@ -799,8 +799,8 @@ void floatingBottomToolbarControlsCollection() {
     anchoredTo(empty);
 }
 void floatingFitToCanvasFollowsViewport() {
-    CollageDocument document;
-    CollageEditorWidget editor(&document);
+    ImageStitchingDocument document;
+    ImageStitchingEditorWidget editor(&document);
     auto* canvas = editor.canvas();
     auto* fit = button(&editor, "collageFitToCanvas");
     require(!fit->isEnabled(),
@@ -865,10 +865,10 @@ void floatingFitToCanvasFollowsViewport() {
             "clearing the result must hide and disable the floating fit action");
 }
 void arrangementChangesFitToCanvas() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({800, 400}), QStringLiteral("first"));
     const auto second = document.append(image({400, 800}, Qt::blue), QStringLiteral("second"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 700);
     editor.show();
     pump();
@@ -878,14 +878,15 @@ void arrangementChangesFitToCanvas() {
     require(direction != nullptr, "arrangement control must be available");
     document.select(second);
     QStringList fields;
-    QObject::connect(&editor, &CollageEditorWidget::settingsEdited, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::settingsEdited, &editor,
                      [&](const QString& field) { fields.append(field); });
-    for (const auto arrangement : {CollageDirection::Horizontal, CollageDirection::Vertical}) {
+    for (const auto arrangement :
+         {ImageStitchingDirection::Horizontal, ImageStitchingDirection::Vertical}) {
         wheel(canvas, {120, 100}, 480);
         mouse(canvas, QEvent::MouseButtonPress, {50, 50}, Qt::MiddleButton, Qt::MiddleButton);
         mouse(canvas, QEvent::MouseMove, {140, 125}, Qt::NoButton, Qt::MiddleButton);
         mouse(canvas, QEvent::MouseButtonRelease, {140, 125}, Qt::MiddleButton, Qt::NoButton);
-        if (arrangement == CollageDirection::Horizontal) {
+        if (arrangement == ImageStitchingDirection::Horizontal) {
             auto* option = direction->childAt(direction->optionRect(1).center());
             require(option != nullptr, "horizontal arrangement must expose its button");
             click(option);
@@ -898,7 +899,7 @@ void arrangementChangesFitToCanvas() {
             pump();
         }
         require(document.settings().direction == arrangement &&
-                    fields.size() == (arrangement == CollageDirection::Horizontal ? 1 : 2) &&
+                    fields.size() == (arrangement == ImageStitchingDirection::Horizontal ? 1 : 2) &&
                     fields.last() == QStringLiteral("direction"),
                 "mouse and keyboard arrangement changes must update and publish the direction");
         const auto fittedZoom = canvas->zoom();
@@ -924,10 +925,10 @@ void arrangementChangesFitToCanvas() {
             "other layout settings must preserve the zoom and selected image anchor");
 }
 void fitPanZoomAndNavigation() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({400, 200}), QStringLiteral("first"));
     const auto second = document.append(image({100, 400}, Qt::blue), QStringLiteral("second"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 700);
     editor.show();
     pump();
@@ -986,10 +987,10 @@ void fitPanZoomAndNavigation() {
             "reset toolbar action must reset selected transform");
 }
 void releaseOnlySwapAndCrossWindowIsolation() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({120, 80}), QStringLiteral("A"));
     const auto second = document.append(image({120, 80}), QStringLiteral("B"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -1010,7 +1011,7 @@ void releaseOnlySwapAndCrossWindowIsolation() {
     auto* thumbnail = editor.findChild<QWidget*>(QStringLiteral("collageThumbnail_%1").arg(first));
     require(thumbnail != nullptr && thumbnail->property("collageItemId").toULongLong() == first,
             "thumbnail identity must follow canvas swaps");
-    CollageDocument other;
+    ImageStitchingDocument other;
     other.append(image({100, 100}), QStringLiteral("other"));
     QMimeData foreign;
     foreign.setData(QStringLiteral("application/x-snow-shot-collage-item"),
@@ -1034,13 +1035,13 @@ void releaseOnlySwapAndCrossWindowIsolation() {
             "thumbnail drop must swap document and preview order");
 }
 void invalidLayoutKeepsSelectionAndTransformsUsable() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({80, 40}), QStringLiteral("first"));
     const auto second = document.append(image({40, 80}, Qt::blue), QStringLiteral("second"));
     const auto firstPixels = document.items()[0].image.cacheKey();
     const auto secondPixels = document.items()[1].image.cacheKey();
     const auto initialSettings = document.settings();
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -1091,8 +1092,8 @@ void backgroundColorsShareRowAndCenteredSwatches() {
     const auto originalConfig = themes.config();
     for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
         themes.setPreset(theme);
-        CollageDocument document;
-        CollageEditorWidget editor(&document);
+        ImageStitchingDocument document;
+        ImageStitchingEditorWidget editor(&document);
         editor.resize(1000, 650);
         editor.show();
         pump();
@@ -1209,8 +1210,8 @@ void backgroundColorsShareRowAndCenteredSwatches() {
 }
 
 void controlsEmptyBusyAndPresets() {
-    CollageDocument document;
-    CollageEditorWidget editor(&document);
+    ImageStitchingDocument document;
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -1252,12 +1253,13 @@ void controlsEmptyBusyAndPresets() {
     int clears = 0;
     quint64 replacement = 0;
     QStringList fields;
-    QObject::connect(&editor, &CollageEditorWidget::addImagesRequested, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::addImagesRequested, &editor,
                      [&] { ++additions; });
-    QObject::connect(&editor, &CollageEditorWidget::clearRequested, &editor, [&] { ++clears; });
-    QObject::connect(&editor, &CollageEditorWidget::replaceImageRequested, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::clearRequested, &editor,
+                     [&] { ++clears; });
+    QObject::connect(&editor, &ImageStitchingEditorWidget::replaceImageRequested, &editor,
                      [&](quint64 id) { replacement = id; });
-    QObject::connect(&editor, &CollageEditorWidget::settingsEdited, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::settingsEdited, &editor,
                      [&](const QString& field) { fields.append(field); });
     click(button(&editor, "collageEmptyAddImages"));
     require(additions == 1, "empty Add action must request import");
@@ -1283,7 +1285,7 @@ void controlsEmptyBusyAndPresets() {
     auto* horizontal = direction->childAt(direction->optionRect(1).center());
     require(horizontal != nullptr, "horizontal option must expose its interactive button");
     click(horizontal);
-    require(document.settings().direction == CollageDirection::Horizontal &&
+    require(document.settings().direction == ImageStitchingDirection::Horizontal &&
                 fields.contains(QStringLiteral("direction")),
             "layout control must edit document and publish persistence field");
     auto* sizing = editor.findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageSizing"));
@@ -1293,7 +1295,7 @@ void controlsEmptyBusyAndPresets() {
     sizingOption->setFocus(Qt::TabFocusReason);
     QKeyEvent nextSizing(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
     QApplication::sendEvent(sizingOption, &nextSizing);
-    require(document.settings().sizing == CollageSizing::Original &&
+    require(document.settings().sizing == ImageStitchingSizing::Original &&
                 fields.contains(QStringLiteral("sizing_mode")),
             "keyboard selection must edit image sizing and publish persistence field");
     auto* border =
@@ -1366,14 +1368,14 @@ void controlsEmptyBusyAndPresets() {
             "editor feedback has no bottom status panel that can displace the preview");
 }
 void spacingUnitsPreservePixelsAndConvertEdits() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image({300, 100}), QStringLiteral("first"));
     document.append(image({600, 200}), QStringLiteral("second"));
     auto settings = document.settings();
     settings.border = 17;
     settings.spacing = 11;
     document.setSettings(settings);
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -1394,7 +1396,7 @@ void spacingUnitsPreservePixelsAndConvertEdits() {
                 border->geometry().top() > borderUnit->geometry().bottom(),
             "length fields must match the save dialog's label and compact unit header");
     QStringList edits;
-    QObject::connect(&editor, &CollageEditorWidget::settingsEdited, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::settingsEdited, &editor,
                      [&](const QString& field) { edits.append(field); });
     border->setValue(17.4);
     spacing->setValue(10.6);
@@ -1471,14 +1473,14 @@ void spacingUnitsPreservePixelsAndConvertEdits() {
 }
 
 void spacingPercentagesFollowImageReference() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({200, 80}), QStringLiteral("first"));
     document.append(image({400, 100}), QStringLiteral("second"));
     auto settings = document.settings();
     settings.border = 20;
     settings.spacing = 10;
     document.setSettings(settings);
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     auto* border =
         editor.findChild<adqt::widgets::AdInputNumber*>(QStringLiteral("collageOuterBorder"));
     auto* spacing =
@@ -1491,15 +1493,15 @@ void spacingPercentagesFollowImageReference() {
     spacingUnit->setCurrentValue(QStringLiteral("percentage"));
     require(border->value() == 10 && spacing->value() == 5,
             "uniform vertical percentages must use the first image width");
-    settings.sizing = CollageSizing::Original;
+    settings.sizing = ImageStitchingSizing::Original;
     document.setSettings(settings);
     require(border->value() == 5 && spacing->value() == 3,
             "original vertical percentages must use the widest image");
-    settings.direction = CollageDirection::Horizontal;
+    settings.direction = ImageStitchingDirection::Horizontal;
     document.setSettings(settings);
     require(border->value() == 20 && spacing->value() == 10,
             "original horizontal percentages must use the tallest image");
-    settings.sizing = CollageSizing::Uniform;
+    settings.sizing = ImageStitchingSizing::Uniform;
     document.setSettings(settings);
     require(border->value() == 25 && spacing->value() == 13,
             "uniform horizontal percentages must use the first image height");
@@ -1520,9 +1522,9 @@ void spacingPercentagesFollowImageReference() {
     document.append(image({200, 100}), QStringLiteral("new"));
     require(border->isEnabled() && border->value() == 20 && spacing->value() == 10,
             "new images must restore percentage editing with the saved pixel values");
-    CollageDocument otherDocument;
+    ImageStitchingDocument otherDocument;
     otherDocument.append(image({100, 100}), QStringLiteral("other"));
-    CollageEditorWidget other(&otherDocument);
+    ImageStitchingEditorWidget other(&otherDocument);
     auto* otherUnit = other.findChild<adqt::widgets::AdSegmented*>(
         QStringLiteral("collageOuterBorderUnitSegmented"));
     require(otherUnit->currentValue() == QStringLiteral("pixels") &&
@@ -1531,18 +1533,18 @@ void spacingPercentagesFollowImageReference() {
 }
 
 void customGridPercentagesFollowCellWidth() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first = document.append(image({200, 80}), QStringLiteral("first"));
     const auto second = document.append(image({400, 100}), QStringLiteral("second"));
     auto settings = document.settings();
-    settings.direction = CollageDirection::Custom;
+    settings.direction = ImageStitchingDirection::Custom;
     settings.rows = 1;
     settings.columns = 2;
     settings.customGridInitialized = true;
     settings.border = 20;
     settings.spacing = 10;
     document.setSettings(settings);
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     auto* border =
         editor.findChild<adqt::widgets::AdInputNumber*>(QStringLiteral("collageOuterBorder"));
     auto* spacing =
@@ -1559,7 +1561,7 @@ void customGridPercentagesFollowCellWidth() {
                 border->toolTip() == QStringLiteral("Percentage of the grid cell width") &&
                 spacing->toolTip() == border->toolTip(),
             "uniform Custom percentages must use the first transformed image's cell width");
-    settings.sizing = CollageSizing::Original;
+    settings.sizing = ImageStitchingSizing::Original;
     document.setSettings(settings);
     require(border->value() == 5 && spacing->value() == 3,
             "original Custom percentages must use the widest transformed image's cell width");
@@ -1582,11 +1584,11 @@ void customGridPercentagesFollowCellWidth() {
 }
 
 void customGridDimensionChangesFitToCanvas() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image({800, 400}), QStringLiteral("first"));
     const auto selected = document.append(image({400, 800}), QStringLiteral("second"));
     document.append(image({200, 200}), QStringLiteral("third"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 700);
     editor.show();
     pump();
@@ -1599,7 +1601,7 @@ void customGridDimensionChangesFitToCanvas() {
     direction->setCurrentValue(QStringLiteral("custom"));
     document.select(selected);
     QStringList edits;
-    QObject::connect(&editor, &CollageEditorWidget::settingsEdited, &editor,
+    QObject::connect(&editor, &ImageStitchingEditorWidget::settingsEdited, &editor,
                      [&](const QString& field) { edits.append(field); });
     const auto editAndVerifyFit = [&](adqt::widgets::AdInputNumber* input, double value) {
         wheel(editor.canvas(), {120, 100}, 480);
@@ -1636,11 +1638,11 @@ void customGridDimensionChangesFitToCanvas() {
 }
 
 void detailTilesRemainBoundedAndOriginalsUnchanged() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto source = image({3840, 2160}, QColor(20, 40, 60, 110));
     const auto key = source.cacheKey();
     document.append(source, QStringLiteral("4K"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
     pump();
@@ -1674,10 +1676,10 @@ void detailTilesRemainBoundedAndOriginalsUnchanged() {
 }
 
 void backgroundEditsPreservePendingNumericInput() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image({500, 300}), QStringLiteral("first"));
     document.append(image({500, 300}), QStringLiteral("second"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -1706,10 +1708,10 @@ void backgroundEditsPreservePendingNumericInput() {
 }
 
 void thumbnailReorderingPreservesWidgetsAndFocus() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     for (int index = 0; index < 9; ++index)
         document.append(image({150, 100}), QString::number(index));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 700);
     editor.show();
     pump();
@@ -1745,7 +1747,7 @@ void thumbnailReorderingPreservesWidgetsAndFocus() {
 
 void detailTilesPreserveColorOrientationAndCroppedPalette() {
     for (const auto format : {QImage::Format_RGBA64_Premultiplied, QImage::Format_Mono}) {
-        CollageDocument document;
+        ImageStitchingDocument document;
         QImage source(1603, 1201, format);
         require(!source.isNull(), "detail color fixture allocation");
         const std::array<QColor, 4> colors{QColor(190, 40, 20, 110), QColor(20, 180, 50, 150),
@@ -1766,7 +1768,7 @@ void detailTilesPreserveColorOrientationAndCroppedPalette() {
         const auto key = source.cacheKey();
         const auto id = document.append(source, QStringLiteral("color and palette"));
         require(id != 0, "detail color fixture admission");
-        CollageEditorWidget editor(&document);
+        ImageStitchingEditorWidget editor(&document);
         editor.resize(1200, 800);
         editor.show();
         document.select(0);
@@ -1856,10 +1858,10 @@ void stronglyReducedDetailsKeepNativeAreaQuality() {
     source.setColorSpace(QColorSpace::DisplayP3);
     const auto key = source.cacheKey();
     const auto converted = source.convertedToColorSpace(QColorSpace::SRgb);
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto id = document.append(source, QStringLiteral("high-frequency alpha colors"));
     require(id != 0, "area-detail fixture admission");
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(800, 640);
     editor.show();
     document.select(0);
@@ -1963,9 +1965,9 @@ void cancelledDetailsRetainPreviewAccountingUntilRetirement() {
         QThread::msleep(1);
     }
     require(blockers->started.load() == workers, "detail retirement fixture workers must start");
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image({2000, 1600}), QStringLiteral("queued detail"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1200, 800);
     editor.show();
     timer.restart();
@@ -1994,9 +1996,9 @@ void cancelledDetailsRetainPreviewAccountingUntilRetirement() {
 }
 
 void languageChangesPreserveSettingsAndRefreshLabels() {
-    CollageDocument document;
+    ImageStitchingDocument document;
     document.append(image({120, 100}), QStringLiteral("sample"));
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     editor.resize(1000, 650);
     editor.show();
     pump();
@@ -2007,7 +2009,7 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     borderUnit->setCurrentValue(QStringLiteral("percentage"));
     border->setValue(12.5);
     auto customSettings = document.settings();
-    customSettings.direction = CollageDirection::Custom;
+    customSettings.direction = ImageStitchingDirection::Custom;
     customSettings.rows = 2;
     customSettings.columns = 3;
     customSettings.customGridInitialized = true;
@@ -2018,7 +2020,7 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
             "collage Chinese translation catalog must be available");
     QApplication::installTranslator(&translator);
     pump();
-    const auto localized = QCoreApplication::translate("CollageEditorWidget", "Add images");
+    const auto localized = QCoreApplication::translate("ImageStitchingEditorWidget", "Add images");
     require(localized != QStringLiteral("Add images") &&
                 button(&editor, "collageAddImages")->toolTip() == localized &&
                 button(&editor, "collageAddImages")->accessibleName() == localized,
@@ -2026,29 +2028,32 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     auto* prompt = editor.findChild<QLabel*>(QStringLiteral("collageEmptyPrompt"));
     auto* guide = button(&editor, "collageEmptyAddImages");
     require(prompt &&
-                prompt->text() == QCoreApplication::translate("CollageEditorWidget",
-                                                              "Add images to create a collage") &&
+                prompt->text() ==
+                    QCoreApplication::translate("ImageStitchingEditorWidget",
+                                                "Add images to start image stitching") &&
                 guide->text() == localized && guide->accessibleName() == localized,
             "language change must refresh the empty prompt and accessible guide button");
-    require(button(editor.canvas(), "collageRotateClockwise")->accessibleName() ==
-                QCoreApplication::translate("CollageEditorWidget", "Rotate clockwise by 90°"),
-            "language change must refresh floating toolbar accessibility");
+    require(
+        button(editor.canvas(), "collageRotateClockwise")->accessibleName() ==
+            QCoreApplication::translate("ImageStitchingEditorWidget", "Rotate clockwise by 90°"),
+        "language change must refresh floating toolbar accessibility");
     auto* direction =
         editor.findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageDirection"));
     auto* sizing = editor.findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageSizing"));
     require(direction && sizing &&
                 direction->optionLabel(1) ==
-                    QCoreApplication::translate("CollageEditorWidget", "Horizontal") &&
+                    QCoreApplication::translate("ImageStitchingEditorWidget", "Horizontal") &&
                 direction->optionLabel(2) ==
-                    QCoreApplication::translate("CollageEditorWidget", "Custom") &&
+                    QCoreApplication::translate("ImageStitchingEditorWidget", "Custom") &&
                 sizing->optionLabel(1) ==
-                    QCoreApplication::translate("CollageEditorWidget", "Original size"),
+                    QCoreApplication::translate("ImageStitchingEditorWidget", "Original size"),
             "language change must refresh segmented choices");
     for (const auto* source : {"Rows", "Columns"}) {
         const auto name = QStringLiteral("collageGrid%1").arg(QString::fromLatin1(source));
         auto* input = editor.findChild<adqt::widgets::AdInputNumber*>(name);
         auto* label = editor.findChild<QLabel*>(name + QStringLiteral("Label"));
-        const auto localizedName = QCoreApplication::translate("CollageEditorWidget", source);
+        const auto localizedName =
+            QCoreApplication::translate("ImageStitchingEditorWidget", source);
         require(input && label && localizedName != QString::fromLatin1(source) &&
                     input->accessibleName() == localizedName && label->text() == localizedName,
                 "language change must refresh custom grid labels and accessible names");
@@ -2056,25 +2061,25 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
     for (const auto* name :
          {"collageOuterBorderUnitSegmented", "collageImageSpacingUnitSegmented"}) {
         auto* unit = editor.findChild<adqt::widgets::AdSegmented*>(QString::fromLatin1(name));
-        require(unit && unit->optionLabel(0) != QStringLiteral("Pixel") &&
+        require(unit && unit->optionLabel(0) != QStringLiteral("Pixels") &&
                     unit->optionLabel(0) ==
-                        QCoreApplication::translate("CollageEditorWidget", "Pixel") &&
+                        QCoreApplication::translate("ImageStitchingEditorWidget", "Pixels") &&
                     unit->optionLabel(1) ==
-                        QCoreApplication::translate("CollageEditorWidget", "Percentage"),
+                        QCoreApplication::translate("ImageStitchingEditorWidget", "Percentage"),
                 "language change must refresh both unit switches");
     }
     require(
         borderUnit->currentValue() == QStringLiteral("percentage") && border->value() == 13 &&
             border->decimals() == 0 && border->suffixText() == QStringLiteral("%") &&
-            border->accessibleName() ==
-                QCoreApplication::translate("CollageEditorWidget", "Outer border in percentage") &&
-            border->toolTip() == QCoreApplication::translate("CollageEditorWidget",
+            border->accessibleName() == QCoreApplication::translate("ImageStitchingEditorWidget",
+                                                                    "Outer border in percentage") &&
+            border->toolTip() == QCoreApplication::translate("ImageStitchingEditorWidget",
                                                              "Percentage of the grid cell width"),
         "language changes must preserve active units and refresh their accessibility and help");
     auto* fit = button(editor.canvas(), "collageFitToCanvas");
     require(fit->text().isEmpty() &&
                 fit->toolTip() ==
-                    QCoreApplication::translate("CollageEditorWidget", "Fit to canvas") &&
+                    QCoreApplication::translate("ImageStitchingEditorWidget", "Fit to canvas") &&
                 fit->accessibleName() == fit->toolTip(),
             "language change must refresh the floating fit tooltip and accessible name");
     require(document.settings() == settings, "language change must not edit layout settings");
@@ -2147,7 +2152,7 @@ QImage previewFixture(QSize size, int variant) {
 int renderPreview(const QString& path, bool dark, bool percentage, bool empty) {
     adqt::theme::ThemeManager::instance().setPreset(dark ? adqt::theme::ThemeScheme::Dark
                                                          : adqt::theme::ThemeScheme::Light);
-    CollageDocument document;
+    ImageStitchingDocument document;
     const auto first =
         document.append(previewFixture({720, 280}, 0), QStringLiteral("History screenshot"));
     document.append(previewFixture({480, 390}, 1), QStringLiteral("Capture settings"));
@@ -2157,11 +2162,11 @@ int renderPreview(const QString& path, bool dark, bool percentage, bool empty) {
     settings.spacing = 16;
     settings.background = QColor(255, 255, 255, 90);
     if (QApplication::arguments().contains(QStringLiteral("--custom")))
-        settings.direction = CollageDirection::Custom;
+        settings.direction = ImageStitchingDirection::Custom;
     document.setSettings(settings);
     if (empty)
         document.clear();
-    CollageEditorWidget editor(&document);
+    ImageStitchingEditorWidget editor(&document);
     if (percentage)
         for (const auto* name :
              {"collageOuterBorderUnitSegmented", "collageImageSpacingUnitSegmented"})

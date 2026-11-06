@@ -13,891 +13,6 @@
         </message>
     </context>
     <context>
-        <name>CollageDocument</name>
-        <message>
-            <source>Enter a nonnegative image spacing</source>
-            <translation>请输入非负的图像间距</translation>
-        </message>
-        <message>
-            <source>Enter a nonnegative page margin</source>
-            <translation>请输入非负的页边距</translation>
-        </message>
-        <message>
-            <source>Enter a positive paper dimension</source>
-            <translation>请输入正数的纸张尺寸</translation>
-        </message>
-        <message>
-            <source>Select a paper orientation</source>
-            <translation>请选择纸张方向</translation>
-        </message>
-        <message>
-            <source>Select a paper size</source>
-            <translation>请选择纸张大小</translation>
-        </message>
-        <message>
-            <source>Select a stitching method</source>
-            <translation>请选择拼接方式</translation>
-        </message>
-        <message>
-            <source>Select a template</source>
-            <translation>请选择模板</translation>
-        </message>
-        <message>
-            <source>Select an export mode</source>
-            <translation>请选择导出模式</translation>
-        </message>
-        <message>
-            <source>The PDF page settings are invalid</source>
-            <translation>PDF 页面设置无效</translation>
-        </message>
-        <message>
-            <source>The collage exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
-            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置</translation>
-        </message>
-        <message>
-            <source>The collage export was cancelled</source>
-            <translation>图片拼接导出已取消</translation>
-        </message>
-        <message>
-            <source>The collage images could not be prepared for export</source>
-            <translation>无法准备图片拼接图像以供导出</translation>
-        </message>
-        <message>
-            <source>The collage is too large for the clipboard. Save it to a file instead</source>
-            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件</translation>
-        </message>
-        <message>
-            <source>The collage layout settings are invalid</source>
-            <translation>图片拼接布局设置无效</translation>
-        </message>
-        <message>
-            <source>The image spacing must leave usable template cells</source>
-            <translation>图像间距必须为模板区域留出可用空间</translation>
-        </message>
-        <message>
-            <source>The margins must leave a usable content area</source>
-            <translation>页边距必须留出可用的内容区域</translation>
-        </message>
-        <message>
-            <source>The paper dimension exceeds the PDF size limit</source>
-            <translation>纸张尺寸超过了 PDF 大小限制</translation>
-        </message>
-        <message>
-            <source>There is not enough available memory for this collage operation. Try fewer images or close other collage windows</source>
-            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口</translation>
-        </message>
-        <message>
-            <source>This collage requires too much temporary memory. Try fewer images or smaller image sizes</source>
-            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollageEditorWidget</name>
-        <message>
-            <source> px</source>
-            <translation> 像素</translation>
-        </message>
-        <message>
-            <source>%1 × %2 mm</source>
-            <translation>%1 × %2 毫米</translation>
-        </message>
-        <message>
-            <source>%1 × %2 px</source>
-            <translation>%1 × %2 像素</translation>
-        </message>
-        <message>
-            <source>Add images</source>
-            <translation>添加图像</translation>
-        </message>
-        <message>
-            <source>Add images to create a collage</source>
-            <translation>添加图像以创建图片拼接</translation>
-        </message>
-        <message>
-            <source>Add multiple image files at once</source>
-            <translation>可一次添加多张图片</translation>
-        </message>
-        <message>
-            <source>Background color</source>
-            <translation>背景颜色</translation>
-        </message>
-        <message>
-            <source>Black</source>
-            <translation>黑色</translation>
-        </message>
-        <message>
-            <source>Blue</source>
-            <translation>蓝色</translation>
-        </message>
-        <message>
-            <source>Choose a background color, including transparency</source>
-            <translation>选择背景颜色，可设置透明度</translation>
-        </message>
-        <message>
-            <source>Clear all</source>
-            <translation>全部清空</translation>
-        </message>
-        <message>
-            <source>Collage preview</source>
-            <translation>图片拼接预览</translation>
-        </message>
-        <message>
-            <source>Columns</source>
-            <translation>列</translation>
-        </message>
-        <message>
-            <source>Custom</source>
-            <translation>自定义</translation>
-        </message>
-        <message>
-            <source>Delete image</source>
-            <translation>删除图像</translation>
-        </message>
-        <message>
-            <source>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
-            <translation>拖动图像以移动或交换；拖动选框控制点以围绕中心缩放。按住鼠标中键拖动以平移，滚动以缩放</translation>
-        </message>
-        <message>
-            <source>Drag image files here, or choose add images</source>
-            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
-        </message>
-        <message>
-            <source>Drop images to add to collage</source>
-            <translation>松开鼠标，将图片添加到图片拼接</translation>
-        </message>
-        <message>
-            <source>Fit to canvas</source>
-            <translation>适应画布</translation>
-        </message>
-        <message>
-            <source>Flip horizontally</source>
-            <translation>水平翻转</translation>
-        </message>
-        <message>
-            <source>Flip vertically</source>
-            <translation>垂直翻转</translation>
-        </message>
-        <message>
-            <source>Gray</source>
-            <translation>灰色</translation>
-        </message>
-        <message>
-            <source>Green</source>
-            <translation>绿色</translation>
-        </message>
-        <message>
-            <source>Horizontal</source>
-            <translation>水平</translation>
-        </message>
-        <message>
-            <source>Image %1: %2</source>
-            <translation>图像 %1：%2</translation>
-        </message>
-        <message>
-            <source>Image sizing</source>
-            <translation>图像尺寸</translation>
-        </message>
-        <message>
-            <source>Image spacing</source>
-            <translation>图像间距</translation>
-        </message>
-        <message>
-            <source>Image spacing in output pixels</source>
-            <translation>图像间距（输出像素）</translation>
-        </message>
-        <message>
-            <source>Image spacing in percentage</source>
-            <translation>图像间距（百分比）</translation>
-        </message>
-        <message>
-            <source>Image spacing unit</source>
-            <translation>图像间距单位</translation>
-        </message>
-        <message>
-            <source>Image type</source>
-            <translation>图像类型</translation>
-        </message>
-        <message>
-            <source>Layout direction</source>
-            <translation>布局方向</translation>
-        </message>
-        <message>
-            <source>Original size</source>
-            <translation>原始尺寸</translation>
-        </message>
-        <message>
-            <source>Outer border</source>
-            <translation>外边框</translation>
-        </message>
-        <message>
-            <source>Outer border in output pixels</source>
-            <translation>外边框（输出像素）</translation>
-        </message>
-        <message>
-            <source>Outer border in percentage</source>
-            <translation>外边框（百分比）</translation>
-        </message>
-        <message>
-            <source>Outer border unit</source>
-            <translation>外边框单位</translation>
-        </message>
-        <message>
-            <source>PDF document</source>
-            <translation>PDF 文档</translation>
-        </message>
-        <message>
-            <source>Percentage</source>
-            <translation>百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the grid cell width</source>
-            <translation>网格单元宽度的百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the tallest image after sizing</source>
-            <translation>调整尺寸后最高图像高度的百分比</translation>
-        </message>
-        <message>
-            <source>Percentage of the widest image after sizing</source>
-            <translation>调整尺寸后最宽图像宽度的百分比</translation>
-        </message>
-        <message>
-            <source>Pixel</source>
-            <translation>像素</translation>
-        </message>
-        <message>
-            <source>Purple</source>
-            <translation>紫色</translation>
-        </message>
-        <message>
-            <source>Red</source>
-            <translation>红色</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>替换图像</translation>
-        </message>
-        <message>
-            <source>Reset transform</source>
-            <translation>重置变换</translation>
-        </message>
-        <message>
-            <source>Reverse image order</source>
-            <translation>反转图像顺序</translation>
-        </message>
-        <message>
-            <source>Rotate clockwise by 90°</source>
-            <translation>顺时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>Rotate counterclockwise by 90°</source>
-            <translation>逆时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>Rows</source>
-            <translation>行</translation>
-        </message>
-        <message>
-            <source>Select to center this image; drag onto another image to swap</source>
-            <translation>选择以将此图像居中；拖到另一图像上以交换位置</translation>
-        </message>
-        <message>
-            <source>Static image</source>
-            <translation>静态图像</translation>
-        </message>
-        <message>
-            <source>Total: %1 images</source>
-            <translation>总计：%1 张图像</translation>
-        </message>
-        <message>
-            <source>Total: %1 pages</source>
-            <translation>总计：%1 页</translation>
-        </message>
-        <message>
-            <source>Uniform size</source>
-            <translation>统一尺寸</translation>
-        </message>
-        <message>
-            <source>Vertical</source>
-            <translation>垂直</translation>
-        </message>
-        <message>
-            <source>White</source>
-            <translation>白色</translation>
-        </message>
-        <message>
-            <source>Yellow</source>
-            <translation>黄色</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfExport</name>
-        <message>
-            <source>Export was canceled</source>
-            <translation>导出已取消</translation>
-        </message>
-        <message>
-            <source>No output destination was selected</source>
-            <translation>未选择输出位置</translation>
-        </message>
-        <message>
-            <source>Page %1 could not be exported: %2</source>
-            <translation>无法导出第 %1 页：%2</translation>
-        </message>
-        <message>
-            <source>The PDF could not be saved: %1</source>
-            <translation>无法保存 PDF：%1</translation>
-        </message>
-        <message>
-            <source>The PDF settings or images are invalid</source>
-            <translation>PDF 设置或图像无效</translation>
-        </message>
-        <message>
-            <source>The image could not be prepared for PDF export</source>
-            <translation>无法准备图像以供导出为 PDF</translation>
-        </message>
-        <message>
-            <source>The output folder could not be created</source>
-            <translation>无法创建输出文件夹</translation>
-        </message>
-        <message>
-            <source>The selected PDF already exists. Choose another filename</source>
-            <translation>所选 PDF 已存在，请选择其他文件名</translation>
-        </message>
-        <message>
-            <source>There is not enough memory to export the PDF</source>
-            <translation>内存不足，无法导出 PDF</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfPageGrid</name>
-        <message>
-            <source>Add images</source>
-            <translation>添加图像</translation>
-        </message>
-        <message>
-            <source>Add images to create a PDF document</source>
-            <translation>添加图像以创建 PDF 文档</translation>
-        </message>
-        <message>
-            <source>Add multiple image files at once</source>
-            <translation>可一次添加多张图片</translation>
-        </message>
-        <message>
-            <source>Clear</source>
-            <translation>清空</translation>
-        </message>
-        <message>
-            <source>Delete image</source>
-            <translation>删除图像</translation>
-        </message>
-        <message>
-            <source>Drag image files here, or choose add images</source>
-            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
-        </message>
-        <message>
-            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image</source>
-            <translation>拖动页面以调整顺序。使用方向键选择页面，按 Enter 键预览原图</translation>
-        </message>
-        <message>
-            <source>Drop images to add pages</source>
-            <translation>松开鼠标以添加页面</translation>
-        </message>
-        <message>
-            <source>Flip horizontally</source>
-            <translation>水平翻转</translation>
-        </message>
-        <message>
-            <source>Flip vertically</source>
-            <translation>垂直翻转</translation>
-        </message>
-        <message>
-            <source>Image preview was cancelled</source>
-            <translation>图像预览已取消</translation>
-        </message>
-        <message>
-            <source>PDF document pages</source>
-            <translation>PDF 文档页面</translation>
-        </message>
-        <message>
-            <source>Page %1</source>
-            <translation>第 %1 页</translation>
-        </message>
-        <message>
-            <source>Page %1: %2</source>
-            <translation>第 %1 页：%2</translation>
-        </message>
-        <message>
-            <source>Preview original image</source>
-            <translation>预览原图</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>替换图像</translation>
-        </message>
-        <message>
-            <source>Reset transform</source>
-            <translation>重置变换</translation>
-        </message>
-        <message>
-            <source>Reverse page order</source>
-            <translation>反转页面顺序</translation>
-        </message>
-        <message>
-            <source>Rotate clockwise by 90°</source>
-            <translation>顺时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>Rotate counterclockwise by 90°</source>
-            <translation>逆时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>The original image is unavailable</source>
-            <translation>原图不可用</translation>
-        </message>
-        <message>
-            <source>The page preview shows the last valid settings</source>
-            <translation>页面预览使用上一次有效的设置</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfSettingsWidget</name>
-        <message>
-            <source>A3</source>
-            <translation>A3</translation>
-        </message>
-        <message>
-            <source>A4</source>
-            <translation>A4</translation>
-        </message>
-        <message>
-            <source>A5</source>
-            <translation>A5</translation>
-        </message>
-        <message>
-            <source>B5</source>
-            <translation>B5</translation>
-        </message>
-        <message>
-            <source>Combined export</source>
-            <translation>合并导出</translation>
-        </message>
-        <message>
-            <source>Custom</source>
-            <translation>自定义</translation>
-        </message>
-        <message>
-            <source>Custom paper</source>
-            <translation>自定义纸张</translation>
-        </message>
-        <message>
-            <source>Custom paper height</source>
-            <translation>自定义纸张高度</translation>
-        </message>
-        <message>
-            <source>Custom paper width</source>
-            <translation>自定义纸张宽度</translation>
-        </message>
-        <message>
-            <source>Eight images</source>
-            <translation>八张图像</translation>
-        </message>
-        <message>
-            <source>Export mode</source>
-            <translation>导出模式</translation>
-        </message>
-        <message>
-            <source>Five images</source>
-            <translation>五张图像</translation>
-        </message>
-        <message>
-            <source>Four images</source>
-            <translation>四张图像</translation>
-        </message>
-        <message>
-            <source>Height</source>
-            <translation>高度</translation>
-        </message>
-        <message>
-            <source>ID card</source>
-            <translation>身份证</translation>
-        </message>
-        <message>
-            <source>Image size</source>
-            <translation>图像大小</translation>
-        </message>
-        <message>
-            <source>Image spacing</source>
-            <translation>图像间距</translation>
-        </message>
-        <message>
-            <source>Landscape</source>
-            <translation>横向</translation>
-        </message>
-        <message>
-            <source>Legal</source>
-            <translation>Legal</translation>
-        </message>
-        <message>
-            <source>Letter</source>
-            <translation>Letter</translation>
-        </message>
-        <message>
-            <source>Nine images</source>
-            <translation>九张图像</translation>
-        </message>
-        <message>
-            <source>Page margin</source>
-            <translation>页边距</translation>
-        </message>
-        <message>
-            <source>Page-based stitching</source>
-            <translation>分页拼接</translation>
-        </message>
-        <message>
-            <source>Paper orientation</source>
-            <translation>纸张方向</translation>
-        </message>
-        <message>
-            <source>Paper size</source>
-            <translation>纸张大小</translation>
-        </message>
-        <message>
-            <source>Per-page export</source>
-            <translation>逐页导出</translation>
-        </message>
-        <message>
-            <source>Portrait</source>
-            <translation>纵向</translation>
-        </message>
-        <message>
-            <source>Seven images</source>
-            <translation>七张图像</translation>
-        </message>
-        <message>
-            <source>Six images</source>
-            <translation>六张图像</translation>
-        </message>
-        <message>
-            <source>Stitching method</source>
-            <translation>拼接方式</translation>
-        </message>
-        <message>
-            <source>Template</source>
-            <translation>模板</translation>
-        </message>
-        <message>
-            <source>Template-based stitching</source>
-            <translation>模板拼接</translation>
-        </message>
-        <message>
-            <source>Three images</source>
-            <translation>三张图像</translation>
-        </message>
-        <message>
-            <source>Two images</source>
-            <translation>两张图像</translation>
-        </message>
-        <message>
-            <source>Width</source>
-            <translation>宽度</translation>
-        </message>
-        <message>
-            <source>mm</source>
-            <translation>毫米</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollagePdfTemplateWidget</name>
-        <message>
-            <source>Add images</source>
-            <translation>添加图像</translation>
-        </message>
-        <message>
-            <source>Add images to create a PDF document</source>
-            <translation>添加图像以创建 PDF 文档</translation>
-        </message>
-        <message>
-            <source>Clear all</source>
-            <translation>全部清空</translation>
-        </message>
-        <message>
-            <source>Delete image</source>
-            <translation>删除图像</translation>
-        </message>
-        <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale around its center</source>
-            <translation>拖动图像可移动或交换位置；拖动选框手柄可围绕中心等比例缩放</translation>
-        </message>
-        <message>
-            <source>Flip horizontally</source>
-            <translation>水平翻转</translation>
-        </message>
-        <message>
-            <source>Flip vertically</source>
-            <translation>垂直翻转</translation>
-        </message>
-        <message>
-            <source>Image %1: %2</source>
-            <translation>图像 %1：%2</translation>
-        </message>
-        <message>
-            <source>Image preview was cancelled</source>
-            <translation>图像预览已取消</translation>
-        </message>
-        <message>
-            <source>Input images</source>
-            <translation>输入图像</translation>
-        </message>
-        <message>
-            <source>Next page</source>
-            <translation>下一页</translation>
-        </message>
-        <message>
-            <source>No pages</source>
-            <translation>暂无页面</translation>
-        </message>
-        <message>
-            <source>Page %1 of %2</source>
-            <translation>第 %1 页，共 %2 页</translation>
-        </message>
-        <message>
-            <source>Preview original image</source>
-            <translation>预览原图</translation>
-        </message>
-        <message>
-            <source>Previous page</source>
-            <translation>上一页</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>替换图像</translation>
-        </message>
-        <message>
-            <source>Reset image</source>
-            <translation>重置图像</translation>
-        </message>
-        <message>
-            <source>Reverse image order</source>
-            <translation>反转图像顺序</translation>
-        </message>
-        <message>
-            <source>Rotate clockwise by 90°</source>
-            <translation>顺时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>Rotate counterclockwise by 90°</source>
-            <translation>逆时针旋转 90°</translation>
-        </message>
-        <message>
-            <source>Select to show this image's page; drag onto another image to swap</source>
-            <translation>单击以显示此图像所在页面；拖到另一张图像上可交换位置</translation>
-        </message>
-        <message>
-            <source>Template stitching preview</source>
-            <translation>模板拼接预览</translation>
-        </message>
-        <message>
-            <source>The original image is unavailable</source>
-            <translation>原图不可用</translation>
-        </message>
-        <message>
-            <source>The page preview shows the last valid settings</source>
-            <translation>页面预览使用上一次有效的设置</translation>
-        </message>
-    </context>
-    <context>
-        <name>CollageWindow</name>
-        <message>
-            <source>%1: %2</source>
-            <translation>%1：%2</translation>
-        </message>
-        <message>
-            <source>Add images</source>
-            <translation>添加图像</translation>
-        </message>
-        <message>
-            <source>All images will be removed from this collage</source>
-            <translation>将从此图片拼接中移除全部图像</translation>
-        </message>
-        <message>
-            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
-            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试</translation>
-        </message>
-        <message>
-            <source>Cancel</source>
-            <translation>取消</translation>
-        </message>
-        <message>
-            <source>Canceling PDF export…</source>
-            <translation>正在取消 PDF 导出…</translation>
-        </message>
-        <message>
-            <source>Clear all</source>
-            <translation>全部清空</translation>
-        </message>
-        <message>
-            <source>Clear all images?</source>
-            <translation>清空全部图像？</translation>
-        </message>
-        <message>
-            <source>Clipboard image</source>
-            <translation>剪贴板图像</translation>
-        </message>
-        <message>
-            <source>Collage</source>
-            <translation>图片拼接</translation>
-        </message>
-        <message>
-            <source>Copy</source>
-            <translation>复制</translation>
-        </message>
-        <message>
-            <source>Copying collage…</source>
-            <translation>正在复制图片拼接…</translation>
-        </message>
-        <message>
-            <source>Copying could not be started. Try again</source>
-            <translation>无法开始复制，请重试</translation>
-        </message>
-        <message>
-            <source>Could not read the selected image files. Please try again</source>
-            <translation>无法读取选中的图片文件，请重试</translation>
-        </message>
-        <message>
-            <source>Discard</source>
-            <translation>放弃</translation>
-        </message>
-        <message>
-            <source>Discard this collage?</source>
-            <translation>放弃此图片拼接？</translation>
-        </message>
-        <message>
-            <source>Export could not be started. Try again</source>
-            <translation>无法开始导出，请重试</translation>
-        </message>
-        <message>
-            <source>Exporting PDF page %1 of %2: %3%</source>
-            <translation>正在导出 PDF 第 %1 页，共 %2 页：%3%</translation>
-        </message>
-        <message>
-            <source>Image loading could not be started. Try again</source>
-            <translation>无法开始加载图像，请重试</translation>
-        </message>
-        <message>
-            <source>Images</source>
-            <translation>图像</translation>
-        </message>
-        <message>
-            <source>Loading images: %1 of %2</source>
-            <translation>正在加载图像：%1 / %2</translation>
-        </message>
-        <message>
-            <source>PDF documents</source>
-            <translation>PDF 文档</translation>
-        </message>
-        <message>
-            <source>PDF export was canceled. Your images and edits are preserved</source>
-            <translation>PDF 导出已取消。您的图像和编辑已保留</translation>
-        </message>
-        <message>
-            <source>Page %1 was not saved</source>
-            <translation>第 %1 页未保存</translation>
-        </message>
-        <message>
-            <source>Pages %1–%2 were not saved</source>
-            <translation>第 %1–%2 页未保存</translation>
-        </message>
-        <message>
-            <source>Pinned window %1</source>
-            <translation>固定到屏幕窗口 %1</translation>
-        </message>
-        <message>
-            <source>Preparing collage…</source>
-            <translation>正在准备图片拼接…</translation>
-        </message>
-        <message>
-            <source>Reading selected image files…</source>
-            <translation>正在读取选中的图片文件…</translation>
-        </message>
-        <message>
-            <source>Replace image</source>
-            <translation>替换图像</translation>
-        </message>
-        <message>
-            <source>Save</source>
-            <translation>保存</translation>
-        </message>
-        <message>
-            <source>Save PDF document</source>
-            <translation>保存 PDF 文档</translation>
-        </message>
-        <message>
-            <source>Save as file</source>
-            <translation>保存为文件</translation>
-        </message>
-        <message>
-            <source>Saved pages: %1
-Files:
-%2
-%3</source>
-            <translation>已保存页面：%1
-文件：
-%2
-%3</translation>
-        </message>
-        <message>
-            <source>Saving collage…</source>
-            <translation>正在保存图片拼接…</translation>
-        </message>
-        <message>
-            <source>Saving could not be started. Try again</source>
-            <translation>无法开始保存，请重试</translation>
-        </message>
-        <message>
-            <source>Screenshot %1</source>
-            <translation>截图 %1</translation>
-        </message>
-        <message>
-            <source>Select destination folder</source>
-            <translation>选择目标文件夹</translation>
-        </message>
-        <message>
-            <source>Some images could not be loaded:
-%1</source>
-            <translation>部分图像无法加载：
-%1</translation>
-        </message>
-        <message>
-            <source>The PDFs could not be exported. Try again</source>
-            <translation>无法导出 PDF，请重试</translation>
-        </message>
-        <message>
-            <source>The file manager is unavailable. Open it and try again</source>
-            <translation>文件管理器不可用，请打开后重试</translation>
-        </message>
-        <message>
-            <source>The file manager took too long to return the selected files. Please try again</source>
-            <translation>文件管理器返回选中文件的时间过长，请重试</translation>
-        </message>
-        <message>
-            <source>The final screenshot is unavailable</source>
-            <translation>最终截图不可用</translation>
-        </message>
-        <message>
-            <source>The image could not be decoded or is no longer available</source>
-            <translation>无法解码图像，或图像已不可用</translation>
-        </message>
-        <message>
-            <source>The images and edits in this collage will be discarded</source>
-            <translation>将放弃此图片拼接中的图像和编辑</translation>
-        </message>
-        <message>
-            <source>The layout settings could not be remembered: %1</source>
-            <translation>无法记住布局设置：%1</translation>
-        </message>
-    </context>
-    <context>
         <name>HistoryEntryWidget</name>
         <message>
             <source>%1 x %2 px  ·  %3 display(s)</source>
@@ -992,7 +107,7 @@ Files:
             <translation>截图结果</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1069,7 +184,7 @@ Files:
             <translation>请选择像素或百分比</translation>
         </message>
         <message>
-            <source>Each image must be at least one pixel wide or high</source>
+            <source>Each image must be at least one pixel wide and high</source>
             <translation>每张图像的宽度和高度必须至少为 1 像素</translation>
         </message>
         <message>
@@ -1378,14 +493,899 @@ Files:
         </message>
     </context>
     <context>
+        <name>ImageStitchingDocument</name>
+        <message>
+            <source>Enter a nonnegative image spacing</source>
+            <translation>请输入非负的图像间距</translation>
+        </message>
+        <message>
+            <source>Enter a nonnegative page margin</source>
+            <translation>请输入非负的页边距</translation>
+        </message>
+        <message>
+            <source>Enter a positive paper dimension</source>
+            <translation>请输入正数的纸张尺寸</translation>
+        </message>
+        <message>
+            <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
+            <translation>此图片拼接需要过多临时内存。请减少图像数量或使用较小的图像</translation>
+        </message>
+        <message>
+            <source>Select a paper orientation</source>
+            <translation>请选择纸张方向</translation>
+        </message>
+        <message>
+            <source>Select a paper size</source>
+            <translation>请选择纸张大小</translation>
+        </message>
+        <message>
+            <source>Select a stitching method</source>
+            <translation>请选择拼接方式</translation>
+        </message>
+        <message>
+            <source>Select a template</source>
+            <translation>请选择模板</translation>
+        </message>
+        <message>
+            <source>Select an export mode</source>
+            <translation>请选择导出模式</translation>
+        </message>
+        <message>
+            <source>The PDF page settings are invalid</source>
+            <translation>PDF 页面设置无效</translation>
+        </message>
+        <message>
+            <source>The image spacing must leave usable template cells</source>
+            <translation>图像间距必须为模板区域留出可用空间</translation>
+        </message>
+        <message>
+            <source>The image stitching export was canceled</source>
+            <translation>图片拼接导出已取消</translation>
+        </message>
+        <message>
+            <source>The image stitching layout settings are invalid</source>
+            <translation>图片拼接布局设置无效</translation>
+        </message>
+        <message>
+            <source>The margins must leave a usable content area</source>
+            <translation>页边距必须留出可用的内容区域</translation>
+        </message>
+        <message>
+            <source>The paper dimension exceeds the PDF size limit</source>
+            <translation>纸张尺寸超过了 PDF 大小限制</translation>
+        </message>
+        <message>
+            <source>The stitched image could not be prepared for export</source>
+            <translation>无法准备图片拼接图像以供导出</translation>
+        </message>
+        <message>
+            <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
+            <translation>图片拼接超过了 8 GiB 图像限制。请减少图像数量或调小布局设置</translation>
+        </message>
+        <message>
+            <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
+            <translation>图片拼接过大，无法复制到剪贴板。请保存为文件</translation>
+        </message>
+        <message>
+            <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
+            <translation>可用内存不足，无法执行此图片拼接操作。请减少图像数量或关闭其他图片拼接窗口</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingEditorWidget</name>
+        <message>
+            <source> px</source>
+            <translation> 像素</translation>
+        </message>
+        <message>
+            <source>%1 × %2 mm</source>
+            <translation>%1 × %2 毫米</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Add images</source>
+            <translation>添加图像</translation>
+        </message>
+        <message>
+            <source>Add images to start image stitching</source>
+            <translation>添加图像以创建图片拼接</translation>
+        </message>
+        <message>
+            <source>Add multiple image files at once</source>
+            <translation>可一次添加多张图片</translation>
+        </message>
+        <message>
+            <source>Background color</source>
+            <translation>背景颜色</translation>
+        </message>
+        <message>
+            <source>Black</source>
+            <translation>黑色</translation>
+        </message>
+        <message>
+            <source>Blue</source>
+            <translation>蓝色</translation>
+        </message>
+        <message>
+            <source>Choose a background color, including transparency</source>
+            <translation>选择背景颜色，可设置透明度</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Columns</source>
+            <translation>列数</translation>
+        </message>
+        <message>
+            <source>Custom</source>
+            <translation>自定义</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>删除图像</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag selection handles to scale around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>拖动图像以移动或交换；拖动选框控制点以围绕中心缩放。按住鼠标中键拖动以平移，滚动以缩放</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
+        </message>
+        <message>
+            <source>Drop images to stitch</source>
+            <translation>松开鼠标，将图片添加到图片拼接</translation>
+        </message>
+        <message>
+            <source>Fit to canvas</source>
+            <translation>适应画布</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻转</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻转</translation>
+        </message>
+        <message>
+            <source>Gray</source>
+            <translation>灰色</translation>
+        </message>
+        <message>
+            <source>Green</source>
+            <translation>绿色</translation>
+        </message>
+        <message>
+            <source>Horizontal</source>
+            <translation>水平</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>图像 %1：%2</translation>
+        </message>
+        <message>
+            <source>Image sizing</source>
+            <translation>图像尺寸</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>图像间距</translation>
+        </message>
+        <message>
+            <source>Image spacing in output pixels</source>
+            <translation>图像间距（输出像素）</translation>
+        </message>
+        <message>
+            <source>Image spacing in percentage</source>
+            <translation>图像间距（百分比）</translation>
+        </message>
+        <message>
+            <source>Image spacing unit</source>
+            <translation>图像间距单位</translation>
+        </message>
+        <message>
+            <source>Image stitching preview</source>
+            <translation>图片拼接预览</translation>
+        </message>
+        <message>
+            <source>Image type</source>
+            <translation>图像类型</translation>
+        </message>
+        <message>
+            <source>Layout direction</source>
+            <translation>布局方向</translation>
+        </message>
+        <message>
+            <source>Original size</source>
+            <translation>原始尺寸</translation>
+        </message>
+        <message>
+            <source>Outer border</source>
+            <translation>外边框</translation>
+        </message>
+        <message>
+            <source>Outer border in output pixels</source>
+            <translation>外边框（输出像素）</translation>
+        </message>
+        <message>
+            <source>Outer border in percentage</source>
+            <translation>外边框（百分比）</translation>
+        </message>
+        <message>
+            <source>Outer border unit</source>
+            <translation>外边框单位</translation>
+        </message>
+        <message>
+            <source>PDF document</source>
+            <translation>PDF 文档</translation>
+        </message>
+        <message>
+            <source>Percentage</source>
+            <translation>百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the grid cell width</source>
+            <translation>网格单元宽度的百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the tallest image after sizing</source>
+            <translation>调整尺寸后最高图像高度的百分比</translation>
+        </message>
+        <message>
+            <source>Percentage of the widest image after sizing</source>
+            <translation>调整尺寸后最宽图像宽度的百分比</translation>
+        </message>
+        <message>
+            <source>Pixels</source>
+            <translation>像素</translation>
+        </message>
+        <message>
+            <source>Purple</source>
+            <translation>紫色</translation>
+        </message>
+        <message>
+            <source>Red</source>
+            <translation>红色</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>替换图像</translation>
+        </message>
+        <message>
+            <source>Reset transform</source>
+            <translation>重置变换</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反转图像顺序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>顺时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>Rows</source>
+            <translation>行数</translation>
+        </message>
+        <message>
+            <source>Select to center this image; drag onto another image to swap</source>
+            <translation>选择以将此图像居中；拖到另一图像上以交换位置</translation>
+        </message>
+        <message>
+            <source>Static image</source>
+            <translation>静态图像</translation>
+        </message>
+        <message>
+            <source>Total: %1 images</source>
+            <translation>总计：%1 张图像</translation>
+        </message>
+        <message>
+            <source>Total: %1 pages</source>
+            <translation>总计：%1 页</translation>
+        </message>
+        <message>
+            <source>Uniform size</source>
+            <translation>统一尺寸</translation>
+        </message>
+        <message>
+            <source>Vertical</source>
+            <translation>垂直</translation>
+        </message>
+        <message>
+            <source>White</source>
+            <translation>白色</translation>
+        </message>
+        <message>
+            <source>Yellow</source>
+            <translation>黄色</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfExport</name>
+        <message>
+            <source>Export was canceled</source>
+            <translation>导出已取消</translation>
+        </message>
+        <message>
+            <source>No output destination was selected</source>
+            <translation>未选择输出位置</translation>
+        </message>
+        <message>
+            <source>Page %1 could not be exported: %2</source>
+            <translation>无法导出第 %1 页：%2</translation>
+        </message>
+        <message>
+            <source>The PDF could not be saved: %1</source>
+            <translation>无法保存 PDF：%1</translation>
+        </message>
+        <message>
+            <source>The PDF settings or images are invalid</source>
+            <translation>PDF 设置或图像无效</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for PDF export</source>
+            <translation>无法准备图像以供导出为 PDF</translation>
+        </message>
+        <message>
+            <source>The output folder could not be created</source>
+            <translation>无法创建输出文件夹</translation>
+        </message>
+        <message>
+            <source>The selected PDF already exists. Choose another filename</source>
+            <translation>所选 PDF 已存在，请选择其他文件名</translation>
+        </message>
+        <message>
+            <source>There is not enough memory to export the PDF</source>
+            <translation>内存不足，无法导出 PDF</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfPageGrid</name>
+        <message>
+            <source>Add images</source>
+            <translation>添加图像</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>添加图像以创建 PDF 文档</translation>
+        </message>
+        <message>
+            <source>Add multiple image files at once</source>
+            <translation>可一次添加多张图片</translation>
+        </message>
+        <message>
+            <source>Clear</source>
+            <translation>清空</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>删除图像</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
+        </message>
+        <message>
+            <source>Drag pages to reorder. Use the arrow keys to select a page and Enter to preview the original image</source>
+            <translation>拖动页面以调整顺序。使用方向键选择页面，按 Enter 键预览原图</translation>
+        </message>
+        <message>
+            <source>Drop images to add pages</source>
+            <translation>松开鼠标以添加页面</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻转</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻转</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled</source>
+            <translation>图像预览已取消</translation>
+        </message>
+        <message>
+            <source>PDF document pages</source>
+            <translation>PDF 文档页面</translation>
+        </message>
+        <message>
+            <source>Page %1</source>
+            <translation>第 %1 页</translation>
+        </message>
+        <message>
+            <source>Page %1: %2</source>
+            <translation>第 %1 页：%2</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>预览原图</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>替换图像</translation>
+        </message>
+        <message>
+            <source>Reset transform</source>
+            <translation>重置变换</translation>
+        </message>
+        <message>
+            <source>Reverse page order</source>
+            <translation>反转页面顺序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>顺时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原图不可用</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings</source>
+            <translation>页面预览使用上一次有效的设置</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfSettingsWidget</name>
+        <message>
+            <source>A3</source>
+            <translation>A3</translation>
+        </message>
+        <message>
+            <source>A4</source>
+            <translation>A4</translation>
+        </message>
+        <message>
+            <source>A5</source>
+            <translation>A5</translation>
+        </message>
+        <message>
+            <source>B5</source>
+            <translation>B5</translation>
+        </message>
+        <message>
+            <source>Combined export</source>
+            <translation>合并导出</translation>
+        </message>
+        <message>
+            <source>Custom</source>
+            <translation>自定义</translation>
+        </message>
+        <message>
+            <source>Custom paper</source>
+            <translation>自定义纸张</translation>
+        </message>
+        <message>
+            <source>Custom paper height</source>
+            <translation>自定义纸张高度</translation>
+        </message>
+        <message>
+            <source>Custom paper width</source>
+            <translation>自定义纸张宽度</translation>
+        </message>
+        <message>
+            <source>Eight images</source>
+            <translation>八张图像</translation>
+        </message>
+        <message>
+            <source>Export mode</source>
+            <translation>导出模式</translation>
+        </message>
+        <message>
+            <source>Five images</source>
+            <translation>五张图像</translation>
+        </message>
+        <message>
+            <source>Four images</source>
+            <translation>四张图像</translation>
+        </message>
+        <message>
+            <source>Height</source>
+            <translation>高度</translation>
+        </message>
+        <message>
+            <source>ID card</source>
+            <translation>身份证</translation>
+        </message>
+        <message>
+            <source>Image size</source>
+            <translation>图像大小</translation>
+        </message>
+        <message>
+            <source>Image spacing</source>
+            <translation>图像间距</translation>
+        </message>
+        <message>
+            <source>Landscape</source>
+            <translation>横向</translation>
+        </message>
+        <message>
+            <source>Legal</source>
+            <translation>Legal</translation>
+        </message>
+        <message>
+            <source>Letter</source>
+            <translation>Letter</translation>
+        </message>
+        <message>
+            <source>Nine images</source>
+            <translation>九张图像</translation>
+        </message>
+        <message>
+            <source>Page margin</source>
+            <translation>页边距</translation>
+        </message>
+        <message>
+            <source>Page-based stitching</source>
+            <translation>分页拼接</translation>
+        </message>
+        <message>
+            <source>Paper orientation</source>
+            <translation>纸张方向</translation>
+        </message>
+        <message>
+            <source>Paper size</source>
+            <translation>纸张大小</translation>
+        </message>
+        <message>
+            <source>Per-page export</source>
+            <translation>逐页导出</translation>
+        </message>
+        <message>
+            <source>Portrait</source>
+            <translation>纵向</translation>
+        </message>
+        <message>
+            <source>Seven images</source>
+            <translation>七张图像</translation>
+        </message>
+        <message>
+            <source>Six images</source>
+            <translation>六张图像</translation>
+        </message>
+        <message>
+            <source>Stitching method</source>
+            <translation>拼接方式</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>模板</translation>
+        </message>
+        <message>
+            <source>Template-based stitching</source>
+            <translation>模板拼接</translation>
+        </message>
+        <message>
+            <source>Three images</source>
+            <translation>三张图像</translation>
+        </message>
+        <message>
+            <source>Two images</source>
+            <translation>两张图像</translation>
+        </message>
+        <message>
+            <source>Width</source>
+            <translation>宽度</translation>
+        </message>
+        <message>
+            <source>mm</source>
+            <translation>毫米</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingPdfTemplateWidget</name>
+        <message>
+            <source>Add images</source>
+            <translation>添加图像</translation>
+        </message>
+        <message>
+            <source>Add images to create a PDF document</source>
+            <translation>添加图像以创建 PDF 文档</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Delete image</source>
+            <translation>删除图像</translation>
+        </message>
+        <message>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
+            <translation>拖动图像可移动或交换位置；拖动选框控制点可围绕中心等比例缩放</translation>
+        </message>
+        <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻转</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻转</translation>
+        </message>
+        <message>
+            <source>Image %1: %2</source>
+            <translation>图像 %1：%2</translation>
+        </message>
+        <message>
+            <source>Image preview was cancelled</source>
+            <translation>图像预览已取消</translation>
+        </message>
+        <message>
+            <source>Input images</source>
+            <translation>输入图像</translation>
+        </message>
+        <message>
+            <source>Next page</source>
+            <translation>下一页</translation>
+        </message>
+        <message>
+            <source>No pages</source>
+            <translation>暂无页面</translation>
+        </message>
+        <message>
+            <source>Page %1 of %2</source>
+            <translation>第 %1 页，共 %2 页</translation>
+        </message>
+        <message>
+            <source>Preview original image</source>
+            <translation>预览原图</translation>
+        </message>
+        <message>
+            <source>Previous page</source>
+            <translation>上一页</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>替换图像</translation>
+        </message>
+        <message>
+            <source>Reset image</source>
+            <translation>重置图像</translation>
+        </message>
+        <message>
+            <source>Reverse image order</source>
+            <translation>反转图像顺序</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise by 90°</source>
+            <translation>顺时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise by 90°</source>
+            <translation>逆时针旋转 90°</translation>
+        </message>
+        <message>
+            <source>Select to show this image's page; drag onto another image to swap</source>
+            <translation>单击以显示此图像所在页面；拖到另一张图像上可交换位置</translation>
+        </message>
+        <message>
+            <source>Template stitching preview</source>
+            <translation>模板拼接预览</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原图不可用</translation>
+        </message>
+        <message>
+            <source>The page preview shows the last valid settings</source>
+            <translation>页面预览使用上一次有效的设置</translation>
+        </message>
+    </context>
+    <context>
+        <name>ImageStitchingWindow</name>
+        <message>
+            <source>%1: %2</source>
+            <translation>%1：%2</translation>
+        </message>
+        <message>
+            <source>Add images</source>
+            <translation>添加图像</translation>
+        </message>
+        <message>
+            <source>All images will be removed from this stitching session</source>
+            <translation>将从此图片拼接中移除全部图像</translation>
+        </message>
+        <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Canceling PDF export…</source>
+            <translation>正在取消 PDF 导出…</translation>
+        </message>
+        <message>
+            <source>Clear all</source>
+            <translation>全部清空</translation>
+        </message>
+        <message>
+            <source>Clear all images?</source>
+            <translation>清空全部图像？</translation>
+        </message>
+        <message>
+            <source>Clipboard image</source>
+            <translation>剪贴板图像</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>复制</translation>
+        </message>
+        <message>
+            <source>Copying could not be started. Try again</source>
+            <translation>无法开始复制，请重试</translation>
+        </message>
+        <message>
+            <source>Copying stitched image…</source>
+            <translation>正在复制图片拼接…</translation>
+        </message>
+        <message>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>无法读取选中的图片文件，请重试</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>放弃</translation>
+        </message>
+        <message>
+            <source>Discard this stitching session?</source>
+            <translation>放弃此图片拼接？</translation>
+        </message>
+        <message>
+            <source>Export could not be started. Try again</source>
+            <translation>无法开始导出，请重试</translation>
+        </message>
+        <message>
+            <source>Exporting PDF page %1 of %2: %3%</source>
+            <translation>正在导出 PDF 第 %1 页，共 %2 页：%3%</translation>
+        </message>
+        <message>
+            <source>Image loading could not be started. Try again</source>
+            <translation>无法开始加载图像，请重试</translation>
+        </message>
+        <message>
+            <source>Image stitching</source>
+            <translation>图片拼接</translation>
+        </message>
+        <message>
+            <source>Images</source>
+            <translation>图像</translation>
+        </message>
+        <message>
+            <source>Loading images: %1 of %2</source>
+            <translation>正在加载图像：%1 / %2</translation>
+        </message>
+        <message>
+            <source>PDF documents</source>
+            <translation>PDF 文档</translation>
+        </message>
+        <message>
+            <source>PDF export was canceled. Your images and edits are preserved</source>
+            <translation>PDF 导出已取消。您的图像和编辑已保留</translation>
+        </message>
+        <message>
+            <source>Page %1 was not saved</source>
+            <translation>第 %1 页未保存</translation>
+        </message>
+        <message>
+            <source>Pages %1–%2 were not saved</source>
+            <translation>第 %1–%2 页未保存</translation>
+        </message>
+        <message>
+            <source>Pinned window %1</source>
+            <translation>固定到屏幕窗口 %1</translation>
+        </message>
+        <message>
+            <source>Preparing stitched image…</source>
+            <translation>正在准备图片拼接…</translation>
+        </message>
+        <message>
+            <source>Reading selected image files…</source>
+            <translation>正在读取选中的图片文件…</translation>
+        </message>
+        <message>
+            <source>Replace image</source>
+            <translation>替换图像</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>保存</translation>
+        </message>
+        <message>
+            <source>Save PDF document</source>
+            <translation>保存 PDF 文档</translation>
+        </message>
+        <message>
+            <source>Save as file</source>
+            <translation>保存为文件</translation>
+        </message>
+        <message>
+            <source>Saved pages: %1
+Files:
+%2
+%3</source>
+            <translation>已保存页面：%1
+文件：
+%2
+%3</translation>
+        </message>
+        <message>
+            <source>Saving could not be started. Try again</source>
+            <translation>无法开始保存，请重试</translation>
+        </message>
+        <message>
+            <source>Saving stitched image…</source>
+            <translation>正在保存图片拼接…</translation>
+        </message>
+        <message>
+            <source>Screenshot %1</source>
+            <translation>截图 %1</translation>
+        </message>
+        <message>
+            <source>Select destination folder</source>
+            <translation>选择目标文件夹</translation>
+        </message>
+        <message>
+            <source>Some images could not be loaded:
+%1</source>
+            <translation>部分图像无法加载：
+%1</translation>
+        </message>
+        <message>
+            <source>The PDFs could not be exported. Try again</source>
+            <translation>无法导出 PDF，请重试</translation>
+        </message>
+        <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>文件管理器不可用，请打开后重试</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>文件管理器返回选中文件的时间过长，请重试</translation>
+        </message>
+        <message>
+            <source>The final screenshot is unavailable</source>
+            <translation>最终截图不可用</translation>
+        </message>
+        <message>
+            <source>The image could not be decoded or is no longer available</source>
+            <translation>无法解码图像，或图像已不可用</translation>
+        </message>
+        <message>
+            <source>The images and edits in this stitching session will be discarded</source>
+            <translation>将放弃此图片拼接中的图像和编辑</translation>
+        </message>
+        <message>
+            <source>The layout settings could not be remembered: %1</source>
+            <translation>无法记住布局设置：%1</translation>
+        </message>
+    </context>
+    <context>
         <name>LiveWindowSource</name>
         <message>
             <source>Allow Accessibility in System Settings to monitor the live window's state</source>
             <translation>请在系统设置中允许辅助功能权限，以监测实时窗口的状态</translation>
         </message>
         <message>
-            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window</source>
-            <translation>请在系统设置中允许屏幕与系统音频录制权限，以固定实时窗口</translation>
+            <source>Allow Screen &amp; System Audio Recording in System Settings to pin a live window to the screen</source>
+            <translation>请在系统设置中允许屏幕与系统音频录制权限，以将实时窗口固定到屏幕</translation>
         </message>
         <message>
             <source>The live window display could not be initialized</source>
@@ -1635,7 +1635,7 @@ Files:
         </message>
         <message>
             <source>Select pinned windows from the same group to pin them to the screen</source>
-            <translation>请选择同一分组中的固定窗口，以将它们固定到屏幕</translation>
+            <translation>请选择同一分组中的固定到屏幕窗口，以将它们固定到屏幕</translation>
         </message>
         <message>
             <source>Select record</source>
@@ -1664,7 +1664,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1717,7 +1717,7 @@ Files:
             <translation>更改来源或日期范围以查看更多历史记录</translation>
         </message>
         <message>
-            <source>Copied and pinned screenshots will appear here</source>
+            <source>Copied or pinned screenshots will appear here</source>
             <translation>已复制或固定到屏幕的截图会显示在这里</translation>
         </message>
         <message>
@@ -1813,7 +1813,7 @@ Files:
             <translation>开始日期</translation>
         </message>
         <message>
-            <source>Stitch image</source>
+            <source>Stitch images</source>
             <translation>图片拼接</translation>
         </message>
         <message>
@@ -1964,7 +1964,7 @@ Files:
             <translation>确定销毁此固定到屏幕窗口吗？此操作无法撤销</translation>
         </message>
         <message>
-            <source>Disable hide to top</source>
+            <source>Disable hide at top</source>
             <translation>禁用顶部隐藏</translation>
         </message>
         <message>
@@ -1980,7 +1980,7 @@ Files:
             <translation>启用标注模式</translation>
         </message>
         <message>
-            <source>Enable hide to top</source>
+            <source>Enable hide at top</source>
             <translation>启用顶部隐藏</translation>
         </message>
         <message>
@@ -2012,12 +2012,12 @@ Files:
             <translation>分组：默认</translation>
         </message>
         <message>
-            <source>Hide other windows</source>
-            <translation>隐藏其他窗口</translation>
+            <source>Hide at top</source>
+            <translation>顶部隐藏</translation>
         </message>
         <message>
-            <source>Hide to top</source>
-            <translation>顶部隐藏</translation>
+            <source>Hide other windows</source>
+            <translation>隐藏其他窗口</translation>
         </message>
         <message>
             <source>Image editing</source>
@@ -2073,7 +2073,7 @@ Files:
         </message>
         <message>
             <source>No available output filename was found</source>
-            <translation>找不到可用的输出文件名</translation>
+            <translation>未找到可用的输出文件名</translation>
         </message>
         <message>
             <source>Opacity</source>
@@ -2096,8 +2096,12 @@ Files:
             <translation>暂停</translation>
         </message>
         <message>
+            <source>Pin to screen management</source>
+            <translation>固定到屏幕管理</translation>
+        </message>
+        <message>
             <source>Pinned content</source>
-            <translation>贴图内容</translation>
+            <translation>固定到屏幕的内容</translation>
         </message>
         <message>
             <source>Play</source>
@@ -2273,10 +2277,6 @@ Files:
             <source>Uploading to cloud... %1%</source>
             <translation>正在上传到云端… %1%</translation>
         </message>
-        <message>
-            <source>Window management</source>
-            <translation>窗口管理</translation>
-        </message>
     </context>
     <context>
         <name>WindowGroupSwitcher</name>
@@ -2357,7 +2357,7 @@ Files:
         </message>
         <message>
             <source>Save as file</source>
-            <translation>另存为文件</translation>
+            <translation>保存为文件</translation>
         </message>
         <message>
             <source>Text files (*.txt)</source>

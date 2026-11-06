@@ -104,7 +104,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
   signals:
     void editRequested(const QString& recordId);
     void pinRequested(const QString& recordId);
-    void collageRequested(const QVector<snow_shot::storage::CaptureHistoryRecord>& records);
+    void stitchImagesRequested(const QVector<snow_shot::storage::CaptureHistoryRecord>& records);
     void splitRequested(const snow_shot::storage::CaptureHistoryRecord& record);
     void imageEditingRequested(const snow_shot::storage::CaptureHistoryRecord& record);
 

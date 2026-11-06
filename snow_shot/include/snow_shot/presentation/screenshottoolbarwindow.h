@@ -71,7 +71,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void connectToolCommands(ScreenshotToolPalette& toolPalette);
     void connectActionCommands(ScreenshotToolPalette& toolPalette);
     void connectStyleCommands(ScreenshotToolPalette& toolPalette);
-    void connectSerialNumberCommands(ScreenshotToolPalette& toolPalette);
+    void connectSequenceNumberCommands(ScreenshotToolPalette& toolPalette);
     void connectScrollingScreenshotCommands(ScreenshotToolPalette& toolPalette);
 
     void synchronizeJumpToTranslationPageSetting();

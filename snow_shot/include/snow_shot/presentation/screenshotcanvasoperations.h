@@ -5,11 +5,11 @@
 namespace snow_shot::presentation {
 inline void bindScreenshotCanvasOperations(ScreenshotToolPalette* toolbar, SnowCanvasWidget& canvas,
                                            QObject* owner) {
-    QObject::connect(toolbar, &ScreenshotToolPalette::serialNumberDecrementRequested, owner,
+    QObject::connect(toolbar, &ScreenshotToolPalette::sequenceNumberDecrementRequested, owner,
                      [&canvas]() { canvas.adjustSelectedSerialNumbers(-1); });
-    QObject::connect(toolbar, &ScreenshotToolPalette::serialNumberIncrementRequested, owner,
+    QObject::connect(toolbar, &ScreenshotToolPalette::sequenceNumberIncrementRequested, owner,
                      [&canvas]() { canvas.adjustSelectedSerialNumbers(1); });
-    QObject::connect(toolbar, &ScreenshotToolPalette::serialNumberCreateTextRequested, owner,
+    QObject::connect(toolbar, &ScreenshotToolPalette::sequenceNumberCreateTextRequested, owner,
                      [&canvas]() { canvas.createSerialNumberText(); });
     QObject::connect(toolbar, &ScreenshotToolPalette::sendSelectionToBackRequested, owner,
                      [&canvas]() { canvas.reorderSelected(SnowCanvasSelectionOrder::SendToBack); });

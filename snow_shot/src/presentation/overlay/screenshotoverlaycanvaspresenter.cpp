@@ -749,7 +749,7 @@ void ScreenshotOverlayCanvasPresenter::setTextStyle(const ScreenshotDisplaySessi
         });
 }
 
-void ScreenshotOverlayCanvasPresenter::setSerialNumberStyle(
+void ScreenshotOverlayCanvasPresenter::setSequenceNumberStyle(
     const ScreenshotDisplaySession& displaySession, const SnowCanvasSerialNumberStyle& style,
     std::optional<quint32> properties) const {
     displaySession.forEachOverlay(
@@ -766,8 +766,8 @@ void ScreenshotOverlayCanvasPresenter::setSerialNumberStyle(
 }
 
 namespace {
-void adjustSelectedSerialNumbersForDisplaySession(const ScreenshotDisplaySession& displaySession,
-                                                  qint64 delta) {
+void adjustSelectedSequenceNumbersForDisplaySession(const ScreenshotDisplaySession& displaySession,
+                                                    qint64 delta) {
     displaySession.forEachOverlay([delta](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay->canvas() != nullptr) {
             overlay->canvas()->adjustSelectedSerialNumbers(delta);
@@ -776,13 +776,13 @@ void adjustSelectedSerialNumbersForDisplaySession(const ScreenshotDisplaySession
 }
 } // namespace
 
-void ScreenshotOverlayCanvasPresenter::adjustSelectedSerialNumbers(
+void ScreenshotOverlayCanvasPresenter::adjustSelectedSequenceNumbers(
     const ScreenshotDisplaySession& displaySession, qint64 delta) const {
-    adjustSelectedSerialNumbersForDisplaySession(displaySession, delta);
+    adjustSelectedSequenceNumbersForDisplaySession(displaySession, delta);
 }
 
 namespace {
-void createTextForSelectedSerialNumberForDisplaySession(
+void createTextForSelectedSequenceNumberForDisplaySession(
     const ScreenshotDisplaySession& displaySession) {
     displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay->canvas() != nullptr) {
@@ -792,9 +792,9 @@ void createTextForSelectedSerialNumberForDisplaySession(
 }
 } // namespace
 
-void ScreenshotOverlayCanvasPresenter::createTextForSelectedSerialNumber(
+void ScreenshotOverlayCanvasPresenter::createTextForSelectedSequenceNumber(
     const ScreenshotDisplaySession& displaySession) const {
-    createTextForSelectedSerialNumberForDisplaySession(displaySession);
+    createTextForSelectedSequenceNumberForDisplaySession(displaySession);
 }
 
 void ScreenshotOverlayCanvasPresenter::reorderSelectedElements(

@@ -951,10 +951,10 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
         deltaY != 0) {
         return m_context.actions.stepFilterIntensity(deltaY > 0 ? 1 : -1);
     }
-    if ((m_context.interaction.activeTool() == ScreenshotActiveTool::PenFilter ||
+    if ((m_context.interaction.activeTool() == ScreenshotActiveTool::BrushFilter ||
          m_context.interaction.activeTool() == ScreenshotActiveTool::BrushEraser) &&
         deltaY != 0) {
-        return m_context.actions.stepPenFilterStrokeWidth(deltaY > 0 ? 1 : -1);
+        return m_context.actions.stepBrushFilterStrokeWidth(deltaY > 0 ? 1 : -1);
     }
     if (m_context.interaction.activeTool() == ScreenshotActiveTool::Watermark && deltaY != 0) {
         return m_context.actions.stepWatermarkFontSize(deltaY > 0 ? 1 : -1);

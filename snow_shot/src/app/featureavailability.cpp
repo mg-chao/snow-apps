@@ -18,7 +18,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::ScreenshotFullScreen:
     case Action::ScreenshotFocusedWindow:
         return FeatureFamily::Screenshot;
-    case Action::ScreenshotFixed:
+    case Action::ScreenshotPinToScreen:
     case Action::PinClipboardContent:
     case Action::RestoreLastClosedWindows:
     case Action::HideShowAllWindows:
@@ -37,7 +37,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::OpenSettings:
     case Action::TranslateSelectedText:
     case Action::ToggleWindowUnderCursorAlwaysOnTop:
-    case Action::ToggleGlobalHotkeys:
+    case Action::ToggleGlobalShortcuts:
     case Action::ToggleDisableOnFocusedFullscreenWindow:
         return std::nullopt;
     }
@@ -47,7 +47,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
 FeatureFamily featureFamilyFor(presentation::settings::SettingsGlobalMouseAction action) {
     using Action = presentation::settings::SettingsGlobalMouseAction;
     switch (action) {
-    case Action::ScreenshotFixed:
+    case Action::ScreenshotPinToScreen:
         return FeatureFamily::PinToScreen;
     case Action::ScreenRecording:
         return FeatureFamily::ScreenRecording;

@@ -8,7 +8,7 @@
 
 #include <memory>
 
-namespace snow_shot::presentation::collage_detail {
+namespace snow_shot::presentation::image_stitching_detail {
 inline constexpr qint64 maximumRasterBytes = image::maximumImageImportBytes;
 inline constexpr qint64 maximumWindowPreviewBytes = qint64{64} * 1024 * 1024;
 inline constexpr qint64 maximumWorkingBytes = qint64{512} * 1024 * 1024;
@@ -34,4 +34,4 @@ class ResourceReservation final {
                                                                   QString* error = nullptr);
 [[nodiscard]] qint64 reservedBytes();
 [[nodiscard]] qint64 budgetLimit();
-} // namespace snow_shot::presentation::collage_detail
+} // namespace snow_shot::presentation::image_stitching_detail

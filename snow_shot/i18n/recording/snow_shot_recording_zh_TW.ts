@@ -54,8 +54,8 @@
     <context>
         <name>RecordingRegionDragHandle</name>
         <message>
-            <source>Move recording area</source>
-            <translation>移動錄影區域</translation>
+            <source>Move screen recording area</source>
+            <translation>移動螢幕錄製區域</translation>
         </message>
     </context>
     <context>
@@ -65,8 +65,8 @@
             <translation>取消</translation>
         </message>
         <message>
-            <source>Cancelling rendering...</source>
-            <translation>正在取消轉繪...</translation>
+            <source>Canceling rendering...</source>
+            <translation>正在取消算繪...</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -77,32 +77,32 @@
             <translation>正在完成錄製匯出...</translation>
         </message>
         <message>
-            <source>Keep source</source>
+            <source>Keep source files</source>
             <translation>保留來源檔案</translation>
         </message>
         <message>
-            <source>Preparing recording...</source>
-            <translation>正在準備錄製...</translation>
+            <source>Preparing recording for export...</source>
+            <translation>正在準備錄製匯出...</translation>
         </message>
         <message>
             <source>Rendering canceled</source>
-            <translation>轉繪已取消</translation>
+            <translation>算繪已取消</translation>
         </message>
         <message>
             <source>Rendering failed</source>
-            <translation>轉繪失敗</translation>
+            <translation>算繪失敗</translation>
         </message>
         <message>
             <source>Rendering progress</source>
-            <translation>轉繪進度</translation>
+            <translation>算繪進度</translation>
         </message>
         <message>
             <source>Rendering recording</source>
-            <translation>轉繪錄製</translation>
+            <translation>算繪錄製內容</translation>
         </message>
         <message>
             <source>Rendering video...</source>
-            <translation>正在轉繪影片...</translation>
+            <translation>正在算繪影片...</translation>
         </message>
         <message>
             <source>Retry</source>
@@ -116,11 +116,11 @@
         </message>
         <message>
             <source>Unable to read rendering progress</source>
-            <translation>無法讀取轉繪進度</translation>
+            <translation>無法讀取算繪進度</translation>
         </message>
         <message>
             <source>Unable to start rendering</source>
-            <translation>無法開始轉繪</translation>
+            <translation>無法開始算繪</translation>
         </message>
     </context>
     <context>
@@ -146,12 +146,12 @@
             <translation>麥克風已開啟</translation>
         </message>
         <message>
-            <source>Speaker disabled</source>
-            <translation>喇叭已關閉</translation>
+            <source>System audio disabled</source>
+            <translation>系統音訊已關閉</translation>
         </message>
         <message>
-            <source>Speaker enabled</source>
-            <translation>喇叭已開啟</translation>
+            <source>System audio enabled</source>
+            <translation>系統音訊已開啟</translation>
         </message>
         <message>
             <source>WebP</source>
@@ -223,11 +223,11 @@
             <translation>垂直翻轉</translation>
         </message>
         <message>
-            <source>Move webcam</source>
+            <source>Move webcam preview</source>
             <translation>移動攝影機畫面</translation>
         </message>
         <message>
-            <source>Resize webcam</source>
+            <source>Resize webcam preview</source>
             <translation>調整攝影機畫面大小</translation>
         </message>
         <message>
@@ -258,16 +258,16 @@
             <translation>開啟資料夾</translation>
         </message>
         <message>
-            <source>Recording recovery</source>
-            <translation>錄製復原</translation>
-        </message>
-        <message>
             <source>Recover</source>
             <translation>復原</translation>
         </message>
         <message>
             <source>Screen recording</source>
             <translation>螢幕錄製</translation>
+        </message>
+        <message>
+            <source>Screen recording recovery</source>
+            <translation>螢幕錄製復原</translation>
         </message>
         <message>
             <source>The recording could not be finalized. Recoverable media and its timeline were saved in:
@@ -311,15 +311,15 @@ Keep this folder to recover the recording</source>
             <translation>完成</translation>
         </message>
         <message>
-            <source>Recording settings</source>
-            <translation>錄影設定</translation>
+            <source>Screen recording settings</source>
+            <translation>螢幕錄製設定</translation>
         </message>
     </context>
     <context>
         <name>ScreenRecordingToolbarWindow</name>
         <message>
             <source>Show recording toolbar</source>
-            <translation>顯示錄影工具列</translation>
+            <translation>顯示螢幕錄製工具列</translation>
         </message>
     </context>
 </TS>

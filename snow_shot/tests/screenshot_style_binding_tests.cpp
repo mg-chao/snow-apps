@@ -44,7 +44,7 @@ void require(bool condition, const char* message) {
 ScreenshotToolPalette::Options options() {
     ScreenshotToolPalette::Options result;
     result.showTextTool = true;
-    result.showSerialNumberTool = true;
+    result.showSequenceNumberTool = true;
     result.showFilterTool = true;
     result.showWatermarkTool = true;
     result.showSpotlightTool = true;
@@ -232,7 +232,7 @@ void creationDefaultsPreserveDocumentAndEditingCleanup() {
                 !observedTools.contains(SnowCanvasTool::PenFilter),
             "restoring a non-filter tool must not transiently activate either filter");
 }
-void serialNumberAppearanceDefaultsPreserveSessionSequences() {
+void sequenceNumberAppearanceDefaultsPreserveSessionSequences() {
     const SnowCanvasSerialNumberNumericType types[] = {
         SnowCanvasSerialNumberNumericType::Arabic,
         SnowCanvasSerialNumberNumericType::Roman,
@@ -308,7 +308,7 @@ void serialNumberAppearanceDefaultsPreserveSessionSequences() {
         }
     }
 }
-void selectedSerialNumberToolbarEditsContinueCreationSequence() {
+void selectedSequenceNumberToolbarEditsContinueCreationSequence() {
     for (int editPath = 0; editPath < 3; ++editPath) {
         SnowCanvasRuntime runtime;
         SnowCanvasWidget canvas(runtime);
@@ -326,7 +326,7 @@ void selectedSerialNumberToolbarEditsContinueCreationSequence() {
                     canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
                 "prepare sequence toolbar fixture");
         const auto creationStyle = canvas.canvasStyleToolbarState().serialNumberStyle;
-        palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber);
         palette.show();
         QApplication::processEvents();
         for (const QPointF point : {QPointF(80, 80), QPointF(250, 80), QPointF(420, 80)}) {
@@ -392,7 +392,7 @@ void selectedSerialNumberToolbarEditsContinueCreationSequence() {
     }
 }
 
-void selectedSerialNumberSizeEditsUpdateCreationAppearance() {
+void selectedSequenceNumberSizeEditsUpdateCreationAppearance() {
     const auto original = screenshotCanvasToolStyleDefaults();
     const auto restore =
         qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
@@ -426,7 +426,7 @@ void selectedSerialNumberSizeEditsUpdateCreationAppearance() {
         require(canvas.setViewportCamera(200, 150, 1) &&
                     canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
                 "prepare selected sequence size fixture");
-        palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber);
         mouse(canvas, QEvent::MouseButtonPress, {80, 80});
         mouse(canvas, QEvent::MouseButtonRelease, {80, 80});
         applyScreenshotCanvasToolStyles(canvas, defaults);
@@ -496,7 +496,7 @@ void selectedSerialNumberSizeEditsUpdateCreationAppearance() {
     }
 }
 
-void selectedSerialNumberEditsUpdateCreationAppearance() {
+void selectedSequenceNumberEditsUpdateCreationAppearance() {
     constexpr quint32 properties =
         SnowCanvasSerialNumberStyleMixedNumber | SnowCanvasSerialNumberStyleMixedColor |
         SnowCanvasSerialNumberStyleMixedFill | SnowCanvasSerialNumberStyleMixedFillStyle |
@@ -530,7 +530,7 @@ void selectedSerialNumberEditsUpdateCreationAppearance() {
     require(canvas.setViewportCamera(200, 150, 1) &&
                 canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
             "prepare selected serial number style fixture");
-    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber);
     palette.show();
     QApplication::processEvents();
     mouse(canvas, QEvent::MouseButtonPress, {80, 80});
@@ -638,7 +638,7 @@ void selectedSerialNumberEditsUpdateCreationAppearance() {
                 screenshotCanvasToolStyleDefaults().serialNumber.fontSize == 32,
             "editing creation styles still remembers and saves future preferences");
 }
-void newScreenshotDocumentRestartsSerialNumberSequences() {
+void newScreenshotDocumentRestartsSequenceNumberSequences() {
     const SnowCanvasSerialNumberNumericType types[] = {
         SnowCanvasSerialNumberNumericType::Arabic,
         SnowCanvasSerialNumberNumericType::Roman,
@@ -660,7 +660,7 @@ void newScreenshotDocumentRestartsSerialNumberSequences() {
         applyScreenshotCanvasToolStyles(canvas, defaults);
         require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
                 "activate screenshot numbering");
-        palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber);
         const auto viewport = canvas.viewportId();
         for (int capture = 0; capture < 3; ++capture) {
             if (capture > 0) {
@@ -1349,12 +1349,12 @@ void runScreenshotStyleBindingTests() {
     runWatermarkPersistenceTests();
 }
 
-void runScreenshotSerialNumberRestartTests() {
-    selectedSerialNumberToolbarEditsContinueCreationSequence();
-    selectedSerialNumberSizeEditsUpdateCreationAppearance();
-    selectedSerialNumberEditsUpdateCreationAppearance();
-    serialNumberAppearanceDefaultsPreserveSessionSequences();
-    newScreenshotDocumentRestartsSerialNumberSequences();
+void runScreenshotSequenceNumberRestartTests() {
+    selectedSequenceNumberToolbarEditsContinueCreationSequence();
+    selectedSequenceNumberSizeEditsUpdateCreationAppearance();
+    selectedSequenceNumberEditsUpdateCreationAppearance();
+    sequenceNumberAppearanceDefaultsPreserveSessionSequences();
+    newScreenshotDocumentRestartsSequenceNumberSequences();
     const auto original = screenshotCanvasToolStyleDefaults();
     const auto restore =
         qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
@@ -1388,7 +1388,7 @@ void runScreenshotSerialNumberRestartTests() {
             .toLongLong();
     };
     require(create({40, 150}) == 50, "create the existing high sequence number");
-    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SequenceNumber);
     palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
     palette.show();
     QApplication::processEvents();

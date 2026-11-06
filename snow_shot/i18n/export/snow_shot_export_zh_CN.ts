@@ -90,7 +90,7 @@
         </message>
         <message>
             <source>The image save directory is not configured</source>
-            <translation>尚未配置图片保存目录</translation>
+            <translation>尚未配置图像保存目录</translation>
         </message>
         <message>
             <source>The screenshot clipboard payload is invalid</source>
@@ -446,7 +446,7 @@
             <translation>百分比</translation>
         </message>
         <message>
-            <source>Pixel</source>
+            <source>Pixels</source>
             <translation>像素</translation>
         </message>
         <message>
@@ -538,7 +538,7 @@
             <translation>图像尺寸超出导出限制</translation>
         </message>
         <message>
-            <source>The save paths could not be stored</source>
+            <source>The save path settings could not be saved</source>
             <translation>无法存储保存路径配置</translation>
         </message>
         <message>

@@ -284,14 +284,14 @@ void MainWindow::buildUi() {
             &MainWindow::screenshotHistoryEditRequested);
     connect(m_contentCard, &ContentCardWidget::screenshotHistoryPinRequested, this,
             &MainWindow::screenshotHistoryPinRequested);
-    connect(m_contentCard, &ContentCardWidget::screenshotHistoryCollageRequested, this,
-            &MainWindow::screenshotHistoryCollageRequested);
+    connect(m_contentCard, &ContentCardWidget::screenshotHistoryStitchImagesRequested, this,
+            &MainWindow::screenshotHistoryStitchImagesRequested);
     connect(m_contentCard, &ContentCardWidget::screenshotHistorySplitRequested, this,
             &MainWindow::screenshotHistorySplitRequested);
     connect(m_contentCard, &ContentCardWidget::screenshotHistoryImageEditingRequested, this,
             &MainWindow::screenshotHistoryImageEditingRequested);
-    connect(m_contentCard, &ContentCardWidget::pinnedWindowCollageRequested, this,
-            &MainWindow::pinnedWindowCollageRequested);
+    connect(m_contentCard, &ContentCardWidget::pinnedWindowStitchImagesRequested, this,
+            &MainWindow::pinnedWindowStitchImagesRequested);
     connect(m_contentCard, &ContentCardWidget::pinnedWindowSplitRequested, this,
             &MainWindow::pinnedWindowSplitRequested);
     connect(m_contentCard, &ContentCardWidget::pinnedWindowImageEditingRequested, this,

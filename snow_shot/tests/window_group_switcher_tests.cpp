@@ -231,7 +231,7 @@ void invalidation() {
     {
         Fixture f;
         f.press(f.first);
-        f.shortcuts.setGlobalHotkeysEnabled(false);
+        f.shortcuts.setGlobalShortcutsEnabled(false);
         require(!f.picker.isVisible() && f.commits == 0, "disabled hotkeys cancel");
         f.picker.pollInput();
         require(!f.picker.isTrackingInput(), "disabled session stops polling");

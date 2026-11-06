@@ -5,17 +5,18 @@
 #include <memory>
 
 namespace snow_shot::presentation {
-class CollageDocument;
+class ImageStitchingDocument;
 }
 
 namespace snow_shot::presentation::components {
 
 // The text editors retain incomplete input independently of the last valid page layout.
-class CollagePdfSettingsWidget final : public QWidget {
+class ImageStitchingPdfSettingsWidget final : public QWidget {
     Q_OBJECT
   public:
-    explicit CollagePdfSettingsWidget(CollageDocument* document, QWidget* parent = nullptr);
-    ~CollagePdfSettingsWidget() override;
+    explicit ImageStitchingPdfSettingsWidget(ImageStitchingDocument* document,
+                                             QWidget* parent = nullptr);
+    ~ImageStitchingPdfSettingsWidget() override;
     void retranslateUi();
 
   signals:

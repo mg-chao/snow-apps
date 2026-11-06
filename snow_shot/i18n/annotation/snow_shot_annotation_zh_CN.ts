@@ -168,7 +168,7 @@
         </message>
         <message>
             <source>Arrow outline width %1px</source>
-            <translation>箭头描边宽度 %1px</translation>
+            <translation>箭头描边宽度 %1 像素</translation>
         </message>
         <message>
             <source>Arrow shaft type</source>
@@ -197,10 +197,6 @@
         <message>
             <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
             <translation>自动滚动间隔（滚轮调整；单击重置为 200 ms）</translation>
-        </message>
-        <message>
-            <source>Available for multi-region selections</source>
-            <translation>仅适用于多区域选区</translation>
         </message>
         <message>
             <source>Avatar</source>
@@ -247,12 +243,40 @@
             <translation>置于顶层</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>画笔</translation>
+        </message>
+        <message>
             <source>Brush eraser</source>
             <translation>画笔橡皮擦</translation>
         </message>
         <message>
             <source>Brush eraser width %1 (%2px)</source>
             <translation>画笔橡皮擦宽度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>画笔滤镜</translation>
+        </message>
+        <message>
+            <source>Brush filter width %1 (%2px)</source>
+            <translation>画笔滤镜宽度 %1（%2 像素）</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>画笔高亮</translation>
+        </message>
+        <message>
+            <source>Brush highlight color</source>
+            <translation>画笔高亮颜色</translation>
+        </message>
+        <message>
+            <source>Brush highlight color %1</source>
+            <translation>画笔高亮颜色 %1</translation>
+        </message>
+        <message>
+            <source>Brush highlight width %1 (%2px)</source>
+            <translation>画笔高亮宽度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -263,7 +287,7 @@
             <translation>取消截图</translation>
         </message>
         <message>
-            <source>Capture interface during scrolling screenshot</source>
+            <source>Capture UI during scrolling screenshots</source>
             <translation>滚动截图时捕获界面</translation>
         </message>
         <message>
@@ -375,20 +399,20 @@
             <translation>当前画笔橡皮擦宽度</translation>
         </message>
         <message>
+            <source>Current brush filter width</source>
+            <translation>当前画笔滤镜宽度</translation>
+        </message>
+        <message>
+            <source>Current brush highlight width</source>
+            <translation>当前画笔高亮宽度</translation>
+        </message>
+        <message>
             <source>Current distance stroke width</source>
             <translation>当前距离描边宽度</translation>
         </message>
         <message>
             <source>Current magnifier stroke width</source>
             <translation>当前放大镜描边宽度</translation>
-        </message>
-        <message>
-            <source>Current pen filter width</source>
-            <translation>当前画笔滤镜宽度</translation>
-        </message>
-        <message>
-            <source>Current pen highlight width</source>
-            <translation>当前画笔高亮宽度</translation>
         </message>
         <message>
             <source>Current sequence number font size</source>
@@ -947,6 +971,10 @@
             <translation>数字键</translation>
         </message>
         <message>
+            <source>Only available for multi-region selections</source>
+            <translation>仅适用于多区域选区</translation>
+        </message>
+        <message>
             <source>Opacity</source>
             <translation>不透明度</translation>
         </message>
@@ -973,34 +1001,6 @@
         <message>
             <source>Pause recording</source>
             <translation>暂停录制</translation>
-        </message>
-        <message>
-            <source>Pen</source>
-            <translation>画笔</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>画笔滤镜</translation>
-        </message>
-        <message>
-            <source>Pen filter width %1 (%2px)</source>
-            <translation>画笔滤镜宽度 %1（%2 像素）</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>画笔高亮</translation>
-        </message>
-        <message>
-            <source>Pen highlight color</source>
-            <translation>画笔高亮颜色</translation>
-        </message>
-        <message>
-            <source>Pen highlight color %1</source>
-            <translation>画笔高亮颜色 %1</translation>
-        </message>
-        <message>
-            <source>Pen highlight width %1 (%2px)</source>
-            <translation>画笔高亮宽度 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Physical pixel selection</source>
@@ -1091,8 +1091,8 @@
             <translation>录制屏幕</translation>
         </message>
         <message>
-            <source>Record speakers</source>
-            <translation>录制系统声音</translation>
+            <source>Record system audio</source>
+            <translation>录制系统音频</translation>
         </message>
         <message>
             <source>Record webcam</source>
@@ -1105,10 +1105,6 @@
         <message>
             <source>Recording format</source>
             <translation>录制格式</translation>
-        </message>
-        <message>
-            <source>Recording settings</source>
-            <translation>屏幕录制设置</translation>
         </message>
         <message>
             <source>Rectangle</source>
@@ -1167,6 +1163,10 @@
             <translation>保存到文件</translation>
         </message>
         <message>
+            <source>Screen recording settings</source>
+            <translation>屏幕录制设置</translation>
+        </message>
+        <message>
             <source>Scrolling screenshot</source>
             <translation>滚动截图</translation>
         </message>
@@ -1197,6 +1197,10 @@
         <message>
             <source>Send to back</source>
             <translation>置于底层</translation>
+        </message>
+        <message>
+            <source>Sequence number</source>
+            <translation>序号</translation>
         </message>
         <message>
             <source>Sequence number (scroll to adjust)</source>
@@ -1237,10 +1241,6 @@
         <message>
             <source>Sequence number type</source>
             <translation>序号类型</translation>
-        </message>
-        <message>
-            <source>Serial number</source>
-            <translation>序号</translation>
         </message>
         <message>
             <source>Settings</source>
@@ -1604,7 +1604,7 @@
         </message>
         <message>
             <source>Watermark font size %1 (%2px)</source>
-            <translation>水印字体大小 %1 (%2px)</translation>
+            <translation>水印字号 %1（%2 像素）</translation>
         </message>
         <message>
             <source>Watermark gap</source>

@@ -48,7 +48,7 @@ void duplicateShortcutSharesOnlyHistoryContexts(settings::SettingsRuntimeSession
             "reset restores contextual R without rejecting previous selection R");
 }
 
-void screenshotQuickActionHotkeysReset(settings::SettingsRuntimeSession& session) {
+void screenshotQuickActionShortcutsReset(settings::SettingsRuntimeSession& session) {
     using Action = snow_shot::presentation::GlobalShortcutAction;
     require(
         session.applyShortcuts(Action::ScreenshotScrolling, {QStringLiteral("Ctrl+Alt+F9")}) &&
@@ -349,7 +349,7 @@ int main(int argc, char** argv) {
         settings::BuiltInSettingsBackend backend(manager);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         duplicateShortcutSharesOnlyHistoryContexts(session, backend);
-        screenshotQuickActionHotkeysReset(session);
+        screenshotQuickActionShortcutsReset(session);
         copyShortcutReset(session);
         printShortcutsReset(session);
         selectionTypeShortcutsPersistValidateAndReset(

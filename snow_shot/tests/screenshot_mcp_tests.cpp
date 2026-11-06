@@ -984,7 +984,7 @@ void annotationRuntime() {
     runtime.setDocumentChangedHandler({});
     require(runtime.undo() && changes == 4, "observation can be repeatedly detached");
 }
-void serialNumberPatchesPreserveMixedSelectionProperties(bool useWidget) {
+void sequenceNumberPatchesPreserveMixedSelectionProperties(bool useWidget) {
     SnowCanvasRuntime runtime;
     const auto created =
         QJsonDocument::fromJson(
@@ -1123,8 +1123,8 @@ void completeToolStyleContract() {
             properties = flags;
             ++updates;
         }
-        void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& value,
-                                             quint32 flags) {
+        void setSequenceNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& value,
+                                               quint32 flags) {
             state.serialNumberStyle = value;
             properties = flags;
             ++updates;
@@ -1150,6 +1150,12 @@ void completeToolStyleContract() {
         }
         bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle& value, quint32 flags) {
             state.distanceStyle = value;
+            properties = flags;
+            ++updates;
+            return true;
+        }
+        bool setBracketStyleFromToolbar(const SnowCanvasBracketStyle& value, quint32 flags) {
+            state.bracketStyle = value;
             properties = flags;
             ++updates;
             return true;
@@ -1414,8 +1420,8 @@ int main(int argc, char** argv) {
     }
     replaySubscriptions();
     sessionCompletionReentry();
-    serialNumberPatchesPreserveMixedSelectionProperties(false);
-    serialNumberPatchesPreserveMixedSelectionProperties(true);
+    sequenceNumberPatchesPreserveMixedSelectionProperties(false);
+    sequenceNumberPatchesPreserveMixedSelectionProperties(true);
     completeToolStyleContract();
     workflowOperations();
     annotationRuntime();

@@ -544,7 +544,7 @@ void savedPinsPreferCurrentSnapshots() {
 }
 
 void currentPinRenderingMemoryIsAdmittedBeforeLoading() {
-    const auto baseline = collageResourceUsage();
+    const auto baseline = imageStitchingResourceUsage();
     const auto renders = std::make_shared<std::atomic_int>(0);
     const QImage accepted = image({3, 2}, Qt::green);
     {
@@ -582,7 +582,7 @@ void currentPinRenderingMemoryIsAdmittedBeforeLoading() {
                 "a rejected render leaves image loading usable for the next pin");
         window.shutdown();
     }
-    waitUntil([&] { return collageResourceUsage().reservedBytes == baseline.reservedBytes; },
+    waitUntil([&] { return imageStitchingResourceUsage().reservedBytes == baseline.reservedBytes; },
               "split render admission releases failed and completed import reservations");
 }
 

@@ -1348,7 +1348,7 @@ void builtInCatalogIsCompleteAndValid() {
                 pinSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
                 pinSelect.options[2].label.translated() == QStringLiteral("Thumbnail mode") &&
                 pinSelect.options[3].value == QStringLiteral("hide_to_top") &&
-                pinSelect.options[3].label.translated() == QStringLiteral("Hide to top") &&
+                pinSelect.options[3].label.translated() == QStringLiteral("Hide at top") &&
                 pinSelect.options[4].value == QStringLiteral("show_text_recognition_results") &&
                 pinSelect.options[4].label.translated() ==
                     QStringLiteral("Show text recognition results") &&
@@ -1380,7 +1380,7 @@ void builtInCatalogIsCompleteAndValid() {
                 middleSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
                 middleSelect.options[2].label.translated() == QStringLiteral("Thumbnail mode") &&
                 middleSelect.options[3].value == QStringLiteral("hide_to_top") &&
-                middleSelect.options[3].label.translated() == QStringLiteral("Hide to top") &&
+                middleSelect.options[3].label.translated() == QStringLiteral("Hide at top") &&
                 middleSelect.options[4].value == QStringLiteral("show_text_recognition_results") &&
                 middleSelect.options[4].label.translated() ==
                     QStringLiteral("Show text recognition results") &&
@@ -1743,7 +1743,7 @@ void builtInCatalogIsCompleteAndValid() {
                 recordingShortcuts->items.at(5).title.translated() ==
                     QStringLiteral("Next recording area"),
             "recording area history labels must identify their direction");
-    const bool everyHotkeySectionUsesTwoColumns =
+    const bool everyShortcutSectionUsesTwoColumns =
         applicationShortcutsPage != nullptr &&
         std::all_of(
             applicationShortcutsPage->sections.cbegin(), applicationShortcutsPage->sections.cend(),
@@ -1835,7 +1835,7 @@ void builtInCatalogIsCompleteAndValid() {
 #else
                 5 &&
 #endif
-            everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
+            everyShortcutSectionUsesTwoColumns && screenshotShortcuts != nullptr &&
             screenshotShortcuts->items.size() == 31 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
@@ -1845,7 +1845,7 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotShortcuts->items.at(5).title.translated() ==
                 QStringLiteral("Move entire selection") &&
             screenshotShortcuts->items.at(6).title.translated() ==
-                QStringLiteral("Keep selection width and height consistent") &&
+                QStringLiteral("Maintain selection aspect ratio") &&
             screenshotShortcuts->items.at(7).title.translated() ==
                 QStringLiteral("Selection aspect ratio snap") &&
             screenshotShortcuts->items.at(8).title.translated() ==
@@ -2401,7 +2401,7 @@ void globalMouseSettingsHaveStableContracts() {
         {"global-mouse.screenshot-copy", "Copy to clipboard", "global_mouse/screenshot_copy",
          Action::ScreenshotCopy},
         {"global-mouse.screenshot-fixed", "Pin to screen", "global_mouse/screenshot_fixed",
-         Action::ScreenshotFixed},
+         Action::ScreenshotPinToScreen},
         {"global-mouse.screenshot-ocr", "Text recognition", "global_mouse/screenshot_ocr",
          Action::ScreenshotOcr},
         {"global-mouse.screenshot-ocr-copy", "Copy after text recognition",
@@ -2459,7 +2459,7 @@ void globalMouseSettingsHaveStableContracts() {
                 translation != nullptr && translation->pageId == QStringLiteral("translation") &&
                 translation->iconFactory && history != nullptr &&
                 history->pageId == QStringLiteral("screenshot-history"),
-            "navigation order must be Global hotkeys, Global mouse, Screenshot history, Pin to "
+            "navigation order must be Global shortcuts, Global mouse, Screenshot history, Pin to "
             "Screen Management, Translation");
 
     for (qsizetype index = 0; index < static_cast<qsizetype>(std::size(expectations)); ++index) {
@@ -2485,14 +2485,14 @@ void globalMouseSettingsHaveStableContracts() {
             "Global mouse reset metadata must cover every Screenshot action");
 }
 
-void globalHotkeyShortcutsHaveStableContracts() {
+void globalShortcutActionsHaveStableContracts() {
     using Action = snow_shot::presentation::GlobalShortcutAction;
-    const auto* hotkeysPage =
+    const auto* shortcutsPage =
         settings::builtInSettingsRegistry().catalog().page(QStringLiteral("global-hotkeys"));
-    require(hotkeysPage != nullptr &&
-                hotkeysPage->title.translated() == QStringLiteral("Global hotkeys") &&
-                hotkeysPage->description.translated() == QStringLiteral("Global hotkeys page"),
-            "global hotkeys must expose the renamed page and description");
+    require(shortcutsPage != nullptr &&
+                shortcutsPage->title.translated() == QStringLiteral("Global shortcuts") &&
+                shortcutsPage->description.translated() == QStringLiteral("Global shortcuts page"),
+            "global shortcuts must expose the renamed page and description");
 
     struct ShortcutExpectation {
         Action action;
@@ -2510,7 +2510,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::ScreenshotDelay, "screenshot", "quick.screenshot-delay",
          "global_shortcuts/screenshot_delay", settings::SettingsCommandKind::ExecuteQuickAction,
          settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds},
-        {Action::ScreenshotFixed, "screenshot", "quick.screenshot-fixed",
+        {Action::ScreenshotPinToScreen, "screenshot", "quick.screenshot-fixed",
          "global_shortcuts/screenshot_fixed", settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::ScreenshotOcr, "screenshot", "quick.screenshot-ocr",
          "global_shortcuts/screenshot_ocr", settings::SettingsCommandKind::ExecuteQuickAction},
@@ -2567,7 +2567,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
          "global_shortcuts/toggle_window_under_cursor_always_on_top",
          settings::SettingsCommandKind::ExecuteQuickAction},
 #endif
-        {Action::ToggleGlobalHotkeys, "other", "quick.toggle-global-hotkeys",
+        {Action::ToggleGlobalShortcuts, "other", "quick.toggle-global-hotkeys",
          "global_shortcuts/toggle_global_hotkeys",
          settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::ToggleDisableOnFocusedFullscreenWindow, "other",
@@ -2674,7 +2674,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
                     QStringLiteral("Full-screen canvas (enable/disable click-through)"),
             "global canvas label and empty default");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
-            "Open Interface settings must not appear in Global hotkeys");
+            "Open Interface settings must not appear in Global shortcuts");
 
     const auto trayGroups = catalog.trayMenuGroups();
     QStringList trayOptionIds;
@@ -2779,27 +2779,27 @@ void globalHotkeyShortcutsHaveStableContracts() {
     require(!trayMenuSchema->defaultValue.toArray().contains(QStringLiteral("tray.restart-app")),
             "Restart App must remain unchecked in the default tray customization");
 
-    const settings::SettingsTrayMenuOptionDefinition* hotkeyToggleTrayOption = nullptr;
+    const settings::SettingsTrayMenuOptionDefinition* shortcutToggleTrayOption = nullptr;
     for (const auto& group : trayGroups) {
         for (const auto& option : group.options) {
             if (option.id == QStringLiteral("quick.toggle-global-hotkeys")) {
-                hotkeyToggleTrayOption = &option;
+                shortcutToggleTrayOption = &option;
             }
         }
     }
-    const auto* hotkeyToggleItem =
+    const auto* shortcutToggleItem =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("other"),
                       QStringLiteral("quick.toggle-global-hotkeys")});
     require(
-        hotkeyToggleTrayOption != nullptr && hotkeyToggleItem != nullptr &&
-            hotkeyToggleItem->title.source != nullptr &&
-            QString::fromLatin1(hotkeyToggleItem->title.source) ==
-                QStringLiteral("Disable/enable global hotkeys") &&
-            hotkeyToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
-            hotkeyToggleTrayOption->label.source != nullptr &&
-            QString::fromLatin1(hotkeyToggleTrayOption->label.source) ==
-                QStringLiteral("Disable global hotkeys") &&
-            hotkeyToggleTrayOption->checkable &&
+        shortcutToggleTrayOption != nullptr && shortcutToggleItem != nullptr &&
+            shortcutToggleItem->title.source != nullptr &&
+            QString::fromLatin1(shortcutToggleItem->title.source) ==
+                QStringLiteral("Disable/enable global shortcuts") &&
+            shortcutToggleTrayOption->kind == settings::SettingsTrayMenuOptionKind::QuickAction &&
+            shortcutToggleTrayOption->label.source != nullptr &&
+            QString::fromLatin1(shortcutToggleTrayOption->label.source) ==
+                QStringLiteral("Disable global shortcuts") &&
+            shortcutToggleTrayOption->checkable &&
             checkableOptionIds ==
                 QStringList{QStringLiteral("quick.toggle-global-hotkeys"),
                             QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window")},
@@ -2868,14 +2868,14 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 scrollingShortcut.iconFactory &&
                 scrollingShortcut.iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::ScrollingScreenshot(),
-            "scrolling screenshot reuses its toolbar icon and supports two unset hotkeys");
+            "scrolling screenshot reuses its toolbar icon and supports two unset shortcuts");
     for (const auto action : {Action::ScreenshotSave, Action::ScreenshotQuickSave}) {
         const auto* item = catalog.itemForShortcut(action);
         const auto* schema = storage::ConfigurationSchema::entry(item->configurationKey);
         const auto& shortcut = std::get<settings::SettingsShortcutActionDefinition>(item->payload);
         require(schema && schema->valueKind == storage::ConfigurationValueKind::ShortcutList &&
                     schema->maximumListItems == 2 && schema->defaultValue.toArray().isEmpty(),
-                "save hotkeys support two bindings and start unset");
+                "save shortcuts support two bindings and start unset");
         const bool saveAsFile = action == Action::ScreenshotSave;
         require(
             item->title.translated() ==
@@ -2884,7 +2884,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 shortcut.iconFactory() ==
                     (saveAsFile ? snow_shot::presentation::icons::custom::outlined::Save()
                                 : snow_shot::presentation::icons::custom::outlined::QuickSave()),
-            "save hotkeys reuse the screenshot save labels and icons");
+            "save shortcuts reuse the screenshot save labels and icons");
     }
     require(translationItem != nullptr && translationItem->title.source != nullptr &&
                 QString::fromLatin1(translationItem->title.source) ==
@@ -3093,7 +3093,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
     for (const presentation::GlobalShortcutAction action :
          {presentation::GlobalShortcutAction::Screenshot,
           presentation::GlobalShortcutAction::ScreenshotDelay,
-          presentation::GlobalShortcutAction::ScreenshotFixed,
+          presentation::GlobalShortcutAction::ScreenshotPinToScreen,
           presentation::GlobalShortcutAction::ScreenshotOcr,
           presentation::GlobalShortcutAction::ScreenshotTranslation,
           presentation::GlobalShortcutAction::ScreenshotScrolling,
@@ -3110,7 +3110,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
 #ifdef Q_OS_WIN
           presentation::GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
 #endif
-          presentation::GlobalShortcutAction::ToggleGlobalHotkeys}) {
+          presentation::GlobalShortcutAction::ToggleGlobalShortcuts}) {
         require(compact.shortcutActionTitle(action, 0) == catalog.shortcutActionTitle(action, 0) &&
                     compact.shortcutActionTitle(action, 99) ==
                         catalog.shortcutActionTitle(action, 99),
@@ -3339,7 +3339,7 @@ void searchIndexIsGeneratedAndRanked() {
                                     shortcut->shortcutAction ==
                                         presentation::GlobalShortcutAction::OpenSettings;
                          }),
-            "removed global hotkeys must not remain in search");
+            "removed global shortcuts must not remain in search");
     const auto option = index.search(QStringLiteral("dark"));
     require(std::any_of(option.cbegin(), option.cend(),
                         [](const auto& result) {
@@ -3411,11 +3411,11 @@ void searchIndexIsGeneratedAndRanked() {
     }
 
     index.setRuntimeValues({7});
-    const auto delayedScreenshot = index.search(QStringLiteral("delay 7s"));
+    const auto delayedScreenshot = index.search(QStringLiteral("run after 7 seconds"));
     require(!delayedScreenshot.isEmpty() &&
                 delayedScreenshot.constFirst().id ==
                     QStringLiteral("item:quick.screenshot-delay") &&
-                delayedScreenshot.constFirst().title == QStringLiteral("Delay 7s to execute") &&
+                delayedScreenshot.constFirst().title == QStringLiteral("Run after 7 seconds") &&
                 !delayedScreenshot.constFirst().title.contains(QStringLiteral("%1")),
             "search must resolve runtime placeholders before indexing and displaying item titles");
 }
@@ -3859,8 +3859,8 @@ void fullscreenWindowFilterHasStableContract() {
     const settings::SettingsSearchIndex search(registry);
     require(registry.validationErrors().isEmpty(),
             "fullscreen filter conforms to the settings registry");
-    const auto* fullscreen =
-        registry.fieldForSwitch(settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+    const auto* fullscreen = registry.fieldForSwitch(
+        settings::SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen);
     const auto* filter =
         registry.fieldForSelect(settings::SettingsSelectBinding::FullscreenWindowFilter);
     const auto* automatic =
@@ -3868,7 +3868,7 @@ void fullscreenWindowFilterHasStableContract() {
     require(filter && automatic && automatic->items.size() == 2 &&
                 automatic->items.at(0).id == fullscreen->id &&
                 automatic->items.at(1).id == filter->id &&
-                filter->reset == settings::SettingsSectionReset::GlobalHotkeys &&
+                filter->reset == settings::SettingsSectionReset::GlobalShortcuts &&
                 filter->configurationKey ==
                     QStringLiteral("global_shortcuts/fullscreen_window_filter") &&
                 filter->defaultValue == QJsonValue(QStringLiteral("game_windows")),
@@ -3937,11 +3937,11 @@ void featureNavigationAndSearchAreConsistent() {
                     hits.first().location.sectionId == field->sectionId,
                 "search locates backup and restore in data storage");
     }
-    const auto* fullscreen =
-        registry.fieldForSwitch(settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+    const auto* fullscreen = registry.fieldForSwitch(
+        settings::SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen);
     require(fullscreen != nullptr && fullscreen->pageId == QStringLiteral("global-hotkeys") &&
                 fullscreen->sectionId == QStringLiteral("global-hotkeys") &&
-                fullscreen->reset == settings::SettingsSectionReset::GlobalHotkeys &&
+                fullscreen->reset == settings::SettingsSectionReset::GlobalShortcuts &&
                 fullscreen->configurationKey ==
                     QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window") &&
                 catalog.section(QStringLiteral("shortcuts-mouse"),
@@ -4170,7 +4170,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--global-hotkeys-only"))) {
         fullscreenWindowFilterHasStableContract();
-        globalHotkeyShortcutsHaveStableContracts();
+        globalShortcutActionsHaveStableContracts();
         compactTrayManifestMatchesRegistryCatalog();
         searchIndexIsGeneratedAndRanked();
         return 0;
@@ -4292,7 +4292,7 @@ int main(int argc, char** argv) {
     translationConfidenceCatalog();
     featureNavigationAndSearchAreConsistent();
     globalMouseSettingsHaveStableContracts();
-    globalHotkeyShortcutsHaveStableContracts();
+    globalShortcutActionsHaveStableContracts();
     compactTrayManifestMatchesRegistryCatalog();
     structuredFallbackIsDeterministic();
     invalidCatalogReportsAllConformanceErrors();

@@ -10,20 +10,20 @@
 
 namespace snow_shot::presentation {
 
-struct CollagePdfDestination final {
+struct ImageStitchingPdfDestination final {
     // A filename for combined export, or a directory for per-page export.
     QString path;
     bool overwriteAuthorized = false;
 };
 
-struct CollagePdfExportProgress final {
+struct ImageStitchingPdfExportProgress final {
     qsizetype completedPages = 0;
     qsizetype totalPages = 0;
     qsizetype pageNumber = 0;
     qreal pageFraction = 0;
 };
 
-struct CollagePdfExportResult final {
+struct ImageStitchingPdfExportResult final {
     qsizetype totalCount = 0;
     QVector<qsizetype> completedPages;
     QStringList paths;
@@ -38,10 +38,10 @@ struct CollagePdfExportResult final {
 
 // Run on an export worker with an immutable item/settings snapshot. Cancellation retires the
 // current staging file; complete per-page PDFs remain available and are returned in page order.
-[[nodiscard]] CollagePdfExportResult
-exportCollagePdf(const QVector<CollageItem>& items, const CollagePdfSettings& settings,
-                 const CollagePdfDestination& destination, std::function<bool()> cancelled = {},
-                 std::function<void(const CollagePdfExportProgress&)> progress = {});
+[[nodiscard]] ImageStitchingPdfExportResult exportImageStitchingPdf(
+    const QVector<ImageStitchingItem>& items, const ImageStitchingPdfSettings& settings,
+    const ImageStitchingPdfDestination& destination, std::function<bool()> cancelled = {},
+    std::function<void(const ImageStitchingPdfExportProgress&)> progress = {});
 
 } // namespace snow_shot::presentation
 

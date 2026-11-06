@@ -398,20 +398,20 @@ void ScreenshotOverlayCoordinator::setTextStyle(const ScreenshotDisplaySession& 
     m_canvasPresenter.setTextStyle(displaySession, style, properties);
 }
 
-void ScreenshotOverlayCoordinator::setSerialNumberStyle(
+void ScreenshotOverlayCoordinator::setSequenceNumberStyle(
     const ScreenshotDisplaySession& displaySession, const SnowCanvasSerialNumberStyle& style,
     std::optional<quint32> properties) {
-    m_canvasPresenter.setSerialNumberStyle(displaySession, style, properties);
+    m_canvasPresenter.setSequenceNumberStyle(displaySession, style, properties);
 }
 
-void ScreenshotOverlayCoordinator::adjustSelectedSerialNumbers(
+void ScreenshotOverlayCoordinator::adjustSelectedSequenceNumbers(
     const ScreenshotDisplaySession& displaySession, qint64 delta) {
-    m_canvasPresenter.adjustSelectedSerialNumbers(displaySession, delta);
+    m_canvasPresenter.adjustSelectedSequenceNumbers(displaySession, delta);
 }
 
-void ScreenshotOverlayCoordinator::createTextForSelectedSerialNumber(
+void ScreenshotOverlayCoordinator::createTextForSelectedSequenceNumber(
     const ScreenshotDisplaySession& displaySession) {
-    m_canvasPresenter.createTextForSelectedSerialNumber(displaySession);
+    m_canvasPresenter.createTextForSelectedSequenceNumber(displaySession);
 }
 
 void ScreenshotOverlayCoordinator::reorderSelectedElements(
@@ -561,8 +561,8 @@ bool ScreenshotOverlayCoordinator::stepToolbarFilterIntensity(int direction) {
     return m_uiHost.stepToolbarFilterIntensity(direction);
 }
 
-bool ScreenshotOverlayCoordinator::stepToolbarPenFilterStrokeWidth(int direction) {
-    return m_uiHost.stepToolbarPenFilterStrokeWidth(direction);
+bool ScreenshotOverlayCoordinator::stepToolbarBrushFilterStrokeWidth(int direction) {
+    return m_uiHost.stepToolbarBrushFilterStrokeWidth(direction);
 }
 
 bool ScreenshotOverlayCoordinator::stepToolbarWatermarkFontSize(int direction) {

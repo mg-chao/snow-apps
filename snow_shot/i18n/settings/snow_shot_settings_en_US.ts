@@ -507,6 +507,10 @@
             <translation>Bracket annotation</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>Brush</translation>
+        </message>
+        <message>
             <source>Distance annotation</source>
             <translation>Distance annotation</translation>
         </message>
@@ -551,10 +555,6 @@
             <translation>No hidden tools</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>Pen</translation>
-        </message>
-        <message>
             <source>Redo</source>
             <translation>Redo</translation>
         </message>
@@ -567,8 +567,8 @@
             <translation>Separator component</translation>
         </message>
         <message>
-            <source>Serial number</source>
-            <translation>Serial number</translation>
+            <source>Sequence number</source>
+            <translation>Sequence number</translation>
         </message>
         <message>
             <source>Shape</source>
@@ -884,8 +884,8 @@
             <translation>Close recording</translation>
         </message>
         <message>
-            <source>Copy recording content</source>
-            <translation>Copy recording content</translation>
+            <source>Copy recording</source>
+            <translation>Copy recording</translation>
         </message>
         <message>
             <source>Drag tools here to hide them from the recording toolbar</source>
@@ -1192,12 +1192,12 @@
             <translation>API configuration</translation>
         </message>
         <message>
-            <source>API key</source>
-            <translation>API key</translation>
+            <source>API for detecting window child elements</source>
+            <translation>API for detecting window child elements</translation>
         </message>
         <message>
-            <source>API used to control obtaining child elements of the window</source>
-            <translation>API used to control obtaining child elements of the window</translation>
+            <source>API key</source>
+            <translation>API key</translation>
         </message>
         <message>
             <source>AVIF</source>
@@ -1572,6 +1572,18 @@
             <translation>Browse, restore, and delete pinned windows</translation>
         </message>
         <message>
+            <source>Brush</source>
+            <translation>Brush</translation>
+        </message>
+        <message>
+            <source>Brush filter</source>
+            <translation>Brush filter</translation>
+        </message>
+        <message>
+            <source>Brush highlight</source>
+            <translation>Brush highlight</translation>
+        </message>
+        <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
             <translation>Cached history thumbnails will be removed and rebuilt on demand</translation>
         </message>
@@ -1792,8 +1804,8 @@
             <translation>Choose the primary color used throughout the theme</translation>
         </message>
         <message>
-            <source>Choose the primary language for translation</source>
-            <translation>Choose the primary language for translation</translation>
+            <source>Choose the primary target language for translation</source>
+            <translation>Choose the primary target language for translation</translation>
         </message>
         <message>
             <source>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot</source>
@@ -1848,8 +1860,8 @@
             <translation>Choose which actions also save an image in the selected image format and save directory</translation>
         </message>
         <message>
-            <source>Choose which fullscreen windows automatically disable global hotkeys</source>
-            <translation>Choose which fullscreen windows automatically disable global hotkeys</translation>
+            <source>Choose which fullscreen windows automatically disable global shortcuts</source>
+            <translation>Choose which fullscreen windows automatically disable global shortcuts</translation>
         </message>
         <message>
             <source>Clear</source>
@@ -2208,14 +2220,6 @@
             <translation>Defaults for newly pinned text; source formatting is preserved</translation>
         </message>
         <message>
-            <source>Delay %1s to execute</source>
-            <translation>Delay %1s to execute</translation>
-        </message>
-        <message>
-            <source>Delay capture</source>
-            <translation>Delay capture</translation>
-        </message>
-        <message>
             <source>Delayed screenshot</source>
             <translation>Delayed screenshot</translation>
         </message>
@@ -2272,16 +2276,16 @@
             <translation>Destroy</translation>
         </message>
         <message>
-            <source>Disable global hotkeys</source>
-            <translation>Disable global hotkeys</translation>
+            <source>Disable global shortcuts</source>
+            <translation>Disable global shortcuts</translation>
         </message>
         <message>
-            <source>Disable hotkeys in fullscreen windows</source>
-            <translation>Disable hotkeys in fullscreen windows</translation>
+            <source>Disable shortcuts in fullscreen windows</source>
+            <translation>Disable shortcuts in fullscreen windows</translation>
         </message>
         <message>
-            <source>Disable/enable global hotkeys</source>
-            <translation>Disable/enable global hotkeys</translation>
+            <source>Disable/enable global shortcuts</source>
+            <translation>Disable/enable global shortcuts</translation>
         </message>
         <message>
             <source>Disabled</source>
@@ -2512,10 +2516,6 @@
             <translation>Fix top-right corner</translation>
         </message>
         <message>
-            <source>Fixed screenshot</source>
-            <translation>Fixed screenshot</translation>
-        </message>
-        <message>
             <source>Flip horizontally</source>
             <translation>Flip horizontally</translation>
         </message>
@@ -2608,24 +2608,24 @@
             <translation>Global canvas</translation>
         </message>
         <message>
-            <source>Global hotkey activation behavior</source>
-            <translation>Global hotkey activation behavior</translation>
-        </message>
-        <message>
-            <source>Global hotkeys</source>
-            <translation>Global hotkeys</translation>
-        </message>
-        <message>
-            <source>Global hotkeys page</source>
-            <translation>Global hotkeys page</translation>
-        </message>
-        <message>
             <source>Global mouse</source>
             <translation>Global mouse</translation>
         </message>
         <message>
             <source>Global mouse gestures</source>
             <translation>Global mouse gestures</translation>
+        </message>
+        <message>
+            <source>Global shortcut activation behavior</source>
+            <translation>Global shortcut activation behavior</translation>
+        </message>
+        <message>
+            <source>Global shortcuts</source>
+            <translation>Global shortcuts</translation>
+        </message>
+        <message>
+            <source>Global shortcuts page</source>
+            <translation>Global shortcuts page</translation>
         </message>
         <message>
             <source>Group recognized text before translating</source>
@@ -2660,16 +2660,16 @@
             <translation>Hidden tools</translation>
         </message>
         <message>
+            <source>Hide at top</source>
+            <translation>Hide at top</translation>
+        </message>
+        <message>
             <source>Hide or show all windows in the current group</source>
             <translation>Hide or show all windows in the current group</translation>
         </message>
         <message>
             <source>Hide the toolbar near the left or right screen edge. Hover over the edge control to show it again</source>
             <translation>Hide the toolbar near the left or right screen edge. Hover over the edge control to show it again</translation>
-        </message>
-        <message>
-            <source>Hide to top</source>
-            <translation>Hide to top</translation>
         </message>
         <message>
             <source>Hide when outside selection</source>
@@ -2688,16 +2688,12 @@
             <translation>Highlight</translation>
         </message>
         <message>
-            <source>Hotkey hint opacity</source>
-            <translation>Hotkey hint opacity</translation>
-        </message>
-        <message>
             <source>Icon</source>
             <translation>Icon</translation>
         </message>
         <message>
-            <source>Ignore global hotkeys while a matching focused window occupies an entire monitor</source>
-            <translation>Ignore global hotkeys while a matching focused window occupies an entire monitor</translation>
+            <source>Ignore global shortcuts while a matching focused window occupies an entire monitor</source>
+            <translation>Ignore global shortcuts while a matching focused window occupies an entire monitor</translation>
         </message>
         <message>
             <source>Image and document files</source>
@@ -2826,10 +2822,6 @@
         <message>
             <source>Keep screenshots available after the application closes</source>
             <translation>Keep screenshots available after the application closes</translation>
-        </message>
-        <message>
-            <source>Keep selection width and height consistent</source>
-            <translation>Keep selection width and height consistent</translation>
         </message>
         <message>
             <source>Keep the Snow Shot save dialog open after saving to show the result</source>
@@ -2970,6 +2962,10 @@
         <message>
             <source>Main interface skin position</source>
             <translation>Main interface skin position</translation>
+        </message>
+        <message>
+            <source>Maintain selection aspect ratio</source>
+            <translation>Maintain selection aspect ratio</translation>
         </message>
         <message>
             <source>Manage Snow Shot's login permission in macOS System Settings</source>
@@ -3272,18 +3268,6 @@
             <translation>Pages</translation>
         </message>
         <message>
-            <source>Pen</source>
-            <translation>Pen</translation>
-        </message>
-        <message>
-            <source>Pen filter</source>
-            <translation>Pen filter</translation>
-        </message>
-        <message>
-            <source>Pen highlight</source>
-            <translation>Pen highlight</translation>
-        </message>
-        <message>
             <source>Permanently remove all saved screenshots</source>
             <translation>Permanently remove all saved screenshots</translation>
         </message>
@@ -3298,10 +3282,6 @@
         <message>
             <source>Persistent screenshot history</source>
             <translation>Persistent screenshot history</translation>
-        </message>
-        <message>
-            <source>Pin clipboard</source>
-            <translation>Pin clipboard</translation>
         </message>
         <message>
             <source>Pin clipboard content to screen</source>
@@ -3328,8 +3308,8 @@
             <translation>Pin selected image or document files from Finder or the desktop to the screen</translation>
         </message>
         <message>
-            <source>Pin selection</source>
-            <translation>Pin selection</translation>
+            <source>Pin selection to screen</source>
+            <translation>Pin selection to screen</translation>
         </message>
         <message>
             <source>Pin the confirmed screenshot selection to the screen</source>
@@ -3360,12 +3340,8 @@
             <translation>Pin window to screen</translation>
         </message>
         <message>
-            <source>Pin-to-screen management</source>
-            <translation>Pin-to-screen management</translation>
-        </message>
-        <message>
-            <source>Pinned screenshot window appearance settings</source>
-            <translation>Pinned screenshot window appearance settings</translation>
+            <source>Pinned screenshot</source>
+            <translation>Pinned screenshot</translation>
         </message>
         <message>
             <source>Pinned toolbar</source>
@@ -3378,6 +3354,14 @@
         <message>
             <source>Pinned window active shadow</source>
             <translation>Pinned window active shadow</translation>
+        </message>
+        <message>
+            <source>Pinned window appearance settings</source>
+            <translation>Pinned window appearance settings</translation>
+        </message>
+        <message>
+            <source>Pinned window behavior settings</source>
+            <translation>Pinned window behavior settings</translation>
         </message>
         <message>
             <source>Pinned window behavior, appearance and tools</source>
@@ -3584,10 +3568,6 @@
             <translation>Recording temporary files</translation>
         </message>
         <message>
-            <source>Recording toggle</source>
-            <translation>Recording toggle</translation>
-        </message>
-        <message>
             <source>Recording toolbar</source>
             <translation>Recording toolbar</translation>
         </message>
@@ -3732,6 +3712,10 @@
             <translation>Rotate counterclockwise</translation>
         </message>
         <message>
+            <source>Run after %1 seconds</source>
+            <translation>Run after %1 seconds</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
         </message>
@@ -3756,8 +3740,8 @@
             <translation>Save recognition result as image</translation>
         </message>
         <message>
-            <source>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
-            <translation>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</translation>
+            <source>Save system audio and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
+            <translation>Save system audio and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</translation>
         </message>
         <message>
             <source>Save the confirmed screenshot selection to a file</source>
@@ -3976,8 +3960,8 @@
             <translation>Selection, capture guides and annotation tools</translation>
         </message>
         <message>
-            <source>Serial number</source>
-            <translation>Serial number</translation>
+            <source>Sequence number</source>
+            <translation>Sequence number</translation>
         </message>
         <message>
             <source>Server address</source>
@@ -4228,8 +4212,8 @@
             <translation>Show the sub-toolbar for the edit selection tool</translation>
         </message>
         <message>
-            <source>Show the video format and microphone and speaker status in the center of the motion preview area</source>
-            <translation>Show the video format and microphone and speaker status in the center of the motion preview area</translation>
+            <source>Show the video format and microphone and system audio status in the center of the motion preview area</source>
+            <translation>Show the video format and microphone and system audio status in the center of the motion preview area</translation>
         </message>
         <message>
             <source>Show toolbar</source>
@@ -4386,6 +4370,10 @@
         <message>
             <source>Start scrolling capture in the confirmed screenshot selection</source>
             <translation>Start scrolling capture in the confirmed screenshot selection</translation>
+        </message>
+        <message>
+            <source>Start/copy screen recording</source>
+            <translation>Start/copy screen recording</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>
@@ -4556,8 +4544,8 @@
             <translation>Toggle guides</translation>
         </message>
         <message>
-            <source>Toggle hotkeys</source>
-            <translation>Toggle hotkeys</translation>
+            <source>Toggle shortcuts</source>
+            <translation>Toggle shortcuts</translation>
         </message>
         <message>
             <source>Toggle whether the window under the cursor stays above other windows</source>
@@ -4680,12 +4668,12 @@
             <translation>Tray menu skin position</translation>
         </message>
         <message>
-            <source>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</source>
-            <translation>Turn every global hotkey off or back on; this shortcut stays active while global hotkeys are disabled</translation>
+            <source>Turn every global shortcut off or back on; this shortcut stays active while global shortcuts are disabled</source>
+            <translation>Turn every global shortcut off or back on; this shortcut stays active while global shortcuts are disabled</translation>
         </message>
         <message>
-            <source>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
-            <translation>Turn off or back on the suppression of global hotkeys while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</translation>
+            <source>Turn off or back on the suppression of global shortcuts while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</source>
+            <translation>Turn off or back on the suppression of global shortcuts while the focused window is fullscreen; this shortcut stays active while fullscreen suppression is enabled</translation>
         </message>
         <message>
             <source>UIA</source>
@@ -5076,8 +5064,8 @@ Unavailable: %2</translation>
             <translation>The system rejected this shortcut (error %1)</translation>
         </message>
         <message>
-            <source>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global hotkeys are enabled and the focused window allows them</source>
-            <translation>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global hotkeys are enabled and the focused window allows them</translation>
+            <source>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global shortcuts are enabled and the focused window allows them</source>
+            <translation>This shortcut is temporarily disabled and released for use by other applications. It will be restored when global shortcuts are enabled and the focused window allows them</translation>
         </message>
     </context>
     <context>

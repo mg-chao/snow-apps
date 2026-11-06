@@ -449,10 +449,10 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     m_xInput = createIntegerInput(m_selectionBounds.left(), m_selectionBounds.right());
     m_yInput = createIntegerInput(m_selectionBounds.top(), m_selectionBounds.bottom());
     adqt::widgets::AdFormItem* xItem =
-        addNormalField(tr("Position X"), m_xInput, QString::fromLatin1(kFieldX));
+        addNormalField(tr("X coordinate"), m_xInput, QString::fromLatin1(kFieldX));
     addNormalColumnSpacer();
     adqt::widgets::AdFormItem* yItem =
-        addNormalField(tr("Position Y"), m_yInput, QString::fromLatin1(kFieldY));
+        addNormalField(tr("Y coordinate"), m_yInput, QString::fromLatin1(kFieldY));
 
     m_widthInput = createIntegerInput(1, m_selectionBounds.width());
     m_heightInput = createIntegerInput(1, m_selectionBounds.height());
@@ -622,9 +622,9 @@ ScreenshotSelectionResizeModalContent::addNormalField(const QString& label, QWid
     if (fieldName == QString::fromLatin1(kFieldQuickSet)) {
         source = "Quick set";
     } else if (fieldName == QString::fromLatin1(kFieldX)) {
-        source = "Position X";
+        source = "X coordinate";
     } else if (fieldName == QString::fromLatin1(kFieldY)) {
-        source = "Position Y";
+        source = "Y coordinate";
     } else if (fieldName == QString::fromLatin1(kFieldWidth)) {
         source = "Width";
     } else if (fieldName == QString::fromLatin1(kFieldHeight)) {

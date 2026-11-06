@@ -480,8 +480,8 @@ bool ScreenshotFloatingToolPaletteWindow::stepFilterIntensity(int direction) {
     return m_paletteHost != nullptr && m_paletteHost->stepFilterIntensity(direction);
 }
 
-bool ScreenshotFloatingToolPaletteWindow::stepPenFilterStrokeWidth(int direction) {
-    return m_paletteHost != nullptr && m_paletteHost->stepPenFilterStrokeWidth(direction);
+bool ScreenshotFloatingToolPaletteWindow::stepBrushFilterStrokeWidth(int direction) {
+    return m_paletteHost != nullptr && m_paletteHost->stepBrushFilterStrokeWidth(direction);
 }
 
 bool ScreenshotFloatingToolPaletteWindow::stepWatermarkFontSize(int direction) {

@@ -58,7 +58,7 @@ bool thumbIsOnRight(adqt::widgets::AdSwitch* toggle) {
     require(left + right > 0, "rendered switch contains the test thumb color");
     return right > left;
 }
-class FakeTranslationHotkeyBackend final : public snow_shot::presentation::GlobalShortcutBackend {
+class FakeTranslationShortcutBackend final : public snow_shot::presentation::GlobalShortcutBackend {
   public:
     void setActivationHandler(ActivationHandler value) override {
         handler = std::move(value);
@@ -141,7 +141,7 @@ void windowAlwaysOnTopShortcutSettings() {
     require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(false),
             "disable translation independently of the topmost action");
     {
-        auto native = std::make_unique<FakeTranslationHotkeyBackend>();
+        auto native = std::make_unique<FakeTranslationShortcutBackend>();
         auto* input = native.get();
         bool fullscreen = false;
         GlobalShortcutManager manager(std::move(native), nullptr, [&] { return fullscreen; });
@@ -173,10 +173,10 @@ void windowAlwaysOnTopShortcutSettings() {
         };
         activate();
         require(activations == 2, "each assigned topmost shortcut activates once");
-        manager.setGlobalHotkeysEnabled(false);
+        manager.setGlobalShortcutsEnabled(false);
         require(manager.state(action).status == GlobalShortcutStatus::Disabled,
                 "manual global suppression disables topmost shortcuts");
-        manager.setGlobalHotkeysEnabled(true);
+        manager.setGlobalShortcutsEnabled(true);
         require(store.setValue(fullscreenKey, true), "enable fullscreen suppression");
         fullscreen = true;
         manager.refreshFocusedFullscreenState();
@@ -188,7 +188,7 @@ void windowAlwaysOnTopShortcutSettings() {
                 "leaving fullscreen restores topmost shortcuts");
     }
     {
-        GlobalShortcutManager manager(std::make_unique<FakeTranslationHotkeyBackend>(), nullptr,
+        GlobalShortcutManager manager(std::make_unique<FakeTranslationShortcutBackend>(), nullptr,
                                       [] { return false; });
         settings::BuiltInSettingsBackend backend(manager);
         manager.initialize();
@@ -223,7 +223,7 @@ void selectedTextShortcutSettings() {
     const snow_shot::shortcuts::ShortcutBindingList keys{QStringLiteral("Ctrl+Alt+T"),
                                                          QStringLiteral("Ctrl+Shift+T")};
     {
-        auto native = std::make_unique<FakeTranslationHotkeyBackend>();
+        auto native = std::make_unique<FakeTranslationShortcutBackend>();
         auto* input = native.get();
         bool fullscreen = false;
         GlobalShortcutManager manager(std::move(native), nullptr, [&]() { return fullscreen; });
@@ -383,7 +383,7 @@ void selectedTextShortcutSettings() {
         require(input->registrations.values().contains(keys.first()),
                 "re-enable restores native registration");
         id = input->registrations.key(keys.first());
-        manager.setGlobalHotkeysEnabled(false);
+        manager.setGlobalShortcutsEnabled(false);
         require(
             !input->registrations.values().contains(keys.first()) &&
                 !input->registrations.values().contains(keys.last()) &&
@@ -391,7 +391,7 @@ void selectedTextShortcutSettings() {
             "manual hotkey disablement releases both selected text bindings and preserves keys");
         input->handler(id);
         require(activations == 1, "disabled global hotkeys suppress selected text translation");
-        manager.setGlobalHotkeysEnabled(true);
+        manager.setGlobalShortcutsEnabled(true);
         const int restoredId = input->registrations.key(keys.first());
         require(restoredId != 0 && restoredId != id &&
                     input->registrations.values().contains(keys.last()),
@@ -439,7 +439,7 @@ void selectedTextShortcutSettings() {
         require(session.applyShortcuts(action, keys), "prepare selected text bindings for reload");
     }
     {
-        GlobalShortcutManager reloaded(std::make_unique<FakeTranslationHotkeyBackend>(), nullptr,
+        GlobalShortcutManager reloaded(std::make_unique<FakeTranslationShortcutBackend>(), nullptr,
                                        []() { return false; });
         reloaded.initialize();
         require(reloaded.state(action).shortcuts == keys &&
@@ -454,7 +454,7 @@ void ocrHighlightingDefaultsPersistsAndResets() {
     auto& applicationStorage = storage::ApplicationStorage::instance();
     auto& configuration = applicationStorage.configuration();
     snow_shot::presentation::GlobalShortcutManager shortcuts(
-        std::make_unique<FakeTranslationHotkeyBackend>());
+        std::make_unique<FakeTranslationShortcutBackend>());
     settings::BuiltInSettingsBackend backend(shortcuts);
     const storage::TextRecognitionSettings recognition;
     constexpr auto binding = settings::SettingsSwitchBinding::ShowTextHighlighting;

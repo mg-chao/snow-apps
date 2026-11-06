@@ -142,7 +142,7 @@ QString globalMouseKey(SettingsGlobalMouseAction action) {
     switch (action) {
     case SettingsGlobalMouseAction::ScreenshotCopy:
         return QStringLiteral("global_mouse/screenshot_copy");
-    case SettingsGlobalMouseAction::ScreenshotFixed:
+    case SettingsGlobalMouseAction::ScreenshotPinToScreen:
         return QStringLiteral("global_mouse/screenshot_fixed");
     case SettingsGlobalMouseAction::ScreenshotOcr:
         return QStringLiteral("global_mouse/screenshot_ocr");
@@ -1021,7 +1021,7 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::RecordingSettings().notifyAfterExportCompletes();
     case SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose:
         return storage::RecordingSettings().deleteFilesOnRecordingClose();
-    case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
+    case SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::McpEnabled:
         return storage::ApplicationStorage::instance()
@@ -1383,7 +1383,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose) {
         return storage::RecordingSettings().setDeleteFilesOnRecordingClose(value);
     }
-    if (binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
+    if (binding == SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen) {
         return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(value);
     }
     if (binding == SettingsSwitchBinding::McpEnabled) {
@@ -1476,7 +1476,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
     case SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes:
     case SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose:
-    case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
+    case SettingsSwitchBinding::DisableShortcutsOnFocusedFullscreen:
     case SettingsSwitchBinding::McpEnabled:
     case SettingsSwitchBinding::AutoStartAtBoot:
     case SettingsSwitchBinding::LaunchAsAdministrator:
@@ -2607,7 +2607,7 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                       QStringLiteral("global_shortcuts/screenshot"));
         resetShortcut(GlobalShortcutAction::ScreenshotDelay,
                       QStringLiteral("global_shortcuts/screenshot_delay"));
-        resetShortcut(GlobalShortcutAction::ScreenshotFixed,
+        resetShortcut(GlobalShortcutAction::ScreenshotPinToScreen,
                       QStringLiteral("global_shortcuts/screenshot_fixed"));
         resetShortcut(GlobalShortcutAction::ScreenshotOcr,
                       QStringLiteral("global_shortcuts/screenshot_ocr"));
@@ -2636,14 +2636,14 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
     }
     case SettingsSectionReset::GlobalMouse: {
         QMap<QString, QJsonValue> values;
-        for (const auto action :
-             {SettingsGlobalMouseAction::ScreenshotCopy, SettingsGlobalMouseAction::ScreenshotFixed,
-              SettingsGlobalMouseAction::ScreenshotOcr,
-              SettingsGlobalMouseAction::ScreenshotOcrCopy,
-              SettingsGlobalMouseAction::ScreenshotTranslation,
-              SettingsGlobalMouseAction::ScreenshotSave,
-              SettingsGlobalMouseAction::ScreenshotQuickSave,
-              SettingsGlobalMouseAction::ScreenRecording}) {
+        for (const auto action : {SettingsGlobalMouseAction::ScreenshotCopy,
+                                  SettingsGlobalMouseAction::ScreenshotPinToScreen,
+                                  SettingsGlobalMouseAction::ScreenshotOcr,
+                                  SettingsGlobalMouseAction::ScreenshotOcrCopy,
+                                  SettingsGlobalMouseAction::ScreenshotTranslation,
+                                  SettingsGlobalMouseAction::ScreenshotSave,
+                                  SettingsGlobalMouseAction::ScreenshotQuickSave,
+                                  SettingsGlobalMouseAction::ScreenRecording}) {
             const QString key = globalMouseKey(action);
             if (storage::ConfigurationSchema::contains(key))
                 values.insert(key, storage::ConfigurationSchema::defaultValue(key));
@@ -2669,7 +2669,7 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                       QStringLiteral("global_shortcuts/translate_selected_text"));
         resetShortcut(GlobalShortcutAction::ToggleWindowUnderCursorAlwaysOnTop,
                       QStringLiteral("global_shortcuts/toggle_window_under_cursor_always_on_top"));
-        resetShortcut(GlobalShortcutAction::ToggleGlobalHotkeys,
+        resetShortcut(GlobalShortcutAction::ToggleGlobalShortcuts,
                       QStringLiteral("global_shortcuts/toggle_global_hotkeys"));
         resetShortcut(
             GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
@@ -3080,7 +3080,7 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/capture_toolbar_in_recording"))},
         });
-    case SettingsSectionReset::GlobalHotkeys:
+    case SettingsSectionReset::GlobalShortcuts:
         return resetAvailableConfigurationValues(sectionDefaults(reset));
     case SettingsSectionReset::SystemGeneral: {
         const auto& configuration = storage::ApplicationStorage::instance().configuration();
