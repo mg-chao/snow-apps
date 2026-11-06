@@ -40,6 +40,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::ScreenshotOcr,
     GlobalShortcutAction::ScreenshotOcrCopy,
     GlobalShortcutAction::ScreenshotTranslation,
+    GlobalShortcutAction::ScreenshotScrolling,
     GlobalShortcutAction::ScreenshotCopy,
     GlobalShortcutAction::ScreenshotSave,
     GlobalShortcutAction::ScreenshotQuickSave,
@@ -273,10 +274,12 @@ void clearAll(GlobalShortcutManager& manager) {
     }
 }
 
-void screenshotSaveShortcutsRegisterActivateAndPersist() {
-    const std::array actions{GlobalShortcutAction::ScreenshotSave,
+void screenshotQuickActionShortcutsRegisterActivateAndPersist() {
+    const std::array actions{GlobalShortcutAction::ScreenshotScrolling,
+                             GlobalShortcutAction::ScreenshotSave,
                              GlobalShortcutAction::ScreenshotQuickSave};
     const std::array bindings{
+        shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F9"), QStringLiteral("Shift+F9")},
         shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F10"), QStringLiteral("Shift+F10")},
         shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F11"),
                                        QStringLiteral("Shift+F11")}};
@@ -292,34 +295,35 @@ void screenshotSaveShortcutsRegisterActivateAndPersist() {
         for (std::size_t i = 0; i < actions.size(); ++i) {
             const auto action = actions[i];
             require(manager.state(action).status == GlobalShortcutStatus::Unset,
-                    "screenshot save hotkeys start unset");
+                    "optional screenshot hotkeys start unset");
             require(manager.setShortcuts(action, bindings[i]) &&
                         manager.state(action).status == GlobalShortcutStatus::Registered &&
                         manager.state(action).bindings.size() == 2,
-                    "both screenshot save hotkey bindings register");
+                    "both screenshot hotkey bindings register");
             for (auto it = input->registrations.cbegin(); it != input->registrations.cend(); ++it) {
                 if (bindings[i].contains(it.value()))
                     input->handler(it.key());
             }
             require(activated.count(action) == 2,
-                    "each save binding activates its own screenshot action");
+                    "each binding activates its own screenshot action");
         }
         require(!manager.validateShortcut(actions[1], bindings[0].first()).supported,
-                "save actions participate in global hotkey conflict detection");
+                "screenshot actions participate in global hotkey conflict detection");
     }
     GlobalShortcutManager restored(std::make_unique<FakeBackend>(), nullptr, [] { return false; });
     restored.initialize();
     const snow_shot::storage::ShortcutSettings settings;
-    require(settings.screenshotSave() == bindings[0] &&
-                settings.screenshotQuickSave() == bindings[1],
-            "save actions persist under distinct settings keys");
+    require(settings.screenshotScrolling() == bindings[0] &&
+                settings.screenshotSave() == bindings[1] &&
+                settings.screenshotQuickSave() == bindings[2],
+            "screenshot actions persist under distinct settings keys");
     for (std::size_t i = 0; i < actions.size(); ++i) {
         require(restored.state(actions[i]).shortcuts == bindings[i] &&
                     restored.state(actions[i]).status == GlobalShortcutStatus::Registered,
-                "save hotkeys register again after manager reload");
+                "screenshot hotkeys register again after manager reload");
         require(restored.setShortcuts(actions[i], {}) &&
                     restored.state(actions[i]).status == GlobalShortcutStatus::Unset,
-                "save hotkeys can be cleared");
+                "screenshot hotkeys can be cleared");
     }
 }
 
@@ -500,6 +504,7 @@ void hiddenFloatingToolsPreserveGlobalHotkeys() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         GlobalShortcutAction::ScreenshotTranslation,
 #endif
+        GlobalShortcutAction::ScreenshotScrolling,
         GlobalShortcutAction::ScreenRecord,
     };
     for (const bool initiallyHidden : {false, true}) {
@@ -2001,7 +2006,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
-    screenshotSaveShortcutsRegisterActivateAndPersist();
+    screenshotQuickActionShortcutsRegisterActivateAndPersist();
     switchGroupShortcutPersistsAndReportsBinding();
 #ifdef Q_OS_WIN
     nativeGroupKeyStateUsesEveryShortcutKey();

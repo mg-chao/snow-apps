@@ -1953,6 +1953,12 @@ class ApplicationController::Impl {
             }
 #endif
             break;
+        case presentation::GlobalShortcutAction::ScreenshotScrolling:
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                static_cast<void>(controller->captureForAction(
+                    ScreenshotController::CaptureAction::StartScrolling));
+            }
+            break;
         case presentation::GlobalShortcutAction::ScreenshotCopy:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->captureAndCopySelection();

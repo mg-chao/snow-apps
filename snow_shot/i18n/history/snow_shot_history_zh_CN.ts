@@ -1828,7 +1828,7 @@ Files:
         </message>
         <message>
             <source>A pinned window is no longer available to save</source>
-            <translation>一个贴图窗口已无法保存</translation>
+            <translation>一个固定到屏幕窗口已无法保存</translation>
         </message>
         <message>
             <source>AirDrop</source>

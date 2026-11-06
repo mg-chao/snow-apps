@@ -709,6 +709,15 @@ bool ShortcutSettings::setScreenshotTranslation(
 }
 #endif
 
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotScrolling() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/screenshot_scrolling"));
+}
+
+bool ShortcutSettings::setScreenshotScrolling(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_scrolling"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::screenshotCopy() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"));
 }

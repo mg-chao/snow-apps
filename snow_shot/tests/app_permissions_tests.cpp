@@ -271,10 +271,13 @@ void freshSettingsActions() {
 }
 void routingPolicy() {
     using A = GlobalShortcutAction;
-    for (auto action :
-         {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
-          A::ScreenshotOcrCopy, A::ScreenshotTranslation, A::ScreenshotCopy, A::ScreenshotSave,
-          A::ScreenshotQuickSave, A::ScreenshotFullScreen, A::ScreenshotFocusedWindow})
+    require(snow_shot::app::featureFamilyFor(A::ScreenshotScrolling) ==
+                snow_shot::app::FeatureFamily::Screenshot,
+            "scrolling screenshot must use the screenshot feature gate");
+    for (auto action : {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
+                        A::ScreenshotOcrCopy, A::ScreenshotTranslation, A::ScreenshotScrolling,
+                        A::ScreenshotCopy, A::ScreenshotSave, A::ScreenshotQuickSave,
+                        A::ScreenshotFullScreen, A::ScreenshotFocusedWindow})
         require(requiredPermissions(action, true) == AppPermissions{P::ScreenRecording},
                 "capture must not require optional smart-selection access");
     for (auto action : {A::ScreenRecord, A::ScreenRecordCopy}) {

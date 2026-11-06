@@ -2611,6 +2611,8 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                       QStringLiteral("global_shortcuts/screenshot_ocr_copy"));
         resetShortcut(GlobalShortcutAction::ScreenshotTranslation,
                       QStringLiteral("global_shortcuts/screenshot_translation"));
+        resetShortcut(GlobalShortcutAction::ScreenshotScrolling,
+                      QStringLiteral("global_shortcuts/screenshot_scrolling"));
         resetShortcut(GlobalShortcutAction::ScreenshotCopy,
                       QStringLiteral("global_shortcuts/screenshot_copy"));
         resetShortcut(GlobalShortcutAction::ScreenshotSave,

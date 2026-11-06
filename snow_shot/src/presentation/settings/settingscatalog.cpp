@@ -153,6 +153,17 @@ SettingsItemDefinition screenshotTranslationItem() {
 }
 #endif
 
+SettingsItemDefinition screenshotScrollingItem() {
+    return quickActionItem(
+        QStringLiteral("quick.screenshot-scrolling"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Scrolling screenshot"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Start scrolling capture in the confirmed screenshot selection"),
+        {}, GlobalShortcutAction::ScreenshotScrolling,
+        QStringLiteral("global_shortcuts/screenshot_scrolling"),
+        []() { return custom_outlined_icons::ScrollingScreenshot(); });
+}
+
 SettingsItemDefinition screenshotCopyItem() {
     return quickActionItem(
         QStringLiteral("quick.screenshot-copy"),
@@ -3271,6 +3282,7 @@ QVector<SettingsPageDefinition> builtInPages() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                         screenshotTranslationItem(),
 #endif
+                        screenshotScrollingItem(),
                         screenshotCopyItem(),
                         screenshotSaveItem(),
                         screenshotQuickSaveItem(),
@@ -4454,6 +4466,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/screenshot_ocr_copy");
     case GlobalShortcutAction::ScreenshotTranslation:
         return QStringLiteral("global_shortcuts/screenshot_translation");
+    case GlobalShortcutAction::ScreenshotScrolling:
+        return QStringLiteral("global_shortcuts/screenshot_scrolling");
     case GlobalShortcutAction::ScreenshotCopy:
         return QStringLiteral("global_shortcuts/screenshot_copy");
     case GlobalShortcutAction::ScreenshotSave:
@@ -4815,6 +4829,10 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                 GlobalShortcutAction::ScreenshotTranslation,
                 []() { return custom_outlined_icons::OcrTranslate(); }),
+          quick(QStringLiteral("quick.screenshot-scrolling"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Scrolling screenshot"),
+                GlobalShortcutAction::ScreenshotScrolling,
+                []() { return custom_outlined_icons::ScrollingScreenshot(); }),
           quick(QStringLiteral("quick.screenshot-copy"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to clipboard"),
                 GlobalShortcutAction::ScreenshotCopy,

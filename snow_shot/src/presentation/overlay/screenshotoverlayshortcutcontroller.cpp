@@ -42,6 +42,8 @@ QString screenshotShortcutForGlobalAction(snow_shot::presentation::GlobalShortcu
         return QStringLiteral("text_recognition");
     case Action::ScreenshotTranslation:
         return QStringLiteral("text_translation");
+    case Action::ScreenshotScrolling:
+        return QStringLiteral("scrolling_screenshot");
     case Action::ScreenshotCopy:
         return QStringLiteral("copy_to_clipboard");
     case Action::ScreenshotSave:

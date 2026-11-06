@@ -1465,7 +1465,7 @@
         </message>
         <message>
             <source>Automatically enable annotation mode in new Pin to Screen windows opened with Edit with Snow Shot</source>
-            <translation>透過「使用 Snow Shot 編輯」開啟新的貼圖視窗時，自動啟用標註模式</translation>
+            <translation>透過「使用 Snow Shot 編輯」開啟新的固定到螢幕視窗時，自動啟用標註模式</translation>
         </message>
         <message>
             <source>Automatically exit screen recording after the recording is saved</source>
@@ -4386,6 +4386,10 @@
         <message>
             <source>Start new screenshot sessions and pin-to-screen annotation mode with the last used annotation tool instead of the move tool</source>
             <translation>開始新的截圖作業或進入固定到螢幕標註模式時，自動啟用上次使用的標註工具，而不是移動工具</translation>
+        </message>
+        <message>
+            <source>Start scrolling capture in the confirmed screenshot selection</source>
+            <translation>在已確認的截圖選取範圍內開始捲動截圖</translation>
         </message>
         <message>
             <source>Start/pause/resume recording</source>
