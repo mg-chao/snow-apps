@@ -1097,6 +1097,10 @@
             <translation>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment</translation>
         </message>
         <message>
+            <source>Enter a valid HTTP proxy address, for example http://127.0.0.1:7890</source>
+            <translation>Enter a valid HTTP proxy address, for example http://127.0.0.1:7890</translation>
+        </message>
+        <message>
             <source>The clipboard is unavailable</source>
             <translation>The clipboard is unavailable</translation>
         </message>
@@ -1676,6 +1680,10 @@
             <translation>Choose how much execution time the application receives</translation>
         </message>
         <message>
+            <source>Choose how network requests connect through a proxy</source>
+            <translation>Choose how network requests connect through a proxy</translation>
+        </message>
+        <message>
             <source>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text</source>
             <translation>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text</translation>
         </message>
@@ -1834,10 +1842,6 @@
         <message>
             <source>Choose where recording output files are written</source>
             <translation>Choose where recording output files are written</translation>
-        </message>
-        <message>
-            <source>Choose whether network requests use the system proxy</source>
-            <translation>Choose whether network requests use the system proxy</translation>
         </message>
         <message>
             <source>Choose which actions also save an image in the selected image format and save directory</source>
@@ -2652,6 +2656,10 @@
             <translation>H.265 (Hardware)</translation>
         </message>
         <message>
+            <source>HTTP/HTTPS proxy</source>
+            <translation>HTTP/HTTPS proxy</translation>
+        </message>
+        <message>
             <source>Hardware acceleration</source>
             <translation>Hardware acceleration</translation>
         </message>
@@ -2982,6 +2990,10 @@
         <message>
             <source>Manual</source>
             <translation>Manual</translation>
+        </message>
+        <message>
+            <source>Manual configuration</source>
+            <translation>Manual configuration</translation>
         </message>
         <message>
             <source>Manual save image filename format</source>
@@ -4718,6 +4730,10 @@
         <message>
             <source>Use GPU acceleration when available. Recognition uses the CPU while acceleration is unavailable</source>
             <translation>Use GPU acceleration when available. Recognition uses the CPU while acceleration is unavailable</translation>
+        </message>
+        <message>
+            <source>Use an HTTP proxy for HTTP and HTTPS requests, for example http://127.0.0.1:7890</source>
+            <translation>Use an HTTP proxy for HTTP and HTTPS requests, for example http://127.0.0.1:7890</translation>
         </message>
         <message>
             <source>Use global mouse gestures, select individual window elements, and translate selected text</source>

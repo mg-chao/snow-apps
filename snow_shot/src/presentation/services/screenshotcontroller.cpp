@@ -88,6 +88,7 @@
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotocrcontroller.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrproxyconfiguration.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotselectioneditworkflow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
@@ -140,9 +141,6 @@
 #include <QSet>
 #include <QUrl>
 #include <QMimeData>
-#include <QNetworkProxy>
-#include <QNetworkProxyFactory>
-#include <QNetworkProxyQuery>
 #include <QTimer>
 #include <QWindow>
 
@@ -195,33 +193,6 @@ template <typename Function> class ScopeExit final {
 
 template <typename Function> ScopeExit<Function> makeScopeExit(Function function) {
     return ScopeExit<Function>(std::move(function));
-}
-
-QString resolvedOcrProxyUrl(const QString& proxyMode) {
-    if (proxyMode != QStringLiteral("system")) {
-        return {};
-    }
-    const QNetworkProxyQuery query(QUrl(QStringLiteral("https://www.modelscope.cn/")));
-    const QList<QNetworkProxy> proxies = QNetworkProxyFactory::systemProxyForQuery(query);
-    for (const QNetworkProxy& proxy : proxies) {
-        if (proxy.type() != QNetworkProxy::HttpProxy &&
-            proxy.type() != QNetworkProxy::Socks5Proxy) {
-            continue;
-        }
-        QUrl url;
-        url.setScheme(proxy.type() == QNetworkProxy::Socks5Proxy ? QStringLiteral("socks5")
-                                                                 : QStringLiteral("http"));
-        url.setHost(proxy.hostName());
-        url.setPort(proxy.port());
-        if (!proxy.user().isEmpty()) {
-            url.setUserName(proxy.user());
-        }
-        if (!proxy.password().isEmpty()) {
-            url.setPassword(proxy.password());
-        }
-        return url.toString(QUrl::FullyEncoded);
-    }
-    return {};
 }
 
 ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) {
@@ -815,10 +786,6 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                 } else if (key == QStringLiteral("text_recognition/hardware_acceleration") &&
                            m_ocrRecognition != nullptr) {
                     m_ocrRecognition->setHardwareAcceleration(value.toBool());
-                } else if (key == QStringLiteral("network/proxy")) {
-                    if (m_ocrRecognition != nullptr) {
-                        m_ocrRecognition->setProxyUrl(resolvedOcrProxyUrl(value.toString()));
-                    }
                 }
             });
     }
@@ -1288,14 +1255,13 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
                                    .filePath(QStringLiteral("assets/ocr"));
     }
-    if (applicationStorage.isInitialized()) {
-        ocrOptions.proxyUrl = resolvedOcrProxyUrl(
-            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString());
-    }
     if (m_ocrRecognition == nullptr) {
         m_ownedOcrRecognition =
             std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, &owner);
         m_ocrRecognition = m_ownedOcrRecognition.get();
+        if (applicationStorage.isInitialized())
+            snow_shot::presentation::bindOcrProxyConfiguration(*m_ocrRecognition,
+                                                               applicationStorage.configuration());
     }
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (!m_qrRecognition)

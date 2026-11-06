@@ -300,6 +300,11 @@ target_link_libraries(snow_shot PRIVATE snow_shot_edition_full)
 target_sources(snow_shot PRIVATE include/snow_shot/app/edition.h)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-mini-ocr-proxy-startup-tests
+        COMMAND snow_shot_mini --ocr-proxy-startup-tests)
+    set_tests_properties(snow-shot-mini-ocr-proxy-startup-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     if(WIN32)
         find_program(_snow_launch_test_powershell NAMES pwsh powershell REQUIRED)
         add_test(NAME snow-shot-launcher-tests

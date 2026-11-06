@@ -1,6 +1,7 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/ocrtextoptions.h"
+#include "snow_shot/proxyconfiguration.h"
 #include "snow_shot/selectiontransitionanimation.h"
 #include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "snow_shot/app/edition.h"
@@ -332,7 +333,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      QStringLiteral("none"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("none"), QStringLiteral("system")}},
+     {QStringLiteral("none"), QStringLiteral("system"), QStringLiteral("manual")}},
+    {QStringLiteral("network/http_proxy"), QString(), ConfigurationValueKind::String},
     {QStringLiteral("text_recognition/resident_process"), !app::edition::isMini,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/model_hot_start"), false, ConfigurationValueKind::Boolean},
@@ -2914,6 +2916,11 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         const auto values = cloudUploadSettingsFromJson(value, &valid);
         const auto normalized = cloudUploadSettingsToJson(values);
         return {normalized, valid, normalized != value};
+    }
+    if (key == QStringLiteral("network/http_proxy")) {
+        const auto normalized = normalizedHttpProxyUrl(value.toString());
+        return {normalized.value_or(QString()), value.isString() && normalized.has_value(),
+                normalized.has_value() && *normalized != value};
     }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (key == QStringLiteral("api_configuration/server_url")) {

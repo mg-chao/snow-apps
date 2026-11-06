@@ -612,6 +612,13 @@ void schedulingAndFailures() {
     require(network && network->proxy().type() == QNetworkProxy::NoProxy, "proxy defaults to none");
     service.setSystemProxy(true);
     require(network->proxyFactory() != nullptr, "system proxy is configurable");
+    service.setProxyConfiguration(QStringLiteral("manual"),
+                                  QStringLiteral("http://user:pass@127.0.0.1:7890"));
+    require(
+        network->proxyFactory() == nullptr && network->proxy().type() == QNetworkProxy::HttpProxy &&
+            network->proxy().hostName() == QStringLiteral("127.0.0.1") &&
+            network->proxy().port() == 7890 && network->proxy().user() == QStringLiteral("user"),
+        "manual proxy replaces system proxy resolution");
     service.setSystemProxy(false);
     require(network->proxyFactory() == nullptr, "direct networking restored");
 

@@ -760,6 +760,8 @@ class NetworkSettings final {
   public:
     [[nodiscard]] QString proxy() const;
     bool setProxy(const QString& proxy) const;
+    [[nodiscard]] QString httpProxy() const;
+    bool setHttpProxy(const QString& address) const;
 };
 } // namespace snow_shot::storage
 

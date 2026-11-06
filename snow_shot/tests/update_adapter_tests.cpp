@@ -837,13 +837,20 @@ int main(int argc, char** argv) {
             {QStringLiteral("fontFamily"), QStringLiteral("Segoe UI")},
             {QStringLiteral("fontSize"), 14}};
         service.setProgressAppearance(initialAppearance);
+        service.setProxyConfiguration(QStringLiteral("manual"),
+                                      QStringLiteral("http://127.0.0.1:7890"));
         service.setMode(QStringLiteral("manual"));
         service.start();
         require(waitUntil([&] { return !service.busy(); }), "slow-download probe completes");
-        require(readJson(QDir(cache).filePath(QStringLiteral("execute.json")))
-                        .value(QStringLiteral("progressAppearance"))
-                        .toObject() == initialAppearance,
+        const auto initialCommand = readJson(QDir(cache).filePath(QStringLiteral("execute.json")));
+        require(initialCommand.value(QStringLiteral("progressAppearance")).toObject() ==
+                    initialAppearance,
                 "initial appearance accompanies the first operation");
+        const auto proxyCommand = readJson(QDir(cache).filePath(QStringLiteral("execute.json")));
+        require(!proxyCommand.value(QStringLiteral("systemProxy")).toBool() &&
+                    proxyCommand.value(QStringLiteral("httpProxy")).toString() ==
+                        QStringLiteral("http://127.0.0.1:7890"),
+                "manual proxy is passed to the updater helper");
         service.setMode(QStringLiteral("download"));
         require(waitUntil([&] { return service.status().state == UpdateState::Downloading; }),
                 "slow payload download begins");

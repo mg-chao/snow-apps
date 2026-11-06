@@ -1097,6 +1097,10 @@
             <translation>請輸入有效的 HTTP 或 HTTPS 伺服器位址，不包含認證資訊、查詢參數或片段</translation>
         </message>
         <message>
+            <source>Enter a valid HTTP proxy address, for example http://127.0.0.1:7890</source>
+            <translation>請輸入有效的 HTTP 代理位址，例如 http://127.0.0.1:7890</translation>
+        </message>
+        <message>
             <source>The clipboard is unavailable</source>
             <translation>剪貼簿無法使用</translation>
         </message>
@@ -1676,6 +1680,10 @@
             <translation>選擇應用程式取得的執行時間</translation>
         </message>
         <message>
+            <source>Choose how network requests connect through a proxy</source>
+            <translation>選擇網路請求連線代理的方式</translation>
+        </message>
+        <message>
             <source>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text</source>
             <translation>選擇文字偵測時的影像縮放方式。限制長邊可提高速度；放大短邊可能辨識出更小的文字</translation>
         </message>
@@ -1834,10 +1842,6 @@
         <message>
             <source>Choose where recording output files are written</source>
             <translation>選擇錄製輸出檔案的儲存位置</translation>
-        </message>
-        <message>
-            <source>Choose whether network requests use the system proxy</source>
-            <translation>選擇網路請求是否使用系統代理</translation>
         </message>
         <message>
             <source>Choose which actions also save an image in the selected image format and save directory</source>
@@ -2652,6 +2656,10 @@
             <translation>H.265（硬體）</translation>
         </message>
         <message>
+            <source>HTTP/HTTPS proxy</source>
+            <translation>HTTP/HTTPS 代理</translation>
+        </message>
+        <message>
             <source>Hardware acceleration</source>
             <translation>硬體加速</translation>
         </message>
@@ -2982,6 +2990,10 @@
         <message>
             <source>Manual</source>
             <translation>手動</translation>
+        </message>
+        <message>
+            <source>Manual configuration</source>
+            <translation>手動設定</translation>
         </message>
         <message>
             <source>Manual save image filename format</source>
@@ -4718,6 +4730,10 @@
         <message>
             <source>Use GPU acceleration when available. Recognition uses the CPU while acceleration is unavailable</source>
             <translation>在可用時使用 GPU 加速。加速不可用時，辨識將使用 CPU</translation>
+        </message>
+        <message>
+            <source>Use an HTTP proxy for HTTP and HTTPS requests, for example http://127.0.0.1:7890</source>
+            <translation>使用 HTTP 代理處理 HTTP 和 HTTPS 請求，例如 http://127.0.0.1:7890</translation>
         </message>
         <message>
             <source>Use global mouse gestures, select individual window elements, and translate selected text</source>

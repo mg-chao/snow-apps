@@ -2900,4 +2900,12 @@ bool NetworkSettings::setProxy(const QString& proxy) const {
     return cache().setValue(QStringLiteral("network/proxy"), proxy);
 }
 
+QString NetworkSettings::httpProxy() const {
+    return cache().value(QStringLiteral("network/http_proxy")).toString();
+}
+
+bool NetworkSettings::setHttpProxy(const QString& address) const {
+    return cache().setValue(QStringLiteral("network/http_proxy"), address);
+}
+
 } // namespace snow_shot::storage

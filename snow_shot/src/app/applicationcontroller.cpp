@@ -50,6 +50,7 @@
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 #endif
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrproxyconfiguration.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
@@ -372,6 +373,7 @@ class ApplicationController::Impl {
             applicationStorage.configuration().value(kOcrTextDetectionProcessingKey).toString());
         ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, &q);
         auto& configuration = applicationStorage.configuration();
+        presentation::bindOcrProxyConfiguration(*ocrRecognition, configuration);
         updates = new update::UpdateService(update::defaultUpdateServiceOptions(), &app);
         updates->setProgressAppearance(
             presentation::styles::ThemeManager::instance().updateProgressAppearance());
@@ -382,8 +384,9 @@ class ApplicationController::Impl {
                     presentation::styles::ThemeManager::instance().updateProgressAppearance());
             });
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
-        updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
-                                u"system");
+        updates->setProxyConfiguration(
+            configuration.value(QStringLiteral("network/proxy")).toString(),
+            configuration.value(QStringLiteral("network/http_proxy")).toString());
         QObject::connect(&presentation::LanguageManager::instance(),
                          &presentation::LanguageManager::languageChanged, updates,
                          [updateService = updates] {
@@ -1675,8 +1678,12 @@ class ApplicationController::Impl {
 #endif
         if (key == u"updates/mode" && updates != nullptr) {
             updates->setMode(value.toString());
-        } else if (key == u"network/proxy" && updates != nullptr) {
-            updates->setSystemProxy(value.toString() == u"system");
+        } else if ((key == u"network/proxy" || key == u"network/http_proxy") &&
+                   updates != nullptr) {
+            const auto& configuration = storage::ApplicationStorage::instance().configuration();
+            updates->setProxyConfiguration(
+                configuration.value(QStringLiteral("network/proxy")).toString(),
+                configuration.value(QStringLiteral("network/http_proxy")).toString());
         } else if (key == kPinBorderColorKey) {
             QColor color = storage::colorFromRgbaString(value.toString());
             if (!color.isValid()) {

@@ -20,6 +20,7 @@ const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
 const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
+const QString httpProxyKey = QStringLiteral("network/http_proxy");
 const QString serverKey = QStringLiteral("api_configuration/server_url");
 } // namespace
 
@@ -47,7 +48,8 @@ TranslationService::TranslationService(SnowShotApiClient& client,
     client.setCustomModels(customAiModelsFromJson(settings.value(customKey)));
     client.setTextTranslationConfigurations(
         textTranslationConfigurationsFromJson(settings.value(textKey)));
-    client.setUseSystemProxy(settings.value(proxyKey).toString() == QStringLiteral("system"));
+    client.setProxyConfiguration(settings.value(proxyKey).toString(),
+                                 settings.value(httpProxyKey).toString());
     connect(&settings, &QObject::destroyed, this, [this] { delete this; });
     connect(&settings, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
@@ -61,9 +63,9 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                 } else if (key == textKey) {
                     m_client->setTextTranslationConfigurations(
                         textTranslationConfigurationsFromJson(m_settings->value(textKey)));
-                } else if (key == proxyKey) {
-                    m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
-                                                QStringLiteral("system"));
+                } else if (key == proxyKey || key == httpProxyKey) {
+                    m_client->setProxyConfiguration(m_settings->value(proxyKey).toString(),
+                                                    m_settings->value(httpProxyKey).toString());
                 } else if (!m_saving &&
                            (key == sourceKey || key == targetKey || key == secondaryTargetKey ||
                             key == confidenceThresholdKey || key == modelKey)) {
