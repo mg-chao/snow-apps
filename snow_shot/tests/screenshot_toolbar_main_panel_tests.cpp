@@ -617,9 +617,10 @@ void actionButtonsRecoverAfterLoading() {
             QWidget owner;
             auto options = snow_shot::presentation::screenshotDrawingToolbarOptions();
             options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::PinAction;
+            // Stacks are stored top to bottom; the bottom action is the initial trigger.
             options.actionToolsLayout = ScreenshotToolbarLayout{
                 grouped
-                    ? QVector<QStringList>{{QStringLiteral("copy"), QStringLiteral("save-as-file")}}
+                    ? QVector<QStringList>{{QStringLiteral("save-as-file"), QStringLiteral("copy")}}
                     : QVector<QStringList>{{QStringLiteral("copy")},
                                            {QStringLiteral("save-as-file")}},
                 {}};
