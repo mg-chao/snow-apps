@@ -2122,8 +2122,9 @@ void AdInputNumber::layoutChildren(const ResolvedVisualState& state) {
 
   const bool hasTrailingAffixWidgets = (suffixIconLabel_ && suffixIconLabel_->isVisible()) ||
                                        (suffixLabel_ && suffixLabel_->isVisible());
-  Q_UNUSED(hasTrailingAffixWidgets)
-  int right = std::max(x, editorRight);
+  // Match Ant Design's suffix end margin while the step actions are visible.
+  const int suffixEndMargin = hasTrailingAffixWidgets ? state.visibleHandleWidth : 0;
+  int right = std::max(x, editorRight - suffixEndMargin);
   bool hasTrailingAffix = false;
   const auto layoutRight = [&](QWidget* widget, const QSize& size) {
     if (!widget || !widget->isVisible() || !size.isValid() || size.width() <= 0 ||
