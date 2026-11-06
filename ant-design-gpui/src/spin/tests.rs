@@ -923,3 +923,76 @@ fn automatic_progress_has_one_wakeup_owner_and_keeps_coarse_updates_for_static_c
         "static or reduced-motion automatic indicators still receive coarse progress updates"
     );
 }
+
+#[test]
+fn native_hidden_fullscreen_spin_releases_factory_payloads_and_preserves_loading() {
+    use std::sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let mut f = Fixture::new(false, |view| view.fullscreen = true);
+    let captures = Arc::new(Mutex::new(Vec::<Weak<()>>::new()));
+    let captured = captures.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let called = calls.clone();
+    f.patch(|patch| {
+        patch.spin.indicator = Some(SpinIndicator::from_content(move |_, window, cx| {
+            called.fetch_add(1, Ordering::Relaxed);
+            let payload =
+                window.use_keyed_state("fullscreen-spin-payload", cx, |_, _| Arc::new(()));
+            captured
+                .lock()
+                .unwrap()
+                .push(Arc::downgrade(payload.read(cx)));
+            div().size(px(20.))
+        }))
+    });
+    assert!(
+        captures
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|weak| weak.strong_count() > 0)
+    );
+    let before = calls.load(Ordering::Relaxed);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert_eq!(calls.load(Ordering::Relaxed), before);
+    assert!(
+        captures
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|weak| weak.strong_count() == 0)
+    );
+    assert!(f.view.read_with(&f.cx, |view, _| view.spinning));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(calls.load(Ordering::Relaxed) > before);
+    assert!(
+        captures
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|weak| weak.strong_count() > 0)
+    );
+}
+
+#[test]
+fn native_hidden_fullscreen_spin_keeps_delay_intent_without_a_hidden_timer() {
+    let mut f = Fixture::new(false, |view| {
+        view.fullscreen = true;
+        view.delay = Duration::from_millis(500);
+    });
+    assert!(!f.context().spinning);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.executor().advance_clock(Duration::from_millis(600));
+    f.cx.run_until_parked();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(
+        f.context().spinning,
+        "elapsed logical delay survives presentation suspension"
+    );
+}

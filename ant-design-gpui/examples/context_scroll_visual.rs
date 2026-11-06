@@ -5,6 +5,10 @@
 
 use std::{path::PathBuf, time::Duration};
 
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
+
 use ant_design_gpui::{
     Button, ConfigScope, ContextMenu, ContextMenuState, Direction, MenuEntry, MenuItem, MenuItems,
     ScrollArea, ScrollAreaState, ScrollAxis, UiRoot, icons::IconName, theme::AlgorithmChain,
@@ -137,11 +141,14 @@ fn main() {
                     size(px(880.), px(560.)),
                     cx,
                 ))),
-                show: false,
+                show: cfg!(not(target_os = "windows")),
                 focus: false,
                 ..Default::default()
             },
             |window, cx| {
+                let native_title = format!("Context menu visual fixture {}", std::process::id());
+                window.set_window_title(&native_title);
+                #[cfg(not(target_os = "windows"))]
                 window.resize(size(px(880.), px(560.)));
                 let menu_items = items([
                     MenuEntry::group("Document"),
@@ -201,6 +208,8 @@ fn main() {
                         cx.background_executor()
                             .timer(Duration::from_millis(150))
                             .await;
+                        #[cfg(target_os = "windows")]
+                        capture_windows::resize(&native_title, (880, 560), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                         for (name, algorithm) in [
                             ("light", AlgorithmChain::default()),
                             ("dark", AlgorithmChain::dark()),

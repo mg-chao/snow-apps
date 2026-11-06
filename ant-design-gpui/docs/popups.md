@@ -52,12 +52,16 @@ for programmatic requests, explicit realignment, or inspection of the most recen
 layout. Handles do not keep unmounted controls alive. `PopupSession` identifies
 both a mounted instance and its current opening, for guarding external async work.
 
-Content factories run only while presented. A hidden popup retains its last
-factory and captured entities; `.fresh(true)` updates that description while
-hidden. `.destroy_on_hidden(true)` releases popup-owned content on closure,
-including when `fresh` is also enabled. Keep meaningful editable state in owned
-GPUI entities captured by the factory. Frame-local elements and controls' internal
-keyed state are not retained across a hidden subtree.
+Content factories run only while presented or completing an existing exit.
+Hidden popup controllers retain no content factory or subtree. Reopening obtains
+current content from the owning render, including inside cached parent views.
+Popup-only controllers and resources are released after the surface is fully
+hidden; meaningful editable state belongs in application models referenced weakly
+by factories. Frame-local elements and controls' internal keyed state are rebuilt.
+
+The former `fresh` and `destroy_on_hidden` APIs have been removed. Lazy creation
+and final-hide destruction are unconditional. See [popup ownership and migration](popup-lifetime.md)
+for resource leases, retained state, and bounded caches.
 
 ## Confirmation
 

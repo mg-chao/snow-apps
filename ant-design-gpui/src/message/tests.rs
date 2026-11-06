@@ -760,3 +760,81 @@ fn eviction_reports_logical_dismissal_before_deferred_close_callbacks() {
         MessageCloseReason::Evicted
     );
 }
+
+#[test]
+fn final_exit_releases_burst_storage_and_deadline_timer() {
+    let mut f = Fixture::new(false);
+    f.in_window(|messages, w, cx| {
+        for i in 0..64 {
+            messages.open(
+                MessageOptions::new(format!("Notice {i}")).duration(Duration::ZERO),
+                w,
+                cx,
+            );
+        }
+    });
+    f.draw();
+    f.in_window(|messages, w, cx| messages.destroy_all(w, cx));
+    f.draw();
+    f.draw();
+    let resources =
+        f.in_window(|messages, _, cx| messages.state.upgrade().unwrap().read(cx).idle_resources());
+    assert_eq!(resources, (0, 0, false));
+}
+
+#[test]
+fn native_hidden_notices_release_custom_presentation_and_rebuild_without_dismissal() {
+    let mut f = Fixture::new(false);
+    let captures = Rc::new(std::cell::RefCell::new(Vec::<std::rc::Weak<()>>::new()));
+    let captured = captures.clone();
+    let calls = Rc::new(Cell::new(0));
+    let called = calls.clone();
+    let handle = f.open(
+        MessageOptions::content(move |_, window, cx| {
+            called.set(called.get() + 1);
+            let payload = window.use_keyed_state("hidden-notice-payload", cx, |_, _| Rc::new(()));
+            captured.borrow_mut().push(Rc::downgrade(payload.read(cx)));
+            div().w(px(100.)).h(px(20.))
+        })
+        .duration(Duration::ZERO),
+    );
+    assert!(captures.borrow().iter().any(|weak| weak.strong_count() > 0));
+    let before = calls.get();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert_eq!(
+        calls.get(),
+        before,
+        "the cleanup draw must not invoke content factories"
+    );
+    assert!(
+        captures
+            .borrow()
+            .iter()
+            .all(|weak| weak.strong_count() == 0)
+    );
+    assert!(!handle.is_dismissed());
+    assert_eq!(f.count(), 1);
+    assert!(f.layouts().is_empty());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(!handle.is_dismissed());
+    assert!(calls.get() > before);
+    assert!(captures.borrow().iter().any(|weak| weak.strong_count() > 0));
+}
+
+#[test]
+fn native_hidden_notices_resume_hover_paused_dismissal_deadlines() {
+    let mut f = Fixture::new(false);
+    let handle = f.open(MessageOptions::new("Paused").duration(Duration::from_secs(1)));
+    f.hover(&handle, true);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.executor().advance_clock(Duration::from_millis(1100));
+    f.cx.run_until_parked();
+    assert!(
+        handle.is_dismissed(),
+        "an invisible hover cannot pause application dismissal"
+    );
+    assert_eq!(f.count(), 0);
+}

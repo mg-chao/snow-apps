@@ -14,10 +14,12 @@ struct Consumer {
     open: bool,
     calls: Rc<Cell<usize>>,
     scope: ConfigScope,
+    hidden: Rc<Cell<usize>>,
 }
 impl Render for Consumer {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let calls = self.calls.clone();
+        let hidden = self.hidden.clone();
         div().p(px(20.)).child(
             Popup::new("menu-exit-test")
                 .scope(self.scope.clone())
@@ -28,6 +30,7 @@ impl Render for Consumer {
                 .placement(PopupPlacement::BottomLeft)
                 .motion_duration(Duration::from_millis(200))
                 .exit_duration(Duration::from_millis(200))
+                .on_hidden(move |_| hidden.set(hidden.get() + 1))
                 .child(Button::new("exit-trigger").label("Open"))
                 .content(move |_, _, _| {
                     let calls = calls.clone();
@@ -62,6 +65,7 @@ impl Fixture {
                 open: false,
                 calls: calls.clone(),
                 scope: scope.clone(),
+                hidden: Rc::default(),
             });
             host = Some(consumer.clone());
             UiRoot::new(scope, consumer, window, cx)
@@ -155,4 +159,33 @@ fn popup_menu_exit_reopening_continues_from_the_painted_opacity() {
     f.advance(250);
     assert_eq!(f.opacity(), 1.);
     assert!(!f.exiting());
+    assert_eq!(
+        f.host.read_with(&f.cx, |state, _| state.hidden.get()),
+        0,
+        "the canceled exit must not release a reopened presentation"
+    );
+}
+
+#[test]
+fn popup_exit_deadline_releases_controller_content_without_a_future_frame() {
+    let mut f = Fixture::new();
+    f.open(true);
+    f.advance(250);
+    f.open(false);
+    assert!(f.exiting());
+    f.cx.executor().advance_clock(Duration::from_millis(250));
+    f.cx.run_until_parked();
+    assert!(!f.exiting());
+    assert_eq!(f.host.read_with(&f.cx, |state, _| state.hidden.get()), 1);
+    let handle = f.handle.clone();
+    assert!(f.cx.update(|_, cx| {
+        handle
+            .state()
+            .unwrap()
+            .upgrade()
+            .unwrap()
+            .read(cx)
+            .content
+            .is_none()
+    }));
 }

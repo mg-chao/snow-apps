@@ -434,6 +434,26 @@ fn menu_native_unmount_cancels_delayed_hover_work() {
 }
 
 #[test]
+fn menu_native_hidden_window_cancels_hover_before_the_first_opening() {
+    let mut f = Fixture::new(MenuMode::Vertical);
+    let target = f.bounds("branch").center();
+    f.cx.simulate_event(gpui::MouseMoveEvent {
+        position: target,
+        pressed_button: None,
+        modifiers: Modifiers::none(),
+    });
+    f.draw();
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.executor().advance_clock(Duration::from_millis(150));
+    f.cx.run_until_parked();
+    assert!(
+        f.open().is_empty(),
+        "a retired hover intent cannot open a hidden window's menu"
+    );
+}
+
+#[test]
 fn menu_native_hover_delay_bridge_and_click_trigger() {
     let mut f = Fixture::new(MenuMode::Vertical);
     let target = f.bounds("branch").center();
@@ -559,17 +579,26 @@ fn menu_native_bounded_root_materializes_visible_rows_and_reveals_end() {
 }
 
 #[test]
-fn menu_native_force_render_materializes_closed_content_only_when_requested() {
+fn menu_native_closed_submenu_is_lazy_and_releases_resources_after_exit() {
     let mut f = Fixture::new(MenuMode::Vertical);
     let calls = Rc::new(Cell::new(0));
     let counter = calls.clone();
+    let generated = Rc::new(RefCell::new(Vec::new()));
+    let leases = generated.clone();
     let items = MenuItems::new([SubMenu::new(
         "branch",
         "Branch",
         MenuItems::new([MenuItem::new("prepared", "Prepared")
             .content(move |_, _, _| {
                 counter.set(counter.get() + 1);
-                div().child("Prepared")
+                let lease = Rc::new(());
+                leases.borrow_mut().push(Rc::downgrade(&lease));
+                div()
+                    .id("prepared-content")
+                    .child("Prepared")
+                    .on_click(move |_, _, _| {
+                        let _ = &lease;
+                    })
             })
             .into()])
         .unwrap(),
@@ -577,28 +606,140 @@ fn menu_native_force_render_materializes_closed_content_only_when_requested() {
     .into()])
     .unwrap();
     f.state.update(&mut f.cx, |s, cx| s.set_items(items, cx));
-    f.draw();
-    assert_eq!(calls.get(), 0);
     let popup_calls = Rc::new(Cell::new(0));
     f.edit(|h| {
-        h.options.force_submenu_render = true;
         h.popup_calls = Some(popup_calls.clone());
     });
-    assert!(calls.get() > 0);
-    assert!(
-        popup_calls.get() > 0,
-        "eager preparation also calls the custom popup wrapper"
-    );
-    assert!(f.open().is_empty());
-    assert!(f.cx.debug_bounds("prepared").is_none());
-    f.edit(|h| h.options.mode = MenuMode::Inline);
+    let mount = f.state.read_with(&f.cx, |s, _| {
+        s.test_mount.as_ref().unwrap().upgrade().unwrap()
+    });
+    assert_eq!(calls.get(), 0);
+    assert_eq!(popup_calls.get(), 0);
     assert_eq!(
-        f.bounds("menu-frame").size.height,
-        px(48.),
-        "eager hidden inline content occupies no extra height"
+        mount.read_with(&f.cx, |mount, _| mount.popup_cache_counts()),
+        (0, 0, 0)
     );
-    f.click("branch");
-    assert_eq!(f.bounds("menu-frame").size.height, px(96.));
+    f.motion(true);
+    f.focus("branch");
+    f.key("right");
+    f.advance(300);
+    assert!(calls.get() > 0);
+    assert!(popup_calls.get() > 0);
+    assert!(
+        generated
+            .borrow()
+            .iter()
+            .any(|lease| lease.upgrade().is_some())
+    );
+    assert_eq!(
+        mount
+            .read_with(&f.cx, |mount, _| mount.popup_cache_counts())
+            .0,
+        1
+    );
+    f.key("escape");
+    assert!(f.open().is_empty());
+    assert_eq!(
+        mount
+            .read_with(&f.cx, |mount, _| mount.popup_cache_counts())
+            .0,
+        1,
+        "exit retains the rendering resources until its final frame"
+    );
+    f.advance(300);
+    f.draw();
+    assert_eq!(
+        mount.read_with(&f.cx, |mount, _| mount.popup_cache_counts()),
+        (0, 0, 1)
+    );
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| !state.row_focus.contains_key("prepared"))
+    );
+    assert!(
+        generated
+            .borrow()
+            .iter()
+            .all(|lease| lease.upgrade().is_none()),
+        "the hidden subtree cannot retain its generated event handlers"
+    );
+    f.key("right");
+    assert!(f.cx.debug_bounds("prepared").is_some());
+}
+
+#[test]
+fn menu_native_reopening_restores_a_virtual_viewport_without_retaining_the_list() {
+    let mut f = Fixture::new(MenuMode::Vertical);
+    let items = MenuItems::new([SubMenu::new(
+        "branch",
+        "Branch",
+        MenuItems::new(
+            (0..1_000)
+                .map(|index| MenuItem::new(format!("row-{index}"), format!("Row {index}")).into()),
+        )
+        .unwrap(),
+    )
+    .into()])
+    .unwrap();
+    f.state.update(&mut f.cx, |state, cx| {
+        state.set_items(items, cx);
+        state.set_open_keys(["branch"], cx);
+    });
+    f.draw();
+    f.focus("row-0");
+    f.key("end");
+    assert!(f.cx.debug_bounds("row-999").is_some());
+    f.state.update(&mut f.cx, |state, cx| {
+        state.set_open_keys(Vec::<MenuKey>::new(), cx)
+    });
+    f.draw();
+    f.draw();
+    let mount = f.state.read_with(&f.cx, |state, _| {
+        state.test_mount.as_ref().unwrap().upgrade().unwrap()
+    });
+    assert_eq!(
+        mount.read_with(&f.cx, |mount, _| mount.popup_cache_counts()),
+        (0, 0, 1)
+    );
+    assert_eq!(
+        mount.read_with(&f.cx, |mount, _| mount.popup_list_count()),
+        0
+    );
+    f.state
+        .update(&mut f.cx, |state, cx| state.set_open_keys(["branch"], cx));
+    f.draw();
+    f.draw();
+    assert_eq!(
+        mount.read_with(&f.cx, |mount, _| mount.popup_list_count()),
+        1
+    );
+    assert!(
+        f.cx.debug_bounds("row-999").is_some(),
+        "recreated list restores the scalar viewport"
+    );
+    assert!(f.cx.debug_bounds("row-0").is_none());
+}
+
+#[test]
+fn menu_native_window_restore_recreates_the_active_row_focus() {
+    let mut f = Fixture::new(MenuMode::Vertical);
+    f.focus("branch");
+    f.key("right");
+    assert_eq!(f.active().as_deref(), Some("child"));
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        !f.state
+            .read_with(&f.cx, |state, _| state.row_focus.contains_key("child"))
+    );
+    assert_eq!(f.active().as_deref(), Some("child"));
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    let state = f.state.clone();
+    assert!(f.cx.update(|window, cx| state.read(cx).row_focus["child"].is_focused(window)));
+    f.key("down");
+    assert_eq!(f.active().as_deref(), Some("nested"));
 }
 
 #[test]

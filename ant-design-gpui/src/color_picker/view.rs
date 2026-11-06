@@ -111,7 +111,6 @@ pub struct ColorPicker {
     placement: PopupPlacement,
     arrow: Option<PopupArrow>,
     auto_adjust: bool,
-    destroy: bool,
     child: Option<AnyElement>,
     text_render: Option<TextRender>,
     panel_render: Option<PanelRender>,
@@ -229,7 +228,6 @@ impl ColorPicker {
             placement: PopupPlacement::BottomLeft,
             arrow: None,
             auto_adjust: true,
-            destroy: false,
             child: None,
             text_render: None,
             panel_render: None,
@@ -323,10 +321,6 @@ impl ColorPicker {
     }
     pub fn auto_adjust_overflow(mut self, v: bool) -> Self {
         self.auto_adjust = v;
-        self
-    }
-    pub fn destroy_on_hidden(mut self, v: bool) -> Self {
-        self.destroy = v;
         self
     }
     pub fn child(mut self, v: impl IntoElement) -> Self {
@@ -534,6 +528,7 @@ impl ColorPicker {
             });
             s.retain_controls(&groups, window, cx);
             if sync {
+                s.discard_panel_drafts();
                 s.sync_editors(None, window, cx);
             }
             if s.disabled {
@@ -719,7 +714,7 @@ impl Mount {
             state: state.downgrade(),
             _observer: cx.observe(state, |_, _, cx| cx.notify()),
             _release: cx.on_release(|this: &mut Self, cx| {
-                let _ = this.state.update(cx, |state, _| state.release_mount());
+                let _ = this.state.update(cx, |state, cx| state.release_mount(cx));
             }),
             motion: Default::default(),
             epoch: cx.background_executor().now(),
@@ -1209,9 +1204,9 @@ impl RenderOnce for ColorPicker {
         let popup_handle = self.state.read(cx).popup.clone();
         let render = self.panel_render;
         let content_parts = parts.clone();
-        let initial_focus = self
-            .state
-            .update(cx, |s, cx| s.control_focus(Control::Palette, window, cx));
+        let presented = self.state.downgrade();
+        let hidden = presented.clone();
+        let initial_focus = presented.clone();
         let popup_padding = config
             .theme
             .component::<crate::popover::PopoverTheme>()
@@ -1233,14 +1228,22 @@ impl RenderOnce for ColorPicker {
             )
             .scope(parts.scope)
             .handle(&popup_handle)
-            .initial_focus(&initial_focus)
+            .on_presented(move |window, cx| {
+                let _ = presented.update(cx, |s, cx| {
+                    s.ensure_panel(window, cx);
+                    s.control_focus(Control::Palette, window, cx);
+                });
+            })
+            .initial_focus_with(move |cx| initial_focus.upgrade()?.read(cx).initial_panel_focus(cx))
+            .on_hidden(move |cx| {
+                let _ = hidden.update(cx, |s, cx| s.release_panel(cx));
+            })
             .open(open)
             .disabled(disabled)
             .triggers(self.trigger)
             .placement(self.placement)
             .arrow(self.arrow.unwrap_or(config.color_picker.arrow))
             .auto_adjust_overflow(self.auto_adjust)
-            .destroy_on_hidden(self.destroy)
             .accessibility_role(Role::Dialog)
             .accessibility_label(config.locale.color_picker.panel_label.clone())
             .surface_style(surface.style().clone())
@@ -1426,6 +1429,9 @@ impl Styled for ColorPickerPanel {
 impl RenderOnce for ColorPickerPanel {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let parts = self.picker.configure(window, cx);
+        self.picker
+            .state
+            .update(cx, |s, cx| s.ensure_panel(window, cx));
         let element = if let Some(render) = self.picker.panel_render {
             render(&parts, window, cx)
         } else {
@@ -2117,7 +2123,7 @@ impl ColorPickerPanelParts {
             )
             .width;
         let format_width = format_text_width + px((g.margin_xxs + g.font_size_icon) as f32);
-        let selector = Select::new("format", &state.format_select)
+        let selector = Select::new("format", &state.panel().format_select)
             .scope(self.scope.clone())
             .size(Size::Small)
             .variant(Variant::Borderless)
@@ -2184,7 +2190,7 @@ impl ColorPickerPanelParts {
             inputs = inputs.flex_row_reverse();
         }
         if format == ColorPickerFormat::Hex {
-            let mut hex = Input::new("hex", &state.hex)
+            let mut hex = Input::new("hex", &state.panel().hex)
                 .scope(self.scope.clone())
                 .size(Size::Small)
                 .disabled(disabled)
@@ -2214,23 +2220,24 @@ impl ColorPickerPanelParts {
                     ][index]
                         .clone()
                 };
-                let mut channel = InputNumber::new(("channel", index), &state.channels[index], cx)
-                    .with_tokens(number_tokens.clone())
-                    .scope(self.scope.clone())
-                    .size(Size::Small)
-                    .disabled(disabled)
-                    .accessibility_label(label)
-                    .text_size(px(g.font_size_sm as f32))
-                    .h(px(editor_height))
-                    .flex_1()
-                    .min_w(px(0.));
+                let mut channel =
+                    InputNumber::new(("channel", index), &state.panel().channels[index], cx)
+                        .with_tokens(number_tokens.clone())
+                        .scope(self.scope.clone())
+                        .size(Size::Small)
+                        .disabled(disabled)
+                        .accessibility_label(label)
+                        .text_size(px(g.font_size_sm as f32))
+                        .h(px(editor_height))
+                        .flex_1()
+                        .min_w(px(0.));
                 channel.style().refine(&self.styles.input);
                 inputs = inputs.child(self.editor_measure(index, channel));
             }
         }
         row = row.child(inputs);
         if !state.disabled_alpha {
-            let mut alpha = InputNumber::new("alpha-editor", &state.channels[3], cx)
+            let mut alpha = InputNumber::new("alpha-editor", &state.panel().channels[3], cx)
                 .with_tokens(number_tokens)
                 .scope(self.scope.clone())
                 .size(Size::Small)

@@ -10,8 +10,8 @@ use gpui::{
     ImageSource, ImgResourceLoader, RenderImage, Resource, Task, WeakEntity, Window,
 };
 use std::{
-    cell::{Cell, RefCell},
-    collections::{HashMap, HashSet},
+    cell::RefCell,
+    collections::HashMap,
     future::Future,
     rc::{Rc, Weak},
     sync::{
@@ -20,8 +20,10 @@ use std::{
     },
 };
 
+#[cfg(test)]
+use std::cell::Cell;
+
 const MAX_IDLE_ENTRIES: usize = 128;
-const MAX_IDLE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum SourceKey {
@@ -90,25 +92,22 @@ pub(super) fn resolve(
 }
 
 enum PreparationState<T> {
-    Pending(HashSet<EntityId>),
+    Pending(HashMap<EntityId, usize>),
     Ready(Arc<T>),
 }
 
 /// A cancellable background preparation. Results stay attached to the original
 /// cache key, and completion only invalidates views which requested that key.
 pub(crate) struct Preparation<T> {
+    id: u64,
     state: Rc<RefCell<PreparationState<T>>>,
-    completion: Rc<RefCell<Option<Completion>>>,
     _task: Task<()>,
 }
-type Completion = Box<dyn FnOnce(&mut App)>;
 
 impl<T: Send + Sync + 'static> Preparation<T> {
     pub(crate) fn new(future: impl Future<Output = T> + Send + 'static, cx: &App) -> Self {
-        let state = Rc::new(RefCell::new(PreparationState::Pending(HashSet::new())));
+        let state = Rc::new(RefCell::new(PreparationState::Pending(HashMap::new())));
         let weak = Rc::downgrade(&state);
-        let completion = Rc::new(RefCell::new(None::<Completion>));
-        let completed = completion.clone();
         let task = cx.background_executor().spawn(future);
         let task = cx.spawn(async move |cx| {
             let result = Arc::new(task.await);
@@ -116,26 +115,20 @@ impl<T: Send + Sync + 'static> Preparation<T> {
             let old = state.replace(PreparationState::Ready(result));
             if let PreparationState::Pending(views) = old {
                 cx.update(|cx| {
-                    for view in views {
+                    for view in views.into_keys() {
                         cx.notify(view);
-                    }
-                    if let Some(completion) = completed.borrow_mut().take() {
-                        completion(cx);
                     }
                 });
             }
         });
         Self {
+            id: crate::behavior::resources::next_resource_id(),
             state,
-            completion,
             _task: task,
         }
     }
 
-    fn on_complete(&self, callback: impl FnOnce(&mut App) + 'static) {
-        *self.completion.borrow_mut() = Some(Box::new(callback));
-    }
-
+    #[cfg(test)]
     pub(crate) fn get(&self) -> Option<Arc<T>> {
         match &*self.state.borrow() {
             PreparationState::Pending(_) => None,
@@ -143,13 +136,46 @@ impl<T: Send + Sync + 'static> Preparation<T> {
         }
     }
 
-    pub(crate) fn use_value(&self, window: &Window) -> Option<Arc<T>> {
-        match &mut *self.state.borrow_mut() {
-            PreparationState::Pending(views) => {
-                views.insert(window.current_view());
-                None
+    pub(crate) fn use_value(&self, window: &mut Window, cx: &mut App) -> Option<Arc<T>> {
+        if let PreparationState::Ready(value) = &*self.state.borrow() {
+            return Some(value.clone());
+        }
+        let view = window.current_view();
+        window.use_keyed_state(("ant-image-preparation-waiter", self.id), cx, |_, _| {
+            if let PreparationState::Pending(views) = &mut *self.state.borrow_mut() {
+                *views.entry(view).or_default() += 1;
             }
-            PreparationState::Ready(value) => Some(value.clone()),
+            PreparationWaiter {
+                state: Rc::downgrade(&self.state),
+                view,
+            }
+        });
+        None
+    }
+}
+
+/// Waiters follow scene ownership independently of the shared preparation. A
+/// hidden/departed consumer must not accumulate subscriptions while another
+/// scene still waits for the same source.
+struct PreparationWaiter<T> {
+    state: Weak<RefCell<PreparationState<T>>>,
+    view: EntityId,
+}
+impl<T> Drop for PreparationWaiter<T> {
+    fn drop(&mut self) {
+        if let Some(state) = self.state.upgrade()
+            && let PreparationState::Pending(views) = &mut *state.borrow_mut()
+            && let Some(count) = views.get_mut(&self.view)
+        {
+            *count -= 1;
+            if *count == 0 {
+                views.remove(&self.view);
+                if views.is_empty() {
+                    *views = HashMap::new();
+                } else if views.capacity() > views.len().max(16) * 4 {
+                    views.shrink_to(views.len().max(16));
+                }
+            }
         }
     }
 }
@@ -158,9 +184,13 @@ type Decoded = Result<Arc<RenderImage>, ImageCacheError>;
 struct Record {
     id: u64,
     load: Preparation<Decoded>,
+    #[cfg(test)]
     bytes: Cell<Option<usize>>,
+    key: SourceKey,
+    owner: WeakEntity<DecodedImageCache>,
 }
 impl Record {
+    #[cfg(test)]
     fn bytes(&self) -> usize {
         if let Some(bytes) = self.bytes.get() {
             return bytes;
@@ -176,29 +206,20 @@ impl Record {
         self.bytes.set(Some(bytes));
         bytes
     }
-    fn image(&self) -> Option<Arc<RenderImage>> {
-        self.load
-            .get()
-            .and_then(|value| value.as_ref().as_ref().ok().cloned())
-    }
 }
 struct Entry {
-    record: Rc<Record>,
+    record: Weak<Record>,
     used: u64,
-    bytes: usize,
 }
 
-/// Decoded images retained by active views are leased; only idle retention is
-/// limited. This prevents a warm image from restarting its load under pressure.
+/// Weak, bounded lookup metadata. Pending work and decoded pixels belong only
+/// to scenes using the source; there is no idle decoded-image payload cache.
 #[derive(Default)]
 pub(super) struct DecodedImageCache {
     owner: Option<WeakEntity<Self>>,
-    entries: HashMap<SourceKey, Entry>,
-    resident: HashMap<SourceKey, Weak<Record>>,
+    entries: HashMap<u64, Entry>,
     tick: u64,
-    bytes: usize,
 }
-
 struct SharedDecodedCache(Entity<DecodedImageCache>);
 impl Global for SharedDecodedCache {}
 
@@ -211,39 +232,34 @@ pub(super) fn shared_cache(cx: &mut App) -> Entity<DecodedImageCache> {
 }
 
 pub(super) fn new_cache(cx: &mut App) -> Entity<DecodedImageCache> {
-    let entity = cx.new(|cx| DecodedImageCache {
+    cx.new(|cx| DecodedImageCache {
         owner: Some(cx.weak_entity()),
         ..Default::default()
-    });
-    cx.observe_release(&entity, |cache, cx| {
-        for (_, entry) in cache.entries.drain() {
-            retire(&entry.record, cx);
-        }
     })
-    .detach();
-    entity
+}
+
+fn fingerprint(key: &SourceKey) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hash);
+    hash.finish()
 }
 
 fn retire(record: &Rc<Record>, cx: &mut App) {
-    if Rc::strong_count(record) == 1
-        && let Some(image) = record.image()
-    {
-        cx.defer(move |cx| cx.drop_image(image, None));
-    }
-}
-
-struct Lease(Rc<Record>);
-fn lease(record: &Rc<Record>, window: &mut Window, cx: &mut App) {
-    window.with_id(
-        ("ant-image-decoded-view", window.current_view()),
-        |window| {
-            window.use_keyed_state(("ant-image-decoded", record.id), cx, |_, cx| {
-                cx.on_release(|lease: &mut Lease, cx| retire(&lease.0, cx))
-                    .detach();
-                Lease(record.clone())
-            });
-        },
-    );
+    let hash = fingerprint(&record.key);
+    let id = record.id;
+    let _ = record.owner.update(cx, |cache, _| {
+        if cache
+            .entries
+            .get(&hash)
+            .is_some_and(|entry| entry.record.upgrade().is_none_or(|record| record.id == id))
+        {
+            cache.entries.remove(&hash);
+            if cache.entries.is_empty() {
+                cache.entries = HashMap::new();
+            }
+        }
+    });
 }
 
 impl DecodedImageCache {
@@ -254,81 +270,71 @@ impl DecodedImageCache {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Decoded> {
-        self.tick = self.tick.wrapping_add(1);
-        let record = if let Some(entry) = self.entries.get_mut(&key) {
-            entry.used = self.tick;
-            entry.record.clone()
-        } else {
-            static NEXT: AtomicU64 = AtomicU64::new(1);
-            let record = self
-                .resident
-                .get(&key)
-                .and_then(Weak::upgrade)
-                .unwrap_or_else(|| {
-                    let load = create(cx);
-                    if let Some(owner) = self.owner.clone() {
-                        load.on_complete(move |cx| {
-                            // Retiring the just-completed entry may drop its
-                            // task; do so after that task has returned.
-                            cx.defer(move |cx| {
-                                let _ = owner.update(cx, |cache, cx| {
-                                    cache.bytes = 0;
-                                    for entry in cache.entries.values_mut() {
-                                        entry.bytes = entry.record.bytes();
-                                        cache.bytes = cache.bytes.saturating_add(entry.bytes);
-                                    }
-                                    cache.trim(cx);
-                                });
-                            });
-                        });
-                    }
-                    Rc::new(Record {
-                        id: NEXT.fetch_add(1, Ordering::Relaxed),
-                        load,
-                        bytes: Cell::new(None),
-                    })
-                });
-            self.resident.retain(|_, value| value.strong_count() > 0);
-            self.resident.insert(key.clone(), Rc::downgrade(&record));
-            self.entries.insert(
-                key.clone(),
-                Entry {
-                    record: record.clone(),
-                    used: self.tick,
-                    bytes: 0,
-                },
-            );
-            record
-        };
-        lease(&record, window, cx);
-        let result = record
+        let owner = self
+            .owner
+            .as_ref()
+            .expect("decoded registry owner")
+            .entity_id();
+        let record = window.with_id(("ant-image-decoded-owner", owner), |window| {
+            crate::behavior::resources::scene_resource(
+                ("ant-image-decoded-source", fingerprint(&key)),
+                |record: &Rc<Record>| record.key == key,
+                |_, cx| self.record(key.clone(), create, cx),
+                |record| Rc::strong_count(record) == 1,
+                retire,
+                window,
+                cx,
+            )
+        });
+        record
             .load
-            .use_value(window)
-            .map(|value| value.as_ref().clone());
-        if let Some(entry) = self.entries.get_mut(&key) {
-            let bytes = record.bytes();
-            self.bytes = self.bytes.saturating_add(bytes.saturating_sub(entry.bytes));
-            entry.bytes = bytes;
-        }
-        self.trim(cx);
-        result
+            .use_value(window, cx)
+            .map(|value| value.as_ref().clone())
     }
 
-    fn trim(&mut self, cx: &mut App) {
-        while self.entries.len() > MAX_IDLE_ENTRIES || self.bytes > MAX_IDLE_BYTES {
-            let Some(key) = self
+    fn record(
+        &mut self,
+        key: SourceKey,
+        create: impl FnOnce(&mut App) -> Preparation<Decoded>,
+        cx: &mut App,
+    ) -> Rc<Record> {
+        self.tick = self.tick.wrapping_add(1);
+        let hash = fingerprint(&key);
+        let record = self
+            .entries
+            .get(&hash)
+            .and_then(|entry| entry.record.upgrade())
+            .filter(|record| record.key == key)
+            .unwrap_or_else(|| {
+                static NEXT: AtomicU64 = AtomicU64::new(1);
+                Rc::new(Record {
+                    id: NEXT.fetch_add(1, Ordering::Relaxed),
+                    load: create(cx),
+                    #[cfg(test)]
+                    bytes: Cell::new(None),
+                    key,
+                    owner: self.owner.clone().expect("decoded registry owner"),
+                })
+            });
+        self.entries
+            .retain(|_, entry| entry.record.strong_count() > 0);
+        self.entries.insert(
+            hash,
+            Entry {
+                record: Rc::downgrade(&record),
+                used: self.tick,
+            },
+        );
+        while self.entries.len() > MAX_IDLE_ENTRIES {
+            let key = *self
                 .entries
                 .iter()
                 .min_by_key(|(_, entry)| entry.used)
-                .map(|(key, _)| key.clone())
-            else {
-                break;
-            };
-            if let Some(entry) = self.entries.remove(&key) {
-                self.bytes = self.bytes.saturating_sub(entry.bytes);
-                retire(&entry.record, cx);
-            }
+                .unwrap()
+                .0;
+            self.entries.remove(&key);
         }
+        record
     }
 
     fn load_encoded(
@@ -551,7 +557,7 @@ mod tests {
     fn completed_decodes_account_for_bytes_without_reading_the_source_again() {
         struct Consumer {
             cache: Entity<DecodedImageCache>,
-            started: bool,
+            shown: bool,
         }
         impl gpui::Render for Consumer {
             fn render(
@@ -559,8 +565,7 @@ mod tests {
                 window: &mut Window,
                 cx: &mut gpui::Context<Self>,
             ) -> impl gpui::IntoElement {
-                if !self.started {
-                    self.started = true;
+                if self.shown {
                     self.cache.update(cx, |cache, cx| {
                         let _ = cache.get(
                             SourceKey::Encoded(123),
@@ -592,15 +597,260 @@ mod tests {
         let window = cx.open_window(gpui::size(gpui::px(100.), gpui::px(100.)), |_, _| {
             Consumer {
                 cache: retained,
-                started: false,
+                shown: true,
             }
         });
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         cx.run_until_parked();
         cache.read_with(&cx, |cache, _| {
-            assert_eq!(cache.bytes, 4);
-            assert_eq!(cache.entries[&SourceKey::Encoded(123)].bytes, 4);
+            let record = cache.entries[&fingerprint(&SourceKey::Encoded(123))]
+                .record
+                .upgrade()
+                .unwrap();
+            assert_eq!(record.bytes(), 4);
+            assert_eq!(cache.entries.len(), 1);
         });
+        let weak = cache.read_with(&cx, |cache, _| {
+            cache.entries[&fingerprint(&SourceKey::Encoded(123))]
+                .record
+                .clone()
+        });
+        window
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+        cx.run_until_parked();
+        assert!(
+            weak.upgrade().is_none(),
+            "last scene releases decoded payload"
+        );
+        cache.read_with(&cx, |cache, _| assert!(cache.entries.is_empty()));
+    }
+    #[test]
+    fn shared_pending_decodes_unregister_departed_scenes_and_cancel_after_the_last_user() {
+        struct Guard(Arc<AtomicUsize>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        struct Consumer {
+            cache: Entity<DecodedImageCache>,
+            shown: bool,
+            drops: Arc<AtomicUsize>,
+            starts: Arc<AtomicUsize>,
+        }
+        impl gpui::Render for Consumer {
+            fn render(
+                &mut self,
+                window: &mut Window,
+                cx: &mut gpui::Context<Self>,
+            ) -> impl gpui::IntoElement {
+                if self.shown {
+                    let drops = self.drops.clone();
+                    let starts = self.starts.clone();
+                    self.cache.update(cx, |cache, cx| {
+                        cache.get(
+                            SourceKey::Encoded(456),
+                            move |cx| {
+                                starts.fetch_add(1, Ordering::SeqCst);
+                                let guard = Guard(drops);
+                                Preparation::new(
+                                    async move {
+                                        let _guard = guard;
+                                        std::future::pending::<Decoded>().await
+                                    },
+                                    cx,
+                                )
+                            },
+                            window,
+                            cx,
+                        )
+                    });
+                }
+                gpui::div()
+            }
+        }
+        let mut cx = gpui::TestAppContext::single();
+        let cache = cx.update(new_cache);
+        let starts = Arc::new(AtomicUsize::new(0));
+        let drops = Arc::new(AtomicUsize::new(0));
+        let windows: Vec<_> = (0..2)
+            .map(|_| {
+                cx.add_window(|_, _| Consumer {
+                    cache: cache.clone(),
+                    shown: true,
+                    drops: drops.clone(),
+                    starts: starts.clone(),
+                })
+            })
+            .collect();
+        let draw = |cx: &mut gpui::TestAppContext, index: usize| {
+            cx.update_window(windows[index].into(), |_, window, cx| {
+                window.draw(cx).clear(cx)
+            })
+            .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx, 0);
+        draw(&mut cx, 1);
+        let weak = cache.read_with(&cx, |cache, _| {
+            cache.entries[&fingerprint(&SourceKey::Encoded(456))]
+                .record
+                .clone()
+        });
+        let waiters = || {
+            let record = weak.upgrade().unwrap();
+            let state = record.load.state.borrow();
+            match &*state {
+                PreparationState::Pending(views) => views.len(),
+                PreparationState::Ready(_) => panic!("fixture remains pending"),
+            }
+        };
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        assert_eq!(waiters(), 2);
+        windows[0]
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        draw(&mut cx, 0);
+        assert_eq!(waiters(), 1);
+        assert_eq!(
+            drops.load(Ordering::SeqCst),
+            0,
+            "the other scene still owns the task"
+        );
+        windows[1]
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        draw(&mut cx, 1);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        cache.read_with(&cx, |cache, _| assert!(cache.entries.is_empty()));
+    }
+
+    #[test]
+    fn active_decodes_survive_lookup_eviction_without_restarting_or_changing_identity() {
+        const SOURCES: usize = MAX_IDLE_ENTRIES + 1;
+        struct Consumer {
+            cache: Entity<DecodedImageCache>,
+            shown: bool,
+            starts: Rc<Cell<usize>>,
+            probes: Vec<Option<Weak<Record>>>,
+            identities: Vec<Option<usize>>,
+        }
+        impl gpui::Render for Consumer {
+            fn render(
+                &mut self,
+                window: &mut Window,
+                cx: &mut gpui::Context<Self>,
+            ) -> impl gpui::IntoElement {
+                if self.shown {
+                    for index in 0..SOURCES {
+                        window.with_id(("decode-pressure", index), |window| {
+                            self.cache.update(cx, |cache, cx| {
+                                let key = SourceKey::Encoded(index as u64);
+                                let value = cache.get(
+                                    key.clone(),
+                                    |cx| {
+                                        self.starts.set(self.starts.get() + 1);
+                                        Preparation::new(
+                                            async move {
+                                                Ok(Arc::new(RenderImage::new(vec![
+                                                    ::image::Frame::new(
+                                                        ::image::RgbaImage::from_pixel(
+                                                            1,
+                                                            1,
+                                                            ::image::Rgba([index as u8, 0, 0, 255]),
+                                                        ),
+                                                    ),
+                                                ])))
+                                            },
+                                            cx,
+                                        )
+                                    },
+                                    window,
+                                    cx,
+                                );
+                                if self.probes[index].is_none() {
+                                    self.probes[index] =
+                                        Some(cache.entries[&fingerprint(&key)].record.clone());
+                                }
+                                self.identities[index] = value.map(|image| image.unwrap().id.0);
+                            });
+                        });
+                    }
+                }
+                gpui::div()
+            }
+        }
+        let mut cx = gpui::TestAppContext::single();
+        let cache = cx.update(new_cache);
+        let starts = Rc::new(Cell::new(0));
+        let window = cx.add_window(|_, _| Consumer {
+            cache: cache.clone(),
+            shown: true,
+            starts: starts.clone(),
+            probes: vec![None; SOURCES],
+            identities: vec![None; SOURCES],
+        });
+        let draw = |cx: &mut gpui::TestAppContext| {
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx);
+        draw(&mut cx);
+        let identities = window
+            .read_with(&cx, |consumer, _| consumer.identities.clone())
+            .unwrap();
+        assert!(identities.iter().all(Option::is_some));
+        for _ in 0..4 {
+            window.update(&mut cx, |_, _, cx| cx.notify()).unwrap();
+            draw(&mut cx);
+            window
+                .read_with(&cx, |consumer, _| {
+                    assert_eq!(consumer.identities, identities);
+                    assert!(
+                        consumer
+                            .probes
+                            .iter()
+                            .all(|probe| { probe.as_ref().unwrap().upgrade().is_some() })
+                    );
+                })
+                .unwrap();
+        }
+        assert_eq!(starts.get(), SOURCES);
+        cache.read_with(&cx, |cache, _| {
+            assert!(cache.entries.len() <= MAX_IDLE_ENTRIES)
+        });
+        window
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        draw(&mut cx);
+        window
+            .read_with(&cx, |consumer, _| {
+                assert!(
+                    consumer
+                        .probes
+                        .iter()
+                        .all(|probe| { probe.as_ref().unwrap().upgrade().is_none() })
+                );
+            })
+            .unwrap();
+        cache.read_with(&cx, |cache, _| assert!(cache.entries.is_empty()));
     }
 }

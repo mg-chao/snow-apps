@@ -263,8 +263,9 @@ pub struct PickerState<S: PickerSelection> {
     pub(super) format_callback: Option<FormatCallback>,
     pub(super) scope: Option<ConfigScope>,
     pub(super) editors: [Entity<InputState>; 2],
-    pub(super) panel_focus: FocusHandle,
-    pub(super) column_focus: [FocusHandle; 5],
+    panel: Option<PanelResources>,
+    needs_panel_focus: bool,
+    panel_focus_target: PanelFocusTarget,
     pub(super) popup: PopupHandle,
     pub(super) panel_mode: PickerPanelMode,
     pub(super) view_date: NaiveDate,
@@ -276,7 +277,6 @@ pub struct PickerState<S: PickerSelection> {
     pub(super) disabled_date: Option<DisabledDate>,
     pub(super) disabled_time: Option<DisabledTimeFactory>,
     pub(super) clock: Rc<dyn Fn() -> NaiveDateTime>,
-    pub(super) scrolls: [UniformListScrollHandle; 5],
     pub(super) scroll_keys: [Option<(TimeUnit, u32)>; 5],
     pub(super) scroll_generation: [u64; 5],
     scroll_tasks: [Option<Task<()>>; 5],
@@ -293,6 +293,20 @@ pub struct PickerState<S: PickerSelection> {
     _subscriptions: Vec<Subscription>,
     _marker: PhantomData<S>,
 }
+/// Native panel identities and list geometry have one presentation lifetime.
+#[derive(Clone, Copy, Default)]
+enum PanelFocusTarget {
+    #[default]
+    Calendar,
+    Time(usize),
+}
+struct PanelResources {
+    focus: FocusHandle,
+    columns: [FocusHandle; 5],
+    scrolls: [UniformListScrollHandle; 5],
+    _window_subscriptions: [Subscription; 2],
+    _focus_subscriptions: Vec<Subscription>,
+}
 impl<S: PickerSelection> EventEmitter<PickerEvent<S::Value>> for PickerState<S> {}
 impl<S: PickerSelection> Focusable for PickerState<S> {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
@@ -303,7 +317,7 @@ impl<S: PickerSelection> Focusable for PickerState<S> {
 impl<S: PickerSelection> PickerState<S> {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let editors = std::array::from_fn(|_| cx.new(|cx| InputState::new(window, cx)));
-        let mut subscriptions: Vec<Subscription> = editors
+        let subscriptions: Vec<Subscription> = editors
             .iter()
             .enumerate()
             .map(|(index, editor)| {
@@ -312,18 +326,6 @@ impl<S: PickerSelection> PickerState<S> {
                 })
             })
             .collect();
-        subscriptions.push(cx.observe_window_activation(window, |state, window, _| {
-            if !window.is_window_active() {
-                state.cancel_scroll_tasks();
-            }
-        }));
-        subscriptions.push(
-            cx.observe_window_visibility(window, |state, visibility, _, _| {
-                if !visibility.is_visible() {
-                    state.cancel_scroll_tasks();
-                }
-            }),
-        );
         let now = Local::now().naive_local();
         Self {
             accepted: S::empty(),
@@ -355,8 +357,9 @@ impl<S: PickerSelection> PickerState<S> {
             format_callback: None,
             scope: None,
             editors,
-            panel_focus: crate::behavior::focus_handle(cx),
-            column_focus: std::array::from_fn(|_| crate::behavior::focus_handle(cx)),
+            panel: None,
+            needs_panel_focus: false,
+            panel_focus_target: PanelFocusTarget::Calendar,
             popup: PopupHandle::new(),
             panel_mode: if S::HAS_DATE {
                 PickerPanelMode::Date
@@ -372,7 +375,6 @@ impl<S: PickerSelection> PickerState<S> {
             disabled_date: None,
             disabled_time: None,
             clock: Rc::new(|| Local::now().naive_local()),
-            scrolls: std::array::from_fn(|_| UniformListScrollHandle::new()),
             scroll_keys: [None; 5],
             scroll_generation: [0; 5],
             scroll_tasks: std::array::from_fn(|_| None),
@@ -390,6 +392,98 @@ impl<S: PickerSelection> PickerState<S> {
             _marker: PhantomData,
         }
     }
+    pub(super) fn ensure_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.panel.is_none() {
+            let focus = crate::behavior::focus_handle(cx);
+            let columns: [FocusHandle; 5] =
+                std::array::from_fn(|_| crate::behavior::focus_handle(cx));
+            let mut subscriptions = vec![cx.on_focus(&focus, window, |state, _, _| {
+                state.panel_focus_target = PanelFocusTarget::Calendar;
+            })];
+            for (index, column) in columns.iter().enumerate() {
+                subscriptions.push(cx.on_focus(column, window, move |state, _, _| {
+                    state.panel_focus_target = PanelFocusTarget::Time(index);
+                }));
+            }
+            self.panel = Some(PanelResources {
+                focus,
+                columns,
+                scrolls: std::array::from_fn(|_| UniformListScrollHandle::new()),
+                _focus_subscriptions: subscriptions,
+                _window_subscriptions: [
+                    cx.observe_window_activation(window, |state, window, _| {
+                        if !window.is_window_active() {
+                            state.cancel_scroll_tasks();
+                        }
+                    }),
+                    cx.observe_window_visibility(window, |state, visibility, _, _| {
+                        if !visibility.is_visible() {
+                            state.cancel_scroll_tasks();
+                        }
+                    }),
+                ],
+            });
+        }
+        if self.needs_panel_focus {
+            self.needs_panel_focus = false;
+            self.panel_focus().focus(window, cx);
+        }
+    }
+    pub(super) fn initial_panel_focus(&self) -> Option<FocusHandle> {
+        let panel = self.panel.as_ref()?;
+        Some(match self.panel_focus_target {
+            PanelFocusTarget::Time(index) if index < self.options.time.units().len() => {
+                panel.columns[index].clone()
+            }
+            _ => panel.focus.clone(),
+        })
+    }
+    pub(super) fn panel_focus(&self) -> &FocusHandle {
+        &self.panel.as_ref().expect("a presented picker panel").focus
+    }
+    pub(super) fn column_focus(&self, index: usize) -> &FocusHandle {
+        &self
+            .panel
+            .as_ref()
+            .expect("a presented picker panel")
+            .columns[index]
+    }
+    pub(super) fn panel_scroll(&self, index: usize) -> &UniformListScrollHandle {
+        &self
+            .panel
+            .as_ref()
+            .expect("a presented picker panel")
+            .scrolls[index]
+    }
+    pub(super) fn focus_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(panel) = &self.panel {
+            panel.focus.focus(window, cx);
+        } else {
+            self.needs_panel_focus = true;
+        }
+    }
+    pub(super) fn release_panel(&mut self) {
+        self.cancel_scroll_tasks();
+        self.panel = None;
+        self.needs_panel_focus = false;
+        if !self.is_open() {
+            self.panel_focus_target = PanelFocusTarget::Calendar;
+        }
+        self.scroll_keys = [None; 5];
+        self.geometry = PickerGeometry {
+            trigger: self.geometry.trigger,
+            prefix: self.geometry.prefix,
+            inputs: std::mem::take(&mut self.geometry.inputs),
+            tags: std::mem::take(&mut self.geometry.tags),
+            ..Default::default()
+        };
+        self.hover = None;
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has_panel_resources(&self) -> bool {
+        self.panel.is_some()
+    }
+
     pub fn value(&self) -> &S::Value {
         &self.accepted
     }
@@ -582,7 +676,9 @@ impl<S: PickerSelection> PickerState<S> {
         }
     }
     pub(super) fn owns_focus(&self, window: &Window, cx: &App) -> bool {
-        self.panel_focus.contains_focused(window, cx)
+        self.panel
+            .as_ref()
+            .is_some_and(|panel| panel.focus.contains_focused(window, cx))
             || self
                 .editors
                 .iter()
@@ -716,11 +812,13 @@ impl<S: PickerSelection> PickerState<S> {
         self.pending_focus_return = None;
         self.mounted = false;
         self.open = false;
+        self.panel_focus_target = PanelFocusTarget::Calendar;
         self.generation = self.generation.wrapping_add(1);
         self.callback_epoch = self.callback_epoch.wrapping_add(1);
         self.proposal_epoch = self.proposal_epoch.wrapping_add(1);
         self.cancel_scroll_tasks();
         self.geometry = PickerGeometry::default();
+        self.release_panel();
     }
     pub(super) fn request_open(
         &mut self,
@@ -1211,7 +1309,7 @@ impl<S: PickerSelection> PickerState<S> {
         let target = self.target_panel();
         if self.panel_mode != target {
             if self.is_open() || self.inline {
-                self.panel_focus.focus(window, cx);
+                self.focus_panel(window, cx);
             }
             if !self.view_controlled {
                 self.view_date = date;
@@ -1544,7 +1642,7 @@ impl<S: PickerSelection> PickerState<S> {
         cx: &mut Context<Self>,
     ) {
         if !self.disabled && (self.is_open() || self.inline) {
-            self.panel_focus.focus(window, cx);
+            self.focus_panel(window, cx);
         }
         self.panel_mode = mode;
         self.emit(
@@ -1785,7 +1883,8 @@ impl<S: PickerSelection> PickerState<S> {
                 {
                     return;
                 }
-                let offset = f32::from(state.scrolls[column].0.borrow().base_handle.offset().y);
+                let offset =
+                    f32::from(state.panel_scroll(column).0.borrow().base_handle.offset().y);
                 let index = (-offset / row_height).round().max(0.) as usize;
                 let time = state
                     .draft

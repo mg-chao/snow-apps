@@ -8,7 +8,7 @@ use crate::{
 };
 use gpui::{
     AnyView, App, AppContext, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    Pixels, SharedString, Subscription, Window,
+    Pixels, SharedString, Subscription, Task, Window,
 };
 use std::{
     rc::Rc,
@@ -49,16 +49,12 @@ pub struct ModalState {
     dispatching: bool,
     pub(super) generation: u64,
     pub(super) focus: FocusHandle,
-    pub(super) ok_focus: FocusHandle,
-    pub(super) cancel_focus: FocusHandle,
-    pub(super) close_focus: FocusHandle,
-    pub(super) start_focus: FocusHandle,
-    pub(super) end_focus: FocusHandle,
+    pub(super) presentation: Option<ModalPresentation>,
+    pub(super) presentation_generation: u64,
     pub(super) return_focus: Option<FocusHandle>,
     pub(super) needs_focus: bool,
     pub(super) mask_down: bool,
     pub(super) bounds: Bounds<Pixels>,
-    pub(super) scroll: Entity<ScrollAreaState>,
     pub(super) body_view: Option<AnyView>,
     pub(super) title_view: Option<AnyView>,
     pub(super) footer_view: Option<AnyView>,
@@ -70,6 +66,15 @@ pub struct ModalState {
     opacity: ScalarTransition,
     frame_pending: bool,
     scope_subscription: Subscription,
+    settle_task: Option<Task<()>>,
+}
+pub(super) struct ModalPresentation {
+    pub ok_focus: FocusHandle,
+    pub cancel_focus: FocusHandle,
+    pub close_focus: FocusHandle,
+    pub start_focus: FocusHandle,
+    pub end_focus: FocusHandle,
+    pub scroll: Entity<ScrollAreaState>,
     close_scope: Option<(crate::theme::Color, crate::theme::Color, ConfigScope)>,
 }
 impl EventEmitter<ModalEvent> for ModalState {}
@@ -80,7 +85,7 @@ impl Focusable for ModalState {
 }
 
 impl ModalState {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         let scope = ConfigScope::application(cx);
         let subscription = scope.observe(cx);
         Self {
@@ -97,16 +102,12 @@ impl ModalState {
             dispatching: false,
             generation: 0,
             focus: cx.focus_handle(),
-            ok_focus: focus_handle(cx),
-            cancel_focus: focus_handle(cx),
-            close_focus: focus_handle(cx),
-            start_focus: focus_handle(cx),
-            end_focus: focus_handle(cx),
+            presentation: None,
+            presentation_generation: 0,
             return_focus: None,
             needs_focus: false,
             mask_down: false,
             bounds: Bounds::default(),
-            scroll: cx.new(|cx| ScrollAreaState::new(window, cx)),
             body_view: None,
             title_view: None,
             footer_view: None,
@@ -118,7 +119,7 @@ impl ModalState {
             opacity: ScalarTransition::new(0., CubicBezier::new(0.08, 0.82, 0.17, 1.)),
             frame_pending: false,
             scope_subscription: subscription,
-            close_scope: None,
+            settle_task: None,
         }
     }
     pub fn is_open(&self) -> bool {
@@ -136,6 +137,30 @@ impl ModalState {
     }
     pub(crate) fn set_viewport_motion(&mut self, duration: Duration, enabled: bool) {
         self.viewport_motion = Some((duration, enabled));
+    }
+    /// Transfer only focus intent when a specialized surface discards its shell.
+    /// The outgoing marker must not restore focus as part of its later unmount.
+    pub(crate) fn take_viewport_focus(
+        &mut self,
+        window: &Window,
+        cx: &App,
+    ) -> (bool, Option<gpui::WeakFocusHandle>) {
+        let owned = self.needs_focus || self.focus.contains_focused(window, cx);
+        let return_to = self.take_viewport_return_focus();
+        (owned, return_to)
+    }
+    pub(crate) fn take_viewport_return_focus(&mut self) -> Option<gpui::WeakFocusHandle> {
+        self.return_focus.take().map(|focus| focus.downgrade())
+    }
+    /// Apply after reopening so a replacement shell neither steals outside focus
+    /// nor mistakes a disposed operation control for the original opener.
+    pub(crate) fn restore_viewport_focus(
+        &mut self,
+        owned: bool,
+        return_to: Option<gpui::WeakFocusHandle>,
+    ) {
+        self.needs_focus = owned;
+        self.return_focus = return_to.and_then(|focus| focus.upgrade());
     }
     fn motion(&self, cx: &App) -> (Duration, MotionPolicy) {
         let config = self.scope.snapshot(cx);
@@ -176,7 +201,9 @@ impl ModalState {
         }
         self.scope_subscription = scope.observe(cx);
         self.scope = scope;
-        self.close_scope = None;
+        if let Some(presentation) = &mut self.presentation {
+            presentation.close_scope = None;
+        }
         cx.notify();
     }
     pub fn set_options(&mut self, options: ModalOptions, cx: &mut Context<Self>) {
@@ -207,6 +234,40 @@ impl ModalState {
             self.footer_view = None;
         }
         self.options = options;
+    }
+    pub(super) fn ensure_presentation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.presentation.is_none() {
+            self.presentation_generation = self.presentation_generation.wrapping_add(1);
+            self.presentation = Some(ModalPresentation {
+                ok_focus: focus_handle(cx),
+                cancel_focus: focus_handle(cx),
+                close_focus: focus_handle(cx),
+                start_focus: focus_handle(cx),
+                end_focus: focus_handle(cx),
+                scroll: cx.new(|cx| ScrollAreaState::new(window, cx)),
+                close_scope: None,
+            });
+        }
+    }
+    pub(super) fn presentation(&self) -> &ModalPresentation {
+        self.presentation
+            .as_ref()
+            .expect("presented dialog resources")
+    }
+    pub(super) fn suspend(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.presentation.is_some() {
+            let resume = self.open && (self.needs_focus || self.focus.contains_focused(window, cx));
+            self.release_presentation();
+            self.needs_focus = resume;
+            cx.notify();
+        }
+    }
+    pub(super) fn release_presentation(&mut self) {
+        self.release_content();
+        self.presentation = None;
+        self.bounds = Bounds::default();
+        self.mask_down = false;
+        self.frame_pending = false;
     }
     fn release_content(&mut self) {
         self.body_view = None;
@@ -242,6 +303,26 @@ impl ModalState {
         } else {
             ModalPhase::Closing
         };
+        self.settle_task = None;
+        let generation = self.generation;
+        let delay = if policy.allows_motion() {
+            duration
+        } else {
+            Duration::ZERO
+        };
+        let timer = cx.background_executor().timer(delay);
+        self.settle_task = Some(cx.spawn_in(window, async move |weak, cx| {
+            timer.await;
+            let _ = cx.update(|window, cx| {
+                let _ = weak.update(cx, |state, cx| {
+                    if state.generation == generation {
+                        state.settle_task = None;
+                        state.sample(window, cx);
+                        cx.notify();
+                    }
+                });
+            });
+        }));
         if open {
             if self.return_focus.is_none() {
                 self.return_focus = window.focused(cx);
@@ -281,7 +362,7 @@ impl ModalState {
             config.theme.tokens.color_icon,
             config.theme.tokens.color_icon_hover,
         );
-        if let Some((a, b, scope)) = &self.close_scope
+        if let Some((a, b, scope)) = &self.presentation().close_scope
             && (*a, *b) == colors
         {
             return scope.clone();
@@ -305,7 +386,10 @@ impl ModalState {
                 cx,
             )
             .expect("valid close button theme");
-        self.close_scope = Some((colors.0, colors.1, scope.clone()));
+        self.presentation
+            .as_mut()
+            .expect("presented dialog")
+            .close_scope = Some((colors.0, colors.1, scope.clone()));
         scope
     }
     pub(super) fn mask(&self, cx: &App) -> bool {
@@ -360,9 +444,6 @@ impl ModalState {
                         }
                         host::retire(entity.entity_id(), w, cx);
                         entity.update(cx, |s, cx| {
-                            if s.options.destroy_on_hidden {
-                                s.release_content();
-                            }
                             let restore = s
                                 .options
                                 .focus_return
@@ -372,6 +453,7 @@ impl ModalState {
                             if restore && let Some(target) = target {
                                 w.focus(&target, cx);
                             }
+                            s.release_presentation();
                         });
                         host::restore_focus(w, cx);
                     }
@@ -408,7 +490,8 @@ impl ModalState {
         self.pending_cancel = false;
         self.dispatching = false;
         self.mounted = false;
-        self.release_content();
+        self.settle_task = None;
+        self.release_presentation();
         if let Some(completion) = &self.completion {
             completion.finish(ModalOutcome::Destroyed);
         }

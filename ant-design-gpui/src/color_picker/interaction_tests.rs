@@ -279,7 +279,7 @@ impl Fixture {
         self.draw();
     }
     fn edit_hex(&mut self, text: &str) {
-        let hex = self.state.read_with(&self.cx, |s, _| s.hex.clone());
+        let hex = self.state.read_with(&self.cx, |s, _| s.panel().hex.clone());
         self.cx
             .update_window(self.window.into(), |_, window, cx| {
                 hex.update(cx, |s, cx| {
@@ -629,7 +629,9 @@ fn color_picker_outside_press_closes_without_emitting_a_color_change() {
 #[test]
 fn color_picker_nested_format_selector_keeps_the_panel_open() {
     let mut f = Fixture::new(blue());
-    let selector = f.state.read_with(&f.cx, |s, _| s.format_select.clone());
+    let selector = f
+        .state
+        .read_with(&f.cx, |s, _| s.panel().format_select.clone());
     f.cx.update_window(f.window.into(), |_, window, cx| {
         let focus = selector.read(cx).focus_handle(cx);
         focus.focus(window, cx);
@@ -681,7 +683,9 @@ fn color_picker_controlled_format_can_reject_a_user_proposal() {
             .iter()
             .any(|e| matches!(e, ColorPickerEvent::FormatChange(ColorPickerFormat::Hsb)))
     );
-    let selector = f.state.read_with(&f.cx, |s, _| s.format_select.clone());
+    let selector = f
+        .state
+        .read_with(&f.cx, |s, _| s.panel().format_select.clone());
     f.cx.update_window(f.window.into(), |_, window, cx| {
         let focus = selector.read(cx).focus_handle(cx);
         focus.focus(window, cx);
@@ -919,7 +923,7 @@ fn color_picker_empty_numeric_channel_updates_that_color_channel_to_zero() {
     f.draw();
     let editor = f
         .state
-        .read_with(&f.cx, |s, cx| s.channels[0].read(cx).editor.clone());
+        .read_with(&f.cx, |s, cx| s.panel().channels[0].read(cx).editor.clone());
     f.cx.update_window(f.window.into(), |_, window, cx| {
         editor.update(cx, |s, cx| {
             s.select_all(window, cx);
@@ -1073,7 +1077,7 @@ fn perform_discrete_edit(f: &mut Fixture, edit: &str, ids: &[u64]) {
         "channel" => {
             let editor = f
                 .state
-                .read_with(&f.cx, |s, cx| s.channels[0].read(cx).editor.clone());
+                .read_with(&f.cx, |s, cx| s.panel().channels[0].read(cx).editor.clone());
             f.cx.update_window(f.window.into(), |_, window, cx| {
                 editor.update(cx, |s, cx| {
                     s.select_all(window, cx);
@@ -1292,4 +1296,253 @@ fn color_picker_completion_only_owner_echo_preserves_pointer_and_key_stop_ids() 
         })
         .unwrap();
     }
+}
+
+#[test]
+fn color_picker_panel_editors_are_lazy_released_and_recreated_with_the_value() {
+    let mut f = Fixture::with_open(gradient(), false);
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .is_none()
+    );
+    f.update(|s, w, c| s.set_format(ColorPickerFormat::Rgb, w, c));
+    f.draw();
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .is_none()
+    );
+    f.update(|s, w, c| s.set_open(true, w, c));
+    f.draw();
+    let editors = f
+        .state
+        .read_with(&f.cx, |s, _| s.retained_editor_ids())
+        .unwrap();
+    let weak = f.state.read_with(&f.cx, |s, _| s.panel().hex.downgrade());
+    let channel = f
+        .state
+        .read_with(&f.cx, |s, _| s.panel().channels[0].downgrade());
+    let format = f
+        .state
+        .read_with(&f.cx, |s, _| s.panel().format_select.downgrade());
+    let stops = f.state.read_with(&f.cx, |s, _| s.model.stops().to_vec());
+    f.update(|s, w, c| s.set_open(false, w, c));
+    f.draw();
+    f.draw();
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .is_none()
+    );
+    assert!(
+        weak.upgrade().is_none(),
+        "the hidden panel must release native editors"
+    );
+    assert!(channel.upgrade().is_none());
+    assert!(format.upgrade().is_none());
+    f.state.read_with(&f.cx, |s, _| {
+        assert!(s.focuses.is_empty());
+        assert!(s.groups.is_empty());
+    });
+    assert_eq!(f.value(), gradient());
+    f.update(|s, w, c| s.set_open(true, w, c));
+    f.draw();
+    assert_ne!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .unwrap(),
+        editors
+    );
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.model.stops().to_vec()),
+        stops
+    );
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.format()),
+        ColorPickerFormat::Rgb
+    );
+}
+
+#[test]
+fn color_picker_rejected_controlled_close_retains_the_current_editors() {
+    let mut f = Fixture::new(blue());
+    f.consumer.update(&mut f.cx, |s, c| {
+        s.controlled_open = Some(true);
+        c.notify();
+    });
+    f.draw();
+    let editors = f.state.read_with(&f.cx, |s, _| s.retained_editor_ids());
+    f.update(|s, w, c| s.request_open(false, w, c));
+    f.draw();
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.retained_editor_ids()),
+        editors
+    );
+    f.consumer.update(&mut f.cx, |s, c| {
+        s.shown = false;
+        c.notify();
+    });
+    f.draw();
+    f.draw();
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .is_none()
+    );
+}
+
+#[test]
+fn color_picker_mode_restore_survives_a_hidden_panel() {
+    let mut f = Fixture::new(gradient());
+    let stops = f.state.read_with(&f.cx, |s, _| s.model.stops().to_vec());
+    f.update(|s, w, c| s.choose_mode(ColorPickerMode::Single, w, c));
+    f.draw();
+    assert!(!f.value().is_gradient());
+    f.update(|s, w, c| s.set_open(false, w, c));
+    f.draw();
+    f.update(|s, w, c| s.set_open(true, w, c));
+    f.draw();
+    f.update(|s, w, c| s.choose_mode(ColorPickerMode::Gradient, w, c));
+    f.draw();
+    assert_eq!(f.value(), gradient());
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.model.stops().to_vec()),
+        stops
+    );
+}
+
+#[test]
+fn closing_color_picker_stops_numeric_repeat_even_if_an_editor_is_retained_elsewhere() {
+    let mut f = Fixture::new(blue());
+    f.update(|s, w, c| s.set_format(ColorPickerFormat::Rgb, w, c));
+    f.draw();
+    let channel = f
+        .state
+        .read_with(&f.cx, |s, _| s.panel().channels[0].clone());
+    f.cx.update_window(f.window.into(), |_, w, c| {
+        channel.update(c, |s, c| {
+            s.start_repeat(crate::input_number::StepDirection::Up, false, w, c)
+        });
+    })
+    .unwrap();
+    f.draw();
+    f.cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(700));
+    f.draw();
+    f.update(|s, w, c| s.set_open(false, w, c));
+    f.draw();
+    let value = channel.read_with(&f.cx, |s, _| s.value().cloned());
+    f.cx.background_executor
+        .advance_clock(std::time::Duration::from_secs(2));
+    f.draw();
+    assert_eq!(channel.read_with(&f.cx, |s, _| s.value().cloned()), value);
+}
+
+#[test]
+fn color_picker_native_hide_rehydrates_partial_text_and_the_actual_editor_focus() {
+    let mut f = Fixture::new(blue());
+    f.update(|s, w, c| s.focus_input(0, w, c));
+    f.draw();
+    f.edit_hex("ab");
+    let draft = f
+        .state
+        .read_with(&f.cx, |s, c| s.panel().hex.read(c).value_snapshot());
+    let selection = f
+        .state
+        .read_with(&f.cx, |s, c| s.panel().hex.read(c).selection());
+    let previous = f.state.read_with(&f.cx, |s, _| s.panel().hex.downgrade());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.draw();
+    f.draw();
+    assert!(previous.upgrade().is_none());
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| s.retained_editor_ids())
+            .is_none()
+    );
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    f.update(|s, w, c| {
+        assert_eq!(s.panel().hex.read(c).value(), draft.as_ref());
+        assert_eq!(s.panel().hex.read(c).selection(), selection);
+        assert!(s.panel().hex.read(c).focus_handle(c).is_focused(w));
+        s.set_format(ColorPickerFormat::Rgb, w, c);
+        s.focus_input(0, w, c);
+    });
+    f.draw();
+    let editor = f
+        .state
+        .read_with(&f.cx, |s, c| s.panel().channels[0].read(c).editor.clone());
+    f.cx.update_window(f.window.into(), |_, w, c| {
+        editor.update(c, |s, c| {
+            s.select_all(w, c);
+            s.replace_text_in_range(None, "-", w, c);
+        });
+    })
+    .unwrap();
+    f.draw();
+    let previous = editor.downgrade();
+    drop(editor);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.draw();
+    f.draw();
+    assert!(previous.upgrade().is_none());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    f.update(|s, w, c| {
+        let channel = s.panel().channels[0].read(c);
+        assert_eq!(channel.text(c), "-");
+        assert_eq!(
+            channel.draft_status(),
+            &crate::input_number::NumericDraft::Incomplete
+        );
+        assert!(channel.focus_handle(c).is_focused(w));
+    });
+    assert_eq!(f.value(), blue());
+    assert!(
+        f.changes().is_empty(),
+        "rehydration is silent application state restoration"
+    );
+}
+
+#[test]
+fn color_picker_hidden_drafts_survive_compatible_controlled_gradient_updates() {
+    let mut f = Fixture::new(gradient());
+    f.update(|s, w, c| s.focus_input(0, w, c));
+    f.draw();
+    f.edit_hex("ab");
+    let draft = f
+        .state
+        .read_with(&f.cx, |s, c| s.panel().hex.read(c).value_snapshot());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.draw();
+    f.draw();
+    let replacement = ColorPickerValue::gradient([
+        ColorStop::new(PickerColor::parse("#ff0000").unwrap(), 0.).unwrap(),
+        ColorStop::new(PickerColor::parse("#00ff00").unwrap(), 100.).unwrap(),
+    ])
+    .unwrap();
+    f.consumer.update(&mut f.cx, |s, c| {
+        s.controlled = Some(replacement.clone());
+        c.notify();
+    });
+    f.draw();
+    f.consumer.update(&mut f.cx, |s, c| {
+        s.controlled = Some(replacement.clone());
+        s.disabled_alpha = true;
+        c.notify();
+    });
+    f.draw();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    f.update(|s, w, c| {
+        assert_eq!(s.panel().hex.read(c).value(), draft.as_ref());
+        assert!(s.panel().hex.read(c).focus_handle(c).is_focused(w));
+    });
+    assert_eq!(f.value(), replacement);
+    assert!(f.changes().is_empty());
 }

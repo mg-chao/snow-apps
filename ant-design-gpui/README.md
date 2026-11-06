@@ -119,7 +119,7 @@ accessibility, and native layout details.
 Modal provides controlled dialogs and context-aware confirmation, information, success,
 warning and error helpers. Its 17 reference examples cover asynchronous actions,
 custom footers, loading, localization, drag positioning, responsive widths and styling.
-Additional examples exercise nested overlays, tall content and retained native views.
+Additional examples exercise nested overlays, tall content and persistent application models.
 See the [Modal guide](docs/modal.md) for ownership, lifecycle and verification.
 
 Menu provides persistent horizontal, vertical and inline navigation, with collapsed

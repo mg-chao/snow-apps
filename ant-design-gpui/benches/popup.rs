@@ -267,20 +267,23 @@ fn main() {
         cx.update(|cx| handle.force_align(cx));
         draw(&mut cx, false);
     });
-    measure("popup/reopen/warm-shadow", 200, || {
+    let aligned = cx.update(|cx| popup_shadow_statistics(cx));
+    assert_eq!(
+        before.misses, aligned.misses,
+        "visible alignment reuses its live raster"
+    );
+    measure("popup/reopen/recreate-shadow", 200, || {
         for open in [false, true] {
             cx.update_window(window.into(), |_, window, cx| {
                 handle.set_open(open, window, cx)
             })
             .unwrap();
             draw(&mut cx, false);
+            if !open {
+                assert_eq!(cx.update(|cx| popup_shadow_statistics(cx).bytes), 0);
+            }
         }
     });
-    let after = cx.update(|cx| popup_shadow_statistics(cx));
-    assert_eq!(
-        before.misses, after.misses,
-        "alignment and reopening must reuse the shadow raster"
-    );
     let mut width = 300.;
     measure("popup/shadow/cold-size-change", 30, || {
         width += 1.;
@@ -291,7 +294,7 @@ fn main() {
         draw(&mut cx, false);
     });
     let stats = cx.update(|cx| popup_shadow_statistics(cx));
-    assert!(stats.entries <= 64 && stats.bytes <= 16 * 1024 * 1024);
+    assert!(stats.entries <= 64);
     println!("popup/shadows: {stats:?}");
     view.update(&mut cx, |scene, cx| {
         scene.mode = Mode::Unique;

@@ -1,5 +1,9 @@
 # Popup system implementation and verification
 
+The resource-lifetime rules and cache measurements below predate the popup memory
+refactor. Current ownership, API migration, and new validation are recorded in
+[Popup lifetime](popup-lifetime.md). Historical visual comparisons remain relevant.
+
 Tooltip, Popover and Popconfirm now use one native GPUI popup foundation.
 The implementation follows Ant Design 6.6.7 at
 `f8f5595ab5e891fff6a2a06c5b3b98af643d008e` from `E:/ant-design`.
@@ -12,8 +16,8 @@ See [the public guide](popups.md) for application integration.
   Deferred native elements escape ancestor clipping while preserving event ancestry.
   Weak ownership coordinates nested dismissal, Escape, focus return and unique tooltips.
 - The shared lifecycle supports controlled and uncontrolled state, hover/focus/click/
-  context-menu triggers, cancelable delays, fresh or retained content, destruction on
-  closure, imperative handles and generation-guarded asynchronous completion.
+  context-menu triggers, cancelable delays, lazy presentation content, cleanup after
+  exit completion, imperative handles and generation-guarded asynchronous completion.
 - Placement follows current bounds during prepaint, including cached scrollers,
   content changes and mask changes. There is no layout polling.
 - Components provide twelve placements, rounded arrows, overflow flip/shift, scoped
@@ -27,16 +31,16 @@ See [the public guide](popups.md) for application integration.
   Button, Checkbox, Radio, Switch and actionable Tag bind automatically. Custom
   controls can bind their own semantic root with `PopupTrigger`; a compound group
   should expose a primary control or wrap individual items.
-- Entry fades use reference timings. As selected by the user, closure immediately
-  removes content, input, focus and accessibility registrations. Unique tooltips
+- Entry and exit fades retain their existing timings. Closing disengages outgoing
+  input and accessibility; content survives the exit and is then released. Unique tooltips
   animate the decorative background's position and size over 300 ms by default
   with CSS `ease`; incoming text fades linearly over 200 ms at its final layout.
   Interrupted handoffs start from the last displayed bounds.
 - Shadows use the existing SVG renderer with blur-aware sampling, native scene
-  leases and a bounded 64-entry / 16 MiB cache. Sharp shadows retain full DPI.
+  leases and a bounded 64-entry weak index without idle rasters. Sharp shadows retain full DPI.
   Timers are canceled or generation guarded, and settled popups request no frames.
 
-## Completed verification
+## Historical verification
 
 | Area | Evidence |
 | --- | --- |

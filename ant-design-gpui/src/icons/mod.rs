@@ -372,43 +372,22 @@ struct IconImageResource {
     bytes: usize,
 }
 
-// GPUI retains accessed element states when replaying a cached view's scene. An entity lease
-// therefore has exactly the lifetime of the scene which can reference this image's atlas tile.
-struct IconImageLease {
-    resource: Option<Arc<IconImageResource>>,
-}
-
-fn lease_image(resource: &Arc<IconImageResource>, window: &mut Window, cx: &mut App) {
-    let view = window.current_view();
-    window.with_id(("__adgpui_icon_view", view), |window| {
-        window.use_keyed_state(("__adgpui_icon_image", resource.image.id.0), cx, |_, cx| {
-            cx.on_release(|lease: &mut IconImageLease, cx| {
-                if let Some(resource) = lease.resource.take()
-                    && Arc::strong_count(&resource) == 1
+fn retire_image(resource: &Arc<IconImageResource>, cx: &mut App) {
+    crate::behavior::resources::retire_native_image(resource.image.clone(), cx);
+    let key = resource.key.clone();
+    cx.defer(move |cx| {
+        if cx.has_global::<IconRenderer>() {
+            cx.update_global::<IconRenderer, _>(|renderer, _| {
+                if renderer
+                    .resident
+                    .get(&key)
+                    .is_some_and(|resource| resource.strong_count() == 0)
                 {
-                    let image = resource.image.clone();
-                    let key = resource.key.clone();
-                    cx.defer(move |cx| {
-                        cx.drop_image(image, None);
-                        if cx.has_global::<IconRenderer>() {
-                            cx.update_global::<IconRenderer, _>(|renderer, _| {
-                                if renderer
-                                    .resident
-                                    .get(&key)
-                                    .is_some_and(|resource| resource.strong_count() == 0)
-                                {
-                                    renderer.resident.remove(&key);
-                                }
-                            });
-                        }
-                    });
+                    renderer.resident.remove(&key);
+                    renderer.resident_used.remove(&key);
                 }
-            })
-            .detach();
-            IconImageLease {
-                resource: Some(resource.clone()),
-            }
-        });
+            });
+        }
     });
 }
 
@@ -418,6 +397,7 @@ pub struct IconRenderer {
     parsed: HashMap<ParsedKey, ParsedEntry>,
     rasters: HashMap<RasterKey, RasterEntry>,
     resident: HashMap<RasterKey, Weak<IconImageResource>>,
+    resident_used: HashMap<RasterKey, u64>,
     tick: u64,
     generation: u64,
     statistics: IconCacheStatistics,
@@ -444,6 +424,7 @@ impl IconRenderer {
             parsed: HashMap::new(),
             rasters: HashMap::new(),
             resident: HashMap::new(),
+            resident_used: HashMap::new(),
             tick: 0,
             generation: 0,
             statistics: IconCacheStatistics::default(),
@@ -642,8 +623,49 @@ impl IconRenderer {
         }
         let renderer = cx.svg_renderer();
         let assets = cx.asset_source().clone();
-        let raster = self.rasterize_inner(&renderer, &*assets, icon, &options)?;
-        lease_image(&raster.resource, window, cx);
+        let key = self.raster_key(&*assets, icon, &options)?;
+        let mut recovered = true;
+        let mut retired = Vec::new();
+        let resource = crate::behavior::resources::try_scene_resource(
+            (
+                "__adgpui_icon_image",
+                crate::behavior::resources::resource_fingerprint(&key),
+            ),
+            |resource: &Arc<IconImageResource>| resource.key == key,
+            |_, _| {
+                recovered = false;
+                let raster =
+                    self.rasterize_key(&renderer, &*assets, icon, &options, key.clone())?;
+                retired = raster.retired;
+                Ok::<_, IconError>(raster.resource)
+            },
+            |resource| Arc::strong_count(resource) == 1,
+            retire_image,
+            window,
+            cx,
+        )?;
+        if recovered {
+            self.tick = self.tick.wrapping_add(1);
+            self.statistics.raster_hits += 1;
+            if let Some(used) = self.resident_used.get_mut(&key) {
+                *used = self.tick;
+            }
+        }
+        crate::behavior::resources::lease_native_image(&resource.image, window, cx);
+        // Parsed custom artwork can be as large as its raster. Native painting
+        // leaves no idle parsed asset behind; explicit exports retain their
+        // separately configured parsed cache.
+        self.parsed.remove(&key.parsed);
+        // Native controls retain pixels in their scene leases only. The public
+        // export/rasterize cache remains explicit caller-owned configuration.
+        if self
+            .rasters
+            .get(&key)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.resource, &resource))
+        {
+            let entry = self.rasters.remove(&key).expect("painted raster");
+            self.statistics.raster_bytes -= entry.bytes;
+        }
         let painted = Bounds::centered_at(
             bounds.center(),
             painted_size.map(|dimension| dimension * scale),
@@ -653,17 +675,17 @@ impl IconRenderer {
                 painted,
                 painted,
                 gpui::Corners::default(),
-                raster.resource.image.clone(),
+                resource.image.clone(),
                 0,
                 false,
             )
             .map_err(|error| IconError::InvalidSvg(error.to_string()));
-        if !raster.retired.is_empty() {
+        if !retired.is_empty() {
             // Active/cached scene leases protect their images from disposal. Retired resources
             // without a scene lease can be reclaimed once windows are back in the app.
             cx.defer(move |cx| {
-                for image in raster.retired {
-                    cx.drop_image(image, None);
+                for image in retired {
+                    crate::behavior::resources::retire_native_image(image, cx);
                 }
             });
         }
@@ -677,9 +699,18 @@ impl IconRenderer {
         icon: &IconRef,
         options: &IconRenderOptions,
     ) -> Result<RasterizedIcon, IconError> {
+        let key = self.raster_key(assets, icon, options)?;
+        self.rasterize_key(renderer, assets, icon, options, key)
+    }
+
+    fn raster_key(
+        &self,
+        assets: &dyn AssetSource,
+        icon: &IconRef,
+        options: &IconRenderOptions,
+    ) -> Result<RasterKey, IconError> {
         let dimensions = validate_size(options)?;
         let colors = resolve_colors(icon, options)?;
-        self.tick = self.tick.wrapping_add(1);
         let source = match &icon.source {
             IconSource::Embedded { descriptor, .. } => {
                 SourceKey::Embedded(*descriptor as *const IconDescriptor as usize)
@@ -702,11 +733,25 @@ impl IconRenderer {
             },
             mirror: options.mirror,
         };
-        let key = RasterKey {
-            parsed: parsed_key.clone(),
+        Ok(RasterKey {
+            parsed: parsed_key,
             width: dimensions.width.0,
             height: dimensions.height.0,
-        };
+        })
+    }
+
+    fn rasterize_key(
+        &mut self,
+        renderer: &SvgRenderer,
+        assets: &dyn AssetSource,
+        icon: &IconRef,
+        options: &IconRenderOptions,
+        key: RasterKey,
+    ) -> Result<RasterizedIcon, IconError> {
+        self.tick = self.tick.wrapping_add(1);
+        let parsed_key = key.parsed.clone();
+        let colors = (parsed_key.primary, parsed_key.secondary);
+        let dimensions = size(DevicePixels(key.width), DevicePixels(key.height));
         if let Some(entry) = self.rasters.get_mut(&key) {
             entry.used = self.tick;
             self.statistics.raster_hits += 1;
@@ -716,6 +761,7 @@ impl IconRenderer {
             });
         }
         if let Some(resource) = self.resident.get(&key).and_then(Weak::upgrade) {
+            self.resident_used.insert(key.clone(), self.tick);
             // The CPU LRU can be smaller than the visible working set. Reuse view-owned images
             // without promoting them into the LRU and evicting another visible icon each frame.
             self.statistics.raster_hits += 1;
@@ -770,6 +816,22 @@ impl IconRenderer {
         self.resident
             .retain(|_, resource| resource.strong_count() > 0);
         self.resident.insert(key.clone(), Arc::downgrade(&resource));
+        self.resident_used
+            .retain(|key, _| self.resident.contains_key(key));
+        self.resident_used.insert(key.clone(), self.tick);
+        while self.resident.len() > 512 {
+            let Some(oldest) = self
+                .resident_used
+                .iter()
+                .min_by_key(|(_, used)| *used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.resident.remove(&oldest);
+            self.resident_used.remove(&oldest);
+        }
+
         if bytes > self.limits.max_raster_bytes
             || bytes > self.limits.raster_bytes
             || self.limits.raster_entries == 0
@@ -1033,11 +1095,11 @@ impl RenderOnce for Icon {
 }
 
 /// Reclaim the default app renderer's rasters and matching GPUI atlas entries.
-pub fn trim_icon_cache(target_bytes: usize, window: &mut Window, cx: &mut App) {
+pub fn trim_icon_cache(target_bytes: usize, _window: &mut Window, cx: &mut App) {
     if cx.try_global::<IconRenderer>().is_some() {
         cx.update_global::<IconRenderer, _>(|renderer, cx| {
             for image in renderer.trim(target_bytes) {
-                cx.drop_image(image, Some(window));
+                crate::behavior::resources::retire_native_image(image, cx);
             }
         });
     }
@@ -1048,7 +1110,7 @@ pub fn clear_icon_cache(window: &mut Window, cx: &mut App) {
     if cx.try_global::<IconRenderer>().is_some() {
         cx.update_global::<IconRenderer, _>(|renderer, cx| {
             for image in renderer.clear() {
-                cx.drop_image(image, Some(window));
+                crate::behavior::resources::retire_native_image(image, cx);
             }
         });
         // A cached view must render new content after replacing an asset at an existing path.

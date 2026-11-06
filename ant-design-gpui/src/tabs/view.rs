@@ -11,7 +11,7 @@ use crate::{
     behavior::{Accessibility, FocusRing, MotionPolicy},
     icons::{IconName, icon},
     input::motion::CSS_EASE,
-    popup::{Popup, PopupHandle, PopupPlacement, PopupTriggers},
+    popup::{Popup, PopupHandle, PopupPlacement, PopupSession, PopupTriggers},
 };
 use gpui::{
     AnyElement, App, Bounds, ElementId, Entity, IntoElement, MouseButton, Refineable, RenderOnce,
@@ -114,9 +114,21 @@ pub struct TabsPopupRender {
     pub active_key: Option<SharedString>,
     pub handle: PopupHandle,
     state: WeakEntity<TabsState>,
+    session: Option<PopupSession>,
 }
 impl TabsPopupRender {
+    fn current(&self, cx: &App) -> bool {
+        self.handle.is_open(cx)
+            && self.session == self.handle.session_id(cx)
+            && self
+                .state
+                .upgrade()
+                .is_some_and(|state| state.read(cx).mounted)
+    }
     pub fn select(&self, key: &str, window: &mut Window, cx: &mut App) {
+        if !self.current(cx) {
+            return;
+        }
         let enabled = self
             .state
             .update(cx, |s, cx| {
@@ -133,7 +145,9 @@ impl TabsPopupRender {
         }
     }
     pub fn close(&self, window: &mut Window, cx: &mut App) {
-        self.handle.close(window, cx);
+        if self.current(cx) {
+            self.handle.close(window, cx);
+        }
     }
 }
 
@@ -436,6 +450,8 @@ impl RenderOnce for Tabs {
                                 s.mounted = false;
                                 s.generation = s.generation.wrapping_add(1);
                                 s.frame_pending = false;
+                                s.release_popup();
+                                s.release_mount();
                                 for item in s.items.values_mut() {
                                     item.pressed = false;
                                     item.hovered = false;
@@ -1407,7 +1423,10 @@ impl Tabs {
     ) -> AnyElement {
         let state = self.state.clone();
         let handle = state.read(cx).popup.clone();
-        let popup_focus = state.read(cx).popup_focus.clone();
+        let presented = state.downgrade();
+        let hidden = state.downgrade();
+        let focused = state.downgrade();
+        let custom_focus = self.popup_focus.clone();
         let config = scope.snapshot(cx);
         let content = self.more_icon.as_ref().map_or_else(
             || {
@@ -1444,7 +1463,22 @@ impl Tabs {
         Popup::new("more-popup")
             .scope(scope.clone())
             .handle(&handle)
-            .initial_focus(self.popup_focus.as_ref().unwrap_or(&popup_focus))
+            .on_presented(move |_, cx| {
+                let _ = presented.update(cx, |state, cx| state.present_popup(cx));
+            })
+            .initial_focus_with(move |cx| {
+                custom_focus.clone().or_else(|| {
+                    focused
+                        .upgrade()?
+                        .read(cx)
+                        .popup_presentation
+                        .as_ref()
+                        .map(|presentation| presentation.focus.clone())
+                })
+            })
+            .on_hidden(move |cx| {
+                let _ = hidden.update(cx, |state, _| state.release_popup());
+            })
             .disabled(state.read(cx).disabled)
             .child(
                 Accessibility::new(Role::Button)
@@ -1469,249 +1503,266 @@ impl Tabs {
             )
             .z_index(tokens.z_index_popup)
             .gap(px(4.))
-            .fresh(true)
-            .destroy_on_hidden(true)
             .shadows(tokens.globals.box_shadow_secondary.clone())
             .surface_style(div().p_0().style().clone())
             .background(tokens.globals.color_bg_container.to_hsla())
             .radius(px(tokens.globals.border_radius_lg as f32))
             .accessibility_role(Role::ListBox)
             .accessibility_label(config.locale.common.more_tabs.clone())
-            .content(move |handle, window, cx| {
-                let s = state.read(cx);
-                let context = Rc::new(TabsPopupRender {
-                    rest_tabs: s
-                        .hidden
-                        .iter()
-                        .filter_map(|key| s.model.items.get(key).cloned())
-                        .collect(),
-                    active_key: s.model.active.clone(),
-                    handle: handle.clone(),
-                    state: state.downgrade(),
-                });
-                let keyboard = context.clone();
-                let popup_focus = s.popup_focus.clone();
-                let popup_active = s.popup_active.clone();
-                let scroll = s.popup_scroll.clone();
-                let editable = s.kind == TabsType::EditableCard;
-                let disabled = s.disabled;
-                // The menu owns one intrinsic width, including offscreen options.
-                // UniformList lays each row out as a root, so both the list and
-                // its rows must explicitly fill that width.
-                let width = popup_width(
-                    &context.rest_tabs,
-                    &popup_tokens,
-                    &popup_font,
-                    editable,
-                    disabled,
-                    window,
-                    cx,
-                );
-                let mut menu = div()
-                    .id("more-list")
-                    .flex()
-                    .flex_col()
-                    .w(width)
-                    .min_w(px(120.).min(window.viewport_size().width))
-                    .max_w(window.viewport_size().width)
-                    .py(px(popup_tokens.globals.padding_xxs as f32))
-                    .font(popup_font.clone())
-                    .text_size(px(popup_tokens.globals.font_size as f32))
-                    .line_height(gpui::relative(popup_tokens.globals.line_height as f32))
-                    .text_left()
-                    .track_focus(&popup_focus)
-                    .on_key_down(move |event, window, cx| {
-                        let key = event.keystroke.key.as_str();
-                        if !matches!(
-                            key,
-                            "up" | "down"
-                                | "home"
-                                | "end"
-                                | "enter"
-                                | "space"
-                                | "delete"
-                                | "backspace"
-                        ) {
-                            return;
-                        }
-                        let chosen = keyboard
-                            .state
-                            .update(cx, |s, cx| {
-                                let enabled: Vec<_> = s
-                                    .hidden
-                                    .iter()
-                                    .filter(|key| s.enabled(key))
-                                    .cloned()
-                                    .collect();
-                                if enabled.is_empty() {
-                                    return None;
-                                }
-                                let current = s
-                                    .popup_active
-                                    .as_ref()
-                                    .and_then(|key| enabled.iter().position(|item| item == key));
-                                if matches!(key, "delete" | "backspace") {
-                                    if let Some(index) = current {
-                                        s.edit(
-                                            TabsEdit::Remove(enabled[index].clone()),
-                                            TabsSource::Keyboard,
-                                            window,
-                                            cx,
+            .content({
+                let state = state.downgrade();
+                move |handle, window, cx| {
+                    let Some(state) = state.upgrade() else {
+                        return div().into_any_element();
+                    };
+                    let s = state.read(cx);
+                    let context = Rc::new(TabsPopupRender {
+                        rest_tabs: s
+                            .hidden
+                            .iter()
+                            .filter_map(|key| s.model.items.get(key).cloned())
+                            .collect(),
+                        active_key: s.model.active.clone(),
+                        handle: handle.clone(),
+                        state: state.downgrade(),
+                        session: handle.session_id(cx),
+                    });
+                    let keyboard = context.clone();
+                    let Some(presentation) = &s.popup_presentation else {
+                        return div().into_any_element();
+                    };
+                    let popup_focus = presentation.focus.clone();
+                    let popup_active = s.popup_active.clone();
+                    let scroll = presentation.scroll.clone();
+                    let editable = s.kind == TabsType::EditableCard;
+                    let disabled = s.disabled;
+                    // The menu owns one intrinsic width, including offscreen options.
+                    // UniformList lays each row out as a root, so both the list and
+                    // its rows must explicitly fill that width.
+                    let width = popup_width(
+                        &context.rest_tabs,
+                        &popup_tokens,
+                        &popup_font,
+                        editable,
+                        disabled,
+                        window,
+                        cx,
+                    );
+                    let mut menu = div()
+                        .id("more-list")
+                        .flex()
+                        .flex_col()
+                        .w(width)
+                        .min_w(px(120.).min(window.viewport_size().width))
+                        .max_w(window.viewport_size().width)
+                        .py(px(popup_tokens.globals.padding_xxs as f32))
+                        .font(popup_font.clone())
+                        .text_size(px(popup_tokens.globals.font_size as f32))
+                        .line_height(gpui::relative(popup_tokens.globals.line_height as f32))
+                        .text_left()
+                        .track_focus(&popup_focus)
+                        .on_key_down(move |event, window, cx| {
+                            if !keyboard.current(cx) {
+                                return;
+                            }
+                            let key = event.keystroke.key.as_str();
+                            if !matches!(
+                                key,
+                                "up" | "down"
+                                    | "home"
+                                    | "end"
+                                    | "enter"
+                                    | "space"
+                                    | "delete"
+                                    | "backspace"
+                            ) {
+                                return;
+                            }
+                            let chosen = keyboard
+                                .state
+                                .update(cx, |s, cx| {
+                                    let enabled: Vec<_> = s
+                                        .hidden
+                                        .iter()
+                                        .filter(|key| s.enabled(key))
+                                        .cloned()
+                                        .collect();
+                                    if enabled.is_empty() {
+                                        return None;
+                                    }
+                                    let current = s.popup_active.as_ref().and_then(|key| {
+                                        enabled.iter().position(|item| item == key)
+                                    });
+                                    if matches!(key, "delete" | "backspace") {
+                                        if let Some(index) = current {
+                                            s.edit(
+                                                TabsEdit::Remove(enabled[index].clone()),
+                                                TabsSource::Keyboard,
+                                                window,
+                                                cx,
+                                            );
+                                        }
+                                        return None;
+                                    }
+                                    if matches!(key, "enter" | "space") {
+                                        return Some(enabled[current.unwrap_or(0)].clone());
+                                    }
+                                    let index = match key {
+                                        "home" => 0,
+                                        "end" => enabled.len() - 1,
+                                        "up" => current.map_or(enabled.len() - 1, |i| {
+                                            (i + enabled.len() - 1) % enabled.len()
+                                        }),
+                                        _ => current.map_or(0, |i| (i + 1) % enabled.len()),
+                                    };
+                                    s.popup_active = Some(enabled[index].clone());
+                                    if let Some(row) =
+                                        s.hidden.iter().position(|key| key == &enabled[index])
+                                        && let Some(presentation) = &s.popup_presentation
+                                    {
+                                        presentation
+                                            .scroll
+                                            .scroll_to_item(row, gpui::ScrollStrategy::Nearest);
+                                    }
+                                    cx.notify();
+                                    None
+                                })
+                                .ok()
+                                .flatten();
+                            if let Some(key) = chosen {
+                                keyboard.select(&key, window, cx);
+                            }
+                            cx.stop_propagation();
+                            window.prevent_default();
+                        });
+                    menu.style().refine(&styles);
+                    let rows = context.clone();
+                    let row_tokens = popup_tokens.clone();
+                    let close_label = close_label.clone();
+                    let count = rows.rest_tabs.len();
+                    let row_height =
+                        popup_tokens.globals.font_height + popup_tokens.globals.padding_xxs * 2.;
+                    state.update(cx, |s, _| s.rendered_popup_rows = 0);
+                    menu = menu.child(
+                        gpui::uniform_list("overflow-options", count, move |range, window, cx| {
+                            let _ = rows
+                                .state
+                                .update(cx, |s, _| s.rendered_popup_rows += range.len());
+                            range
+                                .map(|index| {
+                                    let item = &rows.rest_tabs[index];
+                                    let selection = rows.clone();
+                                    let key = item.key.clone();
+                                    let a11y_select = rows.clone();
+                                    let a11y_key = item.key.clone();
+                                    let g = &row_tokens.globals;
+                                    let hover_color = g.control_item_bg_hover.to_hsla();
+                                    let unavailable = disabled || item.disabled;
+                                    let mut row = div()
+                                        .id(item.key.clone())
+                                        .flex()
+                                        .w_full()
+                                        .min_w_0()
+                                        .items_center()
+                                        .h(px(row_height as f32))
+                                        .px(px(g.padding_sm as f32))
+                                        .py(px(g.padding_xxs as f32))
+                                        .whitespace_nowrap()
+                                        .text_color(
+                                            if unavailable {
+                                                g.color_text_disabled
+                                            } else {
+                                                g.color_text
+                                            }
+                                            .to_hsla(),
+                                        )
+                                        .when(!unavailable, |d| {
+                                            d.cursor_pointer().hover(move |d| d.bg(hover_color))
+                                        })
+                                        .when(unavailable, |d| d.cursor_not_allowed())
+                                        .role(Role::ListBoxOption)
+                                        .aria_selected(rows.active_key.as_ref() == Some(&item.key))
+                                        .when(
+                                            !unavailable
+                                                && popup_active.as_ref() == Some(&item.key),
+                                            |d| d.bg(hover_color),
+                                        )
+                                        .on_click(move |_, window, cx| {
+                                            selection.select(&key, window, cx)
+                                        })
+                                        .on_a11y_action(
+                                            accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                a11y_select.select(&a11y_key, window, cx)
+                                            },
+                                        );
+                                    if let Some(icon_ref) = &item.icon {
+                                        row = row.child(
+                                            icon(icon_ref.clone())
+                                                .inherit_color()
+                                                .size(px(g.font_size as f32)),
                                         );
                                     }
-                                    return None;
-                                }
-                                if matches!(key, "enter" | "space") {
-                                    return Some(enabled[current.unwrap_or(0)].clone());
-                                }
-                                let index = match key {
-                                    "home" => 0,
-                                    "end" => enabled.len() - 1,
-                                    "up" => current.map_or(enabled.len() - 1, |i| {
-                                        (i + enabled.len() - 1) % enabled.len()
-                                    }),
-                                    _ => current.map_or(0, |i| (i + 1) % enabled.len()),
-                                };
-                                s.popup_active = Some(enabled[index].clone());
-                                if let Some(row) =
-                                    s.hidden.iter().position(|key| key == &enabled[index])
-                                {
-                                    s.popup_scroll
-                                        .scroll_to_item(row, gpui::ScrollStrategy::Nearest);
-                                }
-                                cx.notify();
-                                None
-                            })
-                            .ok()
-                            .flatten();
-                        if let Some(key) = chosen {
-                            keyboard.select(&key, window, cx);
-                        }
-                        cx.stop_propagation();
-                        window.prevent_default();
-                    });
-                menu.style().refine(&styles);
-                let rows = context.clone();
-                let row_tokens = popup_tokens.clone();
-                let close_label = close_label.clone();
-                let count = rows.rest_tabs.len();
-                let row_height =
-                    popup_tokens.globals.font_height + popup_tokens.globals.padding_xxs * 2.;
-                state.update(cx, |s, _| s.rendered_popup_rows = 0);
-                menu = menu.child(
-                    gpui::uniform_list("overflow-options", count, move |range, window, cx| {
-                        let _ = rows
-                            .state
-                            .update(cx, |s, _| s.rendered_popup_rows += range.len());
-                        range
-                            .map(|index| {
-                                let item = &rows.rest_tabs[index];
-                                let selection = rows.clone();
-                                let key = item.key.clone();
-                                let a11y_select = rows.clone();
-                                let a11y_key = item.key.clone();
-                                let g = &row_tokens.globals;
-                                let hover_color = g.control_item_bg_hover.to_hsla();
-                                let unavailable = disabled || item.disabled;
-                                let mut row = div()
-                                    .id(item.key.clone())
-                                    .flex()
-                                    .w_full()
-                                    .min_w_0()
-                                    .items_center()
-                                    .h(px(row_height as f32))
-                                    .px(px(g.padding_sm as f32))
-                                    .py(px(g.padding_xxs as f32))
-                                    .whitespace_nowrap()
-                                    .text_color(
-                                        if unavailable {
-                                            g.color_text_disabled
+                                    row = row.child(div().flex_1().min_w_0().truncate().child(
+                                        if let Some(render) = &item.label_render {
+                                            render(window, cx)
                                         } else {
-                                            g.color_text
-                                        }
-                                        .to_hsla(),
-                                    )
-                                    .when(!unavailable, |d| {
-                                        d.cursor_pointer().hover(move |d| d.bg(hover_color))
-                                    })
-                                    .when(unavailable, |d| d.cursor_not_allowed())
-                                    .role(Role::ListBoxOption)
-                                    .aria_selected(rows.active_key.as_ref() == Some(&item.key))
-                                    .when(
-                                        !unavailable && popup_active.as_ref() == Some(&item.key),
-                                        |d| d.bg(hover_color),
-                                    )
-                                    .on_click(move |_, window, cx| {
-                                        selection.select(&key, window, cx)
-                                    })
-                                    .on_a11y_action(
-                                        accesskit::Action::Click,
-                                        move |_, window, cx| {
-                                            a11y_select.select(&a11y_key, window, cx)
+                                            item.label.clone().into_any_element()
                                         },
-                                    );
-                                if let Some(icon_ref) = &item.icon {
-                                    row = row.child(
-                                        icon(icon_ref.clone())
-                                            .inherit_color()
-                                            .size(px(g.font_size as f32)),
-                                    );
-                                }
-                                row = row.child(div().flex_1().min_w_0().truncate().child(
-                                    if let Some(render) = &item.label_render {
-                                        render(window, cx)
-                                    } else {
-                                        item.label.clone().into_any_element()
-                                    },
-                                ));
-                                if editable && item.closable && !unavailable {
-                                    let close_state = rows.state.clone();
-                                    let close_key = item.key.clone();
-                                    row = row.child(
-                                        div()
-                                            .id("remove")
-                                            .flex_none()
-                                            .ml(px(g.margin_sm as f32))
-                                            .px(px(6.))
-                                            .py(px(1.))
-                                            .text_color(g.color_icon.to_hsla())
-                                            .role(Role::Button)
-                                            .aria_label(close_label.clone())
-                                            .on_click(move |_, window, cx| {
-                                                let _ = close_state.update(cx, |s, cx| {
-                                                    s.edit(
-                                                        TabsEdit::Remove(close_key.clone()),
-                                                        TabsSource::Overflow,
-                                                        window,
-                                                        cx,
-                                                    )
-                                                });
-                                                cx.stop_propagation();
-                                            })
-                                            .child(
-                                                icon(IconName::CloseOutlined)
-                                                    .inherit_color()
-                                                    .size(px(g.font_size_sm as f32)),
-                                            ),
-                                    );
-                                }
-                                let mut semantics = Accessibility::new(Role::ListBoxOption)
-                                    .label(item.label.clone());
-                                semantics.disabled = unavailable;
-                                semantics.apply(row).into_any_element()
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .w_full()
-                    .h(px((count as f64 * row_height)
-                        .min((200. - popup_tokens.globals.padding_xxs * 2.).max(0.))
-                        as f32))
-                    .track_scroll(&scroll),
-                );
-                if let Some(render) = &renderer {
-                    render(menu.into_any_element(), &context, window, cx)
-                } else {
-                    menu.into_any_element()
+                                    ));
+                                    if editable && item.closable && !unavailable {
+                                        let close_context = rows.clone();
+                                        let close_key = item.key.clone();
+                                        row = row.child(
+                                            div()
+                                                .id("remove")
+                                                .flex_none()
+                                                .ml(px(g.margin_sm as f32))
+                                                .px(px(6.))
+                                                .py(px(1.))
+                                                .text_color(g.color_icon.to_hsla())
+                                                .role(Role::Button)
+                                                .aria_label(close_label.clone())
+                                                .on_click(move |_, window, cx| {
+                                                    if !close_context.current(cx) {
+                                                        return;
+                                                    }
+                                                    let _ =
+                                                        close_context.state.update(cx, |s, cx| {
+                                                            s.edit(
+                                                                TabsEdit::Remove(close_key.clone()),
+                                                                TabsSource::Overflow,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        });
+                                                    cx.stop_propagation();
+                                                })
+                                                .child(
+                                                    icon(IconName::CloseOutlined)
+                                                        .inherit_color()
+                                                        .size(px(g.font_size_sm as f32)),
+                                                ),
+                                        );
+                                    }
+                                    let mut semantics = Accessibility::new(Role::ListBoxOption)
+                                        .label(item.label.clone());
+                                    semantics.disabled = unavailable;
+                                    semantics.apply(row).into_any_element()
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .w_full()
+                        .h(px((count as f64 * row_height)
+                            .min((200. - popup_tokens.globals.padding_xxs * 2.).max(0.))
+                            as f32))
+                        .track_scroll(&scroll),
+                    );
+                    if let Some(render) = &renderer {
+                        render(menu.into_any_element(), &context, window, cx)
+                    } else {
+                        menu.into_any_element()
+                    }
                 }
             })
             .into_any_element()

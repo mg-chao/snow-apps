@@ -63,7 +63,7 @@ python scripts/compare_menu_visual.py --native ../build/ant-design-gpui/menu-ref
 ```
 
 Repeat captures at scales `1.5` and `2` for 150% and 200% DPI. Native captures
-exercise the Windows DPI-change notification on their own hidden window; no
+exercise the Windows DPI-change notification on their own non-activating window; no
 monitor configuration is changed. The browser owns a fresh isolated profile.
 The comparison enforces a one-logical-pixel budget for opaque surfaces and
 focus outlines, checks rendered glyph/icon foreground colors, default-chevron

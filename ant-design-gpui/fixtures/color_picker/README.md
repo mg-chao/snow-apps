@@ -57,7 +57,7 @@ for failed geometry, border-token or surface checks.
 
 `scripts/capture-color-picker-native.ps1` binds native captures to SHA-256 hashes
 of the source, shared cases, compiler, executable and metrics. It checks source
-stability before and after building/capturing. Its hidden native window resizes
+stability before and after building/capturing. Its non-activating background native window resizes
 only its owned HWND with `SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOMOVE` and records
 foreground-PID guards at every DPI/frame/capture checkpoint. Performance uses
 `scripts/run-color-picker-perf.ps1`, the Release performance preset, and a

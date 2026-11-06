@@ -1,9 +1,13 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hidden native GPU captures of the same cases as the independent upstream renderer.
+//! Background native GPU captures of the same cases as the independent upstream renderer.
 
 use std::{path::PathBuf, time::Duration};
+
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
 
 use ant_design_gpui::{
     ConfigPatch, ConfigScope, Direction, UiRoot,
@@ -22,14 +26,7 @@ use serde_json::{Value, json};
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -37,10 +34,10 @@ fn set_native_scale(title: &str, scale: f32) {
         fn SendMessageW(window: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     }
     let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-    // Only the uniquely titled hidden window belonging to this process is addressed.
+    // Only the uniquely titled background window belonging to this process is addressed.
     unsafe {
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "hidden Message capture HWND");
+        assert_ne!(handle, 0, "background Message capture HWND");
         let mut rect = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut rect), 0);
         let dpi = (96. * scale).round() as usize;
@@ -238,9 +235,9 @@ fn main() {
         scope.update_patch(cx, |patch| patch.motion = Some(false)).unwrap();
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(740.), px(1000.)), cx))),
-            show: false, focus: false, ..Default::default()
+            show: cfg!(not(target_os = "windows")), focus: false, ..Default::default()
         }, |window, cx| {
-            let title = format!("Ant Design Message hidden capture {}", std::process::id());
+            let title = format!("Ant Design Message background capture {}", std::process::id());
             window.set_window_title(&title);
             let messages = cx.new(|cx| MessageState::new(scope.clone(), window, cx));
             let capture = cx.new(|_| Capture { scope: scope.clone(), messages });
@@ -249,6 +246,8 @@ fn main() {
                 let scenes: Value = serde_json::from_str(include_str!("../fixtures/message/visual-cases.json")).unwrap();
                 let mut metrics = Vec::new();
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&title, (740, 1000), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for (scene, sample) in scenes.as_object().unwrap() {
                     if selected_scene.as_ref().is_some_and(|selected| selected != scene) { continue; }
                     let width = sample["width"].as_f64().unwrap_or(740.) as f32;
@@ -264,7 +263,10 @@ fn main() {
                             for scale in [1., 1.5, 2.] {
                                 if selected_scale.is_some_and(|selected| selected != scale) { continue; }
                                 set_native_scale(&title, scale);
+                                #[cfg(target_os = "windows")]
+                                capture_windows::resize(&title, (width as u32, height as u32), scale).expect("size background notice capture");
                                 cx.update(|window, cx| {
+                                    #[cfg(not(target_os = "windows"))]
                                     window.resize(size(px(width), px(height)));
                                     window.simulate_mouse_move(point(px(width - 1.), px(height - 1.)), cx);
                                     configure(&capture, sample, window, cx);
@@ -316,6 +318,6 @@ fn main() {
                 cx.update(|_, cx| cx.quit()).unwrap();
             }).detach();
             root
-        }).expect("hidden Message capture window");
+        }).expect("background Message capture window");
     });
 }

@@ -198,6 +198,25 @@ impl InputNumberState {
         Ok(())
     }
 
+    /// Rehydrate a popup's current text without reviving undo history, repeat
+    /// tasks, or application value/change events. The accepted number persists.
+    pub(crate) fn restore_draft(
+        &mut self,
+        text: &str,
+        selection: TextSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.cancel_repeat();
+        self.editor.update(cx, |editor, cx| {
+            editor.set_value(text, window, cx);
+            editor.select(selection, window, cx);
+        });
+        self.ignore_through_revision = self.editor.read(cx).buffer.revision();
+        self.draft_status = self.model.options.parse(text);
+        cx.notify();
+    }
+
     pub fn set_options(
         &mut self,
         options: NumberOptions,

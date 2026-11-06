@@ -30,12 +30,55 @@ use crate::{
 pub(super) type Content = Rc<dyn Fn(&PopupHandle, &mut Window, &mut App) -> AnyElement>;
 pub(super) type ChangeHandler = Rc<dyn Fn(&PopupOpenChange, &mut Window, &mut App)>;
 pub(super) type SurfaceClickHandler = Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+pub(super) type HiddenHandler = Rc<dyn Fn(&mut App)>;
+pub(super) type PresentedHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(super) type InitialFocus = Rc<dyn Fn(&App) -> Option<FocusHandle>>;
+
+/// This description belongs to the current frame, never to a hidden controller.
+pub(super) struct Source {
+    pub content: Content,
+    pub on_hidden: Option<HiddenHandler>,
+    pub on_presented: Option<PresentedHandler>,
+    pub on_popup_click: Option<SurfaceClickHandler>,
+    pub arrow_attachment: Option<ArrowAttachment>,
+    pub initial_focus: Option<FocusHandle>,
+    pub initial_focus_with: Option<InitialFocus>,
+}
+
 pub(super) type ArrowAttachment = Rc<dyn Fn(&PopupLayout, &App) -> Option<Point<Pixels>>>;
+
+type HiddenSlot = RefCell<Option<HiddenHandler>>;
+type HiddenQueue = RefCell<Vec<std::rc::Weak<HiddenSlot>>>;
 
 /// A weak connection to a mounted popup. Keeping a handle never keeps an
 /// unmounted popup, native window, pending hover timer or content tree alive.
 #[derive(Clone, Default)]
-pub struct PopupHandle(Rc<RefCell<Option<WeakEntity<PopupState>>>>);
+pub struct PopupHandle(Rc<RefCell<Option<WeakEntity<PopupState>>>>, Rc<HiddenQueue>);
+
+/// Deferred cleanup avoids re-entering a consumer which closes its popup inside
+/// its own update. Handles keep weak slots only; the app effect owns the callback.
+pub(super) struct HiddenEffect {
+    callback: Rc<HiddenSlot>,
+    pending: std::rc::Weak<HiddenQueue>,
+}
+
+pub(super) fn dispatch_hidden(effect: Option<HiddenEffect>, cx: &mut App) {
+    if let Some(effect) = effect {
+        cx.defer(move |cx| {
+            let callback = effect.callback.borrow_mut().take();
+            if let Some(callback) = callback {
+                callback(cx);
+            }
+            if let Some(pending) = effect.pending.upgrade() {
+                let mut pending = pending.borrow_mut();
+                pending.retain(|weak| weak.upgrade().is_some_and(|slot| slot.borrow().is_some()));
+                if pending.is_empty() {
+                    *pending = Vec::new();
+                }
+            }
+        });
+    }
+}
 
 /// Identity of an opening, including its mounted instance. Compare these values
 /// before applying asynchronous results to a popup that may have been replaced.
@@ -48,6 +91,29 @@ pub struct PopupSession {
 impl PopupHandle {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn pending_hidden(&self, callback: HiddenHandler) -> HiddenEffect {
+        let callback = Rc::new(RefCell::new(Some(callback)));
+        self.1.borrow_mut().push(Rc::downgrade(&callback));
+        HiddenEffect {
+            callback,
+            pending: Rc::downgrade(&self.1),
+        }
+    }
+
+    /// Cleanup from a prior presentation must precede resource initialization
+    /// for a replacement, even if close/reopen happened within one app update.
+    pub(super) fn flush_hidden(&self, cx: &mut App) {
+        let pending = std::mem::take(&mut *self.1.borrow_mut());
+        for weak in pending {
+            if let Some(slot) = weak.upgrade() {
+                let callback = slot.borrow_mut().take();
+                if let Some(callback) = callback {
+                    callback(cx);
+                }
+            }
+        }
     }
 
     pub fn is_open(&self, cx: &App) -> bool {
@@ -167,6 +233,7 @@ pub(super) struct Options {
     pub busy: bool,
     pub automation_id: Option<SharedString>,
     pub initial_focus: Option<FocusHandle>,
+    pub initial_focus_with: Option<InitialFocus>,
     pub unique_group: Option<EntityId>,
     pub motion_duration: Option<Duration>,
     pub exit_duration: Duration,
@@ -208,6 +275,7 @@ impl Default for Options {
             busy: false,
             automation_id: None,
             initial_focus: None,
+            initial_focus_with: None,
             unique_group: None,
             motion_duration: None,
             exit_duration: Duration::ZERO,
@@ -231,8 +299,8 @@ pub struct Popup {
     content: Content,
     open: Option<bool>,
     default_open: bool,
-    fresh: bool,
-    destroy_on_hidden: bool,
+    on_hidden: Option<HiddenHandler>,
+    on_presented: Option<PresentedHandler>,
     handle: Option<PopupHandle>,
     on_change: Option<ChangeHandler>,
     pub(super) options: Options,
@@ -249,8 +317,8 @@ impl Popup {
             content: Rc::new(|_, _, _| div().into_any_element()),
             open: None,
             default_open: false,
-            fresh: false,
-            destroy_on_hidden: false,
+            on_hidden: None,
+            on_presented: None,
             handle: None,
             on_change: None,
             options: Options::default(),
@@ -293,12 +361,25 @@ impl Popup {
         self.default_open = open;
         self
     }
-    pub fn fresh(mut self, fresh: bool) -> Self {
-        self.fresh = fresh;
+    /// Release popup-only resources after its final presentation ends.
+    /// Internal consumers must capture their controller weakly.
+    pub(crate) fn on_hidden(mut self, callback: impl Fn(&mut App) + 'static) -> Self {
+        self.on_hidden = Some(Rc::new(callback));
         self
     }
-    pub fn destroy_on_hidden(mut self, destroy: bool) -> Self {
-        self.destroy_on_hidden = destroy;
+    /// Initialize presentation-only resources before the first content build.
+    pub(crate) fn on_presented(
+        mut self,
+        callback: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_presented = Some(Rc::new(callback));
+        self
+    }
+    pub(crate) fn initial_focus_with(
+        mut self,
+        callback: impl Fn(&App) -> Option<FocusHandle> + 'static,
+    ) -> Self {
+        self.options.initial_focus_with = Some(Rc::new(callback));
         self
     }
     pub fn handle(mut self, handle: &PopupHandle) -> Self {
@@ -548,9 +629,10 @@ pub(super) struct PopupState {
     pub handle: PopupHandle,
     pub on_change: Option<ChangeHandler>,
     pub trigger_focus: FocusHandle,
-    pub surface_focus: FocusHandle,
+    pub surface_focus: Option<FocusHandle>,
     pub return_focus: Option<FocusHandle>,
     pub focus_pending: bool,
+    resume_focus: bool,
     pub context_position: Option<Point<Pixels>>,
     pub anchor: Bounds<Pixels>,
     pub layout: Option<PopupLayout>,
@@ -560,7 +642,9 @@ pub(super) struct PopupState {
     unique_motion: Option<BoundsTransition>,
     pub pointer_down: bool,
     pub keyboard_down: Option<SharedString>,
-    pub destroy_on_hidden: bool,
+    hidden_callback: Option<HiddenHandler>,
+    exit_generation: u64,
+    exit_task: Option<Task<()>>,
     pub session: u64,
     pub trigger_metadata: Rc<RefCell<super::trigger::Metadata>>,
     epoch: Instant,
@@ -569,6 +653,7 @@ pub(super) struct PopupState {
     pub exiting: bool,
     entry_started: Duration,
     frame_pending: bool,
+    frame_generation: u64,
     unique_claimed: bool,
     timer: Option<(u64, Task<()>)>,
     _subscriptions: Vec<Subscription>,
@@ -582,8 +667,12 @@ impl PopupState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        // A keyed popup can move while its controller/handle stays mounted.
+        // Retire the old presentation before a replacement initializes resources.
+        if let Some(previous) = control.handle.as_ref().and_then(PopupHandle::state) {
+            suspend(&previous, cx);
+        }
         let trigger_focus = cx.focus_handle();
-        let surface_focus = cx.focus_handle();
         let weak = cx.weak_entity();
         let enter = window.on_focus_in(&trigger_focus, cx, move |window, cx| {
             if window.last_input_was_keyboard() {
@@ -605,6 +694,14 @@ impl PopupState {
         let handle = control.handle.clone().unwrap_or_default();
         *handle.0.borrow_mut() = Some(cx.weak_entity());
         let parent = host.borrow().parent;
+        host.borrow_mut()
+            .states
+            .insert(cx.entity_id(), cx.weak_entity());
+        cx.on_release(|state: &mut Self, cx| {
+            let effect = state.finish_hidden(cx.background_executor().now());
+            dispatch_hidden(effect, cx);
+        })
+        .detach();
         Self {
             id: cx.entity_id(),
             host,
@@ -613,15 +710,14 @@ impl PopupState {
             scope,
             lifecycle: Lifecycle::new(control.open, control.default_open),
             options: control.options.clone(),
-            content: (!(control.destroy_on_hidden
-                && !control.open.unwrap_or(control.default_open)))
-            .then(|| control.content.clone()),
+            content: None,
             handle,
             on_change: control.on_change.clone(),
             trigger_focus,
-            surface_focus,
+            surface_focus: None,
             return_focus: None,
             focus_pending: false,
+            resume_focus: false,
             context_position: None,
             anchor: Bounds::default(),
             layout: None,
@@ -631,7 +727,9 @@ impl PopupState {
             unique_motion: None,
             pointer_down: false,
             keyboard_down: None,
-            destroy_on_hidden: control.destroy_on_hidden,
+            hidden_callback: None,
+            exit_generation: 0,
+            exit_task: None,
             session: 0,
             trigger_metadata: Rc::default(),
             epoch: cx.background_executor().now(),
@@ -640,13 +738,20 @@ impl PopupState {
             exiting: false,
             entry_started: Duration::ZERO,
             frame_pending: false,
+            frame_generation: 0,
             unique_claimed: false,
             timer: None,
             _subscriptions: vec![enter, leave, scope_observer],
         }
     }
 
-    fn sync(&mut self, control: &Popup, scope: ConfigScope, cx: &mut Context<Self>) {
+    fn sync(
+        &mut self,
+        control: &Popup,
+        scope: ConfigScope,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<HiddenEffect> {
         if self.scope != scope {
             self._subscriptions[2] = scope.observe(cx);
             self.scope = scope;
@@ -660,16 +765,16 @@ impl PopupState {
             self.release_unique(Some(cx.background_executor().now()));
         }
         self.options = control.options.clone();
+        if self.content.is_none() {
+            self.options.on_popup_click = None;
+            self.options.arrow_attachment = None;
+            self.options.initial_focus = None;
+            self.options.initial_focus_with = None;
+        }
         if was_open && !self.lifecycle.open() {
-            self.begin_exit(cx);
+            self.begin_exit(window, cx);
         }
         self.on_change = control.on_change.clone();
-        self.destroy_on_hidden = control.destroy_on_hidden;
-        if control.destroy_on_hidden && !self.lifecycle.open() && !self.exiting {
-            self.content = None;
-        } else if self.lifecycle.open() || control.fresh || self.content.is_none() {
-            self.content = Some(control.content.clone());
-        }
         if let Some(handle) = &control.handle {
             *handle.0.borrow_mut() = Some(cx.weak_entity());
             self.handle = handle.clone();
@@ -689,6 +794,93 @@ impl PopupState {
             self.host.borrow_mut().entries.remove(&self.id);
         }
         self.sync_trigger_metadata();
+        if !self.lifecycle.open() && !self.exiting {
+            self.finish_hidden(cx.background_executor().now())
+        } else {
+            None
+        }
+    }
+
+    /// Drop the complete presentation in one place. Essential trigger/controller
+    /// state stays mounted; callbacks and heavyweight descendants do not.
+    pub(super) fn finish_hidden(&mut self, now: Instant) -> Option<HiddenEffect> {
+        if self.content.is_none() && self.surface_focus.is_none() && !self.exiting {
+            if !self.lifecycle.open() {
+                self.return_focus = None;
+                self.resume_focus = false;
+            }
+            return None;
+        }
+        let yielded_unique =
+            self.lifecycle.open() && self.options.unique_group.is_some() && !self.presented();
+        if self.lifecycle.open() {
+            // A hidden presentation invalidates async UI work while preserving
+            // an authoritative controlled open value for later reconstruction.
+            self.session = self.session.wrapping_add(1);
+        }
+        self.exit_generation = self.exit_generation.wrapping_add(1);
+        self.exit_task = None;
+        self.exiting = false;
+        self.timer = None;
+        self.frame_pending = false;
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.release_unique(Some(now));
+        // A controlled owner that declined unique replacement stays yielded
+        // until its authoritative open value changes; teardown must not reclaim.
+        if yielded_unique {
+            self.unique_claimed = true;
+        }
+        {
+            let mut host = self.host.borrow_mut();
+            host.entries.remove(&self.id);
+            host.presentations.remove(&self.id);
+            if host.entries.is_empty() {
+                host.entries = Default::default();
+            }
+            if host.presentations.is_empty() {
+                host.presentations = Default::default();
+            }
+        }
+        self.content = None;
+        self.surface_focus = None;
+        if !self.lifecycle.open() {
+            self.return_focus = None;
+            self.resume_focus = false;
+        }
+        self.focus_pending = false;
+        self.options.initial_focus = None;
+        self.options.initial_focus_with = None;
+        self.options.on_popup_click = None;
+        self.options.arrow_attachment = None;
+        self.layout = None;
+        self.visual_layout = None;
+        self.hidden_callback
+            .take()
+            .map(|callback| self.handle.pending_hidden(callback))
+    }
+
+    pub(super) fn install_source(&mut self, source: &Source, cx: &mut Context<Self>) {
+        if self.content.is_none() {
+            self.surface_focus = Some(cx.focus_handle());
+            self.host
+                .borrow_mut()
+                .presentations
+                .insert(self.id, cx.weak_entity());
+            self.hidden_callback = source.on_hidden.clone();
+        }
+        self.content = Some(source.content.clone());
+        self.options.on_popup_click = source.on_popup_click.clone();
+        self.options.arrow_attachment = source.arrow_attachment.clone();
+        self.options.initial_focus = source.initial_focus.clone().or_else(|| {
+            self.resume_focus
+                .then(|| self.surface_focus.clone())
+                .flatten()
+        });
+        self.options.initial_focus_with = source.initial_focus_with.clone();
+        if self.resume_focus {
+            self.focus_pending = true;
+            self.resume_focus = false;
+        }
     }
 
     fn sync_trigger_metadata(&self) {
@@ -710,6 +902,9 @@ impl PopupState {
                 .is_some_and(|owner| owner.entity_id() == self.id)
             {
                 host.unique.remove(&group);
+                if host.unique.is_empty() {
+                    host.unique = Default::default();
+                }
             }
         }
         if let Some(group) = self.options.unique_group {
@@ -724,6 +919,7 @@ impl PopupState {
                     entry
                         .expires
                         .get_or_insert(now + self.options.handoff_duration);
+                    host.prune_geometry(now);
                 } else {
                     host.unique_geometry.remove(&group);
                 }
@@ -763,14 +959,18 @@ impl PopupState {
         motion.retarget(layout.bounds, now, self.options.handoff_duration, policy);
         let (bounds, finished) = motion.sample(now);
         layout.bounds = bounds;
-        self.host.borrow_mut().unique_geometry.insert(
+        let mut host = self.host.borrow_mut();
+        let used = host.geometry_tick();
+        host.unique_geometry.insert(
             group,
             UniqueGeometry {
                 owner: cx.weak_entity(),
                 bounds,
                 expires: None,
+                used,
             },
         );
+        drop(host);
         if !finished {
             self.request_frame(window, cx);
         }
@@ -782,11 +982,15 @@ impl PopupState {
             return;
         }
         self.frame_pending = true;
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        let generation = self.frame_generation;
         let weak = cx.weak_entity();
         window.on_next_frame(move |_, cx| {
             let _ = weak.update(cx, |state, cx| {
-                state.frame_pending = false;
-                cx.notify();
+                if state.frame_generation == generation {
+                    state.frame_pending = false;
+                    cx.notify();
+                }
             });
         });
     }
@@ -802,7 +1006,7 @@ impl PopupState {
             })
     }
 
-    fn begin_exit(&mut self, cx: &App) {
+    fn begin_exit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let config = self.scope.snapshot(cx);
         let policy = MotionPolicy::new(
             config.motion
@@ -822,6 +1026,29 @@ impl PopupState {
             let now = cx.background_executor().now().duration_since(self.epoch);
             self.opacity
                 .retarget(0., now, self.options.exit_duration, policy);
+            self.exit_generation = self.exit_generation.wrapping_add(1);
+            let generation = self.exit_generation;
+            let timer = cx.background_executor().timer(self.options.exit_duration);
+            self.exit_task = Some(cx.spawn_in(window, async move |weak, cx| {
+                timer.await;
+                let _ = cx.update(|window, cx| {
+                    let callback = weak
+                        .update(cx, |state, cx| {
+                            if !state.exiting || state.exit_generation != generation {
+                                return None;
+                            }
+                            let callback = state.finish_hidden(cx.background_executor().now());
+                            cx.notify();
+                            callback
+                        })
+                        .ok()
+                        .flatten();
+                    dispatch_hidden(callback, cx);
+                    if !window.is_visible() {
+                        host::schedule_hidden_cleanup(window, cx);
+                    }
+                });
+            }));
         }
     }
 
@@ -849,6 +1076,8 @@ impl PopupState {
                     );
                 }
                 self.exiting = false;
+                self.exit_generation = self.exit_generation.wrapping_add(1);
+                self.exit_task = None;
                 self.opacity.retarget(
                     1.,
                     now,
@@ -868,9 +1097,7 @@ impl PopupState {
         let sample = self.opacity.sample(now);
         if self.exiting && sample.finished {
             self.exiting = false;
-            if self.destroy_on_hidden {
-                self.content = None;
-            }
+            // Prepaint dispatches the hidden hook after this state borrow ends.
             self.request_frame(window, cx);
         }
         // Unique content uses Ant's linear fade (motionDurationMid), separate
@@ -902,6 +1129,15 @@ impl Drop for PopupState {
     fn drop(&mut self) {
         self.release_unique(None);
         self.host.borrow_mut().entries.remove(&self.id);
+        let mut host = self.host.borrow_mut();
+        host.states.remove(&self.id);
+        host.presentations.remove(&self.id);
+        if host.states.is_empty() {
+            host.states = Default::default();
+        }
+        if host.presentations.is_empty() {
+            host.presentations = Default::default();
+        }
     }
 }
 
@@ -916,14 +1152,55 @@ impl RenderOnce for Popup {
         let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
             PopupState::new(&self, scope.clone(), host, window, cx)
         });
-        state.update(cx, |state, cx| state.sync(&self, scope, cx));
-        claim_unique(&state.downgrade(), window, cx);
+        let callback = state.update(cx, |state, cx| state.sync(&self, scope, window, cx));
+        dispatch_hidden(callback, cx);
         PopupElement {
             id: self.id,
             child: self.child,
+            source: Source {
+                content: self.content,
+                on_hidden: self.on_hidden,
+                on_presented: self.on_presented,
+                on_popup_click: self.options.on_popup_click,
+                arrow_attachment: self.options.arrow_attachment,
+                initial_focus: self.options.initial_focus,
+                initial_focus_with: self.options.initial_focus_with,
+            },
             state,
         }
     }
+}
+
+/// Remember focus intent without retaining disposed popup controls. Only a
+/// presentation that owned focus before native suspension may reclaim it.
+pub(super) fn suspend_for_window(weak: &WeakEntity<PopupState>, window: &Window, cx: &mut App) {
+    let _ = weak.update(cx, |state, cx| {
+        // Native hiding interrupts the gesture even when a closed trigger has
+        // not allocated any presentation resources yet. A later release must
+        // not activate a press from before suspension.
+        state.pointer_down = false;
+        state.keyboard_down = None;
+        state.resume_focus |= state.lifecycle.open()
+            && state
+                .surface_focus
+                .as_ref()
+                .is_some_and(|focus| focus.contains_focused(window, cx));
+    });
+    suspend(weak, cx);
+}
+
+pub(super) fn suspend(weak: &WeakEntity<PopupState>, cx: &mut App) {
+    let callback = weak
+        .update(cx, |state, cx| {
+            let callback = state.finish_hidden(cx.background_executor().now());
+            state.timer = None;
+            state.focus_pending = false;
+            cx.notify();
+            callback
+        })
+        .ok()
+        .flatten();
+    dispatch_hidden(callback, cx);
 }
 
 pub(super) fn request_open(
@@ -996,41 +1273,45 @@ fn commit(weak: &WeakEntity<PopupState>, generation: u64, window: &mut Window, c
             state.focus_pending = false;
             state.context_position = None;
             if !state.lifecycle.open() {
-                state.begin_exit(cx);
+                state.begin_exit(window, cx);
                 if !state.exiting {
                     state.release_unique(Some(cx.background_executor().now()));
                     state.layout = None;
                 }
                 state.host.borrow_mut().entries.remove(&state.id);
-                if state.destroy_on_hidden && !state.exiting {
-                    state.content = None;
-                }
                 if matches!(
                     change.reason,
                     PopupOpenReason::Escape
                         | PopupOpenReason::Confirm
                         | PopupOpenReason::Cancel
                         | PopupOpenReason::Accessibility
-                ) && state.surface_focus.contains_focused(window, cx)
+                ) && state
+                    .surface_focus
+                    .as_ref()
+                    .is_some_and(|focus| focus.contains_focused(window, cx))
                     && let Some(focus) = &state.return_focus
                 {
                     window.focus(focus, cx);
                 }
             }
         }
+        let hidden = if !state.lifecycle.open() && !state.exiting {
+            state.finish_hidden(cx.background_executor().now())
+        } else {
+            None
+        };
         cx.notify();
         state.sync_trigger_metadata();
         Some((
+            hidden,
             change,
             state.on_change.clone(),
             state.host.clone(),
             state.id,
         ))
     });
-    if let Some((change, callback, host, id)) = emitted {
-        if change.open {
-            claim_unique(weak, window, cx);
-        }
+    if let Some((hidden, change, callback, host, id)) = emitted {
+        dispatch_hidden(hidden, cx);
         if !change.open && !entity.read(cx).lifecycle.open() {
             let children = host.borrow().descendants(id);
             for child in children {
@@ -1045,7 +1326,7 @@ fn commit(weak: &WeakEntity<PopupState>, generation: u64, window: &mut Window, c
     }
 }
 
-fn claim_unique(weak: &WeakEntity<PopupState>, window: &mut Window, cx: &mut App) {
+pub(super) fn claim_unique(weak: &WeakEntity<PopupState>, window: &mut Window, cx: &mut App) {
     let Ok(previous) = weak.update(cx, |state, cx| {
         if !state.lifecycle.open() || state.unique_claimed {
             return None;
@@ -1064,12 +1345,14 @@ fn claim_unique(weak: &WeakEntity<PopupState>, window: &mut Window, cx: &mut App
             .map(|entry| entry.bounds);
         state.unique_replacement = state.unique_origin.is_some();
         if let Some(bounds) = state.unique_origin {
+            let used = host.geometry_tick();
             host.unique_geometry.insert(
                 group,
                 UniqueGeometry {
                     owner: weak.clone(),
                     bounds,
                     expires: None,
+                    used,
                 },
             );
         }

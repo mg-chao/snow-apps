@@ -101,6 +101,7 @@ pub(super) struct SelectModel<T> {
     pub tokenizer: Option<SelectTokenizer>,
     // These counters expose structural work to deterministic performance tests.
     pub filter_revision: u64,
+    rows_enabled: bool,
 }
 impl<T: Clone + Eq + Hash> SelectModel<T> {
     pub fn new(options: SelectOptions<T>) -> Self {
@@ -125,6 +126,7 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
             tag_factory: None,
             tokenizer: None,
             filter_revision: 0,
+            rows_enabled: true,
         };
         this.reset_active();
         this
@@ -287,6 +289,50 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
         };
         Some((position, total))
     }
+    /// A hidden scrolling request retains only a stable option ID. Query-specific
+    /// indices used for membership are temporary and drop before this returns.
+    pub fn matching_id(&self, value: &T) -> Option<ElementId> {
+        if self.rows_enabled {
+            return self
+                .index_of_value(value)
+                .and_then(|i| self.option(i))
+                .map(|option| option.id.clone());
+        }
+        let matches = if self.settings.hide_selected {
+            self.options
+                .search_excluding(&self.query, &self.search, &self.selected)
+        } else {
+            self.options.search(&self.query, &self.search)
+        };
+        if self
+            .options
+            .row_for_value(value)
+            .is_some_and(|row| matches.row_position(row).is_some())
+        {
+            return self.options.option(value).map(|option| option.id.clone());
+        }
+        let created_matches = if self.settings.hide_selected {
+            SelectOptions::<T>::default().all()
+        } else {
+            self.created.search(&self.query, &self.search)
+        };
+        if self
+            .created
+            .row_for_value(value)
+            .is_some_and(|row| created_matches.row_position(row).is_some())
+        {
+            return self.created.option(value).map(|option| option.id.clone());
+        }
+        self.query_suggestion(&matches, &created_matches)
+            .filter(|option| &option.value == value)
+            .map(|option| option.id)
+    }
+    pub fn index_of_id(&self, id: &ElementId) -> Option<usize> {
+        (0..self.row_count()).find(|i| self.option(*i).is_some_and(|option| &option.id == id))
+    }
+    pub fn rows_enabled(&self) -> bool {
+        self.rows_enabled
+    }
     pub fn index_of_value(&self, value: &T) -> Option<usize> {
         if self
             .suggestion
@@ -324,11 +370,42 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
     pub fn active_id(&self) -> Option<&ElementId> {
         self.active.and_then(|i| self.option(i)).map(|o| &o.id)
     }
+    /// Hidden selectors share canonical option indices, releasing query-specific
+    /// permutations and suggestions. Options, selected values and query persist.
+    pub fn suspend_rows(&mut self) {
+        self.rows_enabled = false;
+        self.release_rows();
+        if self.selection_ids.is_empty() {
+            self.selection_ids = HashMap::new();
+        } else if self.selection_ids.capacity() > self.selection_ids.len().saturating_mul(4).max(16)
+        {
+            self.selection_ids.shrink_to_fit();
+        }
+    }
+    fn release_rows(&mut self) {
+        self.matches = self.options.all();
+        self.created_matches = self.created.all();
+        self.display_order = None;
+        self.suggestion = None;
+        self.active = None;
+    }
+    pub fn resume_rows(&mut self) -> bool {
+        if self.rows_enabled {
+            return false;
+        }
+        self.rows_enabled = true;
+        self.refilter();
+        true
+    }
     pub fn refilter(&mut self) {
         let previous = self.active_id().cloned();
         self.refilter_with(previous);
     }
     fn refilter_with(&mut self, previous: Option<ElementId>) {
+        if !self.rows_enabled {
+            self.release_rows();
+            return;
+        }
         self.matches = if self.settings.hide_selected {
             self.options
                 .search_excluding(&self.query, &self.search, &self.selected)
@@ -342,10 +419,34 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
         };
         self.sort_created();
         self.filter_revision += 1;
-        self.suggestion = if self.settings.mode == SelectMode::Tags
+        self.suggestion = self.query_suggestion(&self.matches, &self.created_matches);
+        self.active = previous.and_then(|id| {
+            (0..self.row_count())
+                .find(|i| self.enabled(*i) && self.option(*i).is_some_and(|o| o.id == id))
+        });
+        if self.active.is_none() {
+            self.reset_active();
+        }
+    }
+    fn query_suggestion(
+        &self,
+        matches: &SelectMatches,
+        created_matches: &SelectMatches,
+    ) -> Option<SelectOption<T>> {
+        if self.settings.mode == SelectMode::Tags
             && !self.query.is_empty()
-            && !(0..self.row_count()).any(|i| {
-                self.row(i).and_then(SelectRow::option).is_some_and(|o| {
+            && !matches
+                .rows()
+                .iter()
+                .map(|index| &self.options.rows()[*index])
+                .chain(
+                    created_matches
+                        .rows()
+                        .iter()
+                        .map(|index| &self.created.rows()[*index]),
+                )
+                .filter_map(SelectRow::option)
+                .any(|o| {
                     o.value_text.as_ref() == self.query.as_ref()
                         || self.search.fields.iter().any(|field| match field {
                             super::SelectSearchField::Value => o.value_text == self.query,
@@ -355,7 +456,7 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
                             }
                         })
                 })
-            }) {
+        {
             self.tag_factory
                 .as_ref()
                 .and_then(|f| f(&self.query))
@@ -365,13 +466,6 @@ impl<T: Clone + Eq + Hash> SelectModel<T> {
                 })
         } else {
             None
-        };
-        self.active = previous.and_then(|id| {
-            (0..self.row_count())
-                .find(|i| self.enabled(*i) && self.option(*i).is_some_and(|o| o.id == id))
-        });
-        if self.active.is_none() {
-            self.reset_active();
         }
     }
     /// Keep the immutable datasets shared. Only a row permutation is needed to

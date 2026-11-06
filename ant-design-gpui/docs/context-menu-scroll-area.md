@@ -58,8 +58,10 @@ Menus with more than 64 entries use GPUI's variable-height list; separators and
 group headings retain their natural heights. Per-level text measurements are
 cached against immutable item, theme and font snapshots. Keyboard navigation
 reveals the active row without building every offscreen command.
-The initial width measurement shapes the labels once; performance measurements
-of reopening and redraw use warmed caches.
+The initial width measurement shapes the labels once per presentation; redraws
+reuse those measurements while open. Closing releases per-level lists and metrics,
+so reopening reconstructs them. Historical warm-reopening measurements predate
+this lifetime change; see [popup ownership](popup-lifetime.md).
 
 The existing `UiRoot` popup host supplies clipping escape, collision adjustment,
 nested popup ownership and outside dismissal. Menu surfaces inherit typography,

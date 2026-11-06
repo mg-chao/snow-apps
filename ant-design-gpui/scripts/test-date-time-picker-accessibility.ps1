@@ -57,7 +57,10 @@ public static class DateTimePickerUia {
         SetWindowLongPtr(handle, -20, new IntPtr(style | 0x08000000L));
         Rect bounds; if (!GetWindowRect(handle, out bounds)) return false;
         int width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top;
-        const uint flags = 0x0002 | 0x0004 | 0x0010;
+        // Popup content is intentionally absent while the native window is
+        // hidden. Present this owned inspection HWND without activation before
+        // querying its real popup tree (SWP_SHOWWINDOW | SWP_NOACTIVATE).
+        const uint flags = 0x0002 | 0x0004 | 0x0010 | 0x0040;
         return SetWindowPos(handle, IntPtr.Zero, 0, 0, width + 1, height, flags)
             && SetWindowPos(handle, IntPtr.Zero, 0, 0, width, height, flags);
     }
@@ -124,10 +127,14 @@ function Value-Of([System.Windows.Automation.AutomationElement]$Node) {
     return $Node.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
 }
 function Require-RegisteredClick([string]$Role, [string]$Label) {
-    $candidates = @((Read-State).tree.nodes.PSObject.Properties.Value | Where-Object {
-        $_.aria.role -eq $Role -and $_.aria.label -eq $Label
-    })
-    Require ($candidates.Count -eq 1 -and @($candidates[0].aria.on_action) -contains 'Click') "Native $Role $Label has no registered Click accessibility handler"
+    # UIA and the fixture JSON are published independently. A native node can
+    # already exist while the latest 100ms snapshot still describes startup.
+    Wait-Condition {
+        $candidates = @((Read-State).tree.nodes.PSObject.Properties.Value | Where-Object {
+            $_.aria.role -eq $Role -and $_.aria.label -eq $Label
+        })
+        $candidates.Count -eq 1 -and @($candidates[0].aria.on_action) -contains 'Click'
+    } "Native $Role $Label has no registered Click accessibility handler"
 }
 function Save-NativeTree([string]$Path) {
     $nodes = $script:window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
@@ -161,7 +168,7 @@ foreach ($locale in @('en_US', 'zh_CN', 'zh_TW')) {
         $script:process = Start-Process -FilePath $exe -ArgumentList @($script:statePath,$component,$locale) -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $output "$name-stderr.txt")
         try {
             $script:handle = [IntPtr]::Zero
-            Wait-Condition { $script:handle = [DateTimePickerUia]::Find($script:process.Id); $script:handle -ne [IntPtr]::Zero } 'Hidden native fixture did not create its HWND' 30000
+            Wait-Condition { $script:handle = [DateTimePickerUia]::Find($script:process.Id); $script:handle -ne [IntPtr]::Zero } 'Native inspection fixture did not create its HWND' 30000
             Require ([DateTimePickerUia]::Owner($script:handle) -eq $script:process.Id) 'HWND does not belong to fixture process'
             Require ([DateTimePickerUia]::InitializeSize($script:handle)) 'Could not initialize owned HWND without activation'
             $script:window = [System.Windows.Automation.AutomationElement]::FromHandle($script:handle)

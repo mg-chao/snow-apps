@@ -11,8 +11,10 @@ use gpui::{
 };
 use std::{cell::Cell, hint::black_box, rc::Rc, time::Instant};
 
+const WARMUP_ITERATIONS: usize = 10;
+
 fn measure(name: &str, n: usize, mut work: impl FnMut()) {
-    for _ in 0..10 {
+    for _ in 0..WARMUP_ITERATIONS {
         work();
     }
     let mut times = Vec::with_capacity(n);
@@ -157,11 +159,17 @@ fn main() {
     measure("one_open_20_rows_draw", 200, || f.draw(false));
     measure("one_open_20_rows_invalidated", 200, || f.draw(true));
     f.idle();
-    measure("retained_close_reopen", 100, || {
+    let initial_constructions = f.constructions.get();
+    let measured_reopens = 100;
+    measure("lazy_close_reopen", measured_reopens, || {
         f.open(false);
         f.open(true);
     });
-    assert_eq!(f.constructions.get(), 1);
+    let reopened_body_constructions = f.constructions.get();
+    assert_eq!(
+        reopened_body_constructions,
+        initial_constructions + WARMUP_ITERATIONS + measured_reopens
+    );
     let mut narrow = false;
     measure("resize_dialog", 100, || {
         narrow = !narrow;
@@ -207,6 +215,6 @@ fn main() {
     f.open(false);
     f.idle();
     println!(
-        "Verified: closed_lazy_constructions=0; retained_body_constructions=1; idle_frames=0; released_helpers=5/5"
+        "Verified: closed_lazy_constructions=0; reopened_body_constructions={reopened_body_constructions}; idle_frames=0; released_helpers=5/5"
     );
 }

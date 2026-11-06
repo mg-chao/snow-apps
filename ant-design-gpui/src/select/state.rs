@@ -11,7 +11,7 @@ use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ScrollStrategy,
     SharedString, Subscription, UniformListScrollHandle, Window,
 };
-use std::{hash::Hash, rc::Rc};
+use std::{cell::RefCell, hash::Hash, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectChangeSource {
@@ -42,14 +42,15 @@ pub enum SelectEvent<T> {
 }
 pub(super) type EventHandler<T> = Rc<dyn Fn(&SelectEvent<T>, &mut Window, &mut App)>;
 
-/// Keep one entity per mounted Select. It owns native text editing, selection,
-/// filtered row snapshots and scroll position; rebuilding the view is inexpensive.
+/// Keep one entity per mounted Select. Native trigger editing and selection persist;
+/// derived popup rows and list geometry are released when presentation ends.
 pub struct SelectState<T: 'static> {
     pub(super) model: SelectModel<T>,
     pub(super) editor: Entity<InputState>,
     pub(super) scroll: UniformListScrollHandle,
     pub(super) variable_list: Option<gpui::ListState>,
     pub(super) variable_key: Option<(u64, f32, usize)>,
+    pending_scroll: RefCell<Option<gpui::ElementId>>,
     pub(super) open: bool,
     pub(super) hovered: bool,
     pub(super) initialized: bool,
@@ -102,11 +103,16 @@ impl<T: Clone + Eq + Hash + 'static> SelectState<T> {
             this.input_event(event, window, cx);
         });
         Self {
-            model: SelectModel::new(options),
+            model: {
+                let mut model = SelectModel::new(options);
+                model.suspend_rows();
+                model
+            },
             editor,
             scroll: UniformListScrollHandle::default(),
             variable_list: None,
             variable_key: None,
+            pending_scroll: RefCell::new(None),
             open: false,
             hovered: false,
             initialized: false,
@@ -173,6 +179,7 @@ impl<T: Clone + Eq + Hash + 'static> SelectState<T> {
         self.set_value(values, cx);
         self.model.set_query(SharedString::default());
         self.model.active = None;
+        self.pending_scroll.borrow_mut().take();
         self.enter_held = false;
         self.editor
             .update(cx, |editor, cx| editor.reset_value("", window, cx));
@@ -271,6 +278,26 @@ impl<T: Clone + Eq + Hash + 'static> SelectState<T> {
             cx.notify();
         }
     }
+    pub(super) fn ensure_popup(&mut self) {
+        if self.model.resume_rows() {
+            self.model.activate_selected();
+            self.scroll_active();
+        }
+    }
+    pub(super) fn take_scroll_request(&self) -> Option<usize> {
+        self.pending_scroll
+            .borrow_mut()
+            .take()
+            .and_then(|id| self.model.index_of_id(&id))
+    }
+    pub(super) fn release_popup(&mut self) {
+        self.variable_list = None;
+        self.variable_key = None;
+        self.scroll = UniformListScrollHandle::default();
+        self.model.suspend_rows();
+        self.rendered_rows = 0;
+        self.pending_scroll.borrow_mut().take();
+    }
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         if !self.disabled(cx) {
             self.focus_handle(cx).focus(window, cx);
@@ -283,6 +310,14 @@ impl<T: Clone + Eq + Hash + 'static> SelectState<T> {
     }
     /// Scroll using the stable option identity, even after filtering or sorting.
     pub fn scroll_to(&self, value: &T, cx: &mut Context<Self>) -> bool {
+        if !self.model.rows_enabled() {
+            if let Some(id) = self.model.matching_id(value) {
+                *self.pending_scroll.borrow_mut() = Some(id);
+                cx.notify();
+                return true;
+            }
+            return false;
+        }
         if let Some(i) = self.model.index_of_value(value) {
             self.scroll.scroll_to_item(i, ScrollStrategy::Top);
             if let Some(list) = &self.variable_list {

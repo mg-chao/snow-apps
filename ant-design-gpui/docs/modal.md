@@ -120,13 +120,14 @@ configuration. `behavior::paragraph_text(id, text, direction)` supplies the same
 cached native bidi shaping used by text slots and Alert; custom native controls
 remain responsible for their own direction and interaction.
 
-Title, body and content-footer view factories are retained independently. Closing
-normally preserves them. `destroy_on_hidden` releases the dialog's cached views
-after closing; `force_render` eagerly initializes them while the builder is
-mounted. Changing a factory's identity replaces that slot's view. Retain factories
-instead of constructing new closures every frame when their identity must remain
-stable. An externally retained `Entity` is still owned by the application; Modal
-cannot destroy the application's other references.
+Title, body and content-footer views are created independently on demand and
+remain stable within a presentation. Closing releases every cached view after
+the exit completes, along with scrolling and popup-only focus resources.
+`destroy_on_hidden` and `force_render` have been removed. Changing a factory's
+identity replaces that slot's view. Retain lightweight factory descriptions when
+their identity must remain stable, and keep meaningful editable values in a
+separate application model. An externally retained `Entity` remains owned by the
+application. See [popup ownership and migration](popup-lifetime.md).
 
 `ModalStyles` refines root, wrapper, mask, container, header, title, body, footer
 and close slots. `styles_fn` additionally receives kind, loading, confirmation
@@ -215,7 +216,7 @@ The performance script requires the configured `windows-msvc-performance` tree,
 checks benchmarks are enabled with Release, and records executable/source hashes.
 It measures cached tokens, 100 closed dialogs, a 20-row dialog, redraws,
 close/reopen cycles, resizing and six stacked surfaces. It asserts zero lazy
-construction while closed, retained content reuse, zero settled animation frames
+construction while closed, reconstruction after closing, zero settled animation frames
 and managed-controller release. CPU timings do not measure GPU presentation or
 end-to-end input latency.
 
@@ -243,6 +244,9 @@ canvases, geometry differences, solid-color probes, helper icon bounds and image
 [`visual-validation-windows.json`](../fixtures/modal/visual-validation-windows.json).
 
 ### Windows results, 2026-10-28
+
+These historical lifecycle/performance measurements predate unconditional popup
+destruction. Current ownership and validation are in [Popup lifetime](popup-lifetime.md).
 
 - **183 focused library tests** passed, covering Modal, root/popup integration,
   configuration and locale, shared bidi text, Alert regressions, icons and affected

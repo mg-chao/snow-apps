@@ -609,6 +609,7 @@ impl<T: Clone + Eq + Hash + 'static> RenderOnce for Select<T> {
                         s.mounted = false;
                         s.open = false;
                         s.hovered = false;
+                        s.release_popup();
                     });
                 }),
             }
@@ -838,6 +839,10 @@ impl<T: Clone + Eq + Hash + 'static> RenderOnce for Select<T> {
         }
         input.style().refine(&self.styles.input);
         let a11y_target = state.clone();
+        // The logical accessibility list is itself presented by the trigger.
+        if open && window.is_a11y_active() {
+            state.update(cx, |s, _| s.ensure_popup());
+        }
         let accessible_list = (open && window.is_a11y_active()).then(|| {
             super::accessibility::list(
                 &state,
@@ -1162,6 +1167,9 @@ impl<T: Clone + Eq + Hash + 'static> RenderOnce for Select<T> {
         let popup_render = self.popup_render;
         let popup_state = state.clone();
         let change_state = state.clone();
+        let hidden = state.downgrade();
+        let presented = hidden.clone();
+        let initial_focus = hidden.clone();
         Popup::new((self.id, "popup"))
             .scope(scope)
             .child(root)
@@ -1183,7 +1191,13 @@ impl<T: Clone + Eq + Hash + 'static> RenderOnce for Select<T> {
             .radius(px(g.border_radius_lg as f32))
             .shadows(g.box_shadow_secondary.clone())
             .accessibility_role(Role::Group)
-            .fresh(true)
+            .on_presented(move |_, cx| {
+                let _ = presented.update(cx, |s, _| s.ensure_popup());
+            })
+            .initial_focus_with(move |cx| Some(initial_focus.upgrade()?.read(cx).focus_handle(cx)))
+            .on_hidden(move |cx| {
+                let _ = hidden.update(cx, |s, _| s.release_popup());
+            })
             .on_open_change(move |change, w, c| {
                 change_state.update(c, |s, c| s.request_open(change.open, change.reason, w, c))
             })
@@ -1445,6 +1459,13 @@ impl<T: Clone + Eq + Hash + 'static> Clone for Rows<T> {
 impl<T: Clone + Eq + Hash + 'static> Rows<T> {
     fn render(&self, window: &mut Window, cx: &mut App) -> AnyElement {
         let count = self.state.read(cx).model.row_count();
+        let pending_scroll = self.state.update(cx, |s, _| {
+            let index = s.take_scroll_request();
+            if let Some(index) = index {
+                s.scroll.scroll_to_item(index, gpui::ScrollStrategy::Top);
+            }
+            index
+        });
         if count == 0 {
             if let Some(render) = &self.empty_render {
                 return render(window, cx);
@@ -1490,6 +1511,12 @@ impl<T: Clone + Eq + Hash + 'static> Rows<T> {
                         });
                     }
                     s.variable_key = Some(key);
+                }
+                if let Some(index) = pending_scroll {
+                    list.scroll_to(gpui::ListOffset {
+                        item_ix: index,
+                        offset_in_item: px(0.),
+                    });
                 }
                 list.clone()
             });

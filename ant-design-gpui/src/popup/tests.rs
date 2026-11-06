@@ -28,14 +28,14 @@ pub(super) struct Consumer {
     outside_clicks: Rc<Cell<usize>>,
     popup_clicks: Rc<Cell<usize>>,
     content_builds: Rc<Cell<usize>>,
+    hidden_calls: Rc<Cell<usize>>,
+    presented_calls: Rc<Cell<usize>>,
     pub(super) triggers: PopupTriggers,
     pub(super) controlled: Option<bool>,
     mounted: bool,
     nested: bool,
     clipped: bool,
     pub(super) initial_focus: bool,
-    destroy: bool,
-    fresh: bool,
     width: PopupWidth,
     trigger_width: f32,
     trigger_disabled: bool,
@@ -57,6 +57,9 @@ impl Render for Consumer {
             let clicks = self.clicks.clone();
             let popup_clicks = self.popup_clicks.clone();
             let builds = self.content_builds.clone();
+            let hidden = self.hidden_calls.clone();
+            let presented = self.presented_calls.clone();
+            let hidden_handle = self.handle.clone();
             let scope = self.scope.clone();
             let inner_focus = self.inner_focus.clone();
             let nested = self.nested;
@@ -65,9 +68,13 @@ impl Render for Consumer {
             self.captures.borrow_mut().push(Rc::downgrade(&capture));
             let mut popup = Popup::new("popup-test")
                 .width(self.width)
-                .destroy_on_hidden(self.destroy)
-                .fresh(self.fresh)
                 .scope(self.scope.clone())
+                .on_presented(move |_, _| presented.set(presented.get() + 1))
+                .on_hidden(move |cx| {
+                    // Hidden consumers must run without a PopupState entity lease.
+                    let _ = hidden_handle.is_open(cx);
+                    hidden.set(hidden.get() + 1);
+                })
                 .handle(&self.handle)
                 .triggers(self.triggers)
                 .on_open_change(move |change, _, _| changes.borrow_mut().push(*change))
@@ -260,14 +267,14 @@ impl Fixture {
                     outside_clicks: Rc::default(),
                     popup_clicks: Rc::default(),
                     content_builds: Rc::default(),
+                    hidden_calls: Rc::default(),
+                    presented_calls: Rc::default(),
                     triggers: PopupTriggers::CLICK,
                     controlled: None,
                     mounted: true,
                     nested: false,
                     clipped: false,
                     initial_focus: false,
-                    destroy: false,
-                    fresh: false,
                     width: PopupWidth::Content,
                     trigger_width: 80.,
                     trigger_disabled: false,
@@ -466,7 +473,7 @@ fn popup_click_preserves_trigger_callback_and_outside_activation() {
 }
 
 #[test]
-fn popup_shadow_raster_is_reused_after_force_align_and_reopen() {
+fn popup_shadow_raster_is_shared_while_visible_and_recreated_after_reopen() {
     let mut f = Fixture::new(|_| {});
     f.set_open(true);
     let warm = f.cx.update(|cx| popup_shadow_statistics(cx));
@@ -475,12 +482,15 @@ fn popup_shadow_raster_is_reused_after_force_align_and_reopen() {
     let handle = f.handle();
     f.cx.update(|cx| handle.force_align(cx));
     f.draw();
+    let aligned = f.cx.update(|cx| popup_shadow_statistics(cx));
+    assert_eq!(aligned.misses, warm.misses);
+    assert!(aligned.hits > warm.hits);
     f.set_open(false);
+    assert_eq!(f.cx.update(|cx| popup_shadow_statistics(cx).bytes), 0);
     f.set_open(true);
-    let reused = f.cx.update(|cx| popup_shadow_statistics(cx));
-    assert_eq!(reused.misses, warm.misses);
-    assert!(reused.hits > warm.hits);
-    assert_eq!(reused.bytes, warm.bytes);
+    let reopened = f.cx.update(|cx| popup_shadow_statistics(cx));
+    assert_eq!(reopened.misses, warm.misses + 1);
+    assert_eq!(reopened.bytes, warm.bytes);
 }
 
 #[test]
@@ -502,12 +512,9 @@ fn popup_sessions_distinguish_closed_and_remounted_instances() {
 }
 
 #[test]
-fn popup_destroy_releases_cached_content_captures_even_with_fresh_enabled() {
-    let mut f = Fixture::new(|state| {
-        state.destroy = true;
-        state.fresh = true;
-    });
-    let live_captures = |f: &Fixture| {
+fn popup_factories_are_frame_local_while_hidden_and_rebuild_on_reopen() {
+    let mut f = Fixture::with_cache(|_| {}, true);
+    let live = |f: &Fixture| {
         f.consumer.read_with(&f.cx, |state, _| {
             state
                 .captures
@@ -517,50 +524,281 @@ fn popup_destroy_releases_cached_content_captures_even_with_fresh_enabled() {
                 .count()
         })
     };
-    assert_eq!(live_captures(&f), 0);
+    assert_eq!(live(&f), 0);
     f.set_open(true);
-    assert_eq!(live_captures(&f), 1);
+    assert_eq!(live(&f), 1);
     f.set_open(false);
-    assert_eq!(live_captures(&f), 0);
-    f.draw();
-    assert_eq!(live_captures(&f), 0);
+    assert_eq!(live(&f), 0);
+    f.edit(|_| {});
+    assert_eq!(live(&f), 0);
+    f.set_open(true);
+    assert_eq!(live(&f), 1);
+    f.set_open(false);
+    assert_eq!(live(&f), 0);
 }
 
 #[test]
-fn popup_closed_cache_keeps_content_until_fresh_or_destroy_is_requested() {
+fn popup_hidden_hook_is_exactly_once_per_presentation_and_runs_on_unmount() {
+    let mut f = Fixture::new(|_| {});
+    let counts = |f: &Fixture| {
+        f.consumer.read_with(&f.cx, |state, _| {
+            (state.presented_calls.get(), state.hidden_calls.get())
+        })
+    };
+    assert_eq!(counts(&f), (0, 0));
+    f.set_open(true);
+    f.draw();
+    assert_eq!(counts(&f), (1, 0));
+    f.set_open(false);
+    f.draw();
+    assert_eq!(counts(&f), (1, 1));
+    f.set_open(true);
+    f.edit(|state| state.mounted = false);
+    assert_eq!(counts(&f), (2, 2));
+}
+
+#[test]
+fn popup_shadow_pixels_are_released_after_last_scene_closes() {
     let mut f = Fixture::new(|_| {});
     f.set_open(true);
+    assert!(f.cx.update(|cx| popup_shadow_statistics(cx).bytes) > 0);
     f.set_open(false);
-    let captures = f
-        .consumer
-        .read_with(&f.cx, |state, _| state.captures.clone());
-    let held = captures
-        .borrow()
-        .iter()
-        .find(|capture| capture.strong_count() > 0)
-        .unwrap()
-        .clone();
-    f.edit(|_| {});
-    assert!(held.upgrade().is_some());
-    f.edit(|state| state.fresh = true);
-    assert!(held.upgrade().is_none());
+    assert_eq!(f.cx.update(|cx| popup_shadow_statistics(cx).bytes), 0);
+}
+
+#[test]
+fn hidden_window_releases_cached_popup_scene_without_a_platform_frame_and_restores_it() {
+    let mut f = Fixture::with_cache(|_| {}, true);
+    f.set_open(true);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        f.open(),
+        "window suspension preserves authoritative visibility"
+    );
+    assert_eq!(f.cx.update(|cx| popup_shadow_statistics(cx).bytes), 0);
     assert_eq!(
-        captures
-            .borrow()
-            .iter()
-            .filter(|capture| capture.strong_count() > 0)
-            .count(),
+        f.consumer
+            .read_with(&f.cx, |state, _| state.hidden_calls.get()),
         1
     );
-    f.edit(|state| state.destroy = true);
-    assert_eq!(
-        captures
+    assert!(f.consumer.read_with(&f.cx, |state, _| {
+        state
+            .captures
             .borrow()
             .iter()
-            .filter(|capture| capture.strong_count() > 0)
-            .count(),
-        0
+            .all(|capture| capture.strong_count() == 0)
+    }));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(f.open());
+    assert_eq!(
+        f.consumer
+            .read_with(&f.cx, |state, _| state.presented_calls.get()),
+        2
     );
+    assert!(f.cx.update(|cx| popup_shadow_statistics(cx).bytes) > 0);
+}
+
+#[test]
+fn popup_native_visibility_suspension_cancels_pointer_press_until_a_new_click() {
+    for initially_open in [false, true] {
+        let mut f = Fixture::new(|_| {});
+        f.set_open(initially_open);
+        let handle = f.handle();
+        let state = handle.state().unwrap().upgrade().unwrap();
+        let before = f.changes();
+        let position = point(px(120.), px(116.));
+        f.dispatch(PlatformInput::MouseDown(MouseDownEvent {
+            button: MouseButton::Left,
+            position,
+            ..Default::default()
+        }));
+        assert!(state.read_with(&f.cx, |s, _| s.pointer_down));
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+        f.cx.run_until_parked();
+        assert!(!state.read_with(&f.cx, |s, _| s.pointer_down));
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+        f.draw();
+        f.dispatch(PlatformInput::MouseUp(MouseUpEvent {
+            button: MouseButton::Left,
+            position,
+            ..Default::default()
+        }));
+        f.draw();
+        assert_eq!(
+            f.open(),
+            initially_open,
+            "an interrupted click does not toggle"
+        );
+        assert_eq!(f.changes(), before);
+        f.click(120., 116.);
+        assert_eq!(f.open(), !initially_open, "a fresh click still toggles");
+    }
+}
+
+#[test]
+fn popup_native_visibility_suspension_cancels_key_press_until_a_new_activation() {
+    for key in ["enter", "space"] {
+        for initially_open in [false, true] {
+            let mut f = Fixture::new(|_| {});
+            f.key("tab");
+            f.set_open(initially_open);
+            let handle = f.handle();
+            let state = handle.state().unwrap().upgrade().unwrap();
+            let before = f.changes();
+            let keystroke = Keystroke::parse(key).unwrap();
+            f.dispatch(PlatformInput::KeyDown(KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            }));
+            assert!(state.read_with(&f.cx, |s, _| s.keyboard_down.is_some()));
+            f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+            f.cx.run_until_parked();
+            assert!(state.read_with(&f.cx, |s, _| s.keyboard_down.is_none()));
+            f.cx.simulate_window_visibility_change(
+                f.window.into(),
+                gpui::WindowVisibility::Visible,
+            );
+            f.draw();
+            f.dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+            f.draw();
+            assert_eq!(
+                f.open(),
+                initially_open,
+                "an interrupted key does not toggle"
+            );
+            assert_eq!(f.changes(), before);
+            f.key(key);
+            assert_eq!(f.open(), !initially_open, "a fresh key still toggles");
+        }
+    }
+}
+
+#[test]
+fn popup_native_restore_recovers_owned_focus_and_preserves_the_return_target() {
+    let mut f = Fixture::new(|state| state.initial_focus = true);
+    f.key("tab");
+    f.key("enter");
+    assert!(f.focused(|state| state.inner_focus.clone()));
+    let handle = f.handle();
+    let first = f.cx.update(|cx| handle.session_id(cx));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(f.open());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(f.focused(|state| state.inner_focus.clone()));
+    assert_ne!(
+        first,
+        f.cx.update(|cx| handle.session_id(cx)),
+        "suspended async UI sessions are stale"
+    );
+    f.key("escape");
+    assert!(!f.open());
+    assert!(f.focused(|state| state.trigger_focus.clone()));
+}
+
+#[test]
+fn popup_native_restore_does_not_take_focus_from_its_mouse_trigger() {
+    let mut f = Fixture::new(|state| state.initial_focus = true);
+    f.click(120., 116.);
+    assert!(f.open());
+    assert!(f.focused(|state| state.trigger_focus.clone()));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(f.open());
+    assert!(f.focused(|state| state.trigger_focus.clone()));
+    assert!(!f.focused(|state| state.inner_focus.clone()));
+}
+
+#[test]
+fn popup_shadow_scene_sharing_keeps_other_windows_alive_until_their_last_use() {
+    struct Consumer(PopupHandle);
+    impl Render for Consumer {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().p(px(100.)).child(
+                Popup::new("shared-shadow")
+                    .default_open(true)
+                    .handle(&self.0)
+                    .child(div().w(px(80.)).h(px(32.)))
+                    .content(|_, _, _| div().w(px(160.)).h(px(64.))),
+            )
+        }
+    }
+    let mut cx = TestAppContext::single();
+    let handles = [PopupHandle::new(), PopupHandle::new()];
+    let windows: Vec<_> = handles
+        .iter()
+        .map(|handle| {
+            cx.add_window(|window, cx| {
+                crate::init(cx);
+                let scope = ConfigScope::new_window(cx);
+                scope
+                    .update_patch(cx, |patch| patch.motion = Some(false))
+                    .unwrap();
+                let view = cx.new(|_| Consumer(handle.clone()));
+                UiRoot::new(scope, view, window, cx)
+            })
+        })
+        .collect();
+    let draw = |cx: &mut TestAppContext, index: usize| {
+        cx.update_window(windows[index].into(), |_, window, cx| {
+            window.draw(cx).clear(cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    draw(&mut cx, 0);
+    draw(&mut cx, 1);
+    assert_eq!(cx.update(|cx| popup_shadow_statistics(cx).live_entries), 1);
+    for index in 0..2 {
+        cx.update_window(windows[index].into(), |_, window, cx| {
+            handles[index].close(window, cx)
+        })
+        .unwrap();
+        draw(&mut cx, index);
+        let bytes = cx.update(|cx| popup_shadow_statistics(cx).bytes);
+        if index == 0 {
+            assert!(bytes > 0, "the other scene still owns its shadow");
+        } else {
+            assert_eq!(bytes, 0);
+        }
+    }
+}
+
+#[test]
+fn popup_inactive_unique_geometry_has_a_fixed_lru_capacity() {
+    let f = Fixture::new(|_| {});
+    let weak = f.handle().state().unwrap();
+    f.cx.update(|cx| {
+        let mut host = super::host::HostState::default();
+        let mut keys = Vec::new();
+        let now = cx.background_executor().now();
+        for _ in 0..80 {
+            let key = cx.new(|_| ());
+            let used = host.geometry_tick();
+            host.unique_geometry.insert(
+                key.entity_id(),
+                super::host::UniqueGeometry {
+                    owner: weak.clone(),
+                    bounds: gpui::Bounds::default(),
+                    expires: Some(now + Duration::from_millis(300)),
+                    used,
+                },
+            );
+            keys.push(key);
+        }
+        host.prune_geometry(now);
+        assert_eq!(host.unique_geometry.len(), 64);
+        assert!(!host.unique_geometry.contains_key(&keys[0].entity_id()));
+        assert!(host.unique_geometry.contains_key(&keys[79].entity_id()));
+        host.prune_geometry(now + Duration::from_millis(301));
+        assert!(host.unique_geometry.is_empty());
+    });
 }
 
 #[test]

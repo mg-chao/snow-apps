@@ -195,11 +195,25 @@ impl Fixture {
         self.cx.run_until_parked();
     }
     fn pointer(&mut self, event: PlatformInput) {
+        let releasing = matches!(&event, PlatformInput::MouseUp(_));
         self.cx
             .update_window(self.window.into(), |_, window, cx| {
                 window.dispatch_event(event, cx);
             })
             .unwrap();
+        if releasing {
+            // Slider clears tooltip focus on the frame after mouseup so a late
+            // native focus notification cannot reopen it. Finish that release
+            // transition before checking that the controls have become idle.
+            self.cx.run_until_parked();
+            let callbacks = self
+                .cx
+                .update_window(self.window.into(), |_, window, cx| {
+                    window.simulate_next_frame(cx)
+                })
+                .unwrap();
+            assert_eq!(callbacks, 1, "one deferred Slider release callback");
+        }
         self.draw(false);
     }
 }

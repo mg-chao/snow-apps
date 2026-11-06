@@ -44,12 +44,12 @@ fractional-placement and SVG rasterization differences. The policy, limits,
 mutation tests, and current results are detailed in
 [the verification guide](../../docs/image-verification.md).
 
-The capture tools own fresh browser profiles and hidden native windows. They do
+The capture tools own fresh browser profiles and non-activating background native windows. They do
 not attach to an existing browser, read user sessions, change desktop DPI, or
 send global input. Generated bundles, profiles, screenshots, and raw reports stay
 under the ignored build directory. Fixture JSON retains source/package hashes,
 upstream revision, renderer version, and actual geometry/style measurements.
-Native scaling uses `WM_DPICHANGED` at 96/144/192 DPI on the fixture's own hidden
+Native scaling uses `WM_DPICHANGED` at 96/144/192 DPI on the fixture's own background
 window, then checks the actual GPUI scale and physical screenshot dimensions.
 Desktop and monitor DPI remain unchanged; separate physical monitor layouts
 were not exercised.

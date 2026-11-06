@@ -51,7 +51,11 @@ cargo run --locked --offline --example popup_visual -- --output ../build/ant-des
 python scripts/compare_popup_visual.py --native ../build/ant-design-gpui/popup-native --reference ../build/ant-design-gpui/popup-reference/visual --output ../build/ant-design-gpui/popup-visual-comparison.json
 ```
 
-The native harness uses a real hidden platform window and records its actual DPI.
+The native harness uses a real non-activating background platform window and
+records its actual DPI. Windows fixtures share an owned-HWND helper that applies
+`WS_EX_NOACTIVATE` and `SWP_SHOWWINDOW`, places the window behind other windows,
+and checks foreground ownership before and after sizing. A hidden native window
+intentionally has no popup presentation and cannot capture an open popup.
 Edge uses that DPI. The comparison reports logical bounds, pixel differences
 around each popup, and a separate shadow-only region. It does not discard native
 subpixel font rendering differences or average errors over the blank window.
@@ -92,7 +96,7 @@ The MIT/Apache notices for this development tooling are in `placement-tools/lice
 
 After generating the original styles above, capture the default theme across all
 placements and directions at 100% and 200%. The native harness sends DPI changes
-to its own hidden Windows capture window without changing the monitor settings:
+to its own non-activating Windows capture window without changing the monitor settings:
 
 ```powershell
 cargo run --locked --offline --example popup_visual -- --output ../build/ant-design-gpui/popup-native-100 --placements --scale 1

@@ -471,7 +471,7 @@ fn date_picker_native_calendar_click_commits_once_and_closes() {
 #[test]
 fn date_picker_native_keyboard_selection_returns_focus_to_an_enabled_editor() {
     let mut single = Fixture::<DateSelection>::new(Some(date(20)));
-    single.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    single.update(|s, window, cx| s.focus_panel(window, cx));
     single.key("right");
     single.key("enter");
     assert_eq!(single.value(), Some(date(21)));
@@ -479,12 +479,12 @@ fn date_picker_native_keyboard_selection_returns_focus_to_an_enabled_editor() {
     single.assert_editor_focused(0);
 
     let mut range = Fixture::<DateRangeSelection>::new(PickerRange::default());
-    range.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    range.update(|s, window, cx| s.focus_panel(window, cx));
     range.key("right");
     range.key("enter");
     assert!(range.open());
     range.assert_editor_focused(1);
-    range.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    range.update(|s, window, cx| s.focus_panel(window, cx));
     range.key("right");
     range.key("enter");
     assert_eq!(
@@ -498,7 +498,7 @@ fn date_picker_native_keyboard_selection_returns_focus_to_an_enabled_editor() {
     range.configure(|v| v.options.disabled_endpoints = [false, true]);
     range.update(|s, window, cx| {
         s.active = 1;
-        s.panel_focus.focus(window, cx);
+        s.focus_panel(window, cx);
         s.clear(window, cx);
     });
     range.draw();
@@ -549,13 +549,13 @@ fn date_picker_native_preset_today_and_ok_restore_focus_while_inline_actions_kee
     let mut inline = Fixture::<DateSelection>::new(Some(date(20)));
     inline.configure(|v| v.inline = true);
     inline.update(|s, window, cx| {
-        s.panel_focus.focus(window, cx);
+        s.focus_panel(window, cx);
         s.preset(Some(date(21)), window, cx);
-        assert!(s.panel_focus.is_focused(window));
+        assert!(s.panel_focus().is_focused(window));
         s.now(window, cx);
-        assert!(s.panel_focus.is_focused(window));
+        assert!(s.panel_focus().is_focused(window));
         s.clear(window, cx);
-        assert!(s.panel_focus.is_focused(window));
+        assert!(s.panel_focus().is_focused(window));
     });
     assert_eq!(inline.value(), None);
 }
@@ -564,7 +564,7 @@ fn date_picker_native_preset_today_and_ok_restore_focus_while_inline_actions_kee
 fn date_picker_controlled_close_restores_focus_on_acceptance_without_stealing_outside_focus() {
     let mut f = Fixture::<DateSelection>::new(Some(date(20)));
     f.configure(|v| v.controlled_open = Some(true));
-    f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    f.update(|s, window, cx| s.focus_panel(window, cx));
     let cell = f.state.read_with(&f.cx, |s, _| {
         s.geometry
             .cells
@@ -576,7 +576,7 @@ fn date_picker_controlled_close_restores_focus_on_acceptance_without_stealing_ou
     f.click(cell.center());
     assert!(f.open());
     f.update(|s, window, cx| {
-        assert!(s.panel_focus.is_focused(window));
+        assert!(s.panel_focus().is_focused(window));
         assert!(!s.editors[0].read(cx).focus_handle(cx).is_focused(window));
     });
     f.configure(|v| v.controlled_open = Some(false));
@@ -585,9 +585,9 @@ fn date_picker_controlled_close_restores_focus_on_acceptance_without_stealing_ou
 
     f.configure(|v| v.controlled_open = Some(true));
     f.update(|s, window, cx| {
-        s.panel_focus.focus(window, cx);
+        s.focus_panel(window, cx);
         s.clear(window, cx);
-        assert!(s.panel_focus.is_focused(window));
+        assert!(s.panel_focus().is_focused(window));
     });
     f.draw();
     assert!(f.open());
@@ -635,13 +635,13 @@ fn date_picker_rtl_time_columns_keep_physical_order_and_column_keyboard_navigati
                     .all(|columns| columns[0].left() < columns[1].left())
             );
         });
-        f.update(|s, window, cx| s.column_focus[0].focus(window, cx));
+        f.update(|s, window, cx| s.column_focus(0).focus(window, cx));
         f.key("right");
-        f.update(|s, window, _| assert!(s.column_focus[1].is_focused(window)));
+        f.update(|s, window, _| assert!(s.column_focus(1).is_focused(window)));
         f.key("right");
-        f.update(|s, window, _| assert!(s.column_focus[2].is_focused(window)));
+        f.update(|s, window, _| assert!(s.column_focus(2).is_focused(window)));
         f.key("left");
-        f.update(|s, window, _| assert!(s.column_focus[1].is_focused(window)));
+        f.update(|s, window, _| assert!(s.column_focus(1).is_focused(window)));
         f.key("down");
         assert_eq!(
             f.state
@@ -649,7 +649,7 @@ fn date_picker_rtl_time_columns_keep_physical_order_and_column_keyboard_navigati
             25
         );
         f.key("left");
-        f.update(|s, window, _| assert!(s.column_focus[0].is_focused(window)));
+        f.update(|s, window, _| assert!(s.column_focus(0).is_focused(window)));
         f.key("down");
         assert_eq!(
             f.state.read_with(&f.cx, |s, _| s.draft[0].unwrap().hour()),
@@ -1181,7 +1181,7 @@ fn date_picker_native_cell_press_can_be_canceled_before_release() {
     assert!(clear_picker.changes().is_empty());
     clear_picker.update(|s, window, cx| {
         s.set_open(true, window, cx);
-        s.panel_focus.focus(window, cx);
+        s.focus_panel(window, cx);
     });
     clear_picker.draw();
     clear_picker.event(PlatformInput::MouseMove(gpui::MouseMoveEvent {
@@ -1286,7 +1286,7 @@ fn date_picker_native_coarse_disabled_cells_share_pointer_and_keyboard_represent
             v.panel_mode = Some(panel);
             v.disabled_date = Some(predicate.clone());
         });
-        keyboard.update(|s, w, c| s.panel_focus.focus(w, c));
+        keyboard.update(|s, w, c| s.focus_panel(w, c));
         keyboard.key("right");
         let before = keyboard
             .state
@@ -1390,7 +1390,7 @@ fn date_picker_native_coarse_disabled_callbacks_keep_range_origin_and_panel_cont
         });
         f.update(|s, w, c| {
             s.focus_input(1, w, c);
-            s.panel_focus.focus(w, c);
+            s.focus_panel(w, c);
         });
         f.key("right");
         let cell = f.state.read_with(&f.cx, |s, _| {
@@ -1446,7 +1446,7 @@ fn date_picker_native_decade_keyboard_bounds_keep_partially_available_cells_reac
                 .unwrap();
             assert!(!cell.disabled, "the decade intersects the authored bounds");
         });
-        f.update(|s, w, c| s.panel_focus.focus(w, c));
+        f.update(|s, w, c| s.focus_panel(w, c));
         f.key(key);
         assert_eq!(
             f.state.read_with(&f.cx, |s, _| s.cursor.date()),
@@ -1973,7 +1973,7 @@ fn date_picker_header_navigation_keeps_calendar_keys_in_the_visible_period() {
         });
         f.click_header_navigation(true, large);
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), visible);
-        f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+        f.update(|s, window, cx| s.focus_panel(window, cx));
         f.key("right");
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), after_key);
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.panel_date()), visible);
@@ -2028,7 +2028,7 @@ fn date_picker_controlled_keyboard_crossing_waits_for_visible_period_acceptance(
             v.picker_value = Some(date(20));
         });
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), initial);
-        f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+        f.update(|s, window, cx| s.focus_panel(window, cx));
         f.key("right");
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), initial);
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.panel_date()), date(20));
@@ -2058,7 +2058,7 @@ fn date_picker_controlled_keyboard_crossing_waits_for_visible_period_acceptance(
 #[test]
 fn date_picker_uncontrolled_keyboard_emits_only_for_visible_period_changes() {
     let mut f = Fixture::<DateSelection>::new(Some(date(28)));
-    f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    f.update(|s, window, cx| s.focus_panel(window, cx));
     f.key("right");
     assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), date(29));
     assert_eq!(f.state.read_with(&f.cx, |s, _| s.panel_date()), date(28));
@@ -2089,7 +2089,7 @@ fn date_picker_uncontrolled_keyboard_emits_only_for_visible_period_changes() {
 fn date_picker_native_keyboard_focus_ring_moves_with_one_visible_cursor_cell() {
     let mut f = Fixture::<DateSelection>::new(Some(date(20)));
     f.click_header_navigation(true, false);
-    f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+    f.update(|s, window, cx| s.focus_panel(window, cx));
     f.key("right");
     let first = f.cursor_ring_bounds();
     assert_eq!(
@@ -2113,7 +2113,7 @@ fn date_picker_range_keyboard_enters_the_already_visible_second_grid_without_scr
             f.configure(|v| v.picker_value = Some(date(20)));
         }
         let anchor = f.state.read_with(&f.cx, |s, _| s.panel_date());
-        f.update(|s, window, cx| s.panel_focus.focus(window, cx));
+        f.update(|s, window, cx| s.focus_panel(window, cx));
         f.key("right");
         let march = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
         assert_eq!(f.state.read_with(&f.cx, |s, _| s.cursor.date()), march);
@@ -2249,7 +2249,7 @@ fn date_picker_controlled_right_header_normalizes_after_month_end_clamping() {
 #[test]
 fn date_picker_native_header_keyboard_switch_retains_panel_focus() {
     let mut f = Fixture::<DateSelection>::new(Some(date(20)));
-    f.update(|s, w, c| s.panel_focus.focus(w, c));
+    f.update(|s, w, c| s.focus_panel(w, c));
     f.draw();
     for _ in 0..3 {
         f.key("tab");
@@ -2259,14 +2259,14 @@ fn date_picker_native_header_keyboard_switch_retains_panel_focus() {
         f.state.read_with(&f.cx, |s, _| s.panel_mode()),
         PickerPanelMode::Month
     );
-    f.update(|s, w, _| assert!(s.panel_focus.is_focused(w)));
+    f.update(|s, w, _| assert!(s.panel_focus().is_focused(w)));
     assert!(f.open());
     f.key("enter");
     assert_eq!(
         f.state.read_with(&f.cx, |s, _| s.panel_mode()),
         PickerPanelMode::Date
     );
-    f.update(|s, w, _| assert!(s.panel_focus.is_focused(w)));
+    f.update(|s, w, _| assert!(s.panel_focus().is_focused(w)));
     assert!(f.changes().is_empty());
 }
 
@@ -2963,4 +2963,100 @@ fn date_picker_multiple_weeks_highlight_every_selected_row() {
     });
     assert_eq!(f.value(), values);
     assert!(f.changes().is_empty());
+}
+
+#[test]
+fn picker_panel_resources_are_lazy_and_hidden_panels_release_native_lists() {
+    let mut f = Fixture::<TimeSelection>::with_open(None, false);
+    let editors = f.state.read_with(&f.cx, |s, _| s.retained_editor_ids());
+    assert!(!f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    f.update(|s, w, c| s.set_open(true, w, c));
+    f.draw();
+    let focus = f.state.read_with(&f.cx, |s, _| s.panel_focus().clone());
+    assert!(f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    f.update(|s, w, c| s.set_open(false, w, c));
+    f.draw();
+    f.draw();
+    assert!(!f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.retained_editor_ids()),
+        editors
+    );
+    f.state.read_with(&f.cx, |s, _| {
+        assert_eq!(s.geometry.cells.capacity(), 0);
+        assert_eq!(s.geometry.time_columns.capacity(), 0);
+        assert_eq!(s.pending_scroll_tasks(), 0);
+    });
+    f.update(|s, w, c| s.set_open(true, w, c));
+    f.draw();
+    assert_ne!(
+        f.state.read_with(&f.cx, |s, _| s.panel_focus().clone()),
+        focus
+    );
+}
+
+#[test]
+fn inline_picker_keeps_panel_resources_until_unmounted() {
+    let mut f = Fixture::<DateSelection>::with_open(Some(date(12)), false);
+    f.configure(|v| v.inline = true);
+    assert!(f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    f.update(|s, w, c| s.set_open(false, w, c));
+    f.draw();
+    assert!(f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    f.configure(|v| v.shown = false);
+    f.draw();
+    assert!(!f.state.read_with(&f.cx, |s, _| s.has_panel_resources()));
+    assert_eq!(f.value(), Some(date(12)));
+}
+
+#[test]
+fn picker_native_hide_restores_calendar_and_time_keyboard_routes() {
+    let mut date_picker = Fixture::<DateSelection>::new(Some(date(12)));
+    date_picker.update(|s, w, c| s.focus_panel(w, c));
+    date_picker.draw();
+    date_picker.cx.simulate_window_visibility_change(
+        date_picker.window.into(),
+        gpui::WindowVisibility::Hidden,
+    );
+    date_picker.draw();
+    assert!(
+        !date_picker
+            .state
+            .read_with(&date_picker.cx, |s, _| s.has_panel_resources())
+    );
+    date_picker.cx.simulate_window_visibility_change(
+        date_picker.window.into(),
+        gpui::WindowVisibility::Visible,
+    );
+    date_picker.draw();
+    date_picker.draw();
+    date_picker.update(|s, w, _| assert!(s.panel_focus().is_focused(w)));
+    date_picker.key("right");
+    assert_eq!(
+        date_picker
+            .state
+            .read_with(&date_picker.cx, |s, _| s.cursor.date()),
+        date(13)
+    );
+    assert_eq!(date_picker.value(), Some(date(12)));
+
+    let initial = NaiveTime::from_hms_opt(6, 10, 0).unwrap();
+    let mut time_picker = Fixture::<TimeSelection>::new(Some(initial));
+    time_picker.configure(|v| v.options.need_confirm = Some(false));
+    time_picker.update(|s, w, c| s.column_focus(1).focus(w, c));
+    time_picker.draw();
+    time_picker.cx.simulate_window_visibility_change(
+        time_picker.window.into(),
+        gpui::WindowVisibility::Hidden,
+    );
+    time_picker.draw();
+    time_picker.cx.simulate_window_visibility_change(
+        time_picker.window.into(),
+        gpui::WindowVisibility::Visible,
+    );
+    time_picker.draw();
+    time_picker.draw();
+    time_picker.update(|s, w, _| assert!(s.column_focus(1).is_focused(w)));
+    time_picker.key("down");
+    assert_eq!(time_picker.value().unwrap().minute(), 11);
 }

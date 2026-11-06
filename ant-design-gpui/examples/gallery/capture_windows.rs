@@ -1,24 +1,24 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Size only this process's hidden capture window without activating it.
+//! Present and size only this process's background capture window without activation.
 
-use std::{ffi::c_void, io, ptr};
+use std::{io, ptr};
 
-type Hwnd = *mut c_void;
+pub(super) type Hwnd = isize;
 const GWL_EXSTYLE: i32 = -20;
 const WS_EX_NOACTIVATE: isize = 0x0800_0000;
 const SWP_NOMOVE: u32 = 0x0002;
-const SWP_NOZORDER: u32 = 0x0004;
+const SWP_SHOWWINDOW: u32 = 0x0040;
 const SWP_NOACTIVATE: u32 = 0x0010;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct Rect {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
+pub(super) struct Rect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
 }
 
 #[link(name = "user32")]
@@ -96,7 +96,7 @@ fn background() -> io::Result<()> {
     unsafe { window_process(foreground_window(), &mut process) };
     if process == std::process::id() {
         Err(io::Error::other(
-            "hidden gallery capture acquired foreground focus",
+            "background capture acquired foreground focus",
         ))
     } else {
         Ok(())
@@ -142,6 +142,7 @@ fn outer_size(
 /// synchronous WM_SIZE messages back into the native window's resize callback.
 pub(super) fn resize(title: &str, logical: (u32, u32), scale: f32) -> io::Result<()> {
     background()?;
+    let foreground = unsafe { foreground_window() };
     let title: Vec<_> = title.encode_utf16().collect();
     let mut search = Search {
         process: std::process::id(),
@@ -151,16 +152,8 @@ pub(super) fn resize(title: &str, logical: (u32, u32), scale: f32) -> io::Result
     };
     check(unsafe { enum_windows(find_owned, ptr::from_mut(&mut search) as isize) })?;
     let window = search.found.filter(|_| !search.ambiguous).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "expected one owned gallery capture window",
-        )
+        io::Error::new(io::ErrorKind::NotFound, "expected one owned capture window")
     })?;
-    if unsafe { is_visible(window) } != 0 {
-        return Err(io::Error::other(
-            "gallery capture window must remain hidden",
-        ));
-    }
     let mut outer = Rect::default();
     let mut client = Rect::default();
     check(unsafe { window_rect(window, &mut outer) })?;
@@ -176,20 +169,26 @@ pub(super) fn resize(title: &str, logical: (u32, u32), scale: f32) -> io::Result
     if previous == 0 && io::Error::last_os_error().raw_os_error() != Some(0) {
         return Err(io::Error::last_os_error());
     }
-    // Both activation and z-order are explicit. The pinned GPUI Windows resize
-    // path supplies only SWP_NOMOVE, which activates even a hidden window.
+    // A real presentation is required for popup/notice/fullscreen capture. Keep
+    // it behind other windows; GPUI's resize path omits SWP_NOACTIVATE.
     check(unsafe {
         set_window_pos(
             window,
-            ptr::null_mut(),
+            1_usize as Hwnd, // HWND_BOTTOM
             0,
             0,
             dimensions.0,
             dimensions.1,
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
         )
     })?;
     background()?;
+    if unsafe { foreground_window() } != foreground {
+        return Err(io::Error::other(
+            "capture setup changed the foreground window",
+        ));
+    }
+    check(unsafe { is_visible(window) })?;
     check(unsafe { client_rect(window, &mut client) })?;
     let actual = (client.right - client.left, client.bottom - client.top);
     let expected = (

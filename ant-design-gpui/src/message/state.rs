@@ -101,9 +101,11 @@ pub struct MessageState {
     timer_at: Option<Instant>,
     timer_generation: u64,
     pub(super) frame_pending: bool,
+    frame_generation: u64,
     owner_closed: bool,
     _config: Subscription,
     _window: Subscription,
+    _visibility: Subscription,
 }
 
 impl MessageState {
@@ -124,6 +126,13 @@ impl MessageState {
                 }
             }
         });
+        let visibility = cx.observe_window_visibility(window, |state, visible, window, cx| {
+            if !visible.is_visible() {
+                state.suspend_presentation(window, cx);
+                crate::behavior::resources::schedule_hidden_cleanup(window, cx);
+            }
+            cx.notify();
+        });
         Self {
             scope,
             notices: Vec::new(),
@@ -137,9 +146,11 @@ impl MessageState {
             timer_at: None,
             timer_generation: 0,
             frame_pending: false,
+            frame_generation: 0,
             owner_closed: false,
             _config: subscription,
             _window: closed,
+            _visibility: visibility,
         }
     }
 
@@ -177,6 +188,14 @@ impl MessageState {
         cx.notify();
     }
 
+    #[cfg(test)]
+    pub(super) fn idle_resources(&self) -> (usize, usize, bool) {
+        (
+            self.notices.capacity(),
+            self.layouts.capacity(),
+            self.timer.is_some(),
+        )
+    }
     pub fn active_count(&self) -> usize {
         self.notices
             .iter()
@@ -503,8 +522,12 @@ impl MessageState {
                 motion && now.saturating_duration_since(start) < notice.exit_duration
             })
         });
+        if self.notices.capacity() > self.notices.len().saturating_mul(4).max(16) {
+            self.notices.shrink_to(self.notices.len().max(16));
+        }
         if self.notices.is_empty() {
-            self.layouts.clear();
+            self.notices = Vec::new();
+            self.layouts = Vec::new();
             self.list_hovered = false;
         }
     }
@@ -568,6 +591,25 @@ impl MessageState {
         }));
     }
 
+    /// Native visibility ends presentation ownership, while notice identity and
+    /// remaining dismissal budgets continue as application state.
+    pub(super) fn suspend_presentation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.frame_pending = false;
+        self.layouts = Vec::new();
+        self.list_hovered = false;
+        for notice in &mut self.notices {
+            notice.hovered = false;
+        }
+        self.notices.retain(|notice| notice.closing.is_none());
+        if self.notices.is_empty() {
+            self.notices = Vec::new();
+        }
+        self.visual.borrow_mut().clear_content();
+        self.sync_paused(&self.effective_config(cx), cx.background_executor().now());
+        self.reschedule(window, cx);
+    }
+
     pub(super) fn schedule_frame(&mut self, window: &Window, cx: &Context<Self>) {
         if self.frame_pending
             || self.owner_closed
@@ -577,9 +619,13 @@ impl MessageState {
             return;
         }
         self.frame_pending = true;
+        let generation = self.frame_generation;
         let weak = cx.weak_entity();
         window.on_next_frame(move |_, cx| {
             let _ = weak.update(cx, |state, cx| {
+                if state.frame_generation != generation {
+                    return;
+                }
                 state.frame_pending = false;
                 if !state.owner_closed && !state.notices.is_empty() {
                     cx.notify();
@@ -593,7 +639,7 @@ impl MessageState {
         self.timer_generation = self.timer_generation.wrapping_add(1);
         self.timer = None;
         self.timer_at = None;
-        self.layouts.clear();
+        self.layouts = Vec::new();
         self.list_hovered = false;
         self.visual.borrow_mut().clear_content();
         self.notices

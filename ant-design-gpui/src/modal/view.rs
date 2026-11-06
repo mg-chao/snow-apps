@@ -201,39 +201,68 @@ impl Element for Marker {
     }
 }
 
+fn configured_content(state: &ModalState, slot: usize) -> Option<&ModalContent> {
+    match slot {
+        0 => state.options.title.as_ref(),
+        1 => state.options.content.as_ref(),
+        _ => match &state.options.footer {
+            ModalFooter::Content(content) => Some(content),
+            _ => None,
+        },
+    }
+}
+
 fn initialize_content(state: &Entity<ModalState>, window: &mut Window, cx: &mut App) {
     for slot in 0..3 {
         let factory = {
             let s = state.read(cx);
-            if !s.open && !s.options.force_render {
+            if !s.open || !window.is_visible() {
                 return;
             }
-            let (view, content) = match slot {
-                0 => (&s.title_view, s.options.title.as_ref()),
-                1 => (&s.body_view, s.options.content.as_ref()),
-                _ => (
-                    &s.footer_view,
-                    match &s.options.footer {
-                        ModalFooter::Content(c) => Some(c),
-                        _ => None,
-                    },
-                ),
+            let view = match slot {
+                0 => &s.title_view,
+                1 => &s.body_view,
+                _ => &s.footer_view,
             };
             if view.is_some() || (slot != 0 && s.options.loading) {
                 continue;
             }
-            content.and_then(|c| match &c.0 {
-                ContentSource::View(f) => Some(f.clone()),
+            configured_content(s, slot).and_then(|c| match &c.0 {
+                ContentSource::View(f) => {
+                    Some((f.clone(), s.generation, s.presentation_generation))
+                }
                 _ => None,
             })
         };
-        if let Some(factory) = factory {
-            let view = factory(window, cx);
-            state.update(cx, |s, _| match slot {
-                0 => s.title_view = Some(view),
-                1 => s.body_view = Some(view),
-                _ => s.footer_view = Some(view),
+        if let Some((factory, generation, presentation)) = factory {
+            let mut view = Some(factory(window, cx));
+            let visible = window.is_visible();
+            state.update(cx, |s, cx| {
+                // Factories may close/reopen or replace their own configuration.
+                // Install only into the opening and source that requested this view.
+                let current = configured_content(s, slot).is_some_and(|content| {
+                    matches!(&content.0, ContentSource::View(current) if Rc::ptr_eq(current, &factory))
+                });
+                if !visible
+                    || !s.open
+                    || s.generation != generation
+                    || s.presentation_generation != presentation
+                    || !current
+                    || (slot != 0 && s.options.loading)
+                {
+                    cx.notify();
+                    return;
+                }
+                let target = match slot {
+                    0 => &mut s.title_view,
+                    1 => &mut s.body_view,
+                    _ => &mut s.footer_view,
+                };
+                if target.is_none() {
+                    *target = view.take();
+                }
             });
+            // A stale factory result drops after releasing the controller borrow.
         }
     }
 }
@@ -251,11 +280,20 @@ fn slot(
             crate::behavior::paragraph_text("modal-text", text.clone(), direction)
         }
         ContentSource::Render(render) => render(handle, window, cx),
-        ContentSource::View(factory) => factory(window, cx).into_any_element(),
+        // Only initialize_content constructs views. A reentrant configuration
+        // change can leave a slot empty until its scheduled reconciliation frame.
+        ContentSource::View(_) => div().into_any_element(),
     }
 }
 
 pub(super) fn draw(state: &Entity<ModalState>, window: &mut Window, cx: &mut App) {
+    if !window.is_visible() {
+        state.update(cx, |s, cx| s.suspend(window, cx));
+        return;
+    }
+    if state.read(cx).phase != ModalPhase::Closed {
+        state.update(cx, |s, cx| s.ensure_presentation(window, cx));
+    }
     initialize_content(state, window, cx);
     if state.read(cx).phase == ModalPhase::Closed {
         return;
@@ -356,7 +394,7 @@ impl Element for OwnedSurface {
                             && !ok.loading.unwrap_or(false)
                             && !s.confirm_loading =>
                     {
-                        Some(s.ok_focus.clone())
+                        Some(s.presentation().ok_focus.clone())
                     }
                     ModalAutoFocus::Cancel
                         if has_actions
@@ -364,7 +402,7 @@ impl Element for OwnedSurface {
                             && !cancel.disabled.unwrap_or(false)
                             && !cancel.loading.unwrap_or(false) =>
                     {
-                        Some(s.cancel_focus.clone())
+                        Some(s.presentation().cancel_focus.clone())
                     }
                     ModalAutoFocus::None => None,
                     _ => Some(s.focus.clone()),
@@ -372,8 +410,18 @@ impl Element for OwnedSurface {
         });
         if let Some(focus) = focus {
             let id = self.state.entity_id();
+            let weak = self.state.downgrade();
+            let generation = self.state.read(cx).generation;
+            let presentation = self.state.read(cx).presentation_generation;
             w.defer(cx, move |w, cx| {
-                if host::is_top(id, w, cx) {
+                let current = weak.upgrade().is_some_and(|state| {
+                    let state = state.read(cx);
+                    state.open
+                        && state.generation == generation
+                        && state.presentation_generation == presentation
+                        && state.presentation.is_some()
+                });
+                if current && w.is_visible() && host::is_top(id, w, cx) {
                     w.focus(&focus, cx);
                     host::restore_focus(w, cx);
                 }
@@ -406,10 +454,10 @@ fn render_surface(
             s.options.clone(),
             s.scope.clone(),
             s.focus.clone(),
-            s.start_focus.clone(),
-            s.end_focus.clone(),
-            s.close_focus.clone(),
-            s.scroll.clone(),
+            s.presentation().start_focus.clone(),
+            s.presentation().end_focus.clone(),
+            s.presentation().close_focus.clone(),
+            s.presentation().scroll.clone(),
             s.body_view.clone(),
             s.confirm_loading,
             s.open,
@@ -829,7 +877,7 @@ fn footer(
         .danger(ok_options.danger.unwrap_or(false))
         .disabled(ok_options.disabled.unwrap_or(false) || !s.open)
         .loading(s.confirm_loading || s.pending_ok || ok_options.loading.unwrap_or(false))
-        .focus_handle(&s.ok_focus)
+        .focus_handle(&s.presentation().ok_focus)
         .automation_id("modal.ok")
         .on_click(move |_, w, cx| state::activate(&target, None, w, cx));
     ok.style().refine(&ok_options.style);
@@ -841,7 +889,7 @@ fn footer(
             .danger(cancel_options.danger.unwrap_or(false))
             .disabled(cancel_options.disabled.unwrap_or(false) || !s.open)
             .loading(s.pending_cancel || cancel_options.loading.unwrap_or(false))
-            .focus_handle(&s.cancel_focus)
+            .focus_handle(&s.presentation().cancel_focus)
             .automation_id("modal.cancel")
             .on_click(move |_, w, cx| {
                 state::activate(&cancel_target, Some(ModalCancelReason::Button), w, cx)

@@ -11,7 +11,9 @@ use gpui::{
 use super::{
     PopupGeometry, PopupOpenReason, PopupTriggers,
     host::{self, Entry},
-    runtime::{PopupState, finite_nonnegative, update_interest},
+    runtime::{
+        PopupState, Source, claim_unique, dispatch_hidden, finite_nonnegative, update_interest,
+    },
     shadow,
     shape::ArrowShape,
 };
@@ -23,6 +25,7 @@ pub(super) struct PopupElement {
     pub id: ElementId,
     pub child: AnyElement,
     pub state: Entity<PopupState>,
+    pub source: Source,
 }
 
 impl IntoElement for PopupElement {
@@ -70,14 +73,41 @@ impl Element for PopupElement {
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         self.child.prepaint(window, cx);
         let clipped = bounds.intersect(&window.content_mask().bounds);
-        let visible = !clipped.is_empty()
-            && self.state.read(cx).presented()
+        let allowed = window.is_visible()
+            && !clipped.is_empty()
             && crate::modal::host::popup_allowed(self.state.read(cx).modal_owner, window, cx);
+        if allowed {
+            claim_unique(&self.state.downgrade(), window, cx);
+        }
+        let visible = allowed && self.state.read(cx).presented();
+        if !allowed || (!visible && !self.state.read(cx).exiting) {
+            let callback = self.state.update(cx, |state, cx| {
+                state.finish_hidden(cx.background_executor().now())
+            });
+            dispatch_hidden(callback, cx);
+        }
         let opacity = self.state.update(cx, |state, cx| {
             state.anchor = bounds;
             state.sample_opacity(visible, window, cx)
         });
         let exiting = self.state.read(cx).exiting;
+        if visible {
+            let first = self.state.read(cx).content.is_none();
+            if first {
+                let handle = self.state.read(cx).handle.clone();
+                handle.flush_hidden(cx);
+                if let Some(callback) = &self.source.on_presented {
+                    callback(window, cx);
+                }
+            }
+            self.state
+                .update(cx, |state, cx| state.install_source(&self.source, cx));
+        } else if !exiting {
+            let callback = self.state.update(cx, |state, cx| {
+                state.finish_hidden(cx.background_executor().now())
+            });
+            dispatch_hidden(callback, cx);
+        }
         if visible || exiting {
             let (host, content, handle, options, scope, surface_focus) = {
                 let state = self.state.read(cx);
@@ -87,7 +117,7 @@ impl Element for PopupElement {
                     state.handle.clone(),
                     state.options.clone(),
                     state.scope.clone(),
-                    state.surface_focus.clone(),
+                    state.surface_focus.clone().expect("presented popup focus"),
                 )
             };
             if let Some(content) = content {
@@ -153,7 +183,11 @@ impl Element for PopupElement {
                             .on_mouse_up(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
                     );
                     let state = self.state.read(cx);
-                    if state.surface_focus.contains_focused(window, cx) {
+                    if state
+                        .surface_focus
+                        .as_ref()
+                        .is_some_and(|focus| focus.contains_focused(window, cx))
+                    {
                         let focus = state
                             .trigger_metadata
                             .borrow()
@@ -295,7 +329,10 @@ impl Element for PopupElement {
         window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
             if phase.capture() {
                 let _ = weak.update(cx, |state, cx| {
-                    if !state.surface_focus.contains_focused(window, cx)
+                    if !state
+                        .surface_focus
+                        .as_ref()
+                        .is_some_and(|focus| focus.contains_focused(window, cx))
                         && !event.is_held
                         && !event.keystroke.modifiers.modified()
                         && matches!(event.keystroke.key.as_str(), "enter" | "space")
@@ -461,20 +498,28 @@ impl Element for PopupSurface {
         host::with_parent(&host, id, || {
             self.child.prepaint_at(layout.bounds.origin, window, cx);
         });
-        let focus = self.state.update(cx, |state, _| {
-            if std::mem::take(&mut state.focus_pending) {
-                state.options.initial_focus.clone()
-            } else {
-                None
-            }
+        let focus_source = self.state.update(cx, |state, _| {
+            std::mem::take(&mut state.focus_pending).then(|| {
+                (
+                    state.options.initial_focus.clone(),
+                    state.options.initial_focus_with.clone(),
+                    state.session,
+                )
+            })
         });
-        if let Some(focus) = focus {
+        let focus = focus_source.and_then(|(fixed, resolve, session)| {
+            resolve
+                .and_then(|resolve| resolve(cx))
+                .or(fixed)
+                .map(|focus| (focus, session))
+        });
+        if let Some((focus, session)) = focus {
             let weak = self.state.downgrade();
             window.defer(cx, move |window, cx| {
-                if weak
-                    .upgrade()
-                    .is_some_and(|state| state.read(cx).lifecycle.open())
-                {
+                if weak.upgrade().is_some_and(|state| {
+                    let state = state.read(cx);
+                    state.presented() && state.session == session && state.surface_focus.is_some()
+                }) {
                     window.focus(&focus, cx);
                 }
             });

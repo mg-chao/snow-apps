@@ -366,7 +366,7 @@ fn modal_escape_and_focus_traversal_stay_in_dialog() {
     );
 }
 #[test]
-fn modal_lazy_content_retained_then_destroyed_only_when_requested() {
+fn modal_content_is_lazy_and_released_after_every_close() {
     struct Body;
     impl Render for Body {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -383,25 +383,117 @@ fn modal_lazy_content_retained_then_destroyed_only_when_requested() {
         }))
     });
     assert_eq!(calls.get(), 0);
-    f.edit(|o| o.force_render = true);
-    assert_eq!(
-        calls.get(),
-        1,
-        "force_render initializes a closed native view"
-    );
-    assert!(!f.is_open());
-    f.edit(|o| o.force_render = false);
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_none()));
     f.open(true);
     f.draw();
     assert_eq!(calls.get(), 1);
+    let scroll = f
+        .state
+        .read_with(&f.cx, |s, _| s.presentation().scroll.downgrade());
     f.open(false);
-    f.open(true);
-    assert_eq!(calls.get(), 1);
-    f.edit(|o| o.destroy_on_hidden = true);
-    f.open(false);
+    f.draw();
+    assert!(scroll.upgrade().is_none());
+    assert!(f.state.read_with(&f.cx, |s, _| s.body_view.is_none()
+        && s.presentation.is_none()));
     f.open(true);
     assert_eq!(calls.get(), 2);
 }
+#[test]
+fn modal_reentrant_view_factories_discard_replaced_slots() {
+    struct Body;
+    impl Render for Body {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().child("Application content")
+        }
+    }
+    fn replace(options: &mut ModalOptions, slot: usize, content: ModalContent) {
+        match slot {
+            0 => options.title = Some(content),
+            1 => options.content = Some(content),
+            _ => options.footer = ModalFooter::Content(content),
+        }
+    }
+    for slot in 0..3 {
+        let mut f = Fixture::new();
+        let handle = f.cx.update(|cx| ModalState::handle(&f.state, cx));
+        let obsolete = Rc::new(RefCell::new(Vec::new()));
+        let replacement = Rc::new(RefCell::new(Vec::new()));
+        let created = replacement.clone();
+        let next = ModalContent::view(move |_, cx| {
+            let body = cx.new(|_| Body);
+            created.borrow_mut().push(body.downgrade());
+            body.into()
+        });
+        let created = obsolete.clone();
+        f.edit(|options| {
+            replace(
+                options,
+                slot,
+                ModalContent::view(move |_, cx| {
+                    handle.update(|options| replace(options, slot, next.clone()), cx);
+                    let body = cx.new(|_| Body);
+                    created.borrow_mut().push(body.downgrade());
+                    body.into()
+                }),
+            );
+        });
+        f.open(true);
+        f.draw();
+        f.draw();
+        assert_eq!(obsolete.borrow().len(), 1);
+        assert!(obsolete.borrow()[0].upgrade().is_none());
+        assert_eq!(replacement.borrow().len(), 1);
+        let id = replacement.borrow()[0].upgrade().unwrap().entity_id();
+        assert_eq!(
+            f.state.read_with(&f.cx, |state, _| {
+                match slot {
+                    0 => &state.title_view,
+                    1 => &state.body_view,
+                    _ => &state.footer_view,
+                }
+                .as_ref()
+                .unwrap()
+                .entity_id()
+            }),
+            id
+        );
+        f.open(false);
+        f.draw();
+        assert!(replacement.borrow()[0].upgrade().is_none());
+    }
+}
+
+#[test]
+fn modal_reentrant_view_factory_close_does_not_recreate_hidden_content() {
+    struct Body;
+    impl Render for Body {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().child("Application content")
+        }
+    }
+    let mut f = Fixture::new();
+    let handle = f.cx.update(|cx| ModalState::handle(&f.state, cx));
+    let created = Rc::new(RefCell::new(Vec::new()));
+    let bodies = created.clone();
+    f.edit(|options| {
+        options.content = Some(ModalContent::view(move |window, cx| {
+            handle.close(window, cx);
+            let body = cx.new(|_| Body);
+            bodies.borrow_mut().push(body.downgrade());
+            body.into()
+        }));
+    });
+    f.open(true);
+    f.draw();
+    f.draw();
+    assert!(!f.is_open());
+    assert_eq!(created.borrow().len(), 1);
+    assert!(created.borrow()[0].upgrade().is_none());
+    assert!(f.state.read_with(&f.cx, |state, _| {
+        state.body_view.is_none() && state.presentation.is_none()
+    }));
+}
+
 #[test]
 fn modal_helpers_preserve_context_and_return_outcomes() {
     let mut f = Fixture::new();
@@ -907,7 +999,7 @@ fn modal_scroll_lock_and_background_pointer_isolation_are_independent() {
 }
 
 #[test]
-fn modal_retains_all_view_slots_and_loading_does_not_construct_body() {
+fn modal_view_slots_are_lazy_during_loading_and_released_when_hidden() {
     struct Body;
     impl Render for Body {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -939,11 +1031,10 @@ fn modal_retains_all_view_slots_and_loading_does_not_construct_body() {
     assert_eq!(counters.each_ref().map(|c| c.get()), [1, 1, 1]);
     f.open(false);
     f.open(true);
-    assert_eq!(counters.each_ref().map(|c| c.get()), [1, 1, 1]);
-    f.edit(|o| o.destroy_on_hidden = true);
+    assert_eq!(counters.each_ref().map(|c| c.get()), [2, 2, 2]);
     f.open(false);
     f.open(true);
-    assert_eq!(counters.each_ref().map(|c| c.get()), [2, 2, 2]);
+    assert_eq!(counters.each_ref().map(|c| c.get()), [3, 3, 3]);
 }
 
 #[test]
@@ -1103,4 +1194,73 @@ fn modal_windows_keep_hosts_managers_and_results_isolated() {
         ),
         std::task::Poll::Ready(ModalOutcome::Destroyed)
     );
+}
+
+#[test]
+fn modal_presentation_survives_exit_then_releases_on_deadline() {
+    let mut f = Fixture::new();
+    let scope = f.scope.clone();
+    f.cx.update(|cx| scope.update_patch(cx, |p| p.motion = Some(true)).unwrap());
+    f.open(true);
+    f.cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    f.draw();
+    f.open(false);
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_some()));
+    f.cx.executor()
+        .advance_clock(std::time::Duration::from_millis(10));
+    f.cx.run_until_parked();
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_some()));
+    f.cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    f.cx.run_until_parked();
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_none()));
+    assert_eq!(
+        f.events
+            .borrow()
+            .iter()
+            .filter(|e| **e == ModalEvent::AfterClose)
+            .count(),
+        1
+    );
+    f.draw();
+    f.open(true);
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_some()));
+}
+
+#[test]
+fn hidden_native_window_releases_modal_resources_without_closing_controlled_state() {
+    let mut f = Fixture::new();
+    f.open(true);
+    let scroll = f
+        .state
+        .read_with(&f.cx, |s, _| s.presentation().scroll.downgrade());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(f.is_open());
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_none()));
+    assert!(scroll.upgrade().is_none());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(f.state.read_with(&f.cx, |s, _| s.presentation.is_some()));
+}
+
+#[test]
+fn queued_tab_before_native_restore_frame_does_not_access_retired_modal_focus() {
+    let mut f = Fixture::new();
+    f.open(true);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.presentation.is_none())
+    );
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.cx.update_window(f.window.into(), |_, w, cx| host::traverse(false, w, cx))
+        .unwrap();
+    f.draw();
+    f.cx.update_window(f.window.into(), |_, w, cx| {
+        assert!(f.state.read(cx).focus.contains_focused(w, cx))
+    })
+    .unwrap();
 }

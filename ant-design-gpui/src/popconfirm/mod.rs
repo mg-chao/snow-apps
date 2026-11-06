@@ -201,19 +201,19 @@ impl Popconfirm {
 
 struct ConfirmState {
     handle: PopupHandle,
-    confirm_focus: FocusHandle,
-    cancel_focus: FocusHandle,
+    confirm_focus: Option<FocusHandle>,
+    cancel_focus: Option<FocusHandle>,
     request: u64,
     pending_session: Option<crate::popup::PopupSession>,
     on_confirm: Option<ConfirmHandler>,
     on_error: Option<ErrorHandler>,
 }
 impl ConfirmState {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self {
             handle: PopupHandle::new(),
-            confirm_focus: focus_handle(cx),
-            cancel_focus: focus_handle(cx),
+            confirm_focus: None,
+            cancel_focus: None,
             request: 0,
             pending_session: None,
             on_confirm: None,
@@ -310,23 +310,12 @@ impl RenderOnce for Popconfirm {
             if let Some(handle) = self.popup.handle_value() {
                 state.handle = handle;
             }
-            state.on_confirm = self.on_confirm.clone();
-            state.on_error = self.on_error.clone();
             if !state.is_pending(cx) {
                 state.pending_session = None;
             }
         });
         let retained = state.read(cx);
         let handle = retained.handle.clone();
-        let confirm_focus = retained.confirm_focus.clone();
-        let cancel_focus = retained.cancel_focus.clone();
-        let initial_focus = if self.show_cancel && !self.cancel_button.disabled {
-            Some(&cancel_focus)
-        } else if !self.ok_button.disabled {
-            Some(&confirm_focus)
-        } else {
-            None
-        };
         let mut surface = div()
             .p(px(surface_style.padding as f32))
             .font(tokens.font().clone())
@@ -351,9 +340,39 @@ impl RenderOnce for Popconfirm {
                 surface_tokens.globals(),
                 surface_tokens.globals().border_radius_outer,
             );
-        if let Some(focus) = initial_focus {
-            popup = popup.initial_focus(focus);
-        }
+        let start = state.downgrade();
+        let hidden = state.downgrade();
+        let focus = state.downgrade();
+        let focus_cancel = self.show_cancel && !self.cancel_button.disabled;
+        let focus_confirm = !self.ok_button.disabled;
+        popup = popup
+            .on_presented(move |_, cx| {
+                let _ = start.update(cx, |state, cx| {
+                    state.confirm_focus = Some(focus_handle(cx));
+                    state.cancel_focus = Some(focus_handle(cx));
+                });
+            })
+            .on_hidden(move |cx| {
+                let _ = hidden.update(cx, |state, _| {
+                    state.confirm_focus = None;
+                    state.cancel_focus = None;
+                    state.on_confirm = None;
+                    state.on_error = None;
+                    state.pending_session = None;
+                    state.request = state.request.wrapping_add(1);
+                });
+            })
+            .initial_focus_with(move |cx| {
+                let state = focus.upgrade()?;
+                let state = state.read(cx);
+                if focus_cancel {
+                    state.cancel_focus.clone()
+                } else if focus_confirm {
+                    state.confirm_focus.clone()
+                } else {
+                    None
+                }
+            });
         let ok_text = self
             .ok_text
             .unwrap_or_else(|| config.locale.popconfirm.ok_text.clone());
@@ -365,11 +384,23 @@ impl RenderOnce for Popconfirm {
         let description = self.description;
         let weak = state.downgrade();
         popup.content(move |handle, window, cx| {
-            // The factory can remain cached while closed. Read live pending state
-            // when it runs so a task completion never leaves a stale spinner.
-            let pending = weak
+            let (pending, confirm_focus, cancel_focus) = weak
                 .upgrade()
-                .is_some_and(|state| state.read(cx).is_pending(cx));
+                .map(|state| {
+                    state.update(cx, |state, cx| {
+                        state.on_confirm = self.on_confirm.clone();
+                        state.on_error = self.on_error.clone();
+                        (
+                            state.is_pending(cx),
+                            state
+                                .confirm_focus
+                                .clone()
+                                .expect("presented confirmation focus"),
+                            state.cancel_focus.clone().expect("presented cancel focus"),
+                        )
+                    })
+                })
+                .expect("mounted confirmation presentation");
             let mut texts = div().flex().flex_col().min_w(px(0.));
             if let Some(title) = &title {
                 let mut element = div()

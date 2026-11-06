@@ -85,14 +85,6 @@ macro_rules! popup_methods {
             self.popup = self.popup.default_open(open);
             self
         }
-        pub fn fresh(mut self, fresh: bool) -> Self {
-            self.popup = self.popup.fresh(fresh);
-            self
-        }
-        pub fn destroy_on_hidden(mut self, destroy: bool) -> Self {
-            self.popup = self.popup.destroy_on_hidden(destroy);
-            self
-        }
         pub fn handle(mut self, handle: &crate::popup::PopupHandle) -> Self {
             self.popup = self.popup.handle(handle);
             self

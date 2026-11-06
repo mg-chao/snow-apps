@@ -16,7 +16,11 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, Role, ScrollAnchor, StyleRefinement,
     Subscription, Window, canvas, div, point, prelude::*, px, relative,
 };
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::Duration,
+};
 
 pub(super) struct Demo {
     pub id: &'static str,
@@ -121,8 +125,8 @@ pub(super) const DEMOS: &[Demo] = &[
     },
     Demo {
         id: "modal-retained",
-        title: "Retained content",
-        description: "Closing preserves the owned native view. Destroy on hidden constructs a fresh view on reopening.",
+        title: "Persistent application state",
+        description: "Content is recreated on opening. The application keeps the counter value separately.",
     },
 ];
 
@@ -130,6 +134,7 @@ pub(super) struct ModalPage {
     scope: ConfigScope,
     anchors: Vec<ScrollAnchor>,
     pub state: Entity<ModalState>,
+    counter: Rc<Cell<usize>>,
     manager: ModalManager,
     _config: Subscription,
 }
@@ -192,6 +197,7 @@ impl ModalPage {
         });
         Self {
             manager: ModalManager::new(scope.clone(), w),
+            counter: Rc::default(),
             state,
             _config: scope.observe(cx),
             scope,
@@ -460,12 +466,12 @@ impl ModalPage {
                 self.state.update(cx, |s, cx| {
                     if s.options().automation_id.as_deref() != Some("modal.retained") {
                         o.automation_id = Some("modal.retained".into());
-                        o.content = Some(ModalContent::view(|_, cx| cx.new(|_| Counter(0)).into()));
+                        let counter = self.counter.clone();
+                        o.content = Some(ModalContent::view(move |_, cx| {
+                            cx.new(|_| Counter(counter.clone())).into()
+                        }));
                         s.set_options(o, cx);
                     }
-                    let mut o = s.options().clone();
-                    o.destroy_on_hidden = variant == 1;
-                    s.set_options(o, cx);
                     s.set_open(true, w, cx);
                 });
                 return;
@@ -475,13 +481,13 @@ impl ModalPage {
         self.manager.show(o, w, cx);
     }
 }
-struct Counter(usize);
+struct Counter(Rc<Cell<usize>>);
 impl Render for Counter {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("counter")
-            .label(format!("Count: {}", self.0))
+            .label(format!("Count: {}", self.0.get()))
             .on_click(cx.listener(|s, _, _, cx| {
-                s.0 += 1;
+                s.0.set(s.0.get() + 1);
                 cx.notify();
             }))
     }
@@ -600,7 +606,7 @@ impl Render for ModalPage {
                             "modal-width" => &["1000px", "80%", "Responsive"],
                             "modal-static-info" => &["Info", "Success", "Warning", "Error"],
                             "modal-confirm" => &["Confirm", "Reject, then retry"],
-                            "modal-retained" => &["Retain", "Destroy on hidden"],
+                            "modal-retained" => &["Open counter"],
                             _ => &["Open Modal"],
                         };
                         div()

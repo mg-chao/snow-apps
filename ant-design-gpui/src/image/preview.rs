@@ -38,9 +38,10 @@ pub struct PreviewState {
     open: bool,
     current: usize,
     transform: PreviewTransform,
-    dialog: Entity<ModalState>,
+    presentation: Option<PreviewPresentation>,
+    resume_operation: Option<usize>,
+    suspended_focus: Option<(bool, Option<gpui::WeakFocusHandle>)>,
     picture: Entity<PictureState>,
-    operation_focus: [FocusHandle; 9],
     viewport: Size<Pixels>,
     drag: Option<Drag>,
     touch_pan: Option<PreviewTransform>,
@@ -54,6 +55,11 @@ pub struct PreviewState {
     last_action: Option<PreviewAction>,
     mount_generation: u64,
     scope_subscription: Subscription,
+}
+
+struct PreviewPresentation {
+    dialog: Entity<ModalState>,
+    operation_focus: [FocusHandle; 9],
     _picture_subscription: Subscription,
 }
 
@@ -71,8 +77,6 @@ impl PreviewState {
         let scope = ConfigScope::application(cx);
         let scope_subscription = scope.observe(cx);
         let picture = cx.new(|cx| PictureState::new(None, cx));
-        let picture_subscription = cx.observe(&picture, |_, _, cx| cx.notify());
-        let keys = cx.weak_entity();
         let items_explicit = !items.is_empty();
         Self {
             scope,
@@ -84,26 +88,10 @@ impl PreviewState {
             open: false,
             current: 0,
             transform: PreviewTransform::default(),
-            dialog: cx.new(|cx| {
-                let mut dialog = ModalState::new(window, cx);
-                dialog.use_viewport_surface(move |event, w, cx| {
-                    if event.keystroke.modifiers.modified() {
-                        return;
-                    }
-                    let action = match event.keystroke.key.as_str() {
-                        "left" => Some(PreviewAction::Previous),
-                        "right" => Some(PreviewAction::Next),
-                        _ => None,
-                    };
-                    if let Some(action) = action {
-                        let _ = keys.update(cx, |s, cx| s.apply_action(action, w, cx));
-                        cx.stop_propagation();
-                    }
-                });
-                dialog
-            }),
+            presentation: None,
+            resume_operation: None,
+            suspended_focus: None,
             picture,
-            operation_focus: std::array::from_fn(|_| focus_handle(cx)),
             viewport: window.viewport_size(),
             drag: None,
             touch_pan: None,
@@ -117,8 +105,52 @@ impl PreviewState {
             last_action: None,
             mount_generation: 0,
             scope_subscription,
-            _picture_subscription: picture_subscription,
         }
+    }
+
+    fn ensure_presentation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.presentation.is_some() || !self.open || !window.is_visible() {
+            return;
+        }
+        let keys = cx.weak_entity();
+        let dialog = cx.new(|cx| {
+            let mut dialog = ModalState::new(window, cx);
+            dialog.use_viewport_surface(move |event, window, cx| {
+                if event.keystroke.modifiers.modified() {
+                    return;
+                }
+                let action = match event.keystroke.key.as_str() {
+                    "left" => Some(PreviewAction::Previous),
+                    "right" => Some(PreviewAction::Next),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    let _ = keys.update(cx, |s, cx| s.apply_action(action, window, cx));
+                    cx.stop_propagation();
+                }
+            });
+            dialog
+        });
+        self.presentation = Some(PreviewPresentation {
+            dialog,
+            operation_focus: std::array::from_fn(|_| focus_handle(cx)),
+            _picture_subscription: cx.observe(&self.picture, |_, _, cx| cx.notify()),
+        });
+        self.load_current(cx);
+    }
+
+    fn release_presentation(&mut self, cx: &mut Context<Self>) {
+        self.presentation = None;
+        self.resume_operation = None;
+        self.suspended_focus = None;
+        self.picture.update(cx, |p, cx| p.reset(cx));
+        self.drag = None;
+        self.touch_pan = None;
+        self.pinch_origin = None;
+        self.mask_down = false;
+        self.frame_pending = false;
+        self.opening = None;
+        self.closing = None;
     }
 
     pub fn scope(&self) -> &ConfigScope {
@@ -149,6 +181,12 @@ impl PreviewState {
     pub fn picture(&self) -> Entity<PictureState> {
         self.picture.clone()
     }
+    #[cfg(test)]
+    pub(super) fn operation_focus_for_test(&self, index: usize) -> Option<FocusHandle> {
+        self.presentation
+            .as_ref()
+            .map(|presentation| presentation.operation_focus[index].clone())
+    }
     /// Bounds of the fitted image before the user's transform, in window coordinates.
     pub fn image_bounds(&self, cx: &App) -> Bounds<Pixels> {
         Bounds::centered_at(
@@ -164,7 +202,11 @@ impl PreviewState {
         if scope != self.scope {
             self.scope_subscription = scope.observe(cx);
             self.scope = scope.clone();
-            self.dialog.update(cx, |s, cx| s.set_scope(scope, cx));
+            if let Some(presentation) = &self.presentation {
+                presentation
+                    .dialog
+                    .update(cx, |s, cx| s.set_scope(scope, cx));
+            }
             cx.notify();
         }
     }
@@ -347,9 +389,28 @@ impl PreviewState {
             self.transform.scale = self.options.min_scale;
             self.opening = None;
             self.closing = Some(cx.background_executor().now());
+            self.restore_suspended_return_focus(window, cx);
         }
-        self.dialog.update(cx, |s, cx| s.set_open(open, window, cx));
+        self.ensure_presentation(window, cx);
+        if let Some(presentation) = &self.presentation {
+            presentation
+                .dialog
+                .update(cx, |s, cx| s.set_open(open, window, cx));
+        }
         cx.notify();
+    }
+
+    fn restore_suspended_return_focus(&mut self, window: &mut Window, cx: &mut App) {
+        if let Some(target) = self.take_suspended_return_focus()
+            && let Some(target) = target.upgrade()
+        {
+            window.focus(&target, cx);
+        }
+    }
+
+    fn take_suspended_return_focus(&mut self) -> Option<gpui::WeakFocusHandle> {
+        self.resume_operation = None;
+        self.suspended_focus.take().and_then(|(_, target)| target)
     }
 
     pub fn set_current(&mut self, current: usize, cx: &mut Context<Self>) {
@@ -437,6 +498,9 @@ impl PreviewState {
     }
 
     fn load_current(&mut self, cx: &mut Context<Self>) {
+        if !self.open || self.presentation.is_none() {
+            return;
+        }
         let item = self.current_item().cloned();
         self.picture.update(cx, |p, cx| {
             p.set_source(item.as_ref().map(|i| i.source.clone()), cx);
@@ -967,30 +1031,43 @@ impl RenderOnce for PreviewGroup {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let observed = self.state.clone();
         let _mount = window.with_element_namespace(self.id.clone(), |w| {
-            w.use_keyed_state("preview-observer", cx, move |_, cx| {
+            w.use_keyed_state("preview-observer", cx, move |window, cx| {
                 let generation = observed.update(cx, |s, _| {
                     s.mount_generation = s.mount_generation.wrapping_add(1);
                     s.mount_generation
                 });
                 let weak = observed.downgrade();
+                let target = window.window_handle();
                 GroupMount {
                     _observer: cx.observe(&observed, |_, _, cx| cx.notify()),
                     _release: cx.on_release(move |_: &mut GroupMount, cx| {
                         cx.defer(move |cx| {
-                            let _ = weak.update(cx, |s, cx| {
-                                if s.mount_generation != generation {
-                                    return;
-                                }
-                                s.open = false;
-                                s.drag = None;
-                                s.touch_pan = None;
-                                s.pinch_origin = None;
-                                s.mask_down = false;
-                                s.opening = None;
-                                s.closing = None;
-                                s.picture.update(cx, |p, cx| p.set_source(None, cx));
-                                cx.notify();
-                            });
+                            let return_to = weak
+                                .update(cx, |s, cx| {
+                                    if s.mount_generation != generation {
+                                        return None;
+                                    }
+                                    s.open = false;
+                                    let return_to = if let Some(presentation) = &s.presentation {
+                                        presentation.dialog.update(cx, |dialog, _| {
+                                            dialog.take_viewport_return_focus()
+                                        })
+                                    } else {
+                                        s.take_suspended_return_focus()
+                                    };
+                                    s.release_presentation(cx);
+                                    cx.notify();
+                                    return_to
+                                })
+                                .ok()
+                                .flatten();
+                            if let Some(return_to) = return_to {
+                                let _ = target.update(cx, |_, window, cx| {
+                                    if let Some(focus) = return_to.upgrade() {
+                                        window.focus(&focus, cx);
+                                    }
+                                });
+                            }
                         });
                     }),
                 }
@@ -1006,14 +1083,47 @@ impl RenderOnce for PreviewGroup {
             }
             s.refresh_scope_options(cx);
             s.viewport = window.viewport_size();
+            if !window.is_visible() {
+                if let Some(presentation) = &s.presentation {
+                    let operation = presentation
+                        .operation_focus
+                        .iter()
+                        .position(|focus| focus.is_focused(window));
+                    let focus = presentation
+                        .dialog
+                        .update(cx, |dialog, cx| dialog.take_viewport_focus(window, cx));
+                    s.release_presentation(cx);
+                    s.resume_operation = operation;
+                    s.suspended_focus = Some(focus);
+                }
+            } else {
+                s.ensure_presentation(window, cx);
+            }
+            if !s.open && s.presentation.is_none() {
+                s.restore_suspended_return_focus(window, cx);
+            }
         });
+        if self.state.read(cx).presentation.is_none() {
+            let mut result = div().id(self.id).children(self.children);
+            result.style().refine(&self.style);
+            return result;
+        }
+        let suspended_focus = self.state.update(cx, |s, _| s.suspended_focus.take());
         let (dialog, scope, open, initial_focus) = {
             let s = self.state.read(cx);
             (
-                s.dialog.clone(),
+                s.presentation
+                    .as_ref()
+                    .expect("preview presentation")
+                    .dialog
+                    .clone(),
                 s.scope.clone(),
                 s.open,
-                s.operation_focus[6].clone(),
+                s.presentation
+                    .as_ref()
+                    .expect("preview presentation")
+                    .operation_focus[s.resume_operation.unwrap_or(6)]
+                .clone(),
             )
         };
         let weak = self.state.downgrade();
@@ -1111,7 +1221,7 @@ impl RenderOnce for PreviewGroup {
                 if matches!(event, crate::modal::ModalEvent::AfterClose) {
                     let _ = closed.update(cx, |s, cx| {
                         if !s.open {
-                            s.picture.update(cx, |p, cx| p.set_source(None, cx));
+                            s.release_presentation(cx);
                             s.transform = PreviewTransform::default();
                             s.transform.scale = s.options.min_scale;
                             s.visual.snap(s.transform, cx.background_executor().now());
@@ -1126,6 +1236,9 @@ impl RenderOnce for PreviewGroup {
             s.set_scope(scope.clone(), cx);
             s.set_viewport_motion(duration, motion);
             s.set_open(open, window, cx);
+            if let Some((owned, return_to)) = suspended_focus {
+                s.restore_viewport_focus(owned, return_to);
+            }
         });
         let mut result = div().id(self.id).children(self.children).child(
             Modal::new("preview-shell", &dialog, cx)
@@ -1154,7 +1267,11 @@ fn render_surface(
             s.items().len(),
             s.current_item().cloned(),
             s.picture.clone(),
-            s.operation_focus.clone(),
+            s.presentation
+                .as_ref()
+                .expect("preview presentation")
+                .operation_focus
+                .clone(),
             s.fitted_size(cx),
             s.drag.is_some(),
         )

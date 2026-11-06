@@ -78,6 +78,9 @@ impl Level {
 /// Retain one controller per mounted trigger. Immutable item snapshots make normal
 /// redraws cheap; submenu factories run only for the branch being opened.
 pub struct ContextMenuState {
+    // Authoritative command/check state survives the presentation's destruction.
+    items: MenuItems,
+    root_active: Option<usize>,
     pub(super) levels: Vec<Level>,
     pub(super) popup: PopupHandle,
     pub(super) trigger: FocusHandle,
@@ -109,8 +112,11 @@ impl Focusable for ContextMenuState {
 }
 impl ContextMenuState {
     pub fn new(items: MenuItems, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let root_active = items.next(None, 1);
         Self {
-            levels: vec![Level::new(items, None, cx)],
+            items,
+            root_active,
+            levels: Vec::new(),
             popup: PopupHandle::new(),
             trigger: crate::behavior::focus_handle(cx),
             trigger_tab_stop: true,
@@ -135,29 +141,35 @@ impl ContextMenuState {
         }
     }
     pub fn items(&self) -> &MenuItems {
-        &self.levels[0].items
+        &self.items
     }
     pub fn is_open(&self) -> bool {
         self.open
     }
     pub fn active_item(&self) -> Option<&MenuItem> {
-        let level = self.levels.last()?;
-        level.items.item(level.active?)
+        if let Some(level) = self.levels.last() {
+            level.items.item(level.active?)
+        } else {
+            self.items.item(self.root_active?)
+        }
     }
     pub fn submenu_depth(&self) -> usize {
-        self.levels.len() - 1
+        self.levels.len().saturating_sub(1)
     }
     /// Replace the authoritative snapshot, keeping the root active identity when
     /// possible. Descendants are discarded so delayed factories cannot use stale data.
     pub fn set_items(&mut self, items: MenuItems, cx: &mut Context<Self>) {
-        let active = self.levels[0]
-            .active
-            .and_then(|i| self.levels[0].items.item(i))
+        let active = self
+            .levels
+            .first()
+            .and_then(|level| level.active.and_then(|i| level.items.item(i)))
+            .or_else(|| self.root_active.and_then(|index| self.items.item(index)))
             .map(|i| i.id.clone());
         self.focus_repair_from = self.levels.iter().map(|l| l.focus.clone()).collect();
         self.cancel_pending();
         self.levels.truncate(1);
-        self.levels[0].active = active
+        self.items = items.clone();
+        let next_active = active
             .and_then(|id| {
                 items.entries().iter().position(|entry| {
                     entry
@@ -166,9 +178,13 @@ impl ContextMenuState {
                 })
             })
             .or_else(|| items.next(None, 1));
-        self.levels[0].items = items;
-        self.levels[0].width_cache = None;
-        self.levels[0].native_list = None;
+        self.root_active = next_active;
+        if let Some(level) = self.levels.first_mut() {
+            level.active = next_active;
+            level.items = items;
+            level.width_cache = None;
+            level.native_list = None;
+        }
         self.focus_pending = self.open;
         cx.notify();
     }
@@ -230,10 +246,36 @@ impl ContextMenuState {
         self.open = false;
         self.mounted = false;
         self.mount_generation = self.mount_generation.wrapping_add(1);
-        self.levels.truncate(1);
-        self.query.clear();
+        self.release_presentation();
         self.on_event = None;
+        self._scope = None;
+        self.scope = None;
         self.return_focus = None;
+    }
+    pub(super) fn release_presentation(&mut self) {
+        self.cancel_pending();
+        if let Some(root) = self.levels.first() {
+            self.root_active = root.active;
+        }
+        self.levels = Vec::new();
+        self.query = String::new();
+        self.last_query = None;
+        self.focus_repair_from = Vec::new();
+    }
+    pub(super) fn present_root(&mut self, cx: &mut Context<Self>) {
+        if self.levels.is_empty() {
+            let mut level = Level::new(self.items.clone(), None, cx);
+            level.active = self
+                .root_active
+                .filter(|index| level.items.enabled(*index))
+                .or(level.active);
+            if level.active != level.items.next(None, 1)
+                && let Some(index) = level.active
+            {
+                level.scroll.scroll_to_item(index);
+            }
+            self.levels.push(level);
+        }
     }
     fn select(
         &mut self,
@@ -253,6 +295,9 @@ impl ContextMenuState {
         }
         self.cancel_pending();
         self.levels[depth].active = Some(index);
+        if depth == 0 {
+            self.root_active = Some(index);
+        }
         self.levels[depth].reveal(index);
         if close_descendants {
             self.levels.truncate(depth + 1)
@@ -347,20 +392,15 @@ pub(super) fn opened(
             ))
         .then(|| s.return_focus.clone())
         .flatten();
+        if !change.open {
+            s.return_focus = None;
+        }
         s.open = change.open;
         s.cancel_pending();
-        s.levels.truncate(1);
         s.query.clear();
         s.last_query = None;
         if change.open {
-            s.levels[0].active = s.levels[0].items.next(None, 1);
-            s.levels[0].scroll.set_offset(Point::default());
-            if let Some(list) = &s.levels[0].native_list {
-                list.scroll_to(gpui::ListOffset {
-                    item_ix: 0,
-                    offset_in_item: gpui::px(0.),
-                });
-            }
+            s.levels = vec![Level::new(s.items.clone(), None, cx)];
         }
         cx.notify();
         if change.open {
@@ -560,6 +600,7 @@ pub(super) fn activate(
                 parent.submenu = Some(items);
             }
         }
+        s.items = s.levels[0].items.clone();
         s.open = false;
         s.cancel_pending();
         cx.notify();

@@ -1557,7 +1557,7 @@ impl<S: PickerSelection> RenderOnce for Picker<S> {
                 } else if e.keystroke.modifiers.alt && e.keystroke.key == "down" {
                     key_target.update(c, |s, c| {
                         s.request_open(true, false, w, c);
-                        s.panel_focus.focus(w, c);
+                        s.focus_panel(w, c);
                     });
                     w.prevent_default();
                     c.stop_propagation();
@@ -1600,6 +1600,9 @@ impl<S: PickerSelection> RenderOnce for Picker<S> {
         };
         let content = parts.clone();
         let changed = self.state.clone();
+        let presented = self.state.downgrade();
+        let hidden = presented.clone();
+        let initial_focus = presented.clone();
         let render = self.panel_render.clone();
         let arrow_state = self.state.downgrade();
         let range_arrow = parts.arrow;
@@ -1671,7 +1674,6 @@ impl<S: PickerSelection> RenderOnce for Picker<S> {
                     PopupPlacement::BottomLeft
                 },
             ))
-            .fresh(true)
             .z_index(tokens.z_index_popup as usize)
             .background(g.color_bg_elevated)
             .radius(px(g.border_radius_lg as f32))
@@ -1679,6 +1681,17 @@ impl<S: PickerSelection> RenderOnce for Picker<S> {
             .surface_style(div().p_0().style().clone())
             .accessibility_role(Role::Group)
             .accessibility_label(config.locale.picker.panel_label.clone())
+            .on_presented(move |window, cx| {
+                let _ = presented.update(cx, |s, cx| s.ensure_panel(window, cx));
+            })
+            .initial_focus_with(move |cx| initial_focus.upgrade()?.read(cx).initial_panel_focus())
+            .on_hidden(move |cx| {
+                let _ = hidden.update(cx, |s, _| {
+                    if !s.inline {
+                        s.release_panel();
+                    }
+                });
+            })
             .on_open_change(move |change, w, c| {
                 changed.update(c, |s, c| {
                     if !change.open && change.reason == PopupOpenReason::Escape {
@@ -1817,6 +1830,7 @@ impl<S: PickerSelection> Styled for PickerPanel<S> {
 impl<S: PickerSelection> RenderOnce for PickerPanel<S> {
     fn render(self, w: &mut Window, c: &mut App) -> impl IntoElement {
         let parts = self.picker.configure(true, w, c);
+        self.picker.state.update(c, |s, cx| s.ensure_panel(w, cx));
         let observed = self.picker.state.clone();
         let scope = parts.scope.clone();
         let mount = w.use_keyed_state(self.picker.id.clone(), c, move |_, cx| {
@@ -1887,7 +1901,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
         let config = self.scope.snapshot(c);
         let g = self.tokens.globals();
         let s = self.state.read(c);
-        let focus = s.panel_focus.clone();
+        let focus = s.panel_focus().clone();
         let dual = S::RANGE && S::HAS_DATE && !S::HAS_TIME && s.panel_mode == s.target_panel();
         let view = s.view_date;
         let mode = s.panel_mode;
@@ -2013,7 +2027,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
             .child(content)
             .capture_key_down(move |e, w, c| {
                 let handled = target.update(c, |s, c| {
-                    if !s.panel_focus.is_focused(w) {
+                    if !s.panel_focus().is_focused(w) {
                         return false;
                     }
                     let key = if config.direction == Direction::Rtl {
@@ -2583,7 +2597,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
             .on_mouse_down(MouseButton::Left, move |_, w, c| {
                 target.update(c, |s, c| {
                     if !s.disabled && !s.disabled_day(date) {
-                        s.panel_focus.focus(w, c);
+                        s.focus_panel(w, c);
                     }
                 });
                 w.prevent_default();
@@ -2640,8 +2654,8 @@ impl<S: PickerSelection> PickerPanelParts<S> {
             });
         let disabled = s.disabled_cell(cell);
         let cursor_active =
-            cell.in_view && cell.contains(s.cursor.date()) && s.panel_focus.is_focused(w);
-        let panel_focus = s.panel_focus.clone();
+            cell.in_view && cell.contains(s.cursor.date()) && s.panel_focus().is_focused(w);
+        let panel_focus = s.panel_focus().clone();
         let is_today = mode == PickerPanelMode::Date && cell.contains(today);
         let [first, last] = self.displayed_range(c);
         let range_start = S::RANGE
@@ -2843,7 +2857,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
             .on_mouse_down(MouseButton::Left, move |_, w, c| {
                 target.update(c, |s, c| {
                     if !disabled && !s.disabled {
-                        s.panel_focus.focus(w, c);
+                        s.focus_panel(w, c);
                     }
                 });
                 w.prevent_default();
@@ -3002,8 +3016,8 @@ impl<S: PickerSelection> PickerPanelParts<S> {
                 .h(px(height))
                 .into_any_element();
         }
-        let handle = s.scrolls[index].clone();
-        let focus = s.column_focus[index].clone();
+        let handle = s.panel_scroll(index).clone();
+        let focus = s.column_focus(index).clone();
         let has_value = s.draft.get(s.active).copied().flatten().is_some()
             || (!S::HAS_DATE && s.options.time.default_open_value.is_some());
         let initial = values.iter().position(|v| *v == selected).unwrap_or(0);
@@ -3165,7 +3179,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
                             .on_mouse_down(MouseButton::Left, move |_, w, c| {
                                 target.update(c, |s, c| {
                                     if !blocked && !s.disabled {
-                                        s.column_focus[index].focus(w, c);
+                                        s.column_focus(index).focus(w, c);
                                     }
                                 });
                                 w.prevent_default();
@@ -3329,7 +3343,7 @@ impl<S: PickerSelection> PickerPanelParts<S> {
                             index.checked_sub(1)
                         };
                         if let Some(next) = next.filter(|i| *i < s.options.time.units().len()) {
-                            s.column_focus[next].focus(w, c);
+                            s.column_focus(next).focus(w, c);
                         }
                         return;
                     }

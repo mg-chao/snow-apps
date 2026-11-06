@@ -1,7 +1,7 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hidden native GPU captures corresponding to the independent upstream Spin scenes.
+//! Background native GPU captures corresponding to the independent upstream Spin scenes.
 //! Run: cargo run --example spin_visual -- --output <directory>
 
 use std::{
@@ -10,6 +10,10 @@ use std::{
     rc::Rc,
     time::Duration,
 };
+
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
 
 use ant_design_gpui::{
     ConfigPatch, ConfigScope, Direction, Size, Spin, UiRoot,
@@ -107,14 +111,7 @@ impl<E: Element> Element for Measured<E> {
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -125,7 +122,7 @@ fn set_native_scale(title: &str, scale: f32) {
     // This uniquely titled window belongs to this capture process only.
     unsafe {
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "hidden Spin capture HWND");
+        assert_ne!(handle, 0, "background Spin capture HWND");
         let mut rect = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut rect), 0);
         let dpi = (96. * scale).round() as usize;
@@ -328,9 +325,9 @@ fn main() {
         let custom_scope = scope.child(custom, cx).unwrap();
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(740.), px(1000.)), cx))),
-            show: false, focus: false, ..Default::default()
+            show: cfg!(not(target_os = "windows")), focus: false, ..Default::default()
         }, |window, cx| {
-            let native_title = format!("Ant Design Spin hidden capture {}", std::process::id());
+            let native_title = format!("Ant Design Spin background capture {}", std::process::id());
             window.set_window_title(&native_title);
             let scenes: Value = serde_json::from_str(include_str!("../fixtures/spin/visual-cases.json")).unwrap();
             let scene_names: Vec<_> = scenes.as_object().unwrap().keys().filter(|scene| selected_scene.as_ref().is_none_or(|selected| selected == *scene)).cloned().collect();
@@ -342,6 +339,8 @@ fn main() {
             window.spawn(cx, async move |cx| {
                 let mut metrics = Vec::new();
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&native_title, (740, 1000), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for scene in scene_names {
                     cx.update(|_, cx| capture.update(cx, |view, cx| { view.scene = scene.clone(); cx.notify(); })).unwrap();
                     for (theme, algorithms) in [("default", AlgorithmChain::default()), ("dark", AlgorithmChain::dark()), ("compact", AlgorithmChain::compact()), ("dark-compact", AlgorithmChain::dark_compact())] {
@@ -355,7 +354,9 @@ fn main() {
                             for scale in [1., 1.5, 2.] {
                                 if selected_scale.is_some_and(|selected| selected != scale) { continue; }
                                 set_native_scale(&native_title, scale);
-                                cx.update(|window, cx| { window.resize(size(px(740.), px(1000.))); window.refresh(); window.draw(cx).clear(cx); }).unwrap();
+                                #[cfg(target_os = "windows")]
+                                capture_windows::resize(&native_title, (740, 1000), scale).expect("size background Spin capture");
+                                cx.update(|window, cx| { #[cfg(not(target_os = "windows"))] window.resize(size(px(740.), px(1000.))); window.refresh(); window.draw(cx).clear(cx); }).unwrap();
                                 cx.background_executor().timer(Duration::from_millis(80)).await;
                                 cx.update(|window, cx| {
                                     window.bounds_changed(cx);
@@ -389,6 +390,6 @@ fn main() {
                 cx.update(|_, cx| cx.quit()).unwrap();
             }).detach();
             root
-        }).expect("hidden Spin capture window");
+        }).expect("background Spin capture window");
     });
 }

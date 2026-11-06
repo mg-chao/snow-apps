@@ -115,6 +115,10 @@ impl RenderOnce for Spin {
         state.update(cx, |state, cx| {
             state.update(&self, scope.clone(), window, cx)
         });
+        if self.fullscreen && !window.is_visible() {
+            state.update(cx, |state, _| state.suspend_presentation());
+            return gpui::Empty.into_any_element();
+        }
         let config = scope.snapshot(cx);
         let tokens = config.theme.component::<SpinTheme>();
         let metrics =

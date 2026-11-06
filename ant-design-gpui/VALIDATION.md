@@ -994,3 +994,157 @@ The GPUI pin and runtime dependencies are unchanged. Native fade/dimming replace
 the browser's subtree zoom/backdrop blur. Font, SVG and shadow rasterization differ
 between backends. macOS/Linux execution, real screen-reader speech, GPU presentation
 time and end-to-end input latency were not verified.
+
+## Popup memory lifecycle — 2026-11-06
+
+Popup presentation resources are now lazy, survive their existing exit animation,
+and are released after fully hiding and retiring the last cached scene. Selected
+values, drafts, trigger editors, caller models and independent application tasks
+retain their existing ownership. Removed popup retention/eager-render APIs and
+the per-component ownership and bounded-cache ledger are documented in
+[popup-lifetime.md](docs/popup-lifetime.md).
+
+Only affected checks were run; no full crate or repository test suite was run.
+The pinned GPUI revision and dependency manifests/lockfile are unchanged.
+
+- The affected library selection contained **915 tests**. Its broad run passed
+  914; one standalone Pagination tooltip fixture needed its selector wrapper.
+  After that fixture correction, all nine selected native-tooltip tests passed,
+  including the previously failing test. Earlier focused component selections
+  also passed. The broad log and corrected rerun remain separate evidence.
+- After the final review fixes, **91 Image/resource/Modal/Popup tests passed**.
+  Five new pressure regressions exercise full-key collision replacement, 129
+  active decoded sources, 129 real Picture consumers (one Loaded event each),
+  33 transformed rasters and 17 loading masks. Ready identities survive weak-index
+  eviction; final scene retirement releases their records. Two Modal regressions
+  cover reentrant view-factory replacement/closure; two Popup regressions cancel
+  pointer and keyboard arming across native hide/restore while preserving fresh
+  click/key activation.
+- **63 affected gallery tests passed**, covering the popup/picker/menu/overlay
+  pages and their interactions. Deterministic tests use fake clocks, weak/drop
+  probes and live resource/byte counters for lazy construction, exit deadlines,
+  cached parents, clipping, controlled rejection, callback reopening, nested
+  surfaces, hidden windows without incoming frames and asynchronous cancellation.
+- Strict Clippy passed with `-D warnings` for the library/tests, gallery, affected
+  accessibility examples, all 13 migrated visual examples and all nine related
+  benchmarks. Visual fixtures now present a background, nonactivating window;
+  native hidden windows correctly suppress and release popup presentation.
+  Scoped rustfmt, changed PowerShell script parsing and whitespace checks passed.
+- **Six native Windows accessibility scripts passed**: Popup, Modal, Menu,
+  Select/Slider, ColorPicker and Date/TimePicker. Date/Time inspected six profiles
+  (date/time in en_US, zh_CN and zh_TW). ColorPicker used background inspection,
+  without interactive actuation. Date/Time verified registered setters; the
+  existing native ScrollBar `RangeValue.IsReadOnly` adapter limitation remains.
+- Native capture smoke runs produced **394 frames** across the 13 visual
+  fixtures, including 344 Tabs cases and 32 ContextMenu/ScrollArea cases.
+  Representative open Tooltip/Popconfirm, Color, Date, Modal, preview, notice
+  and fullscreen Spin captures were inspected. The helper verifies client size,
+  DPI and preservation of the foreground window.
+
+The broad affected selection was invoked with the test-support feature and these
+filters, using one test thread:
+
+```powershell
+cargo test --locked --offline --features test-support --lib -- popup:: select:: date_picker:: color_picker:: menu:: context_menu:: tabs:: pagination:: segmented:: modal:: image:: icons:: message:: notification:: spin:: root:: slider:: progress:: input_number:: behavior::resources:: behavior::notice:: form::view_tests:: --test-threads=1
+cargo test --locked --offline --features test-support --lib native_tooltip -- --test-threads=1
+cargo test --locked --offline --features test-support --lib -- behavior::resources:: image:: modal::tests::modal_reentrant_view popup_native_visibility_suspension --test-threads=1
+```
+
+Executed logs are under `../build/ant-design-gpui/`:
+`popup-lifetime-final-lib-tests.log`, `popup-lifetime-pressure-tests.log`,
+`popup-lifetime-final-gallery-tests.log`,
+`popup-lifetime-uia/result.json` and `popup-lifetime-capture-smoke-20261106/`.
+Generated evidence is local build output, not source fixtures.
+
+### Release measurements
+
+The actual `windows-msvc-performance` CMake preset was configured with Release
+and benchmarks enabled, reusing installed dependencies with
+`-DVCPKG_MANIFEST_INSTALL=OFF`. Cargo's target directory was
+`../build/windows-msvc-performance/ant-design-gpui`. The nine affected benchmark
+executables were built with `--locked --offline --features test-support` and ran
+sequentially with other builds/tests held. Host: Ryzen 9 5950X, Rust 1.98.1.
+
+| Operation | p50 | p95 |
+| --- | ---: | ---: |
+| Warm popup alignment | 0.223 ms | 0.328 ms |
+| Popup close/reopen, recreating its shadow | 12.786 ms | 17.932 ms |
+| ColorPicker open-panel redraw | 0.444 ms | 0.489 ms |
+| Modal close/reopen | 1.470 ms | 2.246 ms |
+| Menu, 1,000 items, close/reopen | 1.837 ms | 1.948 ms |
+| Select, 100,000 options, close/reopen | 19.155 ms | 23.161 ms |
+| Select, 100,000 options, warm visible redraw | 0.247 ms | 0.394 ms |
+| Date/Time open/close | 22.158 ms | 30.432 ms |
+| ContextMenu, 1,000 items, close/reopen | 19.458 ms | 26.726 ms |
+| Tabs, 1,000 headers, selection/layout | 65.381 ms | 95.594 ms |
+| Image preview, 100 items, open/close | 20.147 ms | 29.092 ms |
+
+All nine benchmark drivers passed. Image and Modal were rebuilt and rerun after
+the final cache-pressure and reentrant-factory fixes; the other seven rows retain
+their earlier source snapshots, whose measured paths are unchanged by those fixes.
+An identical final Image/Modal build check required no recompilation before timing.
+
+These are CPU/layout measurements, not GPU presentation or input latency.
+Reopening rebuilds resources: the historical popup benchmark retained an idle
+shadow and reported approximately 0.298 ms mean reopening, while this run's
+recreating-shadow mean is 13.388 ms. This is the expected memory/CPU tradeoff;
+the historical run is not a controlled same-machine before/after comparison.
+
+Counter assertions establish **zero hidden popup shadow rasters and bytes** after
+the final scene retires, zero never-opened Modal content constructions, one new
+Modal body per presentation (111 including warmup), release of all five managed
+Modal controllers, bounded virtualized Menu construction (42 initial / 56 maximum
+rows), and zero settled animation frames. The ownership ledger records audited
+baseline allocations and their tested post-change counts; no process RSS or
+physical VRAM before/after claim is made.
+
+The benchmark report directory is
+`../build/windows-msvc-performance/ant-design-gpui/popup-lifetime-perf-20261106/`.
+It contains per-target logs and `provenance.json` with source, driver, executable
+and log hashes. Old Modal retained-view assertions and Select/Slider's late-focus
+frame expectation were updated to match the new lifetime and existing focus
+callback behavior; failed driver attempts are archived separately.
+
+Pressure regressions use the CPU test backend. GPU preparation uses the same
+validated scene-slot mechanism; no separate GPU-pressure fixture was available.
+Native macOS/Linux execution and real screen-reader speech were not verified.
+
+### Review follow-up: scene recovery and preview focus
+
+The shadow and icon paths now recover their scene-owned resources before looking
+in the bounded weak registries. Both paths validate the full request key and use
+the shared fallible scene helper, which releases obsolete resources after a failed
+replacement and permits a later retry. Preview suspension transfers only weak
+opener/focus-ownership intent to the replacement dialog; visible and suspended
+unmounting also preserve the return target while releasing the shell.
+
+Deterministic regressions verify:
+
+- 513 distinct painted two-tone icons retain their resource identities across
+  redraws, with exactly 513 initial parse/raster misses. Clearing the cache changes
+  the generation and retires the old native assets; unmounting releases the final
+  resources. The weak registry remains limited to 512 entries.
+- 65 distinct popup shadows survive weak-lookup pressure and cached scene replay
+  without additional raster misses. Changing one shape creates one replacement;
+  hiding releases every raster and reduces live bytes to zero. The weak lookup
+  remains limited to 64 entries.
+- Preview focus returns to the original opener after repeated native hiding,
+  preserves outside focus when focus trapping is disabled, and retains the
+  focused operation when rebuilding its controls. Closing while hidden, expired
+  weak openers, and visible/suspended unmounting are covered.
+- Colliding scene slots retire their obsolete records even when replacement
+  preparation fails; later retries succeed and final unmount retires all resources.
+
+Executed from `ant-design-gpui/`:
+
+```text
+cargo test --locked --offline --features test-support --lib -- behavior::resources:: image:: icons:: popup:: modal:: --test-threads=1
+cargo clippy --locked --offline --features test-support --lib --tests -- -D warnings
+rustfmt --check --edition 2024 src/behavior/resources.rs src/icons/mod.rs src/icons/tests.rs src/image/preview.rs src/image/tests.rs src/modal/state.rs src/popup/shadow.rs
+```
+
+Results: **238 tests passed**, 1,344 filtered out; Clippy and scoped formatting
+passed. Logs are `../build/ant-design-gpui/popup-review-fixes-tests.log` and
+`../build/ant-design-gpui/popup-review-fixes-clippy.log`. The package-wide
+`cargo fmt --all -- --check` still reports existing newline/style issues outside
+these source edits, including `examples/context_scroll_visual.rs`.

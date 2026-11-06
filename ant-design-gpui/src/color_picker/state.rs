@@ -116,8 +116,8 @@ enum EditCompletion {
     Discrete(Option<DiscreteOrigin>),
 }
 
-/// Construct once per mounted picker. Editors, focus handles and gesture identity
-/// survive rebuilding the lightweight ColorPicker/ColorPickerPanel builders.
+/// Construct once per mounted picker. Accepted values and gradient identities
+/// outlive the panel; native editors exist only during a presented session.
 pub struct ColorPickerState {
     pub(super) model: PickerModel,
     pub(super) accepted: ColorPickerValue,
@@ -137,9 +137,7 @@ pub struct ColorPickerState {
     pub(super) trigger_focus: FocusHandle,
     pub(super) focuses: HashMap<Control, FocusHandle>,
     pub(super) groups: HashMap<SharedString, bool>,
-    pub(super) hex: Entity<InputState>,
-    pub(super) channels: [Entity<InputNumberState>; 4],
-    pub(super) format_select: Entity<SelectState<ColorPickerFormat>>,
+    panel: Option<PanelEditors>,
     pub(super) popup: PopupHandle,
     pub(super) drag: Option<Drag>,
     pub(super) key_active: bool,
@@ -154,9 +152,39 @@ pub struct ColorPickerState {
     pub(super) on_open: Option<OpenHandler>,
     pub(super) on_clear: Option<ClearHandler>,
     pub(super) editor_format: Option<ColorPickerFormat>,
+    panel_focus_target: Option<PanelFocusTarget>,
+    panel_drafts: Option<PanelDrafts>,
+    snapshot_drafts: bool,
     _subscriptions: Vec<Subscription>,
     _focus_subscriptions: HashMap<Control, Vec<Subscription>>,
     _scope: Option<Subscription>,
+}
+
+#[derive(Clone)]
+enum PanelFocusTarget {
+    Control(Control),
+    Hex,
+    Channel(usize),
+    Format,
+}
+struct TextDraft {
+    text: SharedString,
+    selection: crate::input::TextSelection,
+}
+struct PanelDrafts {
+    color: PickerColor,
+    format: ColorPickerFormat,
+    hex: TextDraft,
+    channels: [TextDraft; 4],
+}
+
+/// Native editors and listeners exist only for one presented panel session.
+/// The accepted value, format and gradient identities remain in ColorPickerState.
+pub(super) struct PanelEditors {
+    pub(super) hex: Entity<InputState>,
+    pub(super) channels: [Entity<InputNumberState>; 4],
+    pub(super) format_select: Entity<SelectState<ColorPickerFormat>>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<ColorPickerEvent> for ColorPickerState {}
@@ -168,86 +196,16 @@ impl Focusable for ColorPickerState {
 
 impl ColorPickerState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let hex = cx.new(|cx| InputState::new(window, cx));
-        let channels = std::array::from_fn(|_| cx.new(|cx| InputNumberState::new(window, cx)));
-        let format_select = cx.new(|cx| {
-            SelectState::new(
-                SelectOptions::new([
-                    SelectOption::new("hex", ColorPickerFormat::Hex, "HEX"),
-                    SelectOption::new("rgb", ColorPickerFormat::Rgb, "RGB"),
-                    SelectOption::new("hsb", ColorPickerFormat::Hsb, "HSB"),
-                ])
-                .expect("unique picker formats"),
-                window,
-                cx,
-            )
-        });
-        let mut subscriptions =
-            vec![cx.subscribe_in(&hex, window, |this, _, event, window, cx| {
-                match event {
-                    InputEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
-                    InputEvent::Blur => this.defer_blur(window, cx),
-                    _ => {}
-                }
-                if let InputEvent::Change(change) = event
-                    && !change.is_composing
-                {
-                    this.hex_change(&change.value, window, cx);
-                }
-            })];
-        for (index, channel) in channels.iter().enumerate() {
-            subscriptions.push(cx.subscribe_in(
-                channel,
-                window,
-                move |this, _, event, window, cx| {
-                    match event {
-                        InputNumberEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
-                        InputNumberEvent::Blur => this.defer_blur(window, cx),
-                        _ => {}
-                    }
-                    if let InputNumberEvent::Change(change) = event
-                        && let Some(value) = change
-                            .value
-                            .as_ref()
-                            .map_or(Some(0.), |v| v.to_number().ok())
-                    {
-                        this.channel_change(index, value, window, cx);
-                    }
-                },
-            ));
-        }
-        subscriptions.push(cx.subscribe_in(
-            &format_select,
-            window,
-            |this, _, event, window, cx| {
-                match event {
-                    SelectEvent::Focus => this.emit(ColorPickerEvent::Focus, window, cx),
-                    SelectEvent::Blur => this.defer_blur(window, cx),
-                    _ => {}
-                }
-                if let SelectEvent::Change(change) = event
-                    && let Some(value) = change.values.first()
-                {
-                    this.change_format(value.value, window, cx);
-                }
-            },
-        ));
-        subscriptions.push(cx.observe_window_activation(window, |this, window, cx| {
-            if !window.is_window_active() {
-                this.cancel(window, cx);
-            }
-        }));
-        subscriptions.push(
-            cx.observe_window_visibility(window, |this, _, window, cx| this.cancel(window, cx)),
-        );
         let trigger_focus = focus_handle(cx);
-        subscriptions.push(cx.on_focus(&trigger_focus, window, |this, window, cx| {
-            this.emit(ColorPickerEvent::Focus, window, cx)
-        }));
-        subscriptions.push(cx.on_blur(&trigger_focus, window, |this, window, cx| {
-            this.defer_blur(window, cx)
-        }));
-        let mut this = Self {
+        let subscriptions = vec![
+            cx.on_focus(&trigger_focus, window, |this, window, cx| {
+                this.emit(ColorPickerEvent::Focus, window, cx)
+            }),
+            cx.on_blur(&trigger_focus, window, |this, window, cx| {
+                this.defer_blur(window, cx)
+            }),
+        ];
+        Self {
             model: PickerModel::new(ColorPickerValue::Cleared),
             accepted: ColorPickerValue::Cleared,
             controlled: false,
@@ -266,9 +224,7 @@ impl ColorPickerState {
             trigger_focus,
             focuses: HashMap::new(),
             groups: HashMap::new(),
-            hex,
-            channels,
-            format_select,
+            panel: None,
             popup: PopupHandle::new(),
             drag: None,
             key_active: false,
@@ -283,12 +239,183 @@ impl ColorPickerState {
             on_open: None,
             on_clear: None,
             editor_format: None,
+            panel_focus_target: None,
+            panel_drafts: None,
+            snapshot_drafts: true,
             _subscriptions: subscriptions,
             _focus_subscriptions: HashMap::new(),
             _scope: None,
+        }
+    }
+
+    pub(super) fn ensure_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.panel.is_some() {
+            return;
+        }
+        let hex = cx.new(|cx| InputState::new(window, cx));
+        let channels = std::array::from_fn(|_| cx.new(|cx| InputNumberState::new(window, cx)));
+        let format_select = cx.new(|cx| {
+            SelectState::new(
+                SelectOptions::new([
+                    SelectOption::new("hex", ColorPickerFormat::Hex, "HEX"),
+                    SelectOption::new("rgb", ColorPickerFormat::Rgb, "RGB"),
+                    SelectOption::new("hsb", ColorPickerFormat::Hsb, "HSB"),
+                ])
+                .expect("unique picker formats"),
+                window,
+                cx,
+            )
+        });
+        let mut subscriptions =
+            vec![cx.subscribe_in(&hex, window, |this, _, event, window, cx| {
+                match event {
+                    InputEvent::Focus => {
+                        this.panel_focus_target = Some(PanelFocusTarget::Hex);
+                        this.emit(ColorPickerEvent::Focus, window, cx);
+                    }
+                    InputEvent::Blur => this.defer_blur(window, cx),
+                    _ => {}
+                }
+                if let InputEvent::Change(change) = event
+                    && !change.is_composing
+                {
+                    this.hex_change(&change.value, window, cx);
+                }
+            })];
+        for (index, channel) in channels.iter().enumerate() {
+            subscriptions.push(cx.subscribe_in(
+                channel,
+                window,
+                move |this, _, event, window, cx| {
+                    match event {
+                        InputNumberEvent::Focus => {
+                            this.panel_focus_target = Some(PanelFocusTarget::Channel(index));
+                            this.emit(ColorPickerEvent::Focus, window, cx);
+                        }
+                        InputNumberEvent::Blur => this.defer_blur(window, cx),
+                        InputNumberEvent::Input(_) => this.snapshot_drafts = true,
+                        _ => {}
+                    }
+                    if let InputNumberEvent::Change(change) = event
+                        && let Some(value) = change
+                            .value
+                            .as_ref()
+                            .map_or(Some(0.), |v| v.to_number().ok())
+                    {
+                        this.channel_change(index, value, window, cx);
+                    }
+                },
+            ));
+        }
+        subscriptions.push(cx.subscribe_in(
+            &format_select,
+            window,
+            |this, _, event, window, cx| {
+                match event {
+                    SelectEvent::Focus => {
+                        this.panel_focus_target = Some(PanelFocusTarget::Format);
+                        this.emit(ColorPickerEvent::Focus, window, cx);
+                    }
+                    SelectEvent::Blur => this.defer_blur(window, cx),
+                    _ => {}
+                }
+                if let SelectEvent::Change(change) = event
+                    && let Some(value) = change.values.first()
+                {
+                    this.change_format(value.value, window, cx);
+                }
+            },
+        ));
+        subscriptions.push(cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() {
+                this.cancel(window, cx);
+            }
+        }));
+        subscriptions.push(cx.observe_window_visibility(window, |this, _, window, cx| {
+            this.cancel(window, cx);
+        }));
+        self.panel = Some(PanelEditors {
+            hex,
+            channels,
+            format_select,
+            _subscriptions: subscriptions,
+        });
+        self.sync_editors(None, window, cx);
+        self.snapshot_drafts = true;
+        if let Some(drafts) = self.panel_drafts.take().filter(|drafts| {
+            drafts.color == self.model.active_color() && drafts.format == self.format
+        }) {
+            self.panel().hex.update(cx, |editor, cx| {
+                editor.set_value(drafts.hex.text.as_ref(), window, cx);
+                editor.select(drafts.hex.selection, window, cx);
+            });
+            for (editor, draft) in self.panel().channels.iter().zip(&drafts.channels) {
+                editor.update(cx, |editor, cx| {
+                    editor.restore_draft(draft.text.as_ref(), draft.selection, window, cx);
+                });
+            }
+        }
+    }
+    pub(super) fn panel(&self) -> &PanelEditors {
+        self.panel.as_ref().expect("a presented color picker panel")
+    }
+    pub(super) fn initial_panel_focus(&self, cx: &App) -> Option<FocusHandle> {
+        let panel = self.panel.as_ref()?;
+        let focus = match &self.panel_focus_target {
+            Some(PanelFocusTarget::Control(control)) => self.focuses.get(control).cloned(),
+            Some(PanelFocusTarget::Hex) if self.format == ColorPickerFormat::Hex => {
+                Some(panel.hex.read(cx).focus_handle(cx))
+            }
+            Some(PanelFocusTarget::Channel(index))
+                if *index < 4
+                    && (*index == 3 && !self.disabled_alpha
+                        || *index < 3 && self.format != ColorPickerFormat::Hex) =>
+            {
+                Some(panel.channels[*index].read(cx).focus_handle(cx))
+            }
+            Some(PanelFocusTarget::Format) if !self.disabled_format => {
+                Some(panel.format_select.read(cx).focus_handle(cx))
+            }
+            _ => None,
         };
-        this.sync_editors(None, window, cx);
-        this
+        focus.or_else(|| self.focuses.get(&Control::Palette).cloned())
+    }
+    pub(super) fn release_panel(&mut self, cx: &App) {
+        if self.snapshot_drafts
+            && let Some(panel) = &self.panel
+        {
+            let text_draft = |editor: &Entity<InputState>| TextDraft {
+                text: editor.read(cx).value_snapshot(),
+                selection: editor.read(cx).selection(),
+            };
+            // Five current strings and selections preserve meaningful partial edits;
+            // no InputState, undo history, native handle, timer or listener survives.
+            self.panel_drafts = Some(PanelDrafts {
+                color: self.model.active_color(),
+                format: self.format,
+                hex: text_draft(&panel.hex),
+                channels: std::array::from_fn(|index| {
+                    text_draft(&panel.channels[index].read(cx).editor)
+                }),
+            });
+        }
+        if !self.is_open() {
+            self.panel_focus_target = None;
+        }
+        let key_origin = self.key_origin.take();
+        let origin = self.drag.take().map(|drag| drag.origin).or(key_origin);
+        if self.controlled && (origin.is_some() || self.key_active) {
+            self.reconcile_model(origin.as_ref());
+        }
+        self.panel = None;
+        self.model.release_unused_capacity();
+        self.focuses = HashMap::new();
+        self._focus_subscriptions = HashMap::new();
+        self.groups = HashMap::new();
+        self.editor_format = None;
+        self.key_active = false;
+        self.key_changed = false;
+        self.clear_panel_bounds();
     }
 
     pub fn value(&self) -> &ColorPickerValue {
@@ -314,15 +441,16 @@ impl ColorPickerState {
         self.hovered
     }
     #[cfg(any(test, feature = "test-support"))]
-    pub fn retained_editor_ids(&self) -> [gpui::EntityId; 6] {
-        [
-            self.hex.entity_id(),
-            self.channels[0].entity_id(),
-            self.channels[1].entity_id(),
-            self.channels[2].entity_id(),
-            self.channels[3].entity_id(),
-            self.format_select.entity_id(),
-        ]
+    pub fn retained_editor_ids(&self) -> Option<[gpui::EntityId; 6]> {
+        let panel = self.panel.as_ref()?;
+        Some([
+            panel.hex.entity_id(),
+            panel.channels[0].entity_id(),
+            panel.channels[1].entity_id(),
+            panel.channels[2].entity_id(),
+            panel.channels[3].entity_id(),
+            panel.format_select.entity_id(),
+        ])
     }
     #[cfg(any(test, feature = "test-support"))]
     pub fn focus_gradient_stop(
@@ -331,7 +459,7 @@ impl ColorPickerState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.disabled {
+        if self.disabled || self.panel.is_none() {
             return;
         }
         if let Some(id) = self.model.stops().get(index).map(|stop| stop.id) {
@@ -340,7 +468,7 @@ impl ColorPickerState {
         }
     }
     pub fn focus_hue(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.disabled {
+        if !self.disabled && self.panel.is_some() {
             self.control_focus(Control::Hue, window, cx)
                 .focus(window, cx);
         }
@@ -366,6 +494,7 @@ impl ColorPickerState {
         }
         self.accepted = value.clone();
         self.model.set_value(value);
+        self.discard_panel_drafts();
         self.initialized = true;
         self.drag = None;
         self.key_active = false;
@@ -384,6 +513,7 @@ impl ColorPickerState {
         if self.format == format {
             return;
         }
+        self.panel_drafts = None;
         self.format = format;
         self.format_initialized = true;
         self.sync_editors(None, window, cx);
@@ -399,25 +529,30 @@ impl ColorPickerState {
     ) -> Result<(), ColorPickerError> {
         self.cancel(window, cx);
         self.set_open(false, window, cx);
+        self.panel_drafts = None;
+        self.snapshot_drafts = false;
         self.format = format;
         self.editor_format = None;
         self.groups.clear();
         self.set_value(value, window, cx)?;
         self.sync_editors(None, window, cx);
-        let hex = self.hex.read(cx).value_snapshot();
-        self.hex
-            .update(cx, |editor, cx| editor.reset_value(hex, window, cx));
-        for channel in self.channels.clone() {
-            let value = channel.read(cx).value().cloned();
-            channel
-                .update(cx, |editor, cx| editor.reset_value(value, window, cx))
-                .expect("bounded color channel remains valid");
+        if self.panel.is_some() {
+            let hex = self.panel().hex.read(cx).value_snapshot();
+            self.panel()
+                .hex
+                .update(cx, |editor, cx| editor.reset_value(hex, window, cx));
+            for channel in self.panel().channels.clone() {
+                let value = channel.read(cx).value().cloned();
+                channel
+                    .update(cx, |editor, cx| editor.reset_value(value, window, cx))
+                    .expect("bounded color channel remains valid");
+            }
+            let format_values = self.panel().format_select.read(cx).values().to_vec();
+            self.panel().format_select.update(cx, |select, cx| {
+                select.reset_value(format_values, window, cx)
+            });
+            self.blur(window, cx);
         }
-        let format_values = self.format_select.read(cx).values().to_vec();
-        self.format_select.update(cx, |select, cx| {
-            select.reset_value(format_values, window, cx)
-        });
-        self.blur(window, cx);
         cx.notify();
         Ok(())
     }
@@ -453,18 +588,22 @@ impl ColorPickerState {
         }
     }
     pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
-        self.trigger_focus.contains_focused(window, cx)
-            || self.focuses.values().any(|focus| focus.is_focused(window))
-            || self.hex.read(cx).focus_handle(cx).is_focused(window)
-            || self
-                .channels
-                .iter()
-                .any(|channel| channel.read(cx).focus_handle(cx).is_focused(window))
-            || self
-                .format_select
-                .read(cx)
-                .focus_handle(cx)
-                .is_focused(window)
+        self.trigger_focus.contains_focused(window, cx) || self.panel_contains_focus(window, cx)
+    }
+    fn panel_contains_focus(&self, window: &Window, cx: &App) -> bool {
+        self.focuses.values().any(|focus| focus.is_focused(window))
+            || self.panel.as_ref().is_some_and(|panel| {
+                panel.hex.read(cx).focus_handle(cx).is_focused(window)
+                    || panel
+                        .channels
+                        .iter()
+                        .any(|channel| channel.read(cx).focus_handle(cx).is_focused(window))
+                    || panel
+                        .format_select
+                        .read(cx)
+                        .focus_handle(cx)
+                        .is_focused(window)
+            })
     }
     pub fn blur(&self, window: &mut Window, cx: &mut App) {
         if self.contains_focus(window, cx) {
@@ -474,15 +613,15 @@ impl ColorPickerState {
     /// Focus a channel editor. Index zero selects HEX in hex format, and indices
     /// zero through two select RGB/HSB channels. Index three selects alpha.
     pub fn focus_input(&self, index: usize, window: &mut Window, cx: &mut App) {
-        if self.disabled || (index == 3 && self.disabled_alpha) {
+        if self.panel.is_none() || self.disabled || (index == 3 && self.disabled_alpha) {
             return;
         }
         if self.format == ColorPickerFormat::Hex && index != 0 && index != 3 {
             return;
         }
         if self.format == ColorPickerFormat::Hex && index == 0 {
-            self.hex.read(cx).focus_handle(cx).focus(window, cx);
-        } else if let Some(channel) = self.channels.get(index) {
+            self.panel().hex.read(cx).focus_handle(cx).focus(window, cx);
+        } else if let Some(channel) = self.panel().channels.get(index) {
             channel.read(cx).focus_handle(cx).focus(window, cx);
         }
     }
@@ -513,6 +652,7 @@ impl ColorPickerState {
         let focus = focus_handle(cx);
         let active = control.clone();
         let focused = cx.on_focus(&focus, window, move |this, window, cx| {
+            this.panel_focus_target = Some(PanelFocusTarget::Control(active.clone()));
             this.emit(ColorPickerEvent::Focus, window, cx);
             if let Control::Stop(id) = active
                 && let Some(index) = this.model.index_for_id(id)
@@ -716,17 +856,7 @@ impl ColorPickerState {
         cx.notify();
     }
     pub(super) fn restore_trigger_focus(&self, window: &mut Window, cx: &mut App) {
-        let owns_focus = self.focuses.values().any(|focus| focus.is_focused(window))
-            || self.hex.read(cx).focus_handle(cx).is_focused(window)
-            || self
-                .channels
-                .iter()
-                .any(|channel| channel.read(cx).focus_handle(cx).is_focused(window))
-            || self
-                .format_select
-                .read(cx)
-                .focus_handle(cx)
-                .is_focused(window);
+        let owns_focus = self.panel_contains_focus(window, cx);
         if owns_focus {
             let focus = self
                 .popup
@@ -793,6 +923,11 @@ impl ColorPickerState {
         );
     }
     pub(super) fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(panel) = &self.panel {
+            for channel in &panel.channels {
+                channel.update(cx, |channel, _| channel.cancel_repeat());
+            }
+        }
         self.completion_proposal = None;
         let drag = self.drag.take();
         let active = drag.is_some() || self.key_active;
@@ -839,7 +974,7 @@ impl ColorPickerState {
             false
         }
     }
-    pub(super) fn release_mount(&mut self) {
+    pub(super) fn release_mount(&mut self, cx: &App) {
         self.completion_proposal = None;
         let key_origin = self.key_origin.take();
         let origin = self.drag.take().map(|drag| drag.origin).or(key_origin);
@@ -852,26 +987,37 @@ impl ColorPickerState {
         self.clear_panel_bounds();
         self.bounds.trigger = None;
         self.bounds.trigger_swatch = None;
+        self.snapshot_drafts = false;
+        self.release_panel(cx);
+        self.panel_drafts = None;
+        self.panel_focus_target = None;
     }
     pub(super) fn clear_panel_bounds(&mut self) {
-        self.bounds.panel = None;
-        self.bounds.palette = None;
-        self.bounds.hue = None;
-        self.bounds.alpha = None;
-        self.bounds.gradient = None;
-        self.bounds.preview = None;
-        self.bounds.clear = None;
-        self.bounds.editors.clear();
-        self.bounds.presets.clear();
-        self.bounds.handles.clear();
+        let trigger = self.bounds.trigger;
+        let trigger_swatch = self.bounds.trigger_swatch;
+        self.bounds = ColorPickerGeometry {
+            trigger,
+            trigger_swatch,
+            ..Default::default()
+        };
     }
 
+    pub(super) fn discard_panel_drafts(&mut self) {
+        if self.panel_drafts.as_ref().is_some_and(|drafts| {
+            drafts.color != self.model.active_color() || drafts.format != self.format
+        }) {
+            self.panel_drafts = None;
+        }
+    }
     pub(super) fn sync_editors(
         &mut self,
         skip: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.panel.is_none() {
+            return;
+        }
         let color = self.model.active_color();
         let (h, s, b, a) = color.to_hsb();
         let (r, g, blue, _) = color.to_rgb();
@@ -891,7 +1037,7 @@ impl ColorPickerState {
             ]
         };
         if self.editor_format != Some(self.format) {
-            for (index, channel) in self.channels.iter().enumerate() {
+            for (index, channel) in self.panel().channels.iter().enumerate() {
                 let max = if index == 3 {
                     100
                 } else if self.format == ColorPickerFormat::Hsb {
@@ -926,7 +1072,7 @@ impl ColorPickerState {
             }
             self.editor_format = Some(self.format);
         }
-        for (index, channel) in self.channels.iter().enumerate() {
+        for (index, channel) in self.panel().channels.iter().enumerate() {
             if skip != Some(index) {
                 channel.update(cx, |s, cx| {
                     s.set_value(Some(NumericValue::Number(values[index])), window, cx)
@@ -942,12 +1088,16 @@ impl ColorPickerState {
             .collect::<String>()
             .to_ascii_uppercase();
         if skip != Some(4) {
-            self.hex.update(cx, |s, cx| s.set_value(hex, window, cx));
+            self.panel()
+                .hex
+                .update(cx, |s, cx| s.set_value(hex, window, cx));
         }
-        self.format_select
+        self.panel()
+            .format_select
             .update(cx, |s, cx| s.set_values([self.format], cx));
     }
     fn hex_change(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.snapshot_drafts = true;
         if self.disabled {
             return;
         }
@@ -961,7 +1111,7 @@ impl ColorPickerState {
             .take(6)
             .collect::<String>()
             .to_ascii_uppercase();
-        self.hex.update(cx, |s, cx| {
+        self.panel().hex.update(cx, |s, cx| {
             let selection = s.selection();
             let len = display.len();
             s.format_value(
@@ -996,6 +1146,7 @@ impl ColorPickerState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.snapshot_drafts = true;
         if self.disabled || !value.is_finite() {
             return;
         }

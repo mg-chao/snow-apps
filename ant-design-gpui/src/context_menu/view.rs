@@ -212,8 +212,11 @@ impl RenderOnce for ContextMenu {
                     state::show_context_menu(&show_state, window, cx)
                 })
             });
-        let changed = state.clone();
-        let content = state.clone();
+        let changed = state.downgrade();
+        let content = state.downgrade();
+        let hidden = state.downgrade();
+        let presented = state.downgrade();
+        let focused = state.downgrade();
         let label = self.label.unwrap_or_else(|| {
             config
                 .locale
@@ -240,11 +243,30 @@ impl RenderOnce for ContextMenu {
         .child(child)
         .triggers(PopupTriggers::CONTEXT_MENU)
         .disabled(disabled)
-        .destroy_on_hidden(true)
-        .fresh(true)
-        .on_open_change(move |change, window, cx| state::opened(&changed, change, window, cx))
+        .on_presented(move |_, cx| {
+            let _ = presented.update(cx, |state, cx| state.present_root(cx));
+        })
+        .initial_focus_with(move |cx| {
+            focused
+                .upgrade()?
+                .read(cx)
+                .levels
+                .first()
+                .map(|level| level.focus.clone())
+        })
+        .on_open_change(move |change, window, cx| {
+            if let Some(state) = changed.upgrade() {
+                state::opened(&state, change, window, cx);
+            }
+        })
+        .on_hidden(move |cx| {
+            let _ = hidden.update(cx, |state, _| state.release_presentation());
+        })
         .content(move |_, window, cx| {
-            menu_level(&content, 0, &label, width, max_height, window, cx)
+            content.upgrade().map_or_else(
+                || div().into_any_element(),
+                |state| menu_level(&state, 0, &label, width, max_height, window, cx),
+            )
         });
         if let Some(id) = self.automation_id {
             popup = popup.automation_id(id)
@@ -490,6 +512,7 @@ fn menu_level(
     let list_state = state.update(cx, |s, _| {
         let level = &mut s.levels[depth];
         if items.len() > 64 {
+            let fresh = level.native_list.is_none();
             let list = level.native_list.get_or_insert_with(|| {
                 let list = gpui::ListState::new(0, gpui::ListAlignment::Top, px(64.));
                 list.reset_with_uniform_height(items.len(), metric(tokens.item_height, 32.));
@@ -500,6 +523,15 @@ fn menu_level(
                 });
                 list
             });
+            if fresh
+                && level.active != items.next(None, 1)
+                && let Some(index) = level.active
+            {
+                list.scroll_to(gpui::ListOffset {
+                    item_ix: index,
+                    offset_in_item: px(0.),
+                });
+            }
             Some(list.clone())
         } else {
             None
@@ -875,9 +907,9 @@ impl MenuRows {
                 }
                 let row = semantics.apply(row);
                 if item.has_submenu() {
-                    let submenu_state = state.clone();
+                    let submenu_state = state.downgrade();
                     let submenu_label = item.label.clone();
-                    let closed = state.clone();
+                    let closed = state.downgrade();
                     let popup = popup_surface(
                         Popup::new(item.id.clone()),
                         scope,
@@ -894,27 +926,31 @@ impl MenuRows {
                     .triggers(PopupTriggers::NONE)
                     .child(row)
                     .open(expanded)
-                    .fresh(true)
-                    .destroy_on_hidden(true)
                     .on_open_change(move |change, window, cx| {
                         if !change.open
                             && matches!(
                                 change.reason,
                                 PopupOpenReason::Escape | PopupOpenReason::OutsidePress
                             )
+                            && let Some(state) = closed.upgrade()
                         {
-                            state::close_branch(&closed, depth + 1, window, cx)
+                            state::close_branch(&state, depth + 1, window, cx);
                         }
                     })
                     .content(move |_, window, cx| {
-                        menu_level(
-                            &submenu_state,
-                            depth + 1,
-                            &submenu_label,
-                            None,
-                            max_height,
-                            window,
-                            cx,
+                        submenu_state.upgrade().map_or_else(
+                            || div().into_any_element(),
+                            |state| {
+                                menu_level(
+                                    &state,
+                                    depth + 1,
+                                    &submenu_label,
+                                    None,
+                                    max_height,
+                                    window,
+                                    cx,
+                                )
+                            },
                         )
                     });
                     popup.into_any_element()

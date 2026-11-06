@@ -5,15 +5,14 @@
 //! prepared in the background when a platform has no affine GPU compositor.
 
 use super::{PreviewTransform, affine, loader::Preparation};
+use crate::behavior::resources::{
+    WeakRegistry, lease_native_image, resource_fingerprint, scene_resource,
+};
 use gpui::{
     App, BorrowAppContext, Bounds, Global, GpuDamage, GpuRect, GpuService, GpuTexture,
     GpuTextureOptions, Pixels, RenderImage, Window, point, px, size,
 };
-use std::{
-    collections::HashMap,
-    rc::{Rc, Weak},
-    sync::Arc,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 const MAX_TEXTURE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CACHE_ENTRIES: usize = 32;
@@ -50,27 +49,20 @@ struct Upload {
     pixels: Vec<u8>,
 }
 struct GpuEntry {
+    key: GpuKey,
     preparation: Option<Preparation<Option<Upload>>>,
     texture: Option<Arc<dyn GpuTexture>>,
     failed: bool,
-    bytes: usize,
-    used: u64,
-}
-struct RasterResource {
-    image: Arc<RenderImage>,
-    bytes: usize,
 }
 struct RasterEntry {
+    key: RasterKey,
     preparation: Option<Preparation<Option<Arc<RenderImage>>>>,
-    resource: Option<Rc<RasterResource>>,
-    used: u64,
+    image: Option<Arc<RenderImage>>,
 }
 #[derive(Default)]
 struct Cache {
-    gpu: HashMap<GpuKey, GpuEntry>,
-    raster: HashMap<RasterKey, RasterEntry>,
-    raster_resident: HashMap<RasterKey, Weak<RasterResource>>,
-    tick: u64,
+    gpu: WeakRegistry<GpuKey, RefCell<GpuEntry>>,
+    raster: WeakRegistry<RasterKey, RefCell<RasterEntry>>,
 }
 impl Global for Cache {}
 
@@ -107,6 +99,7 @@ pub(super) fn paint_plain(
         };
         (raster, 0)
     };
+    lease_native_image(&image, window, cx);
     window
         .paint_image(
             geometry.bounds,
@@ -212,6 +205,7 @@ pub(super) fn paint_affine(
         ),
         size(px(orientation.width), px(orientation.height)),
     );
+    lease_native_image(&raster, window, cx);
     window
         .paint_image(
             drawn,
@@ -274,21 +268,15 @@ fn decompose(matrix: [f32; 6], bounds: Bounds<Pixels>) -> Orientation {
 }
 
 impl Cache {
-    fn next(&mut self) -> u64 {
-        self.tick = self.tick.wrapping_add(1);
-        self.tick
-    }
-
     fn gpu(
         &mut self,
         image: Arc<RenderImage>,
         frame: usize,
         grayscale: u8,
         service: Arc<dyn GpuService>,
-        window: &Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Option<Arc<dyn GpuTexture>> {
-        let used = self.next();
         let key = GpuKey {
             frame: FrameKey {
                 image: image.id.0,
@@ -298,42 +286,46 @@ impl Cache {
             service: service.service_id(),
             epoch: service.epoch(),
         };
-        self.gpu
-            .retain(|other, _| other.service != key.service || other.epoch == key.epoch);
-        let entry = self.gpu.entry(key).or_insert_with(|| {
-            let dimensions = image.size(frame);
-            let capabilities = service.capabilities();
-            let limits = PreparationLimits {
-                side: capabilities.max_texture_size,
-                bytes: capabilities.max_upload_bytes.min(MAX_TEXTURE_BYTES as u64),
-            };
-            let prepared = bounded_dimensions(
-                [dimensions.width.0 as u32, dimensions.height.0 as u32],
-                limits,
-            );
-            let bytes = prepared.map_or(0, |[width, height]| {
-                u64::from(width) * u64::from(height) * 4
-            });
-            GpuEntry {
-                preparation: prepared.map(|_| {
-                    Preparation::new(
-                        async move { prepare_upload(&image, frame, grayscale, limits) },
-                        cx,
-                    )
-                }),
-                texture: None,
-                failed: prepared.is_none(),
-                bytes: bytes as usize,
-                used,
-            }
-        });
-        entry.used = used;
+        let record = scene_resource(
+            ("ant-image-gpu", resource_fingerprint(&key)),
+            |record: &Rc<RefCell<GpuEntry>>| record.borrow().key == key,
+            |_, cx| {
+                self.gpu.get_or_insert_with(key, MAX_CACHE_ENTRIES, || {
+                    let dimensions = image.size(frame);
+                    let capabilities = service.capabilities();
+                    let limits = PreparationLimits {
+                        side: capabilities.max_texture_size,
+                        bytes: capabilities.max_upload_bytes.min(MAX_TEXTURE_BYTES as u64),
+                    };
+                    let prepared = bounded_dimensions(
+                        [dimensions.width.0 as u32, dimensions.height.0 as u32],
+                        limits,
+                    );
+                    RefCell::new(GpuEntry {
+                        key,
+                        preparation: prepared.map(|_| {
+                            Preparation::new(
+                                async move { prepare_upload(&image, frame, grayscale, limits) },
+                                cx,
+                            )
+                        }),
+                        texture: None,
+                        failed: prepared.is_none(),
+                    })
+                })
+            },
+            |record| Rc::strong_count(record) == 1,
+            |_, cx| prune_later(cx),
+            window,
+            cx,
+        );
+        let mut entry = record.borrow_mut();
         if !entry.failed
             && entry.texture.is_none()
             && let Some(upload) = entry
                 .preparation
                 .as_ref()
-                .and_then(|preparation| preparation.use_value(window))
+                .and_then(|p| p.use_value(window, cx))
         {
             if let Some(upload) = upload.as_ref() {
                 let texture =
@@ -361,30 +353,8 @@ impl Cache {
                 entry.failed = true;
             }
             entry.preparation = None;
-            if entry.failed {
-                entry.bytes = 0;
-            }
         }
-        let result = entry.texture.clone();
-        self.trim_gpu();
-        result
-    }
-
-    fn trim_gpu(&mut self) {
-        let mut bytes: usize = self.gpu.values().map(|entry| entry.bytes).sum();
-        while self.gpu.len() > MAX_CACHE_ENTRIES || bytes > MAX_TEXTURE_BYTES {
-            let Some(key) = self
-                .gpu
-                .iter()
-                .min_by_key(|(_, entry)| entry.used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some(entry) = self.gpu.remove(&key) {
-                bytes = bytes.saturating_sub(entry.bytes);
-            }
-        }
+        entry.texture.clone()
     }
 
     fn raster(
@@ -396,7 +366,6 @@ impl Cache {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Arc<RenderImage>> {
-        let used = self.next();
         let (quarter, flip_y) = orientation;
         let key = RasterKey {
             frame: FrameKey {
@@ -407,85 +376,48 @@ impl Cache {
             quarter,
             flip_y,
         };
-        let entry = self.raster.entry(key).or_insert_with(|| {
-            let resource = self.raster_resident.get(&key).and_then(Weak::upgrade);
-            RasterEntry {
-                preparation: resource.is_none().then(|| {
-                    Preparation::new(
-                        async move { orient(&image, frame, quarter, flip_y, grayscale) },
-                        cx,
-                    )
-                }),
-                resource,
-                used,
-            }
-        });
-        entry.used = used;
-        if entry.resource.is_none()
+        let record = scene_resource(
+            ("ant-image-oriented-raster", resource_fingerprint(&key)),
+            |record: &Rc<RefCell<RasterEntry>>| record.borrow().key == key,
+            |_, cx| {
+                self.raster.get_or_insert_with(key, MAX_CACHE_ENTRIES, || {
+                    RefCell::new(RasterEntry {
+                        key,
+                        preparation: Some(Preparation::new(
+                            async move { orient(&image, frame, quarter, flip_y, grayscale) },
+                            cx,
+                        )),
+                        image: None,
+                    })
+                })
+            },
+            |record| Rc::strong_count(record) == 1,
+            |_, cx| prune_later(cx),
+            window,
+            cx,
+        );
+        let mut entry = record.borrow_mut();
+        if entry.image.is_none()
             && let Some(prepared) = entry
                 .preparation
                 .as_ref()
-                .and_then(|preparation| preparation.use_value(window))
+                .and_then(|p| p.use_value(window, cx))
         {
-            if let Some(image) = prepared.as_ref() {
-                entry.resource = Some(Rc::new(RasterResource {
-                    image: image.clone(),
-                    bytes: image.as_bytes(0).map_or(0, <[u8]>::len),
-                }));
-            }
+            entry.image = prepared.as_ref().clone();
             entry.preparation = None;
         }
-        let result = entry.resource.clone();
-        if let Some(resource) = &result {
-            self.raster_resident
-                .retain(|_, resident| resident.strong_count() > 0);
-            self.raster_resident.insert(key, Rc::downgrade(resource));
-            raster_lease(resource, window, cx);
-        }
-        let mut bytes: usize = self
-            .raster
-            .values()
-            .filter_map(|entry| entry.resource.as_ref())
-            .map(|entry| entry.bytes)
-            .sum();
-        while self.raster.len() > MAX_CACHE_ENTRIES || bytes > MAX_TEXTURE_BYTES {
-            let Some(key) = self
-                .raster
-                .iter()
-                .min_by_key(|(_, entry)| entry.used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some(entry) = self.raster.remove(&key)
-                && let Some(resource) = entry.resource
-            {
-                bytes = bytes.saturating_sub(resource.bytes);
-                retire_raster(&resource, cx);
-            }
-        }
-        result.map(|resource| resource.image.clone())
+        entry.image.clone()
     }
 }
 
-struct RasterLease(Rc<RasterResource>);
-fn retire_raster(resource: &Rc<RasterResource>, cx: &mut App) {
-    if Rc::strong_count(resource) == 1 {
-        let image = resource.image.clone();
-        cx.defer(move |cx| cx.drop_image(image, None));
-    }
-}
-fn raster_lease(resource: &Rc<RasterResource>, window: &mut Window, cx: &mut App) {
-    window.with_id(("ant-image-raster-view", window.current_view()), |window| {
-        window.use_keyed_state(
-            ("ant-image-oriented-raster", resource.image.id.0),
-            cx,
-            |_, cx| {
-                cx.on_release(|lease: &mut RasterLease, cx| retire_raster(&lease.0, cx))
-                    .detach();
-                RasterLease(resource.clone())
-            },
-        );
+fn prune_later(cx: &mut App) {
+    cx.defer(|cx| {
+        if cx.has_global::<Cache>() {
+            cx.update_global::<Cache, _>(|cache, _| {
+                cache.gpu.prune();
+                cache.raster.prune();
+            });
+        }
     });
 }
 
@@ -642,7 +574,87 @@ fn gray_pixel(pixel: &[u8], amount: u8) -> [u8; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::DevicePixels;
+    use gpui::{AppContext, DevicePixels};
+
+    #[test]
+    fn active_oriented_rasters_stay_ready_after_lookup_eviction_and_release_with_the_scene() {
+        struct Consumer {
+            sources: Vec<Arc<RenderImage>>,
+            identities: Vec<Option<usize>>,
+            probes: Vec<Option<std::sync::Weak<RenderImage>>>,
+            shown: bool,
+        }
+        impl gpui::Render for Consumer {
+            fn render(
+                &mut self,
+                window: &mut Window,
+                cx: &mut gpui::Context<Self>,
+            ) -> impl gpui::IntoElement {
+                if !cx.has_global::<Cache>() {
+                    cx.set_global(Cache::default());
+                }
+                if self.shown {
+                    for (index, source) in self.sources.iter().enumerate() {
+                        let result = cx.update_global::<Cache, _>(|cache, cx| {
+                            cache.raster(source.clone(), 0, 0, (1, false), window, cx)
+                        });
+                        self.identities[index] = result.as_ref().map(|image| image.id.0);
+                        if let Some(result) = result {
+                            self.probes[index] = Some(Arc::downgrade(&result));
+                        }
+                    }
+                }
+                gpui::div()
+            }
+        }
+        let mut cx = gpui::TestAppContext::single();
+        let count = MAX_CACHE_ENTRIES + 1;
+        let window = cx.add_window(|_, _| Consumer {
+            sources: (0..count).map(|_| asymmetric()).collect(),
+            identities: vec![None; count],
+            probes: vec![None; count],
+            shown: true,
+        });
+        let draw = |cx: &mut gpui::TestAppContext| {
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx);
+        draw(&mut cx);
+        let identities = window
+            .read_with(&cx, |consumer, _| consumer.identities.clone())
+            .unwrap();
+        assert!(identities.iter().all(Option::is_some));
+        for _ in 0..3 {
+            window.update(&mut cx, |_, _, cx| cx.notify()).unwrap();
+            draw(&mut cx);
+            window
+                .read_with(&cx, |consumer, _| {
+                    assert_eq!(consumer.identities, identities)
+                })
+                .unwrap();
+        }
+        cx.read(|cx| assert_eq!(cx.global::<Cache>().raster.len(), MAX_CACHE_ENTRIES));
+        window
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        draw(&mut cx);
+        window
+            .read_with(&cx, |consumer, _| {
+                assert!(
+                    consumer
+                        .probes
+                        .iter()
+                        .all(|image| { image.as_ref().unwrap().upgrade().is_none() })
+                );
+            })
+            .unwrap();
+        cx.read(|cx| assert_eq!(cx.global::<Cache>().raster.len(), 0));
+    }
     fn asymmetric() -> Arc<RenderImage> {
         Arc::new(RenderImage::new(vec![::image::Frame::new(
             ::image::RgbaImage::from_raw(

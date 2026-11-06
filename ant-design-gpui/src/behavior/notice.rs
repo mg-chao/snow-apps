@@ -7,7 +7,10 @@ use gpui::{
     MouseDownEvent, MouseUpEvent, Pixels, Point, Role, Size, Window, accesskit, size,
 };
 use gpui::{FocusHandle, Global, Subscription, WeakFocusHandle, WindowId};
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::{Rc, Weak},
+};
 
 #[derive(Clone, Copy)]
 pub(crate) struct SurfaceGeometry {
@@ -297,10 +300,26 @@ pub(crate) struct BoundaryState {
     return_to: Option<WeakFocusHandle>,
     pub(crate) closed: Cell<bool>,
     _focus: Subscription,
+    registry: Weak<BoundaryRegistry>,
 }
 
+type BoundaryRegistry = RefCell<Vec<Weak<BoundaryState>>>;
 #[derive(Default)]
-struct FocusBoundaries(Vec<std::rc::Weak<BoundaryState>>);
+struct FocusBoundaries(Rc<BoundaryRegistry>);
+impl Drop for BoundaryState {
+    fn drop(&mut self) {
+        if let Some(registry) = self.registry.upgrade() {
+            let mut registry = registry.borrow_mut();
+            registry.retain(|entry| entry.strong_count() != 0);
+            if registry.is_empty() {
+                *registry = Vec::new();
+            } else if registry.capacity() > registry.len().saturating_mul(4).max(16) {
+                let remaining = registry.len().max(16);
+                registry.shrink_to(remaining);
+            }
+        }
+    }
+}
 impl Global for FocusBoundaries {}
 
 /// An outgoing rich-content tree keeps its native paint while losing interaction.
@@ -309,6 +328,10 @@ pub(crate) struct FocusBoundary(pub(crate) Rc<BoundaryState>);
 
 impl FocusBoundary {
     pub(crate) fn new(window: &mut Window, cx: &mut App) -> Self {
+        if !cx.has_global::<FocusBoundaries>() {
+            cx.set_global(FocusBoundaries::default());
+        }
+        let registry = cx.global::<FocusBoundaries>().0.clone();
         let root = cx.focus_handle();
         let window_id = window.window_handle().window_id();
         let return_to = window.focused(cx).map(|focus| focus.downgrade());
@@ -327,14 +350,13 @@ impl FocusBoundary {
                 return_to,
                 closed: Cell::new(false),
                 _focus: subscription,
+                registry: Rc::downgrade(&registry),
             }
         });
-        if !cx.has_global::<FocusBoundaries>() {
-            cx.set_global(FocusBoundaries::default());
-        }
-        let registry = cx.global_mut::<FocusBoundaries>();
-        registry.0.retain(|weak| weak.strong_count() != 0);
-        registry.0.push(Rc::downgrade(&state));
+        registry
+            .borrow_mut()
+            .retain(|weak| weak.strong_count() != 0);
+        registry.borrow_mut().push(Rc::downgrade(&state));
         Self(state)
     }
 
@@ -343,6 +365,7 @@ impl FocusBoundary {
             .map(|registry| {
                 registry
                     .0
+                    .borrow()
                     .iter()
                     .filter_map(std::rc::Weak::upgrade)
                     .filter(|boundary| boundary.window == self.0.window && boundary.closed.get())
@@ -388,5 +411,31 @@ impl FocusBoundary {
                 window.focus_next(cx);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod lifetime_tests {
+    use super::*;
+    use gpui::AppContext;
+    struct Empty;
+    impl gpui::Render for Empty {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            gpui::div()
+        }
+    }
+    #[test]
+    fn notice_focus_registry_releases_retired_entries_and_peak_capacity() {
+        let mut cx = gpui::TestAppContext::single();
+        let window = cx.add_window(|_, _| Empty);
+        cx.update_window(window.into(), |_, window, cx| {
+            let boundaries: Vec<_> = (0..256).map(|_| FocusBoundary::new(window, cx)).collect();
+            assert_eq!(cx.global::<FocusBoundaries>().0.borrow().len(), 256);
+            drop(boundaries);
+            let registry = cx.global::<FocusBoundaries>().0.borrow();
+            assert!(registry.is_empty());
+            assert_eq!(registry.capacity(), 0);
+        })
+        .unwrap();
     }
 }

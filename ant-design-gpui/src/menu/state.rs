@@ -53,6 +53,8 @@ pub(super) type EventHandler = Rc<dyn Fn(&MenuEvent, &mut Window, &mut App)>;
 
 /// Owns interaction state independently of the cheap, render-time Menu builder.
 pub struct MenuState {
+    #[cfg(test)]
+    pub(super) test_mount: Option<gpui::WeakEntity<super::view::Mount>>,
     pub(super) items: MenuItems,
     pub(super) options: MenuOptions,
     pub(super) selected: Vec<MenuKey>,
@@ -61,6 +63,8 @@ pub struct MenuState {
     pub(super) focus: FocusHandle,
     pub(super) row_focus: HashMap<MenuKey, FocusHandle>,
     pub(super) popups: HashMap<MenuKey, PopupHandle>,
+    pub(super) presented_popups: HashSet<MenuKey>,
+    pub(super) overflow_presented: bool,
     pub(super) scope: Option<ConfigScope>,
     pub(super) on_event: Option<EventHandler>,
     pub(super) disabled: bool,
@@ -74,6 +78,7 @@ pub struct MenuState {
     controlled_open: bool,
     initialized_selected: bool,
     initialized_open: bool,
+    // Navigation state restored when an icon rail expands, independent of popup resources.
     inline_cache: Vec<MenuKey>,
     generation: u64,
     hover_tasks: HashMap<MenuKey, (u64, Task<()>)>,
@@ -140,7 +145,15 @@ impl MenuState {
                 }
             });
         });
+        let weak = cx.weak_entity();
+        let visibility = window.observe_window_visibility(move |visibility, _, cx| {
+            if !visibility.is_visible() {
+                let _ = weak.update(cx, |state, _| state.cancel_pending());
+            }
+        });
         Self {
+            #[cfg(test)]
+            test_mount: None,
             items,
             options: MenuOptions::default(),
             selected: Vec::new(),
@@ -149,6 +162,8 @@ impl MenuState {
             focus,
             row_focus: HashMap::new(),
             popups: HashMap::new(),
+            presented_popups: HashSet::new(),
+            overflow_presented: false,
             scope: None,
             on_event: None,
             disabled: false,
@@ -171,7 +186,7 @@ impl MenuState {
             query: String::new(),
             query_time: None,
             _scope: None,
-            _focus_subscriptions: vec![focused, blurred],
+            _focus_subscriptions: vec![focused, blurred, visibility],
             has_focus: false,
             focus_repair_from: Vec::new(),
             pending_child_focus: None,
@@ -202,6 +217,8 @@ impl MenuState {
         self.revision = self.revision.wrapping_add(1);
         self.row_focus.retain(|key, _| self.items.enabled(key));
         self.popups.retain(|key, _| self.items.is_submenu(key));
+        self.presented_popups
+            .retain(|key| self.items.is_submenu(key));
         self.repair_active();
         cx.notify();
     }
@@ -328,6 +345,9 @@ impl MenuState {
             let keys = unique(keys);
             if self.open != keys {
                 self.remember_active_focus();
+                let pending_focus = self.pending_child_focus.take();
+                self.cancel_pending();
+                self.pending_child_focus = pending_focus.filter(|key| keys.contains(key));
             }
             self.open = keys;
             self.initialized_open = true;
@@ -422,9 +442,9 @@ impl MenuState {
     }
     fn cancel_pending(&mut self) {
         self.generation = self.generation.wrapping_add(1);
-        self.hover_tasks.clear();
-        self.hovered_rows.clear();
-        self.hovered_levels.clear();
+        self.hover_tasks = HashMap::new();
+        self.hovered_rows = HashSet::new();
+        self.hovered_levels = HashSet::new();
         self.pending_child_focus = None;
     }
     fn hover_interested(&self, key: &str) -> bool {
@@ -437,9 +457,57 @@ impl MenuState {
         self.cancel_pending();
         self.mounted = false;
         self.on_event = None;
+        self._scope = None;
+        self.scope = None;
         self.overflow_open = false;
-        self.query.clear();
+        self.query = String::new();
+        self.row_focus = HashMap::new();
+        self.popups = HashMap::new();
+        self.presented_popups = HashSet::new();
+        self.overflow_presented = false;
+        self.focus_repair_from.clear();
         self.has_focus = false;
+    }
+    pub(super) fn rendered_row_visible(&self, key: &str) -> bool {
+        let visible = if self.options.is_inline() {
+            self.visible_enabled(key)
+        } else {
+            self.items.enabled(key)
+                && self.items.path(key).iter().skip(1).all(|parent| {
+                    !self.items.is_submenu(parent) || self.presented_popups.contains(parent)
+                })
+        };
+        visible
+            && (self.options.mode != MenuMode::Horizontal
+                || self.overflow_presented
+                || self
+                    .items
+                    .root_position(key)
+                    .is_some_and(|position| position < self.overflow_start))
+    }
+    pub(super) fn release_popup_rows(&mut self) {
+        let hidden: HashSet<_> = self
+            .row_focus
+            .keys()
+            .chain(self.popups.keys())
+            .filter(|key| !self.rendered_row_visible(key))
+            .cloned()
+            .collect();
+        self.row_focus.retain(|key, _| !hidden.contains(key));
+        self.popups.retain(|key, _| !hidden.contains(key));
+        self.hover_tasks.retain(|key, _| !hidden.contains(key));
+        self.hovered_rows.retain(|key| !hidden.contains(key));
+        self.hovered_levels.retain(|key| !hidden.contains(key));
+        self.row_focus.shrink_to_fit();
+        self.popups.shrink_to_fit();
+        self.hover_tasks.shrink_to_fit();
+        self.hovered_rows.shrink_to_fit();
+        self.hovered_levels.shrink_to_fit();
+        self.presented_popups.shrink_to_fit();
+        if self.open.is_empty() && !self.overflow_open {
+            self.query = String::new();
+            self.query_time = None;
+        }
     }
     pub(super) fn selected_descendant(&self, key: &str) -> bool {
         self.selected
@@ -566,6 +634,17 @@ fn propose_open(
     state.update(cx, |s, cx| {
         if !s.controlled_open {
             s.remember_active_focus();
+            let closed: Vec<_> = s
+                .open
+                .iter()
+                .filter(|key| !keys.contains(key))
+                .cloned()
+                .collect();
+            s.hover_tasks.retain(|key, _| {
+                !closed
+                    .iter()
+                    .any(|parent| key == parent || s.items.descendant_of(key, parent))
+            });
             s.open = keys.clone();
             if s.options.is_inline() {
                 s.inline_cache = s.open.clone();
@@ -746,6 +825,15 @@ fn schedule_hover(
                     if interested == open {
                         toggle(&state, &pending_key, open, MenuSource::Pointer, window, cx);
                     }
+                    state.update(cx, |state, _| {
+                        if state
+                            .hover_tasks
+                            .get(&pending_key)
+                            .is_some_and(|(id, _)| *id == sequence)
+                        {
+                            state.hover_tasks.remove(&pending_key);
+                        }
+                    });
                 }
             });
         });

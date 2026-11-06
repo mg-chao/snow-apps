@@ -42,6 +42,7 @@ struct Consumer {
     item_style: Option<StyleRefinement>,
     custom_height: f32,
     visible: bool,
+    tooltips: bool,
     renders: Rc<Cell<usize>>,
 }
 
@@ -70,6 +71,7 @@ impl Consumer {
             item_style: None,
             custom_height: 12.,
             visible: true,
+            tooltips: false,
             renders: Rc::default(),
         }
     }
@@ -104,6 +106,9 @@ impl Render for Consumer {
                 .automation_id(format!("segmented-test.option-{value}"));
                 if let Some(disabled) = self.option_disabled[index] {
                     option = option.disabled(disabled);
+                }
+                if self.tooltips {
+                    option = option.tooltip("Option details");
                 }
                 option
             });
@@ -1006,4 +1011,116 @@ fn custom_item_background_and_shadow_replace_selected_defaults_without_duplicate
     f.edit(|c| c.item_style = None);
     assert_eq!(f.group_background_count(white), 1);
     assert_eq!(f.shadow_count(), default_shadows);
+}
+
+#[test]
+fn segmented_native_tooltip_releases_on_hidden_window_without_mouse_input() {
+    let mut f = Fixture::new(|consumer| consumer.tooltips = true);
+    let captures = Rc::new(RefCell::new(Vec::new()));
+    let observed = captures.clone();
+    let _observer = f.cx.update(|cx| {
+        cx.observe_new::<SegmentedTooltip>(move |_, _, cx| {
+            observed.borrow_mut().push(cx.weak_entity());
+        })
+    });
+    let hover = |fixture: &mut Fixture| {
+        let position = fixture.item_bounds(1).center();
+        fixture
+            .cx
+            .update_window(fixture.window.into(), |_, window, cx| {
+                window.dispatch_event(
+                    PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                        position,
+                        pressed_button: None,
+                        ..Default::default()
+                    }),
+                    cx,
+                );
+            })
+            .unwrap();
+        fixture.draw();
+    };
+    assert!(captures.borrow().is_empty());
+    hover(&mut f);
+    f.cx.executor().advance_clock(Duration::from_millis(600));
+    f.draw();
+    assert_eq!(captures.borrow().len(), 1);
+    assert!(captures.borrow()[0].upgrade().is_some());
+
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        captures.borrow()[0].upgrade().is_none(),
+        "the cleanup frame drops a still-hovered tooltip"
+    );
+
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    hover(&mut f);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.executor().advance_clock(Duration::from_millis(600));
+    f.cx.run_until_parked();
+    assert_eq!(
+        captures.borrow().len(),
+        1,
+        "hiding cancels a pending show timer"
+    );
+
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    hover(&mut f);
+    f.cx.executor().advance_clock(Duration::from_millis(600));
+    f.draw();
+    assert_eq!(captures.borrow().len(), 2);
+    assert!(captures.borrow()[1].upgrade().is_some());
+}
+
+#[test]
+fn segmented_native_tooltip_cleanup_works_without_a_popup_host() {
+    let mut app = TestAppContext::single();
+    let window = app.add_window(|window, cx| {
+        crate::init(cx);
+        window.activate_window();
+        let scope = ConfigScope::new_window(cx);
+        let mut consumer = Consumer::new(scope, cx);
+        consumer.tooltips = true;
+        consumer
+    });
+    let mut cx = gpui::VisualTestContext::from_window(window.into(), &app);
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.run_until_parked();
+    };
+    let captures = Rc::new(RefCell::new(Vec::new()));
+    let observed = captures.clone();
+    let _observer = cx.update(|_, cx| {
+        cx.observe_new::<SegmentedTooltip>(move |_, _, cx| {
+            observed.borrow_mut().push(cx.weak_entity());
+        })
+    });
+    draw(&mut cx);
+    let position = window
+        .read_with(&cx, |consumer, _| {
+            consumer.item_bounds[0].get().unwrap().center()
+        })
+        .unwrap();
+    cx.simulate_mouse_move(position, None, gpui::Modifiers::none());
+    draw(&mut cx);
+    cx.executor().advance_clock(Duration::from_millis(600));
+    draw(&mut cx);
+    assert_eq!(captures.borrow().len(), 1);
+    assert!(captures.borrow()[0].upgrade().is_some());
+    cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    cx.run_until_parked();
+    assert!(captures.borrow()[0].upgrade().is_none());
+    cx.simulate_visibility_change(gpui::WindowVisibility::Visible);
+    draw(&mut cx);
+    cx.simulate_mouse_move(position, None, gpui::Modifiers::none());
+    draw(&mut cx);
+    cx.executor().advance_clock(Duration::from_millis(600));
+    draw(&mut cx);
+    assert_eq!(captures.borrow().len(), 2);
+    assert!(captures.borrow()[1].upgrade().is_some());
 }

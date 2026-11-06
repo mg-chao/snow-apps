@@ -64,7 +64,7 @@ struct Options {
 
 impl Options {
     fn interactive(&self) -> bool {
-        // Captures stay hidden; --headless also exits after saving the image.
+        // Captures stay in the background; --headless exits after saving the image.
         self.capture.is_none()
     }
 
@@ -200,7 +200,7 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(640.), px(480.))),
-                show: interactive,
+                show: interactive || cfg!(not(target_os = "windows")),
                 focus: interactive,
                 ..Default::default()
             },
@@ -240,14 +240,16 @@ fn main() {
                                         .map_err(|error| error.to_string())
                                     });
                                 if let Err(error) = resize {
-                                    eprintln!("Could not size hidden gallery capture: {error}");
+                                    eprintln!(
+                                        "Could not present background gallery capture: {error}"
+                                    );
                                     cx.update(|_, cx| cx.quit()).ok();
                                     return;
                                 }
                             }
-                            // Hidden windows do not receive presentation frames.
-                            // Flush layout-dependent controls through the event loop:
-                            // initial measurement, overflow reservation, selection reveal.
+                            // Flush background layout through the event loop without
+                            // relying on platform presentation frames: initial measurement,
+                            // overflow reservation, and selection reveal.
                             for _ in 0..3 {
                                 cx.update(|window, cx| window.draw(cx).clear(cx)).ok();
                                 cx.background_executor()

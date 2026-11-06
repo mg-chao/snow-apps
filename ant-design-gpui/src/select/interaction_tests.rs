@@ -457,9 +457,9 @@ fn native_tab_commits_active_then_next_tab_traverses_and_enter_repeat_is_locked(
 #[test]
 fn hundred_thousand_options_build_only_visible_rows_and_reuse_filter_snapshot() {
     let mut f = Fixture::new(SelectMode::Single, 100_000);
-    let revision = f.state.read_with(&f.cx, |s, _| s.model.filter_revision);
     f.focus();
     f.key("down");
+    let revision = f.state.read_with(&f.cx, |s, _| s.model.filter_revision);
     let builds = f.consumer.read_with(&f.cx, |c, _| c.builds.get());
     assert!(builds > 0 && builds < 50, "built {builds} rows");
     for _ in 0..5 {
@@ -778,5 +778,94 @@ fn controlled_query_does_not_erase_native_composition_during_an_unrelated_render
         f.state
             .read_with(&f.cx, |s, c| s.editor.read(c).value().to_owned()),
         ""
+    );
+}
+
+#[test]
+fn hidden_select_releases_variable_list_and_filtered_row_storage() {
+    let mut f = Fixture::new(SelectMode::Multiple, 1000);
+    f.edit(|v| v.variable = true);
+    let editor = f.state.read_with(&f.cx, |s, _| s.input_state().entity_id());
+    f.state.update(&mut f.cx, |s, c| s.set_open(true, c));
+    f.draw();
+    assert!(f.state.read_with(&f.cx, |s, _| s.variable_list.is_some()));
+    f.focus();
+    f.input("7", false);
+    assert!(
+        f.state
+            .read_with(&f.cx, |s, _| !s.model.matches.same_rows(&s.options().all()))
+    );
+    f.state.update(&mut f.cx, |s, c| s.set_open(false, c));
+    f.draw();
+    f.draw();
+    f.state.read_with(&f.cx, |s, _| {
+        assert!(s.variable_list.is_none());
+        assert!(s.variable_key.is_none());
+        assert!(s.model.matches.same_rows(&s.options().all()));
+        assert_eq!(s.search_value(), "7");
+        assert_eq!(s.input_state().entity_id(), editor);
+    });
+    f.state.update(&mut f.cx, |s, c| s.set_open(true, c));
+    f.draw();
+    f.state.read_with(&f.cx, |s, _| {
+        assert!(s.variable_list.is_some());
+        assert!(!s.model.matches.same_rows(&s.options().all()));
+        assert!(s.model.row_count() < 1000);
+    });
+}
+
+#[test]
+fn hidden_scroll_requests_keep_identity_without_retaining_filtered_rows() {
+    let mut f = Fixture::new(SelectMode::Multiple, 1000);
+    f.edit(|v| v.variable = true);
+    let state = f.state.clone();
+    f.cx.update_window(f.window.into(), |_, w, c| {
+        state.update(c, |s, c| {
+            s.set_search_value("99", w, c);
+            assert!(s.scroll_to(&"999".to_owned(), c));
+            assert!(!s.scroll_to(&"2".to_owned(), c));
+            assert!(s.model.matches.same_rows(&s.options().all()));
+            assert!(s.variable_list.is_none());
+            s.set_open(true, c);
+        });
+    })
+    .unwrap();
+    f.draw();
+    f.state.read_with(&f.cx, |s, _| {
+        assert!(
+            s.variable_list
+                .as_ref()
+                .unwrap()
+                .logical_scroll_top()
+                .item_ix
+                > 10
+        );
+        assert!(s.model.row_count() < 1000);
+    });
+}
+
+#[test]
+fn native_hide_recreates_select_rows_without_losing_editor_keyboard_focus() {
+    let mut f = Fixture::new(SelectMode::Single, 4);
+    f.focus();
+    f.key("down");
+    let editor = f.state.read_with(&f.cx, |s, _| s.input_state().entity_id());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.draw();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    let state = f.state.clone();
+    f.cx.update_window(f.window.into(), |_, w, c| {
+        state.update(c, |s, c| {
+            assert_eq!(s.input_state().entity_id(), editor);
+            assert!(s.focus_handle(c).is_focused(w));
+        });
+    })
+    .unwrap();
+    f.key("down");
+    assert_eq!(
+        f.state.read_with(&f.cx, |s, _| s.active_value().cloned()),
+        Some("2".to_owned())
     );
 }

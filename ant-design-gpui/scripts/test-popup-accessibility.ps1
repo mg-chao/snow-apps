@@ -21,11 +21,38 @@ Add-Type -AssemblyName System.Windows.Forms
 if (-not ('AntPopupUiA' -as [type])) {
     Add-Type @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public static class AntPopupUiA {
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    private delegate bool Callback(IntPtr handle, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(Callback callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, StringBuilder title, int capacity);
+    public static IntPtr Find(int pid) {
+        IntPtr result = IntPtr.Zero;
+        EnumWindows((handle, parameter) => {
+            uint owner; GetWindowThreadProcessId(handle, out owner);
+            if (owner == pid) {
+                var title = new StringBuilder(256); GetWindowText(handle, title, title.Capacity);
+                if (title.ToString() == "Popup accessibility fixture") { result = handle; return false; }
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr handle, out Rect bounds);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
+    public static bool InitializeSize(IntPtr handle) {
+        Rect bounds; if (!GetWindowRect(handle, out bounds)) return false;
+        int width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top;
+        const uint flags = 0x0002 | 0x0004 | 0x0010 | 0x0040;
+        return SetWindowPos(handle, IntPtr.Zero, 0, 0, width + 1, height, flags)
+            && SetWindowPos(handle, IntPtr.Zero, 0, 0, width, height, flags);
+    }
     // The .NET Framework UIA wrapper predates FullDescription (30159). Read it
     // through the documented native COM interface, as modern screen readers do.
     public static object FocusedProperty(int id) {
@@ -95,18 +122,26 @@ function Focus-Node($Node) {
     try { Wait-Condition { $Node.Current.HasKeyboardFocus } "Native focus did not reach '$($Node.Current.Name)' (focusable=$($Node.Current.IsKeyboardFocusable), window=$handle, foreground=$([AntPopupUiA]::GetForegroundWindow()), activated=$activated)" }
     catch { throw "$_ Native focused name='$([AntPopupUiA]::FocusedProperty(30005))'; description='$([AntPopupUiA]::FocusedProperty(30159))'" }
 }
-# This is an interactive native UIA test, not a background helper. Windows
-# suppresses GPUI's initial ShowWindow under hidden startup, including its tree.
-$process = Start-Process -FilePath (Join-Path $output 'debug/examples/popup_accessibility.exe') -ArgumentList @($statePath) -WindowStyle Normal -PassThru -RedirectStandardError $stderr
+# Start the process hidden, then show only its owned native HWND. UIA's desktop
+# tree cannot bootstrap an initially hidden window before it has been presented.
+$process = Start-Process -FilePath (Join-Path $output 'debug/examples/popup_accessibility.exe') -ArgumentList @($statePath) -WindowStyle Hidden -PassThru -RedirectStandardError $stderr
 try {
+    $script:fixtureHandle = [IntPtr]::Zero
     Wait-Condition {
-        $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
-        $script:window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-        $null -ne $script:window -and $null -ne (Find-Node $script:window 'confirm-trigger')
+        $process.Refresh()
+        if ($process.HasExited) { throw "Popup fixture exited: $($process.ExitCode)" }
+        $script:fixtureHandle = [AntPopupUiA]::Find($process.Id)
+        $script:fixtureHandle -ne [IntPtr]::Zero
+    } 'Popup native window was not created' 30000
+    [AntPopupUiA]::ShowWindow($script:fixtureHandle, 4) | Out-Null
+    Require ([AntPopupUiA]::InitializeSize($script:fixtureHandle)) 'Popup fixture geometry could not initialize'
+    $script:window = [System.Windows.Automation.AutomationElement]::FromHandle($script:fixtureHandle)
+    Wait-Condition {
+        $null -ne (Find-Node $script:window 'confirm-trigger')
     } 'Popup native tree did not appear' 30000
-    $fixtureHandle = [IntPtr]::new($script:window.Current.NativeWindowHandle)
-    [AntPopupUiA]::ShowWindow($fixtureHandle, 6) | Out-Null
-    [AntPopupUiA]::ShowWindow($fixtureHandle, 9) | Out-Null
+    $script:fixtureHandle = [IntPtr]::new($script:window.Current.NativeWindowHandle)
+    [AntPopupUiA]::ShowWindow($script:fixtureHandle, 6) | Out-Null
+    [AntPopupUiA]::ShowWindow($script:fixtureHandle, 9) | Out-Null
     # Complete an observable native action round trip before keyboard focus:
     # the initial UIA tree is delivered asynchronously during window creation.
     Invoke-Node (Get-Node 'toggle-disabled')
@@ -181,6 +216,16 @@ try {
     Require ($process.ExitCode -eq 0) 'Native fixture failed during teardown'
     Write-Output 'Popup native UIA passed: existing identity/FullDescription, controlled Expand/Collapse, exactly-once Enter/Space callbacks, disabled controls, safe initial focus, Escape/Cancel focus return, async rejection/retry/cancellation/stale results, immediate removal, normal teardown.'
     Write-Output "Evidence: $statePath"
+} catch {
+    if ($null -ne $script:window) {
+        try {
+            @($script:window.FindAll([System.Windows.Automation.TreeScope]::Subtree,
+                [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
+                [ordered]@{name=$_.Current.Name;id=$_.Current.AutomationId;role=$_.Current.ControlType.ProgrammaticName}
+            }) | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$statePath.native-failure.json" -Encoding utf8NoBOM
+        } catch { Write-Warning "Could not save native popup failure tree: $_" }
+    }
+    throw
 } finally {
     $process.Refresh()
     if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }

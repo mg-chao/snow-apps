@@ -1,7 +1,11 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hidden native GPU captures for the independently measured reference matrix.
+//! Background native GPU captures for the independently measured reference matrix.
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
+
 use ant_design_gpui::{
     ConfigScope, Direction, Size, TabItem, TabPlacement, Tabs, TabsItems, TabsState, TabsType,
     UiRoot, theme::AlgorithmChain,
@@ -61,9 +65,12 @@ fn main() {
         scope.update_patch(cx, |patch| patch.motion = Some(false)).unwrap();
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(528.), px(240.)), cx))),
-            show: false, focus: false, ..Default::default()
+            show: cfg!(not(target_os = "windows")), focus: false, ..Default::default()
         }, |window, cx| {
-            window.resize(size(px(528.), px(240.)));
+            let native_title = format!("Tabs visual fixture {}", std::process::id());
+                window.set_window_title(&native_title);
+                #[cfg(not(target_os = "windows"))]
+                window.resize(size(px(528.), px(240.)));
             let items = TabsItems::new((1..=3).map(|index| TabItem::new(index.to_string(), format!("Tab {index}"))
                 .disabled(index == 2).text(format!("Content of Tab Pane {index}")))).unwrap();
             let state = cx.new(|cx| TabsState::new(items, window, cx));
@@ -72,6 +79,8 @@ fn main() {
             window.spawn(cx, async move |cx| {
                 let mut metrics = Vec::new();
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                        #[cfg(target_os = "windows")]
+                        capture_windows::resize(&native_title, (528, 240), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for (theme, algorithms) in [("default", AlgorithmChain::default()), ("dark", AlgorithmChain::dark()), ("compact", AlgorithmChain::compact()), ("dark-compact", AlgorithmChain::dark_compact())] {
                     for (direction, direction_value) in [("ltr", Direction::Ltr), ("rtl", Direction::Rtl)] {
                         cx.update(|_, cx| scope.update_patch(cx, |patch| {

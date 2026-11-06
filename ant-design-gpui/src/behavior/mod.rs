@@ -9,6 +9,7 @@ mod focus;
 mod motion;
 pub(crate) mod notice;
 pub(crate) mod paragraph;
+pub(crate) mod resources;
 pub(crate) mod text;
 mod wave;
 

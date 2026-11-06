@@ -1,8 +1,12 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Deterministic native popup captures. Render a real hidden platform window:
+//! Deterministic native popup captures. Render a real background platform window:
 //! cargo run --example popup_visual -- --output <directory> [--all]
+
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
 
 use ant_design_gpui::{
     Button, ConfigScope, Direction, Popconfirm, Popover, Tooltip, UiRoot,
@@ -212,10 +216,11 @@ fn main() {
         scope.update_patch(cx, |patch| patch.motion = Some(false)).unwrap();
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(800.), px(500.)), cx))),
-            show: false,
+            show: cfg!(not(target_os = "windows")),
             focus: false,
             ..Default::default()
         }, |window, cx| {
+            #[cfg(not(target_os = "windows"))]
             window.resize(size(px(800.), px(500.)));
             let title = format!("Popup visual fixture {}", std::process::id());
             window.set_window_title(&title);
@@ -223,12 +228,17 @@ fn main() {
             let root = cx.new(|cx| UiRoot::new(scope.clone(), capture.clone(), window, cx));
             window.spawn(cx, async move |cx| {
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&title, (800, 500), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 if let Some(scale) = scale {
-                    let finished = change_native_dpi(title, scale);
+                    let finished = change_native_dpi(title.clone(), scale);
                     while !finished.is_finished() {
                         cx.background_executor().timer(Duration::from_millis(20)).await;
                     }
                     finished.join().expect("native DPI delivery");
+                    #[cfg(target_os = "windows")]
+                    capture_windows::resize(&title, (800, 500), scale).expect("size background capture");
+                    #[cfg(not(target_os = "windows"))]
                     cx.update(|window, _| window.resize(size(px(800.), px(500.)))).unwrap();
                     cx.background_executor().timer(Duration::from_millis(100)).await;
                     cx.update(|window, _| {
@@ -353,25 +363,19 @@ fn main() {
     });
 }
 
-// Exercise the native Windows DPI-change path on this fixture's own hidden
+// Exercise the native Windows DPI-change path on this fixture's own background
 // window. This changes neither monitor settings nor the user's other windows.
 // SendMessage runs on a worker so the UI thread can process the DPI callback.
 #[cfg(target_os = "windows")]
 fn change_native_dpi(title: String, scale: f32) -> std::thread::JoinHandle<()> {
     assert!([1., 1.5, 2.].contains(&scale));
-    #[repr(C)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
-        fn FindWindowW(class: *const u16, title: *const u16) -> *mut std::ffi::c_void;
-        fn GetWindowRect(window: *mut std::ffi::c_void, rect: *mut Rect) -> i32;
+        fn FindWindowW(class: *const u16, title: *const u16) -> capture_windows::Hwnd;
+        fn GetWindowRect(window: capture_windows::Hwnd, rect: *mut Rect) -> i32;
         fn SendMessageW(
-            window: *mut std::ffi::c_void,
+            window: capture_windows::Hwnd,
             message: u32,
             wparam: usize,
             lparam: isize,
@@ -389,7 +393,7 @@ fn change_native_dpi(title: String, scale: f32) -> std::thread::JoinHandle<()> {
         // rectangle stays allocated until synchronous message delivery finishes.
         unsafe {
             let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-            assert!(!hwnd.is_null());
+            assert_ne!(hwnd, 0);
             assert_ne!(GetWindowRect(hwnd, &mut rect), 0);
             // Ensure WM_SIZE runs even when the suggested size was unchanged.
             rect.right += 1;

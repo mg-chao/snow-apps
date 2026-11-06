@@ -1,7 +1,11 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hidden native captures driven by fixtures/pagination/visual-cases.json.
+//! Background native captures driven by fixtures/pagination/visual-cases.json.
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
+
 use ant_design_gpui::{
     ConfigScope, Direction, InputNumber, InputNumberState, Pagination, PaginationState, Size,
     UiRoot, Variant,
@@ -28,6 +32,7 @@ use std::{
 
 // Use the exact production compositor for supplementary shaping diagnostics;
 // keep the library's implementation private to its normal public API.
+#[allow(dead_code)] // This fixture uses only the paragraph shaping diagnostics.
 #[path = "../src/behavior/paragraph.rs"]
 mod paragraph_probe;
 
@@ -314,7 +319,8 @@ fn main() {
         let scope = ConfigScope::new_window(cx);
         scope.update_patch(cx, |p| p.motion = Some(false)).unwrap();
         cx.open_window(WindowOptions { window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None,
-            size(px(1280.), px(420.)), cx))), show: false, focus: false, ..Default::default() }, |window, cx| {
+            size(px(1280.), px(420.)), cx))), show: cfg!(not(target_os = "windows")), focus: false, ..Default::default() }, |window, cx| {
+            #[cfg(not(target_os = "windows"))]
             window.resize(size(px(1280.), px(420.)));
             let title = format!("Pagination visual fixture {}", std::process::id());
             window.set_window_title(&title);
@@ -325,16 +331,24 @@ fn main() {
             let root = cx.new(|cx| UiRoot::new(scope.clone(), capture.clone(), window, cx));
             window.spawn(cx, async move |cx| {
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&title, (1280, 420), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 if let Some(scale) = scale {
-                    let worker = change_native_dpi(title, scale);
+                    let worker = change_native_dpi(title.clone(), scale);
                     while !worker.is_finished() { cx.background_executor().timer(Duration::from_millis(20)).await; }
                     worker.join().unwrap();
+                    #[cfg(target_os = "windows")]
+                    capture_windows::resize(&title, (1280, 420), scale).expect("size background capture");
+                    #[cfg(not(target_os = "windows"))]
                     cx.update(|window, _| window.resize(size(px(1280.), px(420.)))).unwrap();
                     cx.background_executor().timer(Duration::from_millis(100)).await;
                     cx.update(|window, _| assert_eq!(window.scale_factor(), scale)).unwrap();
                 }
                 let mut metrics = Vec::new();
                 for scenario in scenarios {
+                    #[cfg(target_os = "windows")]
+                    capture_windows::resize(&title, (scenario["viewport_width"].as_u64().unwrap_or(1280) as u32, 420), cx.update(|window, _| window.scale_factor()).unwrap()).expect("size background pagination capture");
+                    #[cfg(not(target_os = "windows"))]
                     cx.update(|window, _| window.resize(size(px(scenario["viewport_width"].as_f64().unwrap_or(1280.) as f32), px(420.)))).unwrap();
                     cx.background_executor().timer(Duration::from_millis(20)).await;
                     cx.update(|window, cx| {
@@ -501,23 +515,17 @@ fn main() {
     });
 }
 
-// Send only this hidden fixture a native DPI notification; monitor settings stay unchanged.
+// Send only this background fixture a native DPI notification; monitor settings stay unchanged.
 #[cfg(target_os = "windows")]
 fn change_native_dpi(title: String, scale: f32) -> std::thread::JoinHandle<()> {
     assert!([1., 1.5, 2.].contains(&scale));
-    #[repr(C)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
-        fn FindWindowW(class: *const u16, title: *const u16) -> *mut std::ffi::c_void;
-        fn GetWindowRect(window: *mut std::ffi::c_void, rect: *mut Rect) -> i32;
+        fn FindWindowW(class: *const u16, title: *const u16) -> capture_windows::Hwnd;
+        fn GetWindowRect(window: capture_windows::Hwnd, rect: *mut Rect) -> i32;
         fn SendMessageW(
-            window: *mut std::ffi::c_void,
+            window: capture_windows::Hwnd,
             message: u32,
             wparam: usize,
             lparam: isize,
@@ -535,7 +543,7 @@ fn change_native_dpi(title: String, scale: f32) -> std::thread::JoinHandle<()> {
         // remains allocated until synchronous SendMessage returns.
         unsafe {
             let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-            assert!(!hwnd.is_null());
+            assert_ne!(hwnd, 0);
             assert_ne!(GetWindowRect(hwnd, &mut rect), 0);
             rect.right += 1;
             let dpi = (scale * 96.) as usize;

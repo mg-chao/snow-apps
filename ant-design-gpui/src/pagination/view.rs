@@ -391,6 +391,7 @@ impl Styled for Pagination {
 
 struct Mount {
     state: WeakEntity<PaginationState>,
+    native_hints: Option<Subscription>,
     _observer: Subscription,
     _release: Subscription,
 }
@@ -432,14 +433,24 @@ impl RenderOnce for Pagination {
             self.id.clone(),
             SharedString::from(format!("controller-{}", state.entity_id())),
         );
-        let _mount = window.use_keyed_state(mount_id, cx, move |_, cx| {
+        let mount = window.use_keyed_state(mount_id, cx, move |_, cx| {
             observed.update(cx, |state, _| state.mounted = true);
             Mount {
                 state: observed.downgrade(),
+                native_hints: None,
                 _observer: cx.observe(&observed, |_, _, cx| cx.notify()),
                 _release: cx.on_release(|mount: &mut Mount, cx| {
                     let _ = mount.state.update(cx, |state, cx| state.unmount(cx));
                 }),
+            }
+        });
+        mount.update(cx, |mount, _| {
+            if self.show_title && mount.native_hints.is_none() {
+                mount.native_hints = Some(
+                    crate::behavior::resources::observe_native_hint_visibility(window),
+                );
+            } else if !self.show_title {
+                mount.native_hints = None;
             }
         });
         state.update(cx, |state, cx| {
@@ -1620,7 +1631,9 @@ impl Pagination {
                 element.on_mouse_up(MouseButton::Left, reset)
             };
         }
-        if self.show_title {
+        // Native tooltip state lives on the trigger. Omitting its builder lets
+        // the hidden-window cleanup frame release an active view or show timer.
+        if self.show_title && window.is_visible() {
             let title = item_title(
                 item.kind,
                 &config.locale.pagination,
@@ -1795,7 +1808,7 @@ fn themed_icon(
         })
 }
 
-struct PaginationTooltip {
+pub(super) struct PaginationTooltip {
     text: SharedString,
     scope: ConfigScope,
 }

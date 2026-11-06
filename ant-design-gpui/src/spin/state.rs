@@ -39,8 +39,10 @@ pub(super) struct SpinState {
     automatic: bool,
     generation: u64,
     delay_task: Option<Task<()>>,
+    delay_deadline: Option<Instant>,
     auto_task: Option<Task<()>>,
     frame_pending: bool,
+    frame_generation: u64,
     ring: ScalarTransition,
     dots: ScalarTransition,
     ring_mounted: bool,
@@ -51,6 +53,7 @@ pub(super) struct SpinState {
     mask: ScalarTransition,
     initialized: bool,
     _config: Subscription,
+    _visibility: Subscription,
     pub ring_cache: super::paint::RingCache,
     pub dot_cache: super::paint::DotCache,
 }
@@ -58,6 +61,13 @@ pub(super) struct SpinState {
 impl SpinState {
     pub fn new(scope: ConfigScope, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let subscription = scope.observe_in(window, cx, |_, _, cx| cx.notify());
+        let visibility = cx.observe_window_visibility(window, |state, visible, window, cx| {
+            if !visible.is_visible() {
+                state.suspend_presentation();
+                crate::behavior::resources::schedule_hidden_cleanup(window, cx);
+            }
+            cx.notify();
+        });
         Self {
             scope,
             loading: false,
@@ -69,8 +79,10 @@ impl SpinState {
             automatic: false,
             generation: 0,
             delay_task: None,
+            delay_deadline: None,
             auto_task: None,
             frame_pending: false,
+            frame_generation: 0,
             ring: ScalarTransition::new(0., EASE),
             dots: ScalarTransition::new(1., EASE),
             ring_mounted: false,
@@ -81,6 +93,7 @@ impl SpinState {
             mask: ScalarTransition::new(0., EASE),
             initialized: false,
             _config: subscription,
+            _visibility: visibility,
             ring_cache: super::paint::RingCache::default(),
             dot_cache: super::paint::DotCache::default(),
         }
@@ -101,7 +114,10 @@ impl SpinState {
         if !self.loading {
             self.loading = true;
             self.indicator_new_run = true;
-            self.started = Some(self.now(cx));
+            self.started = Some(self.delay_deadline.take().map_or_else(
+                || self.now(cx),
+                |deadline| deadline.saturating_duration_since(self.epoch),
+            ));
             if self.automatic {
                 self.auto_started = self.started;
             }
@@ -130,6 +146,7 @@ impl SpinState {
             self.request = request;
             self.generation = self.generation.wrapping_add(1);
             self.delay_task = None;
+            self.delay_deadline = None;
             if !input.spinning {
                 self.loading = false;
                 self.ring_mounted = false;
@@ -140,31 +157,50 @@ impl SpinState {
                 if input.delay.is_zero() {
                     self.start(cx);
                 } else {
-                    // An unrepresentable deadline remains pending until the owner
-                    // changes/cancels it, rather than overflowing Instant in the timer.
-                    if cx
-                        .background_executor()
-                        .now()
-                        .checked_add(input.delay)
-                        .is_none()
-                    {
-                        return;
-                    }
-                    let generation = self.generation;
-                    let timer = cx.background_executor().timer(input.delay);
-                    self.delay_task = Some(cx.spawn_in(window, async move |state, cx| {
-                        timer.await;
-                        let _ = state.update_in(cx, |state, _, cx| {
-                            if state.generation == generation && state.request.0 {
-                                state.start(cx);
-                                state.delay_task = None;
-                                cx.notify();
-                            }
-                        });
-                    }));
+                    // Retain the logical deadline, not a hidden presentation's
+                    // timer. An overflowing deadline stays pending until canceled.
+                    self.delay_deadline = cx.background_executor().now().checked_add(input.delay);
                 }
             }
         }
+        if !self.loading
+            && input.spinning
+            && let Some(deadline) = self.delay_deadline
+        {
+            let now = cx.background_executor().now();
+            if now >= deadline {
+                self.start(cx);
+            } else if window.is_visible() && self.delay_task.is_none() {
+                let generation = self.generation;
+                let timer = cx
+                    .background_executor()
+                    .timer(deadline.saturating_duration_since(now));
+                self.delay_task = Some(cx.spawn_in(window, async move |state, cx| {
+                    timer.await;
+                    let _ = state.update_in(cx, |state, window, cx| {
+                        if state.generation == generation {
+                            state.delay_task = None;
+                            if state.request.0 && window.is_visible() {
+                                state.start(cx);
+                                cx.notify();
+                            }
+                        }
+                    });
+                }));
+            }
+        }
+    }
+
+    pub(super) fn suspend_presentation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.visible = false;
+        self.delay_task = None;
+        self.auto_task = None;
+        self.frame_pending = false;
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.ring_cache = Default::default();
+        self.dot_cache = Default::default();
+        self.ring_mounted = false;
     }
 
     pub fn sample(
@@ -263,15 +299,20 @@ impl SpinState {
         self.visible = visible;
         if !visible {
             self.auto_task = None;
+            self.ring_cache = Default::default();
+            self.dot_cache = Default::default();
             return;
         }
         if animation && !self.frame_pending {
             self.frame_pending = true;
+            let generation = self.frame_generation;
             let state = cx.weak_entity();
             window.on_next_frame(move |_, cx| {
                 let _ = state.update(cx, |state, cx| {
-                    state.frame_pending = false;
-                    cx.notify();
+                    if state.frame_generation == generation {
+                        state.frame_pending = false;
+                        cx.notify();
+                    }
                 });
             });
         }

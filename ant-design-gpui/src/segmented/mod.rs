@@ -328,6 +328,7 @@ struct SegmentedState<T> {
     frame_pending: bool,
     clock: Box<dyn Fn(&App) -> Duration>,
     _config: Subscription,
+    native_hints: Option<Subscription>,
 }
 
 impl<T: Clone + PartialEq + 'static> SegmentedState<T> {
@@ -359,6 +360,7 @@ impl<T: Clone + PartialEq + 'static> SegmentedState<T> {
             frame_pending: false,
             clock: Box::new(move |cx| cx.background_executor().now().duration_since(epoch)),
             _config: config,
+            native_hints: None,
         }
     }
 
@@ -453,6 +455,17 @@ impl<T: Clone + PartialEq + 'static> SegmentedState<T> {
         self.controlled = control.form_controlled || control.value.is_some();
         self.disabled = control.disabled;
         self.order.clear();
+        let hints = control
+            .options
+            .iter()
+            .any(|option| option.tooltip.is_some());
+        if hints && self.native_hints.is_none() {
+            self.native_hints = Some(crate::behavior::resources::observe_native_hint_visibility(
+                window,
+            ));
+        } else if !hints {
+            self.native_hints = None;
+        }
         self.generation = self.generation.wrapping_add(1);
         for option in &control.options {
             self.order.push(option.id.clone());
@@ -901,7 +914,11 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for Segmented<T> {
                     item.cursor_pointer()
                 };
             }
-            if let Some(text) = option.tooltip {
+            // Removing the native builder retires its active view/show timer
+            // during the host's cleanup frame, even without another mouse event.
+            if window.is_visible()
+                && let Some(text) = option.tooltip
+            {
                 let scope = scope.clone();
                 item = item.tooltip(move |_, cx| {
                     cx.new(|_| SegmentedTooltip {

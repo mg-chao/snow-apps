@@ -21,7 +21,7 @@ use gpui::{
     WeakEntity, Window, accesskit, canvas, div, prelude::*, px, relative, size,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     rc::Rc,
     sync::Arc,
     time::Duration,
@@ -90,7 +90,6 @@ pub struct Menu {
     trigger: Option<MenuTrigger>,
     open_delay: Option<Duration>,
     close_delay: Option<Duration>,
-    force_submenu_render: Option<bool>,
     tooltip: Option<bool>,
     tooltip_placement: Option<PopupPlacement>,
     disabled: Option<bool>,
@@ -125,7 +124,6 @@ impl Menu {
             trigger: None,
             open_delay: None,
             close_delay: None,
-            force_submenu_render: None,
             tooltip: None,
             tooltip_placement: None,
             disabled: None,
@@ -197,11 +195,6 @@ impl Menu {
 
     pub fn close_delay(mut self, delay: Duration) -> Self {
         self.close_delay = Some(delay);
-        self
-    }
-
-    pub fn force_submenu_render(mut self, render: bool) -> Self {
-        self.force_submenu_render = Some(render);
         self
     }
 
@@ -345,7 +338,7 @@ struct CollapseSample {
     moving: bool,
 }
 
-struct Mount {
+pub(super) struct Mount {
     state: WeakEntity<MenuState>,
     epoch: std::time::Instant,
     motion: HashMap<MenuKey, BranchMotion>,
@@ -363,15 +356,30 @@ struct Mount {
     pressed: HashSet<MenuKey>,
     row_motion: HashMap<MenuKey, RowMotion>,
     arrows: HashMap<MenuKey, ScalarTransition>,
-    branch_model: Option<MenuItems>,
-    branch_keys: Vec<MenuKey>,
     popup_rows: HashMap<MenuKey, FlatCache>,
+    // Scalar viewport positions only. The oldest closed branch is evicted at 64 entries.
+    popup_positions: VecDeque<PopupPosition>,
     overflow_items: Option<(MenuItems, usize, MenuItems)>,
     model_revision: u64,
     row_bounds: HashMap<MenuKey, gpui::Bounds<Pixels>>,
     row_geometry_revision: u64,
     _observer: Subscription,
     _release: Subscription,
+}
+
+struct PopupPosition {
+    key: MenuKey,
+    scroll: gpui::Point<Pixels>,
+    list: Option<gpui::ListOffset>,
+    active: Option<MenuKey>,
+}
+
+fn remember_popup_position(positions: &mut VecDeque<PopupPosition>, position: PopupPosition) {
+    positions.retain(|old| old.key != position.key);
+    if positions.len() == 64 {
+        positions.pop_front();
+    }
+    positions.push_back(position);
 }
 
 struct FlatCache {
@@ -392,6 +400,22 @@ struct WidthCache {
 }
 
 impl Mount {
+    #[cfg(test)]
+    pub(super) fn popup_cache_counts(&self) -> (usize, usize, usize) {
+        (
+            self.popup_rows.len(),
+            self.widths.len(),
+            self.popup_positions.len(),
+        )
+    }
+    #[cfg(test)]
+    pub(super) fn popup_list_count(&self) -> usize {
+        self.lists
+            .keys()
+            .filter(|key| key.as_ref() != "__menu_bounded_root")
+            .count()
+    }
+
     fn sync_model(&mut self, items: &MenuItems, revision: u64) {
         if self.model_revision == revision {
             return;
@@ -401,9 +425,8 @@ impl Mount {
         self.popup_rows.clear();
         self.flat_cache = None;
         self.overflow_items = None;
+        self.popup_positions.clear();
         self.list_sources.clear();
-        self.branch_model = None;
-        self.branch_keys.clear();
         self.pressed.clear();
         self.row_bounds.clear();
         self.row_geometry_revision = self.row_geometry_revision.wrapping_add(1);
@@ -418,6 +441,49 @@ impl Mount {
         };
         self.lists.retain(|key, _| current(key));
         self.scroll.retain(|key, _| current(key));
+    }
+
+    fn release_popup(&mut self, identity: &MenuKey, state: &MenuState) {
+        let scroll = self.scroll.remove(identity);
+        let list = self.lists.remove(identity);
+        if scroll.is_some() || list.is_some() {
+            remember_popup_position(
+                &mut self.popup_positions,
+                PopupPosition {
+                    key: identity.clone(),
+                    scroll: scroll
+                        .as_ref()
+                        .map_or_else(Default::default, ScrollHandle::offset),
+                    list: list.as_ref().map(gpui::ListState::logical_scroll_top),
+                    active: self.revealed.get(identity).cloned(),
+                },
+            );
+        }
+        self.widths.remove(identity);
+        self.popup_rows.remove(identity);
+        self.list_sources.remove(identity);
+        self.revealed.remove(identity);
+        if identity.as_ref() == "overflow-list" {
+            self.overflow_items = None;
+        }
+        // Root/inline rows remain live; popup-only row interaction resources do not.
+        self.row_bounds
+            .retain(|key, _| state.rendered_row_visible(key));
+        self.row_motion
+            .retain(|key, _| state.rendered_row_visible(key));
+        self.arrows.retain(|key, _| state.rendered_row_visible(key));
+        self.hovered.retain(|key| state.rendered_row_visible(key));
+        self.pressed.retain(|key| state.rendered_row_visible(key));
+        self.widths.shrink_to_fit();
+        self.popup_rows.shrink_to_fit();
+        self.scroll.shrink_to_fit();
+        self.lists.shrink_to_fit();
+        self.revealed.shrink_to_fit();
+        self.row_bounds.shrink_to_fit();
+        self.row_motion.shrink_to_fit();
+        self.arrows.shrink_to_fit();
+        self.hovered.shrink_to_fit();
+        self.pressed.shrink_to_fit();
     }
 
     fn sample_collapse(
@@ -500,6 +566,8 @@ impl Mount {
 
 #[derive(Clone)]
 struct MenuView {
+    renderer: WeakEntity<MenuRenderer>,
+    first_render: bool,
     state: Entity<MenuState>,
     mount: Entity<Mount>,
     scope: ConfigScope,
@@ -538,6 +606,7 @@ struct MenuMount {
 struct MenuRenderer {
     props: Option<MenuProps>,
     cache: Entity<Mount>,
+    view: Option<MenuView>,
     _subscription: Subscription,
 }
 
@@ -588,9 +657,8 @@ impl RenderOnce for Menu {
                 pressed: HashSet::new(),
                 row_motion: HashMap::new(),
                 arrows: HashMap::new(),
-                branch_model: None,
-                branch_keys: Vec::new(),
                 popup_rows: HashMap::new(),
+                popup_positions: VecDeque::new(),
                 overflow_items: None,
                 model_revision: u64::MAX,
                 row_bounds: HashMap::new(),
@@ -602,8 +670,13 @@ impl RenderOnce for Menu {
             });
             let renderer = cx.new(|cx| MenuRenderer {
                 props: None,
+                view: None,
                 _subscription: cx.observe(&cache, |_, _, cx| cx.notify()),
                 cache,
+            });
+            #[cfg(test)]
+            observed.update(cx, |state, cx| {
+                state.test_mount = Some(renderer.read(cx).cache.downgrade());
             });
             MenuMount { renderer }
         });
@@ -622,7 +695,6 @@ impl RenderOnce for Menu {
             trigger,
             open_delay,
             close_delay,
-            force_submenu_render,
             tooltip
         );
         state.update(cx, |s, cx| {
@@ -703,6 +775,8 @@ impl Render for MenuRenderer {
             cache.sample_collapse(&options, &styles, &tokens, policy, now, window.rem_size())
         });
         let view = MenuView {
+            renderer: cx.weak_entity(),
+            first_render: self.view.is_none(),
             state: state.clone(),
             mount: self.cache.clone(),
             scope,
@@ -718,6 +792,7 @@ impl Render for MenuRenderer {
             collapse,
             overflowed_indicator: props.overflowed_indicator,
         };
+        self.view = Some(view.clone());
         let items = state.read(cx).items.clone();
         let disabled = state.read(cx).disabled;
         let focus = state.update(cx, |s, _| {
@@ -941,6 +1016,25 @@ fn metric(value: f64) -> Pixels {
 }
 
 impl MenuView {
+    fn current(renderer: &WeakEntity<MenuRenderer>, cx: &App) -> Option<Self> {
+        renderer.upgrade()?.read(cx).view.clone()
+    }
+
+    fn popup_hidden(renderer: &WeakEntity<MenuRenderer>, identity: &MenuKey, cx: &mut App) {
+        if let Some(view) = Self::current(renderer, cx) {
+            view.state.update(cx, |state, _| {
+                if let Some(key) = identity.strip_prefix("submenu:") {
+                    state.presented_popups.remove(key);
+                } else if identity.as_ref() == "overflow-list" {
+                    state.overflow_presented = false;
+                }
+            });
+            view.mount.update(cx, |mount, cx| {
+                mount.release_popup(identity, view.state.read(cx));
+            });
+            view.state.update(cx, |state, _| state.release_popup_rows());
+        }
+    }
     fn motion_policy(&self, cx: &App) -> crate::behavior::MotionPolicy {
         crate::behavior::MotionPolicy::new(
             self.config.motion && self.tokens.globals().motion,
@@ -1519,43 +1613,31 @@ impl MenuView {
     }
 
     fn virtual_open(&self, items: &MenuItems, cx: &mut App) -> Vec<MenuKey> {
-        fn keys(items: &MenuItems, result: &mut Vec<MenuKey>) {
-            for entry in items.entries() {
-                if let MenuEntry::SubMenu(submenu) = entry {
-                    result.push(submenu.item.key.clone());
-                }
-                if let Some(children) = entry.children() {
-                    keys(children, result);
-                }
-            }
+        if !self.inline(false) {
+            return Vec::new();
         }
         let open = self.state.read(cx).open.clone();
         let policy = self.motion_policy(cx);
         let now = cx.background_executor().now();
         self.mount.update(cx, |cache, _| {
-            if !cache
-                .branch_model
-                .as_ref()
-                .is_some_and(|old| old.same_collection(items))
-            {
-                cache.branch_keys.clear();
-                keys(items, &mut cache.branch_keys);
-                cache.branch_model = Some(items.clone());
+            for key in &open {
+                if items.is_submenu(key) {
+                    cache
+                        .motion
+                        .entry(key.clone())
+                        .or_insert_with(|| BranchMotion {
+                            transition: ScalarTransition::new(
+                                if self.first_render { 1. } else { 0. },
+                                self.tokens.globals().motion_ease_in_out,
+                            ),
+                            open: self.first_render,
+                        });
+                }
             }
             let elapsed = now.saturating_duration_since(cache.epoch);
             let mut visible = Vec::new();
-            for key in &cache.branch_keys {
+            cache.motion.retain(|key, motion| {
                 let expanded = open.contains(key);
-                let motion = cache
-                    .motion
-                    .entry(key.clone())
-                    .or_insert_with(|| BranchMotion {
-                        transition: ScalarTransition::new(
-                            if expanded { 1. } else { 0. },
-                            self.tokens.globals().motion_ease_in_out,
-                        ),
-                        open: expanded,
-                    });
                 motion.open = expanded;
                 motion.transition.retarget(
                     if expanded { 1. } else { 0. },
@@ -1563,10 +1645,13 @@ impl MenuView {
                     self.tokens.globals().motion_duration_mid,
                     policy,
                 );
-                if expanded || motion.transition.sample(elapsed).value > 0. {
+                let sample = motion.transition.sample(elapsed);
+                if expanded || sample.value > 0. {
                     visible.push(key.clone());
                 }
-            }
+                expanded || !sample.finished || sample.value > 0.
+            });
+            cache.motion.shrink_to_fit();
             visible
         })
     }
@@ -2328,13 +2413,23 @@ impl MenuView {
         let duration = self.tokens.globals().motion_duration_mid;
         let now = cx.background_executor().now();
         let (progress, moving) = self.mount.update(cx, |mount, _| {
+            if !expanded && !mount.motion.contains_key(&key) {
+                return (0., false);
+            }
             let elapsed = now.saturating_duration_since(mount.epoch);
             let branch = mount
                 .motion
                 .entry(key.clone())
                 .or_insert_with(|| BranchMotion {
-                    transition: ScalarTransition::new(if expanded { 1. } else { 0. }, curve),
-                    open: expanded,
+                    transition: ScalarTransition::new(
+                        if self.first_render && expanded {
+                            1.
+                        } else {
+                            0.
+                        },
+                        curve,
+                    ),
+                    open: self.first_render && expanded,
                 });
             if branch.open != expanded || !policy.allows_motion() {
                 branch.open = expanded;
@@ -2346,7 +2441,12 @@ impl MenuView {
                 );
             }
             let sample = branch.transition.sample(elapsed);
-            (sample.value.clamp(0., 1.), !sample.finished)
+            let result = (sample.value.clamp(0., 1.), !sample.finished);
+            if !expanded && sample.finished {
+                mount.motion.remove(&key);
+                mount.motion.shrink_to_fit();
+            }
+            result
         });
         if moving {
             self.request_frame(window, cx);
@@ -2361,7 +2461,7 @@ impl MenuView {
         } else {
             px(0.)
         };
-        if expanded || progress > 0. || self.options.force_submenu_render {
+        if expanded || progress > 0. {
             let palette = MenuStyle::from_tokens(&self.tokens, color_theme);
             let mut children = div()
                 .id("inline-submenu-list")
@@ -2470,7 +2570,7 @@ impl MenuView {
         depth: usize,
         horizontal: bool,
         inherited_theme: MenuColorTheme,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
         let key = submenu.item.key.clone();
@@ -2479,16 +2579,14 @@ impl MenuView {
         let handle = self
             .state
             .update(cx, |s, _| s.popups.entry(key.clone()).or_default().clone());
-        let view = self.clone();
-        let children = submenu.children.clone();
+        let renderer = self.renderer.clone();
+        let hidden_renderer = self.renderer.clone();
+        let presented_state = self.state.downgrade();
+        let focused_state = self.state.downgrade();
+        let presented_key = key.clone();
+        let identity: MenuKey = format!("submenu:{key}").into();
         let content_key = key.clone();
-        let label = submenu.item.label.clone();
-        let custom = submenu
-            .popup_render
-            .clone()
-            .or_else(|| self.popup_render.clone());
-        let eager_custom = custom.clone();
-        let changed = self.state.clone();
+        let changed = self.state.downgrade();
         let changed_key = key.clone();
         let rtl = self.config.direction == Direction::Rtl;
         let placement = if horizontal {
@@ -2516,17 +2614,45 @@ impl MenuView {
             .triggers(PopupTriggers::NONE)
             .disabled(self.state.read(cx).disabled || submenu.item.disabled)
             .open(expanded)
-            .fresh(true)
-            .destroy_on_hidden(!self.options.force_submenu_render)
-            .on_open_change(move |change, window, cx| {
-                state::popup_changed(&changed, &changed_key, change, window, cx)
+            .on_presented(move |_, cx| {
+                let _ = presented_state.update(cx, |state, _| {
+                    state.presented_popups.insert(presented_key.clone());
+                });
             })
+            .initial_focus_with(move |cx| {
+                let state = focused_state.upgrade()?;
+                let state = state.read(cx);
+                state
+                    .active
+                    .as_ref()
+                    .and_then(|key| state.row_focus.get(key))
+                    .cloned()
+                    .or_else(|| Some(state.focus.clone()))
+            })
+            .on_open_change(move |change, window, cx| {
+                if let Some(state) = changed.upgrade() {
+                    state::popup_changed(&state, &changed_key, change, window, cx);
+                }
+            })
+            .on_hidden(move |cx| Self::popup_hidden(&hidden_renderer, &identity, cx))
             .content(move |_, window, cx| {
+                let Some(view) = Self::current(&renderer, cx) else {
+                    return div().into_any_element();
+                };
+                let Some(MenuEntry::SubMenu(submenu)) =
+                    view.state.read(cx).items.find(&content_key).cloned()
+                else {
+                    return div().into_any_element();
+                };
+                let custom = submenu
+                    .popup_render
+                    .clone()
+                    .or_else(|| view.popup_render.clone());
                 let content = view.popup_list(
-                    &children,
+                    &submenu.children,
                     Some(content_key.clone()),
                     depth + 1,
-                    &label,
+                    &submenu.item.label,
                     color_theme,
                     window,
                     cx,
@@ -2551,45 +2677,7 @@ impl MenuView {
                 metric(self.tokens.popup_gap())
             })
         };
-        if self.options.force_submenu_render && !expanded {
-            let mut content = self.popup_list(
-                &submenu.children,
-                Some(submenu.item.key.clone()),
-                depth + 1,
-                &submenu.item.label,
-                color_theme,
-                window,
-                cx,
-            );
-            if let Some(render) = eager_custom {
-                let context = MenuPopupContext {
-                    key: submenu.item.key.clone(),
-                    key_path: self.state.read(cx).items.path(&submenu.item.key),
-                    color_theme,
-                };
-                content = render(content, &context, window, cx);
-            }
-            let mut semantics = Accessibility::new(Role::Menu);
-            semantics.hidden = true;
-            div()
-                .relative()
-                .flex()
-                .flex_col()
-                .child(popup)
-                .child(
-                    semantics.apply(
-                        div()
-                            .absolute()
-                            .invisible()
-                            .size(px(0.))
-                            .overflow_hidden()
-                            .child(content),
-                    ),
-                )
-                .into_any_element()
-        } else {
-            popup.into_any_element()
-        }
+        popup.into_any_element()
     }
 
     fn surface(&self, popup: Popup, color_theme: MenuColorTheme) -> Popup {
@@ -2698,7 +2786,21 @@ impl MenuView {
             - metric(self.tokens.popup_viewport_inset()))
         .max(px(40.));
         let scroll = self.mount.update(cx, |mount, _| {
-            mount.scroll.entry(identity.clone()).or_default().clone()
+            if !mount.scroll.contains_key(&identity) {
+                let scroll = ScrollHandle::new();
+                if let Some(position) = mount
+                    .popup_positions
+                    .iter()
+                    .find(|position| position.key == identity)
+                {
+                    scroll.set_offset(position.scroll);
+                    if let Some(active) = &position.active {
+                        mount.revealed.insert(identity.clone(), active.clone());
+                    }
+                }
+                mount.scroll.insert(identity.clone(), scroll);
+            }
+            mount.scroll[&identity].clone()
         });
         let hover_state = self.state.clone();
         let hover_parent = parent.clone();
@@ -2748,6 +2850,16 @@ impl MenuView {
         });
         if popup_rows.len() > 64 && self.styles.submenu_list == StyleRefinement::default() {
             let list = self.mount.update(cx, |mount, _| {
+                let fresh = !mount.lists.contains_key(&identity);
+                let restored = fresh
+                    .then(|| {
+                        mount
+                            .popup_positions
+                            .iter()
+                            .find(|position| position.key == identity)
+                            .and_then(|position| position.list)
+                    })
+                    .flatten();
                 let list = mount
                     .lists
                     .entry(identity)
@@ -2757,6 +2869,9 @@ impl MenuView {
                         popup_rows.len(),
                         metric(self.tokens.item_height + self.tokens.item_margin_block),
                     );
+                }
+                if let Some(position) = restored {
+                    list.scroll_to(position);
                 }
                 list.clone()
             });
@@ -3109,7 +3224,7 @@ impl MenuView {
         let palette = MenuStyle::from_tokens(&self.tokens, self.options.color_theme);
         let state = self.state.clone();
         let keyboard = self.state.clone();
-        let changed = self.state.clone();
+        let changed = self.state.downgrade();
         let expanded = state.read(cx).overflow_open;
         let disabled = state.read(cx).disabled;
         let revision = state.read(cx).revision;
@@ -3201,20 +3316,10 @@ impl MenuView {
         let mut semantics = Accessibility::new(Role::MenuItem);
         semantics.disabled = disabled;
         let row = semantics.apply(row);
-        let view = self.clone();
-        let hidden = if let Some((source, old_first, hidden)) = &self.mount.read(cx).overflow_items
-            && source.same_collection(items)
-            && *old_first == first
-        {
-            hidden.clone()
-        } else {
-            let hidden = MenuItems::new(items.entries().iter().skip(first).cloned())
-                .expect("validated overflow subset");
-            self.mount.update(cx, |cache, _| {
-                cache.overflow_items = Some((items.clone(), first, hidden.clone()))
-            });
-            hidden
-        };
+        let renderer = self.renderer.clone();
+        let hidden_renderer = self.renderer.clone();
+        let presented_state = self.state.downgrade();
+        let focused_state = self.state.downgrade();
         let popup_label = label;
         self.surface(
             Popup::new("horizontal-overflow-popup"),
@@ -3224,6 +3329,19 @@ impl MenuView {
         .disabled(disabled)
         .child(row)
         .open(expanded)
+        .on_presented(move |_, cx| {
+            let _ = presented_state.update(cx, |state, _| state.overflow_presented = true);
+        })
+        .initial_focus_with(move |cx| {
+            let state = focused_state.upgrade()?;
+            let state = state.read(cx);
+            state
+                .active
+                .as_ref()
+                .and_then(|key| state.row_focus.get(key))
+                .cloned()
+                .or_else(|| Some(state.overflow_focus.clone()))
+        })
         .triggers(if self.options.trigger == MenuTrigger::Hover {
             PopupTriggers::HOVER
         } else {
@@ -3237,14 +3355,34 @@ impl MenuView {
             PopupPlacement::BottomLeft
         })
         .on_open_change(move |change, _, cx| {
-            changed.update(cx, |s, cx| {
+            let _ = changed.update(cx, |s, cx| {
                 if s.overflow_open != change.open {
                     s.overflow_open = change.open;
                     cx.notify();
                 }
             });
         })
+        .on_hidden(move |cx| Self::popup_hidden(&hidden_renderer, &"overflow-list".into(), cx))
         .content(move |_, window, cx| {
+            let Some(view) = Self::current(&renderer, cx) else {
+                return div().into_any_element();
+            };
+            let items = view.state.read(cx).items.clone();
+            let first = view.state.read(cx).overflow_start.min(items.len());
+            let hidden = if let Some((source, old_first, hidden)) =
+                &view.mount.read(cx).overflow_items
+                && source.same_collection(&items)
+                && *old_first == first
+            {
+                hidden.clone()
+            } else {
+                let hidden = MenuItems::new(items.entries().iter().skip(first).cloned())
+                    .expect("validated overflow subset");
+                view.mount.update(cx, |cache, _| {
+                    cache.overflow_items = Some((items.clone(), first, hidden.clone()));
+                });
+                hidden
+            };
             view.popup_list(
                 &hidden,
                 None,
@@ -3376,4 +3514,58 @@ fn chevron(
     )
     .size(dimension)
     .into_any_element()
+}
+
+#[cfg(test)]
+mod popup_lifetime_tests {
+    use super::*;
+
+    #[test]
+    fn menu_popup_positions_have_a_sixty_four_entry_lru_limit() {
+        let mut positions = VecDeque::new();
+        for index in 0..64 {
+            remember_popup_position(
+                &mut positions,
+                PopupPosition {
+                    key: format!("submenu:{index}").into(),
+                    scroll: Default::default(),
+                    list: None,
+                    active: None,
+                },
+            );
+        }
+        remember_popup_position(
+            &mut positions,
+            PopupPosition {
+                key: "submenu:0".into(),
+                scroll: gpui::point(px(0.), px(-20.)),
+                list: None,
+                active: None,
+            },
+        );
+        remember_popup_position(
+            &mut positions,
+            PopupPosition {
+                key: "submenu:64".into(),
+                scroll: Default::default(),
+                list: None,
+                active: None,
+            },
+        );
+        assert_eq!(positions.len(), 64);
+        assert!(
+            !positions
+                .iter()
+                .any(|position| position.key.as_ref() == "submenu:1")
+        );
+        assert_eq!(
+            positions
+                .iter()
+                .find(|position| position.key.as_ref() == "submenu:0")
+                .unwrap()
+                .scroll
+                .y,
+            px(-20.)
+        );
+    }
 }

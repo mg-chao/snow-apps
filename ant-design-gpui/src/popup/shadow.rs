@@ -1,9 +1,9 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cached alpha-shape shadows. Sequential SVG filters match CSS drop-shadow;
-//! body and arrow remain native vector primitives. Moving a surface reuses its
-//! raster, and scene leases protect atlas entries across cached view replays.
+//! Alpha-shape shadows shared only by live native scenes. The bounded weak
+//! lookup keeps lightweight fingerprints, never unused raster data. Scene leases
+//! protect atlas entries across cached replays and retire the last visible use.
 
 use super::{PopupLayout, shape::ArrowShape};
 use crate::theme::ShadowList;
@@ -15,11 +15,13 @@ use std::{
     collections::HashMap,
     fmt::Write,
     hash::{Hash, Hasher},
-    sync::{Arc, Weak},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 const MAX_ENTRIES: usize = 64;
-const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: f32 = 4. * 1024. * 1024.;
 // A blurred mask has far less spatial detail than the native body and arrow.
 // 2.5 samples per Gaussian standard deviation preserve that detail while
@@ -33,11 +35,13 @@ pub struct PopupShadowStatistics {
     pub bytes: usize,
     pub hits: u64,
     pub misses: u64,
+    /// Raster resources currently owned by native scenes, including shared windows.
+    pub live_entries: usize,
 }
 
 pub fn popup_shadow_statistics(cx: &App) -> PopupShadowStatistics {
     cx.try_global::<ShadowCache>()
-        .map_or_else(PopupShadowStatistics::default, |cache| cache.stats.clone())
+        .map_or_else(PopupShadowStatistics::default, ShadowCache::statistics)
 }
 
 #[derive(Clone, PartialEq)]
@@ -65,60 +69,67 @@ impl Hash for Key {
         }
     }
 }
+#[derive(Default)]
+struct Counters {
+    entries: AtomicUsize,
+    bytes: AtomicUsize,
+}
 struct Resource {
     key: Key,
     image: Arc<RenderImage>,
     bounds: Bounds<Pixels>,
     bytes: usize,
+    counters: Arc<Counters>,
+}
+impl Drop for Resource {
+    fn drop(&mut self) {
+        self.counters.entries.fetch_sub(1, Ordering::Relaxed);
+        self.counters.bytes.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
 }
 struct Entry {
-    resource: Arc<Resource>,
+    resource: Weak<Resource>,
     used: u64,
 }
 #[derive(Default)]
 struct ShadowCache {
-    entries: HashMap<Key, Entry>,
-    resident: HashMap<Key, Weak<Resource>>,
+    // Hash collisions only lose sharing: a hit must match the live full key.
+    // Fingerprints do not retain arbitrarily long custom shadow arrays.
+    entries: HashMap<u64, Entry>,
     tick: u64,
     stats: PopupShadowStatistics,
+    counters: Arc<Counters>,
 }
 impl Global for ShadowCache {}
 
-struct Lease(Option<Arc<Resource>>);
-fn lease(resource: &Arc<Resource>, window: &mut Window, cx: &mut App) {
-    let view = window.current_view();
-    window.with_id(("__adgpui_popup_shadow_view", view), |window| {
-        window.use_keyed_state(
-            ("__adgpui_popup_shadow", resource.image.id.0),
-            cx,
-            |_, cx| {
-                cx.on_release(|lease: &mut Lease, cx| {
-                    if let Some(resource) = lease.0.take()
-                        && Arc::strong_count(&resource) == 1
-                    {
-                        let image = resource.image.clone();
-                        let key = resource.key.clone();
-                        cx.defer(move |cx| {
-                            cx.drop_image(image, None);
-                            if cx.has_global::<ShadowCache>() {
-                                cx.update_global::<ShadowCache, _>(|cache, _| {
-                                    if cache
-                                        .resident
-                                        .get(&key)
-                                        .is_some_and(|entry| entry.strong_count() == 0)
-                                    {
-                                        cache.resident.remove(&key);
-                                    }
-                                });
-                            }
-                        });
-                    }
-                })
-                .detach();
-                Lease(Some(resource.clone()))
-            },
-        );
-    });
+fn retire(resource: &Arc<Resource>, cx: &mut App) {
+    let image = resource.image.clone();
+    cx.defer(move |cx| cx.drop_image(image, None));
+}
+fn scene_resource(key: Key, window: &mut Window, cx: &mut App) -> Option<Arc<Resource>> {
+    if !cx.has_global::<ShadowCache>() {
+        cx.set_global(ShadowCache::default());
+    }
+    let fingerprint = crate::behavior::resources::resource_fingerprint(&key);
+    let mut looked_up = false;
+    let resource = crate::behavior::resources::try_scene_resource(
+        ("__adgpui_popup_shadow", fingerprint),
+        |resource: &Arc<Resource>| resource.key == key,
+        |_, cx| {
+            looked_up = true;
+            cx.update_global::<ShadowCache, _>(|cache, cx| cache.get(key.clone(), cx))
+                .ok_or(())
+        },
+        |resource| Arc::strong_count(resource) == 1,
+        retire,
+        window,
+        cx,
+    )
+    .ok();
+    if resource.is_some() && !looked_up {
+        cx.global_mut::<ShadowCache>().stats.hits += 1;
+    }
+    resource
 }
 
 pub(super) fn paint(
@@ -185,12 +196,7 @@ pub(super) fn paint(
         shape: numbers.map(|number| if number == 0. { 0 } else { number.to_bits() }),
         shadows,
     };
-    if !cx.has_global::<ShadowCache>() {
-        cx.set_global(ShadowCache::default());
-    }
-    let resource = cx.update_global::<ShadowCache, _>(|cache, cx| cache.get(key, cx));
-    if let Some(resource) = resource {
-        lease(&resource, window, cx);
+    if let Some(resource) = scene_resource(key, window, cx) {
         let bounds = Bounds::new(
             layout.bounds.origin + resource.bounds.origin,
             resource.bounds.size,
@@ -207,14 +213,24 @@ pub(super) fn paint(
 }
 
 impl ShadowCache {
+    fn statistics(&self) -> PopupShadowStatistics {
+        PopupShadowStatistics {
+            entries: self.entries.len(),
+            bytes: self.counters.bytes.load(Ordering::Relaxed),
+            live_entries: self.counters.entries.load(Ordering::Relaxed),
+            ..self.stats.clone()
+        }
+    }
     fn get(&mut self, key: Key, cx: &mut App) -> Option<Arc<Resource>> {
         self.tick = self.tick.wrapping_add(1);
-        if let Some(entry) = self.entries.get_mut(&key) {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut hash);
+        let fingerprint = hash.finish();
+        if let Some(entry) = self.entries.get_mut(&fingerprint)
+            && let Some(resource) = entry.resource.upgrade()
+            && resource.key == key
+        {
             entry.used = self.tick;
-            self.stats.hits += 1;
-            return Some(entry.resource.clone());
-        }
-        if let Some(resource) = self.resident.get(&key).and_then(Weak::upgrade) {
             self.stats.hits += 1;
             return Some(resource);
         }
@@ -226,36 +242,28 @@ impl ShadowCache {
             .render_parsed(&parsed, SvgSize::ExactSize(dimensions))
             .ok()?;
         let bytes = image.as_bytes(0).map_or(0, <[u8]>::len);
+        self.counters.entries.fetch_add(1, Ordering::Relaxed);
+        self.counters.bytes.fetch_add(bytes, Ordering::Relaxed);
         let resource = Arc::new(Resource {
-            key: key.clone(),
+            key,
             image,
             bounds,
             bytes,
+            counters: self.counters.clone(),
         });
-        self.resident.retain(|_, entry| entry.strong_count() > 0);
-        self.resident.insert(key.clone(), Arc::downgrade(&resource));
-        self.stats.bytes += bytes;
+        self.entries
+            .retain(|_, entry| entry.resource.strong_count() > 0);
         self.entries.insert(
-            key,
+            fingerprint,
             Entry {
-                resource: resource.clone(),
+                resource: Arc::downgrade(&resource),
                 used: self.tick,
             },
         );
-        while self.entries.len() > MAX_ENTRIES || self.stats.bytes > MAX_BYTES {
-            let key = self
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.used)
-                .map(|(key, _)| key.clone())?;
-            let entry = self.entries.remove(&key)?;
-            self.stats.bytes -= entry.resource.bytes;
-            if Arc::strong_count(&entry.resource) == 1 {
-                let image = entry.resource.image.clone();
-                cx.defer(move |cx| cx.drop_image(image, None));
-            }
+        while self.entries.len() > MAX_ENTRIES {
+            let oldest = *self.entries.iter().min_by_key(|(_, entry)| entry.used)?.0;
+            self.entries.remove(&oldest);
         }
-        self.stats.entries = self.entries.len();
         Some(resource)
     }
 }
@@ -364,6 +372,139 @@ fn svg(key: &Key) -> Option<(String, Bounds<Pixels>, gpui::Size<DevicePixels>)> 
 mod tests {
     use super::*;
     use crate::theme::{Color, Shadow};
+    use gpui::{AppContext, IntoElement, Styled};
+    use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn popup_shadow_scene_recovery_survives_lookup_pressure_and_releases_hidden_rasters() {
+        struct Consumer {
+            shown: bool,
+            revision: usize,
+            images: Rc<RefCell<Vec<usize>>>,
+        }
+        impl gpui::Render for Consumer {
+            fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+                if !self.shown {
+                    return gpui::div().into_any_element();
+                }
+                let revision = self.revision;
+                let images = self.images.clone();
+                gpui::canvas(
+                    |_, _, _| (),
+                    move |_, _, window, cx| {
+                        images.borrow_mut().clear();
+                        for index in 0..=MAX_ENTRIES {
+                            window.with_id(("shadow-consumer", index as u64), |window| {
+                                let width = (index + 1 + usize::from(index == 0) * revision) as f32;
+                                let key = Key {
+                                    shape: [width, 2., 0., 1., 1., 0., 0., 0., 0., 0., 0.]
+                                        .map(f32::to_bits),
+                                    shadows: Arc::from([Shadow {
+                                        y: 1.,
+                                        color: Color::BLACK.with_alpha(0.1),
+                                        ..Default::default()
+                                    }]),
+                                };
+                                let resource = scene_resource(key, window, cx).unwrap();
+                                images.borrow_mut().push(resource.image.id.0);
+                                let _ = window.paint_image(
+                                    resource.bounds,
+                                    resource.bounds,
+                                    gpui::Corners::default(),
+                                    resource.image.clone(),
+                                    0,
+                                    false,
+                                );
+                            });
+                        }
+                    },
+                )
+                .size_full()
+                .into_any_element()
+            }
+        }
+        struct CachedConsumer(gpui::Entity<Consumer>);
+        impl gpui::Render for CachedConsumer {
+            fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+                self.0
+                    .clone()
+                    .cached(gpui::StyleRefinement::default().size_full())
+            }
+        }
+        let mut cx = gpui::TestAppContext::single();
+        let images = Rc::new(RefCell::new(Vec::new()));
+        let mut consumer = None;
+        let window = cx.add_window(|_, cx| {
+            let view = cx.new(|_| Consumer {
+                shown: true,
+                revision: 0,
+                images: images.clone(),
+            });
+            consumer = Some(view.clone());
+            CachedConsumer(view)
+        });
+        let consumer = consumer.unwrap();
+        let draw = |cx: &mut gpui::TestAppContext| {
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx);
+        let first = images.borrow().clone();
+        let warm = cx.update(|cx| popup_shadow_statistics(cx));
+        assert_eq!(first.len(), MAX_ENTRIES + 1);
+        assert_eq!(warm.entries, MAX_ENTRIES);
+        assert_eq!(warm.misses, (MAX_ENTRIES + 1) as u64);
+        assert_eq!(warm.live_entries, MAX_ENTRIES + 1);
+        draw(&mut cx);
+        assert_eq!(*images.borrow(), first, "cached scenes keep their leases");
+        consumer.update(&mut cx, |_, cx| cx.notify());
+        draw(&mut cx);
+        assert_eq!(
+            *images.borrow(),
+            first,
+            "repaints recover evicted live records"
+        );
+        assert_eq!(
+            cx.update(|cx| popup_shadow_statistics(cx).misses),
+            warm.misses
+        );
+
+        consumer.update(&mut cx, |consumer, cx| {
+            consumer.revision = 128;
+            cx.notify();
+        });
+        draw(&mut cx);
+        let changed = images.borrow().clone();
+        assert_ne!(changed[0], first[0]);
+        assert_eq!(changed[1..], first[1..]);
+        assert_eq!(
+            cx.update(|cx| popup_shadow_statistics(cx).misses),
+            warm.misses + 1
+        );
+        assert_eq!(
+            cx.update(|cx| popup_shadow_statistics(cx).live_entries),
+            MAX_ENTRIES + 1
+        );
+
+        consumer.update(&mut cx, |consumer, cx| {
+            consumer.shown = false;
+            cx.notify();
+        });
+        draw(&mut cx);
+        assert_eq!(cx.update(|cx| popup_shadow_statistics(cx).live_entries), 0);
+        assert_eq!(cx.update(|cx| popup_shadow_statistics(cx).bytes), 0);
+        consumer.update(&mut cx, |consumer, cx| {
+            consumer.shown = true;
+            cx.notify();
+        });
+        draw(&mut cx);
+        assert!(images.borrow().iter().zip(changed).all(|(a, b)| *a != b));
+        assert_eq!(
+            cx.update(|cx| popup_shadow_statistics(cx).live_entries),
+            MAX_ENTRIES + 1
+        );
+    }
 
     #[test]
     fn blurred_shadow_sampling_is_bounded_but_sharp_edges_keep_device_resolution() {
@@ -391,32 +532,34 @@ mod tests {
     }
 
     #[gpui::test]
-    fn popup_shadow_cache_is_bounded_and_reuses_a_scene_retained_eviction(
+    fn popup_shadow_lookup_is_bounded_and_does_not_keep_unused_rasters(
         cx: &mut gpui::TestAppContext,
     ) {
         cx.update(|cx| {
             let mut cache = ShadowCache::default();
-            let shadows: ShadowList = Arc::from([Shadow {
-                x: 1.,
-                y: 1.,
-                color: Color::BLACK.with_alpha(0.1),
-                ..Default::default()
-            }]);
             let key = |width: f32| Key {
                 shape: [width, 24., 6., 1., 1., 16., 2., 4., 16., 2., 0.].map(f32::to_bits),
-                shadows: shadows.clone(),
+                shadows: Arc::from([Shadow {
+                    x: 1.,
+                    y: 1.,
+                    color: Color::BLACK.with_alpha(0.1),
+                    ..Default::default()
+                }]),
             };
             let held = cache.get(key(32.), cx).unwrap();
-            let identity = held.image.id;
+            assert!(Arc::ptr_eq(&held, &cache.get(key(32.), cx).unwrap()));
+            let mut visible = Vec::new();
             for width in 33..99 {
-                cache.get(key(width as f32), cx).unwrap();
+                visible.push(cache.get(key(width as f32), cx).unwrap());
             }
-            assert_eq!(cache.stats.entries, MAX_ENTRIES);
-            assert!(cache.stats.bytes <= MAX_BYTES);
-            assert!(!cache.entries.contains_key(&key(32.)));
-            let misses = cache.stats.misses;
-            assert_eq!(cache.get(key(32.), cx).unwrap().image.id, identity);
-            assert_eq!(cache.stats.misses, misses);
+            assert_eq!(cache.entries.len(), MAX_ENTRIES);
+            assert_eq!(cache.statistics().live_entries, 67);
+            // Evicting lookup metadata cannot invalidate a still-visible resource.
+            assert!(held.image.as_bytes(0).is_some());
+            drop(visible);
+            drop(held);
+            assert_eq!(cache.statistics().bytes, 0);
+            assert_eq!(cache.statistics().live_entries, 0);
         });
     }
 }

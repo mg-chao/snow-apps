@@ -342,11 +342,67 @@ struct Section {
     start: f32,
     end: f32,
 }
+const MAX_GEOMETRY_ENTRIES: usize = 32;
+const MAX_GEOMETRY_BYTES: usize = 256 * 1024;
+const MAX_GEOMETRY_METADATA: usize = MAX_GEOMETRY_ENTRIES * std::mem::size_of::<CachedGeometry>();
 struct CachedGeometry {
     key: GeometryKey,
     sections: Arc<[Section]>,
+    bytes: usize,
 }
-thread_local! {static GEOMETRY:RefCell<Vec<CachedGeometry>>=const {RefCell::new(Vec::new())};}
+#[derive(Default)]
+struct GeometryCache {
+    entries: Vec<CachedGeometry>,
+    bytes: usize,
+}
+impl GeometryCache {
+    /// Vector-only geometry is a small reopen cache: 32 entries / 256 KiB,
+    /// evicting least recently used entries. Oversized geometry is not retained.
+    fn sections(&mut self, key: GeometryKey) -> Arc<[Section]> {
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            let entry = self.entries.remove(index);
+            let sections = entry.sections.clone();
+            self.entries.push(entry);
+            return sections;
+        }
+        let sections: Arc<[Section]> = make_sections(&key).into();
+        let bytes = key.positions.capacity() * std::mem::size_of::<f32>()
+            + std::mem::size_of_val(sections.as_ref())
+            + 2 * std::mem::size_of::<usize>()
+            + sections
+                .iter()
+                .map(|section| {
+                    section.path.vertices.capacity()
+                        * section
+                            .path
+                            .vertices
+                            .first()
+                            .map_or(0, std::mem::size_of_val)
+                })
+                .sum::<usize>();
+        if bytes > MAX_GEOMETRY_BYTES - MAX_GEOMETRY_METADATA {
+            return sections;
+        }
+        while self.entries.len() >= MAX_GEOMETRY_ENTRIES
+            || self.bytes + bytes + MAX_GEOMETRY_METADATA > MAX_GEOMETRY_BYTES
+        {
+            let removed = self.entries.remove(0);
+            self.bytes -= removed.bytes;
+        }
+        self.bytes += bytes;
+        self.entries.push(CachedGeometry {
+            key,
+            sections: sections.clone(),
+            bytes,
+        });
+        sections
+    }
+}
+thread_local! {
+    static GEOMETRY: RefCell<GeometryCache> = const {
+        RefCell::new(GeometryCache { entries: Vec::new(), bytes: 0 })
+    };
+}
 
 fn paint_gradient(bounds: Bounds<Pixels>, stops: &[ColorStop], radius: f32, window: &mut Window) {
     if bounds.is_empty() || stops.is_empty() {
@@ -380,24 +436,7 @@ fn paint_gradient(bounds: Bounds<Pixels>, stops: &[ColorStop], radius: f32, wind
         radius,
         positions,
     };
-    let sections = GEOMETRY.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(index) = cache.iter().position(|c| c.key == key) {
-            let entry = cache.remove(index);
-            let sections = entry.sections.clone();
-            cache.push(entry);
-            return sections;
-        }
-        let sections: Arc<[Section]> = make_sections(&key).into();
-        if cache.len() >= 32 {
-            cache.remove(0);
-        }
-        cache.push(CachedGeometry {
-            key,
-            sections: sections.clone(),
-        });
-        sections
-    });
+    let sections = GEOMETRY.with(|cache| cache.borrow_mut().sections(key));
     for section in sections.iter() {
         let start = color_at(stops, section.start as f64 * 100., false);
         let end = color_at(stops, section.end as f64 * 100., true);
@@ -649,6 +688,64 @@ mod tests {
                     && v.xy_position.x <= px(234.)
                     && v.xy_position.y >= px(0.)
                     && v.xy_position.y <= px(8.))
+        );
+    }
+    #[test]
+    fn gradient_geometry_cache_has_count_and_capacity_aware_byte_limits() {
+        let key = |width| GeometryKey {
+            width,
+            height: 8.,
+            radius: 4.,
+            positions: vec![0., 0.5, 1.],
+        };
+        let mut cache = GeometryCache::default();
+        let first = cache.sections(key(100.));
+        for index in 1..MAX_GEOMETRY_ENTRIES {
+            cache.sections(key(100. + index as f32));
+        }
+        assert!(Arc::ptr_eq(&first, &cache.sections(key(100.))));
+        cache.sections(key(200.));
+        assert_eq!(cache.entries.len(), MAX_GEOMETRY_ENTRIES);
+        assert!(cache.entries.iter().any(|entry| entry.key.width == 100.));
+        assert!(!cache.entries.iter().any(|entry| entry.key.width == 101.));
+
+        let mut cache = GeometryCache::default();
+        for width in [100., 200.] {
+            let mut positions =
+                Vec::with_capacity(MAX_GEOMETRY_BYTES / (2 * std::mem::size_of::<f32>()));
+            positions.extend([0., 1.]);
+            assert!(
+                !cache
+                    .sections(GeometryKey {
+                        positions,
+                        ..key(width)
+                    })
+                    .is_empty()
+            );
+        }
+        assert_eq!(
+            cache.entries.len(),
+            1,
+            "the byte budget evicts before the entry limit"
+        );
+        assert!(
+            cache.bytes + cache.entries.capacity() * std::mem::size_of::<CachedGeometry>()
+                <= MAX_GEOMETRY_BYTES
+        );
+        let before = cache.bytes;
+        let mut positions = Vec::with_capacity(MAX_GEOMETRY_BYTES / std::mem::size_of::<f32>());
+        positions.extend([0., 1.]);
+        assert!(
+            !cache
+                .sections(GeometryKey {
+                    positions,
+                    ..key(300.)
+                })
+                .is_empty()
+        );
+        assert_eq!(
+            cache.bytes, before,
+            "oversized geometry remains paintable without being cached"
         );
     }
 }

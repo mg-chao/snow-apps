@@ -1,6 +1,10 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
-//! Real hidden platform-window captures of the shared ColorPicker reference scenes.
+//! Real non-activating platform-window captures of the shared ColorPicker reference scenes.
+
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
 
 use ant_design_gpui::{
     ColorPicker, ColorPickerFormat, ColorPickerMode, ColorPickerPanel, ColorPickerPreset,
@@ -38,7 +42,7 @@ fn assert_background() -> u32 {
     assert_ne!(
         process,
         std::process::id(),
-        "hidden capture must never own foreground focus"
+        "background capture must never own foreground focus"
     );
     FOREGROUND_CHECKS.fetch_add(1, Ordering::Relaxed);
     process
@@ -296,14 +300,7 @@ fn rect(value: Option<Bounds<Pixels>>) -> Value {
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -321,11 +318,11 @@ fn set_native_scale(title: &str, scale: f32) {
         ) -> i32;
     }
     let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-    // The unique title resolves only this capture process's own hidden window.
+    // The unique title resolves only this capture process's own background window.
     unsafe {
         assert_background();
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "hidden ColorPicker capture HWND");
+        assert_ne!(handle, 0, "background ColorPicker capture HWND");
         let mut bounds = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut bounds), 0);
         let dpi = (96. * scale).round() as usize;
@@ -399,9 +396,9 @@ fn main() {
         let custom_scope = scope.child(patch, cx).unwrap();
         cx.open_window(WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(640.), px(720.)), cx))),
-            show: false, focus: false, ..Default::default()
+            show: cfg!(not(target_os = "windows")), focus: false, ..Default::default()
         }, |window, cx| {
-            let native_title = format!("ColorPicker hidden capture {}", std::process::id());
+            let native_title = format!("ColorPicker background capture {}", std::process::id());
             window.set_window_title(&native_title);
             assert_background();
             let font=scope.snapshot(cx).font.clone();
@@ -427,6 +424,8 @@ fn main() {
             window.spawn(cx, async move |cx| {
                 let mut metrics = Vec::new();
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&native_title, (640, 720), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for scene in names {
                     cx.update(|window, cx| capture.update(cx, |view, cx| view.configure(scene.clone(), window, cx))).unwrap();
                     for (theme, algorithms) in [("default", AlgorithmChain::default()), ("dark", AlgorithmChain::dark()), ("compact", AlgorithmChain::compact()), ("dark-compact", AlgorithmChain::dark_compact())] {
@@ -445,7 +444,7 @@ fn main() {
                                     window.resize(size(px(640.),px(720.)));
                                     assert_background();window.bounds_changed(cx);window.refresh();
                                     // bounds_changed polls the real platform cursor, even
-                                    // for hidden windows. Restore local synthetic input
+                                    // for background windows. Restore local synthetic input
                                     // after every poll so the user's cursor is irrelevant.
                                     window.dispatch_event(PlatformInput::MouseMove(MouseMoveEvent{position:point(px(0.),px(0.)),..Default::default()}),cx);
                                     window.draw(cx).clear(cx);assert_background();
@@ -537,6 +536,6 @@ fn main() {
                 cx.update(|_, cx| cx.quit()).unwrap();
             }).detach();
             root
-        }).expect("hidden ColorPicker capture window");
+        }).expect("background ColorPicker capture window");
     });
 }

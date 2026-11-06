@@ -103,10 +103,13 @@ controller handles opening, navigation, and transforms.
 
 ## Rendering and limits
 
-Decoded sources share a bounded idle cache (128 entries / 64 MiB). Prepared
-textures and portable oriented rasters use bounded caches (32 entries / 64 MiB).
-Active controllers and cached scenes retain independent resource leases, so
-their working set can exceed the idle budget without invalidating scene replay.
+Decoded sources, prepared textures, portable oriented rasters, and loading masks
+use weak lookup registries. Their limits are 128, 32, 32, and 16 entries respectively,
+with LRU metadata eviction. Presented consumers lease pending work and ready assets;
+a final scene release cancels internal preparation and releases pixels/textures.
+There is no idle payload cache. Closing a preview preserves assets still leased
+by visible thumbnails or other windows. Preparation retains its existing per-asset
+dimension/upload limits. See [popup ownership](popup-lifetime.md).
 
 Windows previews use the existing GPU extension to upload each prepared frame
 once, then apply pan/zoom/rotation/flips through affine composition. Pixel

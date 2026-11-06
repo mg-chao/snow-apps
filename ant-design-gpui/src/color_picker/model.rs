@@ -79,6 +79,15 @@ impl PickerModel {
         self.active_index = self.active_index.min(self.stops.len().saturating_sub(1));
         self.cached_gradient = None;
     }
+    /// Release historical allocation slack without changing current stops or
+    /// the single previous-gradient model snapshot used by mode switching.
+    pub fn release_unused_capacity(&mut self) {
+        if self.stops.is_empty() {
+            self.stops = Vec::new();
+        } else if self.stops.capacity() > self.stops.len().saturating_mul(4).max(16) {
+            self.stops.shrink_to_fit();
+        }
+    }
     pub fn active_index(&self) -> usize {
         self.active_index
     }

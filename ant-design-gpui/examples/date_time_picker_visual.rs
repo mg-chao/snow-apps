@@ -1,6 +1,10 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
-//! Independent shared-scene captures through a hidden native platform window.
+//! Independent shared-scene captures through a non-activating native platform window.
+
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
 
 use ant_design_gpui::{
     ConfigScope, Direction, Size, UiRoot, ValidationStatus, Variant,
@@ -43,7 +47,7 @@ fn assert_background() -> u32 {
     assert_ne!(
         process,
         std::process::id(),
-        "hidden picker capture must preserve foreground focus"
+        "background picker capture must preserve foreground focus"
     );
     FOREGROUND_CHECKS.fetch_add(1, Ordering::Relaxed);
     process
@@ -56,14 +60,7 @@ fn assert_background() -> u32 {
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32, canvas: (f32, f32)) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -84,7 +81,7 @@ fn set_native_scale(title: &str, scale: f32, canvas: (f32, f32)) {
     unsafe {
         assert_background();
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "owned hidden picker HWND");
+        assert_ne!(handle, 0, "owned background picker HWND");
         let mut bounds = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut bounds), 0);
         let dpi = (96. * scale).round() as usize;
@@ -524,8 +521,8 @@ fn main() {
         let scope=ConfigScope::new_window(cx);
         scope.update_patch(cx,|patch|patch.motion=Some(false)).unwrap();
         cx.open_window(WindowOptions{window_bounds:Some(WindowBounds::Windowed(Bounds::centered(None,size(px(1000.),px(760.)),cx))),
-            show:false,focus:false,..Default::default()},|window,cx|{
-            let title=format!("Date/time picker hidden capture {}",std::process::id());window.set_window_title(&title);assert_background();
+            show:cfg!(not(target_os="windows")),focus:false,..Default::default()},|window,cx|{
+            let title=format!("Date/time picker background capture {}",std::process::id());window.set_window_title(&title);assert_background();
             let manifest:Value=serde_json::from_str(include_str!("../fixtures/date_time_picker/visual-cases.json")).unwrap();
             let names:Vec<_>=manifest["scenes"].as_object().unwrap().keys().filter(|name|filters.get("--scene").is_none_or(|f|f.split(',').any(|s|s==name.as_str()))).cloned().collect();
             assert!(!names.is_empty(),"unknown capture scene");
@@ -535,6 +532,8 @@ fn main() {
             window.spawn(cx,async move|cx|{
                 let mut cases=Vec::new();
                 cx.background_executor().timer(Duration::from_millis(150)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&title, (1000, 760), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for scene in names{
                     for(theme,algorithms)in[("default",AlgorithmChain::default()),("dark",AlgorithmChain::dark()),("compact",AlgorithmChain::compact()),("dark-compact",AlgorithmChain::dark_compact())]{
                         if filters.get("--theme").is_some_and(|f|!f.split(',').any(|v|v==theme)){continue;}
@@ -609,6 +608,6 @@ fn main() {
                     "resize":"owned HWND SetWindowPos SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOMOVE","pointer_policy":"neutral local synthetic input after bounds polling; explicit scene focus and hover"})).unwrap()).unwrap();
                 cx.update(|_,cx|cx.quit()).unwrap();
             }).detach();root
-        }).expect("hidden native picker capture window");
+        }).expect("background native picker capture window");
     });
 }

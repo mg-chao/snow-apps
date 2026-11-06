@@ -38,6 +38,7 @@ struct Consumer {
     styles: PaginationStyles,
     override_select: bool,
     show_total: bool,
+    show_title: bool,
     probe_colors: bool,
     painted_colors: Rc<RefCell<HashMap<&'static str, gpui::Hsla>>>,
 }
@@ -82,7 +83,7 @@ impl Render for Consumer {
                 .responsive(self.responsive)
                 .show_size_changer(self.show_size)
                 .styles(self.styles.clone())
-                .show_title(false)
+                .show_title(self.show_title)
                 .on_event(move |event, _, _| events.borrow_mut().push(event.clone()));
             if self.total_explicit {
                 pager = pager.total(self.total);
@@ -241,6 +242,7 @@ impl Fixture {
                 styles: PaginationStyles::default(),
                 override_select: false,
                 show_total: false,
+                show_title: false,
                 probe_colors: false,
                 painted_colors: Rc::default(),
             });
@@ -663,6 +665,120 @@ fn pagination_native_scope_updates_and_state_notifications_reach_cached_parent()
     f.draw();
     assert!(f.cx.debug_bounds("pagination-page-20").is_some());
     assert!(f.events.borrow().is_empty());
+}
+
+#[test]
+fn pagination_native_tooltip_releases_on_hidden_window_without_mouse_input() {
+    let mut f = Fixture::new();
+    f.edit(|consumer| consumer.show_title = true);
+    let captures = Rc::new(RefCell::new(Vec::new()));
+    let observed = captures.clone();
+    let _observer = f.cx.update(|_, cx| {
+        cx.observe_new::<super::view::PaginationTooltip>(move |_, _, cx| {
+            observed.borrow_mut().push(cx.weak_entity());
+        })
+    });
+    assert!(captures.borrow().is_empty());
+    f.hover(Some("pagination-page-6"));
+    f.frame(600);
+    assert_eq!(captures.borrow().len(), 1);
+    assert!(captures.borrow()[0].upgrade().is_some());
+
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        captures.borrow()[0].upgrade().is_none(),
+        "the cleanup frame drops a still-hovered tooltip"
+    );
+    assert_eq!(f.current(), 6);
+
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Visible);
+    f.draw();
+    f.hover(Some("pagination-page-6"));
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.executor().advance_clock(Duration::from_millis(600));
+    f.cx.run_until_parked();
+    assert_eq!(
+        captures.borrow().len(),
+        1,
+        "hiding cancels a pending show timer"
+    );
+
+    f.cx.simulate_visibility_change(gpui::WindowVisibility::Visible);
+    f.draw();
+    f.hover(Some("pagination-page-6"));
+    f.frame(600);
+    assert_eq!(captures.borrow().len(), 2);
+    assert!(captures.borrow()[1].upgrade().is_some());
+}
+
+#[test]
+fn pagination_native_tooltip_cleanup_works_without_a_popup_host() {
+    struct PlainPagination {
+        state: Entity<PaginationState>,
+        scope: ConfigScope,
+    }
+    impl Render for PlainPagination {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().p(px(20.)).child(
+                Pagination::new("plain-pagination", &self.state)
+                    .scope(self.scope.clone())
+                    .total(100)
+                    .show_size_changer(false)
+                    .item_render(|info, original, _, _| {
+                        let id = super::view::item_id(info.kind);
+                        Some(
+                            div()
+                                .debug_selector(move || id.to_string())
+                                .child(original)
+                                .into_any_element(),
+                        )
+                    }),
+            )
+        }
+    }
+    let mut app = TestAppContext::single();
+    let window = app.add_window(|window, cx| {
+        crate::init(cx);
+        window.activate_window();
+        PlainPagination {
+            state: cx.new(|cx| PaginationState::new(window, cx)),
+            scope: ConfigScope::new_window(cx),
+        }
+    });
+    let mut cx = VisualTestContext::from_window(window.into(), &app);
+    let draw = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.run_until_parked();
+    };
+    let captures = Rc::new(RefCell::new(Vec::new()));
+    let observed = captures.clone();
+    let _observer = cx.update(|_, cx| {
+        cx.observe_new::<super::view::PaginationTooltip>(move |_, _, cx| {
+            observed.borrow_mut().push(cx.weak_entity());
+        })
+    });
+    draw(&mut cx);
+    let position = cx.debug_bounds("pagination-page-1").unwrap().center();
+    cx.simulate_mouse_move(position, None, Modifiers::none());
+    draw(&mut cx);
+    cx.executor().advance_clock(Duration::from_millis(600));
+    draw(&mut cx);
+    assert_eq!(captures.borrow().len(), 1);
+    assert!(captures.borrow()[0].upgrade().is_some());
+    cx.simulate_visibility_change(gpui::WindowVisibility::Hidden);
+    cx.run_until_parked();
+    assert!(captures.borrow()[0].upgrade().is_none());
+    cx.simulate_visibility_change(gpui::WindowVisibility::Visible);
+    draw(&mut cx);
+    cx.simulate_mouse_move(position, None, Modifiers::none());
+    draw(&mut cx);
+    cx.executor().advance_clock(Duration::from_millis(600));
+    draw(&mut cx);
+    assert_eq!(captures.borrow().len(), 2);
+    assert!(captures.borrow()[1].upgrade().is_some());
 }
 
 #[test]

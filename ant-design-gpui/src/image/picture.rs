@@ -86,6 +86,13 @@ impl PictureState {
         }
     }
 
+    /// Empty the stable controller when its presentation retires, including
+    /// fallback pixels and animation wakeups which a source-only reset misses.
+    pub(crate) fn reset(&mut self, cx: &mut Context<Self>) {
+        *self = Self::new(None, cx);
+        cx.notify();
+    }
+
     pub fn source(&self) -> Option<&ImageSource> {
         self.source.as_ref()
     }
@@ -669,6 +676,61 @@ mod tests {
         assert_eq!(fixture.events.borrow().len(), 2);
         fixture.draw();
         assert_eq!(fixture.events.borrow().len(), 2);
+    }
+
+    #[test]
+    fn encoded_pictures_over_lookup_capacity_keep_ready_state_and_emit_loaded_once() {
+        let mut fixture = Fixture::new(
+            (0..129)
+                .map(|index| {
+                    let mut pixels = b"P6\n1 1\n255\n".to_vec();
+                    pixels.extend_from_slice(&[index, 0, 0]);
+                    ImageSource::Image(Arc::new(gpui::Image::from_bytes(
+                        gpui::ImageFormat::Pnm,
+                        pixels,
+                    )))
+                })
+                .collect(),
+        );
+        fixture.view.update(&mut fixture.cx, |view, cx| {
+            view.width = 1.;
+            cx.notify();
+        });
+        fixture.draw();
+        fixture.draw();
+        let identities: Vec<_> = (0..129)
+            .map(|index| {
+                fixture.picture(index).read_with(&fixture.cx, |picture, _| {
+                    assert_eq!(picture.status(), PictureStatus::Ready);
+                    picture.image().unwrap().id
+                })
+            })
+            .collect();
+        for _ in 0..4 {
+            fixture.view.update(&mut fixture.cx, |_, cx| cx.notify());
+            fixture.draw();
+            for (index, identity) in identities.iter().enumerate() {
+                fixture.picture(index).read_with(&fixture.cx, |picture, _| {
+                    assert_eq!(picture.status(), PictureStatus::Ready);
+                    assert_eq!(picture.image().unwrap().id, *identity);
+                });
+            }
+            assert_eq!(fixture.events.borrow().len(), 129);
+        }
+        let images: Vec<_> = (0..129)
+            .map(|index| {
+                fixture.picture(index).read_with(&fixture.cx, |picture, _| {
+                    Arc::downgrade(&picture.image().unwrap())
+                })
+            })
+            .collect();
+        fixture.view.update(&mut fixture.cx, |view, cx| {
+            view.shown = false;
+            view.pictures.clear();
+            cx.notify();
+        });
+        fixture.draw();
+        assert!(images.iter().all(|image| image.upgrade().is_none()));
     }
 
     #[test]

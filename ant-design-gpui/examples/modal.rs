@@ -1,7 +1,11 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native Modal verification surface. --capture <png> renders a hidden window and exits.
+//! Native Modal verification surface. --capture <png> renders a background window and exits.
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
+
 use ant_design_gpui::{
     Button, ConfigScope, Direction, Modal, ModalState, UiRoot,
     modal::{
@@ -18,14 +22,7 @@ use std::{path::PathBuf, rc::Rc, time::Duration};
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -33,11 +30,11 @@ fn set_native_scale(title: &str, scale: f32) {
         fn SendMessageW(window: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     }
     let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-    // Only this process's uniquely named hidden window receives the DPI message.
+    // Only this process's uniquely named background window receives the DPI message.
     // Call outside App::update, so native resize callbacks can borrow the App.
     unsafe {
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "hidden Modal capture HWND");
+        assert_ne!(handle, 0, "background Modal capture HWND");
         let mut rect = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut rect), 0);
         let dpi = (96. * scale).round() as usize;
@@ -159,7 +156,7 @@ fn main() {
                     size(px(width), px(height)),
                     cx,
                 ))),
-                show: capture.is_none(),
+                show: capture.is_none() || cfg!(not(target_os = "windows")),
                 focus: capture.is_none(),
                 ..Default::default()
             },
@@ -240,14 +237,21 @@ fn main() {
                 });
                 let root = cx.new(|cx| UiRoot::new(scope, surface, w, cx));
                 if let Some(path) = capture {
+                    #[cfg(not(target_os = "windows"))]
                     w.resize(size(px(width), px(height)));
                     w.spawn(cx, async move |cx| {
+                        cx.background_executor().timer(Duration::from_millis(80)).await;
+                        #[cfg(target_os = "windows")]
+                        capture_windows::resize(&native_title, (width as u32, height as u32), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background Modal capture");
                         if let Some(scale) = scale {
                             cx.background_executor()
                                 .timer(Duration::from_millis(80))
                                 .await;
                             set_native_scale(&native_title, scale);
+                            #[cfg(target_os = "windows")]
+                            capture_windows::resize(&native_title, (width as u32, height as u32), scale).expect("size background Modal capture");
                             cx.update(|w, cx| {
+                                #[cfg(not(target_os = "windows"))]
                                 w.resize(size(px(width), px(height)));
                                 w.bounds_changed(cx);
                                 w.refresh();

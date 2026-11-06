@@ -21,7 +21,7 @@ packages. See the existing Modal reference setup for cache provisioning; native
 builds and deterministic tests do not need Node, a browser, or the reference tree.
 
 Capture filters `--scene`, `--theme`, `--direction`, and `--scale` select subsets.
-Native captures use a hidden HWND and actual 100%, 150%, and 200% scale factors.
+Native captures use a background HWND marked `WS_EX_NOACTIVATE` and actual 100%, 150%, and 200% scale factors.
 No global input or desktop settings are changed. Comparison asserts identical
 physical dimensions, notice identities, and visibility; it retains full unaligned,
 unmasked image differences and logical geometry errors. Raw PNGs, metrics,

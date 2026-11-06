@@ -482,9 +482,13 @@ impl RenderOnce for MessageHost {
 
 pub(super) fn render(
     state: &mut MessageState,
-    _: &mut Window,
+    window: &mut Window,
     cx: &mut Context<MessageState>,
 ) -> impl IntoElement {
+    if !window.is_visible() {
+        state.suspend_presentation(window, cx);
+        return gpui::Empty.into_any_element();
+    }
     if state.notices.is_empty() {
         state.layouts.clear();
         state.visual.borrow_mut().clear_content();
@@ -1289,6 +1293,9 @@ impl Element for NoticeList {
         visual.positions.retain(|id, _| retained.contains(id));
         visual.measurements.retain(|id, _| retained.contains(id));
         visual.boundaries.retain(|id, _| retained.contains(id));
+        crate::behavior::resources::trim_sparse_map(&mut visual.positions);
+        crate::behavior::resources::trim_sparse_map(&mut visual.measurements);
+        crate::behavior::resources::trim_sparse_map(&mut visual.boundaries);
         visual.max_scroll =
             (height + self.vertical_padding - f32::from(window.viewport_size().height)).max(0.);
         visual.scroll = visual.scroll.clamp(0., visual.max_scroll);

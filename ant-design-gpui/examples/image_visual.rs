@@ -1,6 +1,10 @@
 // Copyright (C) 2026 mg-chao
 // SPDX-License-Identifier: Apache-2.0
-//! Hidden native GPU frames sharing inputs with genuine upstream Image renders.
+//! Background native GPU frames sharing inputs with genuine upstream Image renders.
+#[cfg(target_os = "windows")]
+#[path = "gallery/capture_windows.rs"]
+mod capture_windows;
+
 use ant_design_gpui::{
     ConfigPatch, ConfigScope, Direction, Image, ImageState, PreviewGroup, UiRoot,
     image::{
@@ -80,14 +84,7 @@ impl Element for Measured {
 
 #[cfg(target_os = "windows")]
 fn set_native_scale(title: &str, scale: f32) {
-    #[repr(C)]
-    #[derive(Default)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
+    use capture_windows::Rect;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn FindWindowW(class: *const u16, title: *const u16) -> isize;
@@ -95,11 +92,11 @@ fn set_native_scale(title: &str, scale: f32) {
         fn SendMessageW(window: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     }
     let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-    // Only this process's uniquely named hidden window receives WM_DPICHANGED.
+    // Only this process's uniquely named background window receives WM_DPICHANGED.
     // Call outside App::update so native callbacks can borrow the application.
     unsafe {
         let handle = FindWindowW(std::ptr::null(), title.as_ptr());
-        assert_ne!(handle, 0, "hidden Image capture HWND");
+        assert_ne!(handle, 0, "background Image capture HWND");
         let mut rect = Rect::default();
         assert_ne!(GetWindowRect(handle, &mut rect), 0);
         let dpi = (96. * scale).round() as usize;
@@ -405,8 +402,8 @@ fn main() {
         ant_design_gpui::init(cx);
         let scope = ConfigScope::new_window(cx);
         scope.update_patch(cx, |patch| patch.motion = Some(false)).unwrap();
-        cx.open_window(WindowOptions { window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(800.), px(600.)), cx))), show: false, focus: false, ..Default::default() }, |window, cx| {
-            let title = format!("Ant Design Image hidden capture {}", std::process::id());
+        cx.open_window(WindowOptions { window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(800.), px(600.)), cx))), show: cfg!(not(target_os = "windows")), focus: false, ..Default::default() }, |window, cx| {
+            let title = format!("Ant Design Image background capture {}", std::process::id());
             window.set_window_title(&title);
             let state = cx.new(|cx| PreviewState::new(Vec::new(), window, cx));
             let capture = cx.new(|_| Capture { scope: scope.clone(), active_scope: scope.clone(), scene: Value::Null, state, images: Vec::new(), generation: 0, measurements: Rc::new(RefCell::new(BTreeMap::new())) });
@@ -415,6 +412,8 @@ fn main() {
                 let scenes: Value = serde_json::from_str(include_str!("../fixtures/image/visual-cases.json")).unwrap();
                 let mut metrics = Vec::new();
                 cx.background_executor().timer(Duration::from_millis(100)).await;
+                #[cfg(target_os = "windows")]
+                capture_windows::resize(&title, (800, 600), cx.update(|window, _| window.scale_factor()).unwrap()).expect("present background capture window");
                 for (scene, sample) in scenes.as_object().unwrap() {
                     if selected_scene.as_ref().is_some_and(|selected| selected != scene) { continue; }
                     for (theme, algorithms) in [("default", AlgorithmChain::default()), ("dark", AlgorithmChain::dark()), ("compact", AlgorithmChain::compact()), ("dark-compact", AlgorithmChain::dark_compact())] {
@@ -427,7 +426,9 @@ fn main() {
                                 set_native_scale(&title, scale);
                                 let width = sample["width"].as_f64().unwrap() as f32;
                                 let height = sample["height"].as_f64().unwrap() as f32;
-                                cx.update(|window, cx| { window.resize(size(px(width), px(height))); window.bounds_changed(cx); capture.update(cx, |view, cx| view.configure(sample, window, cx)); window.refresh(); window.draw(cx).clear(cx); }).unwrap();
+                                #[cfg(target_os = "windows")]
+                                capture_windows::resize(&title, (width as u32, height as u32), scale).expect("size background image capture");
+                                cx.update(|window, cx| { #[cfg(not(target_os = "windows"))] window.resize(size(px(width), px(height))); window.bounds_changed(cx); capture.update(cx, |view, cx| view.configure(sample, window, cx)); window.refresh(); window.draw(cx).clear(cx); }).unwrap();
                                 let mut ready = false;
                                 for _ in 0..300 {
                                     cx.background_executor().timer(Duration::from_millis(10)).await;
@@ -479,6 +480,6 @@ fn main() {
                 cx.update(|_, cx| cx.quit()).unwrap();
             }).detach();
             root
-        }).expect("hidden Image capture window");
+        }).expect("background Image capture window");
     });
 }

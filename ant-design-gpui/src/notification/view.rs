@@ -208,9 +208,13 @@ impl RenderOnce for NotificationHost {
 
 pub(super) fn render(
     state: &mut NotificationState,
-    _: &mut Window,
+    window: &mut Window,
     cx: &mut Context<NotificationState>,
 ) -> AnyElement {
+    if !window.is_visible() {
+        state.suspend_presentation(window, cx);
+        return gpui::Empty.into_any_element();
+    }
     let notices = state.snapshot(cx);
     if notices.is_empty() {
         state.layouts.clear();
@@ -631,6 +635,7 @@ impl Element for Group {
         }
         let retained: std::collections::HashSet<_> = self.notices.iter().map(|n| n.id).collect();
         group.positions.retain(|id, _| retained.contains(id));
+        crate::behavior::resources::trim_sparse_map(&mut group.positions);
         let height = if collapsed {
             heights.first().copied().unwrap_or(0.)
                 + 8. * self

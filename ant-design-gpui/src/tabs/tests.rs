@@ -191,6 +191,7 @@ struct Consumer {
     indicator: TabsIndicator,
     centered: bool,
     popup_width: Option<f32>,
+    popup_context: Option<Rc<RefCell<Option<TabsPopupRender>>>>,
     _subscription: Subscription,
 }
 impl Render for Consumer {
@@ -208,6 +209,12 @@ impl Render for Consumer {
             tabs = tabs
                 .animated(self.animation)
                 .indicator(self.indicator.clone());
+            if let Some(context) = self.popup_context.clone() {
+                tabs = tabs.popup_render(move |content, popup, _, _| {
+                    *context.borrow_mut() = Some(popup.clone());
+                    content
+                });
+            }
             if let Some(width) = self.popup_width {
                 tabs = tabs.styles(TabsStyles {
                     popup: div().w(px(width)).style().clone(),
@@ -253,6 +260,7 @@ impl Fixture {
                 indicator: TabsIndicator::default(),
                 centered: false,
                 popup_width: None,
+                popup_context: None,
                 _subscription: cx.subscribe(&state, move |_, _, event, _| {
                     output.borrow_mut().push(event.clone())
                 }),
@@ -762,7 +770,7 @@ fn tabs_overflow_virtualizes_long_lists_and_keyboard_reveals_the_last_row() {
     f.draw();
     f.draw();
     assert!(f.state.read_with(&f.cx, |s, _| s.rendered_popup_rows < 20));
-    f.update(|s, w, cx| s.popup_focus.focus(w, cx));
+    f.update(|s, w, cx| s.popup_presentation.as_ref().unwrap().focus.focus(w, cx));
     f.key("end");
     f.draw();
     assert_eq!(
@@ -773,14 +781,127 @@ fn tabs_overflow_virtualizes_long_lists_and_keyboard_reveals_the_last_row() {
     );
     // ScrollHandle's logical child index is local to a rendered virtual slice.
     // The native offset, rather than that local index, verifies distant reveal.
-    assert!(f.state.read_with(
-        &f.cx,
-        |s, _| s.popup_scroll.0.borrow().base_handle.offset().y < px(-27_000.)
-    ));
+    assert!(f.state.read_with(&f.cx, |s, _| {
+        s.popup_presentation
+            .as_ref()
+            .unwrap()
+            .scroll
+            .0
+            .borrow()
+            .base_handle
+            .offset()
+            .y
+            < px(-27_000.)
+    }));
     f.key("enter");
     f.draw();
     assert_eq!(f.active().as_deref(), Some("998"));
     assert!(!f.cx.read(|cx| popup.is_open(cx)));
+}
+
+#[test]
+fn tabs_overflow_resources_are_lazy_and_released_while_selection_survives() {
+    let mut f = Fixture::new(
+        TabsItems::new(
+            (0..100).map(|index| TabItem::new(index.to_string(), format!("Tab {index}"))),
+        )
+        .unwrap(),
+    );
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_presentation.is_none())
+    );
+    let captured = Rc::new(RefCell::new(None));
+    f.consumer.update(&mut f.cx, |consumer, cx| {
+        consumer.popup_context = Some(captured.clone());
+        cx.notify();
+    });
+    f.draw();
+    f.open_overflow();
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_presentation.is_some())
+    );
+    let popup = f.state.read_with(&f.cx, |state, _| state.popup.clone());
+    let context = captured.borrow().as_ref().unwrap().clone();
+    f.update(|state, window, cx| {
+        state.set_active_key(Some("5".into()), cx);
+        popup.close(window, cx);
+    });
+    f.draw();
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_presentation.is_none())
+    );
+    assert_eq!(f.active().as_deref(), Some("5"));
+    f.open_overflow();
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        context.select("9", window, cx);
+        context.close(window, cx);
+    })
+    .unwrap();
+    f.draw();
+    assert_eq!(
+        f.active().as_deref(),
+        Some("5"),
+        "old opening cannot change a new opening"
+    );
+    assert!(f.cx.read(|cx| popup.is_open(cx)));
+}
+
+#[test]
+fn tabs_overflow_window_restore_recreates_focus_and_keeps_navigation() {
+    let mut f = Fixture::new(
+        TabsItems::new(
+            (0..100).map(|index| TabItem::new(index.to_string(), format!("Tab {index}"))),
+        )
+        .unwrap(),
+    );
+    f.open_overflow();
+    f.update(|state, window, cx| {
+        state
+            .popup_presentation
+            .as_ref()
+            .unwrap()
+            .focus
+            .focus(window, cx)
+    });
+    f.key("end");
+    assert_eq!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_active.clone())
+            .as_deref(),
+        Some("99")
+    );
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_presentation.is_none())
+    );
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    assert!(
+        f.cx.update_window(f.window.into(), |_, window, cx| {
+            f.state
+                .read(cx)
+                .popup_presentation
+                .as_ref()
+                .unwrap()
+                .focus
+                .is_focused(window)
+        })
+        .unwrap()
+    );
+    f.key("up");
+    assert_eq!(
+        f.state
+            .read_with(&f.cx, |state, _| state.popup_active.clone())
+            .as_deref(),
+        Some("98")
+    );
+    assert_eq!(f.active().as_deref(), Some("0"));
 }
 
 #[test]

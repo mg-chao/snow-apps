@@ -6,17 +6,15 @@
 //! native GPUI image primitives. No convolution runs on an animation frame.
 
 use super::picture::Preparation;
+use crate::behavior::resources::{
+    WeakRegistry, lease_native_image, resource_fingerprint, scene_resource,
+};
 use crate::{behavior::evaluate_cubic_bezier, theme::CubicBezier};
 use gpui::{
     AnyElement, App, BorrowAppContext, DevicePixels, Global, IntoElement, RenderImage, StyledImage,
     SvgSize, Window, div, img, prelude::*, px, size,
 };
-use std::{
-    collections::HashMap,
-    rc::{Rc, Weak},
-    sync::Arc,
-    time::Duration,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 /// Paint the reference's four-stop, repeating 200% gradient with at most a few
 /// native quads. Only its position changes; no raster preparation runs per frame.
@@ -156,15 +154,13 @@ struct Resource {
     masks: Arc<Masks>,
 }
 struct Entry {
+    key: Key,
     preparation: Option<Preparation<Option<Arc<Masks>>>>,
     resource: Option<Rc<Resource>>,
-    used: u64,
 }
 #[derive(Default)]
 struct Cache {
-    entries: HashMap<Key, Entry>,
-    resident: HashMap<Key, Weak<Resource>>,
-    tick: u64,
+    entries: WeakRegistry<Key, RefCell<Entry>>,
 }
 impl Global for Cache {}
 
@@ -385,26 +381,43 @@ fn rasterize(key: Key, renderer: gpui::SvgRenderer) -> Option<Arc<Masks>> {
 
 impl Cache {
     fn get(&mut self, key: Key, window: &mut Window, cx: &mut App) -> Option<Rc<Resource>> {
-        self.tick = self.tick.wrapping_add(1);
-        let entry = self.entries.entry(key).or_insert_with(|| {
-            let resource = self.resident.get(&key).and_then(Weak::upgrade);
-            let renderer = cx.svg_renderer();
-            Entry {
-                preparation: resource
-                    .is_none()
-                    .then(|| Preparation::new(async move { rasterize(key, renderer) }, cx)),
-                resource,
-                used: self.tick,
-            }
-        });
-        entry.used = self.tick;
+        let record = scene_resource(
+            ("ant-image-ink", resource_fingerprint(&key)),
+            |record: &Rc<RefCell<Entry>>| record.borrow().key == key,
+            |_, cx| {
+                self.entries.get_or_insert_with(key, MAX_ENTRIES, || {
+                    let renderer = cx.svg_renderer();
+                    RefCell::new(Entry {
+                        key,
+                        preparation: Some(Preparation::new(
+                            async move { rasterize(key, renderer) },
+                            cx,
+                        )),
+                        resource: None,
+                    })
+                })
+            },
+            |record| Rc::strong_count(record) == 1,
+            |_, cx| {
+                cx.defer(|cx| {
+                    if cx.has_global::<Cache>() {
+                        cx.update_global::<Cache, _>(|cache, _| cache.entries.prune());
+                    }
+                })
+            },
+            window,
+            cx,
+        );
+        let mut entry = record.borrow_mut();
         if entry.resource.is_none()
             && let Some(prepared) = entry
                 .preparation
                 .as_ref()
-                .and_then(|task| task.use_value(window))
+                .and_then(|task| task.use_value(window, cx))
         {
-            if let Some(masks) = prepared.as_ref() {
+            if let Some(masks) = prepared.as_ref()
+                && masks.bytes <= MAX_BYTES
+            {
                 entry.resource = Some(Rc::new(Resource {
                     masks: masks.clone(),
                 }));
@@ -413,64 +426,104 @@ impl Cache {
         }
         let result = entry.resource.clone();
         if let Some(resource) = &result {
-            self.resident.retain(|_, weak| weak.strong_count() > 0);
-            self.resident.insert(key, Rc::downgrade(resource));
-            lease(resource, window, cx);
-        }
-        let mut bytes: usize = self
-            .entries
-            .values()
-            .filter_map(|entry| entry.resource.as_ref())
-            .map(|resource| resource.masks.bytes)
-            .sum();
-        while self.entries.len() > MAX_ENTRIES || bytes > MAX_BYTES {
-            let Some(key) = self
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some(entry) = self.entries.remove(&key)
-                && let Some(resource) = entry.resource
-            {
-                bytes = bytes.saturating_sub(resource.masks.bytes);
-                retire(&resource, cx);
+            for image in &resource.masks.images {
+                lease_native_image(image, window, cx);
             }
         }
         result
     }
 }
 
-struct Lease(Rc<Resource>);
-fn retire(resource: &Rc<Resource>, cx: &mut App) {
-    if Rc::strong_count(resource) == 1 {
-        let images = resource.masks.images.clone();
-        cx.defer(move |cx| {
-            for image in images {
-                cx.drop_image(image, None);
-            }
-        });
-    }
-}
-fn lease(resource: &Rc<Resource>, window: &mut Window, cx: &mut App) {
-    window.with_id(("ant-image-ink-view", window.current_view()), |window| {
-        window.use_keyed_state(
-            ("ant-image-ink", resource.masks.images[0].id.0),
-            cx,
-            |_, cx| {
-                cx.on_release(|lease: &mut Lease, cx| retire(&lease.0, cx))
-                    .detach();
-                Lease(resource.clone())
-            },
-        );
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_masks_stay_ready_after_lookup_eviction_and_release_with_the_scene() {
+        struct Consumer {
+            shown: bool,
+            identities: Vec<Option<usize>>,
+            probes: Vec<Option<std::rc::Weak<Resource>>>,
+        }
+        impl gpui::Render for Consumer {
+            fn render(
+                &mut self,
+                window: &mut Window,
+                cx: &mut gpui::Context<Self>,
+            ) -> impl IntoElement {
+                if !cx.has_global::<Cache>() {
+                    cx.set_global(Cache::default());
+                }
+                if self.shown {
+                    for index in 0..=MAX_ENTRIES {
+                        let result = cx.update_global::<Cache, _>(|cache, cx| {
+                            cache.get(
+                                Key {
+                                    width: 10 + index as u32,
+                                    height: 10,
+                                    scale: 1f32.to_bits(),
+                                },
+                                window,
+                                cx,
+                            )
+                        });
+                        self.identities[index] = result
+                            .as_ref()
+                            .map(|resource| Rc::as_ptr(resource) as usize);
+                        if let Some(result) = result {
+                            self.probes[index] = Some(Rc::downgrade(&result));
+                        }
+                    }
+                }
+                div()
+            }
+        }
+        let mut cx = gpui::TestAppContext::single();
+        let window = cx.add_window(|_, _| Consumer {
+            shown: true,
+            identities: vec![None; MAX_ENTRIES + 1],
+            probes: vec![None; MAX_ENTRIES + 1],
+        });
+        let draw = |cx: &mut gpui::TestAppContext| {
+            cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx);
+        draw(&mut cx);
+        let identities = window
+            .read_with(&cx, |consumer, _| consumer.identities.clone())
+            .unwrap();
+        assert!(identities.iter().all(Option::is_some));
+        for _ in 0..3 {
+            window.update(&mut cx, |_, _, cx| cx.notify()).unwrap();
+            draw(&mut cx);
+            window
+                .read_with(&cx, |consumer, _| {
+                    assert_eq!(consumer.identities, identities)
+                })
+                .unwrap();
+        }
+        cx.read(|cx| assert_eq!(cx.global::<Cache>().entries.len(), MAX_ENTRIES));
+        window
+            .update(&mut cx, |consumer, _, cx| {
+                consumer.shown = false;
+                cx.notify();
+            })
+            .unwrap();
+        draw(&mut cx);
+        window
+            .read_with(&cx, |consumer, _| {
+                assert!(
+                    consumer
+                        .probes
+                        .iter()
+                        .all(|resource| { resource.as_ref().unwrap().upgrade().is_none() })
+                );
+            })
+            .unwrap();
+        cx.read(|cx| assert_eq!(cx.global::<Cache>().entries.len(), 0));
+    }
     #[test]
     fn ink_flow_matches_reference_endpoints_and_negative_delays() {
         let start = flow(0, 0., 3., 0.);

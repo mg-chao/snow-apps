@@ -17,25 +17,31 @@ struct Page {
     scope: ConfigScope,
     enabled: bool,
     mounted: bool,
+    outside_focus: Option<gpui::FocusHandle>,
 }
 impl Render for Page {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().when(self.mounted, |d| {
-            d.child(
-                PreviewGroup::new("collection", &self.preview)
-                    .scope(self.scope.clone())
-                    .child(
-                        Image::new("thumbnail", &self.image, cx)
-                            .scope(self.scope.clone())
-                            .preview_group(&self.preview)
-                            .preview(self.enabled)
-                            .alt("Test landscape")
-                            .automation_id("image.test.thumbnail")
-                            .w(px(200.))
-                            .h(px(120.)),
-                    ),
-            )
-        })
+        div()
+            .size_full()
+            .when_some(self.outside_focus.as_ref(), |d, focus| {
+                d.child(div().absolute().size_0().track_focus(focus))
+            })
+            .when(self.mounted, |d| {
+                d.child(
+                    PreviewGroup::new("collection", &self.preview)
+                        .scope(self.scope.clone())
+                        .child(
+                            Image::new("thumbnail", &self.image, cx)
+                                .scope(self.scope.clone())
+                                .preview_group(&self.preview)
+                                .preview(self.enabled)
+                                .alt("Test landscape")
+                                .automation_id("image.test.thumbnail")
+                                .w(px(200.))
+                                .h(px(120.)),
+                        ),
+                )
+            })
     }
 }
 
@@ -99,6 +105,7 @@ impl Fixture {
                 scope: scope.clone(),
                 enabled: true,
                 mounted: true,
+                outside_focus: None,
             });
             created = Some((page.clone(), image, preview));
             UiRoot::new(scope, page, w, cx)
@@ -1165,6 +1172,252 @@ fn group_style_resolver_shares_one_snapshot_with_mask_and_body() {
                 .all(|quad| quad.background.as_solid() != Some(masked)),
             "mask=false must omit even an explicit mask fill"
         );
+    })
+    .unwrap();
+}
+
+#[test]
+fn hidden_preview_keeps_picture_identity_without_source_or_fallback_payloads() {
+    let mut f = Fixture::new(2);
+    let picture = f.preview.read_with(&f.cx, |s, _| s.picture());
+    let identity = picture.entity_id();
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_none()
+        && p.fallback().is_none()
+        && p.image().is_none()));
+    f.run(|state, _, cx| state.update(cx, |s, cx| s.set_current(1, cx)));
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_none()));
+    f.preview.update(&mut f.cx, |s, cx| {
+        let mut items = s.items().to_vec();
+        items[1].fallback = Some(items[0].source.clone());
+        s.set_items(items, cx);
+    });
+    f.draw();
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_none() && p.fallback().is_none()));
+    f.open(1);
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_some() && p.fallback().is_some()));
+    f.run(|state, w, cx| state.update(cx, |s, cx| s.request_close(w, cx)));
+    f.draw();
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_none()
+        && p.fallback().is_none()
+        && p.image().is_none()
+        && p.natural_size().is_none()));
+    assert_eq!(f.preview.read_with(&f.cx, |s, _| s.current()), 1);
+    f.open(1);
+    assert_eq!(
+        f.preview.read_with(&f.cx, |s, _| s.picture().entity_id()),
+        identity
+    );
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_some()));
+}
+
+#[test]
+fn hidden_native_window_releases_preview_pixels_without_losing_current_item() {
+    let mut f = Fixture::new(2);
+    f.open(1);
+    let picture = f.preview.read_with(&f.cx, |s, _| s.picture());
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_some()));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(f.is_open());
+    assert_eq!(f.preview.read_with(&f.cx, |s, _| s.current()), 1);
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_none()
+        && p.fallback().is_none()
+        && p.image().is_none()));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    assert!(f.is_open());
+    assert!(picture.read_with(&f.cx, |p, _| p.source().is_some()));
+}
+
+#[test]
+fn preview_restores_focused_operation_to_recreated_controls_after_window_hide() {
+    let mut f = Fixture::new(1);
+    f.open(0);
+    let focus = f
+        .preview
+        .read_with(&f.cx, |s, _| s.operation_focus_for_test(2).unwrap());
+    f.cx.update_window(f.window.into(), |_, w, cx| w.focus(&focus, cx))
+        .unwrap();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    let focus = f
+        .preview
+        .read_with(&f.cx, |s, _| s.operation_focus_for_test(2).unwrap());
+    f.cx.update_window(f.window.into(), |_, w, _| assert!(focus.is_focused(w)))
+        .unwrap();
+}
+
+#[test]
+fn preview_returns_to_its_original_opener_after_repeated_native_hiding() {
+    let mut f = Fixture::new(1);
+    let opener = f.image.read_with(&f.cx, |image, cx| image.focus_handle(cx));
+    f.cx.update_window(f.window.into(), |_, window, cx| window.focus(&opener, cx))
+        .unwrap();
+    f.open(0);
+    for _ in 0..2 {
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+        f.cx.run_until_parked();
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+        f.draw();
+    }
+    f.run(|state, window, cx| state.update(cx, |s, cx| s.request_close(window, cx)));
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(opener.is_focused(window))
+    })
+    .unwrap();
+
+    let next_opener = f
+        .window
+        .root(&mut f.cx)
+        .unwrap()
+        .read_with(&f.cx, |root, cx| root.focus_handle(cx));
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        window.focus(&next_opener, cx)
+    })
+    .unwrap();
+    f.open(0);
+    f.run(|state, window, cx| state.update(cx, |s, cx| s.request_close(window, cx)));
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(next_opener.is_focused(window))
+    })
+    .unwrap();
+}
+
+#[test]
+fn native_preview_restore_preserves_focus_owned_by_an_outside_control() {
+    let mut f = Fixture::new(1);
+    f.options(|options| {
+        options.focus_trap = false;
+        options.mask = false;
+    });
+    f.open(0);
+    let outside = f.image.read_with(&f.cx, |image, cx| image.focus_handle(cx));
+    f.cx.update_window(f.window.into(), |_, window, cx| window.focus(&outside, cx))
+        .unwrap();
+    f.draw();
+    for _ in 0..2 {
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+        f.cx.run_until_parked();
+        f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+        f.draw();
+        f.cx.update_window(f.window.into(), |_, window, _| {
+            assert!(outside.is_focused(window))
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn closing_a_suspended_preview_restores_its_opener_and_starts_a_new_focus_session() {
+    let mut f = Fixture::new(1);
+    let opener = f.image.read_with(&f.cx, |image, cx| image.focus_handle(cx));
+    f.cx.update_window(f.window.into(), |_, window, cx| window.focus(&opener, cx))
+        .unwrap();
+    f.open(0);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.run(|state, window, cx| state.update(cx, |s, cx| s.set_open(false, window, cx)));
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(opener.is_focused(window))
+    })
+    .unwrap();
+    assert!(!f.is_open());
+
+    let next_opener = f
+        .window
+        .root(&mut f.cx)
+        .unwrap()
+        .read_with(&f.cx, |root, cx| root.focus_handle(cx));
+    f.cx.update_window(f.window.into(), |_, window, cx| {
+        window.focus(&next_opener, cx)
+    })
+    .unwrap();
+    f.open(0);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.run(|state, window, cx| state.update(cx, |s, cx| s.request_close(window, cx)));
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(next_opener.is_focused(window))
+    })
+    .unwrap();
+}
+
+#[test]
+fn suspended_preview_keeps_only_a_weak_return_target() {
+    let mut f = Fixture::new(1);
+    let preview = f.preview.clone();
+    let opener =
+        f.cx.update_window(f.window.into(), |_, window, cx| {
+            let opener = cx.focus_handle();
+            let weak = opener.downgrade();
+            window.focus(&opener, cx);
+            preview.update(cx, |s, cx| s.set_open(true, window, cx));
+            weak
+        })
+        .unwrap();
+    f.draw();
+    assert!(opener.upgrade().is_some());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(opener.upgrade().is_none());
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.run(|state, window, cx| state.update(cx, |s, cx| s.request_close(window, cx)));
+    assert!(!f.is_open());
+}
+
+#[test]
+fn unmounting_a_suspended_preview_restores_and_clears_its_focus_intent() {
+    let mut f = Fixture::new(1);
+    let opener = f.cx.update(|cx| cx.focus_handle());
+    f.page.update(&mut f.cx, |page, cx| {
+        page.outside_focus = Some(opener.clone());
+        cx.notify();
+    });
+    f.draw();
+    f.cx.update_window(f.window.into(), |_, window, cx| window.focus(&opener, cx))
+        .unwrap();
+    f.open(0);
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    f.page.update(&mut f.cx, |page, cx| {
+        page.mounted = false;
+        cx.notify();
+    });
+    f.draw();
+    assert!(!f.is_open());
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(opener.is_focused(window))
+    })
+    .unwrap();
+    assert!(f.preview.read_with(&f.cx, |state, cx| {
+        state.picture().read(cx).source().is_none()
+    }));
+}
+
+#[test]
+fn unmounting_a_visible_preview_returns_focus_before_releasing_its_dialog() {
+    let mut f = Fixture::new(1);
+    let opener = f.cx.update(|cx| cx.focus_handle());
+    f.page.update(&mut f.cx, |page, cx| {
+        page.outside_focus = Some(opener.clone());
+        cx.notify();
+    });
+    f.draw();
+    f.cx.update_window(f.window.into(), |_, window, cx| window.focus(&opener, cx))
+        .unwrap();
+    f.open(0);
+    f.page.update(&mut f.cx, |page, cx| {
+        page.mounted = false;
+        cx.notify();
+    });
+    f.draw();
+    f.draw();
+    assert!(!f.is_open());
+    f.cx.update_window(f.window.into(), |_, window, _| {
+        assert!(opener.is_focused(window))
     })
     .unwrap();
 }

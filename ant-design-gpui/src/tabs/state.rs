@@ -75,6 +75,11 @@ pub(super) struct PaneState {
     _focus_subscription: Subscription,
 }
 
+pub(super) struct PopupPresentation {
+    pub focus: FocusHandle,
+    pub scroll: UniformListScrollHandle,
+}
+
 /// Retain one controller per mounted Tabs. Item snapshots and pane entities are
 /// shared across inexpensive view builders; setters do not emit user events.
 pub struct TabsState {
@@ -102,11 +107,12 @@ pub struct TabsState {
     pub(super) viewport_bounds: MeasuredBounds,
     pub(super) list_bounds: MeasuredBounds,
     pub(super) popup: PopupHandle,
-    pub(super) popup_focus: FocusHandle,
+    pub(super) popup_presentation: Option<PopupPresentation>,
     pub(super) add_focus: FocusHandle,
     pub(super) more_focus: FocusHandle,
     pub(super) popup_active: Option<SharedString>,
-    pub(super) popup_scroll: UniformListScrollHandle,
+    // A single scalar viewport and active key make reopening cheap without keeping a list alive.
+    popup_offset: gpui::Point<Pixels>,
     pub(super) rendered_popup_rows: usize,
     pane_selection: Option<SharedString>,
     panes_initialized: bool,
@@ -159,9 +165,9 @@ impl TabsState {
             viewport_bounds: Rc::default(),
             list_bounds: Rc::default(),
             popup: PopupHandle::new(),
-            popup_focus: cx.focus_handle(),
+            popup_presentation: None,
             popup_active: None,
-            popup_scroll: UniformListScrollHandle::default(),
+            popup_offset: Default::default(),
             add_focus: cx.focus_handle().tab_index(0),
             more_focus: cx.focus_handle().tab_index(0),
             rendered_popup_rows: 0,
@@ -182,6 +188,27 @@ impl TabsState {
     }
     pub fn active_key(&self) -> Option<&SharedString> {
         self.model.active.as_ref()
+    }
+    pub(super) fn present_popup(&mut self, cx: &mut Context<Self>) {
+        if self.popup_presentation.is_none() {
+            let scroll = UniformListScrollHandle::new();
+            scroll.0.borrow().base_handle.set_offset(self.popup_offset);
+            self.popup_presentation = Some(PopupPresentation {
+                focus: cx.focus_handle(),
+                scroll,
+            });
+        }
+    }
+    pub(super) fn release_popup(&mut self) {
+        if let Some(presentation) = self.popup_presentation.take() {
+            self.popup_offset = presentation.scroll.0.borrow().base_handle.offset();
+        }
+        self.rendered_popup_rows = 0;
+    }
+    pub(super) fn release_mount(&mut self) {
+        self.scope_subscription = None;
+        self.scope = None;
+        self.on_event = None;
     }
     pub fn items(&self) -> &TabsItems {
         &self.model.items
@@ -305,6 +332,13 @@ impl TabsState {
             .retain(|key, _| self.model.items.get(key).is_some());
         self.hidden
             .retain(|key| self.model.items.get(key).is_some());
+        if self
+            .popup_active
+            .as_ref()
+            .is_some_and(|key| self.model.items.get(key).is_none())
+        {
+            self.popup_active = None;
+        }
         if self
             .focused_key
             .as_deref()

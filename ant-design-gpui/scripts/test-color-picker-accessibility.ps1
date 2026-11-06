@@ -44,7 +44,10 @@ public static class ColorPickerUia {
         int width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top;
         // The pinned backend's Window::resize omits SWP_NOACTIVATE. Generate
         // WM_SIZE on this fixture only, preserving z-order and foreground.
-        const uint flags = 0x0002 | 0x0004 | 0x0010;
+        // Popup content is intentionally absent while the native window is
+        // hidden. Present this owned inspection HWND without activation before
+        // querying its real popup tree (SWP_SHOWWINDOW | SWP_NOACTIVATE).
+        const uint flags = 0x0002 | 0x0004 | 0x0010 | 0x0040;
         return SetWindowPos(handle, IntPtr.Zero, 0, 0, width + 1, height, flags)
             && SetWindowPos(handle, IntPtr.Zero, 0, 0, width, height, flags);
     }
@@ -117,7 +120,7 @@ if ($Interactive) { $fixtureArguments += '--interactive' } else { $fixtureArgume
 $process = Start-Process -FilePath $exe -ArgumentList $fixtureArguments -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $output 'stderr.txt')
 try {
     $script:handle = [IntPtr]::Zero
-    Wait-Condition { $script:handle = [ColorPickerUia]::Find($process.Id); $script:handle -ne [IntPtr]::Zero } 'Fixture did not create its hidden native window' 30000
+    Wait-Condition { $script:handle = [ColorPickerUia]::Find($process.Id); $script:handle -ne [IntPtr]::Zero } 'Fixture did not create its native inspection window' 30000
     Require ([ColorPickerUia]::Owner($script:handle) -eq $process.Id) 'Native handle does not belong to the fixture'
     Require ([ColorPickerUia]::InitializeSize($script:handle, (-not $Interactive))) 'Could not initialize fixture geometry without activation'
     $script:window = [System.Windows.Automation.AutomationElement]::FromHandle($script:handle)

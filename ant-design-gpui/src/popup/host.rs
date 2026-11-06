@@ -11,12 +11,12 @@ use std::{
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, EntityId, Global, GlobalElementId,
     InspectorElementId, IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, Pixels, Point,
-    RenderOnce, WeakEntity, Window, WindowId,
+    RenderOnce, Subscription, WeakEntity, Window, WindowId,
 };
 
 use super::{
     PopupOpenReason,
-    runtime::{PopupState, request_open},
+    runtime::{PopupState, request_open, suspend, suspend_for_window},
 };
 
 #[derive(Default)]
@@ -39,6 +39,7 @@ pub(super) struct UniqueGeometry {
     pub owner: WeakEntity<PopupState>,
     pub bounds: Bounds<Pixels>,
     pub expires: Option<Instant>,
+    pub used: u64,
 }
 
 #[derive(Default)]
@@ -47,10 +48,49 @@ pub(super) struct HostState {
     pub unique: HashMap<EntityId, WeakEntity<PopupState>>,
     pub unique_geometry: HashMap<EntityId, UniqueGeometry>,
     pub parent: Option<EntityId>,
+    pub states: HashMap<EntityId, WeakEntity<PopupState>>,
+    pub presentations: HashMap<EntityId, WeakEntity<PopupState>>,
+    visibility: Option<Subscription>,
+    geometry_tick: u64,
     sequence: usize,
 }
 
+const MAX_INACTIVE_GEOMETRY: usize = 64;
+
 impl HostState {
+    /// Inactive handoff geometry is scalar metadata only, bounded by LRU and time.
+    pub fn prune_geometry(&mut self, now: Instant) {
+        self.unique_geometry.retain(|_, entry| {
+            entry.owner.upgrade().is_some() && entry.expires.is_none_or(|end| now <= end)
+        });
+        while self
+            .unique_geometry
+            .values()
+            .filter(|entry| entry.expires.is_some())
+            .count()
+            > MAX_INACTIVE_GEOMETRY
+        {
+            let Some(key) = self
+                .unique_geometry
+                .iter()
+                .filter(|(_, entry)| entry.expires.is_some())
+                .min_by_key(|(_, entry)| entry.used)
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            self.unique_geometry.remove(&key);
+        }
+        if self.unique_geometry.capacity() > self.unique_geometry.len().max(64) * 4 {
+            self.unique_geometry
+                .shrink_to(self.unique_geometry.len().max(64));
+        }
+    }
+    pub fn geometry_tick(&mut self) -> u64 {
+        self.geometry_tick = self.geometry_tick.wrapping_add(1);
+        self.geometry_tick
+    }
+
     pub fn register(&mut self, id: EntityId, mut entry: Entry) -> usize {
         if let Some(old) = self.entries.get(&id) {
             entry.order = old.order;
@@ -139,6 +179,11 @@ pub(crate) fn dismiss_modal(owner: Option<EntityId>, window: &mut Window, cx: &m
             .is_some_and(|s| s.read(cx).modal_owner == owner)
         {
             request_open(&weak, false, PopupOpenReason::ParentClosed, window, cx);
+            if weak.upgrade().is_some_and(|state| {
+                !crate::modal::host::popup_allowed(state.read(cx).modal_owner, window, cx)
+            }) {
+                suspend(&weak, cx);
+            }
         }
     }
 }
@@ -158,6 +203,11 @@ pub(crate) fn dismiss_unowned_modal(owner: EntityId, window: &mut Window, cx: &m
             .is_some_and(|s| s.read(cx).modal_owner != Some(owner))
         {
             request_open(&weak, false, PopupOpenReason::ParentClosed, window, cx);
+            if weak.upgrade().is_some_and(|state| {
+                !crate::modal::host::popup_allowed(state.read(cx).modal_owner, window, cx)
+            }) {
+                suspend(&weak, cx);
+            }
         }
     }
 }
@@ -166,7 +216,10 @@ pub(crate) fn modal_contains_focus(owner: EntityId, window: &Window, cx: &App) -
         h.borrow().entries.values().any(|e| {
             e.state.upgrade().is_some_and(|s| {
                 s.read(cx).modal_owner == Some(owner)
-                    && s.read(cx).surface_focus.contains_focused(window, cx)
+                    && s.read(cx)
+                        .surface_focus
+                        .as_ref()
+                        .is_some_and(|focus| focus.contains_focused(window, cx))
             })
         })
     })
@@ -246,6 +299,27 @@ impl RenderOnce for PopupHost {
             Rc::new(RefCell::new(HostState::default()))
         });
         let manager = host.read(cx).clone();
+        if manager.borrow().visibility.is_none() {
+            let weak = Rc::downgrade(&manager);
+            let subscription = window.observe_window_visibility(move |visibility, window, cx| {
+                let Some(host) = weak.upgrade() else {
+                    return;
+                };
+                let states: Vec<_> = host.borrow().states.values().cloned().collect();
+                if !visibility.is_visible() {
+                    for state in states {
+                        suspend_for_window(&state, window, cx);
+                    }
+                    schedule_hidden_cleanup(window, cx);
+                } else {
+                    for state in states {
+                        let _ = state.update(cx, |_, cx| cx.notify());
+                    }
+                    window.refresh();
+                }
+            });
+            manager.borrow_mut().visibility = Some(subscription);
+        }
         if !cx.has_global::<Registry>() {
             cx.set_global(Registry::default());
         }
@@ -260,6 +334,12 @@ impl RenderOnce for PopupHost {
             host: manager,
         }
     }
+}
+
+/// Hidden windows have no frame source. One unpresented cleanup frame releases
+/// cached dispatch closures and scene leases as well as the controller resources.
+pub(super) fn schedule_hidden_cleanup(window: &mut Window, cx: &mut App) {
+    crate::behavior::resources::schedule_hidden_cleanup(window, cx);
 }
 
 struct HostElement {
@@ -308,10 +388,7 @@ impl Element for HostElement {
                 .retain(|_, entry| entry.state.upgrade().is_some());
             host.unique.retain(|_, owner| owner.upgrade().is_some());
             let now = cx.background_executor().now();
-            host.unique_geometry.retain(|_, entry| {
-                entry.owner.upgrade().is_some()
-                    && entry.expires.is_none_or(|expires| now <= expires)
-            });
+            host.prune_geometry(now);
         }
         self.child.prepaint(window, cx);
     }

@@ -41,7 +41,6 @@ pub struct MenuOptions {
     pub trigger: MenuTrigger,
     pub open_delay: Duration,
     pub close_delay: Duration,
-    pub force_submenu_render: bool,
     pub tooltip: bool,
 }
 impl Default for MenuOptions {
@@ -56,7 +55,6 @@ impl Default for MenuOptions {
             trigger: MenuTrigger::Hover,
             open_delay: Duration::from_millis(100),
             close_delay: Duration::from_millis(100),
-            force_submenu_render: false,
             tooltip: true,
         }
     }

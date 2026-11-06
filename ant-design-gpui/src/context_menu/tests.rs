@@ -306,6 +306,114 @@ fn context_menu_lazy_submenu_is_fresh_and_escape_closes_one_level() {
 }
 
 #[test]
+fn context_menu_root_presentation_is_lazy_and_released_without_losing_checks() {
+    let items = MenuItems::new((0..1_000).map(|index| {
+        MenuItem::new(format!("item-{index}"), format!("Item {index}"))
+            .checked(false)
+            .into()
+    }))
+    .unwrap();
+    let mut f = Fixture::new(items);
+    assert_eq!(f.active().as_deref(), Some("Item 0"));
+    assert!(f.state.read_with(&f.cx, |state, _| state.levels.is_empty()));
+    f.open();
+    assert!(
+        f.state
+            .read_with(&f.cx, |state, _| state.levels[0].native_list.is_some())
+    );
+    f.key("enter");
+    f.draw();
+    assert!(!f.open_now());
+    assert_eq!(f.active().as_deref(), Some("Item 0"));
+    assert!(f.state.read_with(&f.cx, |state, _| state.levels.is_empty()));
+    assert_eq!(
+        f.state.read_with(&f.cx, |state, _| state
+            .items()
+            .item(0)
+            .unwrap()
+            .check
+            .checked()),
+        Some(true)
+    );
+    f.open();
+    assert_eq!(f.active().as_deref(), Some("Item 0"));
+    assert_eq!(
+        f.state.read_with(&f.cx, |state, _| state
+            .items()
+            .item(0)
+            .unwrap()
+            .check
+            .checked()),
+        Some(true)
+    );
+}
+
+#[test]
+fn context_menu_hidden_active_item_remains_scalar_and_survives_replacement() {
+    let mut f = Fixture::new(simple_items());
+    assert_eq!(f.active().as_deref(), Some("Copy"));
+    f.open();
+    f.key("down");
+    f.key("escape");
+    assert_eq!(f.active().as_deref(), Some("Cut"));
+    assert!(f.state.read_with(&f.cx, |state, _| state.levels.is_empty()));
+    f.state.update(&mut f.cx, |state, cx| {
+        state.set_items(
+            MenuItems::new([
+                MenuItem::new("cut", "Cut").into(),
+                MenuItem::new("copy", "Copy").into(),
+            ])
+            .unwrap(),
+            cx,
+        );
+    });
+    f.draw();
+    assert_eq!(f.active().as_deref(), Some("Cut"));
+    assert!(f.state.read_with(&f.cx, |state, _| state.levels.is_empty()));
+}
+
+#[test]
+fn context_menu_window_restore_recreates_focus_and_keeps_the_active_command() {
+    let mut f = Fixture::new(
+        MenuItems::new(
+            (0..1_000)
+                .map(|index| MenuItem::new(index.to_string(), format!("Item {index}")).into()),
+        )
+        .unwrap(),
+    );
+    f.open();
+    f.key("end");
+    assert_eq!(f.active().as_deref(), Some("Item 999"));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Hidden);
+    f.cx.run_until_parked();
+    assert!(f.state.read_with(&f.cx, |state, _| state.levels.is_empty()));
+    assert_eq!(f.active().as_deref(), Some("Item 999"));
+    f.cx.simulate_window_visibility_change(f.window.into(), gpui::WindowVisibility::Visible);
+    f.draw();
+    f.draw();
+    assert_eq!(f.active().as_deref(), Some("Item 999"));
+    assert!(
+        f.state.read_with(&f.cx, |state, _| {
+            let list = state.levels[0].native_list.as_ref().unwrap();
+            !list
+                .bounds_for_item(999)
+                .unwrap()
+                .intersect(&list.viewport_bounds())
+                .is_empty()
+        }),
+        "recreated virtualization reveals the preserved active command"
+    );
+    assert!(
+        f.cx.update_window(f.window.into(), |_, window, cx| {
+            f.state.read(cx).levels[0].focus.is_focused(window)
+        })
+        .unwrap()
+    );
+    f.key("home");
+    assert_eq!(f.active().as_deref(), Some("Item 0"));
+}
+
+#[test]
 fn context_menu_typeahead_cycles_and_resets_after_timeout() {
     let mut f = Fixture::new(simple_items());
     f.open();

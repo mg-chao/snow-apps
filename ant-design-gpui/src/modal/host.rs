@@ -30,6 +30,7 @@ struct HostState {
     observers: HashMap<EntityId, Subscription>,
     owner: Option<EntityId>,
     sequence: usize,
+    visibility: Option<Subscription>,
 }
 fn current(window: &Window, cx: &App) -> Option<Host> {
     cx.try_global::<Registry>()?
@@ -215,7 +216,9 @@ pub(crate) fn restore_focus(window: &mut Window, cx: &mut App) {
         return;
     };
     let s = top.read(cx);
-    if s.trap(cx)
+    if window.is_visible()
+        && s.presentation.is_some()
+        && s.trap(cx)
         && !s.focus.contains_focused(window, cx)
         && !crate::popup::host::modal_contains_focus(top.entity_id(), window, cx)
     {
@@ -227,6 +230,13 @@ pub(super) fn traverse(backward: bool, window: &mut Window, cx: &mut App) {
     let Some(top) = top(window, cx) else {
         return;
     };
+    if top.read(cx).presentation.is_none() {
+        top.update(cx, |state, cx| {
+            state.needs_focus = true;
+            cx.notify();
+        });
+        return;
+    }
     if !top.read(cx).trap(cx) {
         if backward {
             window.focus_prev(cx);
@@ -237,7 +247,11 @@ pub(super) fn traverse(backward: bool, window: &mut Window, cx: &mut App) {
     }
     let (start, end, focus) = {
         let s = top.read(cx);
-        (s.start_focus.clone(), s.end_focus.clone(), s.focus.clone())
+        (
+            s.presentation().start_focus.clone(),
+            s.presentation().end_focus.clone(),
+            s.focus.clone(),
+        )
     };
     if backward {
         window.focus_prev(cx);
@@ -278,6 +292,30 @@ impl RenderOnce for ModalHost {
             Rc::new(RefCell::new(HostState::default()))
         });
         let host = retained.read(cx).clone();
+        if host.borrow().visibility.is_none() {
+            let weak = Rc::downgrade(&host);
+            let subscription = window.observe_window_visibility(move |visibility, window, cx| {
+                let Some(host) = weak.upgrade() else {
+                    return;
+                };
+                if !visibility.is_visible() {
+                    let states: Vec<_> = host
+                        .borrow()
+                        .entries
+                        .values()
+                        .filter_map(|entry| entry.state.upgrade())
+                        .collect();
+                    for state in states {
+                        state.update(cx, |state, cx| state.suspend(window, cx));
+                    }
+                    crate::behavior::resources::schedule_hidden_cleanup(window, cx);
+                } else {
+                    window.refresh();
+                }
+            });
+            host.borrow_mut().visibility = Some(subscription);
+        }
+
         if !cx.has_global::<Registry>() {
             cx.set_global(Registry::default());
         }

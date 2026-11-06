@@ -110,7 +110,7 @@ struct Fixture {
     cx: TestAppContext,
     window: WindowHandle<UiRoot>,
     probe: Entity<Probe>,
-    editors: [EntityId; 6],
+    editors: Option<[EntityId; 6]>,
     primitive_limit: usize,
 }
 impl Fixture {
@@ -153,14 +153,15 @@ impl Fixture {
     }
     fn draw(&mut self, refresh: bool) {
         self.cx.run_until_parked();
-        assert_eq!(
-            self.editors,
-            self.probe.read_with(&self.cx, |probe, cx| probe
-                .state
-                .read(cx)
-                .retained_editor_ids()),
-            "channel editors must retain entity identity through edits"
-        );
+        let editors = self.probe.read_with(&self.cx, |probe, cx| {
+            probe.state.read(cx).retained_editor_ids()
+        });
+        if let (Some(previous), Some(current)) = (self.editors, editors) {
+            assert_eq!(
+                previous, current,
+                "editors retain identity within a presented session"
+            );
+        }
         let primitive_limit = self.primitive_limit;
         self.cx
             .update_window(self.window.into(), |_, window, cx| {
@@ -196,6 +197,9 @@ impl Fixture {
             })
             .unwrap();
         self.cx.run_until_parked();
+        self.editors = self.probe.read_with(&self.cx, |probe, cx| {
+            probe.state.read(cx).retained_editor_ids()
+        });
     }
     fn print_primitives(&mut self, name: &str) {
         let counts=self.cx.update_window(self.window.into(), |_,window,_|{

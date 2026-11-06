@@ -533,11 +533,10 @@ fn app_cache_clear_preserves_live_scene_until_the_replacement_frame() {
         .update_window(window.into(), |_, window, cx| {
             let image = cx
                 .global::<IconRenderer>()
-                .rasters
+                .resident
                 .values()
-                .next()
-                .expect("paint caches two-tone raster")
-                .resource
+                .find_map(std::sync::Weak::upgrade)
+                .expect("scene leases two-tone raster")
                 .image
                 .clone();
             assert!(window.has_image_atlas_entry(&image));
@@ -565,10 +564,6 @@ impl gpui::Render for EvictionFixture {
         canvas(
             |_, _, _| (),
             move |bounds, (), window, cx| {
-                cx.set_global(IconRenderer::new(IconCacheLimits {
-                    raster_entries: 1,
-                    ..IconCacheLimits::default()
-                }));
                 cx.update_global::<IconRenderer, _>(|renderer, cx| {
                     renderer
                         .paint(
@@ -580,11 +575,16 @@ impl gpui::Render for EvictionFixture {
                         )
                         .unwrap();
                     let first = renderer
-                        .rasters
-                        .values()
-                        .next()
+                        .resident
+                        .iter()
+                        .find(|(key, _)| {
+                            key.parsed.source
+                                == SourceKey::Embedded(IconName::AlertTwoTone.descriptor()
+                                    as *const IconDescriptor
+                                    as usize)
+                        })
+                        .and_then(|(_, resource)| resource.upgrade())
                         .unwrap()
-                        .resource
                         .image
                         .clone();
                     renderer
@@ -596,7 +596,7 @@ impl gpui::Render for EvictionFixture {
                             cx,
                         )
                         .unwrap();
-                    assert_eq!(renderer.statistics().raster_entries, 1);
+                    assert_eq!(renderer.statistics().raster_entries, 0);
                     assert!(
                         window.has_image_atlas_entry(&first),
                         "earlier elements still need the evicted atlas tile during this paint"
@@ -613,6 +613,12 @@ impl gpui::Render for EvictionFixture {
 #[test]
 fn paint_eviction_keeps_current_frame_tiles_while_scene_leases_exist() {
     let mut cx = gpui::TestAppContext::single();
+    cx.update(|cx| {
+        cx.set_global(IconRenderer::new(IconCacheLimits {
+            raster_entries: 1,
+            ..IconCacheLimits::default()
+        }));
+    });
     let first_image = std::rc::Rc::new(std::cell::RefCell::new(None));
     let holder = first_image.clone();
     let window = cx.add_window(move |_, _| EvictionFixture {
@@ -680,10 +686,16 @@ fn cached_view_leases_survive_lru_eviction_reuse_without_rasterization_and_relea
     let first = cx
         .update_window(window.into(), |_, window, cx| {
             let cache = cx.global::<IconRenderer>();
-            assert!(cache.statistics().raster_bytes > 0);
             assert_eq!(
-                cache.statistics().resident_bytes,
-                2 * cache.statistics().raster_bytes
+                cache.statistics().raster_bytes,
+                0,
+                "paint retains no idle rasters"
+            );
+            assert!(cache.statistics().resident_bytes > 0);
+            assert_eq!(
+                cache.statistics().parsed_entries,
+                0,
+                "paint retains no idle parsed SVG"
             );
             let first = cache
                 .resident
@@ -740,7 +752,286 @@ fn cached_view_leases_survive_lru_eviction_reuse_without_rasterization_and_relea
             "unmounted cached scene must release its atlas resource"
         );
         let stats = cx.global::<IconRenderer>().statistics();
-        assert_eq!(stats.resident_bytes, stats.raster_bytes);
+        assert_eq!(stats.raster_bytes, 0);
+        assert_eq!(
+            stats.resident_rasters, 1,
+            "the visible sibling keeps its lease"
+        );
+    })
+    .unwrap();
+}
+
+#[test]
+fn exported_icons_shared_with_cached_images_keep_native_assets_until_the_last_scene() {
+    use std::{cell::Cell, rc::Rc};
+    struct IconView {
+        shown: bool,
+    }
+    impl gpui::Render for IconView {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            if self.shown {
+                icon(IconRef::custom(&FULL_COLOR).unwrap()).into_any_element()
+            } else {
+                gpui::Empty.into_any_element()
+            }
+        }
+    }
+    struct ImageView {
+        image: gpui::Entity<crate::ImageState>,
+        shown: bool,
+        renders: Rc<Cell<usize>>,
+    }
+    impl gpui::Render for ImageView {
+        fn render(&mut self, _: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+            self.renders.set(self.renders.get() + 1);
+            if self.shown {
+                crate::Image::new("exported-icon-image", &self.image, cx)
+                    .preview(false)
+                    .w(px(16.))
+                    .h(px(16.))
+                    .into_any_element()
+            } else {
+                gpui::Empty.into_any_element()
+            }
+        }
+    }
+    struct ImageHost {
+        child: gpui::Entity<ImageView>,
+    }
+    impl gpui::Render for ImageHost {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            let mut sizing = gpui::div().w(px(16.)).h(px(16.));
+            self.child.clone().cached(sizing.style().clone())
+        }
+    }
+    for native_icon in [false, true] {
+        let mut cx = gpui::TestAppContext::single();
+        let image = cx.update(|cx| {
+            crate::init(cx);
+            cx.set_global(IconRenderer::default());
+            let svg = cx.svg_renderer();
+            let assets = cx.asset_source().clone();
+            cx.update_global::<IconRenderer, _>(|cache, _| {
+                cache
+                    .rasterize(
+                        &svg,
+                        &*assets,
+                        &IconRef::custom(&FULL_COLOR).unwrap(),
+                        &IconRenderOptions::default(),
+                    )
+                    .unwrap()
+            })
+        });
+        let icon_window = cx.add_window(|_, _| IconView { shown: native_icon });
+        let renders = Rc::new(Cell::new(0));
+        let image_window = cx.add_window(|window, cx| {
+            let picture = cx.new(|cx| crate::ImageState::new(image.clone(), window, cx));
+            ImageHost {
+                child: cx.new(|_| ImageView {
+                    image: picture,
+                    shown: true,
+                    renders: renders.clone(),
+                }),
+            }
+        });
+        let draw = |cx: &mut gpui::TestAppContext, window: gpui::AnyWindowHandle| {
+            cx.update_window(window, |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+            cx.run_until_parked();
+        };
+        draw(&mut cx, image_window.into());
+        draw(&mut cx, image_window.into());
+        draw(&mut cx, icon_window.into());
+        cx.update_window(image_window.into(), |_, window, _| {
+            assert!(window.has_image_atlas_entry(&image));
+        })
+        .unwrap();
+        let count = renders.get();
+        if native_icon {
+            // Verify the fixture actually shares one image across the two APIs.
+            cx.update(|cx| {
+                assert!(
+                    cx.global::<IconRenderer>()
+                        .resident
+                        .values()
+                        .filter_map(std::sync::Weak::upgrade)
+                        .any(|record| record.image.id == image.id)
+                )
+            });
+            icon_window
+                .update(&mut cx, |view, _, cx| {
+                    view.shown = false;
+                    cx.notify();
+                })
+                .unwrap();
+            draw(&mut cx, icon_window.into());
+            draw(&mut cx, image_window.into());
+            assert_eq!(
+                renders.get(),
+                count,
+                "the Image user really replays a cached scene"
+            );
+        } else {
+            // The export cache does not own the independent Image scene's lease.
+            cx.update_window(icon_window.into(), |_, window, cx| {
+                clear_icon_cache(window, cx)
+            })
+            .unwrap();
+            cx.run_until_parked();
+        }
+        cx.update_window(image_window.into(), |_, window, _| {
+            assert!(
+                window.has_image_atlas_entry(&image),
+                "icon retirement/cache clear must preserve the cached Image user ({native_icon})"
+            );
+        })
+        .unwrap();
+        let child = image_window
+            .root(&mut cx)
+            .unwrap()
+            .read_with(&cx, |host, _| host.child.clone());
+        child.update(&mut cx, |view, cx| {
+            view.shown = false;
+            cx.notify();
+        });
+        draw(&mut cx, image_window.into());
+        cx.update_window(image_window.into(), |_, window, _| {
+            assert!(
+                !window.has_image_atlas_entry(&image),
+                "the final scene releases its atlas asset"
+            );
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn painted_icons_survive_weak_lookup_pressure_and_retire_after_clear_and_unmount() {
+    use std::{cell::RefCell, rc::Rc};
+
+    struct PressureIcons {
+        shown: bool,
+        records: Rc<RefCell<Vec<Weak<IconImageResource>>>>,
+    }
+    impl gpui::Render for PressureIcons {
+        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            let shown = self.shown;
+            let records = self.records.clone();
+            canvas(
+                |_, _, _| (),
+                move |bounds, (), window, cx| {
+                    if !shown {
+                        return;
+                    }
+                    let assets = cx.asset_source().clone();
+                    cx.update_global::<IconRenderer, _>(|renderer, cx| {
+                        for index in 0..513 {
+                            let icon = IconRef::custom(&TWO_TONE).unwrap();
+                            let options = IconRenderOptions {
+                                size: bounds.size,
+                                scale_factor: window.scale_factor(),
+                                colors: IconPalette {
+                                    primary: rgba((index as u32) << 8 | 0xff),
+                                    ..IconPalette::default()
+                                },
+                                ..IconRenderOptions::default()
+                            };
+                            renderer.paint(bounds, &icon, &options, window, cx).unwrap();
+                            if records.borrow().len() == index {
+                                let key = renderer.raster_key(&*assets, &icon, &options).unwrap();
+                                records.borrow_mut().push(renderer.resident[&key].clone());
+                            }
+                        }
+                    });
+                },
+            )
+            .w(px(8.))
+            .h(px(8.))
+        }
+    }
+
+    let mut cx = gpui::TestAppContext::single();
+    cx.update(|cx| cx.set_global(IconRenderer::default()));
+    let records = Rc::new(RefCell::new(Vec::new()));
+    let window = cx.add_window(|_, _| PressureIcons {
+        shown: true,
+        records: records.clone(),
+    });
+    let draw = |cx: &mut gpui::TestAppContext| {
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+        cx.run_until_parked();
+    };
+    draw(&mut cx);
+    let original_records = records.borrow().clone();
+    let original_images: Vec<_> = original_records
+        .iter()
+        .map(|record| record.upgrade().unwrap().image.clone())
+        .collect();
+    assert_eq!(original_records.len(), 513);
+    for _ in 0..3 {
+        window.update(&mut cx, |_, _, cx| cx.notify()).unwrap();
+        draw(&mut cx);
+    }
+    cx.update_window(window.into(), |_, window, cx| {
+        let renderer = cx.global::<IconRenderer>();
+        let stats = renderer.statistics();
+        assert_eq!(stats.raster_misses, 513);
+        assert_eq!(stats.parse_misses, 513);
+        assert!(stats.raster_hits >= 3 * 513);
+        assert_eq!(renderer.resident.len(), 512);
+        assert_eq!(stats.raster_entries, 0);
+        assert_eq!(stats.parsed_entries, 0);
+        for (record, image) in original_records.iter().zip(&original_images) {
+            assert_eq!(record.upgrade().unwrap().image.id, image.id);
+            assert!(window.has_image_atlas_entry(image));
+        }
+        records.borrow_mut().clear();
+        clear_icon_cache(window, cx);
+    })
+    .unwrap();
+    draw(&mut cx);
+    assert!(
+        original_records
+            .iter()
+            .all(|record| record.upgrade().is_none())
+    );
+    cx.update_window(window.into(), |_, window, cx| {
+        let stats = cx.global::<IconRenderer>().statistics();
+        assert_eq!(stats.raster_misses, 2 * 513);
+        assert_eq!(stats.parse_misses, 2 * 513);
+        assert!(
+            original_images
+                .iter()
+                .all(|image| !window.has_image_atlas_entry(image))
+        );
+    })
+    .unwrap();
+    let replacement_images: Vec<_> = records
+        .borrow()
+        .iter()
+        .map(|record| record.upgrade().unwrap().image.clone())
+        .collect();
+    window
+        .update(&mut cx, |view, _, cx| {
+            view.shown = false;
+            cx.notify();
+        })
+        .unwrap();
+    draw(&mut cx);
+    assert!(
+        records
+            .borrow()
+            .iter()
+            .all(|record| record.upgrade().is_none())
+    );
+    cx.update_window(window.into(), |_, window, cx| {
+        assert!(
+            replacement_images
+                .iter()
+                .all(|image| !window.has_image_atlas_entry(image))
+        );
+        assert_eq!(cx.global::<IconRenderer>().statistics().resident_rasters, 0);
     })
     .unwrap();
 }
