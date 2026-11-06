@@ -20,6 +20,7 @@ class CollagePreviewCanvas final : public QWidget {
     [[nodiscard]] qreal zoom() const;
     [[nodiscard]] QPointF offset() const;
     [[nodiscard]] QRectF imageViewportRect(quint64 id) const;
+    [[nodiscard]] QRectF cellViewportRect(quint64 id) const;
     void fitToCanvas();
     void centerImage(quint64 id);
     void preserveViewport();
@@ -30,6 +31,8 @@ class CollagePreviewCanvas final : public QWidget {
   protected:
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent*) override;
+    void hideEvent(QHideEvent*) override;
+    void showEvent(QShowEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;

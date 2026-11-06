@@ -105,6 +105,15 @@ struct CollagePdfPlacement final {
     friend bool operator==(const CollagePdfPlacement&, const CollagePdfPlacement&) = default;
 };
 
+struct CollageStaticPlacement final {
+    QPointF centerOffsetPixels;
+    // Unset uses the automatic layout's image bounds. Scale is relative to transformed source
+    // pixels.
+    std::optional<qreal> pixelsPerPixel;
+
+    friend bool operator==(const CollageStaticPlacement&, const CollageStaticPlacement&) = default;
+};
+
 struct CollageItem final {
     quint64 id = 0;
     quint64 revision = 0;
@@ -116,6 +125,7 @@ struct CollageItem final {
     // Shared memoization belongs to the immutable original, independently of layout/transforms.
     std::shared_ptr<CollageImageMetadata> metadata;
     CollagePdfPlacement pdfPlacement{};
+    CollageStaticPlacement staticPlacement{};
 };
 
 struct CollagePdfCell final {
@@ -147,8 +157,11 @@ calculateCollagePdfComposedPage(const QVector<CollageItem>& items,
 
 struct CollageLayout final {
     QSize size;
+    // Automatic bounds continue to determine output size and layout independently of placement.
     QVector<QRect> rects;
     QString error;
+    QVector<QRect> clipRects;
+    QVector<QRect> imageRects;
 
     [[nodiscard]] bool isValid() const {
         return size.isValid() && !size.isEmpty() && !rects.isEmpty() && error.isEmpty();
@@ -157,6 +170,10 @@ struct CollageLayout final {
 
 [[nodiscard]] QSize transformedSize(const CollageItem& item);
 [[nodiscard]] QImage transformedPreview(const CollageItem& item);
+// Quantize once in output pixels so the preview and row exporter use identical placement.
+[[nodiscard]] QRect resolveCollageStaticImageRect(const CollageItem& item,
+                                                  const QRect& automaticBounds,
+                                                  const QRect& clipBounds);
 [[nodiscard]] CollageLayout calculateCollageLayout(const QVector<CollageItem>& items,
                                                    const CollageSettings& settings);
 
@@ -193,6 +210,7 @@ class CollageDocument final : public QObject {
     bool flip(quint64 id, bool horizontal);
     bool resetTransform(quint64 id);
     bool setPdfPlacement(quint64 id, const CollagePdfPlacement& placement);
+    bool setStaticPlacement(quint64 id, const CollageStaticPlacement& placement);
     [[nodiscard]] quint64 selectedId() const;
     void select(quint64 id);
 
@@ -200,6 +218,7 @@ class CollageDocument final : public QObject {
     void changed();
     void selectionChanged();
     void pdfPlacementChanged(quint64 id);
+    void staticPlacementChanged(quint64 id);
     void customGridAdjusted(const QStringList& fields);
 
   private:

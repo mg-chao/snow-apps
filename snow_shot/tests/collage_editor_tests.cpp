@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/overlaycontrolbutton.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
@@ -235,102 +236,54 @@ void externalImageDrops() {
     leave();
 }
 
-void selectionOutlineUsesThreePixelBorder() {
+QImage renderCanvas(CollagePreviewCanvas& canvas, qreal dpr = 1) {
+    QImage result(QSize(qCeil(canvas.width() * dpr), qCeil(canvas.height() * dpr)),
+                  QImage::Format_ARGB32_Premultiplied);
+    result.setDevicePixelRatio(dpr);
+    result.fill(Qt::transparent);
+    QPainter painter(&result);
+    canvas.render(&painter, {}, {}, QWidget::DrawWindowBackground);
+    return result;
+}
+
+void selectionOutlineMatchesPdfHandles() {
     auto& themes = adqt::theme::ThemeManager::instance();
     const auto originalConfig = themes.config();
     for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
         themes.setPreset(theme);
         CollageDocument document;
-        const auto first = document.append(image({120, 80}), QStringLiteral("first"));
-        const auto second = document.append(image({120, 80}, Qt::green), QStringLiteral("second"));
-        auto settings = document.settings();
-        settings.border = 20;
-        settings.spacing = 20;
-        document.setSettings(settings);
+        const auto id = document.append(image({120, 80}), QStringLiteral("selected"));
         CollagePreviewCanvas canvas(&document);
         canvas.resize(500, 400);
         canvas.show();
         pump();
-        const auto render = [&](qreal scale) {
-            QImage result(QSize(qRound(canvas.width() * scale), qRound(canvas.height() * scale)),
-                          QImage::Format_ARGB32_Premultiplied);
-            result.setDevicePixelRatio(scale);
-            result.fill(Qt::transparent);
-            QPainter painter(&result);
-            canvas.render(&painter, {}, {}, QWidget::DrawWindowBackground);
-            return result;
-        };
         for (const int zoomDelta : {0, -120, 240}) {
             wheel(&canvas, {250, 200}, zoomDelta);
-            // Exercise fractional viewport positions as well as fractional display scaling.
             mouse(&canvas, QEvent::MouseButtonPress, {20, 20}, Qt::MiddleButton, Qt::MiddleButton);
             mouse(&canvas, QEvent::MouseMove, {20.25, 20.5}, Qt::NoButton, Qt::MiddleButton);
             mouse(&canvas, QEvent::MouseButtonRelease, {20.25, 20.5}, Qt::MiddleButton,
                   Qt::NoButton);
-            for (const auto id : {first, second}) {
-                const auto bounds = canvas.imageViewportRect(id);
-                for (const qreal scale : {1.0, 1.5, 2.0}) {
-                    document.select(0);
-                    const auto unselected = render(scale);
-                    document.select(id);
-                    const auto selected = render(scale);
-                    QRect changed;
-                    for (int y = 0; y < selected.height(); ++y) {
-                        for (int x = 0; x < selected.width(); ++x) {
-                            if (selected.pixel(x, y) == unselected.pixel(x, y))
-                                continue;
-                            const QPointF point((x + .5) / scale, (y + .5) / scale);
-                            const qreal edgeTolerance = 1.5 + 1 / scale;
-                            require(bounds.adjusted(-edgeTolerance, -edgeTolerance, edgeTolerance,
-                                                    edgeTolerance)
-                                            .contains(point) &&
-                                        !bounds
-                                             .adjusted(edgeTolerance, edgeTolerance, -edgeTolerance,
-                                                       -edgeTolerance)
-                                             .contains(point),
-                                    "selection must only paint along the image edges");
-                            changed = changed.united(QRect(x, y, 1, 1));
-                        }
-                    }
-                    require(!changed.isEmpty(), "selecting an image must draw an outline");
-                    const QRectF changedBounds(changed.x() / scale, changed.y() / scale,
-                                               changed.width() / scale, changed.height() / scale);
-                    // The centered 3px stroke extends 1.5px beyond the image, without padding.
-                    const qreal tolerance = 1 / scale;
-                    require(
-                        std::abs(changedBounds.left() - (bounds.left() - 1.5)) <= tolerance &&
-                            std::abs(changedBounds.top() - (bounds.top() - 1.5)) <= tolerance &&
-                            std::abs(changedBounds.right() - (bounds.right() + 1.5)) <= tolerance &&
-                            std::abs(changedBounds.bottom() - (bounds.bottom() + 1.5)) <= tolerance,
-                        "selection outline must touch the image bounds without padding");
-                    qreal coverage = 0;
-                    const int centerX = qRound(bounds.center().x() * scale);
-                    for (int y = 0; y < selected.height(); ++y) {
-                        const auto before = unselected.pixelColor(centerX, y);
-                        const auto after = selected.pixelColor(centerX, y);
-                        const std::array base{before.red(), before.green(), before.blue()};
-                        const std::array painted{after.red(), after.green(), after.blue()};
-                        const std::array stroke{0x40, 0x96, 0xff};
-                        std::size_t channel = 0;
-                        for (std::size_t i = 1; i < 3; ++i) {
-                            if (std::abs(stroke[i] - base[i]) >
-                                std::abs(stroke[channel] - base[channel]))
-                                channel = i;
-                        }
-                        coverage += qreal(painted[channel] - base[channel]) /
-                                    (stroke[channel] - base[channel]);
-                    }
-                    require(std::abs(coverage / scale - 6) < .06,
-                            "both horizontal edges must use a three-pixel #4096FF stroke");
-                    document.select(0);
-                    require(render(scale) == unselected,
-                            "clearing selection must remove the entire outline");
+            for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+                document.select(0);
+                const auto plain = renderCanvas(canvas, dpr);
+                auto expected = plain.copy();
+                {
+                    QPainter painter(&expected);
+                    snowCanvasPaintImageSelection(painter, canvas.imageViewportRect(id));
                 }
+                document.select(id);
+                require(renderCanvas(canvas, dpr) == expected,
+                        "static selection must match PDF frame padding, strokes and white handles "
+                        "at every DPI and zoom");
+                document.select(0);
+                require(renderCanvas(canvas, dpr) == plain,
+                        "deselection removes every selection decoration");
             }
         }
     }
     themes.setConfig(originalConfig);
 }
+
 void replacementHighlightMatchesDrawEngineMarquee() {
     auto& themes = adqt::theme::ThemeManager::instance();
     const auto originalConfig = themes.config();
@@ -350,72 +303,226 @@ void replacementHighlightMatchesDrawEngineMarquee() {
         for (const int zoomDelta : {0, -120, 240}) {
             wheel(&canvas, {250, 200}, zoomDelta);
             const auto source = canvas.imageViewportRect(first).center();
-            const auto target = canvas.imageViewportRect(second);
-            mouse(&canvas, QEvent::MouseButtonPress, source, Qt::LeftButton, Qt::LeftButton);
-            for (const qreal scale : {1.0, 1.5, 2.0}) {
-                const auto render = [&] {
-                    QImage result(
-                        QSize(qRound(canvas.width() * scale), qRound(canvas.height() * scale)),
-                        QImage::Format_ARGB32_Premultiplied);
-                    result.setDevicePixelRatio(scale);
-                    result.fill(Qt::transparent);
-                    QPainter painter(&result);
-                    canvas.render(&painter, {}, {}, QWidget::DrawWindowBackground);
-                    return result;
-                };
-                mouse(&canvas, QEvent::MouseMove, source, Qt::NoButton, Qt::LeftButton);
-                const auto before = render();
+            const auto target = canvas.cellViewportRect(second);
+            for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+                document.select(0);
+                auto expected = renderCanvas(canvas, dpr);
+                mouse(&canvas, QEvent::MouseButtonPress, source, Qt::LeftButton, Qt::LeftButton);
                 mouse(&canvas, QEvent::MouseMove, target.center(), Qt::NoButton, Qt::LeftButton);
-                const auto highlighted = render();
-                const auto center = (target.center() * scale).toPoint();
-                const auto fill = highlighted.pixelColor(center);
-                require(std::abs(fill.red() - 13) <= 1 && std::abs(fill.green() - 234) <= 1 &&
-                            std::abs(fill.blue() - 51) <= 1,
-                        "replacement fill must blend #4096FF at 20 percent opacity in both themes");
-                qreal minimumCoverage = std::numeric_limits<qreal>::max();
-                qreal maximumCoverage = 0;
-                for (int x = qCeil((target.left() + 12) * scale);
-                     x < qFloor((target.right() - 12) * scale); ++x) {
-                    qreal coverage = 0;
-                    for (int y = qFloor(target.top() * scale);
-                         y < qCeil((target.top() + 6) * scale); ++y) {
-                        const auto base = before.pixelColor(x, y);
-                        const auto painted = highlighted.pixelColor(x, y);
-                        const qreal fillCoverage =
-                            std::clamp((y + 1) - target.top() * scale, qreal{0}, qreal{1});
-                        const std::array baseChannels{base.red(), base.green(), base.blue()};
-                        const std::array paintedChannels{painted.red(), painted.green(),
-                                                         painted.blue()};
-                        const std::array stroke{0x40, 0x96, 0xff};
-                        std::array<qreal, 3> tinted{};
-                        std::size_t channel = 0;
-                        for (std::size_t i = 0; i < 3; ++i) {
-                            tinted[i] =
-                                baseChannels[i] + (stroke[i] - baseChannels[i]) * .2 * fillCoverage;
-                            if (std::abs(stroke[i] - tinted[i]) >
-                                std::abs(stroke[channel] - tinted[channel]))
-                                channel = i;
-                        }
-                        coverage += (paintedChannels[channel] - tinted[channel]) /
-                                    (stroke[channel] - tinted[channel]);
-                    }
-                    coverage /= scale;
-                    minimumCoverage = std::min(minimumCoverage, coverage);
-                    maximumCoverage = std::max(maximumCoverage, coverage);
+                {
+                    QPainter painter(&expected);
+                    snowCanvasPaintSelectionMarquee(painter, target);
+                    snowCanvasPaintImageSelection(painter, canvas.imageViewportRect(first));
                 }
-                require(std::abs(maximumCoverage - 3) < .15 && std::abs(minimumCoverage) < .15,
-                        "replacement border must have three-pixel dashes separated by clear gaps");
-                mouse(&canvas, QEvent::MouseMove, source, Qt::NoButton, Qt::LeftButton);
-                require(render() == before,
-                        "moving off the replacement target must remove its border and fill");
+                const auto actual = renderCanvas(canvas, dpr);
+                const QRect patch =
+                    QRectF(target.topLeft() * dpr, target.size() * dpr).toAlignedRect();
+                require(actual.copy(patch) == expected.copy(patch),
+                        "swap targets must use PDF's solid one-pixel marquee and translucent fill");
+                QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+                QApplication::sendEvent(&canvas, &escape);
+                mouse(&canvas, QEvent::MouseButtonRelease, target.center(), Qt::LeftButton,
+                      Qt::NoButton);
+                require(document.items()[0].id == first &&
+                            document.items()[0].staticPlacement == CollageStaticPlacement{},
+                        "cancelling a replacement preview preserves ordering and placement");
             }
-            mouse(&canvas, QEvent::MouseButtonRelease, source, Qt::LeftButton, Qt::NoButton);
-            require(document.items()[0].id == first,
-                    "previewing replacement highlights must preserve the image order");
         }
     }
     themes.setConfig(originalConfig);
 }
+
+void staticPlacementOverflowAndDetailAlpha() {
+    CollageDocument document;
+    const auto id =
+        document.append(image({1200, 800}, QColor(255, 0, 0, 128)), QStringLiteral("alpha"));
+    auto settings = document.settings();
+    settings.border = 160;
+    document.setSettings(settings);
+    CollagePreviewCanvas canvas(&document);
+    canvas.resize(900, 760);
+    canvas.show();
+    pump();
+    document.setStaticPlacement(id, {{}, 1.3});
+    const auto cell = canvas.cellViewportRect(id);
+    const QPoint inside = cell.center().toPoint();
+    const QPoint outside = QPointF(cell.left() - 12, cell.center().y()).toPoint();
+    const auto verifyAlpha = [&] {
+        const auto result = renderCanvas(canvas);
+        const auto full = result.pixelColor(inside);
+        const auto ghost = result.pixelColor(outside);
+        require(full.red() == 255 && std::abs(full.green() - 127) <= 1,
+                "selected image alpha is composited once inside its slot");
+        require(ghost.red() == 255 && std::abs(ghost.green() - 223) <= 2,
+                "selected overflow uses PDF's quarter-opacity preview outside the slot");
+    };
+    verifyAlpha();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (canvas.property("detailTileCount").toInt() == 0 && elapsed.elapsed() < 4000) {
+        pump();
+        QThread::msleep(1);
+    }
+    require(canvas.property("detailTileCount").toInt() > 0,
+            "edited large images prepare bounded detail tiles");
+    verifyAlpha();
+    const auto* toolbar = canvas.findChild<QWidget*>(QStringLiteral("collageImageToolbar"));
+    require(toolbar && toolbar->isVisible(), "edited images retain their floating controls");
+    for (const auto& corner : snowCanvasImageSelectionCorners(canvas.imageViewportRect(id)))
+        require(
+            !QRectF(toolbar->geometry()).intersects(QRectF(corner - QPointF(6, 6), QSizeF(12, 12))),
+            "floating controls leave selected corner hit areas accessible");
+    const auto fixturePath = qEnvironmentVariable("SNOW_TEST_STATIC_EDIT_PREVIEW");
+    if (!fixturePath.isEmpty())
+        require(canvas.grab().save(fixturePath), "save static editing visual fixture");
+    document.select(0);
+    require(renderCanvas(canvas).pixelColor(outside) == Qt::white,
+            "unselected overflow is clipped completely");
+}
+
+void centeredStaticResizeMoveAndCancellation() {
+    CollageDocument document;
+    const auto first = document.append(image({240, 160}), QStringLiteral("first"));
+    const auto second = document.append(image({240, 160}, Qt::blue), QStringLiteral("second"));
+    auto settings = document.settings();
+    settings.spacing = 20;
+    document.setSettings(settings);
+    CollageEditorWidget editor(&document);
+    editor.resize(1100, 800);
+    editor.show();
+    pump();
+    auto* canvas = editor.canvas();
+    const auto fitted = canvas->imageViewportRect(first);
+    const auto slot = canvas->cellViewportRect(first);
+    const auto originalSize = document.layout().size;
+    const auto revision = document.contentRevision();
+    int commits = 0;
+    QObject::connect(&document, &CollageDocument::staticPlacementChanged, &editor,
+                     [&](quint64) { ++commits; });
+    const auto press = [&](QPointF point) {
+        mouse(canvas, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
+    };
+    const auto move = [&](QPointF point) {
+        mouse(canvas, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    };
+    const auto release = [&](QPointF point) {
+        mouse(canvas, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    };
+    const auto escape = [&] {
+        QKeyEvent event(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QApplication::sendEvent(canvas, &event);
+    };
+    const auto frame = snowCanvasImageSelectionFrame(fitted);
+    const std::array<QPointF, 8> handles{frame.topLeft(),
+                                         frame.topRight(),
+                                         frame.bottomRight(),
+                                         frame.bottomLeft(),
+                                         QPointF(frame.center().x(), frame.top()),
+                                         QPointF(frame.right(), frame.center().y()),
+                                         QPointF(frame.center().x(), frame.bottom()),
+                                         QPointF(frame.left(), frame.center().y())};
+    const std::array<Qt::CursorShape, 8> cursors{
+        Qt::SizeFDiagCursor, Qt::SizeBDiagCursor, Qt::SizeFDiagCursor, Qt::SizeBDiagCursor,
+        Qt::SizeVerCursor,   Qt::SizeHorCursor,   Qt::SizeVerCursor,   Qt::SizeHorCursor};
+    for (std::size_t index = 0; index < handles.size(); ++index) {
+        document.select(first);
+        mouse(canvas, QEvent::MouseMove, handles[index], Qt::NoButton, Qt::NoButton);
+        require(canvas->cursor().shape() == cursors[index],
+                "every handle exposes its directional resize cursor");
+        auto vector = handles[index] - frame.center();
+        // Selection padding is not part of the image scaling vector.
+        vector.setX(vector.x() == 0 ? 0 : std::copysign(fitted.width() / 2, vector.x()));
+        vector.setY(vector.y() == 0 ? 0 : std::copysign(fitted.height() / 2, vector.y()));
+        const auto finish = handles[index] - vector * .5;
+        const int before = commits;
+        press(handles[index]);
+        move(handles[index] - vector * .25);
+        require(commits == before &&
+                    document.items()[0].staticPlacement == CollageStaticPlacement{},
+                "resize preview is transient until release");
+        release(finish);
+        const auto smaller = canvas->imageViewportRect(first);
+        require(std::abs(smaller.width() - fitted.width() / 2) < .01 &&
+                    std::abs(smaller.height() - fitted.height() / 2) < .01 &&
+                    (smaller.center() - fitted.center()).manhattanLength() < .01 &&
+                    commits == before + 1 && document.contentRevision() == revision &&
+                    document.layout().size == originalSize &&
+                    canvas->cellViewportRect(first) == slot,
+                "all handles resize proportionally about center using final release position and "
+                "fixed slots");
+        document.resetTransform(first);
+    }
+    const auto start = fitted.center();
+    press(start);
+    move(start + QPointF(20, 10));
+    release(start + QPointF(30, 15));
+    const auto moved = canvas->imageViewportRect(first);
+    require((moved.center() - start - QPointF(30, 15)).manhattanLength() <= canvas->zoom(),
+            "body dragging commits translation within the slot");
+    const auto placement = document.items()[0].staticPlacement;
+    for (int cancel = 0; cancel < 8; ++cancel) {
+        document.select(first);
+        const auto bounds = canvas->imageViewportRect(first);
+        const auto handle = snowCanvasImageSelectionCorners(bounds)[2];
+        press(handle);
+        move(handle + QPointF(30, 20));
+        switch (cancel) {
+        case 0:
+            escape();
+            break;
+        case 1:
+            editor.setExportBusy(true);
+            break;
+        case 2:
+            editor.setLoading(true);
+            break;
+        case 3:
+            document.select(second);
+            break;
+        case 4:
+            canvas->hide();
+            break;
+        case 5:
+            wheel(canvas, canvas->rect().center(), 120);
+            break;
+        case 7:
+            canvas->resize(canvas->width() + 20, canvas->height());
+            break;
+        case 6: {
+            auto colors = document.settings();
+            colors.background = Qt::yellow;
+            document.setSettings(colors);
+            break;
+        }
+        }
+        release(handle + QPointF(30, 20));
+        require(document.items()[0].staticPlacement == placement,
+                "lifecycle changes cancel transient placement");
+        if (cancel == 0)
+            require(document.selectedId() == first, "Escape during editing retains selection");
+        editor.setExportBusy(false);
+        editor.setLoading(false);
+        canvas->show();
+        pump();
+    }
+    document.resetTransform(first);
+    document.select(first);
+    const auto handle = snowCanvasImageSelectionCorners(canvas->imageViewportRect(first))[2];
+    const auto target = canvas->cellViewportRect(second).center();
+    press(handle);
+    move(target);
+    require(canvas->property("swapTargetId").toULongLong() == 0,
+            "resizing across another slot cannot swap");
+    escape();
+    release(target);
+    const auto source = canvas->imageViewportRect(first).center();
+    press(source);
+    move(source + QPointF(12, 12));
+    release(target);
+    require(document.items()[0].id == second && document.selectedId() == first,
+            "body dragging swaps by the release slot, not the previous pointer position");
+}
+
 void thumbnailScrollBarOverlaysTheList() {
     CollageDocument document;
     for (int i = 0; i < 10; ++i)
@@ -894,6 +1001,7 @@ void releaseOnlySwapAndCrossWindowIsolation() {
     require(document.items()[0].id == first, "drag must not swap before release");
     mouse(canvas, QEvent::MouseButtonRelease, {2, 2}, Qt::LeftButton, Qt::NoButton);
     require(document.items()[0].id == first, "release outside image must preserve order");
+    document.resetTransform(first);
     mouse(canvas, QEvent::MouseButtonPress, a, Qt::LeftButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseMove, b, Qt::NoButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseButtonRelease, b, Qt::LeftButton, Qt::NoButton);
@@ -2114,8 +2222,15 @@ int main(int argc, char** argv) {
             std::cout << "Collage empty state tests passed\n";
             return 0;
         }
+        if (arguments.contains(QStringLiteral("--static-editing-only"))) {
+            centeredStaticResizeMoveAndCancellation();
+            staticPlacementOverflowAndDetailAlpha();
+            ScreenshotExportCoordinator::shared().shutdown();
+            std::cout << "Static stitching editing tests passed\n";
+            return 0;
+        }
         if (arguments.contains(QStringLiteral("--selection-outline-only"))) {
-            selectionOutlineUsesThreePixelBorder();
+            selectionOutlineMatchesPdfHandles();
             replacementHighlightMatchesDrawEngineMarquee();
             ScreenshotExportCoordinator::shared().shutdown();
             std::cout << "Collage selection outline tests passed\n";
@@ -2171,7 +2286,9 @@ int main(int argc, char** argv) {
             std::cout << "Collage fit control tests passed\n";
             return 0;
         }
-        selectionOutlineUsesThreePixelBorder();
+        selectionOutlineMatchesPdfHandles();
+        centeredStaticResizeMoveAndCancellation();
+        staticPlacementOverflowAndDetailAlpha();
         externalImageDrops();
         replacementHighlightMatchesDrawEngineMarquee();
         thumbnailScrollBarOverlaysTheList();
