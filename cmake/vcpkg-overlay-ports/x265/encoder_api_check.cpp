@@ -18,7 +18,13 @@ bool encodeDepth(int depth) {
     if (!parameters) {
         return false;
     }
-    const bool configured = api->param_default_preset(parameters, "ultrafast", "zerolatency") == 0;
+    const bool configured = api->param_default_preset(parameters, "ultrafast", "zerolatency") == 0 &&
+                            api->param_parse(parameters, "pools", "none") == 0 &&
+                            parameters->internalBitDepth == depth;
+    if (!configured) {
+        api->param_free(parameters);
+        return false;
+    }
     parameters->sourceWidth = 64;
     parameters->sourceHeight = 64;
     parameters->fpsNum = 30;
@@ -26,9 +32,8 @@ bool encodeDepth(int depth) {
     parameters->frameNumThreads = 1;
     parameters->logLevel = X265_LOG_NONE;
     parameters->bEmitInfoSEI = 0;
-    std::memcpy(parameters->numaPools, "none", sizeof("none"));
     const bool profile = api->param_apply_profile(parameters, depth == 10 ? "main10" : "main") == 0;
-    x265_encoder* encoder = configured && profile ? api->encoder_open(parameters) : nullptr;
+    x265_encoder* encoder = profile ? api->encoder_open(parameters) : nullptr;
     if (!encoder) {
         api->param_free(parameters);
         return false;
@@ -39,6 +44,7 @@ bool encodeDepth(int depth) {
     tenBit.fill(512);
     x265_picture picture{};
     api->picture_init(parameters, &picture);
+    picture.bitDepth = depth;
     const int bytes = depth == 10 ? 2 : 1;
     auto* pixels = depth == 10 ? reinterpret_cast<std::uint8_t*>(tenBit.data()) : eightBit.data();
     picture.planes[0] = pixels;
@@ -72,8 +78,24 @@ bool encodeDepth(int depth) {
                 success && frames == 3 ? "pass" : "fail", frames);
     return success && frames == 3;
 }
+
+bool unavailableDepth(int depth) {
+    int error = X265_API_QUERY_ERR_NONE;
+    const bool unavailable = x265_api_get(depth) == nullptr &&
+                             x265_api_query(depth, X265_BUILD, &error) == nullptr &&
+                             error == X265_API_QUERY_ERR_LIB_NOT_FOUND;
+    std::printf("x265 %d-bit get/query unavailable: %s\n", depth, unavailable ? "pass" : "fail");
+    return unavailable;
+}
 } // namespace
 
-int main() {
-    return encodeDepth(8) && encodeDepth(10) ? 0 : 1;
+int main(int argc, char** argv) {
+    const bool combined = argc == 2 && std::strcmp(argv[1], "--combined") == 0;
+    if (argc > 2 || (argc == 2 && !combined && std::strcmp(argv[1], "--8bit-only") != 0)) {
+        std::fprintf(stderr, "Usage: encoder_api_check [--8bit-only|--combined]\n");
+        return 2;
+    }
+    const bool success = encodeDepth(8) &&
+                         (combined ? encodeDepth(10) : unavailableDepth(10) && unavailableDepth(12));
+    return success ? 0 : 1;
 }

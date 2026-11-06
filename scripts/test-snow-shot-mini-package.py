@@ -112,7 +112,7 @@ endif()
                 self.assertIn('!define SNOW_SHOT_INSTALLER_ARCHITECTURE "arm64"', script)
                 init = re.search(r'Function \.onInit\n(.*?)FunctionEnd', script, re.DOTALL).group(1)
                 self.assertLess(init.index('!insertmacro SnowShotCheckArchitecture'),
-                                init.index('Call SnowShotEnsureMainAppClosed'))
+                                init.index('Call SnowShotEnsureInstallationClosed'))
                 self.assertLess(init.index('SetRegView 64'), init.index('ReadRegStr'))
 
 

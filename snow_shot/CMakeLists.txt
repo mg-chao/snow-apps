@@ -2354,6 +2354,11 @@ if(SNOW_SHOT_BUILD_TESTS)
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-package-compression.ps1")
         set_tests_properties(snow-shot-package-compression-tests PROPERTIES
             LABELS "unit;windows" TIMEOUT 60)
+        add_test(NAME snow-shot-codec-profile-tests
+            COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-codec-profile.ps1")
+        set_tests_properties(snow-shot-codec-profile-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
     endif()
     if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
         set(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED TRUE)
@@ -12981,6 +12986,38 @@ foreach(_snow_cloud_target IN LISTS _snow_cloud_targets)
 endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")
+
+if(SNOW_SHOT_BUILD_TESTS)
+    foreach(_schema_edition IN ITEMS full mini)
+        set(_schema_suffix "")
+        set(_schema_test snow-shot-configuration-schema-tests)
+        if(_schema_edition STREQUAL "mini")
+            if(NOT TARGET snow_shot_storage_mini)
+                continue()
+            endif()
+            set(_schema_suffix "_mini")
+            set(_schema_test snow-shot-mini-configuration-schema-tests)
+        endif()
+        add_executable(${_schema_test} tests/configuration_schema_tests.cpp)
+        snow_shot_set_source_dependency_edition(${_schema_test} ${_schema_edition})
+        target_link_libraries(${_schema_test} PRIVATE
+            snow_shot_storage${_schema_suffix} snow_shot_edition_${_schema_edition} Qt6::Core)
+        target_compile_definitions(${_schema_test} PRIVATE
+            SNOW_SCHEMA_BASELINE_JSON="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/configuration-schema-windows-${_schema_edition}.json")
+        add_test(NAME ${_schema_test} COMMAND ${_schema_test})
+        set_tests_properties(${_schema_test} PROPERTIES LABELS unit TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    if(TARGET snow_shot_microtex)
+        get_target_property(_snow_microtex_upstream snow_shot_microtex SNOW_MICROTEX_UPSTREAM_SOURCE)
+        add_test(NAME snow-shot-microtex-table-generator-tests
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/microtex/test_compact_tables.py"
+                --upstream "${_snow_microtex_upstream}")
+        set_tests_properties(snow-shot-microtex-table-generator-tests PROPERTIES
+            LABELS unit TIMEOUT 60)
+    endif()
+endif()
 
 if(SNOW_SHOT_BUILD_TESTS AND WIN32)
     foreach(_shell_edition IN ITEMS full mini)

@@ -403,6 +403,103 @@ message(STATUS "ENCODERS=${{SNOW_SHOT_ENCODERS}} OPTIONS=${{OPTIONS}}")
                             'hevc_nvenc', 'hevc_amf', 'hevc_qsv'):
                 self.assertEqual(encoder in output, arch == 'x64')
 
+    def test_recording_profiles_select_x265_depth_independently(self):
+        port = ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg'
+        manifest = json.loads((port / 'vcpkg.json').read_text(encoding='utf-8'))
+        for profile, expected in [('snow-shot-minimal', ['main8']),
+                                  ('snow-recording-compat', ['main10']),
+                                  ('snow-macos-media', ['main10']),
+                                  ('snow-shot-macos-minimal', ['main10'])]:
+            with self.subTest(profile=profile):
+                dependencies = manifest['features'][profile]['dependencies']
+                self.assertEqual(next(d['features'] for d in dependencies
+                                      if d['name'] == 'x265'), expected)
+
+        text = (ROOT / 'cmake/vcpkg-overlay-ports/x265/portfile.cmake').read_text(
+            encoding='utf-8')
+        start = text.index('if("main8" IN_LIST FEATURES)')
+        fragment = text[start:text.index('if("main10" IN_LIST FEATURES)', start)]
+        for features in ['main8', 'main8;main10', 'main10']:
+            with self.subTest(features=features):
+                output = self.run_cmake(f'''
+set(FEATURES {features})
+{fragment}
+message(STATUS "OPTIONS=${{OPTIONS}}")
+''')
+                self.assertEqual('-DHIGH_BIT_DEPTH=OFF' in output, 'main8' in features)
+                self.assertEqual('-DEXPORT_C_API=ON' in output, 'main8' in features)
+                only_eight = features == 'main8'
+                self.assertEqual('-DENABLE_DYNAMIC_DEPTH=OFF' in output, only_eight)
+                self.assertEqual('-DLINKED_10BIT=OFF' in output, only_eight)
+                self.assertEqual('-DLINKED_12BIT=OFF' in output, only_eight)
+
+    def test_x265_capabilities_derive_actual_configured_depths(self):
+        module = ROOT / 'cmake/vcpkg-overlay-ports/x265/capabilities.cmake'
+        cases = [
+            ('main8', 'HIGH_BIT_DEPTH:BOOL=OFF\nENABLE_DYNAMIC_DEPTH:BOOL=OFF\n',
+             (True, False, False, False)),
+            ('combined', 'HIGH_BIT_DEPTH:BOOL=OFF\nLINKED_10BIT:BOOL=ON\n'
+             'ENABLE_DYNAMIC_DEPTH:BOOL=ON\n', (True, True, False, True)),
+            ('native10', 'HIGH_BIT_DEPTH:BOOL=ON\nMAIN12:BOOL=OFF\n'
+             'ENABLE_DYNAMIC_DEPTH:BOOL=ON\n', (False, True, False, True)),
+            ('native12-linked8', 'HIGH_BIT_DEPTH:BOOL=ON\nMAIN12:BOOL=ON\n'
+             'LINKED_8BIT:BOOL=ON\nENABLE_DYNAMIC_DEPTH:BOOL=ON\n',
+             (True, False, True, True)),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, flags, expected in cases:
+                with self.subTest(configuration=name):
+                    cache = root / f'{name}.txt'
+                    cache.write_text(flags + 'EXPORT_C_API:BOOL=ON\n', encoding='utf-8')
+                    output = root / f'{name}.json'
+                    self.run_cmake(f'''
+include("{module.as_posix()}")
+snow_x265_write_capabilities(OUTPUT_FILE "{output.as_posix()}" CACHES "{cache.as_posix()}")
+''')
+                    actual = json.loads(output.read_text(encoding='utf-8'))
+                    self.assertEqual(actual, dict(schemaVersion=2, singlePublicApi=True,
+                        **dict(zip(('bitDepth8', 'bitDepth10', 'bitDepth12',
+                                    'dynamicDepthLoading'), expected))))
+
+    def test_x265_capability_contract_rejects_overrides_and_mixed_configs(self):
+        module = ROOT / 'cmake/vcpkg-overlay-ports/x265/capabilities.cmake'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = ('HIGH_BIT_DEPTH:BOOL=OFF\nEXPORT_C_API:BOOL=ON\n'
+                    'ENABLE_DYNAMIC_DEPTH:BOOL=OFF\n')
+            release, debug, output = (root / name for name in
+                                      ['release.txt', 'debug.txt', 'capabilities.json'])
+            release.write_text(base, encoding='utf-8')
+            debug.write_text(base, encoding='utf-8')
+            invocation = f'''
+include("{module.as_posix()}")
+snow_x265_write_capabilities(OUTPUT_FILE "{output.as_posix()}"
+    CACHES "{release.as_posix()}" "{debug.as_posix()}" REQUIRE_MAIN8 REQUIRE_8BIT_ONLY)
+'''
+            self.run_cmake(invocation)
+            for replacement, reason in [
+                (base + 'LINKED_10BIT:BOOL=ON\n', 'release/debug encoder capabilities disagree'),
+                (base.replace('OFF', 'ON', 1), 'release/debug encoder capabilities disagree'),
+                (base.replace('EXPORT_C_API:BOOL=ON', 'EXPORT_C_API:BOOL=UNKNOWN'),
+                 'invalid EXPORT_C_API'),
+                (base.replace('ENABLE_DYNAMIC_DEPTH:BOOL=OFF\n', ''),
+                 'missing ENABLE_DYNAMIC_DEPTH'),
+            ]:
+                with self.subTest(reason=reason, flags=replacement):
+                    debug.write_text(replacement, encoding='utf-8')
+                    self.assertIn(reason, self.run_cmake(invocation, success=False))
+            for replacement in [base + 'LINKED_10BIT:BOOL=ON\n',
+                                base + 'LINKED_12BIT:BOOL=ON\n',
+                                base.replace('ENABLE_DYNAMIC_DEPTH:BOOL=OFF',
+                                             'ENABLE_DYNAMIC_DEPTH:BOOL=ON'),
+                                base.replace('HIGH_BIT_DEPTH:BOOL=OFF',
+                                             'HIGH_BIT_DEPTH:BOOL=ON')]:
+                with self.subTest(override=replacement):
+                    release.write_text(replacement, encoding='utf-8')
+                    debug.write_text(replacement, encoding='utf-8')
+                    self.assertIn('was overridden', self.run_cmake(invocation, success=False))
+
     def test_minimal_recording_profiles_enable_only_required_tempo_filters(self):
         port = ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg'
         manifest = json.loads((port / 'vcpkg.json').read_text(encoding='utf-8'))

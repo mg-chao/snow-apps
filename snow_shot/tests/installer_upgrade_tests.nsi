@@ -1,10 +1,15 @@
 Unicode true
+!ifdef SNOW_SHOT_PAYLOAD_ARCHIVE
+SetCompressor lzma
+SetCompressorDictSize 32
+!endif
 Name "Snow Shot legacy installer upgrade tests"
 OutFile "${OUTPUT}"
 RequestExecutionLevel user
 !define INST_DIR "${BUNDLED_DIRECTORY}"
 !include "${PACKAGING}\RunningApplication.nsh"
 !include "${PACKAGING}\OwnedCleanup.nsh"
+!include "${PACKAGING}\InstallerPayload.nsh"
 !include "${PACKAGING}\UpgradeHelper.nsh"
 
 Function .onInit

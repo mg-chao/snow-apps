@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 snow-recording-model = { path = "../snow-recording-model" }
 snow-recording-runtime = { path = "../snow-recording-runtime", default-features = false }
-snow-recording-export = { path = "../snow-recording-export" }
+snow-recording-export = { path = "../snow-recording-export", default-features = false }
 
 [dev-dependencies]
 crossbeam-channel.workspace = true
@@ -26,7 +26,8 @@ windows = { workspace = true, features = [
 ] }
 
 [features]
-default = ["legacy-capture"]
+default = ["legacy-capture", "hdr-encoding"]
+hdr-encoding = ["snow-recording-runtime/hdr-encoding", "snow-recording-export/hdr-encoding"]
 legacy-capture = ["snow-recording-runtime/legacy-capture"]
 
 [[example]]

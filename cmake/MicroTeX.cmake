@@ -18,10 +18,13 @@ function(snow_shot_add_latex_renderer)
 
     set(_support "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/microtex")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${_support}/patch_source.py" "${_support}/snow_preview.h" "${_support}/snow_preview.cpp")
+        "${_support}/patch_source.py" "${_support}/compact_tables.py"
+        "${_support}/snow_preview.h" "${_support}/snow_preview.cpp"
+        "${_support}/snow_tables.h" "${_support}/snow_tables.cpp")
     set(_source "${CMAKE_CURRENT_BINARY_DIR}/microtex-source")
     set(_patch_key "0e3707f6dafebb121d98b53c64364d16fefe481d")
-    foreach(_patch_file IN ITEMS patch_source.py snow_preview.h snow_preview.cpp)
+    foreach(_patch_file IN ITEMS patch_source.py compact_tables.py snow_preview.h snow_preview.cpp
+                                 snow_tables.h snow_tables.cpp)
         file(SHA256 "${_support}/${_patch_file}" _patch_hash)
         string(APPEND _patch_key "${_patch_hash}")
     endforeach()
@@ -43,6 +46,8 @@ function(snow_shot_add_latex_renderer)
         endif()
         configure_file("${_support}/snow_preview.h" "${_source}/src/snow_preview.h" COPYONLY)
         configure_file("${_support}/snow_preview.cpp" "${_source}/src/snow_preview.cpp" COPYONLY)
+        configure_file("${_support}/snow_tables.h" "${_source}/src/snow_tables.h" COPYONLY)
+        configure_file("${_support}/snow_tables.cpp" "${_source}/src/snow_tables.cpp" COPYONLY)
         file(WRITE "${_source}/snow-patch-key.txt" "${_patch_key}")
     endif()
 
@@ -54,8 +59,11 @@ function(snow_shot_add_latex_renderer)
         list(APPEND _sources ${_directory_sources})
     endforeach()
     list(APPEND _sources "${_source}/src/latex.cpp" "${_source}/src/render.cpp"
-        "${_source}/src/platform/qt/graphic_qt.cpp" "${_source}/src/snow_preview.cpp")
+        "${_source}/src/platform/qt/graphic_qt.cpp" "${_source}/src/snow_preview.cpp"
+        "${_source}/src/snow_tables.cpp")
     add_library(snow_shot_microtex STATIC ${_sources})
+    set_property(TARGET snow_shot_microtex PROPERTY SNOW_MICROTEX_UPSTREAM_SOURCE
+        "${snow_microtex_source_SOURCE_DIR}")
     target_include_directories(snow_shot_microtex SYSTEM PUBLIC "${_source}/src")
     target_compile_features(snow_shot_microtex PUBLIC cxx_std_20)
     target_compile_definitions(snow_shot_microtex PRIVATE BUILD_QT)
