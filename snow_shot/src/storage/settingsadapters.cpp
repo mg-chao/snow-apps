@@ -1145,6 +1145,17 @@ bool ScreenshotSettings::setCopyAfterPinningToScreen(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/copy_after_pinning_to_screen"), enabled);
 }
 
+bool ScreenshotSettings::keepAnnotationsEditableAfterPinningToScreen() const {
+    return cache()
+        .value(QStringLiteral("screenshot/keep_annotations_editable_after_pinning_to_screen"))
+        .toBool();
+}
+
+bool ScreenshotSettings::setKeepAnnotationsEditableAfterPinningToScreen(bool enabled) const {
+    return cache().setValue(
+        QStringLiteral("screenshot/keep_annotations_editable_after_pinning_to_screen"), enabled);
+}
+
 QString ScreenshotSettings::imageSaveDirectory() const {
     return cache().value(QStringLiteral("screenshot/image_save_directory")).toString();
 }

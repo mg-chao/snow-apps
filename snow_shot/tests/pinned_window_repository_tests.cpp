@@ -93,6 +93,61 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
     return value;
 }
 
+void editablePinSamplingImagesRoundTrip() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(12, 6), 3));
+    record.canvasSession = QByteArrayLiteral("full session with undo and redo");
+    record.canvasSamplingImages = {
+        {patternedImage(QSize(100, 50), 7), QRectF(-30, -20, 80, 40), QRectF(-20, -10, 60, 30)},
+        {patternedImage(QSize(10, 10), 9), QRectF(5, 5, 8, 8), QRectF(5, 5, 8, 8), false}};
+    const auto verify = [&](const storage::PinnedWindowRecord& loaded) {
+        require(samePixels(loaded.image, record.image) &&
+                    loaded.canvasSamplingImages.size() == record.canvasSamplingImages.size(),
+                "clean cropped base and original sampling layers round trip independently");
+        for (qsizetype i = 0; i < record.canvasSamplingImages.size(); ++i) {
+            const auto& expected = record.canvasSamplingImages[i];
+            const auto& actual = loaded.canvasSamplingImages[i];
+            require(samePixels(actual.image, expected.image) &&
+                        actual.canvasRect == expected.canvasRect &&
+                        actual.coverage == expected.coverage &&
+                        actual.smartEraseSource == expected.smartEraseSource,
+                    "sampling layers retain fractional scale, negative origin and cursor flags");
+        }
+    };
+    require(repository.upsert(record).success && repository.flush().success,
+            "write editable pin sampling images");
+    auto loaded = repository.loadRecord(id);
+    require(loaded.has_value(), "reload sampling donors after payload demotion");
+    verify(*loaded);
+    loaded->canvasSession = QByteArrayLiteral("updated undo stack");
+    loaded->canvasSamplingImages.clear();
+    require(repository.updateState(*loaded).success && repository.flush().success,
+            "document-only updates retain committed immutable sampling sources");
+    storage::PinnedWindowRepository restarted(directory.path(), false);
+    loaded = restarted.loadRecord(id);
+    require(loaded && loaded->canvasSession == QByteArrayLiteral("updated undo stack"),
+            "restart loads the updated session");
+    verify(*loaded);
+    require(!restarted.loadRecord(id, [](qint64) { return false; }),
+            "sampling payload obeys allocation admission");
+    const auto sourcePath = repository.imagePath(id);
+    require(sourcePath.has_value(), "sampling pin has a clean source file");
+    const auto samplingPath =
+        QFileInfo(*sourcePath).dir().filePath(QStringLiteral("canvas_sampling.bin"));
+    QFile corrupted(samplingPath);
+    require(corrupted.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                corrupted.write("invalid") == 7,
+            "corrupt the sampling payload");
+    corrupted.close();
+    require(!restarted.loadRecord(id), "corrupt sampling sources fail instead of losing context");
+    record.canvasSamplingImages.clear();
+    require(repository.upsert(record).success && repository.flush().success &&
+                !QFileInfo::exists(samplingPath) && repository.loadRecord(id).has_value(),
+            "replacing a pin prunes its obsolete sampling sources");
+}
+
 void imagePathsResolveOnlyPersistedImages() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
@@ -3152,6 +3207,10 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--editable-pin-only"))) {
+        editablePinSamplingImagesRoundTrip();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
         textAnnotationsSurviveLazyUpdatesAndClear();
         return 0;
@@ -3212,6 +3271,7 @@ int main(int argc, char* argv[]) {
         markdownFormatMetadataRoundTrips();
         return 0;
     }
+    editablePinSamplingImagesRoundTrip();
     imagePathsResolveOnlyPersistedImages();
     pinnedTextStyleMetadataRoundTrips();
     mislabeledImageFilesSurviveRestart();

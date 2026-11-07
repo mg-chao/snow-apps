@@ -3440,6 +3440,18 @@ constexpr CatalogInlineItem catalogItemScreenshotCopyAfterPinningToScreen{
     .binding = int(SettingsSwitchBinding ::ScreenshotCopyAfterPinningToScreen),
 };
 
+constexpr CatalogInlineItem catalogItemScreenshotKeepAnnotationsEditableAfterPinningToScreen{
+    .kind = CatalogItemKind::Switch,
+    .id = u"screenshot.keep-annotations-editable-after-pinning-to-screen",
+    .title = settingsText(
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Keep annotations editable after pinning to screen")),
+    .description = settingsText(QT_TRANSLATE_NOOP(
+        "SettingsCatalog", "Keep screenshot annotations editable with undo and redo history. "
+                           "Pinned images retain the original layout without layout compaction")),
+    .key = u"screenshot/keep_annotations_editable_after_pinning_to_screen",
+    .binding = int(SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen),
+};
+
 constexpr CatalogInlineItem catalogItemInterfaceScreenshotSelectionBorderColor{
     .kind = CatalogItemKind::Color,
     .id = u"interface.screenshot.selection-border-color",
@@ -4143,6 +4155,7 @@ constexpr CatalogItemFactory catalogPageScreenshotsSectionScreenshotSettingsItem
     {screenshotMiddleClickActionItem},
     {quickSelectionModificationItem},
     {nullptr, &catalogItemScreenshotCopyAfterPinningToScreen},
+    {nullptr, &catalogItemScreenshotKeepAnnotationsEditableAfterPinningToScreen},
     {screenshotShutterSoundNotificationItem},
     {screenshotSoundNotificationItem},
     {screenshotConfirmBeforeExitingViaShortcutItem},
@@ -6333,6 +6346,11 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
                         expectedKey = QStringLiteral("screenshot/copy_after_pinning_to_screen");
+                        break;
+                    case SettingsSwitchBinding::
+                        ScreenshotKeepAnnotationsEditableAfterPinningToScreen:
+                        expectedKey = QStringLiteral(
+                            "screenshot/keep_annotations_editable_after_pinning_to_screen");
                         break;
                     case SettingsSwitchBinding::ScreenshotShowSaveResult:
                         expectedKey = QStringLiteral("screenshot/show_save_result");

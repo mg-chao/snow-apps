@@ -2,6 +2,8 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTWORKFLOWPORTS_H
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotimagesource.h"
+#include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
@@ -164,6 +166,14 @@ class ScreenshotPinnedSelectionResultHandle final {
     friend class ScreenshotExportService;
 };
 
+// Owned by the pin handoff, independently of capture teardown and history storage.
+struct ScreenshotPinnedEditableSelection {
+    QByteArray documentSession;
+    ScreenshotImageSource imageSource;
+    SnowCanvasSmartEraseSnapshot smartErase;
+    ScreenshotSelectionRenderSpec renderSpec;
+};
+
 struct ScreenshotPinnedSelectionRequest {
     QRectF contentCanvasRect;
     QRectF surfaceCanvasRect;
@@ -177,6 +187,7 @@ struct ScreenshotPinnedSelectionRequest {
     ScreenshotRecognitionResults recognitionResults;
     bool recognitionVisible = false;
     bool translationVisible = false;
+    std::shared_ptr<const ScreenshotPinnedEditableSelection> editable;
 
     [[nodiscard]] bool isPrepared() const {
         return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&

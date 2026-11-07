@@ -1632,6 +1632,8 @@ constexpr SchemaEntryDescriptor kEntryDescriptors[] = {
      ConfigurationValueKind::Boolean},
     {u"screenshot/copy_after_pinning_to_screen", booleanDefault(false),
      ConfigurationValueKind::Boolean},
+    {u"screenshot/keep_annotations_editable_after_pinning_to_screen", booleanDefault(false),
+     ConfigurationValueKind::Boolean},
     {u"screenshot/show_save_result", booleanDefault(false), ConfigurationValueKind::Boolean},
     {u"screenshot/image_save_directory", factoryDefault(SchemaDefaultFactory::PicturesDirectory),
      ConfigurationValueKind::String},

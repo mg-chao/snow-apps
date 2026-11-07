@@ -254,6 +254,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         QString groupId = QStringLiteral("default");
         // Editable document imports seed the model without restoring window preferences.
         QByteArray initialCanvasSession;
+        ScreenshotImageSource initialCanvasSamplingSource;
+        SnowCanvasSmartEraseSnapshot initialSmartErase;
         QByteArray initialCanvasHistory;
         QString initialCanvasTool;
     };
@@ -577,6 +579,7 @@ class ScreenshotPinnedWindow final : public QWidget {
                                           QImage original, QImage transformed, int frameIndex,
                                           quint64 token);
     [[nodiscard]] QRect imageTransformGeometry(int quarterTurns) const;
+    [[nodiscard]] ScreenshotImageSource activeAnnotationSamplingSource() const;
     void rebuildTransformedImage();
     void applyScale(int percent);
     void applyWheelScale(double percent, const QPointF& nativeCursor);
@@ -823,6 +826,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotResultStyle m_resultStyle;
     std::optional<snow_shot::storage::PinnedBorderAppearance> m_borderAppearance;
     ScreenshotImageSource m_imageSource;
+    // Original canvas coordinates survive transforms and become active again on reset.
+    ScreenshotImageSource m_originalAnnotationSamplingSource;
+    SnowCanvasSmartEraseSnapshot m_initialSmartErase;
     QImage m_originalImage;
     QImage m_transformedImage;
     std::shared_ptr<const ScreenshotAnimationSource> m_animationSource;

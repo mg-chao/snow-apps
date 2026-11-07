@@ -997,9 +997,9 @@ void magnifierSourcesTrackOriginalImageLayersAndCaptureModes() {
         {{original, bounds, coverage},
          {cursor, QRectF(25, 25, 10, 10), QRectF(25, 25, 10, 10), false}}));
     sources = renderer.baseImageSources();
-    require(sources.size() == 2 && sources[0].coverage == coverage &&
-                sources[1].image.cacheKey() == cursor.cacheKey(),
-            "magnifier sources must retain layer coverage and captured cursor paint order");
+    require(sources.size() == 2 && sources[0].coverage == coverage && sources[0].smartEraseSource &&
+                sources[1].image.cacheKey() == cursor.cacheKey() && !sources[1].smartEraseSource,
+            "sampling sources retain coverage, cursor paint order and donor eligibility");
     renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
     require(renderer.baseImageSources().isEmpty(),
             "scrolling mode must not sample the previous screenshot without a preview");

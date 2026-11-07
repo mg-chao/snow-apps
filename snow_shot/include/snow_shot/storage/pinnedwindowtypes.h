@@ -9,6 +9,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QImage>
+#include <QList>
 #include <QRect>
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include <QRectF>
@@ -38,6 +39,14 @@ struct PinnedWindowGroup final {
     QString id;
     QString name;
     bool builtIn = false;
+};
+
+// Immutable donors for annotations that sample beyond the pinned selection.
+struct PinnedCanvasSamplingImage final {
+    QImage image;
+    QRectF canvasRect;
+    QRectF coverage;
+    bool smartEraseSource = true;
 };
 
 enum class PinnedWindowSourceKind {
@@ -72,6 +81,7 @@ struct PinnedWindowRecord final {
     QString groupId = QStringLiteral("default");
     PinnedWindowSourceKind sourceKind = PinnedWindowSourceKind::ImageData;
     QImage image;
+    QList<PinnedCanvasSamplingImage> canvasSamplingImages;
     std::shared_ptr<const ScreenshotAnimationSource> animationSource;
     int animationSpeedPercent = 100;
     bool animationPlaying = true;

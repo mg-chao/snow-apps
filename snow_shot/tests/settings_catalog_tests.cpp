@@ -356,7 +356,32 @@ void translationConfidenceCatalog() {
     QCoreApplication::removeTranslator(&translator);
 }
 
+void editablePinCatalog() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto* section = registry.catalog().section(QStringLiteral("screenshots"),
+                                                     QStringLiteral("screenshot-settings"));
+    const auto* field = registry.fieldForSwitch(
+        settings::SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen);
+    require(
+        section && field &&
+            field->configurationKey ==
+                QStringLiteral("screenshot/keep_annotations_editable_after_pinning_to_screen") &&
+            !field->defaultValue.toBool() &&
+            field->reset == settings::SettingsSectionReset::ScreenshotSettings &&
+            field->definition->title.translated() ==
+                QStringLiteral("Keep annotations editable after pinning to screen"),
+        "editable pin setting exposes the default-off persisted interaction switch");
+    const auto copy =
+        std::find_if(section->items.cbegin(), section->items.cend(), [](const auto& item) {
+            return item.id == QStringLiteral("screenshot.copy-after-pinning-to-screen");
+        });
+    require(copy != section->items.cend() && std::next(copy) != section->items.cend() &&
+                std::next(copy)->id == field->definition->id,
+            "editable pin setting immediately follows copy after pinning");
+}
+
 void screenshotInteractionCatalog() {
+    editablePinCatalog();
     const auto& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "screenshot interaction settings must validate");
     const auto* functionPage = catalog.page(QStringLiteral("screenshots"));

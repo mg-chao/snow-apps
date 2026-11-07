@@ -2680,6 +2680,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-pinned-window-repository-tests
              COMMAND snow-shot-pinned-window-repository-tests)
+    add_test(NAME snow-shot-editable-pin-storage-tests
+             COMMAND snow-shot-pinned-window-repository-tests --editable-pin-only)
+    set_tests_properties(snow-shot-editable-pin-storage-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_test(NAME snow-shot-pinned-image-path-tests
              COMMAND snow-shot-pinned-window-repository-tests --image-path-only)
     set_tests_properties(snow-shot-pinned-image-path-tests PROPERTIES
@@ -3002,6 +3005,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(WIN32)
         target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE user32)
     endif()
+    add_test(NAME snow-shot-editable-pin-export-tests
+        COMMAND snow-shot-screenshot-export-service-tests --editable-pin-only -platform offscreen)
+    set_tests_properties(snow-shot-editable-pin-export-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30)
     add_test(NAME snow-shot-screenshot-export-service-tests
              COMMAND snow-shot-screenshot-export-service-tests)
     add_test(NAME snow-shot-fractional-dpi-export-tests
@@ -11759,6 +11766,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-image-editing-pin-controller-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-editable-pin-tests
+        COMMAND snow_shot --clipboard-pin-tests --editable-pin-tests -platform offscreen)
+    set_tests_properties(snow-shot-editable-pin-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 90 RUN_SERIAL TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-editable-pin-settings-tests
+        COMMAND snow-shot-export-dialog-workflow-tests --editable-pin-settings -platform offscreen)
+    set_tests_properties(snow-shot-editable-pin-settings-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30)
     add_test(NAME snow-shot-copy-after-pinning-tests
         COMMAND snow_shot --clipboard-pin-tests --copy-after-pin-tests)
     set_tests_properties(snow-shot-copy-after-pinning-tests PROPERTIES

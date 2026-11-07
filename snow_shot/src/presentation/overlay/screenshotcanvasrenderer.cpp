@@ -2634,11 +2634,12 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, cons
     m_opaqueImageCanvasRects = std::move(opaqueRects);
     m_opaqueCoverageValid = false;
     QList<SnowCanvasBaseImageSource> baseSources;
-    if (m_imageSource.isMaterialized()) {
-        baseSources.push_back(
-            {m_imageSource.materializedImage, m_imageSource.materializedCanvasRect, {}});
+    if (m_samplingImageSource.isMaterialized()) {
+        baseSources.push_back({m_samplingImageSource.materializedImage,
+                               m_samplingImageSource.materializedCanvasRect,
+                               {}});
     } else {
-        for (const auto& layer : m_imageSource.layers) {
+        for (const auto& layer : m_samplingImageSource.layers) {
             if (!layer.smartEraseSource)
                 continue;
             // An empty coverage means the entire image canvas rect. Keep the
@@ -3289,8 +3290,8 @@ void ScreenshotCanvasRenderer::refreshBaseImageSources() {
         m_baseImageSources.reserve(m_samplingImageSource.layers.size());
         for (const auto& layer : m_samplingImageSource.layers) {
             if (layer.isValid())
-                m_baseImageSources.append(
-                    {layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+                m_baseImageSources.append({layer.image, layer.imageCanvasRect,
+                                           layer.destinationCanvasRect, layer.smartEraseSource});
         }
     }
 }

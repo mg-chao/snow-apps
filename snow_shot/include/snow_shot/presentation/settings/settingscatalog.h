@@ -152,6 +152,7 @@ enum class SettingsSwitchBinding {
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     ScreenshotCopyAfterPinningToScreen,
+    ScreenshotKeepAnnotationsEditableAfterPinningToScreen,
     ScreenshotShowSaveResult,
     SaveRecognitionResultAsImage,
     ShowOriginalImagePreview,

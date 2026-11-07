@@ -439,6 +439,31 @@ ScreenshotExportService::preparePinnedSelection(const QRect& selection,
     return request;
 }
 
+std::optional<ScreenshotPinnedSelectionRequest>
+ScreenshotExportService::prepareEditablePinnedSelection(const QRect& selection,
+                                                        const ScreenshotResultStyle& style) const {
+    auto request = preparePinnedSelection(selection, style);
+    if (!request)
+        return std::nullopt;
+    auto editable = std::make_shared<ScreenshotPinnedEditableSelection>();
+    editable->documentSession = m_context.runtime.serializeDocumentSession();
+    editable->smartErase = m_context.runtime.smartEraseSnapshot();
+    editable->renderSpec = screenshotSelectionRenderSpec(m_context.displaySession, selection);
+    QList<ScreenshotImageLayer> layers;
+    m_context.displaySession.forEachImageSource(
+        [&](qsizetype, const CapturedDisplayModel& display) {
+            if (!display.image.isNull())
+                layers.append(
+                    screenshotDisplayImageLayers(display, m_context.displaySession.cursorVisible));
+        });
+    editable->imageSource = ScreenshotImageSource::fromLayers(std::move(layers));
+    if (editable->documentSession.isEmpty() || !editable->imageSource.isValid() ||
+        editable->renderSpec.pixelSize.isEmpty())
+        return std::nullopt;
+    request->editable = std::move(editable);
+    return request;
+}
+
 std::optional<ScreenshotClipboardPlacement>
 ScreenshotExportService::prepareClipboardPlacement(const QRect& selection,
                                                    const ScreenshotResultStyle& style,
@@ -459,17 +484,24 @@ bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionR
     }
 
     const QPointer<QObject> guardedReceiver(receiver);
-    QList<CanvasExportSource> sources =
-        exportSourcesForSelection(m_context.displaySession, request.selection);
+    QList<CanvasExportSource> sources;
+    if (request.editable) {
+        for (const auto& layer : request.editable->imageSource.layers)
+            sources.append({layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+    } else {
+        sources = exportSourcesForSelection(m_context.displaySession, request.selection);
+    }
     if (sources.isEmpty()) {
         return false;
     }
 
-    auto smartErase = m_context.runtime.smartEraseSnapshot();
+    auto smartErase =
+        request.editable ? request.editable->smartErase : m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
         SNOW_SHOT_PIN_PERF_SCOPE("export.serialize_document");
-        documentSession = m_context.runtime.serializeDocumentSession();
+        documentSession = request.editable ? request.editable->documentSession
+                                           : m_context.runtime.serializeDocumentSession();
         if (documentSession.isEmpty()) {
             return false;
         }
@@ -477,7 +509,9 @@ bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionR
 
     auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
     const auto renderSpec =
-        screenshotSelectionRenderSpec(m_context.displaySession, request.selection);
+        request.editable
+            ? request.editable->renderSpec
+            : screenshotSelectionRenderSpec(m_context.displaySession, request.selection);
     const auto plan = exportLayoutPlan(request.resultStyle, renderSpec, request.layoutCompaction);
     if (!validExportSize(request.resultStyle, renderSpec, plan))
         return false;

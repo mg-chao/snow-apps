@@ -2808,6 +2808,10 @@
             <translation>Jump to translation page</translation>
         </message>
         <message>
+            <source>Keep annotations editable after pinning to screen</source>
+            <translation>Keep annotations editable after pinning to screen</translation>
+        </message>
+        <message>
             <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
             <translation>Keep closed windows available for restoration; disabling does not delete existing records</translation>
         </message>
@@ -2818,6 +2822,10 @@
         <message>
             <source>Keep records permanently</source>
             <translation>Keep records permanently</translation>
+        </message>
+        <message>
+            <source>Keep screenshot annotations editable with undo and redo history. Pinned images retain the original layout without layout compaction</source>
+            <translation>Keep screenshot annotations editable with undo and redo history. Pinned images retain the original layout without layout compaction</translation>
         </message>
         <message>
             <source>Keep screenshots available after the application closes</source>
