@@ -339,6 +339,7 @@ void sourceRecordsRemainIndependent() {
     display.sourceCanvasRect = draft.canvasBounds;
     display.image = original.image;
     draft.displays.append(std::move(display));
+    draft.resultImage = original.image;
     const auto published = repository->publish(std::move(draft)).get();
     require(published.storage.success, "publish the history source for pinning");
     const auto revision = repository->recordsSnapshot().revision;

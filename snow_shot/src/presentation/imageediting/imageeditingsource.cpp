@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "snow_shot/presentation/imageeditingdocument.h"
-#include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include <QColorSpace>
 #include <QCoreApplication>
@@ -10,15 +9,6 @@ namespace snow_shot::presentation {
 namespace {
 QString loadError() {
     return QCoreApplication::translate("ImageEditingWindow", "The image could not be loaded");
-}
-
-bool hasEditableSelection(const storage::PersistedSelection& selection) {
-    // The editor owns one rectangular base image and annotations in the original canvas space.
-    // Masks and effects require their own clipping/layout state; restoring only their raw donors
-    // would reveal excluded pixels or change annotation placement. Their stored composite is the
-    // faithful representation until that state can also be edited. Background and compaction
-    // preferences have no visual effect on a plain rectangle without an effect inset.
-    return !selection.region && selection.cornerRadius == 0 && selection.effectWidth() == 0;
 }
 } // namespace
 
@@ -93,73 +83,8 @@ void restrictImageEditingSource(ImageEditingSource& source, const QRectF& visibl
 
 ImageEditingSource readImageEditingHistory(storage::CaptureHistoryRepository& repository,
                                            const storage::CaptureHistoryRecord& record) {
-    ImageEditingSource result;
-    const auto payload = hasEditableSelection(record.selection)
-                             ? repository.loadPreservingRecord(record)
-                             : std::nullopt;
-    const bool mapped =
-        record.displays.size() == 1 ||
-        std::all_of(record.displays.cbegin(), record.displays.cend(), [](const auto& display) {
-            return display.sourceCanvasRect.has_value() || display.sourceCanvasOrigin.has_value();
-        });
-    if (payload && mapped && payload->displayImages.size() == record.displays.size()) {
-        SnowCanvasRuntime validator;
-        if (validator.restoreDocumentHistory(payload->canvasHistory) ||
-            validator.restoreDocumentSession(payload->canvasHistory)) {
-            const QRectF bounds(record.selection.rectangle);
-            QList<ScreenshotImageLayer> layers;
-            qreal scale = 1;
-            for (qsizetype i = 0; i < record.displays.size(); ++i) {
-                const auto& display = record.displays[i];
-                const QImage& image = payload->displayImages[i];
-                QRectF frame = display.sourceCanvasRect.value_or(
-                    QRect(display.sourceCanvasOrigin.value_or(record.canvasBounds.topLeft()),
-                          image.size()));
-                if (frame.isEmpty())
-                    continue;
-                result.samplingSources.append({image, frame, {}});
-                const QRectF visible = frame.intersected(bounds);
-                // Match ordinary screenshot export: only intersecting point-space sources
-                // contribute their recorded backing scale, including source-size rounding.
-                if (!visible.isEmpty() && display.canvasUsesPoints)
-                    scale = std::max(scale, display.backingScale);
-                if (!visible.isEmpty())
-                    layers.append({image, frame, visible});
-                if (record.cursorVisible && display.cursor && i < payload->cursorPatches.size() &&
-                    !payload->cursorPatches[i].isNull()) {
-                    const auto pixelRect = display.cursor->pixelRect;
-                    const qreal sx = frame.width() / image.width();
-                    const qreal sy = frame.height() / image.height();
-                    const QRectF cursorRect(frame.x() + pixelRect.x() * sx,
-                                            frame.y() + pixelRect.y() * sy, pixelRect.width() * sx,
-                                            pixelRect.height() * sy);
-                    const auto cursorVisible = cursorRect.intersected(bounds);
-                    result.samplingSources.append(
-                        {payload->cursorPatches[i], cursorRect, {}, false});
-                    if (!cursorVisible.isEmpty())
-                        layers.append(
-                            {payload->cursorPatches[i], cursorRect, cursorVisible, false});
-                }
-            }
-            result.image = renderImageEditingBaseImage(
-                ScreenshotImageSource::fromLayers(layers), bounds,
-                screenshotSelectionRenderedPixelSize(record.selection.rectangle.size(), scale));
-            if (!result.image.isNull()) {
-                result.canvasRect = bounds;
-                result.canvasHistory = validator.serializeDocumentHistory();
-                return result;
-            }
-        }
-    }
-    const auto composite = repository.loadResultImagePreservingRecord(record);
-    if (composite) {
-        result.samplingSources.clear();
-        result.image = *composite;
-        result.canvasRect = QRectF(QPointF(), QSizeF(result.image.size()));
-        result.flattened = record.canvasBytes > 0;
-    } else
-        result.error = loadError();
-    return result;
+    return completeImageEditingComposite(
+        {}, repository.loadResultImagePreservingRecord(record).value_or(QImage()));
 }
 ImageEditingSource readImageEditingPinned(storage::PinnedWindowRecord record,
                                           const ScreenshotPinnedRenderPreparation& preparation) {
