@@ -545,6 +545,8 @@ bool presentPinnedWindowAndSynchronize(
     const std::function<void(const QString&)>& imageEditingRequested,
     std::function<void(bool, QImage)> completion = {}) {
     ScreenshotPinnedWindow::Config config = requestedConfig;
+    // Runtime preferences also apply when saved pins are recreated by a group switch or restore.
+    applyPinRuntimeSettings(&config);
     if (!config.placement.isValid() && config.screen)
         config.placement =
             snow_shot::presentation::pinnedPlacement(config.nativeGeometry, *config.screen);
@@ -755,7 +757,6 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     config.translationVisible = !layoutChanged && request.translationVisible;
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
-    applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
     config.selectionController = m_selectionController.get();
     config.groupId =
@@ -854,7 +855,6 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
-    applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
     config.selectionController = m_selectionController.get();
     config.groupId =
@@ -1085,7 +1085,6 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
         config.initialCanvasTool = document->tool;
         config.recognitionResults = document->recognitionResults;
     }
-    applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
     config.selectionController = m_selectionController.get();
     config.groupId =
@@ -1176,7 +1175,6 @@ bool ScreenshotSelectionExportUiServices::presentLiveWindow(
     config.groupId = m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
     config.creationSource = snow_shot::storage::PinnedWindowCreationSource::Screenshot;
     config.recognitionProvider = m_recognitionProvider;
-    applyPinRuntimeSettings(&config);
     config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     // Supply ordinary callbacks for conversion, without reserving a recoverable live record.
     applyPersistence(&config, config.persistenceId);

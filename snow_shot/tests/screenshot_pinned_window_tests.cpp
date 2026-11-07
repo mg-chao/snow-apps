@@ -11315,6 +11315,7 @@ void restoredPartiallyVisiblePlacementStaysExact() {
 }
 
 #include "pinned_stacking_restore_tests.h"
+#include "pinned_runtime_settings_tests.h"
 
 void restoredStateSavePreservesSourceRevision() {
     IsolatedPinnedStorage isolated;
@@ -29026,6 +29027,14 @@ int main(int argc, char* argv[]) {
             pinnedStackingSurvivesRestoration();
             pinnedStackingExplicitShowDuringRestore();
             pinnedStackingRestoreDuringMutation();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--restore-runtime-zoom-only"))) {
+            pinned_runtime_settings_tests::zoom();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--restore-runtime-recognition-only"))) {
+            pinned_runtime_settings_tests::recognition();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--restored-state-persistence-only"))) {
