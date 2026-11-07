@@ -193,6 +193,8 @@ void ScreenshotPinnedWindow::synchronizeQuickTextAnnotationToolbar() {
                     m_quickTextAnnotationSelectionSuperseded = true;
                     destroyQuickTextAnnotationToolbar();
                 });
+        connect(m_quickTextAnnotationToolbar, &ScreenshotQuickTextAnnotationToolbar::copyClicked,
+                this, [this] { static_cast<void>(copyHiddenTextSelection()); });
         connect(m_quickTextAnnotationToolbar, &ScreenshotQuickTextAnnotationToolbar::toolClicked,
                 this, [this](ScreenshotTextAnnotationTool tool) {
                     // Selection and empty pins need only source identity/revision. Serialize

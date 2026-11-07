@@ -6313,6 +6313,9 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     static_cast<void>(beginCopyRequest());
     if (QClipboard* clipboard = QApplication::clipboard()) {
         clipboard->setMimeData(mime.release());
+        // Keep the copied range selected, but retire its tools until a new selection.
+        m_quickTextAnnotationSelectionSuperseded = true;
+        destroyQuickTextAnnotationToolbar();
     }
     return true;
 }

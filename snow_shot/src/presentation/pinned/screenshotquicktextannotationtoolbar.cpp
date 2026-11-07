@@ -9,6 +9,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 
+#include "antd_icons.h"
 #include "widgets/color_picker.h"
 #include "widgets/detail/overlay_popup_surface.h"
 #include "widgets/popover.h"
@@ -108,6 +109,7 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
     AdPopover* main;
     AdPopover* editor;
     QWidget* editorContent = nullptr;
+    AdButton* copyButton = nullptr;
     std::array<AdButton*, 4> buttons{};
     std::array<Style, 4> preferences;
     States states;
@@ -148,6 +150,12 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
         auto* layout = new QHBoxLayout(content);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(8);
+        copyButton = createScreenshotToolPaletteToolButton(
+            content, nullptr, adqt::icons::antd::outlined::Copy(), kToolMetrics);
+        copyButton->setObjectName(QStringLiteral("quickTextAnnotation_copy"));
+        copyButton->setFocusPolicy(Qt::NoFocus);
+        layout->addWidget(copyButton);
+        QObject::connect(copyButton, &AdButton::clicked, q, &Toolbar::copyClicked);
         for (int i = 0; i < 4; ++i) {
             const Tool tool = static_cast<Tool>(i);
             const auto icon =
@@ -210,6 +218,9 @@ struct ScreenshotQuickTextAnnotationToolbar::Private final {
     }
 
     void retranslate() {
+        const QString copyText = ScreenshotQuickTextAnnotationToolbar::tr("Copy text");
+        copyButton->setToolTip(copyText);
+        copyButton->setAccessibleName(copyText);
         const QString names[] = {ScreenshotQuickTextAnnotationToolbar::tr("Highlight"),
                                  ScreenshotQuickTextAnnotationToolbar::tr("Wavy underline"),
                                  ScreenshotQuickTextAnnotationToolbar::tr("Underline"),

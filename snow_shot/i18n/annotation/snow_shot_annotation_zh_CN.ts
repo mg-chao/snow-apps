@@ -4,6 +4,10 @@
     <context>
         <name>ScreenshotQuickTextAnnotationToolbar</name>
         <message>
+            <source>Copy text</source>
+            <translation>复制文本</translation>
+        </message>
+        <message>
             <source>Highlight</source>
             <translation>高亮</translation>
         </message>
