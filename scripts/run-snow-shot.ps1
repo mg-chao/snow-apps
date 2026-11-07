@@ -90,6 +90,7 @@ function Stop-RunningBuildInstance {
 }
 
 if (-not $NoBuild) {
+    Write-Host "Building Snow Shot ($Edition, $Preset) before launch..."
     Stop-RunningBuildInstance -BuildDirectory $buildDirectory
 
     $buildScript = Join-Path $PSScriptRoot "build.ps1"
@@ -117,13 +118,17 @@ if ((Get-SnowPeMachine -Path $executablePath) -ne $windowsTarget.PeMachine) {
 }
 # Snow Shot is a GUI executable and does not create a console. Hidden sets the
 # Windows startup show state and can suppress its first editor while Qt reports it visible.
+Write-Host "Starting Snow Shot: $executablePath"
 if ($Detached) {
-    Start-Process -FilePath $executablePath -WorkingDirectory $workingDirectory -WindowStyle Normal | Out-Null
+    Start-Process -FilePath $executablePath -WorkingDirectory $workingDirectory `
+        -ArgumentList '--show-main-window' -WindowStyle Normal | Out-Null
+    Write-Host "Snow Shot launched in detached mode; returning to the terminal."
     return
 }
 
 $process = Start-Process -FilePath $executablePath -WorkingDirectory $workingDirectory `
-    -WindowStyle Normal -PassThru
+    -ArgumentList '--show-main-window' -WindowStyle Normal -PassThru
+Write-Host "Snow Shot launched; waiting for it to exit. Use -Detached to return to the terminal after launch."
 $process.WaitForExit()
 if ($process.ExitCode -ne 0) {
     throw "Snow Shot exited with code $($process.ExitCode)."

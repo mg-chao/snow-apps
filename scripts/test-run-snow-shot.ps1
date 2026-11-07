@@ -47,8 +47,10 @@ try {
     $global:SnowLaunchFixtureProcess = $null
     $global:SnowLaunchPath = ''
     function Start-Process {
-        param($FilePath, $WorkingDirectory, $WindowStyle, [switch]$PassThru)
+        param($FilePath, $WorkingDirectory, $ArgumentList, $WindowStyle, [switch]$PassThru)
         Require ($WindowStyle -eq 'Normal') 'GUI launches must not suppress the first editor window.'
+        Require (@($ArgumentList).Count -eq 1 -and $ArgumentList -eq '--show-main-window') `
+            'Development launches must explicitly show the main window, including on first startup.'
         Require ($WorkingDirectory -eq (Split-Path $FilePath)) 'Use the executable directory.'
         $global:SnowLaunchPath = $FilePath
         if ($PassThru) {
@@ -60,8 +62,12 @@ try {
     $launcher = Join-Path $scripts 'run-snow-shot.ps1'
     foreach ($edition in @('Full', 'Mini')) {
         $global:SnowLaunchFixtureProcess = $null
-        & $launcher -Edition $edition -NoBuild
+        $output = (& $launcher -Edition $edition -NoBuild 6>&1 | Out-String)
         Require $global:SnowLaunchFixtureProcess.Waited 'Foreground launches must wait for the GUI process.'
+        Require ($output.Contains('Starting Snow Shot:') -and
+            $output.Contains('waiting for it to exit') -and $output.Contains('-Detached')) `
+            'Explain that launch succeeded and the terminal is waiting for application exit.'
+        Require (-not $output.Contains('Building Snow Shot')) 'NoBuild must skip the build stage.'
         $target = if ($edition -eq 'Mini') { 'snow_shot_mini' } else { 'snow_shot' }
         Require ($global:SnowLaunchPath.EndsWith("$target.exe")) 'Select the requested edition.'
     }
@@ -71,8 +77,10 @@ try {
     try { & $launcher -Edition Mini -NoBuild } catch { $failure = $_.Exception.Message }
     Require ($failure -eq 'Snow Shot exited with code -1073741515.') 'Report the actual loader failure.'
     $global:SnowLaunchFixtureProcess = $null
-    & $launcher -Edition Mini -NoBuild -Detached
+    $output = (& $launcher -Edition Mini -NoBuild -Detached 6>&1 | Out-String)
     Require ($null -eq $global:SnowLaunchFixtureProcess) 'Detached launches must return immediately.'
+    Require ($output.Contains('returning to the terminal') -and
+        -not $output.Contains('waiting for it to exit')) 'Describe detached launches without a wait message.'
 
     # A missing performance build exercises the real batch entry point and argument
     # forwarding without starting an application. Restrict PATH to force its 5.1 fallback.
@@ -166,7 +174,10 @@ function dumpbin.exe {}
             $env:VCPKG_FORCE_SYSTEM_BINARIES = '1'
             Remove-Item Env:VCPKG_FORCE_DOWNLOADED_BINARIES -ErrorAction SilentlyContinue
             $global:SnowLaunchBuildCalls = @()
-            & $launcher -Edition $edition -Detached
+            $output = (& $launcher -Edition $edition -Detached 6>&1 | Out-String)
+            Require ($output.Contains("Building Snow Shot ($edition, windows-msvc-debug) before launch...") -and
+                $output.IndexOf('Building Snow Shot') -lt $output.IndexOf('Starting Snow Shot:')) `
+                'Announce the build stage before launching the application.'
             $expectedCalls = if ($firstBuild) { 2 } else { 1 }
             Require ($global:SnowLaunchBuildCalls.Count -eq $expectedCalls) `
                 'Configure initially, then incrementally build across editions and shell PATH changes.'

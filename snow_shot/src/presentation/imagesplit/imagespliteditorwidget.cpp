@@ -188,13 +188,8 @@ struct ImageSplitPreviewCanvas::Impl {
     QObject callbackContext;
 
     QRectF viewport() const {
-        // Reserve room for the complete Y hint even when the image is panned past the left edge.
-        const qreal gutter = std::max(
-            kRulerWidth,
-            positionBadgeSize(owner, canvasText("Y: %1 px").arg(document->image().height()))
-                    .width() +
-                kPositionBadgeSpacing);
-        return QRectF(gutter, kRulerHeight, std::max(1.0, owner->width() - gutter),
+        // Coordinate hints clamp to the canvas edge instead of reserving an extra gutter.
+        return QRectF(kRulerWidth, kRulerHeight, std::max(1.0, owner->width() - kRulerWidth),
                       std::max(1.0, owner->height() - kRulerHeight));
     }
     QRectF imageRect() const {
@@ -270,7 +265,7 @@ struct ImageSplitPreviewCanvas::Impl {
         if (!ruler.contains(center))
             return {};
         const auto badge = positionBadgeSize(owner, positionText(line));
-        // Painting and overlay damage share the same bounds outside the visible image.
+        // Painting and overlay damage share the same bounds, clamped to the canvas.
         const qreal left = vertical ? center.x() - badge.width() / 2
                                     : ruler.right() - kPositionBadgeSpacing - badge.width();
         const qreal top = vertical ? ruler.bottom() - kPositionBadgeSpacing - badge.height()
