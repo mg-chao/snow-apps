@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use snow_draw_engine_core::{DrawRect, ErrorCode, Point};
 use snow_draw_engine_document::{
@@ -216,7 +216,21 @@ pub(crate) fn append_delete_dependencies(
         }
     }
 
-    for serial_id in ids
+    append_serial_number_delete_updates(transaction, document, &delete_ids);
+
+    for id in delete_ids {
+        transaction.remove_element(id);
+    }
+}
+
+fn append_serial_number_delete_updates(
+    transaction: &mut Transaction,
+    document: &DocumentModel,
+    delete_ids: &[ElementId],
+) {
+    let delete_ids: HashSet<_> = delete_ids.iter().copied().collect();
+    let mut updates = BTreeMap::new();
+    for serial_id in delete_ids
         .iter()
         .copied()
         .filter(|id| document.text(*id).is_ok())
@@ -229,13 +243,55 @@ pub(crate) fn append_delete_dependencies(
             let mut updated = serial.clone();
             updated.text_element_id = None;
             if updated != *serial {
-                transaction.update_serial_number(serial_id, updated);
+                updates.insert(serial_id, updated);
             }
         }
     }
 
-    for id in delete_ids {
-        transaction.remove_element(id);
+    if delete_ids.iter().any(|id| {
+        document
+            .serial_number(*id)
+            .is_ok_and(|serial| serial.serial_number_type.supports_number())
+    }) {
+        let mut numbered: Vec<_> = document
+            .paint_order()
+            .iter()
+            .filter_map(|id| document.serial_number(*id).ok().map(|serial| (*id, serial)))
+            .filter(|(_, serial)| serial.serial_number_type.supports_number())
+            .collect();
+        numbered.sort_unstable_by_key(|(_, serial)| (serial.numeric_type as u32, serial.number));
+
+        let mut previous: Option<(SerialNumberNumericType, i64)> = None;
+        let mut removed_values = 0;
+        for group in numbered.chunk_by(|(_, left), (_, right)| {
+            left.numeric_type == right.numeric_type && left.number == right.number
+        }) {
+            let (_, serial) = group[0];
+            // Original gaps and format changes start independent sequences.
+            if previous.is_none_or(|(numeric_type, number)| {
+                numeric_type != serial.numeric_type || number.checked_add(1) != Some(serial.number)
+            }) {
+                removed_values = 0;
+            }
+            previous = Some((serial.numeric_type, serial.number));
+            if group.iter().all(|(id, _)| delete_ids.contains(id)) {
+                // A duplicate value closes a gap only when its last badge is removed.
+                removed_values += 1;
+            } else if removed_values > 0 {
+                for (id, serial) in group {
+                    if !delete_ids.contains(id) {
+                        updates
+                            .entry(*id)
+                            .or_insert_with(|| (*serial).clone())
+                            .number = serial.number - removed_values;
+                    }
+                }
+            }
+        }
+    }
+
+    for (id, updated) in updates {
+        transaction.update_serial_number(id, updated);
     }
 }
 
@@ -1436,7 +1492,7 @@ mod tests {
     use snow_draw_engine_core::{ColorRgba8, EngineConfig, PathSegmentMode};
     use snow_draw_engine_document::{
         ArrowData, CanvasFilterType, ElementData, ElementMeta, FreeDrawData, Operation,
-        PenFilterData, RectangleData, SerialNumberData, TextData,
+        PenFilterData, RectangleData, SerialNumberData, SerialNumberType, TextData,
     };
 
     #[test]
@@ -2192,6 +2248,287 @@ mod tests {
         assert_eq!(updated_serial.text_element_id, None);
         assert_eq!(*removed_id, text_id);
         assert!(editor.state.selection.is_empty());
+    }
+
+    #[test]
+    fn serial_number_deletion_closes_only_fully_removed_values_in_original_runs() {
+        for (numbers, deleted, expected) in [
+            (
+                vec![1, 2, 3, 4, 5],
+                vec![2],
+                vec![Some(1), Some(2), None, Some(3), Some(4)],
+            ),
+            (vec![1, 2, 3], vec![0], vec![None, Some(1), Some(2)]),
+            (vec![1, 2, 3], vec![2], vec![Some(1), Some(2), None]),
+            (
+                vec![1, 2, 3, 4, 5],
+                vec![1, 3],
+                vec![Some(1), None, Some(2), None, Some(3)],
+            ),
+            (
+                vec![1, 2, 3, 4],
+                vec![1, 2],
+                vec![Some(1), None, None, Some(2)],
+            ),
+            (
+                vec![5, 1, 4, 2, 3],
+                vec![4],
+                vec![Some(4), Some(1), Some(3), Some(2), None],
+            ),
+            (
+                vec![1, 2, 3, 7, 8],
+                vec![1],
+                vec![Some(1), None, Some(2), Some(7), Some(8)],
+            ),
+            (
+                vec![1, 2, 3, 7, 8, 9],
+                vec![1, 4],
+                vec![Some(1), None, Some(2), Some(7), None, Some(8)],
+            ),
+            (
+                vec![1, 2, 2, 3, 4],
+                vec![1],
+                vec![Some(1), None, Some(2), Some(3), Some(4)],
+            ),
+            (
+                vec![1, 2, 2, 3, 4],
+                vec![1, 2],
+                vec![Some(1), None, None, Some(2), Some(3)],
+            ),
+            (
+                vec![1, 2, 3, 3, 4],
+                vec![1],
+                vec![Some(1), None, Some(2), Some(2), Some(3)],
+            ),
+            (vec![0, 1, 2], vec![0], vec![None, Some(0), Some(1)]),
+            (
+                vec![i64::MAX - 2, i64::MAX - 1, i64::MAX],
+                vec![0],
+                vec![None, Some(i64::MAX - 2), Some(i64::MAX - 1)],
+            ),
+            (vec![1, 2, 3], vec![0, 1, 2], vec![None, None, None]),
+            (vec![1, 2, 3], vec![1, 1], vec![Some(1), None, Some(2)]),
+        ] {
+            for selection_deletion in [false, true] {
+                let mut document = DocumentModel::new();
+                let ids: Vec<_> = numbers
+                    .iter()
+                    .map(|number| {
+                        insert_serial_number(
+                            &mut document,
+                            SerialNumberData {
+                                number: *number,
+                                center: Point::new(*number as f64, 30.0),
+                                diameter: 73.0,
+                                rotation: 0.3,
+                                font_size: 24.0,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect();
+                let originals: Vec<_> = ids
+                    .iter()
+                    .map(|id| document.serial_number(*id).unwrap().clone())
+                    .collect();
+                let mut delete_ids: Vec<_> = deleted.iter().map(|index| ids[*index]).collect();
+                let mut editor = Editor::new(EngineConfig::default()).unwrap();
+                let command = if selection_deletion {
+                    delete_ids.reverse();
+                    editor.set_selection_state(delete_ids, None);
+                    editor.delete_selected(&document)
+                } else {
+                    editor.delete_elements(&document, &delete_ids, "erase elements")
+                }
+                .unwrap()
+                .unwrap();
+                let EditorCommand::ApplyTransaction(command) = command else {
+                    panic!("expected deletion transaction");
+                };
+                let result = document.apply_transaction(command.transaction).unwrap();
+                for ((id, original), expected) in ids.iter().zip(&originals).zip(&expected) {
+                    if let Some(number) = expected {
+                        let mut updated = original.clone();
+                        updated.number = *number;
+                        assert_eq!(
+                            document.serial_number(*id).unwrap(),
+                            &updated,
+                            "numbers={numbers:?}, deleted={deleted:?}"
+                        );
+                    } else {
+                        assert!(document.element(*id).is_err());
+                    }
+                }
+                document.apply_history_transaction(&result.inverse).unwrap();
+                assert_eq!(document.paint_order(), ids);
+                for (id, original) in ids.iter().zip(&originals) {
+                    assert_eq!(document.serial_number(*id).unwrap(), original);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn serial_number_deletion_keeps_numeric_formats_independent_of_badge_appearance() {
+        let formats = [
+            SerialNumberNumericType::Arabic,
+            SerialNumberNumericType::Roman,
+            SerialNumberNumericType::LowercaseLetters,
+            SerialNumberNumericType::UppercaseLetters,
+            SerialNumberNumericType::Chinese,
+        ];
+        for deleted_format in formats {
+            let mut document = DocumentModel::new();
+            let mut originals = Vec::new();
+            for numeric_type in formats {
+                for (number, serial_number_type) in [
+                    (1, SerialNumberType::OutlinedCircle),
+                    (2, SerialNumberType::SolidSquare),
+                    (3, SerialNumberType::OutlinedSquare),
+                ] {
+                    let original = SerialNumberData {
+                        number,
+                        numeric_type,
+                        serial_number_type,
+                        ..Default::default()
+                    };
+                    let id = insert_serial_number(&mut document, original.clone());
+                    originals.push((id, original));
+                }
+            }
+            let deleted_id = originals
+                .iter()
+                .find(|(_, serial)| serial.numeric_type == deleted_format && serial.number == 1)
+                .unwrap()
+                .0;
+            let mut transaction = Transaction::new("delete sequence start");
+            append_delete_dependencies(&mut transaction, &document, &[deleted_id]);
+            document.apply_transaction(transaction).unwrap();
+            for (id, mut expected) in originals {
+                if id == deleted_id {
+                    continue;
+                }
+                if expected.numeric_type == deleted_format {
+                    expected.number -= 1;
+                }
+                assert_eq!(document.serial_number(id).unwrap(), &expected);
+            }
+        }
+    }
+
+    #[test]
+    fn serial_number_deletion_ignores_unnumbered_circles_and_missing_ids() {
+        for delete_circle in [false, true] {
+            let mut document = DocumentModel::new();
+            let ids: Vec<_> = [
+                (1, SerialNumberType::SolidCircle),
+                (2, SerialNumberType::Circle),
+                (3, SerialNumberType::SolidCircle),
+                (4, SerialNumberType::SolidCircle),
+            ]
+            .into_iter()
+            .map(|(number, serial_number_type)| {
+                insert_serial_number(
+                    &mut document,
+                    SerialNumberData {
+                        number,
+                        serial_number_type,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+            let mut editor = Editor::new(EngineConfig::default()).unwrap();
+            let missing_id = document.peek_next_element_id();
+            assert!(
+                editor
+                    .delete_elements(&document, &[], "empty")
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                editor
+                    .delete_elements(&document, &[missing_id], "missing")
+                    .unwrap()
+                    .is_none()
+            );
+            let deleted = ids[usize::from(delete_circle)];
+            let mut transaction = Transaction::new("delete circle or number");
+            append_delete_dependencies(&mut transaction, &document, &[deleted]);
+            document.apply_transaction(transaction).unwrap();
+            for (index, id) in ids.iter().enumerate() {
+                if *id != deleted {
+                    assert_eq!(
+                        document.serial_number(*id).unwrap().number,
+                        index as i64 + 1
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn serial_number_deletion_combines_renumbering_with_bound_text_updates() {
+        for delete_badge in [false, true] {
+            let mut document = DocumentModel::new();
+            let mut originals = Vec::new();
+            for number in 1..=3 {
+                let text_id = insert_text(
+                    &mut document,
+                    TextData {
+                        text: format!("label {number}"),
+                        ..Default::default()
+                    },
+                );
+                let serial = SerialNumberData {
+                    number,
+                    text_element_id: Some(text_id),
+                    ..Default::default()
+                };
+                let id = insert_serial_number(&mut document, serial.clone());
+                originals.push((id, serial));
+            }
+            let mut delete_ids = vec![originals[1].1.text_element_id.unwrap()];
+            if delete_badge {
+                delete_ids.push(originals[0].0);
+            }
+            let mut transaction = Transaction::new("delete bound text and optional badge");
+            append_delete_dependencies(&mut transaction, &document, &delete_ids);
+            let result = document.apply_transaction(transaction).unwrap();
+            for (index, (id, original)) in originals.iter().enumerate() {
+                if delete_badge && index == 0 {
+                    assert!(document.element(*id).is_err());
+                    assert!(document.element(original.text_element_id.unwrap()).is_err());
+                    continue;
+                }
+                let mut expected = original.clone();
+                expected.number -= i64::from(delete_badge);
+                if index == 1 {
+                    expected.text_element_id = None;
+                    assert!(document.element(original.text_element_id.unwrap()).is_err());
+                } else {
+                    assert_eq!(
+                        document
+                            .text(original.text_element_id.unwrap())
+                            .unwrap()
+                            .text,
+                        format!("label {}", original.number)
+                    );
+                }
+                assert_eq!(document.serial_number(*id).unwrap(), &expected);
+            }
+            document.apply_history_transaction(&result.inverse).unwrap();
+            for (id, original) in originals {
+                assert_eq!(document.serial_number(id).unwrap(), &original);
+                assert_eq!(
+                    document
+                        .text(original.text_element_id.unwrap())
+                        .unwrap()
+                        .text,
+                    format!("label {}", original.number)
+                );
+            }
+        }
     }
 
     #[test]

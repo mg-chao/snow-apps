@@ -814,6 +814,122 @@ fn serial_number_document_clear_uses_configured_start_for_its_numeric_type() {
 }
 
 #[test]
+fn serial_number_deletion_renumbers_atomically_and_preserves_creation_counter_policy() {
+    for explicit_next in [false, true] {
+        for erase in [false, true] {
+            let (mut engine, viewport) = setup(1.0);
+            let second_viewport = engine.create_viewport(Default::default()).unwrap();
+            let ids: Vec<_> = (0..5)
+                .map(|index| {
+                    click_serial_number(&mut engine, viewport, 100.0 + index as f64 * 120.0)
+                })
+                .collect();
+            let originals: Vec<_> = ids
+                .iter()
+                .map(|id| engine.model.serial_number(*id).unwrap().clone())
+                .collect();
+            if explicit_next {
+                let mut style = engine.editor.serial_number_style(&engine.model);
+                style.number = 10;
+                engine
+                    .set_viewport_serial_number_style_patch(
+                        viewport,
+                        style,
+                        snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+                    )
+                    .unwrap();
+            }
+            if erase {
+                engine
+                    .set_viewport_active_tool(viewport, ActiveTool::Eraser)
+                    .unwrap();
+                pointer(
+                    &mut engine,
+                    viewport,
+                    PointerEventType::Down,
+                    340.0,
+                    300.0,
+                    false,
+                );
+                pointer(
+                    &mut engine,
+                    viewport,
+                    PointerEventType::Up,
+                    340.0,
+                    300.0,
+                    false,
+                );
+            } else {
+                engine
+                    .select_element_with_viewport_changes(viewport, ids[2])
+                    .unwrap();
+                engine
+                    .delete_selected_with_viewport_changes(viewport)
+                    .unwrap();
+            }
+            let expected_next = if explicit_next { 10 } else { 5 };
+            let check_deleted = |engine: &mut Engine| {
+                assert!(engine.model.element(ids[2]).is_err());
+                for (index, (id, original)) in ids.iter().zip(&originals).enumerate() {
+                    if index == 2 {
+                        continue;
+                    }
+                    let mut expected = original.clone();
+                    expected.number -= i64::from(index > 2);
+                    assert_eq!(engine.model.serial_number(*id).unwrap(), &expected);
+                }
+                for view in [viewport, second_viewport] {
+                    assert_eq!(
+                        engine
+                            .viewport_style_toolbar_state(view)
+                            .unwrap()
+                            .serial_number_style
+                            .number,
+                        expected_next
+                    );
+                }
+            };
+            check_deleted(&mut engine);
+            assert!(engine.undo().unwrap());
+            for (id, original) in ids.iter().zip(&originals) {
+                assert_eq!(engine.model.serial_number(*id).unwrap(), original);
+            }
+            assert_eq!(
+                engine.editor.serial_number_style(&engine.model).number,
+                if explicit_next { 10 } else { 6 }
+            );
+            assert!(engine.redo().unwrap());
+            check_deleted(&mut engine);
+
+            let session = engine.serialize_document_session().unwrap();
+            let restored =
+                Engine::from_serialized_document_session_with_config(&session, Default::default())
+                    .unwrap();
+            assert_eq!(restored.model.paint_order(), engine.model.paint_order());
+            for id in engine.model.paint_order() {
+                assert_eq!(
+                    restored.model.serial_number(*id).unwrap(),
+                    engine.model.serial_number(*id).unwrap()
+                );
+            }
+            assert_eq!(
+                restored.editor.serial_number_style(&restored.model).number,
+                expected_next
+            );
+
+            engine
+                .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+                .unwrap();
+            let next = click_serial_number(&mut engine, viewport, 700.0);
+            assert_eq!(
+                engine.model.serial_number(next).unwrap().number,
+                expected_next
+            );
+        }
+    }
+}
+
+#[test]
 fn serial_number_inactive_counters_follow_deletion_reset_and_history() {
     let (mut engine, viewport) = setup(1.0);
     for (numeric_type, x, y) in [

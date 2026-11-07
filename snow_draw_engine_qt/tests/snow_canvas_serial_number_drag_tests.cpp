@@ -116,6 +116,52 @@ void numericTypeReachesExportAndSurvivesHistory() {
             "decreasing the number preserves badge geometry and font size");
 }
 
+void keyboardDeletionRenumbersSequenceInOneHistoryEntry() {
+    for (const int deleteKey : {Qt::Key_Delete, Qt::Key_Backspace}) {
+        SnowCanvasRuntime runtime;
+        SnowCanvasWidget canvas(runtime);
+        canvas.resize(600, 360);
+        canvas.show();
+        QApplication::processEvents();
+        require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate sequence creation");
+        for (int index = 0; index < 5; ++index) {
+            const QPointF point(60.0 + index * 110.0, 120.0);
+            mouse(canvas, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+        }
+        const auto originalRecords = records(runtime, QStringLiteral("SerialNumber"));
+        require(originalRecords.size() == 5, "create five consecutive sequence annotations");
+        require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate sequence selection");
+        mouse(canvas, QEvent::MouseButtonPress, {280.0, 120.0}, Qt::LeftButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseButtonRelease, {280.0, 120.0}, Qt::LeftButton, Qt::NoButton);
+        require(canvas.canvasStyleToolbarState().serialNumberStyle.number == 3,
+                "select the third sequence annotation");
+        key(canvas, deleteKey);
+
+        const auto deletedRecords = records(runtime, QStringLiteral("SerialNumber"));
+        require(deletedRecords.size() == 4, "keyboard deletion removes one annotation");
+        for (int index = 0; index < 4; ++index) {
+            auto expected = originalRecords.at(index < 2 ? index : index + 1).toObject();
+            auto data = expected.value(QStringLiteral("data")).toObject();
+            auto serial = data.value(QStringLiteral("SerialNumber")).toObject();
+            serial.insert(QStringLiteral("number"), index + 1);
+            data.insert(QStringLiteral("SerialNumber"), serial);
+            expected.insert(QStringLiteral("data"), data);
+            require(deletedRecords.at(index).toObject() == expected,
+                    "deletion closes the sequence gap and preserves each surviving badge");
+        }
+        require(runtime.undo(), "undo deletion and renumbering together");
+        require(records(runtime, QStringLiteral("SerialNumber")) == originalRecords,
+                "one undo restores all five original annotations");
+        require(runtime.redo(), "redo deletion and renumbering together");
+        require(records(runtime, QStringLiteral("SerialNumber")) == deletedRecords,
+                "one redo restores the compacted sequence");
+        require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "resume sequence creation");
+        require(canvas.canvasStyleToolbarState().serialNumberStyle.number == 5,
+                "the next annotation follows the compacted sequence");
+    }
+}
+
 void clickAndDragLifecycle() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -433,7 +479,12 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--sequence-deletion-only"))) {
+        keyboardDeletionRenumbersSequenceInOneHistoryEntry();
+        return 0;
+    }
     numericTypeReachesExportAndSurvivesHistory();
+    keyboardDeletionRenumbersSequenceInOneHistoryEntry();
     clickAndDragLifecycle();
     releaseWithoutMoveAndCancellation();
     toolbarCreatedTextKeepsDefaultStyling();
