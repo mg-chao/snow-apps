@@ -1024,6 +1024,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().copyImageFileToClipboard();
     case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
         return storage::ScreenshotSettings().copyAfterPinningToScreen();
+    case SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen:
+        return storage::ScreenshotSettings().keepAnnotationsEditableAfterPinningToScreen();
     case SettingsSwitchBinding::ScreenshotShowSaveResult:
         return storage::ScreenshotSettings().showSaveResult();
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
@@ -1365,6 +1367,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen) {
         return storage::ScreenshotSettings().setCopyAfterPinningToScreen(value);
     }
+    if (binding == SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen) {
+        return storage::ScreenshotSettings().setKeepAnnotationsEditableAfterPinningToScreen(value);
+    }
     if (binding == SettingsSwitchBinding::DrawingAutomaticallySelectNewlyCreatedElements) {
         return storage::DrawingSettings().setAutomaticallySelectNewlyCreatedElements(value);
     }
@@ -1545,6 +1550,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::ScreenshotShowSaveResult:
     case SettingsSwitchBinding::ScreenshotCopyAfterPinningToScreen:
+    case SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen:
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
     case SettingsSwitchBinding::ShowOriginalImagePreview:
     case SettingsSwitchBinding::ShowTextHighlighting:
@@ -2851,6 +2857,9 @@ SettingsResetResult BuiltInSettingsBackend::resetSectionWithResults(SettingsSect
                            QStringLiteral("screenshot_selection/smart_selection"))
                            .toString())) &&
                resetAvailableConfigurationValues({
+                   {QStringLiteral("screenshot/keep_annotations_editable_after_pinning_to_screen"),
+                    storage::ConfigurationSchema::defaultValue(QStringLiteral(
+                        "screenshot/keep_annotations_editable_after_pinning_to_screen"))},
                    {QStringLiteral("screenshot/copy_after_pinning_to_screen"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/copy_after_pinning_to_screen"))},

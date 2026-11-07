@@ -367,7 +367,38 @@ void saveDialogDoesNotResurrectPopover() {
             "closing Save as File must not resurrect a popover that its controller has dismissed");
 }
 
+void editablePinPersistence() {
+    constexpr auto binding =
+        settings::SettingsSwitchBinding::ScreenshotKeepAnnotationsEditableAfterPinningToScreen;
+    const QString key =
+        QStringLiteral("screenshot/keep_annotations_editable_after_pinning_to_screen");
+    const storage::ScreenshotSettings adapter;
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    require(!adapter.keepAnnotationsEditableAfterPinningToScreen() &&
+                !backend.switchValue(binding) && backend.switchEnabled(binding) &&
+                !storage::ConfigurationSchema::defaultValue(key).toBool() &&
+                !storage::ConfigurationSchema::normalize(key, QStringLiteral("true")).valid,
+            "editable pins default off and reject non-boolean values");
+    require(session.applySwitchValue(binding, true) &&
+                adapter.keepAnnotationsEditableAfterPinningToScreen() &&
+                backend.switchValue(binding) &&
+                storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "editable pins round-trip through the settings session");
+    storage::ConfigurationStore reloaded(
+        QDir(storage::ApplicationStorage::instance().configurationDirectory())
+            .filePath(QStringLiteral("config.json")),
+        true, true, 60000);
+    require(reloaded.value(key).toBool(), "editable pin preference survives reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                !adapter.keepAnnotationsEditableAfterPinningToScreen() &&
+                !backend.switchValue(binding),
+            "interaction reset restores editable pins to false");
+}
+
 void persistence(const QTemporaryDir& temp) {
+    editablePinPersistence();
     const QString key = QStringLiteral("screenshot/save_as_file_dialog");
     require(storage::ConfigurationSchema::defaultValue(key).toString() == QStringLiteral("system"),
             "system must be the default");
@@ -3736,6 +3767,12 @@ int main(int argc, char* argv[]) {
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
             std::cout << "Export dialog shortcut tests passed\n";
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--editable-pin-settings"))) {
+            editablePinPersistence();
+            ScreenshotExportCoordinator::shared().shutdown();
+            storage::ApplicationStorage::instance().shutdown();
             return 0;
         }
         shortcutPopupInteraction(owner, temp);

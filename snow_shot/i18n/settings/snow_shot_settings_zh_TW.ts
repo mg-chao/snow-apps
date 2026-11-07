@@ -2808,6 +2808,10 @@
             <translation>跳轉至翻譯頁面</translation>
         </message>
         <message>
+            <source>Keep annotations editable after pinning to screen</source>
+            <translation>固定到螢幕後保持標註可編輯</translation>
+        </message>
+        <message>
             <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
             <translation>保留已關閉視窗以便還原；停用不會刪除現有記錄</translation>
         </message>
@@ -2818,6 +2822,10 @@
         <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
+        </message>
+        <message>
+            <source>Keep screenshot annotations editable with undo and redo history. Pinned images retain the original layout without layout compaction</source>
+            <translation>保留螢幕擷取標註的可編輯狀態及復原、重做記錄。固定的影像保留原始版面配置，不使用緊湊配置</translation>
         </message>
         <message>
             <source>Keep screenshots available after the application closes</source>

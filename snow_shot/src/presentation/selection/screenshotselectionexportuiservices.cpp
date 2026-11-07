@@ -14,6 +14,7 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/pinnedwindowstackingcoordinator.h"
+#include <QColorSpace>
 #include <QScopeGuard>
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -736,6 +737,37 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     // The worker loader returns a fully composited result image. Keep the live
     // renderer neutral so the result style is not applied twice after loading.
     config.resultStyle = ScreenshotResultStyle{};
+    std::shared_ptr<ScreenshotExportArtifact> baseArtifact = artifact;
+    if (request.editable) {
+        const auto editable = request.editable;
+        if (editable->documentSession.isEmpty() || !editable->imageSource.isLayered() ||
+            editable->renderSpec.pixelSize.isEmpty() || request.layoutCompaction.enabled) {
+            if (pinnedWindow)
+                pinnedWindow->deleteLater();
+            return false;
+        }
+        config.canvasSourceRect = request.contentCanvasRect;
+        config.contentCanvasRect = request.contentCanvasRect;
+        config.resultStyle = request.resultStyle;
+        config.initialCanvasSession = editable->documentSession;
+        config.initialCanvasSamplingSource = editable->imageSource;
+        config.initialSmartErase = editable->smartErase;
+        baseArtifact =
+            std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromProducer(
+                [editable,
+                 rect = request.contentCanvasRect](const ScreenshotExportCancellation& cancelled) {
+                    if (cancelled.isCancellationRequested())
+                        return QImage{};
+                    QList<CanvasExportSource> sources;
+                    for (const auto& layer : editable->imageSource.layers)
+                        sources.append(
+                            {layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+                    QImage image = SnowCanvasRuntime::renderImageSourcesToImage(
+                        rect, editable->renderSpec.pixelSize, sources);
+                    image.setColorSpace(QColorSpace::SRgb);
+                    return cancelled.isCancellationRequested() ? QImage{} : image;
+                }));
+    }
     config.borderAppearance = screenshotSelectionBorderAppearance(
         request.selection.size(), request.resultStyle, request.layoutCompaction);
     config.checkerboardEnabled = screenshotSelectionNeedsCheckerboard(config.borderAppearance);
@@ -763,23 +795,24 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     applyPersistence(&config, {}, true);
     configureVisibility(&config);
     m_pendingPinCoordinator->reserve(pinnedWindow, config.persistenceId, config.groupId,
-                                     m_groupManager, artifact);
-    ScreenshotImageLoader loader = [artifact](QObject* receiver,
-                                              ScreenshotImageLoadCallback callback) mutable {
-        auto sharedCallback = std::make_shared<ScreenshotImageLoadCallback>(std::move(callback));
-        if (!artifact->requestImage(
-                receiver, [sharedCallback](ScreenshotExportImageResult result) mutable {
-                    if (*sharedCallback) {
-                        auto completion = std::move(*sharedCallback);
-                        completion(result.succeeded() ? std::move(result.image) : QImage{});
-                    }
-                })) {
-            if (*sharedCallback) {
-                auto completion = std::move(*sharedCallback);
-                completion({});
+                                     m_groupManager, baseArtifact);
+    ScreenshotImageLoader loader =
+        [artifact = baseArtifact](QObject* receiver, ScreenshotImageLoadCallback callback) mutable {
+            auto sharedCallback =
+                std::make_shared<ScreenshotImageLoadCallback>(std::move(callback));
+            if (!artifact->requestImage(
+                    receiver, [sharedCallback](ScreenshotExportImageResult result) mutable {
+                        if (*sharedCallback) {
+                            auto completion = std::move(*sharedCallback);
+                            completion(result.succeeded() ? std::move(result.image) : QImage{});
+                        }
+                    })) {
+                if (*sharedCallback) {
+                    auto completion = std::move(*sharedCallback);
+                    completion({});
+                }
             }
-        }
-    };
+        };
     config.imageLoader =
         m_pendingPinCoordinator->wrapLoader(config.persistenceId, std::move(loader));
     const QPointer<ScreenshotPendingPinCoordinator> coordinator(m_pendingPinCoordinator.get());
@@ -811,6 +844,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
         m_imageSplittingRequested, m_imageEditingRequested, std::move(synchronizedCompletion));
     if (!presented) {
         artifact->cancel();
+        baseArtifact->cancel();
         m_pendingPinCoordinator->cancel(config.persistenceId);
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.export"),
                                          QStringLiteral("pin.rejected"),
@@ -1709,6 +1743,13 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.persistedPreThumbnailPlacement = restored.preThumbnailPlacement;
     config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
     config.persistedCanvasSession = record.canvasSession;
+    if (!record.canvasSamplingImages.isEmpty()) {
+        QList<ScreenshotImageLayer> layers;
+        for (const auto& source : record.canvasSamplingImages)
+            layers.append(
+                {source.image, source.canvasRect, source.coverage, source.smartEraseSource});
+        config.initialCanvasSamplingSource = ScreenshotImageSource::fromLayers(std::move(layers));
+    }
     config.persistedRecognitionResults = record.recognitionResults;
     config.persistedTextAnnotations = record.textAnnotations;
     config.persistedTextType = record.textType;

@@ -591,4 +591,72 @@ void pinnedExportsRejectUnavailableDocumentSnapshots() {
                 Access::displayImage(window),
             "a failed snapshot does not poison future cached exports");
 }
+
+void pinnedExportsPreserveSamplingDonorEligibility() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QImage original(96, 64, QImage::Format_ARGB32_Premultiplied);
+    original.fill(Qt::white);
+    {
+        QPainter painter(&original);
+        painter.fillRect(QRect(26, 26, 12, 12), Qt::black);
+    }
+    QImage overlay(original.size(), original.format());
+    overlay.fill(Qt::red);
+    const QRectF bounds(original.rect());
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget editor(runtime);
+    editor.resize(original.size());
+    editor.show();
+    waitForUi(1);
+    require(editor.setViewportCamera(48, 32, 1) &&
+                editor.setCanvasTool(SnowCanvasTool::RectangleFilter),
+            "configure the sampling donor erasure fixture");
+    SnowCanvasFilterStyle style;
+    style.type = SnowCanvasFilterType::SmartErase;
+    require(editor.setCanvasFilterStyle(style, SnowCanvasFilterStylePropertyType),
+            "configure a smart erasure without a completed reconstruction");
+    for (const auto type :
+         {QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}) {
+        const QPointF point = type == QEvent::MouseButtonPress ? QPointF(22, 22) : QPointF(42, 42);
+        QMouseEvent event(type, point, editor.mapToGlobal(point.toPoint()),
+                          type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(&editor, &event);
+    }
+    require(editor.resetEditingState() && runtime.canUndo(), "commit the donor fixture erasure");
+    for (const bool eligible : {false, true}) {
+        ScreenshotPinnedWindow::Config config;
+        config.screen = QGuiApplication::primaryScreen();
+        config.nativeGeometry = physicalPinGeometry(*config.screen, {40, 60}, original.size());
+        config.initialWindowSize = original.size();
+        config.canvasSourceRect = bounds;
+        config.imageSource = ScreenshotImageSource::fromImage(overlay, bounds);
+        config.initialCanvasSession = runtime.serializeDocumentSession();
+        config.initialCanvasSamplingSource = ScreenshotImageSource::fromLayers(
+            {{original, bounds, bounds}, {overlay, bounds, bounds, eligible}});
+        config.automaticTextRecognition = false;
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        bool ready = false;
+        require(window.present(config, [&](bool success, QImage) { ready = success; }),
+                "present the sampling donor pin");
+        translation_tests::waitUntil([&] { return ready; }, "sampling donor pin publishes pixels");
+        // Force export reconstruction rather than relying on an interactive worker's timing.
+        Access::drawingRuntime(window).restoreSmartEraseSnapshot({});
+        const auto live = pinnedExportSnapshotPixels(Access::viewportExport(window), window);
+        require(live.pixelColor(32, 32) == QColor(eligible ? Qt::red : Qt::white) &&
+                    live.pixelColor(80, 32) == QColor(Qt::red),
+                "live exports use eligible donors and keep visual overlays in the backdrop");
+        auto record = window.persistenceSnapshot();
+        require(record.canvasSamplingImages.size() == 2 &&
+                    record.canvasSamplingImages.last().smartEraseSource == eligible,
+                "pin persistence retains sampling donor eligibility");
+        const auto stored = snow_shot::presentation::renderScreenshotPinnedImageRecord(
+            std::move(record), captureScreenshotPinnedRenderPreparation(&window));
+        require(stored.succeeded(), "stored sampling pin exports successfully");
+        requirePinnedExportPixels(stored.image, live,
+                                  "stored and live exports preserve sampling donor eligibility");
+    }
+}
 } // namespace

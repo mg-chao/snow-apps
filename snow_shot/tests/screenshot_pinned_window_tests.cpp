@@ -28158,6 +28158,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--export-snapshot-only"))) {
+            pinnedExportsPreserveSamplingDonorEligibility();
             pinnedExportCacheRetainsOnlyCompletedOutput();
             pinnedRecognitionSerializationIsAsynchronousAndCancellable();
             pinnedSnapshotMemoryMetadataTracksCachedDocument();

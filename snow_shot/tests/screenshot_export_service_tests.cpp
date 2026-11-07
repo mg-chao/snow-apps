@@ -1077,8 +1077,80 @@ void compactionPreservesSamplingEffects() {
     }
 }
 
+void editablePinSnapshotsRetainCoordinatesAndHistory() {
+    for (const qreal scale : {1.0, 1.25, 2.0}) {
+        for (const QPoint origin : {QPoint(120, 75), QPoint(-90, -60)}) {
+            ScreenshotDisplaySession displays;
+            CapturedDisplayModel display;
+            display.active = true;
+            display.canvasUsesPoints = true;
+            display.backingScale = scale;
+            display.physicalRect = QRect(origin, QSize(80, 60));
+            display.capturedLogicalRect = display.physicalRect;
+            display.canvasRect = display.physicalRect;
+            display.imageSourceCanvasRect = display.physicalRect;
+            display.image = patternedImage(QSize(qRound(80 * scale), qRound(60 * scale)), 6);
+            display.screen = QGuiApplication::primaryScreen();
+            const auto image = display.image;
+            displays.appendDisplay(std::move(display));
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            displays.displayAt(0).screen = QGuiApplication::primaryScreen();
+            SnowCanvasRuntime runtime;
+            const auto operation =
+                QStringLiteral(
+                    R"({"version":1,"operations":[{"type":"rectangle","bounds":[%1,%2,30,15],"style":{"fill":[255,0,0,255]}}]})")
+                    .arg(origin.x() + 12)
+                    .arg(origin.y() + 12)
+                    .toUtf8();
+            require(!runtime.applyAnnotationTransaction(operation).isEmpty() &&
+                        !runtime.applyAnnotationTransaction(operation).isEmpty() && runtime.undo(),
+                    "editable source has committed content and a redo branch");
+            ScreenshotExportService service({displays, runtime, geometry});
+            const QRect selection(origin + QPoint(10, 5), QSize(60, 45));
+            ScreenshotResultStyle style{3, 4, Qt::black};
+            style.region = ScreenshotRegionGeometry(QRegion(0, 0, 20, 45) + QRect(40, 0, 20, 45));
+            const auto expected = waitForResult(
+                [&](QObject* receiver, auto callback) {
+                    return service.requestSelectionResult(selection, style, receiver,
+                                                          std::move(callback));
+                },
+                [](QImage result) { return result; });
+            const auto request = service.prepareEditablePinnedSelection(selection, style);
+            require(request && request->editable && !request->layoutCompaction.enabled &&
+                        request->contentCanvasRect == QRectF(selection) &&
+                        request->editable->renderSpec.pixelSize ==
+                            screenshotSelectionRenderedPixelSize(selection.size(), scale),
+                    "editable pin uses original coordinates and correct backing resolution");
+            SnowCanvasRuntime imported;
+            require(imported.restoreDocumentSession(request->editable->documentSession) &&
+                        imported.documentCheckpoint() == runtime.documentCheckpoint() &&
+                        imported.canUndo() && imported.canRedo(),
+                    "editable request contains full document history");
+            require(runtime.clearDocumentPreservingViewports(),
+                    "tear down source document before rendering");
+            displays.displayAt(0).image = {};
+            require(hasSamePixels(waitForPinnedResult(service, *request), expected),
+                    "pin export uses the frozen session and capture sources after source teardown");
+            const auto& layer = request->editable->imageSource.layers.first();
+            require(layer.image == image && layer.imageCanvasRect == QRectF(origin, QSize(80, 60)),
+                    "editable handoff retains original sampling donors beyond the crop");
+            require(imported.redo() && imported.undo() && imported.undo() &&
+                        !imported.hasDocumentContent(),
+                    "imported history supports redo and undo to an empty canvas");
+        }
+    }
+    ExportFixture fixture;
+    require(!fixture.service().prepareEditablePinnedSelection({}, {}).has_value(),
+            "invalid editable selections are rejected");
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--editable-pin-only"))) {
+        editablePinSnapshotsRetainCoordinatesAndHistory();
+        return EXIT_SUCCESS;
+    }
     if (app.arguments().contains(QStringLiteral("--gap-annotations-only"))) {
         compoundExportsPreserveAnnotationsInGaps();
         return EXIT_SUCCESS;

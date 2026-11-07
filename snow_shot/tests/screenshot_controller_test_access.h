@@ -8,6 +8,7 @@
 #endif
 
 class ScreenshotOverlayWindow;
+class SnowCanvasRuntime;
 class ScreenshotToolbarCommandSink;
 struct ScreenshotSelectionParams;
 
@@ -16,6 +17,7 @@ class ScreenshotControllerTestAccess {
   public:
     static void prepareSelection(ScreenshotController& controller, QImage image,
                                  const ScreenshotSelectionParams& selection);
+    static SnowCanvasRuntime& runtime(ScreenshotController& controller);
     static ScreenshotOverlayWindow* presentSelection(ScreenshotController& controller);
     static void confirmCaptureSelection(ScreenshotController& controller,
                                         ScreenshotController::CaptureAction action);

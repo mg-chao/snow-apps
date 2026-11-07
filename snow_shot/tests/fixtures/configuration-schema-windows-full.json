@@ -5104,6 +5104,16 @@
       "defaultStringIsNull": false,
       "defaultValue": false,
       "integerRange": null,
+      "key": "screenshot/keep_annotations_editable_after_pinning_to_screen",
+      "maximumListItems": -1,
+      "valueKind": "Boolean"
+    },
+    {
+      "allowedStringValues": [],
+      "defaultJsonType": 1,
+      "defaultStringIsNull": false,
+      "defaultValue": false,
+      "integerRange": null,
       "key": "screenshot/show_save_result",
       "maximumListItems": -1,
       "valueKind": "Boolean"

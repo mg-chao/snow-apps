@@ -41,6 +41,10 @@ class ScreenshotExportService final : public ScreenshotSelectionImageComposerPor
     [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
     preparePinnedSelection(const QRect& selection, const ScreenshotResultStyle& style,
                            ScreenshotLayoutCompaction compaction = {}) const override;
+    // Editable pins retain original canvas coordinates and never compact the layout.
+    [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
+    prepareEditablePinnedSelection(const QRect& selection,
+                                   const ScreenshotResultStyle& style) const;
     [[nodiscard]] std::optional<ScreenshotClipboardPlacement>
     prepareClipboardPlacement(const QRect& selection, const ScreenshotResultStyle& style,
                               ScreenshotLayoutCompaction compaction = {}) const;

@@ -3552,6 +3552,9 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
     SNOW_SHOT_PIN_PERF_BEGIN("normal-selection", perfSelection.width(), perfSelection.height());
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.enter");
     SNOW_SHOT_PIN_PERF_SCOPE("controller.pin_selection");
+    const bool keepEditable = settings.keepAnnotationsEditableAfterPinningToScreen();
+    const ScreenshotLayoutCompaction compaction =
+        keepEditable ? ScreenshotLayoutCompaction{} : m_selection.exportLayoutCompaction();
     const bool historyEligible = !isScreenshotRecognitionTool(m_interaction.activeTool());
     const bool recognitionVisible =
         m_ocrController != nullptr && m_ocrController->active() &&
@@ -3568,8 +3571,15 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         SNOW_SHOT_PIN_PERF_FINISH(false);
         return;
     }
+    const bool editingReady = (keepEditable || (historyEligible && m_historyService != nullptr)) &&
+                              resetCanvasEditingState();
+    if (keepEditable && !editingReady) {
+        SNOW_SHOT_PIN_PERF_FINISH(false);
+        static_cast<void>(finishImageExport(*exportGeneration));
+        return;
+    }
     const bool shouldSnapshotHistory =
-        historyEligible && m_historyService != nullptr && resetCanvasEditingState();
+        historyEligible && m_historyService != nullptr && editingReady;
     auto historyCandidate = std::make_shared<std::optional<ScreenshotHistoryEntry>>();
     if (shouldSnapshotHistory && !prepareHistoryCandidate(historyCandidate.get())) {
         static_cast<void>(finishImageExport(*exportGeneration));
@@ -3579,8 +3589,10 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
 
     const ScreenshotResultStyle style = m_selection.resultStyle();
     std::optional<ScreenshotPinnedSelectionRequest> request =
-        m_exportService->preparePinnedSelection(m_selection.pixelSelection(), style,
-                                                m_selection.exportLayoutCompaction());
+        keepEditable
+            ? m_exportService->prepareEditablePinnedSelection(m_selection.pixelSelection(), style)
+            : m_exportService->preparePinnedSelection(m_selection.pixelSelection(), style,
+                                                      compaction);
     if (!request.has_value()) {
         SNOW_SHOT_PIN_PERF_FINISH(false);
         static_cast<void>(finishImageExport(*exportGeneration));
@@ -3613,13 +3625,11 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                         callback(success ? std::move(image) : QImage{});
                     });
             },
-            copyOutput
-                ? m_exportService->prepareClipboardPlacement(m_selection.pixelSelection(), style,
-                                                             m_selection.exportLayoutCompaction())
-                : std::nullopt,
+            copyOutput ? m_exportService->prepareClipboardPlacement(m_selection.pixelSelection(),
+                                                                    style, compaction)
+                       : std::nullopt,
             copyOutput ? std::optional(screenshotSelectionClipboardAppearance(
-                             m_selection.pixelSelection().size(), style,
-                             m_selection.exportLayoutCompaction()))
+                             m_selection.pixelSelection().size(), style, compaction))
                        : std::nullopt));
     if (automaticSave.has_value()) {
         std::erase_if(m_saveArtifacts, [](const auto& weak) { return weak.expired(); });
@@ -6969,6 +6979,10 @@ void ScreenshotControllerTestAccess::prepareSelection(ScreenshotController& cont
     state.m_interaction.beginCapture();
     state.m_interaction.confirmSelection();
     state.m_captureState.sessionState = ScreenshotSessionState::Editing;
+}
+
+SnowCanvasRuntime& ScreenshotControllerTestAccess::runtime(ScreenshotController& controller) {
+    return controller.m_impl->m_canvasRuntime;
 }
 
 bool ScreenshotControllerTestAccess::exportActive(const ScreenshotController& controller) {

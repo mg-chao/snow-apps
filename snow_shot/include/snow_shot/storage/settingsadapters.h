@@ -284,6 +284,8 @@ class ScreenshotSettings final {
     bool setCopyImageFileToClipboard(bool enabled) const;
     [[nodiscard]] bool copyAfterPinningToScreen() const;
     bool setCopyAfterPinningToScreen(bool enabled) const;
+    [[nodiscard]] bool keepAnnotationsEditableAfterPinningToScreen() const;
+    bool setKeepAnnotationsEditableAfterPinningToScreen(bool enabled) const;
     [[nodiscard]] QString imageSaveDirectory() const;
     bool setImageSaveDirectory(const QString& directory) const;
     [[nodiscard]] QString lastManualSaveDirectory() const;
