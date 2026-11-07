@@ -1,0 +1,315 @@
+{
+  "status": "passed",
+  "cases": 1344,
+  "failed_cases": 0,
+  "failed_checks": 0,
+  "geometry_tolerance_logical_px": 1,
+  "solid_rgb_tolerance_bytes": 1,
+  "reference_metrics_sha256": "1f67db9da4462f2bbf5d190b5acb1092d42aa5ec31d46a6649e44d76d34005b2",
+  "native_metrics_sha256": "1e8a8a5a3fe7a6401902660893f3d39b75faedc257acbc246c62b1ce20aaa587",
+  "comparator_sha256": "09f84e59823dea7a2b80d1ecd45ca8830fe8feccafa53f3fd786273aea7db4ce",
+  "reference_upstream": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "rc_picker": "1.12.2"
+  },
+  "aggregate_raster_regions": {
+    "full_canvas": {
+      "pixels": 2468480000,
+      "mean_absolute_channel_error": 0.43821130587784113,
+      "fraction_over_16": 0.004171454498314752,
+      "max_channel_error": 233
+    },
+    "component_with_shadow": {
+      "pixels": 412851256,
+      "mean_absolute_channel_error": 2.5102090045072636,
+      "fraction_over_16": 0.02491659368961687,
+      "max_channel_error": 233
+    },
+    "cell_header_footer_and_input_viewports": {
+      "pixels": 167573092,
+      "mean_absolute_channel_error": 4.30627334647896,
+      "fraction_over_16": 0.050730483626810444,
+      "max_channel_error": 233
+    },
+    "popup_shadow": {
+      "pixels": 76960944,
+      "mean_absolute_channel_error": 3.239206317427707,
+      "fraction_over_16": 0.008813574324140306,
+      "max_channel_error": 233
+    }
+  },
+  "schema_version": 1,
+  "platform": "Windows x64",
+  "completed_utc": "2026-10-30T11:46:39.0328726Z",
+  "comparison_sha256": "f307498e9e1c10d50c54c6b3d8c8db09541f9ec57b7a5792d0a7677c143f66ce",
+  "attestation_sha256": "520ebb3f74b55ef5f18346a93e07d314caa21902e1d77ebdd15fd20cbbf3d075",
+  "source_map_sha256": "a42d34b678817ae5e94bf406fa59d1731ac8bbef50ddb03000bc564813f0ce40",
+  "source_files": 2001,
+  "executable_sha256": "0579e5db2d895260dfae19670106aaef1e1e58d70173c69eee077d38d0dd151b",
+  "toolchain": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "architecture": "X64",
+    "processor_count": 24,
+    "processor_model": "AMD Ryzen 9 5950X 16-Core Processor            "
+  },
+  "capture_context": {
+    "cases": 1344,
+    "foreground_violations": 0,
+    "foreground_checks": 9412,
+    "process_ids": [
+      14732,
+      22336,
+      20940,
+      62608
+    ]
+  },
+  "comparator_controls": 69,
+  "full_antialias_fringe_diagnostic": {
+    "reference_uncovered_pixels": 32,
+    "native_uncovered_pixels": 0
+  },
+  "largest_antialias_extent_diagnostics": [
+    {
+      "case": "date-multiple-default-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -3.8191672047105385e-14,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 1.333333333333333,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        145,
+        145,
+        145
+      ],
+      "native_rgb": [
+        192,
+        192,
+        192
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "date-multiple-dark-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -3.8191672047105385e-14,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 1.333333333333333,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        130,
+        130,
+        130
+      ],
+      "native_rgb": [
+        109,
+        109,
+        109
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "date-multiple-dark-compact-rtl-150",
+      "target": "multiple tag[0] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -3.8191672047105385e-14,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 1.333333333333333,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        130,
+        130,
+        130
+      ],
+      "native_rgb": [
+        109,
+        109,
+        109
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "month-multiple-dark-compact-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -3.8191672047105385e-14,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 1.333333333333333,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        130,
+        130,
+        130
+      ],
+      "native_rgb": [
+        109,
+        109,
+        109
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "quarter-multiple-compact-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -0.6666666666667052,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 0.6666666666666661,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        198,
+        198,
+        198
+      ],
+      "native_rgb": [
+        192,
+        192,
+        192
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "quarter-multiple-dark-compact-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -0.6666666666667052,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 0.6666666666666661,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        84,
+        84,
+        84
+      ],
+      "native_rgb": [
+        109,
+        109,
+        109
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "year-multiple-default-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -0.6666666666667052,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 0.6666666666666661,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        198,
+        198,
+        198
+      ],
+      "native_rgb": [
+        130,
+        130,
+        130
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    },
+    {
+      "case": "year-multiple-dark-rtl-150",
+      "target": "multiple tag[1] remove mark painted part[0]",
+      "painted_edge_delta": {
+        "left": -1.3333333333333712,
+        "top": 0.0,
+        "right": -0.6666666666667052,
+        "bottom": 0.0
+      },
+      "geometry_delta": {
+        "x": -1.3333333333333712,
+        "y": 0.0,
+        "width": 0.6666666666666661,
+        "height": 0.0
+      },
+      "comparison": "ink extent edge distances; authored layout boxes remain unchanged",
+      "reference_rgb": [
+        84,
+        84,
+        84
+      ],
+      "native_rgb": [
+        109,
+        109,
+        109
+      ],
+      "within_1_logical_pixel_edge_distance": false
+    }
+  ],
+  "failed_targets": [],
+  "ink_sampling": {
+    "method": "symmetric strong pixel center to occupied pixel square",
+    "logical_distance_budget": 1,
+    "minimum_core_coverage": 0.5,
+    "sampling_uncertainty_physical_px_per_axis": 0.5,
+    "authored_geometry": "independently gated",
+    "remove_tint": "computed SVG RGBA versus transformed native scene sprite, one byte"
+  },
+  "limitations": [
+    "Text, shadows and AA support are not byte-identical; unmasked statistics and PNGs retained.",
+    "Pixel sampling introduces half a physical pixel of uncertainty per axis.",
+    "Native captures tested on Windows only."
+  ],
+  "packer_sha256": "ed28886deecf6220abfcf03128af697499c76cc4315181641f8525fb57b78bf7"
+}

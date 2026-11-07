@@ -1,0 +1,613 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "schema_version": 1,
+    "upstream": {
+      "version": "6.6.7",
+      "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e"
+    },
+    "slick_version": "2.0.0",
+    "packages": [
+      {
+        "name": "@ant-design/colors",
+        "version": "8.0.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-colors-LICENSE",
+            "sha256": "5d367fb0a07340571542eb4ee8eb1add62d37b71bad6786a57c2e9a86bf76c70"
+          }
+        ]
+      },
+      {
+        "name": "@ant-design/cssinjs",
+        "version": "2.1.2",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-cssinjs-LICENSE.md",
+            "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+          }
+        ]
+      },
+      {
+        "name": "@ant-design/cssinjs-utils",
+        "version": "2.1.2",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-cssinjs-utils-LICENSE",
+            "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+          }
+        ]
+      },
+      {
+        "name": "@ant-design/fast-color",
+        "version": "3.0.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-fast-color-LICENSE",
+            "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+          }
+        ]
+      },
+      {
+        "name": "@ant-design/icons",
+        "version": "6.3.4",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-icons-LICENSE",
+            "sha256": "5d367fb0a07340571542eb4ee8eb1add62d37b71bad6786a57c2e9a86bf76c70"
+          }
+        ]
+      },
+      {
+        "name": "@ant-design/react-slick",
+        "version": "2.0.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "ant-design-react-slick-LICENSE",
+            "sha256": "95d848d55392bb8239b53cb7a6405bf3914bdab56d1a0d26f3af5f7aced776eb"
+          }
+        ]
+      },
+      {
+        "name": "@babel/runtime",
+        "version": "7.29.10",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "babel-runtime-LICENSE",
+            "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76"
+          }
+        ]
+      },
+      {
+        "name": "@emotion/hash",
+        "version": "0.8.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "emotion-hash-LICENSE",
+            "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+          }
+        ]
+      },
+      {
+        "name": "@emotion/unitless",
+        "version": "0.7.5",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "emotion-unitless-LICENSE",
+            "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/motion",
+        "version": "1.3.3",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-motion-LICENSE.md",
+            "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/pagination",
+        "version": "1.4.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-pagination-LICENSE.md",
+            "sha256": "5d0427088e37071c4b942de990f6365d5c2d195f3e957ce925322d184784e2eb"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/picker",
+        "version": "1.12.2",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-picker-LICENSE",
+            "sha256": "53eb8e75d95517110e08f54e1c4007e2204f2de512cca6ca0ac2f9aeb4e6e0f8"
+          },
+          {
+            "name": "rc-component-picker-LICENSE.md",
+            "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/portal",
+        "version": "2.2.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-portal-LICENSE",
+            "sha256": "8781f0ca192057330d7fbab763f8bcd3c8e671032f98e9cf1f8c82d6748e5654"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/resize-observer",
+        "version": "1.1.2",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-resize-observer-LICENSE.md",
+            "sha256": "2481b61123d4f8be84e11847d4bc9684f2aa073d1d2a3275e36fdb7f1cff019a"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/trigger",
+        "version": "3.10.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-trigger-LICENSE",
+            "sha256": "4973f756e858531bdae451f98054278dabd2ef50fc4d3dbccc084ee35964ad3d"
+          }
+        ]
+      },
+      {
+        "name": "@rc-component/util",
+        "version": "1.14.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "rc-component-util-LICENSE",
+            "sha256": "f3ae1f96cf22ff7028a4a908b2bf099968391fe06785e4d830926b07e5125ea6"
+          }
+        ]
+      },
+      {
+        "name": "clsx",
+        "version": "2.1.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "clsx-license",
+            "sha256": "9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97"
+          }
+        ]
+      },
+      {
+        "name": "is-mobile",
+        "version": "5.0.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "is-mobile-is-mobile.txt",
+            "sha256": "7401d23f39cad911e1e83879987ad7848e9774640dd958e8632b8aac943ba44c"
+          }
+        ]
+      },
+      {
+        "name": "json2mq",
+        "version": "0.2.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "json2mq-LICENSE",
+            "sha256": "95d848d55392bb8239b53cb7a6405bf3914bdab56d1a0d26f3af5f7aced776eb"
+          }
+        ]
+      },
+      {
+        "name": "react",
+        "version": "19.2.4",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "react-LICENSE",
+            "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+          }
+        ]
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.4",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "react-dom-LICENSE",
+            "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+          }
+        ]
+      },
+      {
+        "name": "react-is",
+        "version": "19.3.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "react-is-LICENSE",
+            "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+          }
+        ]
+      },
+      {
+        "name": "scheduler",
+        "version": "0.27.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "scheduler-LICENSE",
+            "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+          }
+        ]
+      },
+      {
+        "name": "string-convert",
+        "version": "0.2.1",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "string-convert-LICENSE",
+            "sha256": "8e7a0e17a14c91d325c22a8ade50da3aaa5a97e321beebbdce77d63fc719a1c2"
+          }
+        ]
+      },
+      {
+        "name": "stylis",
+        "version": "4.4.0",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "stylis-LICENSE",
+            "sha256": "88c579c6ee44b41137a21321190d177982e5b17d4fa1b83a4a2e3ea325a8fc9a"
+          }
+        ]
+      },
+      {
+        "name": "throttle-debounce",
+        "version": "5.0.2",
+        "license": "MIT",
+        "files": [
+          {
+            "name": "throttle-debounce-LICENSE.md",
+            "sha256": "b07649c798231a321f90abbb329c15e41a8b5ec5e814dde3e60cd4a470e3b012"
+          }
+        ]
+      }
+    ],
+    "generator_sha256": "1603cbec5195354c952a1f7c820fa0dc9b4e88e100e9667190e8d7e06e7196f1",
+    "lock_sha256": "7237763f3ac20d1856fa23f0074073c808184cac9cd63b9f26ff2a65c45549de",
+    "inputs": {
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react/cjs/react.production.js": "6a3554a5287116df819640334924348287618dcdcd7124a05eb126dcbbecd5f9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react/index.js": "60caffdecbdc5db3bc4ec4e83df9488345ccb271d07533b9210bf5750918d97e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/scheduler/cjs/scheduler.production.js": "679adff761d31e9426604f80c0e99be44a3e6f4c6834b0218ecf0312a67c171f",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/scheduler/index.js": "145965504d60007bc25486ab930b0367867dcd5d579ccd343c148d69349a7cfb",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-dom/cjs/react-dom.production.js": "7a5e56724be242e34ddc14f9d0dc7fc6a32f1367ae994f02d3699b00c085eff4",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-dom/index.js": "ba1a3e33489f868371561777607e3ee5091df0f7ea3f1a10f789d6b86e4c1505",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-dom/cjs/react-dom-client.production.js": "764ffa6adc2c9b02b4dc00f4a58ef13d050e7825898bd9e5dc808d3a3f9d4bb9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-dom/client.js": "00e348ab3d6bc2eef908345d0bc4e008c95bcfecec060dfda5c4967953761396",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/extends.js": "94d2689b0907907fbb08bae35e63abb07b35ebec5cdfd06ec9bdd8db3f611f1c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/typeof.js": "928bcbbdf74fe24ed7486e7f982c4389c1859886b3ed904ebd2677f22193b57a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/toPrimitive.js": "76e21cf10d872318c2da87c378a935dab0668c9604eaaad03cea689f7acc7f50",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/toPropertyKey.js": "7f0000acc9c9cf7594b412095be66cdc59066b25458a16fe1434fd00cff478e7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/defineProperty.js": "2bad7c96ee851cf2cfe1320a54fd88dd5f769a7faf8bd92d60c9f2e6d1e381dd",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/objectSpread2.js": "d03a134abca2a223a82172030d7d79a4b779ab3ee7df91391fb62cad74586284",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/classCallCheck.js": "94da74af6bb85de33395865d6e7bc7fcd24d6dd2d380c020130714dbd6545d11",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/createClass.js": "51e47ab207222aac2efa5b31b193377055afbb394960493d210a4329b959ef14",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/assertThisInitialized.js": "85506493fdfd36684abe5e193716c06f9e2a3d4de49713fc8ff83de59dabb471",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/possibleConstructorReturn.js": "edd9a4fa1e7c21c8fe8d3fdd80b827f1c24013aa27a9510d1f5cb76c3234440f",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/isNativeReflectConstruct.js": "adf1ef3f74c033ccf3c074f9f72f0ff361b63677a8ae5979f55d0eb665278fce",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/getPrototypeOf.js": "de5206113c370a04dbfd6ca7ccb8f3abc1dc935f8dbffc9369442c248c423a59",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/setPrototypeOf.js": "64c1bb95352488d8fc880366ca56c490a5089e93983f05668a987255c6fac5c2",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/inherits.js": "19081820a48ddbf209d022c5addd2abd405534076956a2ca719dc40710f25256",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js": "7ec48646adf76d3a2bbea809b7e0134337b7e5f20fe2169cbac65cc3cea13987",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/objectWithoutProperties.js": "2fe3f649882208db45a72e6d4d33da53e46ed2106393e04c82a708bf8c63f716",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/initial-state.js": "4a965dcbd5aad1c5694f798732adc62c965a7daf7deb61a25b8db484a9e6e7aa",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/throttle-debounce/esm/index.js": "bf8f81da567b6a542d112b46e521d4295e68d97531343a55bfdec8e728fa5340",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/clsx/dist/clsx.mjs": "d949e5cdbfebc76a6642b1901095e900fc3f2262d8dc0373aa44850a9bc75522",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/default-props.js": "5f35ebcad234a6a2aeb13fd7ed685124bb906e346ed4128374e0394419b24aa6",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/utils/innerSliderUtils.js": "9f5225caf6dd35d7a2abaa6e392755889a45ab57a7c79d9b1de1e2e936917c84",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/track.js": "a1124cc67da482d3852b52aa06c47c18045fce5f3950cfd7de034e26128fccf3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/dots.js": "423f4d3dd2df2348e38c9c1e7744d45ae6dfbbf2d1ebbe168644d49b9cda72e5",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/arrows.js": "fe8e9b7db5a646c8dc295a9ef256d8e09b934f95077ddd10bc630a28aa726db8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/inner-slider.js": "ccec172f6c8863f1983647f11b1eaf27f15f4b25318d4874a6a2d9e61910b206",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/string-convert/camel2hyphen.js": "5d1a1c491614234294e33bace718c72141e219ebefbb771690940df1f22ca866",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/json2mq/index.js": "c6fef80d06ccb4b124e1e97f8d3f02b88112056b32b6d860f5e5df4e4b186d2d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/slider.js": "ee63d674fafdbc2aa7c562989ef747e4aad2f3a55170af5a3bc6f07bccb03861",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/react-slick/es/index.js": "cafccfa8b6a6104b730133197d7defb6aa31b4018f27da321e1ac0d9d60f3f5d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useAllowClear.js": "b789838af7263dc19dd6d9e5175f52cfca390d81bb9760c51d6c5fb6064b1ce7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useEvent.js": "a6adacc9d11ca6dcf6e7709e071939ab67de2f088895010a90776a8c97dd26a8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/canUseDom.js": "ee78ec72a13c5785fb75b27bf791bf59dc4ca973d9b35ca9e1461145a204f622",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useLayoutEffect.js": "e1d9ac7bef4a0fce0c0c3b02d64aa8982fa1ec6a318e729f8f2d7f552408fda8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useState.js": "828dc993c1d8a68b6213c4052a79b9d865f2170871fc629ca5731479d119d632",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useMergedState.js": "deed7c30058931824650c44695589b1470ee2f1072f7037e256678f425a97485",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useControlledState.js": "e3207759170e83a2abe0776cee441d039233c3fc9aa1f9605b768b5c165208fa",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/raf.js": "ee8ec5f2567ab5ea331e9912072c495275762088c1bbac937200eea6038190b4",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useDelayState.js": "ef03048f8eb2042e20cbf04111084cfdbff32551ba4cf2cdf46d12d42b190405",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useId.js": "4e31a24eacb1fd1724681a534d4ea98a0096f6ca32870cabb70d22a92ff2666a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useMemo.js": "5136740541c1fc1a89147f60bca1ee17b8ae6922eb58960b2dfabeba1202e503",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/hooks/useSyncState.js": "97d2977dddce51c291a1b894f30e6344225386c277e4881ca52aedc1f4190446",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-is/cjs/react-is.production.js": "9a073bb4a71d6180250b70db22e9120993071cfddd473b1b8d2727182253c79e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/react-is/index.js": "793ea73dcc6ee7f02834b146f14fba1efd34834e86fbefe9cc095cda9add492d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/React/isFragment.js": "a9fa65e0cd6561888ca2cfe4ff09f038640e141038de0063a9b713bfec6c7cf2",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/ref.js": "d4d16111ac3a44b101cf5f60e71d53f0159de2b65192659415375418f38392db",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/contains.js": "43717828ecfc52b9ac60bd1f3f0088c4e357061275793ac0df78dd7f6c5d7c00",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/dynamicCSS.js": "d73571d9a2297fe7ce4d1d607aaed24430d8a0e72075224817bac6bebe8540d0",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/findDOMNode.js": "ac1a5bfa9014d8dd94df7aca1ccb3892531baf62a4ed06db20057fa9adaa8b40",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/isVisible.js": "c0a1134825e16634d4d87503c8ad433d52796fe257dbd6cb5034b1d1eaa3069e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/focus.js": "d16a4bdde0ed20f0e42e6c5db02fc3842a071eaa2cbf3ad916fbd374a2d62bd9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/shadow.js": "24896fd0227411c9aa8823399715d1e99c7866f0ae7f392cf551cfb690e65283",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Dom/styleChecker.js": "a8f8bcb80382564033e40505d5f197b45bd9ff7f11034a01fb2a6bfb782a4816",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/KeyCode.js": "c362451dc06a33c6b8cbbe0cf926e96bbf710382033f78fc83dad13efe360dec",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/getScrollBarSize.js": "3f2418e7a51273c8f24f11db98e15ba1043824549c0f88693669a080a253de5a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/warning.js": "f61bea083fcb6c277f634203108cbee0adedb9bab23836bfe73f6c87fb57b09e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/isEqual.js": "18cdd4d51c1949619fff21d547bd2e9274d62c57f768d8d959770992c06348b8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/is.js": "bdf3a2c4636366aff1e1708b54f1bc58bcac1a70ab37643f2d4643e85ab31691",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/is-mobile/index.js": "799aa13adfc2c6e425b3de92e32dccd4903e3de194547e17bfceb49d8f6a247b",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/isMobile.js": "5017220f256bbbbc52d54cfd2b51da8e5b485d3442b2716fa01b3d4fa6c98ae2",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/omit.js": "020cb8eba24514137d8d820f1759ebd6e9b77dc29e1c357a9660c421d72f130e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/pickAttrs.js": "c6aff3b55e1c7adb83a05262c066bd0944fa80db9ba2239741502aab3c56d676",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/proxyObject.js": "20bcd5644d93bf2250394feaf06d686d489ac2b5f821f323ff6decf8739d6b72",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Children/toArray.js": "310b4d2ecb1f1f99e465a72fb818a693209e1eb925c7939cc04a7a3a60736f88",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/mergeProps.js": "a421c55c41acd4384a883af1a93402708ca2e7546e43c8ab0c5902635a085cee",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/utils/get.js": "f2e06676d77adccafca2319a02a158307c344fdb991de55bca0b012f9bf96685",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/utils/set.js": "ab126062f159a33dfe8d8417c46c33808e5cf933d50f7b192f93f111feaa7009",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/React/render.js": "5a1c243e3f37faf5876497d47334d2fd52d0d1d3732bd9c3bdb7deb27160185d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/test/domHook.js": "fdc58e4149c41a590a7a7cce3bfb0be5d3bfbaaf061b7a74a786e9644b4469b1",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/Portal.js": "d3f4f2da3621ee6164c5024e42e29bdfc9dff82f02a317ee55c090f7dd887d26",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/util/es/index.js": "def2e4f3fe5ba5375f3df656ab3e7688ecbd6d9e83b7e6c41cb7484e6b6a9763",
+      "../../../ant-design/components/_util/is.ts": "b5cc35765d4d374635e3391da435884a057a7263b333083274e4272b53e32f24",
+      "../../../ant-design/components/_util/warning.ts": "8c9f8585d99457113fef983acf49f798837d48a8b092623696170fab2171cf65",
+      "../../../ant-design/components/config-provider/context.ts": "af6b1523d00b89041e695a0e30763a90623a3c3ed55a97ba8a1ea29cf4d60fda",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/pagination/es/locale/en_US.js": "b569c896f157be6af9b2b5e36bd8908d1097e6a41efdef79b81fda6b8b43a297",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/picker/es/locale/common.js": "3072cfe64feefefc32b5b0adb30fac2020264b4621eb4946ec915f8f259afb62",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/picker/es/locale/en_US.js": "75294f48caa7bf9eafe866323a5e307c8c5e649867463b7c4e4b1985e378ae5d",
+      "../../../ant-design/components/time-picker/locale/en_US.ts": "e57240a25960e7507aaebe740f9c3a001cbe219e0deb1ed36cce5102f89b1b23",
+      "../../../ant-design/components/date-picker/locale/en_US.ts": "09266e57528aef8f398c3db09f0ba9310070525e4fb1dc20494b57c507db5df4",
+      "../../../ant-design/components/calendar/locale/en_US.ts": "7e81427f606bdf1231d8d336a4ff7602ab3a7775fd7a5f9dfadb8221e3cdc1d7",
+      "../../../ant-design/components/locale/en_US.ts": "04df0762e0ab2cb08ab3224e2ed0150fdef4e18bef8373b9bd70bf30608bee4d",
+      "../../../ant-design/components/modal/locale.ts": "c7b313964880c9d36081ed2fd36283f30d646aae83c4991e63967abb006d3e30",
+      "../../../ant-design/components/locale/context.ts": "b4c1c5895cbc3c34cae48de29ef54dcdd8d61d35e878ba8a76542e2e21c2eb97",
+      "../../../ant-design/components/locale/useLocale.ts": "da6d46df25f842c6c464a5d098fca4b3330068bdd820f4f72ef3a9719120e36f",
+      "../../../ant-design/components/locale/index.tsx": "be0868ad14881b237d6f4d33566f41db26630b29b0eebb7af09177a822bcb6c3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@emotion/hash/dist/hash.browser.esm.js": "3f6d63bdf3241054ccac29fa5bad7ca228bb889a51214e22224a8fe8c6d3573d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/Cache.js": "da40046d02b2c4f86283c886811c391081c4936f360414a0e427d36c7db7e541",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/transformers/autoPrefix.js": "002d84b1b529cb50bf798e4cced53a485c1fe15ee4958e9134fdd710d3a61cfa",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/StyleContext.js": "278e300498a01a5d158ca2b4e934f05e478b345e695dad73b34d3c99058d0637",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/calc/calculator.js": "63bf954803bf7c65490efe75795192b039798e7e026b28f9e16f71b52f54b47e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/calc/CSSCalculator.js": "3286322d3cb2c8d5d9e572a574840a2b5c21b63128c954562d270a7d5b2c438e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/calc/NumCalculator.js": "12de71fd0a70a762dc293a7b7e119af1635d6bf05929a4880b22800ccc16fce1",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/calc/index.js": "8dbba93c15b58a77df371d87aa09454d8e600917b867753a833f73119a5457b4",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/ThemeCache.js": "0080de17a8d8690fd315d355b5695369afd728e97ee6589c4ed195ee37e5ec64",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/Theme.js": "defd612cc2aa98eb0c08c69d8a04513ef315350f77b6121f8d83d91976a4272d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/createTheme.js": "ba3fbda5260d732263d2ac7649ee36784930d03c0b695b85d8fdc117a2287132",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/theme/index.js": "a9911bd3c1aa9e20972293458214e835624a17b922d03653638e9e703ebed0fe",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/util/index.js": "aa77721bb63353e14c39858c317a365b4ab41c94dcfa90a37e270537e713b66e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/util/css-variables.js": "6efbd0d07bc56e5e98196a48be08780e5431724c2edbe484bceefc897104f5ae",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/hooks/useHMR.js": "976fabecd8f152972e19b2a06a84ea2394bcc2bbe3e5d8eeb3c66d6ebcbf83c7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/hooks/useGlobalCache.js": "bf9c1ebff2c552dcc7aa91acb402177aea389abcb6e396f93540aac1990e0b0d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/hooks/useCacheToken.js": "e29a767c04f25699abc3b2829d64104d3813500f2412b0ae8169871c6afe0309",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@emotion/unitless/dist/unitless.browser.esm.js": "9c697e1a3d9b323569d0795eb66c30ce8f150f7a5a01030cdd7d7bcc8fa28860",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Enum.js": "3ae600445e6402e3e42c8456fd6bac63ffce00f9a59f7e41d870e84e61e98488",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Utility.js": "661653fedf64998195cdd927d9a0944f85fa61414121173d4b6248920d27abaf",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Tokenizer.js": "5f52e7e40f3d905d2121b50fc9d6897f6019fece001e549cdb1bd053b5ff55b0",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Parser.js": "e18482d55508479a48a00ded7dca927ee8c53f109aac35e165b0fbdd226fae51",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Prefixer.js": "fbca42dd117b0c764a00b27280839a474e3a142e67b85e239e2daac13bf6091a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Serializer.js": "938f255405780b39632077771a780a016b738005148cb223be8240380ea3b8d0",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/src/Middleware.js": "82b6642c2718337b9be58a396e1b745e340a7400f208ebfb884609c49d96ab8e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/stylis/index.js": "0208ae0a4e8a393c6c8d391075bd6b4aaa55ce53640ba16729296171d070b12a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/utils.js": "dc9c1e838c456dd6e5b5c586f39b6db66dbe1def47d9155fde2d1dd710f4cbf9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/contentQuotesLinter.js": "d0551f0589934f35b889100e47b257336ac3e4bfd495f10e3eb7a3a37aa19638",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/hashedAnimationLinter.js": "a706c323d82580252c7d6e6fef18226aa40ee5c963180fb657f8ea7e13a22941",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/legacyNotSelectorLinter.js": "700c78504cebe39f3119708ac7a812fa429e0d4f1408c9a080490672f9b782c7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/logicalPropertiesLinter.js": "ef2de2c26cd9f35316cee479a405cc69f347bcf05756edc569934b010fd2287e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/NaNLinter.js": "6528109f6adc064225db7adca10b3b08b30b2ffd7977ddbe628ba02830e4e3d9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/parentSelectorLinter.js": "bb3bcc608e85776a2fc8149c9420d681e44ad6528b7a5979b67298655a5027f1",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/linters/index.js": "341a886ca390d89f3675a28374f9c1fc15c94cb4a892365b9ee94b40a15732f7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/util/cacheMapUtil.js": "b1c57098b058ace9fbcc002486bd89781a50cc5f93b19887f770998e9f69e7d4",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/hooks/useStyleRegister.js": "f0d66aee75a249fab4bc64a44f09614b9bf5a42d857f0e7d10c0e4e9a83b3f6e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/hooks/useCSSVarRegister.js": "6c1cb8b3ad19382fa4ba393e4b368603fb847d17162a99fb147990f089576359",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/extractStyle.js": "3ce67bec55d290581896404bbbfd0bbd6a454dd0a6e4f50eeabdda2fd2e80b73",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/Keyframes.js": "74ff6fd28ec9fa544c80ae34b343c9591f1bcaacf88bd103983ec973252cd808",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/transformers/legacyLogicalProperties.js": "cd2a4c7eeb1396c0a2a9e2a922933cbf4152fe658dd123c17042579bb4467a5c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/transformers/px2rem.js": "26981656e07dda1205be6e5c3fa459b1a286f320df30a9b7a354535d28a08f62",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs/es/index.js": "7941b8bdc0af4ca23e1aca75b26919dba63e1b6e6f59afb7fc99f00aa465d161",
+      "../../../ant-design/components/style/index.tsx": "44c874f93a7ce9c34249b8bb2b3f19082371c5cb88cfd54d3a64f773ca9d9f4a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/arrayWithHoles.js": "7cac6e680e7a3091012c64690e88ea7aadcd0035ef87a3e9d7d092a48c8936e3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/iterableToArrayLimit.js": "9713b31b49589f1577002970689510f8f8b927bd4e783945cfeb6dd142978155",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/arrayLikeToArray.js": "5669c99de0a48fc0e401e283f2e2d14c6950a6def2ddb5aee3b861e9de022418",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/unsupportedIterableToArray.js": "79f0945f9659ff15a3b81b92f70c6e8eb00c5830087a044c6b1ba5e6dde6c3ad",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/nonIterableRest.js": "c6107ade34a6ef9b5eea0c189fb87377d32faae61df50fdbc973aa4210e0efe8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/slicedToArray.js": "5ee40c8f7549643f3e3eaa4566a6b7734d3c577b4aad4651dcfeb4bddbf46f35",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/arrayWithoutHoles.js": "73cb0a59ed5ef5e6bc33df18e911c382787eaf823b0e7bb1cb9f99b3bac3abff",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/iterableToArray.js": "117f3e509ad893e5e589912137a7d9259efba6b98ccf1dd4dc3a2ca64ec1707a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/nonIterableSpread.js": "bc91b16fd6053abf81cb8157a0eec5b0e221d577967ce20c05d24dacaebf3198",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/toConsumableArray.js": "ff1928bda21e1132644062577b74e074c7980536a3998af2608790ece7cd0c1f",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@babel/runtime/helpers/esm/createSuper.js": "3d2f099943676e8703a6a987f0d91ed4452268dbf9fb3986ab9b8da3e8e3a5f7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/calc/calculator.js": "4c7c22db036d0c6cb3e338681b9b67695b6f9551250736769736f803c9ccd5bf",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/calc/CSSCalculator.js": "31122005bb0ccb88cec884915e2edbe91350d6c84f08aba4d246f5486ed2283b",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/calc/NumCalculator.js": "86791eb13b9cdc0d7f281822c557e90560fbe8ffa742fb17156235406c50162c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/calc/index.js": "940b8718e83bf5ba2abd45985f0abc8a688c6f065502e864ab12c388288295ab",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/getCompVarPrefix.js": "d77f4d119d350feac25316fbf444315834b64714b786332b965aec353bbfe391",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/getComponentToken.js": "32205740e24a92b29e292844d6f855cb458cb9b33e6885c8d01d34ad4d493c7c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/statistic.js": "baaa6765520713252a09ffc524577094b578a9076c640150d6125a21d4cd645e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/getDefaultComponentToken.js": "a2005bb51122d0f6776954887d8d73301c3fa65b6ca89908f38c6ce0556dc60a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/maxmin.js": "fdbf80a83ad826ee1605f6eacb6a129154610bf703e5683ea20d3994b1a58d79",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/_util/hooks/useUniqueMemo.js": "3bcbfcb4b9d217a4204a352a223bae6ae67c270d1a5708f917dc186af7aca132",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/hooks/useCSP.js": "2680ee8209fe24c6bdae32cb228083c3481b7870d8a74ca0adbdc48ca2739a55",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/util/genStyleUtils.js": "fda497bb7adc7a421bb4c15e19dc92333884eb25448f1a5f1bf9983498c1a4c0",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/cssinjs-utils/es/index.js": "d80eec16d11e975edab65a4a4bba3b3a9fbd0b861efa7298cf94539f0002160e",
+      "../../../ant-design/components/theme/interface/presetColors.ts": "050aeb8eccf7df4f40de66c66e9a46a8cbf524939deaf1d75f8ef637c5ad06e5",
+      "../../../ant-design/components/theme/interface/index.ts": "c77a692d9a5854dfbacf7fbddaa000611730c758ebc8da3419fa68003b9863f4",
+      "../../../ant-design/components/theme/themes/shared/genFontSizes.ts": "e2756194f72e8bfa1009edd3a9bec5c9ec373e8cb8f468e20808b1b58512783d",
+      "../build/ant-design-gpui/carousel-reference-current/version.js": "a40ee548f3fb7d52433ca840427cf4d56b587037c857668d03fe8dfd9532765f",
+      "../../../ant-design/components/version/index.tsx": "3411c5abccf6ab292822ce3c3267b6c3acb194601013f49206bfa84f308ba5a3",
+      "../../../ant-design/components/theme/themes/seed.ts": "2021c1ec0250eae12b4af9f15d3744711686a00ea003ca02f86fbc6016477230",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/fast-color/es/presetColors.js": "42ed061139087bad7c92b6d82ad644a74264c5bf8c769fea708f42b038fad598",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/fast-color/es/FastColor.js": "6542eb5fc058e583a9c6a2ca05c40cddf950a80ca2501cea66e2b020ec92121e",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/fast-color/es/types.js": "2e29cd9a98755c46896f7a2d56524db2d6d96b248e36db46de14c30bf47c8d05",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/fast-color/es/index.js": "bef4539511136636864e52b478f422f41deba9f524fc205d14f248fd03b83ad0",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/colors/es/generate.js": "81ec2e8a18e28677ec3156d2859e510e4e6a00595515a9d0df20198203334d0c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/colors/es/presets.js": "86560ae243c9760ba6bbffa3e5184c21fcdd9aa1f245d42a7b4a61444409ee97",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/colors/es/index.js": "8b7c28d41d42e986490a744603310662cbe5053aaa8f6213332212c784c592fe",
+      "../../../ant-design/components/theme/themes/shared/genColorMapToken.ts": "0b3e9b6c6d2249172bcbf9ea39a5b0c6f241643db09ea0b6db56f1070b8cbdb0",
+      "../../../ant-design/components/theme/themes/shared/genRadius.ts": "e6dd129aed70ed972faeec2bdd8c37f8297107974fdc7a25062a223e05511c11",
+      "../../../ant-design/components/theme/themes/shared/genCommonMapToken.ts": "8a83549ed4b86219debc496c7ca0594f0a927235d4c20ad89d56953f92baba9b",
+      "../../../ant-design/components/theme/themes/shared/genControlHeight.ts": "74bbba48d8005e9288b916b3b23c55ddd2f0f027d208bdafd65a8c73523290f5",
+      "../../../ant-design/components/theme/themes/shared/genFontMapToken.ts": "e77ce27d2024290b5399d0a43c8f1772c4aa97a2f2cc595e73ab9fff84097c83",
+      "../../../ant-design/components/theme/themes/shared/genSizeMapToken.ts": "12f84aa1cd188c170a946c61612c503cc10f3ca031f9fbf9a1a9e4d2d49e903a",
+      "../../../ant-design/components/theme/themes/default/colorAlgorithm.ts": "c32935abcda924e89b1fffe40fe3b0af994dd70771ffb293d7b9a240177806cd",
+      "../../../ant-design/components/theme/themes/default/colors.ts": "1375abc3b9e99bdf7316b3562008e1a9a0b4fabd9e0f8e5dd90a494f5959f5d9",
+      "../../../ant-design/components/theme/themes/default/index.ts": "477f5d47d2bd369270e90403c51345b635528c22cc36b5a9e4beba86802495f7",
+      "../../../ant-design/components/theme/themes/default/theme.ts": "968336828a558952b4b297d9cfc58b14c44783004a6713d68b61a9fb7aace05a",
+      "../../../ant-design/components/theme/context.ts": "9ace41f0d0fb67d7931c76ee39bf4151fb216d2416e929d34b15d6201b4baebf",
+      "../../../ant-design/components/theme/util/getAlphaColor.ts": "56f568f9527ba46b550488651a13d96e2d378197c8be57694cd1e444dcf8f0b1",
+      "../../../ant-design/components/theme/util/alias.ts": "bdaf32baf5baa9c502335811c497eb7babcc592ebc9e7fad3f79d3e928f49a42",
+      "../../../ant-design/components/theme/useToken.ts": "e26f57978b612371fc4a3bc9837eed8baa1939eba5ea55e5fe8cd48d8f871e00",
+      "../../../ant-design/components/theme/util/genStyleUtils.ts": "7b93038f8c5fbc906ecba8bd344beff4d114bcb94d8b5754dc6b9ccd5b500990",
+      "../../../ant-design/components/theme/util/genPresetColor.ts": "5f582b5fe3d20858fcf11c2aed8efe02a839810e688a48397737cedc06cb12c7",
+      "../../../ant-design/components/theme/util/useResetIconStyle.ts": "d4a209831cc3c6d46f902ba810b11b78945bf885654648e71dc8597035cfe910",
+      "../../../ant-design/components/theme/internal.ts": "2280108b7ce3fb36285fc3c8d3adabda3b54b3c33694d5f11ced3aef818bce00",
+      "../../../ant-design/components/carousel/style/index.ts": "1dfd130a8932f8243dbdf9ee8b55a89b93658aef1a76de8df359b6f535c2bab5",
+      "../../../ant-design/components/carousel/index.tsx": "f29cdd377fe6d77acc3ec25fc42dc1d6db4d7dee1c58a45cbeca1405b8658341",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@ant-design/icons/es/components/Context.js": "ebfe3eaaa5aed53ae246f97d623f2137c2ad95422e737161ca2e443b41ae08b2",
+      "../../../ant-design/components/form/validateMessagesContext.tsx": "900fc6f74f4ae8e3046f511d516cee2435f1408128b078c52f1bb9e93fa1b50a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/Context.js": "b7368e7e84cd319c5662e3cbf3d5896fcca3a781e7f20b43b9618182b3a7048d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/mock.js": "05dd9a73c4d4f31bc22ba0a44bacf44043260902c98333594b0c7af8b98b9b4b",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/useDom.js": "d2e5b8b60bee0a927d3f19fbc929d6c7975d5f39e89faddd20da8ddf879236c3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/util.js": "73540a9342af90026fb0b77c3fb9355a3b7c043a06d7823b071fa9ac1ff5ebb9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/useScrollLocker.js": "d684d9eed0ed0906fe861da065ad0bfa98371fc98dc109cf9c286b848bc98483",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/useEscKeyDown.js": "4cf3734968c612365f98f73b0eac6b2669447aa99b80037931de3ddbf88ef01c",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/Portal.js": "913f4ba3e54d2d65b3a7c5fe67e088544dee78e9e25cacaf1383ef6602a424e3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/portal/es/index.js": "3e4dcdee5eabb8339f378db169f3296cb6d1ea4f3961c74df8b2deac174e2d1d",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/resize-observer/es/Collection.js": "021c2b12ebfcc188dcd43f3d497d5afb9ec3adea5cd471eb14b1d8d81c5f9213",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/resize-observer/es/utils/observerUtil.js": "fe55ddc350fa2deb3518a026b6acbfe111575d1ee7cee2039343a2b6384abb35",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/resize-observer/es/useResizeObserver.js": "5aed5c0b0c7547594db1083204490bedb499e86a2ddde2298337f35b35cc0528",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/resize-observer/es/SingleObserver/index.js": "a19227854fc50ca66e79db3d4372207ea84661aa87ed8468fd238184ed2119ca",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/resize-observer/es/index.js": "4b29001a198304c0c6e01bd85cbdbfa1aba04c75e7d4d935c8bd21dddff05977",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/context.js": "1c9e29be56d40bf32dd95c6d40fdbe7f1bef13055286ebfb0a4cadbfde3531a7",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/interface.js": "5e795579897f958f03a070687e6b6634874661d5310798448887793fe6104aaa",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/util/motion.js": "9122bb6f256b040f5c0b8b20497a769a890e613d10b6eb2306bd65e168779466",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/hooks/useDomMotionEvents.js": "2194271557c6050e7ecd0d590734ab5adcfb2de6a35322de165fb901f4d310a9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/hooks/useIsomorphicLayoutEffect.js": "f94e7523aca1f34e42806987eb18ea8c0ca0cae805561ebabca2c6668ece4861",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/hooks/useNextFrame.js": "5752e64c7790245ea77a7c59d7ca1e96c09d5e0fb5c5665920d22237ae301d47",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/hooks/useStepQueue.js": "1e5b28da40466e296f246f4055ef7dab79d0377e2aaf7c43b3eb079eaf1feab2",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/hooks/useStatus.js": "03f3844e409569735b3dec2f38d7ecd767d36816b25960e7932781e65ed75d24",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/CSSMotion.js": "869b13d54dd777b110c26e5bdeaeba7cc0d2706e18f2494b395308acfb70f537",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/util/diff.js": "da3a686608978dc1d108d11b70f61544abc960eb13750950ecd059c40d98df6a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/CSSMotionList.js": "f7c0b179ff7d04f1a8f4743a61fed0ed0131a67f072688556ef68a56de30cd27",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/motion/es/index.js": "c7d8074caed4f5b6dd56cd6101982da012b549ff77d11dc6d1cd0e81c44d8f5a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/Popup/Arrow.js": "0fef80b81a831423f4e42fc8411a8b43261274fea9fbac465cfcd8786995b691",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/Popup/Mask.js": "a123841e4d1061c2412a5c4b116c0a7857a4622b86fcede6c196026e99e307c8",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/Popup/PopupContent.js": "05bca95e69909dabdb17d733abb6b38b3f56caf1e04fb26ff711c366e7174687",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useOffsetStyle.js": "efe8e2c6b315798e2b9de8a7b4a47128323a831274060d47c2890af9f2162312",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/Popup/index.js": "f79db23db733de66218e573e3cd913f1ac1ffffd4ce450d64eb54784050c9cd3",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/context.js": "6ace416baf075e9d1c56dfee36f23750304b9510155dce1712d9d32b4f6943ee",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useAction.js": "e403c61f9669d960a51d40712af378050efb3845d293c7b1b1c5766e36dce480",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/util.js": "f2ef63bca3f898c96fd6cef40c27a314b2a373a4c18ca2f40fbc12c5392e4815",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useAlign.js": "3c4b7160ccb768c2e68aac4b15400e8ae4cb21075a4289778853c3efa30beb1b",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useDelay.js": "e5b93ef5317033ab95ca76018ff8ea149c86b9f48bbc416c4f567530f043f1d9",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useWatch.js": "bd3a4bc861afd59e8c317785ae3da1d635af669f0c37ae67c2767ee9bfda7e71",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/hooks/useWinClick.js": "6f966165ee080197c54fd80023a73580eec0a2c44f881ab524e1cf3debee4e5f",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/UniqueProvider/useTargetState.js": "cf6cf5f1845be2451cd0cb426e2de69f6ed6769d1a8ce4b3fa7455cba5686165",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/UniqueProvider/UniqueContainer.js": "c6e818047e82b22f9ee52c1dfe8f2cc4309189682d1632dd3882add2f765108a",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/UniqueProvider/index.js": "3974541bb0808f7f6dd1694ab3a78eab8498deb8312e9885ca9b458d03c54a73",
+      "../build/ant-design-gpui/modal-reference/browser/node_modules/@rc-component/trigger/es/index.js": "ff8079af0ab16472b1f44e9477cb4322bad4eea8c02c87207f58a9a2b60eb0a6",
+      "../../../ant-design/components/_util/reactNode.ts": "2b47afd14e0d9585cff537229673f778b4be3003fe1f4c7e6e7d92598cf06ea3",
+      "../../../ant-design/components/tooltip/UniqueProvider/MotionContent.tsx": "82a8be9027510dc33b92aa9b3f2c9c89ada7a3538d928fc447429e1b98a7f5db",
+      "../../../ant-design/components/tooltip/UniqueProvider/index.tsx": "8182db4cf117770d8a792c805410f61541ab62bee382feb0890c9c96a64f5d2d",
+      "../../../ant-design/components/config-provider/DisabledContext.tsx": "3841126bbb7be87579f7977ddb3299b2d6c0d342ecb66d0863c0836ff52501d9",
+      "../../../ant-design/components/config-provider/SizeContext.tsx": "8adabf38910d2b1f14c5f95e4c1e5434588bb6701745c551ec4a87e13e5628d1",
+      "../../../ant-design/components/config-provider/hooks/useConfig.ts": "501841d8c2c3655551619c170b2863d6ae4a60fe3dc8a9d509589ebdabf9b447",
+      "../../../ant-design/components/config-provider/hooks/useTheme.ts": "6effc009d816c1d1533cf6e5c9a2be3e88ffe2357ef3c62d84b04b0eef72d529",
+      "../../../ant-design/components/config-provider/MotionWrapper.tsx": "704cd47acf5881873d2ea12550cfa76352f03841346d48ef0dcfa4949ef891b8",
+      "../../../ant-design/components/config-provider/PropWarning.tsx": "05870f5de06cfe5c8524869489214224ffbcdbe1aca78c4b5ee4d283d44d86c0",
+      "../../../ant-design/components/config-provider/style/index.ts": "a9c65f6436e638541d142f57584db96eeacb248d7f525fcbcddc9635382e4994",
+      "../../../ant-design/components/config-provider/index.tsx": "4e0a55586cf792fe702c0bd7005ea72a182056bc82792bfc7f5459e38ca983bf",
+      "../../../ant-design/components/theme/getDesignToken.ts": "32ec8d981f4bf3935357b8984d8e3aaba76a40d4c42c5adf89b0765786b4d273",
+      "../../../ant-design/components/theme/themes/compact/genCompactSizeMapToken.ts": "708eb1526829f62f2254d57bbdbb167591743bd04e7c024ac695dcb3a0401840",
+      "../../../ant-design/components/theme/themes/compact/index.ts": "4b5ab69fd26714856865c0543837147006337d245fa20d89d9d8a10568074c65",
+      "../../../ant-design/components/theme/themes/dark/colorAlgorithm.ts": "f6fdca89ec3f33a9e485c1b3d31b0eadd9b59adc3983dffc69bd38a6e6f0d6bc",
+      "../../../ant-design/components/theme/themes/dark/colors.ts": "66e8de7cf1970a495929bf0f243aa65e598536017dccf28370bedb6fe9156aea",
+      "../../../ant-design/components/theme/themes/dark/index.ts": "cbfac4877bcf8a0c93f0351cf79656e3f21acfd6f0e56af54f91060c1fd8fd01",
+      "../../../ant-design/components/theme/index.tsx": "7f6f5c0ee1b205b71548acd5c8c0098d8913a063dc6189857050740d2185e99b",
+      "fixtures/carousel/visual-cases.json": "38661e21b650ac0ffee2698a2e06da9a52bc32ba6f361dc646c055d48c7bdc53",
+      "scripts/carousel_reference.tsx": "269a42ddc0ee79099300aabef0a7c4aee294a9ec7c655858b83fb99a243200ef"
+    },
+    "capture_sha256": "cc5625e6da6e28c3ec27a265ae2f9188a5caeee78dd85c24b7a7459874d62973"
+  },
+  "componentDefaults": {
+    "default": {
+      "defaults": {
+        "arrowSize": 16,
+        "arrowOffset": 8,
+        "dotWidth": 16,
+        "dotHeight": 3,
+        "dotGap": 4,
+        "dotOffset": 12,
+        "dotWidthActive": 24,
+        "dotActiveWidth": 24
+      }
+    },
+    "dark": {
+      "defaults": {
+        "arrowSize": 16,
+        "arrowOffset": 8,
+        "dotWidth": 16,
+        "dotHeight": 3,
+        "dotGap": 4,
+        "dotOffset": 12,
+        "dotWidthActive": 24,
+        "dotActiveWidth": 24
+      }
+    },
+    "compact": {
+      "defaults": {
+        "arrowSize": 16,
+        "arrowOffset": 4,
+        "dotWidth": 16,
+        "dotHeight": 3,
+        "dotGap": 4,
+        "dotOffset": 12,
+        "dotWidthActive": 24,
+        "dotActiveWidth": 24
+      }
+    },
+    "dark-compact": {
+      "defaults": {
+        "arrowSize": 16,
+        "arrowOffset": 4,
+        "dotWidth": 16,
+        "dotHeight": 3,
+        "dotGap": 4,
+        "dotOffset": 12,
+        "dotWidthActive": 24,
+        "dotActiveWidth": 24
+      }
+    }
+  }
+}

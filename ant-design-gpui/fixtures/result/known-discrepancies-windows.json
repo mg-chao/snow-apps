@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e"
+  },
+  "differences": [
+    {
+      "kind": "Host action intrinsic text widths",
+      "scope": "Unconstrained developer-authored raw action controls, not Ant Design Button measurements",
+      "record": "fixtures/result/host-action-metrics-windows.json",
+      "note": "Windows GPUI text advances vary with DPI. Original Action width differs by 1.09896 logical pixels at 150% scale. Equivalent fixed-width child probes isolate the Result layout gate."
+    },
+    {
+      "kind": "Native dashed border pattern",
+      "scope": "Semantic root customization only; default Result has no border",
+      "case": "semantic-default-ltr-100",
+      "browser": {
+        "top_border_colored_pixel_run_lengths_px": {
+          "6": 11,
+          "5": 57
+        },
+        "png_sha256": "ca5aa5aa08cec9ea2e61cd9edacaf08d7fcd2138203d856910df5b61410a02b1"
+      },
+      "native": {
+        "top_border_colored_pixel_run_lengths_px": {
+          "4": 113
+        },
+        "png_sha256": "2a18aaff64ad5a41889e42f5f868dc7e0d369067719d4cec2a6a21ea26a2bc9e"
+      },
+      "measurement": "Opaque-ish blue pixel runs at physical y=21, x=30..709, max RGB-channel distance from #1677ff below 20; 100% scale. Browser runs are mostly 5/6px; native runs are 4px. These are raster runs, not CSS dash-length declarations.",
+      "note": "GPUI border_dashed uses a denser pattern than CSS dashed. Full pixel comparisons retain this difference; no Result-specific border painter overrides native StyleRefinement."
+    },
+    {
+      "kind": "Nested arbitrary host text bidi",
+      "scope": "Custom GPUI div child containing raw text inside the body, notably unicode/rich/error RTL scenes",
+      "note": "Result preserves arbitrary native host subtrees. Stock GPUI text inside a custom div can keep a final period visually trailing, while browser CSS RTL places the neutral punctuation before the English run. This is not font antialiasing. Direct Result-owned body strings use the shared paragraph bidi path and are separately verified by the body-text scene."
+    },
+    {
+      "kind": "Font shaping and antialiasing",
+      "scope": "Browser versus Windows GPUI glyph rasterization",
+      "note": "Full unaligned and unmasked canvas pixel errors are retained in visual-validation-windows.json. No font masking, rescaling, origin alignment, or interpolation is applied to the reported full-canvas errors."
+    }
+  ],
+  "visual_review": {
+    "categories_inspected": 29,
+    "scene_fixture_sha256": "c71942e3a9f2a1321d2a9865950cb920661246506e421b26ae1d6aa6d3186660",
+    "coverage": "All original category groups, direct Result-owned RTL body text, eleven dark compact RTL representatives, and all six narrow exception categories in both directions at 100% scale.",
+    "remaining_findings": "The four rendering differences recorded above. No additional narrow exception discrepancy was found."
+  }
+}

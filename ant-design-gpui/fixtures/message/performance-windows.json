@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x64",
+  "preset": "windows-msvc-performance",
+  "profile": "release",
+  "utc": "2026-10-28T14:08:45.7319785Z",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "measurement": "CPU layout and scene preparation; diagnostic timings",
+  "native_executable": {
+    "name": "message-b0f36c4090b8e71b.exe",
+    "sha256": "024dc8d797d95df890d0df13dd4b3c217f5bf66f03e4fb6e953938d4af8aa90f"
+  },
+  "source_sha256": {
+    "benches/message.rs": "87d44dd5074856a279d313073c1e1e7f7edcf898b97fc86fffb813c5ab96688e",
+    "scripts/run-message-perf.ps1": "b81674d261120b15a3ed3826dcf34c07926a39aedf3242f65ca965102e0ed5d2",
+    "Cargo.toml": "c676f4612e74903d5741eb29bd2f3b7b08164446db5a6ff5c38fc739a87eb9f6",
+    "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+    "src/root.rs": "943fc6310804e202a736088db2f970a7e81e119603a6f13ad3676a777a460d61",
+    "src/lib.rs": "40f1c31d967c65933280ebd252435f82a2eb30c4754091034fafc10ef644e1ec",
+    "src/config.rs": "67e3ee9a84fc6157d74077ad8d5fa0749ec28c57d43e1ff2676335f1f606e2a3",
+    "src/behavior/text.rs": "c2caa1b4b1b3714e85f846a7deb32658795554a1d17a2bb48cdac0840f56384f",
+    "src/message/config.rs": "04c780c38ad0efdc7683c5baf8d298c0cfe4bbfc82d600a3db4789470f9d8ea8",
+    "src/message/core_audit_tests.rs": "f0d393529937f1528883a9fd609fee2ecfaa018717e10c5909d5791bb6c2b876",
+    "src/message/element.rs": "6dfe810d7f61512c026b01549f832c4d8eca5c17a429f7300528e34780126940",
+    "src/message/mod.rs": "c6a1caf9c4c7efc3169109a8f80cda35f8fe66c068147923a325e52081926211",
+    "src/message/reference_tests.rs": "318e33e4b3553e62bf7d101b3cd5e4635fc0715ecc82405b0b18f899d4cdcc49",
+    "src/message/render_tests.rs": "ee3f8f2c697c2c314973030dcf19dc6e6ae87fa32be28440b00135b553f37a74",
+    "src/message/state.rs": "64c50b671cd447c30d560b822f70962bf4ada5a28620b548b0985fcd5c173623",
+    "src/message/style.rs": "f27974adcbcd90c29ee55ddad808a9fc70da2b6eedaeedf3b30960cbd47d3a2f",
+    "src/message/tests.rs": "ef8519e055cbfb1901d1dd387ec55d3f5bf6acacf4d4e66c1087e042ac20d4b0",
+    "src/message/view.rs": "9a8b47f806179377d1e8a7df6297fd1426e5748ee0dfde592b0a6a5f9fc0279d"
+  },
+  "assertions": [
+    "empty and static hosts request zero frames",
+    "active loading requests exactly one callback per controller",
+    "eight forced redraws share one frame callback",
+    "warm icon parse and raster misses remain unchanged",
+    "keyed replacement preserves 100 retained notices",
+    "destruction drains continuous work"
+  ],
+  "measurements": [
+    {
+      "name": "message/style/cached-tokens",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 22.9
+    },
+    {
+      "name": "message/options",
+      "iterations": 200000,
+      "nanoseconds_per_iteration": 171.178
+    },
+    {
+      "name": "message/1/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 72.7,
+      "p95_microseconds": 113.4
+    },
+    {
+      "name": "message/1/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 108.2,
+      "p95_microseconds": 125.6
+    },
+    {
+      "name": "message/1/loading/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 70.0,
+      "p95_microseconds": 79.5
+    },
+    {
+      "name": "message/1/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 68.0,
+      "p95_microseconds": 83.8
+    },
+    {
+      "name": "message/3/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 115.5,
+      "p95_microseconds": 139.5
+    },
+    {
+      "name": "message/3/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 112.7,
+      "p95_microseconds": 141.7
+    },
+    {
+      "name": "message/3/loading/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 113.9,
+      "p95_microseconds": 138.70000000000002
+    },
+    {
+      "name": "message/3/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 111.2,
+      "p95_microseconds": 136.3
+    },
+    {
+      "name": "message/20/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 506.00000000000006,
+      "p95_microseconds": 573.5
+    },
+    {
+      "name": "message/20/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 381.3,
+      "p95_microseconds": 429.59999999999997
+    },
+    {
+      "name": "message/20/loading/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 516.1999999999999,
+      "p95_microseconds": 601.7
+    },
+    {
+      "name": "message/20/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 503.8,
+      "p95_microseconds": 608.9
+    },
+    {
+      "name": "message/100/static/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2715.8999999999996,
+      "p95_microseconds": 3653.5
+    },
+    {
+      "name": "message/100/stacked/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 1902.0,
+      "p95_microseconds": 2910.7
+    },
+    {
+      "name": "message/100/loading/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 3240.4,
+      "p95_microseconds": 4561.599999999999
+    },
+    {
+      "name": "message/100/reduced/warm-redraw",
+      "iterations": 100,
+      "median_microseconds": 2929.9,
+      "p95_microseconds": 4039.0
+    },
+    {
+      "name": "message/keyed-update",
+      "iterations": 1000,
+      "median_microseconds": 4.1,
+      "p95_microseconds": 6.9
+    },
+    {
+      "name": "message/open",
+      "iterations": 1000,
+      "median_microseconds": 1.4,
+      "p95_microseconds": 2.3
+    },
+    {
+      "name": "message/destroy",
+      "iterations": 1000,
+      "median_microseconds": 0.7,
+      "p95_microseconds": 1.1
+    }
+  ],
+  "limitations": [
+    "CPU layout and scene preparation rather than GPU frame times.",
+    "Diagnostic timings on this machine; no hardware-independent timing threshold."
+  ]
+}

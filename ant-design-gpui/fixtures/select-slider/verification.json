@@ -1,0 +1,523 @@
+{
+  "schema_version": 1,
+  "verified_utc": "2026-10-27T03:51:08.138279+00:00",
+  "reference": {
+    "ant_design_version": "6.6.7",
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "select_package": "1.10.1",
+    "slider_package": "1.1.1",
+    "browser_lock_sha256": "4de8df42bca0635ca18f7e410cd26e125484591e03fb45df025043bba8a774a1",
+    "provenance_sha256": "cf10951b1aa0b95ef0ba4b32643e8aaec55a767ee452e360cb451e1dac7062a8"
+  },
+  "environment": {
+    "os": "Windows 11 Pro 10.0.26300",
+    "architecture": "x86_64-pc-windows-msvc",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+    "exposed_cores": 12,
+    "exposed_threads": 24,
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661"
+  },
+  "tests": {
+    "command_prefix": "cargo test --locked --offline",
+    "library_filters": {
+      "select::": 31,
+      "slider::": 27,
+      "input::": 97,
+      "popup::": 71,
+      "icons::": 19,
+      "locale::": 5,
+      "select_slider_reference_tests": 2
+    },
+    "gallery_select_slider": 5,
+    "total": 257,
+    "full_suite_run": false,
+    "log_sha256": "1fad5151f8aaa24e23fb19ec1dd5e81c2b7fe6e9a07046d9a7c2155359844cb5"
+  },
+  "quality": {
+    "clippy": "cargo clippy --locked --offline --lib --example gallery --example select_slider_visual --example select_slider_accessibility --bench select_slider -- -D warnings",
+    "clippy_passed": true,
+    "rustfmt_changed_rust_files": true
+  },
+  "visual": {
+    "paired_captures": 2352,
+    "surface_checks_passed": 5928,
+    "geometry_tolerance_logical_px": 1,
+    "rgb_tolerance": 0.00392156862745098,
+    "alpha_tolerance": 0.001,
+    "inline_host_baseline_normalized": true,
+    "scales": [
+      {
+        "cases": 784,
+        "scale_factors": [
+          1.0
+        ],
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 1976,
+        "passed_surface_checks": 1976,
+        "failed_surface_checks": 0,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "text-dependent tag widths",
+          "shadows",
+          "motion",
+          "transparent layout-only elements"
+        ],
+        "pixel_mean_absolute_channel_error": {
+          "median": 0.07947496947496947,
+          "p95": 0.9485490435490436,
+          "maximum": 2.004053724053724
+        },
+        "pixel_fraction_over_16": {
+          "median": 0.001043956043956044,
+          "p95": 0.009035409035409036,
+          "maximum": 0.019774114774114775
+        },
+        "comparison_sha256": "f9533b179680dacf79df5c5011fda30841d40eea9853b354ed3ddb11826b5719",
+        "native_metrics_sha256": "b9ce0be2862e93b259f3a0423ee5517c9cb02696aa68f8515d9f379abdec154b",
+        "browser_metrics_sha256": "9ff46465834fc43ba6baf3c54d8da618be166360cea8269c7bf776dafec07e5f"
+      },
+      {
+        "cases": 784,
+        "scale_factors": [
+          1.5
+        ],
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 1976,
+        "passed_surface_checks": 1976,
+        "failed_surface_checks": 0,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "text-dependent tag widths",
+          "shadows",
+          "motion",
+          "transparent layout-only elements"
+        ],
+        "pixel_mean_absolute_channel_error": {
+          "median": 0.15221182110071,
+          "p95": 1.0615194681861349,
+          "maximum": 1.7790403834848278
+        },
+        "pixel_fraction_over_16": {
+          "median": 0.0028530728530728527,
+          "p95": 0.009333876000542668,
+          "maximum": 0.01991045991045991
+        },
+        "comparison_sha256": "da586c2a5a768b8a996ee693c14fc2de6d83147f84574f2660c056641723dd9f",
+        "native_metrics_sha256": "71c6c2b6a5ea721a86cc823d10eb5c022fb6422be0d10dc10b5c1bfc3cd9bbee",
+        "browser_metrics_sha256": "793ea55d95e7b28e6c118dabfc07add55b64c83ce6270231c99e334753da1c81"
+      },
+      {
+        "cases": 784,
+        "scale_factors": [
+          2.0
+        ],
+        "renderer": "Edg/156.0.4314.42",
+        "surface_checks": 1976,
+        "passed_surface_checks": 1976,
+        "failed_surface_checks": 0,
+        "excluded_from_surface_pass": [
+          "text rasterization",
+          "text-dependent tag widths",
+          "shadows",
+          "motion",
+          "transparent layout-only elements"
+        ],
+        "pixel_mean_absolute_channel_error": {
+          "median": 0.047509920634920634,
+          "p95": 0.8940176027676028,
+          "maximum": 1.6158017908017908
+        },
+        "pixel_fraction_over_16": {
+          "median": 0.0006791819291819292,
+          "p95": 0.007783882783882784,
+          "maximum": 0.015131257631257632
+        },
+        "comparison_sha256": "c77a4332012b2fb5aa665e166aa97442e7a31c78ca848868c975ba67384a5704",
+        "native_metrics_sha256": "1b35aa6eed8c39019e5b909f20efcd5f893a99a10f1cdec2ed0eb39cee5ae277",
+        "browser_metrics_sha256": "44dc9fac55cb730815d5e021026a40abea7ec9d21ad9d3817f49a2c918c4ee2c"
+      }
+    ]
+  },
+  "windows_uia": {
+    "status": "passed",
+    "runtime": "7.6.7",
+    "utc": "2026-10-26T20:51:01.1300400Z",
+    "checks": [
+      "combobox",
+      "expand-collapse",
+      "active-option",
+      "group-ordinals",
+      "bounded-virtualization",
+      "distant-option-search",
+      "selection-item",
+      "selection",
+      "remove",
+      "clear",
+      "range-value",
+      "per-handle-disabled",
+      "keyboard"
+    ]
+  },
+  "performance": {
+    "preset": "windows-msvc-performance",
+    "build": "Release; SNOW_APPS_BUILD_BENCHMARKS=ON",
+    "method": "GPUI offscreen deterministic text system; 5 warmups; timings include CPU frame work and allocation instrumentation, not GPU presentation or physical input latency",
+    "raw_sha256": "8005f605939899a7036afb01289eaf772386fdf617b7aae92179622db5db781a",
+    "structural_assertions": [
+      "at most 24 realized rows in benchmark viewport",
+      "at most 5 measured responsive tag candidates",
+      "immutable option collection identity retained",
+      "settled frames do not schedule animation"
+    ],
+    "measurements": [
+      {
+        "name": "select/1000/filter",
+        "iterations": 100,
+        "us": {
+          "p50": 24.1,
+          "p95": 40.7,
+          "p99": 61.8
+        },
+        "allocations": 9.0,
+        "allocated_bytes": 1154.0
+      },
+      {
+        "name": "select/1000/warm-open-redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 254.5,
+          "p95": 422.0,
+          "p99": 431.79999999999995
+        },
+        "allocations": 614.0,
+        "allocated_bytes": 320784.0
+      },
+      {
+        "name": "select/1000/reopen",
+        "iterations": 100,
+        "us": {
+          "p50": 660.4,
+          "p95": 912.0,
+          "p99": 990.5000000000001
+        },
+        "allocations": 1835.0,
+        "allocated_bytes": 797692.0
+      },
+      {
+        "name": "select/1000/scroll",
+        "iterations": 100,
+        "us": {
+          "p50": 414.5,
+          "p95": 688.0,
+          "p99": 703.1999999999999
+        },
+        "allocations": 1316.5,
+        "allocated_bytes": 650202.0
+      },
+      {
+        "name": "select/1000/responsive-selected",
+        "iterations": 100,
+        "us": {
+          "p50": 113.0,
+          "p95": 162.7,
+          "p99": 210.6
+        },
+        "allocations": 354.0,
+        "allocated_bytes": 151099.0
+      },
+      {
+        "name": "select/10000/filter",
+        "iterations": 100,
+        "us": {
+          "p50": 256.0,
+          "p95": 298.5,
+          "p99": 378.5
+        },
+        "allocations": 13.0,
+        "allocated_bytes": 17762.0
+      },
+      {
+        "name": "select/10000/warm-open-redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 197.0,
+          "p95": 233.7,
+          "p99": 293.29999999999995
+        },
+        "allocations": 614.0,
+        "allocated_bytes": 320800.0
+      },
+      {
+        "name": "select/10000/reopen",
+        "iterations": 100,
+        "us": {
+          "p50": 554.1,
+          "p95": 666.3,
+          "p99": 751.7
+        },
+        "allocations": 1835.0,
+        "allocated_bytes": 797724.0
+      },
+      {
+        "name": "select/10000/scroll",
+        "iterations": 100,
+        "us": {
+          "p50": 397.0,
+          "p95": 484.70000000000005,
+          "p99": 581.4000000000001
+        },
+        "allocations": 1316.5,
+        "allocated_bytes": 650218.0
+      },
+      {
+        "name": "select/10000/responsive-selected",
+        "iterations": 100,
+        "us": {
+          "p50": 109.2,
+          "p95": 128.1,
+          "p99": 348.1
+        },
+        "allocations": 354.0,
+        "allocated_bytes": 151099.0
+      },
+      {
+        "name": "select/100000/filter",
+        "iterations": 100,
+        "us": {
+          "p50": 2858.2999999999997,
+          "p95": 3207.4,
+          "p99": 3356.5
+        },
+        "allocations": 16.0,
+        "allocated_bytes": 192578.0
+      },
+      {
+        "name": "select/100000/warm-open-redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 191.9,
+          "p95": 205.0,
+          "p99": 213.3
+        },
+        "allocations": 614.0,
+        "allocated_bytes": 320816.0
+      },
+      {
+        "name": "select/100000/reopen",
+        "iterations": 100,
+        "us": {
+          "p50": 544.4,
+          "p95": 873.0,
+          "p99": 897.8000000000001
+        },
+        "allocations": 1835.0,
+        "allocated_bytes": 797756.0
+      },
+      {
+        "name": "select/100000/scroll",
+        "iterations": 100,
+        "us": {
+          "p50": 391.40000000000003,
+          "p95": 458.0,
+          "p99": 492.5
+        },
+        "allocations": 1316.5,
+        "allocated_bytes": 650234.0
+      },
+      {
+        "name": "select/100000/responsive-selected",
+        "iterations": 100,
+        "us": {
+          "p50": 107.80000000000001,
+          "p95": 118.8,
+          "p99": 121.39999999999999
+        },
+        "allocations": 354.0,
+        "allocated_bytes": 151099.0
+      },
+      {
+        "name": "slider/snap-100m-steps-10k-marks",
+        "iterations": 1000,
+        "us": {
+          "p50": 0.09999999999999999,
+          "p95": 0.09999999999999999,
+          "p99": 0.09999999999999999
+        },
+        "allocations": 0.0,
+        "allocated_bytes": 0.0
+      },
+      {
+        "name": "slider/1-handles/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 43.2,
+          "p95": 75.6,
+          "p99": 111.5
+        },
+        "allocations": 137.0,
+        "allocated_bytes": 41948.0
+      },
+      {
+        "name": "slider/2-handles/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 55.099999999999994,
+          "p95": 58.9,
+          "p99": 76.10000000000001
+        },
+        "allocations": 194.0,
+        "allocated_bytes": 58708.0
+      },
+      {
+        "name": "slider/10-handles/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 165.3,
+          "p95": 188.4,
+          "p99": 268.40000000000003
+        },
+        "allocations": 671.0,
+        "allocated_bytes": 214028.0
+      },
+      {
+        "name": "slider/100-handles/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 1512.5,
+          "p95": 1903.5,
+          "p99": 3563.5
+        },
+        "allocations": 6176.0,
+        "allocated_bytes": 2390556.0
+      },
+      {
+        "name": "slider/drag/tooltip-false",
+        "iterations": 100,
+        "us": {
+          "p50": 146.60000000000002,
+          "p95": 279.1,
+          "p99": 307.8
+        },
+        "allocations": 420.04,
+        "allocated_bytes": 126410.4
+      },
+      {
+        "name": "slider/drag/tooltip-true",
+        "iterations": 100,
+        "us": {
+          "p50": 240.0,
+          "p95": 309.9,
+          "p99": 358.0
+        },
+        "allocations": 635.01,
+        "allocated_bytes": 238301.96
+      },
+      {
+        "name": "slider/dense-dots/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 749.5,
+          "p95": 849.1,
+          "p99": 1015.1999999999999
+        },
+        "allocations": 138.0,
+        "allocated_bytes": 222428.0
+      },
+      {
+        "name": "slider/100000-marks/redraw",
+        "iterations": 100,
+        "us": {
+          "p50": 1195.3,
+          "p95": 1288.2,
+          "p99": 1332.6
+        },
+        "allocations": 132.0,
+        "allocated_bytes": 220668.0
+      }
+    ]
+  },
+  "licenses": {
+    "manifest_sha256": "acb8eca5ec44c949848a959a3b8a79f76a6ce1d481008d3c073610db652759a2",
+    "notices": 486,
+    "external_rust_packages": 256,
+    "vcpkg_packages": 38,
+    "new_runtime_dependencies": 0
+  },
+  "remaining_discrepancies": [
+    "Text antialiasing/baselines and text-dependent tag widths differ between Windows GPUI and Chromium.",
+    "Shadow blur rasterization differs despite matching tokens.",
+    "Shared popup entry fade and immediate closure; CSS subtree scale/exit not reproduced.",
+    "Pinned GPUI paragraph reading-direction limitations remain."
+  ],
+  "not_verified": [
+    "Live Chinese IME candidate-window interaction",
+    "Screen-reader speech output",
+    "Native macOS/Linux behavior",
+    "GPU presentation time and physical input-to-screen latency",
+    "Timed browser/native animation parity"
+  ],
+  "source_sha256": {
+    "benches/select_slider.rs": "25e87a9d4a0df62cb174c984e677622caff86403b1058928cb70426aa4d936f6",
+    "Cargo.lock": "5a67e919a8f1ee99a4f6f513288b8b09f849c78f28be40dd620ef3fc7f886181",
+    "Cargo.toml": "684f1ff554f368f1fd43c706da226ec5c85cb69134e839996dcac6272e87c557",
+    "examples/gallery/catalog.rs": "af5fff4925ceae8ce01970723bc6d546e26dda4afaa7986eb67520cbd3cacf1b",
+    "examples/gallery/main.rs": "57bf180c471f8e603a1bc95ff7656a41b77f8b638912b32503f683d87f5754b2",
+    "examples/gallery/select.rs": "951b282e7ee828b483ef8d2fa82b472c1d3f878817595babbaccfc1e2750c0d8",
+    "examples/gallery/shell.rs": "1ac86539dd586fb0751fb5a1e69b05fbbffb68dbb3043999a3eba78350ebf590",
+    "examples/gallery/slider.rs": "8244b1f126faf751dfe241cc228b3f24320dd7fab39cb02ba96bc355dc571fba",
+    "examples/gallery/tests/select_slider.rs": "2913e55bbb7559d5bc0a38647dbdc70a6fb1fe0ce1d0b53020b436a5d6bb0229",
+    "examples/gallery/tests.rs": "e6f5b33254cd6bd6688fd0d918ad21146d2d5161dcd2ded0518330d5e0ccc0bf",
+    "examples/select_slider_accessibility.rs": "1bdd5032cba50852c1e92b2505669c4e4bf82e0cc8901523283c90a608dc7a20",
+    "examples/select_slider_visual.rs": "4df1ffb6f108187c469dcde6a794adfc0d1438da462ce2e4b918044a2f15f435",
+    "scripts/capture_select_slider_reference.mjs": "6385a04a72d2970049a0578a2e063685cf42582ae3bce06e56ce9f948246017a",
+    "scripts/capture_select_slider_reference.ps1": "5f47fd6c88b697ce7f2b2c8c45bf130de0e9b7f89a9363af2db21a846eaecab2",
+    "scripts/compare_select_slider_visual.py": "6331f305fdd1a1301ffe979f3ade5bf45efb8ae5266e5e6c103d79a74553c80b",
+    "scripts/generate_slider_model_reference.mjs": "6a030cc6757cec1dd27ab7eacc61a032c0564c80e302323e1b20e6082f0257e9",
+    "scripts/pack_select_slider_reference.mjs": "ad373658e5852579a2e94f4cd5a87806f5e16c0e3a1472ab7438de2118e90418",
+    "scripts/prepare_select_slider_reference.mjs": "52f5225f32b26f2cbc9baf33687987799396b55c57fd3471373a7f26b495f56d",
+    "scripts/run-select-slider-perf.ps1": "47cd56e49eee1ed83f2d2683f5303f36ad93efdb23cf6ac8293ee27279575281",
+    "scripts/select_slider_reference.tsx": "a81160658b3b5781d4745a6c5ef39e473d6f53c5a32d724d2ecd2315337aecae",
+    "scripts/select_slider_visual_cases.mjs": "de7fd192407d4cb50d6c7d466729f372a91884b60dcab7a9f57aa96bea0f4485",
+    "scripts/test-select-slider-accessibility.ps1": "e4577db28f05d315fa57bc3b4a827ad2d741377798a983ff1222e54c5616ffbe",
+    "src/icons/mod.rs": "3f2cf3625770911c48fabcd76eb1f1641b1f5f8917b58460b2a299b2c86fa1cf",
+    "src/icons/tests.rs": "0c77ff449c5f36f91cf6faf3e83be87706a2e7fc1bb4686a48682b78f53c12a8",
+    "src/input/group/tests.rs": "c8699e5a5c438762dc2cca4c3055086ac7c242c520a9ccd10a8a2bfac277bac1",
+    "src/input/motion.rs": "eb66928bc6a185ed9e3400c2fa202bfe81629feb2ae249fb531615fd5c738265",
+    "src/input/view.rs": "9c314d3c027e9509180a93930a634f7da5a3325b9641d456db52f494aa2c980e",
+    "src/lib.rs": "a99e147354073bec66857a3495f6343abdddea500106f76cc1051e2466f298da",
+    "src/locale.rs": "a9f805015acbc639dc7d22971c11bbb9dba5f4957f7da8b8ef36ae7d74b407dc",
+    "src/popup/element.rs": "f8ee001e4c9dc3106d6c03d2fa615881241c6b95e26f8a6df7d2c9843ad0621c",
+    "src/popup/mod.rs": "dad07d5c91bfce615b7cf6789fd02f1e9eab3e314c793f123eb150439394a8d6",
+    "src/popup/runtime.rs": "513e593bda8c18eb24bf9a272fe77b67622a73ee5caea55f6677ee76d5470887",
+    "src/popup/tests.rs": "691e10fcadfb913bf6f30efdabbbde346ef341d100da8c2d77b121b251fc1431",
+    "src/select/accessibility.rs": "6e75990170d4dddbc3d681ca9772aac3854a2fcf9d0c1b100efa8d9d352c4ded",
+    "src/select/empty.rs": "7cbdceb9a57bc4359e435c4ff95f46ff6b606838dbf3a1832439520a4b45fd2c",
+    "src/select/interaction_tests.rs": "249c57d91bb7c5e7157740f33f2d18d7fe5ba740ba9787257e0180160f4b3a62",
+    "src/select/mod.rs": "fd79c4cecbfd951686f54a3675c96b3cdafcd13e1e0822aa13d5b925d03f8b09",
+    "src/select/model.rs": "9d521c3188b659eeaf166e724b131e388207758f5dfa629732bae41fb6274cc3",
+    "src/select/options.rs": "2dd83c6073b0a4fd0c23a0414dde4c1e5579bd1275e46321ff248be5c9a95605",
+    "src/select/overflow.rs": "31707f8005d31863c908a41ed9500f0bd747b265bb362ce63742a262c04dadb7",
+    "src/select/state.rs": "e8d44037d4debc4361fa5afec29ad53c52d1050f539877ce48867e7bd10a78cf",
+    "src/select/style.rs": "3c045108aefcb3acf8a6c53d85014c0f272cf63753c4dc6678bef7f80b4fad72",
+    "src/select/tests.rs": "5ec85003831c1cdb62818fc5032c99f0dd128492bfe55c024b025da0a4f16dac",
+    "src/select/view.rs": "15259cb5b3d260bc4b8ec101636b807eeb040471fcd3058e67fa018f513a077d",
+    "src/select_slider_reference_tests.rs": "9906f73ab8f9b0f3fce9318e29ba51a6b9dcff25f9efe750ab68970c90e51b3e",
+    "src/slider/interaction_tests.rs": "cbeab1ee73f2c31487a16f166cb5f4c5cb1df836d5566cb830efb3cf88780420",
+    "src/slider/mod.rs": "4ac34a9be98d43ada2fdb6f835972f3383d270af9109aae15b4ecd5ab7f9ea20",
+    "src/slider/model.rs": "6b3e496581f7fe89de8d966cd4f13a932282ab87df23ffabff2167796d2df750",
+    "src/slider/state.rs": "5c5c2b788d028d3c368b328550dcb8dd3e3b978d7b6d253dbd0d470662ff1bd3",
+    "src/slider/style.rs": "ebbb2bcd8860a1a0bdccbddc0fdde2d8b4bd1978dbea086b22af7445733c0343",
+    "src/slider/tests.rs": "f3b4b4a2a1eacb7e2ea4f89e0337c36190e4187804cc75e7eb27b15e43551055",
+    "src/slider/view.rs": "c201e68380c52e3620d557640a2805823cc42b08fb1219e66409561bf0ea4844"
+  },
+  "fixture_sha256": {
+    "fixtures/select/browser-package-lock.json": "4de8df42bca0635ca18f7e410cd26e125484591e03fb45df025043bba8a774a1",
+    "fixtures/select/multiple-token-events.json": "61214e91e9dddf6620485cb4a84dfeb8a8621ba403a9e887ec3deb18c15dcc7a",
+    "fixtures/select/tags-token-events.json": "dd24d997583ee4dd26c433af4c814a7251e2ade4a72e81e9d4f35a63366dae4a",
+    "fixtures/select/visual-reference.json": "48f3028c2a4a66af13b9747810a1e20bd073f3186b60d31e100206a7ae2657b2",
+    "fixtures/slider/model.json": "6e189c109b213048783b6131b129e214e8fbc33b081160ee1093d7c8f9871293",
+    "fixtures/slider/visual-reference.json": "b5dc5c3a67248dbcdd69583c2c74aa60b4cec05643a6b21eac05d542f5f04c97"
+  }
+}

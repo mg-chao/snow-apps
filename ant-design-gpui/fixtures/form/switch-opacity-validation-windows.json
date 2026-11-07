@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "passed": false,
+  "scope": "Auxiliary real original/native Switch compositions over six uniform backdrops, independent of the primary Form matrix. Every strict failure is retained.",
+  "native_executable_sha256": "03a732db066a77494401e99a956d35c7f24d3a6b631a6ad54b0a0fa28d82dbe2",
+  "gpu": {
+    "backend": "Direct3D11",
+    "adapter": "AMD Radeon RX 6750 XT",
+    "vendor_id": 4098,
+    "device_id": 29663,
+    "max_texture_size": 16384
+  },
+  "geometry_passed": 12,
+  "paint_passed": 7,
+  "actual_captures": 12,
+  "gates": {
+    "geometry_logical_px": 1,
+    "solid_channel_error_bytes": 1
+  },
+  "failed_cases": [
+    "switch-opacity-container-default-ltr-100",
+    "switch-opacity-white-default-ltr-100",
+    "switch-opacity-white-dark-ltr-100",
+    "switch-opacity-gray-dark-ltr-100",
+    "switch-opacity-red-dark-ltr-100"
+  ],
+  "limitation": "Floating-point GPU composition and Chromium software RGBA8 interpolation can differ by two RGB bytes in solid interiors at some authored opacities. Antialiasing coverage differences remain reported separately. No opacity-specific corrections or threshold changes are applied.",
+  "cases": [
+    {
+      "name": "switch-opacity-container-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": false,
+      "flat_interior_max_error": 2,
+      "flat_interior_error_pixels": 386,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "0ec0d993a78e5a2fde18999df680d8e9e77f04f51d843b02b1a097f815d2099b",
+      "native_sha256": "211357e7ac34807a4c1480f497ae779d4a1741e5683c7a45682a43dc261e6a75"
+    },
+    {
+      "name": "switch-opacity-white-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": false,
+      "flat_interior_max_error": 2,
+      "flat_interior_error_pixels": 386,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "0ec0d993a78e5a2fde18999df680d8e9e77f04f51d843b02b1a097f815d2099b",
+      "native_sha256": "211357e7ac34807a4c1480f497ae779d4a1741e5683c7a45682a43dc261e6a75"
+    },
+    {
+      "name": "switch-opacity-gray-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "71d808b0c855657e22dae8f85aca93c302d847888326787eee4b023a5406aa37",
+      "native_sha256": "50a8cb999cae7e6ae0372ef5945e2992882d5aa91a437446c90fe6a3237db55c"
+    },
+    {
+      "name": "switch-opacity-red-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "1bef65d34494b863772088900c7b5a8b646d7e7d9984c7d221eb653046694f52",
+      "native_sha256": "422e897b0878f66657e37773fb3d347ba91e3375f7a3077742ff53b3f55e4106"
+    },
+    {
+      "name": "switch-opacity-dark-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "f790bd7a8f3c0325db6fdb2643dfe53c847a0fa7406ea7678862a7eea9c14f3e",
+      "native_sha256": "9ca7c053b6d8c4ba8e3e98a71a66681a2e6698f6079b4f91599189c6d15da9d2"
+    },
+    {
+      "name": "switch-opacity-blue-default-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "2a125b85853609838b6de3d16a0a4879abb30abbbdd49899874f33c1d3cf459c",
+      "native_sha256": "8483ba6c78fa7cb8316fae8eebee9f795f70a6f5b6c832407793aea46aa1844a"
+    },
+    {
+      "name": "switch-opacity-container-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "0e8d8ca4173dfc718f3c534cea9407a8b32a19a7de35c070a4d5b53abfcfa147",
+      "native_sha256": "4200413852efc443f4894833468452789d0dc694eb8b608e16d6fc68ac9497d0"
+    },
+    {
+      "name": "switch-opacity-white-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": false,
+      "flat_interior_max_error": 2,
+      "flat_interior_error_pixels": 386,
+      "coverage_error_pixels": 2,
+      "reference_sha256": "a96da87f778a6836a1c653c2b1ce7a1c51aa11755d3fae109c5ee275266fa154",
+      "native_sha256": "1288fb769858488b3c8855f91986b2b88511f09f1040b72c68c6d396d5f4227f"
+    },
+    {
+      "name": "switch-opacity-gray-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": false,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 1,
+      "reference_sha256": "1216f9d8dc80f382e2133b5f39cbf02c41b2de00a2ec07fa307af7fe149107c2",
+      "native_sha256": "8c559dfcef114bbeef34114e3305bc77a286a104d5f412c12f3511f15b195002"
+    },
+    {
+      "name": "switch-opacity-red-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": false,
+      "flat_interior_max_error": 2,
+      "flat_interior_error_pixels": 387,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "35842eabd1f4ff6166d13cdb919572ee7c8f19650209cddde74f9bfe34e25cf3",
+      "native_sha256": "56be8744da7e25947371cc1238ae58fa0f982a3a3ef4a91dd10ef49ba02d550d"
+    },
+    {
+      "name": "switch-opacity-dark-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "0e8d8ca4173dfc718f3c534cea9407a8b32a19a7de35c070a4d5b53abfcfa147",
+      "native_sha256": "4200413852efc443f4894833468452789d0dc694eb8b608e16d6fc68ac9497d0"
+    },
+    {
+      "name": "switch-opacity-blue-dark-ltr-100",
+      "geometry_pass": true,
+      "paint_pass": true,
+      "flat_interior_max_error": 1,
+      "flat_interior_error_pixels": 0,
+      "coverage_error_pixels": 0,
+      "reference_sha256": "a9843b6cd9ba6e329075bd0ea35ed1043a3fc218bc88735ff65988ba4312e468",
+      "native_sha256": "2825a05c40020fb40e16f3484fa54a5cb449275fd9596d89e011659eb1462105"
+    }
+  ],
+  "evidence_sha256": {
+    "comparison": "1beeb8ef118c3804fbc5b28070515932d5eedfcb749163bac609e81997700e2c",
+    "source_metrics": "986052ba00adb22f9e9a0d969c884b3bc47a12742fe5c757d7edbbc90bce7ac9",
+    "native_metrics": "422513f5c5963ecc6fd9f3b015c9f3f5fb1864e9f160eb05140a58302eb8c174",
+    "build_context": "b08ec7d7f1819be6ffb6350ae0dc10a314879b4621324beb65ab2c81d5ee53e2",
+    "software_backend_probe": "7d2d8dfd2af4a08df667e80c053f196a05fd4ad3f09d24d14c39300983794c4a",
+    "manifest": "56486fda26907c879967fb177baaccfedc339b8b3439d9af438cd894f04d8555"
+  }
+}

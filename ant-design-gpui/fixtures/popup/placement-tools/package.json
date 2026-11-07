@@ -1,0 +1,12 @@
+{
+  "name": "ant-design-popup-placement-reference",
+  "private": true,
+  "description": "Isolated browser fixture tools; never shipped with the Rust library",
+  "dependencies": {
+    "@rc-component/trigger": "3.10.1",
+    "esbuild": "0.27.3",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "typescript": "5.9.3"
+  }
+}

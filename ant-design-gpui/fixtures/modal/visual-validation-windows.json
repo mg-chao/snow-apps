@@ -1,0 +1,6897 @@
+{
+  "comparisons": 90,
+  "browser": "Chrome/156.0.8078.48",
+  "upstream": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+  "max_geometry_error_logical_px": 0.0,
+  "max_icon_geometry_error_logical_px": 0.6666666666666666,
+  "max_icon_solid_core_error_logical_px": 1.3333333333333333,
+  "max_solid_channel_delta": 0,
+  "mean_full_frame_channel_error": 0.5535321166028425,
+  "all_image_dimensions_match": true,
+  "measurement": "Full unaligned, unmasked canvases; no interpolation or font masking. Geometry is native minus browser. Solid probes avoid text, antialiased edges and shadows. Skeleton is frozen at frame zero. Icon geometry uses >=50% color coverage; exact-color core bounds are also reported separately to expose antialiasing differences.",
+  "source_sha256": {
+    "examples/modal.rs": "bc0c49f6bdaad9d5a73f3b7f5357218deb4340f722b322f99e334ef0f2b87dad",
+    "fixtures/modal/visual-cases.json": "0356170ade07ee2a147da3a9c4f35f17a5a36dd1ad2c80f00f7256b41432b42b",
+    "E:/snow-apps-workspace/snow-apps/ant-design-gpui/scripts/compare_modal_visual.py": "7248195e6fddd539e9ce531a0bf02b3a36cb22be9c22dd94c0f3d155d88550a4",
+    "src/behavior/text.rs": "d095cb9eaf4de7f171a0ec43a2438723061197ed458528a1c4870826213ed2d9",
+    "src/behavior/paragraph.rs": "29544db61ed2de35da3a26512a0dce8ecd06e5b4665d2372ab2aa6ef39a9ede1",
+    "src/icons/mod.rs": "dc617f4148ecc1a519afd91bcc992219ceb6e577f2ec9f2e702032bd2081ec63",
+    "src/modal/config.rs": "9bc11b488f04056f949978d7d60d4c9d05b026c7101befbadfd0c29915168f38",
+    "src/modal/host.rs": "b63badd9701e8fc0c1569364ae6e2d6c49f81ca61fabdc91dc42cf56549cfe38",
+    "src/modal/manager.rs": "b87c3a601795fc9a64eef8bca960dfaac16380c03b0e504683e1019125463657",
+    "src/modal/mod.rs": "94bd30003fefeb28835b22b562dd96b8ba8b66e2849d676e772e48d25a513c22",
+    "src/modal/reference_tests.rs": "ab122bdb0e6bde6dd2ca739ba2b7028ffdfc01120eacb2220ac25b4e29847982",
+    "src/modal/skeleton.rs": "5349bddcbdf362b0388ffbb4d5bc57251a5c5bd746b08868fcd008f9b7a79299",
+    "src/modal/state.rs": "485e290ae9ebf2066b278cd0fed1650a317121c34ecdfe53ab74c4d3bb7abbd9",
+    "src/modal/style.rs": "0b6274587138191119154a5e2e2d7366e43753b8ff6e68b66db442d21bf9eede",
+    "src/modal/tests.rs": "bde3d4f1a03947393f254c20ca7f680d134524f385191fd92d22875b1712e5f3",
+    "src/modal/view.rs": "d0747b949a3a87b730eb1af2dc3ebe7c76918cadcd3060eabae600d0c309f6c4"
+  },
+  "native_executable_sha256": "3902f8deb990048d246e042ff369207febcf45c1ea9b435e9c2a290aff208f02",
+  "cases": [
+    {
+      "name": "default-ltr-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.8593812500000001,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "715691ceb0975e56ec9a7810dcdc5dd04b25ea6b23905a984369a41ea98009d6",
+      "native_sha256": "b8cc7da4cbae68e40d709898571fcdbbc89e601b503efa3420b4619e2c65d84d"
+    },
+    {
+      "name": "default-ltr-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7690138888888889,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "a878b8dc347f4af437869e5daf505a9575c22dddd174ee5ad285e5bba90c2898",
+      "native_sha256": "b120d79c352ff2b639927d59ef83a9f70e70e077642aace1e6f6b000e2204906"
+    },
+    {
+      "name": "default-rtl-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.8610736111111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "e465fd98a337f9b2b7179c12c711b368e821645c14692706b5c05661e5386694",
+      "native_sha256": "21d739e92817014c67ffb62450473f53bda9ece2b3519430e862b6fe6ebabe6f"
+    },
+    {
+      "name": "default-rtl-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7776111111111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "8f4d3b3b7b60d5029d14ad76538111f39447bbbdbccb3ae51fafd133fbe859f5",
+      "native_sha256": "65714bffd660b8cd94bac0b583adb696f241d16d8c7e4e258c1308870ccc7d02"
+    },
+    {
+      "name": "dark-ltr-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6470715277777778,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "edd3632dcf54a853fb9a815f1b972abf9b96438e2e02b54d4c53cf4449ae2a4b",
+      "native_sha256": "e428745452b94293b7da520e1debc0095d7fe0c378ebbc0aa4c29ddb4ab2685e"
+    },
+    {
+      "name": "dark-ltr-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5998368055555555,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "29f67a4a46649b1e08d07367b9493f3552609503e8440da3eb373c2a95944f31",
+      "native_sha256": "5522b44c0928b71c950b5284f849772c9d3afa7af0872f9b27a8cdd7dc2c30f9"
+    },
+    {
+      "name": "dark-rtl-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.65114375,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "6464d0ecec30556275618431a306d5383210e685e53886c17a7cb41a02df6e90",
+      "native_sha256": "745f597c3229aa3d7ba2382e3413144f05a6fcd032f072f7cd6cea52169fa56e"
+    },
+    {
+      "name": "dark-rtl-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6029291666666666,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "a6a6aa38c5e31414691b393f8157478f2282c9495ace92f3d94ee6fcc162e436",
+      "native_sha256": "2edaced91ea5b956a4fff448ee6e7208aebcf1eae8be0371d5e153cc57bb99b4"
+    },
+    {
+      "name": "compact-ltr-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5502520833333334,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "d57dfc8c347257d838fc00d21edc419f19ecb84083e001f5c14eb18bafa2c8d8",
+      "native_sha256": "08f9205938d5a8661041c07285aff1a4cd0c271006345440daa6288b2cfa8611"
+    },
+    {
+      "name": "compact-ltr-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6009152777777778,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "87286ccf92d0521edf56b588598ba0b9f1c3814d087c669f3f188355ec0fdc26",
+      "native_sha256": "201e145de13961fbc476ab672e0515da594c48625ba5ba6452c250ee1e654ec0"
+    },
+    {
+      "name": "compact-rtl-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5519222222222222,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "e0c8970238db680773c80553218c0eb7d793b1f46b7d3afdf4ac0d515b1dd46d",
+      "native_sha256": "36b96a2dc3c6e52d791437ee918dbccd76b6a1af8238c23a7d4945e1a9020ecc"
+    },
+    {
+      "name": "compact-rtl-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6055611111111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "e35798ad0cd73a5d3d10012bab0f1ff8c46c1ad5d407de8146f76edea2540a15",
+      "native_sha256": "aee75ef988a28237a6e0f9c23954c4e858b16dce4126f495394cd456286e0d75"
+    },
+    {
+      "name": "dark-compact-ltr-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.38190972222222225,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "e1f9e9f6841bb1d2afb2c79e109505618e63cf980540fb1c28e275e4a7255bc1",
+      "native_sha256": "7875cce34502eb9dc646722a8983a15e8ba1f10cfe0f6ce5e5e0f524d480dbc0"
+    },
+    {
+      "name": "dark-compact-ltr-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.45205,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "78889cb941c2950236786423826db751585c77581fdd010e1a11f20000f4f305",
+      "native_sha256": "69f8817a17b5189a389ab73f6813d2db4a366f87de36caa27c036ab208b5c062"
+    },
+    {
+      "name": "dark-compact-rtl-standard",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.38260694444444443,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "d7de746da6717cf19b9a96b94cde1a2892519d71cfb0221aeb7adcd15e0f5262",
+      "native_sha256": "c7a936919cf80c3468c0725d9bd3e9ba66054c721242304df93d3a30f3376c80"
+    },
+    {
+      "name": "dark-compact-rtl-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.45717291666666665,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "9e5262bd2d347c5c472f12ed8d06d3057f96b7f8c0d372c8a830dbb6bd389c80",
+      "native_sha256": "e9e65e0cd4e0f16f273610817b407df5a323589b66acef5eb75a598f606d488b"
+    },
+    {
+      "name": "info",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7107791666666667,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "faf08ac6fdffba2ede62df76653d63e1f020a66259ad825f7460422d6f5eda91",
+      "native_sha256": "a39f5b31481dbe0554f944c326a2d938832554e30ddfd5219bfedf63ea6138c6"
+    },
+    {
+      "name": "success",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7120694444444444,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            82,
+            196,
+            26
+          ],
+          "native_rgb": [
+            82,
+            196,
+            26
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "f2c987ac100b307574c25f5885609c063addcbdd07b86afabb3b6e71da34d45c",
+      "native_sha256": "54d71e68bd1d4989bb09bad3d3df7ae1f847aee2d2e9939356f0dd31b52961f6"
+    },
+    {
+      "name": "warning",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7102555555555555,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "8362f73c5316649f6da1cd6d335f6d049b7eea1484536bcbc5cda870677618f1",
+      "native_sha256": "e7d8b22beb20bea3bcc421ee05171c3d7740b1a9147ce5ca7e15c44c81d9b2e4"
+    },
+    {
+      "name": "error",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7116652777777778,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            255,
+            77,
+            79
+          ],
+          "native_rgb": [
+            255,
+            77,
+            79
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "a0b9271250e79a2cbff6a87fd5f1eeae20fdfb1bf48fb4f317530cceded0120e",
+      "native_sha256": "74de73ed0fcfbcb47aaf33eb19906419cfd5bc5f6d8fbe7f46c2cf630bbd294f"
+    },
+    {
+      "name": "wireframe",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.8829229166666668,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "41d9d13fe5b1677df363f23dedc828762710a79839e9cb492d8ccdfbe45cbc98",
+      "native_sha256": "8e1fbf4ca82ca602c99b31771ec330799a2a27c29df1652416bd71db54d71294"
+    },
+    {
+      "name": "wireframe-confirm",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7821972222222223,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 1.0,
+      "browser_sha256": "deee28daf0cc775f9169b8f6e901cd16b72bb40e4b6011c92635ca87838607ba",
+      "native_sha256": "3dac05736e8bcd948d28e58f92f8b8d85358b26895891a50d2a2e5144194eb38"
+    },
+    {
+      "name": "loading",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.43130555555555555,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-0",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-1",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-2",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-3",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "3554a42fde83f295642b0e7700c4d0f569d356d2ce6df2f45c538fa4a79f92d1",
+      "native_sha256": "5cacda5c9219c85dc71eaf9a235601013eeabb97a65ea72e46d57ed0e7d135d2"
+    },
+    {
+      "name": "centered",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.8593812500000001,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "5abe6cc77ac2fabcd64e93d7435f7c7f1285b9974593d9896e839c1c3823dc85",
+      "native_sha256": "bc6d6e0ab8eea52cc625c1a747f312eb973d1aebd126d810119a701a929e1a51"
+    },
+    {
+      "name": "tall",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 2.2562111111111114,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "0cb411ee368b804a15e1ab8b2d86fec1f8e8258206ea9037fd6b3c91e65f00c9",
+      "native_sha256": "1c109e9ca7f1121a3dfa68071f310c9d25fe16335cfa114d1406336d1a9da030"
+    },
+    {
+      "name": "narrow",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 1.5816157407407407,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "18a6d63deb1b33694c003c3600af5cdd33d13a14481743fd1c1e8c0068ce589a",
+      "native_sha256": "e9aeef5906d333e0b58f3acfb64398e3246db7de8a851fa9597b6c8d988bad8a"
+    },
+    {
+      "name": "no-footer",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7700409722222222,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "5002729455c17ae0eca2162cf9eeb33bbf3402d3eb33627c62012b4ae0dc9964",
+      "native_sha256": "b5a53970561c64a5cf9667eae51eadc87d9a5f537bf23b145532e1842d71cc17"
+    },
+    {
+      "name": "no-title",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.7321756944444445,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "b51b2aa54e13397e9f907c63034f659a0e696602748a805d0cd3501313a37427",
+      "native_sha256": "ab597c6a21aeb9924089d27147a3d81ea68821e07d5cff4102424535989cd2f3"
+    },
+    {
+      "name": "wide",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.9131020833333334,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "8336ba4556d5b8f42eeefd3236b3a7e40a3493e2801acf4b62a00f8b74fa214d",
+      "native_sha256": "6014a6a4b6ff2c3816ef46052508a19c5091b8d1ce6d85aed5b69bb2b675226f"
+    },
+    {
+      "name": "custom-token",
+      "scale": 1.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.8238972222222222,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            251,
+            230
+          ],
+          "native_rgb": [
+            255,
+            251,
+            230
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "beb60c94b9dfb537c6c3dc12c26eaf9d9a488b5135e4a1f454d3ca1c10bd2d34",
+      "native_sha256": "59422a371d5f37ce697d9e7104ab98982e1c4faa1a5efe726ad823ba4d668c9e"
+    },
+    {
+      "name": "default-ltr-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4614123456790124,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "d0688900fd1f0638f5f26675683a89cb1310e52df78533a7f8c087c44264ac4d",
+      "native_sha256": "753ab2ac1683e5b9b26ed83cc3d5092cb1fc6cb79f6d1808a5035579119bc37d"
+    },
+    {
+      "name": "default-ltr-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4139083333333333,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "70ff11509be128e1ac59a2afbce65017815ebff8eaaf745e211d3150fff182f5",
+      "native_sha256": "a0cb48ec6df00d365bf81217149ddd96a6d0171b36c5e7e4d058655a9dffe92d"
+    },
+    {
+      "name": "default-rtl-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4615725308641975,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "3cafbc02d9d3cb2b2a868495b762a01a24440e09db812855e11c04064e786585",
+      "native_sha256": "40c6be430a12b2a3d32aecb0094ca3ea8ec1727f16d61c38681525c2be083bbe"
+    },
+    {
+      "name": "default-rtl-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.42191481481481485,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "3481a260847a58db41a2182209b201d618c25b128ff7047ee6cbcf2e496276f9",
+      "native_sha256": "46997e84e858dba226ae4d4b7a8000721708ca2b8349bb58006fef2cbca315f2"
+    },
+    {
+      "name": "dark-ltr-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.278620987654321,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "2005cfac2d871a670189673496a75a7496c67c8e9b83729eaa999ff5cec95793",
+      "native_sha256": "5ac56566f4f3c30f55e9f6b15d8d850752e673f13e357b458938a7e702434fb5"
+    },
+    {
+      "name": "dark-ltr-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.27096759259259257,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "bbbfc6492617f0f7f7080d6326b125224364c34ebfe58a376d91108a3afef3a0",
+      "native_sha256": "7863ba41d0009678e7b439514f479f0da94f6b7ad4a335d62441a50d3f6d14d7"
+    },
+    {
+      "name": "dark-rtl-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.278033950617284,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "ed56d5084dff1eb0d7832ef09208036a355997e2e8f607b83a8eceb7e92840bc",
+      "native_sha256": "ee9893f8abd73da46ab8bc6abd43004459d6fa7bcd040e9916c6b32bf4636ef9"
+    },
+    {
+      "name": "dark-rtl-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.27706728395061725,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "3d7856e4fb0707106b51d0a4b3b1a7fa3172bc502d8db3fc0717666323ee38d4",
+      "native_sha256": "d4249c43d3195d3a5520218b338da066907c0513310f1594ec1e2d11200c9574"
+    },
+    {
+      "name": "compact-ltr-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4542654320987654,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "a9dd7ed9d0865736712338a923ffe8e99fb8a4dbfb751c9c663f12c2aeb0b990",
+      "native_sha256": "2aa78f8c561baa1d706ea7fda1d198fdb2c8a6b0ff4612048d172b7b7c750342"
+    },
+    {
+      "name": "compact-ltr-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.40419969135802464,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "13a9a844aceb41ef4d5b0f787b05ea508fc0164ca5a61c8e93116c8f817bed13",
+      "native_sha256": "f182fc7cc6e77095559e291b9334b7b147adfc381d471436979a8e769b5856c9"
+    },
+    {
+      "name": "compact-rtl-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.45944351851851856,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "d168a6bcbb483e7be425ab56951b9789d5197b4eb3434d7e46098dafd0b3f15a",
+      "native_sha256": "9e95fb2dacc467e5dcf82acc22c82e8bda69649d0c8cce4b08a69188883e428b"
+    },
+    {
+      "name": "compact-rtl-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4043200617283951,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "5d566500af4c2ec19ad90eae0640b301122d0b813cc87b30aa35785b68f63f11",
+      "native_sha256": "2610b50a6a9797f31dac2bc4ee1fcd190431813b5a4f692ec7c0a817ac4caf9f"
+    },
+    {
+      "name": "dark-compact-ltr-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.2844055555555556,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "8486af8a7eb804ff0c148ce2706aa3a08385bfd2ff08a0f072db9d73d8f7572b",
+      "native_sha256": "b8daae03e5c7bda90c8931f49070808b79337e767817d8f723d7ae9c640772af"
+    },
+    {
+      "name": "dark-compact-ltr-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.27542407407407404,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "136877ef022e69b5ca9235b77a6b5925f1b72ca6d2f87969f28570d65fe3f1d3",
+      "native_sha256": "a4171f3ed57b75b771708202d6021cc24560c087621a545d74949fff30e8015d"
+    },
+    {
+      "name": "dark-compact-rtl-standard",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.28778672839506175,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "11aa8aecbef400c1a91e86dba0dc64c0ab34b108e5168c25393a10dd0472b599",
+      "native_sha256": "fee96ebeafddb6293af2504236b26687ac39141ac73a617f61d47abcd1e5516a"
+    },
+    {
+      "name": "dark-compact-rtl-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.27305586419753086,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "eb65c8f27ed202f43bf006d1cb0cf4a48ecf7480f09e8f54162df47c12bec8bf",
+      "native_sha256": "9abd3a1b9b4829f9fefbd9a2c9af92b4fbba46ce57d1a83e0b73d6659b508a40"
+    },
+    {
+      "name": "info",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3755537037037037,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "90996ed06c779b019e82a2730df72d380b24e42b914bea69162ad3d83798bfe6",
+      "native_sha256": "26d6a800f6eaae42a907e3163097e34b6d7fd6733523dfaa473e41d83069a555"
+    },
+    {
+      "name": "success",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3798626543209876,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            82,
+            196,
+            26
+          ],
+          "native_rgb": [
+            82,
+            196,
+            26
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "e2491f40a849aafb6691fb81cbc149df54535d853b898eb91b0a2f22816b3dd0",
+      "native_sha256": "eb10c3d4f5759e34dadd00b1a71ddcece9b44b91fafa7444e1508b9cce4ea13c"
+    },
+    {
+      "name": "warning",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3742561728395062,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "defc3d5fd950994eff5a43f5600753a96ef4da1bc4b8d925a5f57611d5ddd7b5",
+      "native_sha256": "87c5aa212d7f34354fa18513adbc95c4c0e601e0f37f8ab5c9809189a81572b4"
+    },
+    {
+      "name": "error",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3782675925925926,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            255,
+            77,
+            79
+          ],
+          "native_rgb": [
+            255,
+            77,
+            79
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "e8dbf69f0996073f193f25411ebf4c47219e9ba06fdc744ee36c8b14410bfc2d",
+      "native_sha256": "7db57765984abed2baa9764eb56ea7a7dbd942874f5948fefe48bcc9523bbff4"
+    },
+    {
+      "name": "wireframe",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.48442530864197536,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "1c91fce5ef775ea922d41488c2b20a5d506c54ec8f3aa7f0b006fa000c0ba4d0",
+      "native_sha256": "c6d7bce560a814d2a0e2375a023ea3a46786489b7220a7e8c43578405056e020"
+    },
+    {
+      "name": "wireframe-confirm",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.42697500000000005,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.6666666666666666,
+      "icon_solid_core_error_logical_px": 1.3333333333333333,
+      "browser_sha256": "156a73d28ef257d92c15ad18bb746d5527f8efe4a17bcd15875eb33293840064",
+      "native_sha256": "1824bee325bb30459d02f7261522ec6fdce21d513dd59be9dd7e2cba1943ec03"
+    },
+    {
+      "name": "loading",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.34392932098765433,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-0",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-1",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-2",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-3",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "ba013f9f62f830cbd184014eab2d45a916e4d2d16a0bc4f131eb08e09ea66094",
+      "native_sha256": "3dcac06623a2189c1739747163b32c1fd41c007a18d5e7545d98027032c6e298"
+    },
+    {
+      "name": "centered",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4614123456790124,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "e025b8ffc929ba69f0d00a5d21f3cde96f9ca91a5bac3c16010777664aa7e4b1",
+      "native_sha256": "702eb6feaa5f14ee1771b8ac68ce3a9eba0583779ef46169619e74855eaee28b"
+    },
+    {
+      "name": "tall",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6459138888888889,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "32416b639d2d4f2dea7fde7c877786d990a6989fbb15dec23eab4c5ec2102b66",
+      "native_sha256": "7017edef803b872fb360241e996d72bb3f0a74f4065167a167c7e50da5b35a38"
+    },
+    {
+      "name": "narrow",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6986200274348423,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "b6027ffc0d44258e19b18c4da20416f8cbd51d294b4a7a93838de2dcc79b5909",
+      "native_sha256": "274bd467e146cd90e4e565c3699cf58be101399186356be1e5ab8f31b1e4374f"
+    },
+    {
+      "name": "no-footer",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3953358024691358,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "6b37bf56091c3fff87c03afff3cdcd85928ae07ba3f4b32a24ed74d69bace8a3",
+      "native_sha256": "b695ae6f301849a343641bec74f440dcdcff2d320c0c0cd9470da8a2b5518e4a"
+    },
+    {
+      "name": "no-title",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4223691358024691,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "5d37e8060e93aaa65600d40839ee02d318832a8dbc3f45d6c57fdff4306a1294",
+      "native_sha256": "a104439ec45396c85204384c336a2bc23f90b21af3a848f8fd81238daad92b9b"
+    },
+    {
+      "name": "wide",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5159447530864197,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "c3b8078ad24536047c27632c7a182d405cceafcd9f1c4b4b9afcb0de7ded7810",
+      "native_sha256": "fcaad455ff86762a653fbf2645aa3d26d86924195cc64f088168b6ce6f5d6260"
+    },
+    {
+      "name": "custom-token",
+      "scale": 1.5,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5683327160493827,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            251,
+            230
+          ],
+          "native_rgb": [
+            255,
+            251,
+            230
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "8d7d824348520581ed080b105c4ed9629ffd34e13ca782566bc8a1cb90197840",
+      "native_sha256": "82ad95e596d5d0266633a2eb971fff287d7ceb0c5af3254e3938e47d8c59d11e"
+    },
+    {
+      "name": "default-ltr-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5905722222222222,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "12fa00165516dc774e0ad3d73ac5df866f26982a23e249639db2efd8e793cdd6",
+      "native_sha256": "d6114e00cf350214fcf313d3c3fb5124768b5854e98f8a751362d8a1dc724f8c"
+    },
+    {
+      "name": "default-ltr-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4597329861111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "f1983f64dae2ed8abded6f2f1cedec6db01c908515279eb6e4bb791018c0040f",
+      "native_sha256": "913668954343bbabefe6776422c846dd24ffb917b08dfd1ab09450093042a563"
+    },
+    {
+      "name": "default-rtl-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5920366319444444,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "75387985e54f2c614d7f9395fba5eb6fb356381f6cf3187d8e6ad7a60c1a2b84",
+      "native_sha256": "a21e30dfa198d4fb5e47b569d2f5c413d973f21eeaa3522b981229d12ab5b81e"
+    },
+    {
+      "name": "default-rtl-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4582076388888889,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "531ffe06c66c6a785b9afce5b2872cc1ac74458789e1e53933bbdd26b1eaedff",
+      "native_sha256": "a6cad83b892bc7dc1363deda7cabf9c72bcd308be6bf7a22f45e8db7b61e5621"
+    },
+    {
+      "name": "dark-ltr-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.38414409722222226,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "8e74a92c744b45852de8c229b4fdf44370a66dcce317e2c0684ed84342d148db",
+      "native_sha256": "0861c9674e18a11309c5d3ffd395300b60dda45d87f0f7396a4b0171cfcafb0d"
+    },
+    {
+      "name": "dark-ltr-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3032357638888889,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "35d791f200843b3bbda1905e19dc5b7a99a9ebcb4bb308398626cf0b539cf7e5",
+      "native_sha256": "f1142e3fae5eb418fbadf801fbf7a7f96536a1c94147fdc467075ceed4c6b874"
+    },
+    {
+      "name": "dark-rtl-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.38733854166666665,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "bde9ed7dcd7c524ccc0a39a2d8f7c82e604d76893add50f92b2def77fe3de99f",
+      "native_sha256": "91cfdc4ec4cef8a5a5393bb3639b9cf005c060fe9167deba8f18d3e832f2562f"
+    },
+    {
+      "name": "dark-rtl-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.30329774305555557,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "38225ab6cececcbac305f14e46d1a67327b2cea9270c27fbf9a6c956cb5d0bd8",
+      "native_sha256": "51d8c11677ddd920401efe302ad8362ad51403ebfa264373771e13a249c2cf88"
+    },
+    {
+      "name": "compact-ltr-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.47958906249999994,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "8900383abcdd64150ed17acc3dedd8329137baab5c5755c6ad95d59022c5852f",
+      "native_sha256": "d0fe5ce72eea45366b4eb7f4906fd9120d4c11e84a70cef9900dfc8eb8f51109"
+    },
+    {
+      "name": "compact-ltr-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4800267361111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "bf34d33850956a6fb09fed515ef320b39120c6358a3d08e4ad4e0e135e5cf68a",
+      "native_sha256": "ad929c739952653fa1b018d37931a2e27fc0551c4f18c908e3d6793675151f99"
+    },
+    {
+      "name": "compact-rtl-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.48235156250000005,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "042155e41b82d4130d45c74587c09d40a5c41885a34bd7f0d2e52d60494b638f",
+      "native_sha256": "9c06e16cf00c9e95d75ee9132292aedc7e14d7e11e65fb387a02c140873a0dcf"
+    },
+    {
+      "name": "compact-rtl-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.48455850694444447,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.0,
+      "browser_sha256": "9dca5bf2675f2a7371ea1b68accb7cfc5b8da72decab033ea847154fa3e09691",
+      "native_sha256": "b82b00dd9bc165da145f03ded6c2b357218c0ccac8edb6b2bc505f7b676f5ca1"
+    },
+    {
+      "name": "dark-compact-ltr-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.30323680555555554,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "e7e596dc0ca23053e0f1e2fc4749f13aa9a98b7225474abb5dc2c9026f5268e4",
+      "native_sha256": "e587ceccc4621f6a842b8cb7de2fb73ea684e236752dd9a27fc083924913fb3c"
+    },
+    {
+      "name": "dark-compact-ltr-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.33304618055555557,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "ee2bf7dcfc4f1a32214f04211b819564dbaca9947ca404256bf5dcbb8d753b98",
+      "native_sha256": "7197364c0290ef8e9cebe100dfef9a4db63cb55f912551d90d9e7255ebaf892f"
+    },
+    {
+      "name": "dark-compact-rtl-standard",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3052899305555556,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "78cc82af9cbd4cd55784bc975d05af05933dd32567e8863248472d59b17d633e",
+      "native_sha256": "816d4c0cff7e1befdcab053022eb0ea0186328b9c227d168c78ab4d02df26d8a"
+    },
+    {
+      "name": "dark-compact-rtl-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3378739583333334,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            11,
+            11,
+            11
+          ],
+          "native_rgb": [
+            11,
+            11,
+            11
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            31,
+            31,
+            31
+          ],
+          "native_rgb": [
+            31,
+            31,
+            31
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            20,
+            20,
+            20
+          ],
+          "native_rgb": [
+            20,
+            20,
+            20
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            104,
+            220
+          ],
+          "native_rgb": [
+            22,
+            104,
+            220
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            216,
+            150,
+            20
+          ],
+          "native_rgb": [
+            216,
+            150,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "dd89d17c20c75e3bd7a39ad43618b3ee4de30ea1cc51479f5ac2e8ccae563164",
+      "native_sha256": "a2d59d06e8ecc7444b98c8f4c7877b04599892d1f487ae0c22f1bc30dc1339c5"
+    },
+    {
+      "name": "info",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.41276979166666666,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "c3617db1ddcced52a89130e98e0118d73e9a2c52602c37599dd629d02ef58368",
+      "native_sha256": "e526da12c0d0775464df2b028983242a130afd6af6a6ac713e52bf7fd9c30ff6"
+    },
+    {
+      "name": "success",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.41365052083333337,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            82,
+            196,
+            26
+          ],
+          "native_rgb": [
+            82,
+            196,
+            26
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "8729b81c6acfaeb92a83ab63a870831d5051d4c7b576c8256e3b48fb79a6e727",
+      "native_sha256": "a20c0ec69d14bb52234a2ba943e741ec6847d52b9c71efdb6d95b75889f2326e"
+    },
+    {
+      "name": "warning",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4125800347222222,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "f258708b0ddae85bd91fa9c0f4613fa370de16cdfed9941df71220bc04b16d8c",
+      "native_sha256": "33adfc3e13d7f1093347ca999bb10e35894669a7522b33bf3b8c0233960d744d"
+    },
+    {
+      "name": "error",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.41340052083333334,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            255,
+            77,
+            79
+          ],
+          "native_rgb": [
+            255,
+            77,
+            79
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "946057135a5b4b4c332460e8fe58d060efb01c2c9f29a10d9e314382d94a7803",
+      "native_sha256": "644e1715272db65e497f0445c549d50c624c7d60a2684280df35bb3673650dbf"
+    },
+    {
+      "name": "wireframe",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6138144097222221,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "f5f2d4b469ca3654e45f4df948213f127f645bd7cbe0089385068f303170ed3a",
+      "native_sha256": "c4351915bf251bbe5e679c073458f8c15e89cb5905c4d8fa5ba62f5ed04603aa"
+    },
+    {
+      "name": "wireframe-confirm",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.4727767361111111,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "status-icon",
+          "browser_rgb": [
+            250,
+            173,
+            20
+          ],
+          "native_rgb": [
+            250,
+            173,
+            20
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0.0,
+      "icon_solid_core_error_logical_px": 0.5,
+      "browser_sha256": "28f79c7e6c759029b93c875d2a875bbcdbdda42a0a936d8b340e19ab8236da50",
+      "native_sha256": "d94a035a04a95742b6a5d3424c10320ef740291abae6b32026a098c7acef8aed"
+    },
+    {
+      "name": "loading",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.3386869791666667,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-0",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-1",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-2",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "skeleton-3",
+          "browser_rgb": [
+            240,
+            240,
+            240
+          ],
+          "native_rgb": [
+            240,
+            240,
+            240
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "4835dc04df1dc88a6a76223a12e4d4e9d30327e0c2ec827b60120fac01b33e6f",
+      "native_sha256": "8277ad0997047136a6642dadc3eebd2d9c9ed937f90a0b7c49393d467764d55a"
+    },
+    {
+      "name": "centered",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5906414930555556,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "5fdaa81c6d88887c5bda16aa0f60fbf804208d8d436ebe74826d6a49981ce29b",
+      "native_sha256": "68620be0ece689f12c5ce8e1b7d1b77e797c97d3796ecdcc8f89bfb2438bb394"
+    },
+    {
+      "name": "tall",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 1.2726100694444444,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "d1d963b36c7ae7cc7795628a192cd7564ca41feca42cd1c00becd2986a92bea4",
+      "native_sha256": "375f46f2033d7b3342a8bbdbff80d2b8d6cf1cba9f9dcc224282601af9294f99"
+    },
+    {
+      "name": "narrow",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.9836037808641974,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "47461c4ba9fcb4527095cbef277c58fa71c236b31ce517d24f809a18286068b8",
+      "native_sha256": "abbc8bd943137d8a118b1e33277750c40eb5ea4cb0edd2ac043804e26cd410eb"
+    },
+    {
+      "name": "no-footer",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.514746875,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "1f6bebfd7ce73ffabd27e2621584fb97916b0bc6d182e15d96e9f1f4a6a2281f",
+      "native_sha256": "d42184383d030b2603532e9180515f5fe5f9e649823faf4bc885148fab6db214"
+    },
+    {
+      "name": "no-title",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.5574166666666667,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "a621ee506fe689bf05048d293857caa18d60faa55f0fb034c28e4540cf1450c8",
+      "native_sha256": "290af645c45dd665760d28221edeb7483b46c98a0bf92750238b134e2b185e55"
+    },
+    {
+      "name": "wide",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6463071180555556,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "3a5dc04cf19c4a4761a20b0572400bde7e330f5f324a57a7c67dfb4a50483687",
+      "native_sha256": "28497d96215b11c310321456e40e312b3754b3f3833c8288b67818038b15639f"
+    },
+    {
+      "name": "custom-token",
+      "scale": 2.0,
+      "geometry_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "mean_absolute_channel_error": 0.6846793402777779,
+      "solid_probes": [
+        {
+          "slot": "mask",
+          "browser_rgb": [
+            140,
+            140,
+            140
+          ],
+          "native_rgb": [
+            140,
+            140,
+            140
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "surface",
+          "browser_rgb": [
+            255,
+            251,
+            230
+          ],
+          "native_rgb": [
+            255,
+            251,
+            230
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-0",
+          "browser_rgb": [
+            255,
+            255,
+            255
+          ],
+          "native_rgb": [
+            255,
+            255,
+            255
+          ],
+          "max_channel_delta": 0
+        },
+        {
+          "slot": "button-1",
+          "browser_rgb": [
+            22,
+            119,
+            255
+          ],
+          "native_rgb": [
+            22,
+            119,
+            255
+          ],
+          "max_channel_delta": 0
+        }
+      ],
+      "icon_geometry_error_logical_px": 0,
+      "icon_solid_core_error_logical_px": 0,
+      "browser_sha256": "a0db7fcb5faa15d2e201e0dab62bfe437889a6a6dd64b9d0400f66feafd122c2",
+      "native_sha256": "e403d70eeac9cab1d62fe8454363898f358fc31c174197cefacfc543f691b807"
+    }
+  ]
+}

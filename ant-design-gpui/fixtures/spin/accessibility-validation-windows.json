@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "platform": "windows",
+  "mode": "hidden-native-window",
+  "keyboard": "not-sent",
+  "activation": "WM_GETOBJECT UIA root through normal AccessKit registration",
+  "utc": "2026-10-28T10:55:27.8838424Z",
+  "reason": null,
+  "checks": [
+    "stage-0-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-1-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-2-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-3-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-4-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-5-native-group-label-description-id-busy-live-progress-and-children",
+    "stage-6-native-group-label-description-id-busy-live-progress-and-children"
+  ],
+  "scenarios": [
+    {
+      "stage": 0,
+      "name": "indeterminate",
+      "fullscreen": false,
+      "native_role": "ControlType.Group",
+      "busy": true,
+      "live_setting": 1,
+      "native_aria_properties": "busy=true",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [
+        {
+          "role": "ProgressIndicator",
+          "label": "Working results",
+          "description": "Retrieving application data"
+        }
+      ],
+      "native_numeric_range": null,
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 1,
+      "name": "determinate",
+      "fullscreen": false,
+      "native_role": "ControlType.Group",
+      "busy": true,
+      "live_setting": 1,
+      "native_aria_properties": "busy=true",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [
+        {
+          "role": "ProgressIndicator",
+          "label": "Working results",
+          "description": "Retrieving application data",
+          "numeric_value": 75.0,
+          "min_numeric_value": 0.0,
+          "max_numeric_value": 100.0
+        }
+      ],
+      "native_numeric_range": {
+        "value": 75.0,
+        "minimum": 0.0,
+        "maximum": 100.0
+      },
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 2,
+      "name": "automatic",
+      "fullscreen": false,
+      "native_role": "ControlType.Group",
+      "busy": true,
+      "live_setting": 1,
+      "native_aria_properties": "busy=true",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [
+        {
+          "role": "ProgressIndicator",
+          "label": "Working results",
+          "description": "Retrieving application data"
+        }
+      ],
+      "native_numeric_range": null,
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 3,
+      "name": "inactive",
+      "fullscreen": false,
+      "native_role": "ControlType.Group",
+      "busy": false,
+      "live_setting": 1,
+      "native_aria_properties": "",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [],
+      "native_numeric_range": null,
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 4,
+      "name": "fullscreen",
+      "fullscreen": true,
+      "native_role": "ControlType.Group",
+      "busy": true,
+      "live_setting": 1,
+      "native_aria_properties": "busy=true",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [
+        {
+          "role": "ProgressIndicator",
+          "label": "Working results",
+          "description": "Retrieving application data",
+          "numeric_value": 65.0,
+          "min_numeric_value": 0.0,
+          "max_numeric_value": 100.0
+        }
+      ],
+      "native_numeric_range": {
+        "value": 65.0,
+        "minimum": 0.0,
+        "maximum": 100.0
+      },
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 5,
+      "name": "fullscreen-inactive",
+      "fullscreen": true,
+      "native_role": "ControlType.Group",
+      "busy": false,
+      "live_setting": 1,
+      "native_aria_properties": "",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [],
+      "native_numeric_range": null,
+      "child_preserved": true,
+      "outside_preserved": true
+    },
+    {
+      "stage": 6,
+      "name": "custom-indicator",
+      "fullscreen": false,
+      "native_role": "ControlType.Group",
+      "busy": true,
+      "live_setting": 1,
+      "native_aria_properties": "busy=true",
+      "label": "Working results",
+      "description": "Retrieving application data",
+      "automation_id": "spin.main",
+      "progress": [
+        {
+          "role": "ProgressIndicator",
+          "label": "Working results",
+          "description": "Retrieving application data",
+          "numeric_value": 42.0,
+          "min_numeric_value": 0.0,
+          "max_numeric_value": 100.0
+        }
+      ],
+      "native_numeric_range": {
+        "value": 42.0,
+        "minimum": 0.0,
+        "maximum": 100.0
+      },
+      "child_preserved": true,
+      "outside_preserved": true
+    }
+  ],
+  "binary_sha256": "246a31b2e374dbe4addb95c33b6f0889d5e5ce8daab9de4c8c1a181cd7a80e19",
+  "source_sha256": {
+    "examples/spin_accessibility.rs": "5aa0c3a0007ad8d2ac7d2c0b5e45c879bca5a7c7c93d1a4a948b960329adf410",
+    "scripts/test-spin-accessibility.ps1": "276fe332447a740c151bf7f8d1edb1c508468b23498f468386802ee87cdf18ba",
+    "src/spin/config.rs": "fd0a4dbbca14d86cf1dab4a09433aae144cf243185f09b9d465ddb02908f3a01",
+    "src/spin/element.rs": "c6e69f7f833dff7caae88539829723a5a6aa4c9dfdac83fda4f8419749565dc4",
+    "src/spin/geometry.rs": "671dfb399aa0ed35c13b55e8045c92553dbe52c088adb40f9a5e5b32c9e1f47c",
+    "src/spin/mod.rs": "8c4f079f5f9f7a579e1cb2a25f92a3cbb120b2d78ba71252f6ab2eec84b356ed",
+    "src/spin/paint.rs": "f50d96f764770fa1075d39b43000de89608d29cd119c3e404a5c456c81780db3",
+    "src/spin/reference_tests.rs": "0cbf33f29bef1a56997078646885081d2c2d105a43a77d7cc22d037840637c34",
+    "src/spin/state.rs": "e91debd9a8e3525fde20a0ce21ab8a91dd8e7d52d8ea4ffa7adcf3464648f209",
+    "src/spin/style.rs": "fc731c78e5fd42b343307f855e400d828c54be5eb1caea2b937e6a16d00db298",
+    "src/spin/tests.rs": "119dbd3ee4c4f12ee65fb1f8de4135651afee6cd2cab27ea9a2cf72ceff3e3dc",
+    "src/spin/view.rs": "fa4abb5a73af2666d30d810b2f5319e55ad2b90c4bb7c9030586393042f5d2e1"
+  },
+  "limitations": [
+    "Pinned GPUI debug JSON omits busy/live/author ID; those values are read through native Windows UIA COM properties.",
+    "Screen reader speech and interactive keyboard focus are not exercised by this hidden fixture."
+  ]
+}

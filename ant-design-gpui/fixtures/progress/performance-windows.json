@@ -1,0 +1,606 @@
+{
+  "profile": "release",
+  "kind": "offscreen-cpu",
+  "measurements": [
+    {
+      "name": "progress/1/Line/cold",
+      "samples": 30,
+      "median_microseconds": 156.5,
+      "p95_microseconds": 203.9,
+      "median_allocations": 329,
+      "median_allocated_bytes": 139768
+    },
+    {
+      "name": "progress/1/Line/warm",
+      "samples": 100,
+      "median_microseconds": 58.6,
+      "p95_microseconds": 117.5,
+      "median_allocations": 122,
+      "median_allocated_bytes": 51266
+    },
+    {
+      "name": "progress/1/Line/update",
+      "samples": 100,
+      "median_microseconds": 137.60000000000002,
+      "p95_microseconds": 199.6,
+      "median_allocations": 302,
+      "median_allocated_bytes": 136252
+    },
+    {
+      "name": "progress/1/Circle/cold",
+      "samples": 30,
+      "median_microseconds": 183.5,
+      "p95_microseconds": 241.0,
+      "median_allocations": 372,
+      "median_allocated_bytes": 470395
+    },
+    {
+      "name": "progress/1/Circle/warm",
+      "samples": 100,
+      "median_microseconds": 51.3,
+      "p95_microseconds": 66.3,
+      "median_allocations": 106,
+      "median_allocated_bytes": 139666
+    },
+    {
+      "name": "progress/1/Circle/update",
+      "samples": 100,
+      "median_microseconds": 139.6,
+      "p95_microseconds": 214.60000000000002,
+      "median_allocations": 284,
+      "median_allocated_bytes": 360523
+    },
+    {
+      "name": "progress/1/Dashboard/cold",
+      "samples": 30,
+      "median_microseconds": 176.70000000000002,
+      "p95_microseconds": 281.40000000000003,
+      "median_allocations": 366,
+      "median_allocated_bytes": 447190
+    },
+    {
+      "name": "progress/1/Dashboard/warm",
+      "samples": 100,
+      "median_microseconds": 73.30000000000001,
+      "p95_microseconds": 99.5,
+      "median_allocations": 106,
+      "median_allocated_bytes": 128722
+    },
+    {
+      "name": "progress/1/Dashboard/update",
+      "samples": 100,
+      "median_microseconds": 135.6,
+      "p95_microseconds": 271.09999999999997,
+      "median_allocations": 284,
+      "median_allocated_bytes": 338186
+    },
+    {
+      "name": "progress/1/GradientLine/cold",
+      "samples": 30,
+      "median_microseconds": 152.5,
+      "p95_microseconds": 266.9,
+      "median_allocations": 361,
+      "median_allocated_bytes": 169452
+    },
+    {
+      "name": "progress/1/GradientLine/warm",
+      "samples": 100,
+      "median_microseconds": 53.4,
+      "p95_microseconds": 106.39999999999999,
+      "median_allocations": 125,
+      "median_allocated_bytes": 53570
+    },
+    {
+      "name": "progress/1/GradientLine/update",
+      "samples": 100,
+      "median_microseconds": 132.0,
+      "p95_microseconds": 245.5,
+      "median_allocations": 334,
+      "median_allocated_bytes": 165936
+    },
+    {
+      "name": "progress/1/GradientCircle/cold",
+      "samples": 30,
+      "median_microseconds": 390.8,
+      "p95_microseconds": 496.7,
+      "median_allocations": 1102,
+      "median_allocated_bytes": 2065842
+    },
+    {
+      "name": "progress/1/GradientCircle/warm",
+      "samples": 100,
+      "median_microseconds": 92.0,
+      "p95_microseconds": 188.9,
+      "median_allocations": 203,
+      "median_allocated_bytes": 293170
+    },
+    {
+      "name": "progress/1/GradientCircle/update",
+      "samples": 100,
+      "median_microseconds": 320.5,
+      "p95_microseconds": 420.0,
+      "median_allocations": 1014,
+      "median_allocated_bytes": 1955970
+    },
+    {
+      "name": "progress/1/LineSteps/cold",
+      "samples": 30,
+      "median_microseconds": 101.89999999999999,
+      "p95_microseconds": 115.89999999999999,
+      "median_allocations": 539,
+      "median_allocated_bytes": 173114
+    },
+    {
+      "name": "progress/1/LineSteps/warm",
+      "samples": 100,
+      "median_microseconds": 37.1,
+      "p95_microseconds": 38.099999999999994,
+      "median_allocations": 116,
+      "median_allocated_bytes": 36282
+    },
+    {
+      "name": "progress/1/LineSteps/update",
+      "samples": 100,
+      "median_microseconds": 84.4,
+      "p95_microseconds": 128.89999999999998,
+      "median_allocations": 233,
+      "median_allocated_bytes": 72724
+    },
+    {
+      "name": "progress/1/CircleSteps/cold",
+      "samples": 30,
+      "median_microseconds": 331.8,
+      "p95_microseconds": 555.2,
+      "median_allocations": 2757,
+      "median_allocated_bytes": 1131157
+    },
+    {
+      "name": "progress/1/CircleSteps/warm",
+      "samples": 100,
+      "median_microseconds": 51.7,
+      "p95_microseconds": 75.5,
+      "median_allocations": 104,
+      "median_allocated_bytes": 93362
+    },
+    {
+      "name": "progress/1/CircleSteps/update",
+      "samples": 100,
+      "median_microseconds": 108.9,
+      "p95_microseconds": 131.6,
+      "median_allocations": 224,
+      "median_allocated_bytes": 197037
+    },
+    {
+      "name": "progress/1/InnerContent/cold",
+      "samples": 30,
+      "median_microseconds": 139.4,
+      "p95_microseconds": 157.1,
+      "median_allocations": 323,
+      "median_allocated_bytes": 152775
+    },
+    {
+      "name": "progress/1/InnerContent/warm",
+      "samples": 100,
+      "median_microseconds": 58.9,
+      "p95_microseconds": 105.3,
+      "median_allocations": 126,
+      "median_allocated_bytes": 58570
+    },
+    {
+      "name": "progress/1/InnerContent/update",
+      "samples": 100,
+      "median_microseconds": 132.4,
+      "p95_microseconds": 144.1,
+      "median_allocations": 297,
+      "median_allocated_bytes": 149267
+    },
+    {
+      "name": "progress/20/Line/cold",
+      "samples": 30,
+      "median_microseconds": 1113.5,
+      "p95_microseconds": 1591.8,
+      "median_allocations": 4240,
+      "median_allocated_bytes": 2074180
+    },
+    {
+      "name": "progress/20/Line/warm",
+      "samples": 100,
+      "median_microseconds": 444.3,
+      "p95_microseconds": 582.1,
+      "median_allocations": 1323,
+      "median_allocated_bytes": 668922
+    },
+    {
+      "name": "progress/20/Line/update",
+      "samples": 100,
+      "median_microseconds": 1056.6,
+      "p95_microseconds": 1427.3999999999999,
+      "median_allocations": 3711,
+      "median_allocated_bytes": 2002060
+    },
+    {
+      "name": "progress/20/Circle/cold",
+      "samples": 30,
+      "median_microseconds": 1857.8,
+      "p95_microseconds": 2277.2999999999997,
+      "median_allocations": 5100,
+      "median_allocated_bytes": 8687488
+    },
+    {
+      "name": "progress/20/Circle/warm",
+      "samples": 100,
+      "median_microseconds": 419.1,
+      "p95_microseconds": 455.0,
+      "median_allocations": 1003,
+      "median_allocated_bytes": 2437306
+    },
+    {
+      "name": "progress/20/Circle/update",
+      "samples": 100,
+      "median_microseconds": 1284.1000000000001,
+      "p95_microseconds": 1474.2,
+      "median_allocations": 3351,
+      "median_allocated_bytes": 6488248
+    },
+    {
+      "name": "progress/20/Dashboard/cold",
+      "samples": 30,
+      "median_microseconds": 1790.0,
+      "p95_microseconds": 2676.6,
+      "median_allocations": 4981,
+      "median_allocated_bytes": 8223844
+    },
+    {
+      "name": "progress/20/Dashboard/warm",
+      "samples": 100,
+      "median_microseconds": 426.8,
+      "p95_microseconds": 606.3000000000001,
+      "median_allocations": 1003,
+      "median_allocated_bytes": 2218426
+    },
+    {
+      "name": "progress/20/Dashboard/update",
+      "samples": 100,
+      "median_microseconds": 1243.3999999999999,
+      "p95_microseconds": 1693.4,
+      "median_allocations": 3351,
+      "median_allocated_bytes": 6041508
+    },
+    {
+      "name": "progress/20/GradientLine/cold",
+      "samples": 30,
+      "median_microseconds": 1193.4,
+      "p95_microseconds": 1352.9,
+      "median_allocations": 4883,
+      "median_allocated_bytes": 2684444
+    },
+    {
+      "name": "progress/20/GradientLine/warm",
+      "samples": 100,
+      "median_microseconds": 448.6,
+      "p95_microseconds": 493.5,
+      "median_allocations": 1384,
+      "median_allocated_bytes": 723066
+    },
+    {
+      "name": "progress/20/GradientLine/update",
+      "samples": 100,
+      "median_microseconds": 1150.0,
+      "p95_microseconds": 1253.0,
+      "median_allocations": 4353,
+      "median_allocated_bytes": 2611868
+    },
+    {
+      "name": "progress/20/GradientCircle/cold",
+      "samples": 30,
+      "median_microseconds": 6369.599999999999,
+      "p95_microseconds": 7350.5,
+      "median_allocations": 19661,
+      "median_allocated_bytes": 40486676
+    },
+    {
+      "name": "progress/20/GradientCircle/warm",
+      "samples": 100,
+      "median_microseconds": 1099.9,
+      "p95_microseconds": 1475.5,
+      "median_allocations": 2923,
+      "median_allocated_bytes": 5452282
+    },
+    {
+      "name": "progress/20/GradientCircle/update",
+      "samples": 100,
+      "median_microseconds": 5894.3,
+      "p95_microseconds": 8056.499999999999,
+      "median_allocations": 17911,
+      "median_allocated_bytes": 38286980
+    },
+    {
+      "name": "progress/20/LineSteps/cold",
+      "samples": 30,
+      "median_microseconds": 1068.6999999999998,
+      "p95_microseconds": 1710.5,
+      "median_allocations": 8516,
+      "median_allocated_bytes": 2806804
+    },
+    {
+      "name": "progress/20/LineSteps/warm",
+      "samples": 100,
+      "median_microseconds": 310.5,
+      "p95_microseconds": 359.90000000000003,
+      "median_allocations": 1203,
+      "median_allocated_bytes": 398522
+    },
+    {
+      "name": "progress/20/LineSteps/update",
+      "samples": 100,
+      "median_microseconds": 626.4000000000001,
+      "p95_microseconds": 1106.1000000000001,
+      "median_allocations": 2407,
+      "median_allocated_bytes": 797204
+    },
+    {
+      "name": "progress/20/CircleSteps/cold",
+      "samples": 30,
+      "median_microseconds": 6162.8,
+      "p95_microseconds": 7871.2,
+      "median_allocations": 52798,
+      "median_allocated_bytes": 21886600
+    },
+    {
+      "name": "progress/20/CircleSteps/warm",
+      "samples": 100,
+      "median_microseconds": 501.6,
+      "p95_microseconds": 653.7,
+      "median_allocations": 962,
+      "median_allocated_bytes": 1503162
+    },
+    {
+      "name": "progress/20/CircleSteps/update",
+      "samples": 100,
+      "median_microseconds": 1077.3,
+      "p95_microseconds": 1649.0,
+      "median_allocations": 2149,
+      "median_allocated_bytes": 3202400
+    },
+    {
+      "name": "progress/20/InnerContent/cold",
+      "samples": 30,
+      "median_microseconds": 1310.6000000000001,
+      "p95_microseconds": 1683.8,
+      "median_allocations": 4196,
+      "median_allocated_bytes": 2341464
+    },
+    {
+      "name": "progress/20/InnerContent/warm",
+      "samples": 100,
+      "median_microseconds": 540.4,
+      "p95_microseconds": 682.4,
+      "median_allocations": 1403,
+      "median_allocated_bytes": 815002
+    },
+    {
+      "name": "progress/20/InnerContent/update",
+      "samples": 100,
+      "median_microseconds": 1258.8,
+      "p95_microseconds": 1682.9,
+      "median_allocations": 3687,
+      "median_allocated_bytes": 2269504
+    },
+    {
+      "name": "progress/100/Line/cold",
+      "samples": 30,
+      "median_microseconds": 6002.5,
+      "p95_microseconds": 7003.4,
+      "median_allocations": 20674,
+      "median_allocated_bytes": 10205812
+    },
+    {
+      "name": "progress/100/Line/warm",
+      "samples": 100,
+      "median_microseconds": 2316.7999999999997,
+      "p95_microseconds": 3915.3,
+      "median_allocations": 6366,
+      "median_allocated_bytes": 3262202
+    },
+    {
+      "name": "progress/100/Line/update",
+      "samples": 100,
+      "median_microseconds": 5463.400000000001,
+      "p95_microseconds": 7103.3,
+      "median_allocations": 18037,
+      "median_allocated_bytes": 9843340
+    },
+    {
+      "name": "progress/100/Circle/cold",
+      "samples": 30,
+      "median_microseconds": 11002.400000000001,
+      "p95_microseconds": 13351.699999999999,
+      "median_allocations": 24971,
+      "median_allocated_bytes": 43269528
+    },
+    {
+      "name": "progress/100/Circle/warm",
+      "samples": 100,
+      "median_microseconds": 2882.1,
+      "p95_microseconds": 3928.4999999999995,
+      "median_allocations": 4765,
+      "median_allocated_bytes": 12102842
+    },
+    {
+      "name": "progress/100/Circle/update",
+      "samples": 100,
+      "median_microseconds": 8430.5,
+      "p95_microseconds": 11814.0,
+      "median_allocations": 16235,
+      "median_allocated_bytes": 32271720
+    },
+    {
+      "name": "progress/100/Dashboard/cold",
+      "samples": 30,
+      "median_microseconds": 10430.3,
+      "p95_microseconds": 11707.5,
+      "median_allocations": 24372,
+      "median_allocated_bytes": 40949292
+    },
+    {
+      "name": "progress/100/Dashboard/warm",
+      "samples": 100,
+      "median_microseconds": 2394.9,
+      "p95_microseconds": 2926.7999999999997,
+      "median_allocations": 4765,
+      "median_allocated_bytes": 11008442
+    },
+    {
+      "name": "progress/100/Dashboard/update",
+      "samples": 100,
+      "median_microseconds": 7276.900000000001,
+      "p95_microseconds": 10330.9,
+      "median_allocations": 16235,
+      "median_allocated_bytes": 30038020
+    },
+    {
+      "name": "progress/100/GradientLine/cold",
+      "samples": 30,
+      "median_microseconds": 6880.9,
+      "p95_microseconds": 8541.800000000001,
+      "median_allocations": 23873,
+      "median_allocated_bytes": 13207548
+    },
+    {
+      "name": "progress/100/GradientLine/warm",
+      "samples": 100,
+      "median_microseconds": 2370.1,
+      "p95_microseconds": 2860.8,
+      "median_allocations": 6666,
+      "median_allocated_bytes": 3509402
+    },
+    {
+      "name": "progress/100/GradientLine/update",
+      "samples": 100,
+      "median_microseconds": 6246.9,
+      "p95_microseconds": 9513.6,
+      "median_allocations": 21237,
+      "median_allocated_bytes": 12845340
+    },
+    {
+      "name": "progress/100/GradientCircle/cold",
+      "samples": 30,
+      "median_microseconds": 39775.4,
+      "p95_microseconds": 48046.8,
+      "median_allocations": 97771,
+      "median_allocated_bytes": 202276628
+    },
+    {
+      "name": "progress/100/GradientCircle/warm",
+      "samples": 100,
+      "median_microseconds": 8596.2,
+      "p95_microseconds": 10039.0,
+      "median_allocations": 14365,
+      "median_allocated_bytes": 27184442
+    },
+    {
+      "name": "progress/100/GradientCircle/update",
+      "samples": 100,
+      "median_microseconds": 33522.5,
+      "p95_microseconds": 40942.0,
+      "median_allocations": 89035,
+      "median_allocated_bytes": 191278820
+    },
+    {
+      "name": "progress/100/LineSteps/cold",
+      "samples": 30,
+      "median_microseconds": 5671.9,
+      "p95_microseconds": 9320.1,
+      "median_allocations": 42067,
+      "median_allocated_bytes": 13881052
+    },
+    {
+      "name": "progress/100/LineSteps/warm",
+      "samples": 100,
+      "median_microseconds": 1492.6,
+      "p95_microseconds": 2093.0,
+      "median_allocations": 5765,
+      "median_allocated_bytes": 1915642
+    },
+    {
+      "name": "progress/100/LineSteps/update",
+      "samples": 100,
+      "median_microseconds": 3089.9,
+      "p95_microseconds": 4401.3,
+      "median_allocations": 11531,
+      "median_allocated_bytes": 3831444
+    },
+    {
+      "name": "progress/100/CircleSteps/cold",
+      "samples": 30,
+      "median_microseconds": 29288.0,
+      "p95_microseconds": 52538.2,
+      "median_allocations": 263471,
+      "median_allocated_bytes": 109312128
+    },
+    {
+      "name": "progress/100/CircleSteps/warm",
+      "samples": 100,
+      "median_microseconds": 2959.9,
+      "p95_microseconds": 4681.8,
+      "median_allocations": 4565,
+      "median_allocated_bytes": 7455642
+    },
+    {
+      "name": "progress/100/CircleSteps/update",
+      "samples": 100,
+      "median_microseconds": 6438.5,
+      "p95_microseconds": 8572.099999999999,
+      "median_allocations": 10235,
+      "median_allocated_bytes": 15889520
+    },
+    {
+      "name": "progress/100/InnerContent/cold",
+      "samples": 30,
+      "median_microseconds": 7383.1,
+      "p95_microseconds": 10374.7,
+      "median_allocations": 20470,
+      "median_allocated_bytes": 11575928
+    },
+    {
+      "name": "progress/100/InnerContent/warm",
+      "samples": 100,
+      "median_microseconds": 2938.2000000000003,
+      "p95_microseconds": 4523.400000000001,
+      "median_allocations": 6766,
+      "median_allocated_bytes": 4008602
+    },
+    {
+      "name": "progress/100/InnerContent/update",
+      "samples": 100,
+      "median_microseconds": 6447.4,
+      "p95_microseconds": 8086.299999999999,
+      "median_allocations": 17933,
+      "median_allocated_bytes": 11214064
+    }
+  ],
+  "idle_frame_assertions": 24,
+  "builder_inline_bytes": 376,
+  "provenance": {
+    "utc": "2026-10-28T14:57:12.3177870Z",
+    "preset": "windows-msvc-performance",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+    "binary_sha256": "c2086d2b1c34c6b94c303ad4ad733135350d1b58397e229e9e057ab64fa8569e",
+    "source_sha256": {
+      "Cargo.toml": "c676f4612e74903d5741eb29bd2f3b7b08164446db5a6ff5c38fc739a87eb9f6",
+      "Cargo.lock": "0eceaf9c72300f27b386397663d5b7b933de63be0328b8b5e4f8466a1c587031",
+      "benches/progress.rs": "13953db85921a2c6388fe0f0f3cec28f26089dac628b38e96a11451a6d99aca0",
+      "src/progress/config.rs": "fc82e30eaefef23237700eb0d3820dcb464aed957418a7b1e5b89349d8e15b0d",
+      "src/progress/element.rs": "c8bc09b657a7b1fe1ab0982691adde4204684c0b7f72c1b09734072edaa80fbc",
+      "src/progress/geometry.rs": "43bde11a00339ef18b2dd666c3deeed86becc42b4e1bded5086bb9445044ee95",
+      "src/progress/mod.rs": "6dad70bdbd1aa164a7ae28e78fd6ad676c1af53b1c31cbeb259a38b7e59d86b3",
+      "src/progress/paint.rs": "aa3acb24803ff324aa8364e1fa73355ef29c675ad8ff8d2b5c9b18c3c7dc9eb4",
+      "src/progress/state.rs": "7156531d64508ebc9578f8dc4f9d76d897a217df31991571edebcf6e914cb0e3",
+      "src/progress/style.rs": "cb42e79686c2069d14b5404d02d23882a17a9395a45f987d65576ee877acee54",
+      "src/progress/tests.rs": "91d313bc278581587f10218fda2dae9da040cdb7a8f1c21611d5e898dce8e113",
+      "src/progress/view.rs": "b8fe26071b8f5f5d01c7554b2f898c3374da8e9703e548ec975afa3e19499f59"
+    },
+    "timing": "Offscreen CPU draw; process allocation counter is enabled during each sample."
+  }
+}

@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "scope": "Actual GPUI Form renders compared with the pinned original Ant Design Form. All failures are retained. Glyph rasterization is excluded from solid-paint gates; raw image differences remain in the complete report.",
+  "upstream": {
+    "revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "version": "6.6.7",
+    "rc_form": "1.8.6"
+  },
+  "original_renderer": "Chrome/156.0.8078.74",
+  "native": {
+    "os": "Microsoft Windows 10.0.26300",
+    "architecture": "X64",
+    "pe_stack_reserve_bytes": 1048576,
+    "features": [
+      "test-support"
+    ],
+    "label_geometry_source": "logical-prepaint",
+    "gpu": {
+      "backend": "Direct3D11",
+      "adapter": "AMD Radeon RX 6750 XT",
+      "vendor_id": 4098,
+      "device_id": 29663,
+      "max_texture_size": 16384
+    },
+    "executable_sha256": "03a732db066a77494401e99a956d35c7f24d3a6b631a6ad54b0a0fa28d82dbe2",
+    "source_snapshot_matches_build": true,
+    "source_files_verified": 348,
+    "hidden_capture_never_foreground": true,
+    "started_utc": "2026-10-30T17:04:40.3782951Z"
+  },
+  "matrix": {
+    "scenes": 19,
+    "themes": [
+      "default",
+      "dark",
+      "compact",
+      "dark-compact"
+    ],
+    "directions": [
+      "ltr",
+      "rtl"
+    ],
+    "scales": [
+      1,
+      1.5,
+      2
+    ],
+    "actual_captures": 456
+  },
+  "gates": {
+    "geometry_logical_px": 1,
+    "solid_channel_error_bytes": 1
+  },
+  "geometry_passed": 456,
+  "paint_passed": 456,
+  "failed_cases": [],
+  "scenes": [
+    {
+      "scene": "horizontal",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "vertical",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "inline",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "mixed",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "sizes",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "marks",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "statuses",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "wrapped",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "label-absence",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "narrow-520",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "breakpoint-575",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "breakpoint-576",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "variants",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 1,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "disabled",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 1,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "tokens",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "no-style",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "nested-items",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "dynamic-list",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    },
+    {
+      "scene": "semantic",
+      "captures": 24,
+      "geometry_passed": 24,
+      "paint_passed": 24,
+      "maximum_flat_channel_error": 0,
+      "maximum_flat_error_pixels": 0,
+      "maximum_coverage_error_pixels": 0
+    }
+  ],
+  "comparator_negative_controls": {
+    "synthetic_baseline": true,
+    "negative_controls_passed": 6,
+    "coverage_boundary_controls_passed": 2
+  },
+  "passive_inspection": {
+    "pixel_equivalence_captures": 19,
+    "sha256": "294b14358e6c745f5f4bd91e5d651a6d22a8eebb243d44e27da25ea7b74dfe33"
+  },
+  "evidence_sha256": {
+    "original_metrics": "46f25b3d8ee4dfda7bd64371d48cc01745ad97d26d65fd2d21b6b3bc59033d16",
+    "original_audit": "17287b72429112766d5dfa7967420c973efd70440232fa9224af264ccbe82b28",
+    "native_metrics": "c2b49e786b8e6d5c9f0ac8cf25786ed1f12ed60569ac193a0bdd7c38d6b228ff",
+    "native_context": "b08ec7d7f1819be6ffb6350ae0dc10a314879b4621324beb65ab2c81d5ee53e2",
+    "comparison": "c01b0c990e062fefb2af7e43a2a756a04007bb915d4765c17a4a5ed541434226",
+    "comparator": "f99ae90b135a8524625c3732152770106d3dae1c1a9aca216424203a10df20c6",
+    "native_capture": "a95fc85a66e77f2953fff58df83c179f0fd2a674a75fea2b9198b4987a630175"
+  }
+}

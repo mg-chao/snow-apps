@@ -1,0 +1,230 @@
+{
+  "completed_utc": "2026-10-30T11:52:19.5999153Z",
+  "preset": "windows-msvc-performance",
+  "profile": "Release",
+  "measurement": "CPU and allocations with deterministic offscreen GPUI; not GPU presentation or physical input latency",
+  "cmake_cache_sha256": "b67758cfc9c342d6d4b276c76a95e397bd49900cfac4c96be8c111a97f336898",
+  "results_sha256": "5d38beb1ee20ff1cc30919238aefca93a3b6ad80aaa2feb5dd883ed4b11c9d10",
+  "schema_version": 1,
+  "status": "passed",
+  "platform": "Windows x64",
+  "source_map_sha256": "a42d34b678817ae5e94bf406fa59d1731ac8bbef50ddb03000bc564813f0ce40",
+  "source_files": 2001,
+  "executable_sha256": "71c66a501fb5888d8fed7b867b0ca3a31f7ff791ca7d71f6641f037193bfac8b",
+  "toolchain": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "architecture": "X64",
+    "processor_count": 24,
+    "processor_model": "AMD Ryzen 9 5950X 16-Core Processor            "
+  },
+  "measurements": [
+    {
+      "name": "date-time-picker/compiled-format",
+      "iterations": 1000,
+      "us": {
+        "p50": 0.6,
+        "p95": 0.7,
+        "p99": 1.5999999999999999
+      },
+      "allocations": 4.0,
+      "allocated_bytes": 79.0
+    },
+    {
+      "name": "date-time-picker/compiled-parse",
+      "iterations": 1000,
+      "us": {
+        "p50": 0.19999999999999998,
+        "p95": 0.3,
+        "p99": 0.3
+      },
+      "allocations": 0.0,
+      "allocated_bytes": 0.0
+    },
+    {
+      "name": "date-time-picker/checked-month-navigation",
+      "iterations": 1000,
+      "us": {
+        "p50": 0.09999999999999999,
+        "p95": 0.09999999999999999,
+        "p99": 0.09999999999999999
+      },
+      "allocations": 0.0,
+      "allocated_bytes": 0.0
+    },
+    {
+      "name": "date-time-picker/bounded-calendar-grid-construction",
+      "iterations": 1000,
+      "us": {
+        "p50": 2.5,
+        "p95": 3.5,
+        "p99": 11.3
+      },
+      "allocations": 15.0,
+      "allocated_bytes": 3392.0
+    },
+    {
+      "name": "date-time-picker/closed-date-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 199.29999999999998,
+        "p95": 785.3,
+        "p99": 5321.0
+      },
+      "allocations": 300.0,
+      "allocated_bytes": 79015.0
+    },
+    {
+      "name": "date-time-picker/open-date-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 2451.5,
+        "p95": 4120.4,
+        "p99": 7441.599999999999
+      },
+      "allocations": 3813.0,
+      "allocated_bytes": 1315584.0
+    },
+    {
+      "name": "date-time-picker/popup-open-close-cycle",
+      "iterations": 200,
+      "us": {
+        "p50": 7575.700000000001,
+        "p95": 19758.3,
+        "p99": 34110.4
+      },
+      "allocations": 13359.0,
+      "allocated_bytes": 4269125.0
+    },
+    {
+      "kind": "fixture-policy",
+      "name": "motion-enabled-popup",
+      "active": true,
+      "visible": true,
+      "reduced_motion": false,
+      "opening_animation_callbacks": 14,
+      "settled_idle_callbacks": 0
+    },
+    {
+      "name": "date-time-picker/open-date-motion-enabled-idle-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 2074.7999999999997,
+        "p95": 4121.5,
+        "p99": 6108.299999999999
+      },
+      "allocations": 3813.0,
+      "allocated_bytes": 1315584.0
+    },
+    {
+      "name": "date-time-picker/next-month-pointer",
+      "iterations": 100,
+      "us": {
+        "p50": 8959.4,
+        "p95": 20717.1,
+        "p99": 25234.800000000003
+      },
+      "allocations": 15639.71,
+      "allocated_bytes": 5255742.08
+    },
+    {
+      "name": "date-time-picker/open-range-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 5720.3,
+        "p95": 9335.2,
+        "p99": 11958.2
+      },
+      "allocations": 7221.0,
+      "allocated_bytes": 2423381.0
+    },
+    {
+      "name": "date-time-picker/range-hover-pointer",
+      "iterations": 200,
+      "us": {
+        "p50": 13528.9,
+        "p95": 20744.6,
+        "p99": 38531.200000000004
+      },
+      "allocations": 14472.005,
+      "allocated_bytes": 4850659.28
+    },
+    {
+      "name": "date-time-picker/open-datetime-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 3794.1,
+        "p95": 5531.8,
+        "p99": 6426.2
+      },
+      "allocations": 6281.0,
+      "allocated_bytes": 2095848.0
+    },
+    {
+      "name": "date-time-picker/open-time-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 1307.4,
+        "p95": 2023.6,
+        "p99": 2543.5
+      },
+      "allocations": 2662.0,
+      "allocated_bytes": 849272.0
+    },
+    {
+      "name": "date-time-picker/time-column-native-wheel-scroll",
+      "iterations": 200,
+      "us": {
+        "p50": 2758.7000000000003,
+        "p95": 3934.0,
+        "p99": 4656.4
+      },
+      "allocations": 5347.015,
+      "allocated_bytes": 1705480.96
+    },
+    {
+      "name": "date-time-picker/millisecond-step-1-redraw",
+      "iterations": 200,
+      "us": {
+        "p50": 1993.7000000000003,
+        "p95": 3277.8999999999996,
+        "p99": 3799.1
+      },
+      "allocations": 3337.0,
+      "allocated_bytes": 1068152.0
+    },
+    {
+      "name": "date-time-picker/millisecond-selection-sync",
+      "iterations": 200,
+      "us": {
+        "p50": 4007.6,
+        "p95": 6502.0,
+        "p99": 7423.8
+      },
+      "allocations": 6809.0,
+      "allocated_bytes": 2150684.0
+    },
+    {
+      "name": "date-time-picker/100-mounted-closed-motion-enabled-redraw",
+      "iterations": 100,
+      "us": {
+        "p50": 18758.2,
+        "p95": 25335.6,
+        "p99": 27558.800000000003
+      },
+      "allocations": 24686.0,
+      "allocated_bytes": 6564366.0
+    }
+  ],
+  "retained_editor_identity": "stable",
+  "single_picker_primitive_limit": 1200,
+  "hundred_picker_primitive_limit": 6400,
+  "idle_frame_requests": 0,
+  "limitations": [
+    "CPU/allocation distributions use offscreen TestAppContext and its deterministic test text system, with no numeric latency SLA.",
+    "Production font-shaping performance is not measured by this fixture.",
+    "No GPU presentation time or physical input latency was measured."
+  ],
+  "packer_sha256": "ed28886deecf6220abfcf03128af697499c76cc4315181641f8525fb57b78bf7"
+}

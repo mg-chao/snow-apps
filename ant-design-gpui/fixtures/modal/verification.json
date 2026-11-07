@@ -1,0 +1,156 @@
+{
+  "status": "passed",
+  "completed_utc": "2026-10-28T14:57:16.404318+00:00",
+  "upstream_revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+  "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+  "runtime_dependencies_added": false,
+  "full_test_suite_run": false,
+  "library_tests": {
+    "passed": 183,
+    "filtered_out": 638,
+    "command": "cargo test --locked --offline --lib -- modal:: root:: popup:: config:: locale:: behavior::text:: alert:: icons:: behavior::tests::semantic_adapter behavior::tests::busy_semantics --test-threads=1"
+  },
+  "gallery_tests": {
+    "passed": 2,
+    "filtered_out": 75,
+    "command": "cargo test --locked --offline --example gallery modal::tests -- --test-threads=1"
+  },
+  "clippy": {
+    "status": "passed",
+    "command": "cargo clippy --locked --offline --lib --tests --example modal --example gallery --bench modal -- -D warnings"
+  },
+  "format": {
+    "status": "passed",
+    "scope": "Changed Rust sources only; rustfmt --check with skip_children=true and git diff --check"
+  },
+  "coverage": {
+    "controlled_lifecycle": [
+      "modal_owner_decides_closure_and_completion_events_are_once",
+      "modal_completion_callback_can_reopen_without_retiring_new_opening",
+      "modal_closing_surface_is_inert_and_reopening_preserves_motion"
+    ],
+    "dismissal": [
+      "modal_mask_requires_press_and_release_outside",
+      "modal_disabled_cancel_button_does_not_disable_escape_or_close",
+      "modal_loading_blocks_cancel_and_duplicate_ok_requests"
+    ],
+    "async": [
+      "modal_async_failure_retry_and_stale_completion",
+      "modal_reentrant_callbacks_are_guarded_before_dispatch",
+      "modal_pending_actions_complete_independently_and_survive_close_in_callback"
+    ],
+    "focus_overlay_and_windows": [
+      "modal_escape_and_focus_traversal_stay_in_dialog",
+      "modal_child_popup_receives_escape_before_dialog",
+      "modal_nested_helper_returns_focus_and_destroy_all_is_manager_local",
+      "modal_windows_keep_hosts_managers_and_results_isolated",
+      "modal_empty_footer_and_disappearing_focus_fall_back_inside_dialog",
+      "modal_scroll_lock_and_background_pointer_isolation_are_independent"
+    ],
+    "content_and_cleanup": [
+      "modal_lazy_content_retained_then_destroyed_only_when_requested",
+      "modal_retains_all_view_slots_and_loading_does_not_construct_body",
+      "modal_unmount_releases_owned_content_and_blocks_old_requests",
+      "modal_result_survives_entity_release",
+      "modal_skeleton_animation_stops_when_loading_or_motion_stops"
+    ],
+    "themes_locales_rtl_customization": [
+      "modal_tokens_match_original_browser_component",
+      "modal_responsive_width_and_catalogs",
+      "modal_scoped_button_options_merge_and_explicit_false_overrides",
+      "modal_footer_aligns_to_logical_end_in_both_directions",
+      "modal_helper_icons_use_status_colors_and_reference_frames",
+      "modal_helper_title_style_affects_native_layout"
+    ],
+    "gallery": [
+      "modal_gallery_examples_open_and_release_managed_dialogs",
+      "draggable_modal_tracks_pointer_clamps_to_viewport_and_stops_on_release"
+    ]
+  },
+  "visual": {
+    "comparisons": 90,
+    "all_image_dimensions_match": true,
+    "max_geometry_error_logical_px": 0.0,
+    "max_icon_geometry_error_logical_px": 0.6666666666666666,
+    "max_icon_solid_core_error_logical_px": 1.3333333333333333,
+    "max_solid_channel_delta": 0,
+    "mean_full_frame_channel_error": 0.5535321166028425
+  },
+  "visual_review": "All 30 cases reviewed side by side at 100%; representative RTL, dark compact, status, wireframe, loading and custom token pairs reviewed again at 150%/200%. Raw comparisons preserve all pixels.",
+  "uia_checks": 8,
+  "performance": {
+    "preset": "windows-msvc-performance",
+    "profile": "bench (Release)",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+    "measurements": {
+      "cached_token_resolution": {
+        "n": 1000,
+        "mean_us": 1.689,
+        "p50_us": 1.7,
+        "p95_us": 1.7
+      },
+      "100_closed_draw": {
+        "n": 200,
+        "mean_us": 476.233,
+        "p50_us": 444.6,
+        "p95_us": 661.4
+      },
+      "100_closed_invalidated": {
+        "n": 200,
+        "mean_us": 487.369,
+        "p50_us": 449.7,
+        "p95_us": 689.8
+      },
+      "one_open_20_rows_draw": {
+        "n": 200,
+        "mean_us": 291.659,
+        "p50_us": 278.3,
+        "p95_us": 376.8
+      },
+      "one_open_20_rows_invalidated": {
+        "n": 200,
+        "mean_us": 328.952,
+        "p50_us": 292.3,
+        "p95_us": 484.5
+      },
+      "retained_close_reopen": {
+        "n": 100,
+        "mean_us": 1025.537,
+        "p50_us": 947.1,
+        "p95_us": 1410.1
+      },
+      "resize_dialog": {
+        "n": 100,
+        "mean_us": 282.156,
+        "p50_us": 264.3,
+        "p95_us": 481.7
+      },
+      "six_stacked_dialogs": {
+        "n": 100,
+        "mean_us": 892.182,
+        "p50_us": 856.9,
+        "p95_us": 1001.9
+      }
+    },
+    "cached_token_resolution_batch_size": 100,
+    "assertions": {
+      "closed_lazy_constructions": 0,
+      "retained_body_constructions": 1,
+      "idle_frames": 0,
+      "released_helpers": "5/5"
+    }
+  },
+  "limits": [
+    "Pinned GPUI uses fade instead of subtree zoom and dimming instead of backdrop blur.",
+    "Native font, SVG antialiasing and shadow rasterization differ from Chromium; icon opaque-core differences are retained in the report.",
+    "CPU/layout timings do not establish GPU frame time or end-to-end latency.",
+    "Native macOS/Linux and real screen-reader speech were not verified."
+  ],
+  "evidence_sha256": {
+    "reference.json": "7ea45ec41173cfa63b13c1cab77c78a357ed0d70e15841fbf0e3b3d25e828d23",
+    "visual-validation-windows.json": "e471ae37cb9af1fe02c65acbf743bd5723761128be3a99684d768ae3ca842dc0",
+    "accessibility-windows.json": "e535b30d5471c39e8700301f502cf53fc53232cf2d69da287341cb7b84122c89",
+    "performance-windows.json": "e9f87981d59c08860cef98cdb6d62bca820cbc6f2843e29879846c85a62c1381",
+    "performance-windows.txt": "4bb8e52decec1852d806f168449c833dfa0cca2d3ef84e08eff7524f656ff0b2"
+  }
+}

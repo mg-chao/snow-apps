@@ -1,0 +1,4202 @@
+{
+  "cases": 344,
+  "browser": "Edg/156.0.4314.42",
+  "scale_factors": [
+    1.5
+  ],
+  "maximum_item_bounds_delta": {
+    "x": 8.5,
+    "y": 1.3333358764648438,
+    "width": 2.8333358764648438,
+    "height": 0.6666679382324219
+  },
+  "maximum_component_mean_error": 5.004428826416778,
+  "mean_component_error": 2.4499471765675875,
+  "results": [
+    {
+      "name": "default-ltr-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7773716699155298,
+      "component_pixels_above_16": 0.028326023391812866,
+      "foreground_mean_absolute_channel_error": 50.377256982828506
+    },
+    {
+      "name": "default-ltr-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.6554783950617282,
+      "component_pixels_above_16": 0.028326023391812866,
+      "foreground_mean_absolute_channel_error": 56.49671507607192
+    },
+    {
+      "name": "default-ltr-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.9834139231824417,
+      "component_pixels_above_16": 0.020612139917695473,
+      "foreground_mean_absolute_channel_error": 90.69788235294118
+    },
+    {
+      "name": "default-ltr-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.371687242798354,
+      "component_pixels_above_16": 0.01551954732510288,
+      "foreground_mean_absolute_channel_error": 72.28840068709881
+    },
+    {
+      "name": "default-ltr-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.14204504985755,
+      "component_pixels_above_16": 0.03107638888888889,
+      "foreground_mean_absolute_channel_error": 45.020458691686216
+    },
+    {
+      "name": "default-ltr-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.016110220797721,
+      "component_pixels_above_16": 0.030876068376068377,
+      "foreground_mean_absolute_channel_error": 49.32007745010426
+    },
+    {
+      "name": "default-ltr-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.729770233196159,
+      "component_pixels_above_16": 0.0173559670781893,
+      "foreground_mean_absolute_channel_error": 74.99992531182313
+    },
+    {
+      "name": "default-ltr-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1585305212620027,
+      "component_pixels_above_16": 0.013359053497942386,
+      "foreground_mean_absolute_channel_error": 54.30177227482399
+    },
+    {
+      "name": "default-ltr-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.709246031746032,
+      "component_pixels_above_16": 0.03656084656084656,
+      "foreground_mean_absolute_channel_error": 47.27581272893773
+    },
+    {
+      "name": "default-ltr-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.5921164021164023,
+      "component_pixels_above_16": 0.036375661375661374,
+      "foreground_mean_absolute_channel_error": 50.772886093640814
+    },
+    {
+      "name": "default-ltr-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.9623628257887518,
+      "component_pixels_above_16": 0.019953703703703703,
+      "foreground_mean_absolute_channel_error": 64.93912993964241
+    },
+    {
+      "name": "default-ltr-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.321210562414266,
+      "component_pixels_above_16": 0.014583333333333334,
+      "foreground_mean_absolute_channel_error": 48.964285714285715
+    },
+    {
+      "name": "default-ltr-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5128600823045266,
+      "component_pixels_above_16": 0.02562830687830688,
+      "foreground_mean_absolute_channel_error": 50.377256982828506
+    },
+    {
+      "name": "default-ltr-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.131080981775426,
+      "component_pixels_above_16": 0.025209435626102294,
+      "foreground_mean_absolute_channel_error": 43.02404809619239
+    },
+    {
+      "name": "default-ltr-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.295157260435038,
+      "component_pixels_above_16": 0.025352733686067018,
+      "foreground_mean_absolute_channel_error": 46.02764875027649
+    },
+    {
+      "name": "default-ltr-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.8313786008230455,
+      "component_pixels_above_16": 0.031536596119929455,
+      "foreground_mean_absolute_channel_error": 47.67917053543795
+    },
+    {
+      "name": "default-ltr-centered",
+      "maximum_item_bounds_delta": {
+        "x": 4.5833282470703125,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.407521310993533,
+      "component_pixels_above_16": 0.02310405643738977,
+      "foreground_mean_absolute_channel_error": 49.53914227365555
+    },
+    {
+      "name": "default-ltr-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.402575690770135,
+      "component_pixels_above_16": 0.02562830687830688,
+      "foreground_mean_absolute_channel_error": 56.49671507607192
+    },
+    {
+      "name": "default-ltr-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.9834139231824417,
+      "component_pixels_above_16": 0.020612139917695473,
+      "foreground_mean_absolute_channel_error": 90.69788235294118
+    },
+    {
+      "name": "default-ltr-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.371687242798354,
+      "component_pixels_above_16": 0.01551954732510288,
+      "foreground_mean_absolute_channel_error": 72.28840068709881
+    },
+    {
+      "name": "default-ltr-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.8482918263090675,
+      "component_pixels_above_16": 0.027861590038314177,
+      "foreground_mean_absolute_channel_error": 43.96043051598607
+    },
+    {
+      "name": "default-ltr-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.4436861430395913,
+      "component_pixels_above_16": 0.02739463601532567,
+      "foreground_mean_absolute_channel_error": 37.76022162781811
+    },
+    {
+      "name": "default-ltr-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.6084570561941254,
+      "component_pixels_above_16": 0.02753831417624521,
+      "foreground_mean_absolute_channel_error": 40.14717052791492
+    },
+    {
+      "name": "default-ltr-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.2076149425287355,
+      "component_pixels_above_16": 0.035739942528735635,
+      "foreground_mean_absolute_channel_error": 41.326329647182725
+    },
+    {
+      "name": "default-ltr-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.739419699872286,
+      "component_pixels_above_16": 0.02768199233716475,
+      "foreground_mean_absolute_channel_error": 47.75991978226615
+    },
+    {
+      "name": "default-ltr-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.76664780521262,
+      "component_pixels_above_16": 0.0181738683127572,
+      "foreground_mean_absolute_channel_error": 70.55500550055005
+    },
+    {
+      "name": "default-ltr-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.155428669410151,
+      "component_pixels_above_16": 0.013112139917695474,
+      "foreground_mean_absolute_channel_error": 51.838416763678694
+    },
+    {
+      "name": "default-ltr-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.3672602089268757,
+      "component_pixels_above_16": 0.032811016144349475,
+      "foreground_mean_absolute_channel_error": 45.92250759458713
+    },
+    {
+      "name": "default-ltr-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.2665954415954417,
+      "component_pixels_above_16": 0.032644824311490975,
+      "foreground_mean_absolute_channel_error": 48.95323129251701
+    },
+    {
+      "name": "default-ltr-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.9656601508916323,
+      "component_pixels_above_16": 0.019583333333333335,
+      "foreground_mean_absolute_channel_error": 61.85007585609016
+    },
+    {
+      "name": "default-ltr-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.3250222908093279,
+      "component_pixels_above_16": 0.01427469135802469,
+      "foreground_mean_absolute_channel_error": 46.38935319767442
+    },
+    {
+      "name": "default-ltr-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.375,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5154123982138166,
+      "component_pixels_above_16": 0.02506895193065406,
+      "foreground_mean_absolute_channel_error": 52.98484219269103
+    },
+    {
+      "name": "default-ltr-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.375,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.4177469135802467,
+      "component_pixels_above_16": 0.02506895193065406,
+      "foreground_mean_absolute_channel_error": 59.02767749699158
+    },
+    {
+      "name": "default-ltr-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.134706790123457,
+      "component_pixels_above_16": 0.02190843621399177,
+      "foreground_mean_absolute_channel_error": 90.68466302367942
+    },
+    {
+      "name": "default-ltr-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.187530517578125,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.180869341563786,
+      "component_pixels_above_16": 0.015046296296296295,
+      "foreground_mean_absolute_channel_error": 61.72128060263653
+    },
+    {
+      "name": "default-ltr-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.6955150462962965,
+      "component_pixels_above_16": 0.03448350694444444,
+      "foreground_mean_absolute_channel_error": 55.868572065296114
+    },
+    {
+      "name": "default-ltr-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 2.9685402199074074,
+      "component_pixels_above_16": 0.02843967013888889,
+      "foreground_mean_absolute_channel_error": 48.928706586095345
+    },
+    {
+      "name": "default-ltr-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 2.132577160493827,
+      "component_pixels_above_16": 0.02045267489711934,
+      "foreground_mean_absolute_channel_error": 69.21364502746945
+    },
+    {
+      "name": "default-ltr-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.3509722222222222,
+      "component_pixels_above_16": 0.014511316872427984,
+      "foreground_mean_absolute_channel_error": 49.537823702002804
+    },
+    {
+      "name": "default-ltr-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.2857450473729544,
+      "component_pixels_above_16": 0.031169250645994833,
+      "foreground_mean_absolute_channel_error": 45.801277139208175
+    },
+    {
+      "name": "default-ltr-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1958225667527995,
+      "component_pixels_above_16": 0.031050818260120586,
+      "foreground_mean_absolute_channel_error": 48.55161847456683
+    },
+    {
+      "name": "default-ltr-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.9206189986282578,
+      "component_pixels_above_16": 0.01881687242798354,
+      "foreground_mean_absolute_channel_error": 46.74610849556771
+    },
+    {
+      "name": "default-ltr-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.171894718792867,
+      "component_pixels_above_16": 0.012890946502057613,
+      "foreground_mean_absolute_channel_error": 31.128284389489952
+    },
+    {
+      "name": "default-rtl-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.2653752436647174,
+      "component_pixels_above_16": 0.031323099415204676,
+      "foreground_mean_absolute_channel_error": 57.95730563969422
+    },
+    {
+      "name": "default-rtl-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1434819688109163,
+      "component_pixels_above_16": 0.031323099415204676,
+      "foreground_mean_absolute_channel_error": 65.20193847450484
+    },
+    {
+      "name": "default-rtl-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5691786694101508,
+      "component_pixels_above_16": 0.015354938271604938,
+      "foreground_mean_absolute_channel_error": 80.90740249403025
+    },
+    {
+      "name": "default-rtl-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.6891700960219478,
+      "component_pixels_above_16": 0.018585390946502058,
+      "foreground_mean_absolute_channel_error": 82.34838601772871
+    },
+    {
+      "name": "default-rtl-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.6768652065527068,
+      "component_pixels_above_16": 0.034375,
+      "foreground_mean_absolute_channel_error": 51.67042486782598
+    },
+    {
+      "name": "default-rtl-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.5508769586894586,
+      "component_pixels_above_16": 0.034174679487179484,
+      "foreground_mean_absolute_channel_error": 56.80425470122704
+    },
+    {
+      "name": "default-rtl-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.3621776406035666,
+      "component_pixels_above_16": 0.013194444444444444,
+      "foreground_mean_absolute_channel_error": 62.69516551559895
+    },
+    {
+      "name": "default-rtl-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4756430041152264,
+      "component_pixels_above_16": 0.016424897119341565,
+      "foreground_mean_absolute_channel_error": 64.4944243520193
+    },
+    {
+      "name": "default-rtl-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.32918430335097,
+      "component_pixels_above_16": 0.041706349206349205,
+      "foreground_mean_absolute_channel_error": 54.06907158836689
+    },
+    {
+      "name": "default-rtl-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.2113139329806,
+      "component_pixels_above_16": 0.04152116402116402,
+      "foreground_mean_absolute_channel_error": 58.24259328126937
+    },
+    {
+      "name": "default-rtl-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5664831961591221,
+      "component_pixels_above_16": 0.014747942386831275,
+      "foreground_mean_absolute_channel_error": 56.51194921583271
+    },
+    {
+      "name": "default-rtl-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.6666100823045267,
+      "component_pixels_above_16": 0.018693415637860082,
+      "foreground_mean_absolute_channel_error": 56.145525201554435
+    },
+    {
+      "name": "default-rtl-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.9543871252204585,
+      "component_pixels_above_16": 0.02833994708994709,
+      "foreground_mean_absolute_channel_error": 57.95730563969422
+    },
+    {
+      "name": "default-rtl-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.554049088771311,
+      "component_pixels_above_16": 0.027998236331569663,
+      "foreground_mean_absolute_channel_error": 50.39274573812115
+    },
+    {
+      "name": "default-rtl-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7274103468547914,
+      "component_pixels_above_16": 0.02820767195767196,
+      "foreground_mean_absolute_channel_error": 53.5324384787472
+    },
+    {
+      "name": "default-rtl-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.271663727219283,
+      "component_pixels_above_16": 0.03422619047619048,
+      "foreground_mean_absolute_channel_error": 54.11565122218168
+    },
+    {
+      "name": "default-rtl-centered",
+      "maximum_item_bounds_delta": {
+        "x": 4.5833282470703125,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.115729717813051,
+      "component_pixels_above_16": 0.031018518518518518,
+      "foreground_mean_absolute_channel_error": 61.028653707703384
+    },
+    {
+      "name": "default-rtl-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.844102733686067,
+      "component_pixels_above_16": 0.02833994708994709,
+      "foreground_mean_absolute_channel_error": 65.20193847450484
+    },
+    {
+      "name": "default-rtl-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5691786694101508,
+      "component_pixels_above_16": 0.015354938271604938,
+      "foreground_mean_absolute_channel_error": 80.90740249403025
+    },
+    {
+      "name": "default-rtl-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.6891700960219478,
+      "component_pixels_above_16": 0.018585390946502058,
+      "foreground_mean_absolute_channel_error": 82.34838601772871
+    },
+    {
+      "name": "default-rtl-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.327905491698595,
+      "component_pixels_above_16": 0.03081896551724138,
+      "foreground_mean_absolute_channel_error": 50.4540667781701
+    },
+    {
+      "name": "default-rtl-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.9033484993614302,
+      "component_pixels_above_16": 0.030423850574712644,
+      "foreground_mean_absolute_channel_error": 44.04939654099788
+    },
+    {
+      "name": "default-rtl-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.0778496168582374,
+      "component_pixels_above_16": 0.03066331417624521,
+      "foreground_mean_absolute_channel_error": 46.55452349990711
+    },
+    {
+      "name": "default-rtl-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.6870130906768837,
+      "component_pixels_above_16": 0.03869731800766284,
+      "foreground_mean_absolute_channel_error": 46.79222256696659
+    },
+    {
+      "name": "default-rtl-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.219272828863346,
+      "component_pixels_above_16": 0.030639367816091955,
+      "foreground_mean_absolute_channel_error": 54.99357092941999
+    },
+    {
+      "name": "default-rtl-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.3590757887517146,
+      "component_pixels_above_16": 0.01294753086419753,
+      "foreground_mean_absolute_channel_error": 59.9392
+    },
+    {
+      "name": "default-rtl-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.5125205761316873,
+      "component_pixels_above_16": 0.017242798353909464,
+      "foreground_mean_absolute_channel_error": 60.85450890691065
+    },
+    {
+      "name": "default-rtl-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.9253600823045267,
+      "component_pixels_above_16": 0.037440645773979105,
+      "foreground_mean_absolute_channel_error": 52.520846835169586
+    },
+    {
+      "name": "default-rtl-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.8243510604621718,
+      "component_pixels_above_16": 0.03727445394112061,
+      "foreground_mean_absolute_channel_error": 56.12120673304884
+    },
+    {
+      "name": "default-rtl-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.5702949245541837,
+      "component_pixels_above_16": 0.014439300411522634,
+      "foreground_mean_absolute_channel_error": 53.60916489738146
+    },
+    {
+      "name": "default-rtl-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.6699074074074074,
+      "component_pixels_above_16": 0.01832304526748971,
+      "foreground_mean_absolute_channel_error": 53.43529087400055
+    },
+    {
+      "name": "default-rtl-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.799579721565537,
+      "component_pixels_above_16": 0.028024034672970842,
+      "foreground_mean_absolute_channel_error": 58.10177232447171
+    },
+    {
+      "name": "default-rtl-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7019142369319673,
+      "component_pixels_above_16": 0.028024034672970842,
+      "foreground_mean_absolute_channel_error": 64.83865374004887
+    },
+    {
+      "name": "default-rtl-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.187530517578125,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.6015929355281207,
+      "component_pixels_above_16": 0.016574074074074074,
+      "foreground_mean_absolute_channel_error": 78.06805451049243
+    },
+    {
+      "name": "default-rtl-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.7753515089163237,
+      "component_pixels_above_16": 0.019310699588477365,
+      "foreground_mean_absolute_channel_error": 82.74830095146717
+    },
+    {
+      "name": "default-rtl-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.923904079861111,
+      "component_pixels_above_16": 0.03627387152777778,
+      "foreground_mean_absolute_channel_error": 58.866743980561075
+    },
+    {
+      "name": "default-rtl-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.3585901331018517,
+      "component_pixels_above_16": 0.03284505208333333,
+      "foreground_mean_absolute_channel_error": 54.741663657156614
+    },
+    {
+      "name": "default-rtl-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.8657887517146776,
+      "component_pixels_above_16": 0.0182201646090535,
+      "foreground_mean_absolute_channel_error": 64.915611814346
+    },
+    {
+      "name": "default-rtl-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.7879046639231824,
+      "component_pixels_above_16": 0.01867283950617284,
+      "foreground_mean_absolute_channel_error": 60.06514411901441
+    },
+    {
+      "name": "default-rtl-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.6165338788400803,
+      "component_pixels_above_16": 0.03448535745047373,
+      "foreground_mean_absolute_channel_error": 50.095238095238095
+    },
+    {
+      "name": "default-rtl-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.5266329313809934,
+      "component_pixels_above_16": 0.034366925064599485,
+      "foreground_mean_absolute_channel_error": 53.1979908373351
+    },
+    {
+      "name": "default-rtl-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.7200943072702333,
+      "component_pixels_above_16": 0.016934156378600823,
+      "foreground_mean_absolute_channel_error": 43.94285969376367
+    },
+    {
+      "name": "default-rtl-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.5436882716049383,
+      "component_pixels_above_16": 0.016728395061728397,
+      "foreground_mean_absolute_channel_error": 38.64638633377135
+    },
+    {
+      "name": "dark-ltr-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.882403346328785,
+      "component_pixels_above_16": 0.03940058479532164,
+      "foreground_mean_absolute_channel_error": 51.27689861984248
+    },
+    {
+      "name": "dark-ltr-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.654869233268356,
+      "component_pixels_above_16": 0.03127436647173489,
+      "foreground_mean_absolute_channel_error": 55.21143774286197
+    },
+    {
+      "name": "dark-ltr-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.953283607681756,
+      "component_pixels_above_16": 0.02097736625514403,
+      "foreground_mean_absolute_channel_error": 87.78481695568401
+    },
+    {
+      "name": "dark-ltr-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.304269547325103,
+      "component_pixels_above_16": 0.016661522633744857,
+      "foreground_mean_absolute_channel_error": 67.24332449160035
+    },
+    {
+      "name": "dark-ltr-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.3536413817663817,
+      "component_pixels_above_16": 0.04855769230769231,
+      "foreground_mean_absolute_channel_error": 22.870037965072132
+    },
+    {
+      "name": "dark-ltr-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1206152065527064,
+      "component_pixels_above_16": 0.04014423076923077,
+      "foreground_mean_absolute_channel_error": 22.246872420143518
+    },
+    {
+      "name": "dark-ltr-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.75179012345679,
+      "component_pixels_above_16": 0.019002057613168723,
+      "foreground_mean_absolute_channel_error": 32.96742849764349
+    },
+    {
+      "name": "dark-ltr-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1516598079561042,
+      "component_pixels_above_16": 0.015771604938271604,
+      "foreground_mean_absolute_channel_error": 22.540646721063766
+    },
+    {
+      "name": "dark-ltr-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.9656437389770725,
+      "component_pixels_above_16": 0.056666666666666664,
+      "foreground_mean_absolute_channel_error": 22.098625150643155
+    },
+    {
+      "name": "dark-ltr-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.749783950617284,
+      "component_pixels_above_16": 0.04887566137566138,
+      "foreground_mean_absolute_channel_error": 21.50194887370286
+    },
+    {
+      "name": "dark-ltr-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.0333076131687244,
+      "component_pixels_above_16": 0.024737654320987654,
+      "foreground_mean_absolute_channel_error": 25.799468791500665
+    },
+    {
+      "name": "dark-ltr-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.3450137174211247,
+      "component_pixels_above_16": 0.01978909465020576,
+      "foreground_mean_absolute_channel_error": 17.722670828526837
+    },
+    {
+      "name": "dark-ltr-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.6078887419165198,
+      "component_pixels_above_16": 0.03564814814814815,
+      "foreground_mean_absolute_channel_error": 51.27689861984248
+    },
+    {
+      "name": "dark-ltr-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.3081569664902997,
+      "component_pixels_above_16": 0.03520723104056438,
+      "foreground_mean_absolute_channel_error": 45.60472040668119
+    },
+    {
+      "name": "dark-ltr-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.1130217519106407,
+      "component_pixels_above_16": 0.03474426807760141,
+      "foreground_mean_absolute_channel_error": 41.95810524779213
+    },
+    {
+      "name": "dark-ltr-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.806227954144621,
+      "component_pixels_above_16": 0.041534391534391535,
+      "foreground_mean_absolute_channel_error": 46.506790912966686
+    },
+    {
+      "name": "dark-ltr-centered",
+      "maximum_item_bounds_delta": {
+        "x": 4.5833282470703125,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.4508009994121105,
+      "component_pixels_above_16": 0.03302469135802469,
+      "foreground_mean_absolute_channel_error": 49.70654442456768
+    },
+    {
+      "name": "dark-ltr-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.4020245443856556,
+      "component_pixels_above_16": 0.028295855379188713,
+      "foreground_mean_absolute_channel_error": 55.21143774286197
+    },
+    {
+      "name": "dark-ltr-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.953283607681756,
+      "component_pixels_above_16": 0.02097736625514403,
+      "foreground_mean_absolute_channel_error": 87.78481695568401
+    },
+    {
+      "name": "dark-ltr-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.304269547325103,
+      "component_pixels_above_16": 0.016661522633744857,
+      "foreground_mean_absolute_channel_error": 67.24332449160035
+    },
+    {
+      "name": "dark-ltr-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.063382024265645,
+      "component_pixels_above_16": 0.044731800766283525,
+      "foreground_mean_absolute_channel_error": 16.31429726050706
+    },
+    {
+      "name": "dark-ltr-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.734478767560664,
+      "component_pixels_above_16": 0.04424090038314176,
+      "foreground_mean_absolute_channel_error": 14.561489705632125
+    },
+    {
+      "name": "dark-ltr-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.542919859514687,
+      "component_pixels_above_16": 0.043726053639846746,
+      "foreground_mean_absolute_channel_error": 13.540624468266122
+    },
+    {
+      "name": "dark-ltr-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.232016283524904,
+      "component_pixels_above_16": 0.05049090038314176,
+      "foreground_mean_absolute_channel_error": 16.144253011087184
+    },
+    {
+      "name": "dark-ltr-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.86275941890166,
+      "component_pixels_above_16": 0.03745210727969349,
+      "foreground_mean_absolute_channel_error": 15.650204144014323
+    },
+    {
+      "name": "dark-ltr-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.8003395061728396,
+      "component_pixels_above_16": 0.020128600823045267,
+      "foreground_mean_absolute_channel_error": 23.185266180693617
+    },
+    {
+      "name": "dark-ltr-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.1517318244170096,
+      "component_pixels_above_16": 0.015833333333333335,
+      "foreground_mean_absolute_channel_error": 15.328926638810877
+    },
+    {
+      "name": "dark-ltr-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.6289846470402027,
+      "component_pixels_above_16": 0.05262345679012346,
+      "foreground_mean_absolute_channel_error": 16.197796757024385
+    },
+    {
+      "name": "dark-ltr-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.4443455207344096,
+      "component_pixels_above_16": 0.04592830009496676,
+      "foreground_mean_absolute_channel_error": 15.63001114586704
+    },
+    {
+      "name": "dark-ltr-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 2.048400205761317,
+      "component_pixels_above_16": 0.025416666666666667,
+      "foreground_mean_absolute_channel_error": 18.872980492585917
+    },
+    {
+      "name": "dark-ltr-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.3595301783264746,
+      "component_pixels_above_16": 0.020406378600823047,
+      "foreground_mean_absolute_channel_error": 12.85548035253445
+    },
+    {
+      "name": "dark-ltr-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.375,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5737260309955343,
+      "component_pixels_above_16": 0.03404255319148936,
+      "foreground_mean_absolute_channel_error": 53.25749235474006
+    },
+    {
+      "name": "dark-ltr-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.375,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.3914171263462043,
+      "component_pixels_above_16": 0.027531520882584714,
+      "foreground_mean_absolute_channel_error": 57.19132893496701
+    },
+    {
+      "name": "dark-ltr-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.0999245541838136,
+      "component_pixels_above_16": 0.02221707818930041,
+      "foreground_mean_absolute_channel_error": 88.25196396396396
+    },
+    {
+      "name": "dark-ltr-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.187530517578125,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1214746227709191,
+      "component_pixels_above_16": 0.015889917695473252,
+      "foreground_mean_absolute_channel_error": 57.22394329220268
+    },
+    {
+      "name": "dark-ltr-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.938472945601852,
+      "component_pixels_above_16": 0.05779079861111111,
+      "foreground_mean_absolute_channel_error": 18.764966549417203
+    },
+    {
+      "name": "dark-ltr-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.130251736111111,
+      "component_pixels_above_16": 0.044921875,
+      "foreground_mean_absolute_channel_error": 15.307579297649392
+    },
+    {
+      "name": "dark-ltr-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 2.2405521262002743,
+      "component_pixels_above_16": 0.027839506172839507,
+      "foreground_mean_absolute_channel_error": 23.077313121676294
+    },
+    {
+      "name": "dark-ltr-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.4264609053497943,
+      "component_pixels_above_16": 0.022541152263374487,
+      "foreground_mean_absolute_channel_error": 15.108009885157726
+    },
+    {
+      "name": "dark-ltr-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.50956431237439,
+      "component_pixels_above_16": 0.05188415159345392,
+      "foreground_mean_absolute_channel_error": 14.25309344539777
+    },
+    {
+      "name": "dark-ltr-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.3749847412109375,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.3449863623313236,
+      "component_pixels_above_16": 0.045897932816537465,
+      "foreground_mean_absolute_channel_error": 13.75849736950996
+    },
+    {
+      "name": "dark-ltr-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.9481498628257887,
+      "component_pixels_above_16": 0.025781893004115226,
+      "foreground_mean_absolute_channel_error": 24.84463703411901
+    },
+    {
+      "name": "dark-ltr-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.1634310699588477,
+      "component_pixels_above_16": 0.019845679012345678,
+      "foreground_mean_absolute_channel_error": 15.504793282540554
+    },
+    {
+      "name": "dark-rtl-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.840212800519818,
+      "component_pixels_above_16": 0.04470029239766082,
+      "foreground_mean_absolute_channel_error": 67.02743513398553
+    },
+    {
+      "name": "dark-rtl-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.6126786874593892,
+      "component_pixels_above_16": 0.03657407407407407,
+      "foreground_mean_absolute_channel_error": 73.47881040892193
+    },
+    {
+      "name": "dark-rtl-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5601783264746227,
+      "component_pixels_above_16": 0.015848765432098764,
+      "foreground_mean_absolute_channel_error": 78.76796536796537
+    },
+    {
+      "name": "dark-rtl-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.652690329218107,
+      "component_pixels_above_16": 0.019290123456790122,
+      "foreground_mean_absolute_channel_error": 79.04494750656168
+    },
+    {
+      "name": "dark-rtl-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.9438479344729345,
+      "component_pixels_above_16": 0.05049412393162393,
+      "foreground_mean_absolute_channel_error": 26.731141899846055
+    },
+    {
+      "name": "dark-rtl-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.7107416310541312,
+      "component_pixels_above_16": 0.042067307692307696,
+      "foreground_mean_absolute_channel_error": 26.286011735756198
+    },
+    {
+      "name": "dark-rtl-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4175068587105624,
+      "component_pixels_above_16": 0.014958847736625515,
+      "foreground_mean_absolute_channel_error": 26.970949210079645
+    },
+    {
+      "name": "dark-rtl-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4981378600823045,
+      "component_pixels_above_16": 0.018420781893004116,
+      "foreground_mean_absolute_channel_error": 28.7337807606264
+    },
+    {
+      "name": "dark-rtl-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.608694885361552,
+      "component_pixels_above_16": 0.06048941798941799,
+      "foreground_mean_absolute_channel_error": 25.506985150449395
+    },
+    {
+      "name": "dark-rtl-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.391274250440917,
+      "component_pixels_above_16": 0.05265873015873016,
+      "foreground_mean_absolute_channel_error": 25.004849855509487
+    },
+    {
+      "name": "dark-rtl-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.6573113854595336,
+      "component_pixels_above_16": 0.019326131687242797,
+      "foreground_mean_absolute_channel_error": 21.378010981225646
+    },
+    {
+      "name": "dark-rtl-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.7330606995884774,
+      "component_pixels_above_16": 0.023806584362139917,
+      "foreground_mean_absolute_channel_error": 22.321465667749564
+    },
+    {
+      "name": "dark-rtl-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.0957671957671957,
+      "component_pixels_above_16": 0.03720238095238095,
+      "foreground_mean_absolute_channel_error": 59.696499433106574
+    },
+    {
+      "name": "dark-rtl-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.776811434450323,
+      "component_pixels_above_16": 0.03680555555555556,
+      "foreground_mean_absolute_channel_error": 53.81139601139601
+    },
+    {
+      "name": "dark-rtl-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5715388007054676,
+      "component_pixels_above_16": 0.03650793650793651,
+      "foreground_mean_absolute_channel_error": 50.00907661520869
+    },
+    {
+      "name": "dark-rtl-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.2926219870664317,
+      "component_pixels_above_16": 0.043066578483245146,
+      "foreground_mean_absolute_channel_error": 53.69813016900395
+    },
+    {
+      "name": "dark-rtl-centered",
+      "maximum_item_bounds_delta": {
+        "x": 4.5833282470703125,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1527006172839505,
+      "component_pixels_above_16": 0.03929673721340388,
+      "foreground_mean_absolute_channel_error": 60.99054524774294
+    },
+    {
+      "name": "dark-rtl-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.8899029982363316,
+      "component_pixels_above_16": 0.029850088183421518,
+      "foreground_mean_absolute_channel_error": 64.93344893072414
+    },
+    {
+      "name": "dark-rtl-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5601783264746227,
+      "component_pixels_above_16": 0.015848765432098764,
+      "foreground_mean_absolute_channel_error": 78.76796536796537
+    },
+    {
+      "name": "dark-rtl-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.652690329218107,
+      "component_pixels_above_16": 0.019290123456790122,
+      "foreground_mean_absolute_channel_error": 79.04494750656168
+    },
+    {
+      "name": "dark-rtl-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.5928440293742017,
+      "component_pixels_above_16": 0.04643199233716475,
+      "foreground_mean_absolute_channel_error": 19.050498634313662
+    },
+    {
+      "name": "dark-rtl-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.2430755108556832,
+      "component_pixels_above_16": 0.04597701149425287,
+      "foreground_mean_absolute_channel_error": 17.194901437676005
+    },
+    {
+      "name": "dark-rtl-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.0418542464878673,
+      "component_pixels_above_16": 0.045665708812260536,
+      "foreground_mean_absolute_channel_error": 16.127379364373585
+    },
+    {
+      "name": "dark-rtl-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.7615900383141763,
+      "component_pixels_above_16": 0.05220306513409962,
+      "foreground_mean_absolute_channel_error": 18.711264669089175
+    },
+    {
+      "name": "dark-rtl-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 3.392412994891443,
+      "component_pixels_above_16": 0.03915229885057471,
+      "foreground_mean_absolute_channel_error": 18.46374543557642
+    },
+    {
+      "name": "dark-rtl-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.4175788751714677,
+      "component_pixels_above_16": 0.015020576131687243,
+      "foreground_mean_absolute_channel_error": 18.50667383319896
+    },
+    {
+      "name": "dark-rtl-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.546687242798354,
+      "component_pixels_above_16": 0.01954732510288066,
+      "foreground_mean_absolute_channel_error": 20.178213390619405
+    },
+    {
+      "name": "dark-rtl-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.209215732826844,
+      "component_pixels_above_16": 0.05608974358974359,
+      "foreground_mean_absolute_channel_error": 18.689529035208047
+    },
+    {
+      "name": "dark-rtl-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.8333282470703125,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.023567584678696,
+      "component_pixels_above_16": 0.04937084520417854,
+      "foreground_mean_absolute_channel_error": 18.16351965096735
+    },
+    {
+      "name": "dark-rtl-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.6718278463648835,
+      "component_pixels_above_16": 0.019943415637860083,
+      "foreground_mean_absolute_channel_error": 15.568725226953076
+    },
+    {
+      "name": "dark-rtl-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 7.62939453125e-06,
+        "width": 2.8333282470703125,
+        "height": 3.814697265625e-06
+      },
+      "component_mean_absolute_channel_error": 1.7481532921810699,
+      "component_pixels_above_16": 0.02448559670781893,
+      "foreground_mean_absolute_channel_error": 16.282225844599992
+    },
+    {
+      "name": "dark-rtl-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.8835631731021802,
+      "component_pixels_above_16": 0.035470843183609144,
+      "foreground_mean_absolute_channel_error": 59.27480761441879
+    },
+    {
+      "name": "dark-rtl-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874961853027344,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.70125426845285,
+      "component_pixels_above_16": 0.028959810874704492,
+      "foreground_mean_absolute_channel_error": 64.10825344867898
+    },
+    {
+      "name": "dark-rtl-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.187530517578125,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.5812431412894377,
+      "component_pixels_above_16": 0.01689300411522634,
+      "foreground_mean_absolute_channel_error": 76.09375257902121
+    },
+    {
+      "name": "dark-rtl-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1875,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.7112877229080934,
+      "component_pixels_above_16": 0.019830246913580245,
+      "foreground_mean_absolute_channel_error": 78.3232870261361
+    },
+    {
+      "name": "dark-rtl-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 4.206955295138889,
+      "component_pixels_above_16": 0.05859375,
+      "foreground_mean_absolute_channel_error": 19.991162006946595
+    },
+    {
+      "name": "dark-rtl-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.53447265625,
+      "component_pixels_above_16": 0.04799262152777778,
+      "foreground_mean_absolute_channel_error": 17.20824963879198
+    },
+    {
+      "name": "dark-rtl-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.9661539780521262,
+      "component_pixels_above_16": 0.025457818930041152,
+      "foreground_mean_absolute_channel_error": 20.45979042824756
+    },
+    {
+      "name": "dark-rtl-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.870423525377229,
+      "component_pixels_above_16": 0.026255144032921812,
+      "foreground_mean_absolute_channel_error": 19.504462928181738
+    },
+    {
+      "name": "dark-rtl-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.8721935113407984,
+      "component_pixels_above_16": 0.05363910422049957,
+      "foreground_mean_absolute_channel_error": 15.681359926679178
+    },
+    {
+      "name": "dark-rtl-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.5625,
+        "y": 0.0,
+        "width": 2.1874923706054688,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.707260264140109,
+      "component_pixels_above_16": 0.04765288544358312,
+      "foreground_mean_absolute_channel_error": 15.207206012378427
+    },
+    {
+      "name": "dark-rtl-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.1875,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.737235939643347,
+      "component_pixels_above_16": 0.023117283950617285,
+      "foreground_mean_absolute_channel_error": 22.604743083003953
+    },
+    {
+      "name": "dark-rtl-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1874923706054688,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.5458470507544582,
+      "component_pixels_above_16": 0.02396090534979424,
+      "foreground_mean_absolute_channel_error": 20.055043420173682
+    },
+    {
+      "name": "compact-ltr-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7177799823633157,
+      "component_pixels_above_16": 0.028058862433862432,
+      "foreground_mean_absolute_channel_error": 45.249082232011745
+    },
+    {
+      "name": "compact-ltr-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5503692680776013,
+      "component_pixels_above_16": 0.028058862433862432,
+      "foreground_mean_absolute_channel_error": 52.154097621463194
+    },
+    {
+      "name": "compact-ltr-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4518432784636488,
+      "component_pixels_above_16": 0.015864197530864196,
+      "foreground_mean_absolute_channel_error": 86.17720101781171
+    },
+    {
+      "name": "compact-ltr-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 0.9589643347050755,
+      "component_pixels_above_16": 0.011754115226337448,
+      "foreground_mean_absolute_channel_error": 68.27008547008548
+    },
+    {
+      "name": "compact-ltr-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 4.15375948237394,
+      "component_pixels_above_16": 0.03584337349397591,
+      "foreground_mean_absolute_channel_error": 49.16596399652011
+    },
+    {
+      "name": "compact-ltr-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 2.8561691209281572,
+      "component_pixels_above_16": 0.029417670682730924,
+      "foreground_mean_absolute_channel_error": 46.040668319104014
+    },
+    {
+      "name": "compact-ltr-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.410826474622771,
+      "component_pixels_above_16": 0.014907407407407407,
+      "foreground_mean_absolute_channel_error": 68.63696618843862
+    },
+    {
+      "name": "compact-ltr-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 0.9286539780521262,
+      "component_pixels_above_16": 0.010859053497942387,
+      "foreground_mean_absolute_channel_error": 51.573464278836894
+    },
+    {
+      "name": "compact-ltr-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.270835876464844,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.303698192239859,
+      "component_pixels_above_16": 0.03288690476190476,
+      "foreground_mean_absolute_channel_error": 41.833830845771146
+    },
+    {
+      "name": "compact-ltr-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.270835876464844,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1514825837742504,
+      "component_pixels_above_16": 0.03270502645502645,
+      "foreground_mean_absolute_channel_error": 45.76828272935031
+    },
+    {
+      "name": "compact-ltr-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.5247307956104252,
+      "component_pixels_above_16": 0.01602366255144033,
+      "foreground_mean_absolute_channel_error": 60.192026759505765
+    },
+    {
+      "name": "compact-ltr-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.0664420438957476,
+      "component_pixels_above_16": 0.011959876543209876,
+      "foreground_mean_absolute_channel_error": 46.87238269906771
+    },
+    {
+      "name": "compact-ltr-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.3780574845679014,
+      "component_pixels_above_16": 0.024551504629629628,
+      "foreground_mean_absolute_channel_error": 45.249082232011745
+    },
+    {
+      "name": "compact-ltr-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.0160590277777777,
+      "component_pixels_above_16": 0.024204282407407407,
+      "foreground_mean_absolute_channel_error": 38.61511456023651
+    },
+    {
+      "name": "compact-ltr-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.17202449845679,
+      "component_pixels_above_16": 0.024479166666666666,
+      "foreground_mean_absolute_channel_error": 41.328102055800294
+    },
+    {
+      "name": "compact-ltr-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.745206404320988,
+      "component_pixels_above_16": 0.03138020833333333,
+      "foreground_mean_absolute_channel_error": 43.23655423883318
+    },
+    {
+      "name": "compact-ltr-centered",
+      "maximum_item_bounds_delta": {
+        "x": 3.5416717529296875,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.286574074074074,
+      "component_pixels_above_16": 0.02337962962962963,
+      "foreground_mean_absolute_channel_error": 44.43070002811358
+    },
+    {
+      "name": "compact-ltr-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.2315731095679014,
+      "component_pixels_above_16": 0.024551504629629628,
+      "foreground_mean_absolute_channel_error": 52.154097621463194
+    },
+    {
+      "name": "compact-ltr-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4518432784636488,
+      "component_pixels_above_16": 0.015864197530864196,
+      "foreground_mean_absolute_channel_error": 86.17720101781171
+    },
+    {
+      "name": "compact-ltr-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 0.9589643347050755,
+      "component_pixels_above_16": 0.011754115226337448,
+      "foreground_mean_absolute_channel_error": 68.27008547008548
+    },
+    {
+      "name": "compact-ltr-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.5653959810874705,
+      "component_pixels_above_16": 0.025118203309692673,
+      "foreground_mean_absolute_channel_error": 39.59016393442623
+    },
+    {
+      "name": "compact-ltr-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.2043735224586287,
+      "component_pixels_above_16": 0.024763593380614658,
+      "foreground_mean_absolute_channel_error": 34.05409012403831
+    },
+    {
+      "name": "compact-ltr-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.3519355791962173,
+      "component_pixels_above_16": 0.025044326241134753,
+      "foreground_mean_absolute_channel_error": 36.206791569086654
+    },
+    {
+      "name": "compact-ltr-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.852743301812451,
+      "component_pixels_above_16": 0.031767139479905435,
+      "foreground_mean_absolute_channel_error": 37.457505957108815
+    },
+    {
+      "name": "compact-ltr-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.4241578014184397,
+      "component_pixels_above_16": 0.024940898345153666,
+      "foreground_mean_absolute_channel_error": 43.95395643782741
+    },
+    {
+      "name": "compact-ltr-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.354269547325103,
+      "component_pixels_above_16": 0.014243827160493827,
+      "foreground_mean_absolute_channel_error": 66.66886744540376
+    },
+    {
+      "name": "compact-ltr-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 0.8735648148148148,
+      "component_pixels_above_16": 0.010174897119341563,
+      "foreground_mean_absolute_channel_error": 49.496770405167354
+    },
+    {
+      "name": "compact-ltr-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.012278368794326,
+      "component_pixels_above_16": 0.034988179669030735,
+      "foreground_mean_absolute_channel_error": 47.51441794232823
+    },
+    {
+      "name": "compact-ltr-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.8968232860520096,
+      "component_pixels_above_16": 0.02932919621749409,
+      "foreground_mean_absolute_channel_error": 45.0539077212806
+    },
+    {
+      "name": "compact-ltr-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.5003497942386832,
+      "component_pixels_above_16": 0.015396090534979423,
+      "foreground_mean_absolute_channel_error": 58.620488001613225
+    },
+    {
+      "name": "compact-ltr-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 0.9921090534979424,
+      "component_pixels_above_16": 0.010838477366255143,
+      "foreground_mean_absolute_channel_error": 44.106015210878084
+    },
+    {
+      "name": "compact-ltr-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.736541339319117,
+      "component_pixels_above_16": 0.029489337822671154,
+      "foreground_mean_absolute_channel_error": 48.08869708179203
+    },
+    {
+      "name": "compact-ltr-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5961793864571643,
+      "component_pixels_above_16": 0.029489337822671154,
+      "foreground_mean_absolute_channel_error": 54.602912239275874
+    },
+    {
+      "name": "compact-ltr-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.565951646090535,
+      "component_pixels_above_16": 0.0175,
+      "foreground_mean_absolute_channel_error": 84.26485788113695
+    },
+    {
+      "name": "compact-ltr-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.161553497942387,
+      "component_pixels_above_16": 0.014125514403292181,
+      "foreground_mean_absolute_channel_error": 71.18469462840324
+    },
+    {
+      "name": "compact-ltr-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 3.616474493361286,
+      "component_pixels_above_16": 0.032442348008385746,
+      "foreground_mean_absolute_channel_error": 48.226621282694374
+    },
+    {
+      "name": "compact-ltr-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 2.628646925227114,
+      "component_pixels_above_16": 0.027371593291404612,
+      "foreground_mean_absolute_channel_error": 44.851285615010426
+    },
+    {
+      "name": "compact-ltr-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.438005829903978,
+      "component_pixels_above_16": 0.014614197530864197,
+      "foreground_mean_absolute_channel_error": 63.99284064665127
+    },
+    {
+      "name": "compact-ltr-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.0694581618655692,
+      "component_pixels_above_16": 0.012294238683127573,
+      "foreground_mean_absolute_channel_error": 49.76590762273902
+    },
+    {
+      "name": "compact-ltr-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.9702830188679243,
+      "component_pixels_above_16": 0.03704140461215933,
+      "foreground_mean_absolute_channel_error": 52.24667607953877
+    },
+    {
+      "name": "compact-ltr-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.10583071278826,
+      "component_pixels_above_16": 0.032167190775681344,
+      "foreground_mean_absolute_channel_error": 46.91653072321914
+    },
+    {
+      "name": "compact-ltr-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.6518021262002744,
+      "component_pixels_above_16": 0.01677469135802469,
+      "foreground_mean_absolute_channel_error": 55.29656607700312
+    },
+    {
+      "name": "compact-ltr-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.2339386145404665,
+      "component_pixels_above_16": 0.013245884773662552,
+      "foreground_mean_absolute_channel_error": 44.832734379925604
+    },
+    {
+      "name": "compact-rtl-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1759038800705466,
+      "component_pixels_above_16": 0.03138227513227513,
+      "foreground_mean_absolute_channel_error": 52.25469387755102
+    },
+    {
+      "name": "compact-rtl-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.0084931657848326,
+      "component_pixels_above_16": 0.03138227513227513,
+      "foreground_mean_absolute_channel_error": 60.637
+    },
+    {
+      "name": "compact-rtl-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1386231138545952,
+      "component_pixels_above_16": 0.012541152263374485,
+      "foreground_mean_absolute_channel_error": 78.7873501839326
+    },
+    {
+      "name": "compact-rtl-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2917146776406037,
+      "component_pixels_above_16": 0.015339506172839506,
+      "foreground_mean_absolute_channel_error": 78.43965427470582
+    },
+    {
+      "name": "compact-rtl-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 4.433177153056671,
+      "component_pixels_above_16": 0.03738286479250335,
+      "foreground_mean_absolute_channel_error": 52.193069965416335
+    },
+    {
+      "name": "compact-rtl-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.383578759482374,
+      "component_pixels_above_16": 0.03351740294511379,
+      "foreground_mean_absolute_channel_error": 53.675943438710256
+    },
+    {
+      "name": "compact-rtl-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.2493964334705074,
+      "component_pixels_above_16": 0.013137860082304527,
+      "foreground_mean_absolute_channel_error": 66.41843580553258
+    },
+    {
+      "name": "compact-rtl-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.2077383401920438,
+      "component_pixels_above_16": 0.013935185185185186,
+      "foreground_mean_absolute_channel_error": 60.66970169961845
+    },
+    {
+      "name": "compact-rtl-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.7765707671957673,
+      "component_pixels_above_16": 0.036243386243386244,
+      "foreground_mean_absolute_channel_error": 47.392284991568296
+    },
+    {
+      "name": "compact-rtl-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.623263888888889,
+      "component_pixels_above_16": 0.03606150793650793,
+      "foreground_mean_absolute_channel_error": 52.07225712904785
+    },
+    {
+      "name": "compact-rtl-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.3881721536351166,
+      "component_pixels_above_16": 0.014382716049382717,
+      "foreground_mean_absolute_channel_error": 58.99528649285609
+    },
+    {
+      "name": "compact-rtl-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.320644718792867,
+      "component_pixels_above_16": 0.014907407407407407,
+      "foreground_mean_absolute_channel_error": 53.47714205581265
+    },
+    {
+      "name": "compact-rtl-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7789158950617283,
+      "component_pixels_above_16": 0.02745949074074074,
+      "foreground_mean_absolute_channel_error": 52.25469387755102
+    },
+    {
+      "name": "compact-rtl-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.4358989197530865,
+      "component_pixels_above_16": 0.027184606481481483,
+      "foreground_mean_absolute_channel_error": 46.00346178372962
+    },
+    {
+      "name": "compact-rtl-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.582619598765432,
+      "component_pixels_above_16": 0.027300347222222222,
+      "foreground_mean_absolute_channel_error": 48.562721088435374
+    },
+    {
+      "name": "compact-rtl-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.14555362654321,
+      "component_pixels_above_16": 0.03427372685185185,
+      "foreground_mean_absolute_channel_error": 49.069525959367944
+    },
+    {
+      "name": "compact-rtl-centered",
+      "maximum_item_bounds_delta": {
+        "x": 3.53125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.9270109953703702,
+      "component_pixels_above_16": 0.02857349537037037,
+      "foreground_mean_absolute_channel_error": 55.33561269146608
+    },
+    {
+      "name": "compact-rtl-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.6324315200617283,
+      "component_pixels_above_16": 0.02745949074074074,
+      "foreground_mean_absolute_channel_error": 60.637
+    },
+    {
+      "name": "compact-rtl-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1386231138545952,
+      "component_pixels_above_16": 0.012541152263374485,
+      "foreground_mean_absolute_channel_error": 78.7873501839326
+    },
+    {
+      "name": "compact-rtl-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2917146776406037,
+      "component_pixels_above_16": 0.015339506172839506,
+      "foreground_mean_absolute_channel_error": 78.43965427470582
+    },
+    {
+      "name": "compact-rtl-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.9750886524822695,
+      "component_pixels_above_16": 0.02808806146572104,
+      "foreground_mean_absolute_channel_error": 45.56263023848113
+    },
+    {
+      "name": "compact-rtl-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.632988573680063,
+      "component_pixels_above_16": 0.027807328605200944,
+      "foreground_mean_absolute_channel_error": 40.348284142846076
+    },
+    {
+      "name": "compact-rtl-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.772025216706068,
+      "component_pixels_above_16": 0.027925531914893616,
+      "foreground_mean_absolute_channel_error": 42.38056648915644
+    },
+    {
+      "name": "compact-rtl-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.262110914105595,
+      "component_pixels_above_16": 0.034722222222222224,
+      "foreground_mean_absolute_channel_error": 42.5469682071452
+    },
+    {
+      "name": "compact-rtl-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.834205082742317,
+      "component_pixels_above_16": 0.027910756501182032,
+      "foreground_mean_absolute_channel_error": 50.91430903155604
+    },
+    {
+      "name": "compact-rtl-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.1390329218106996,
+      "component_pixels_above_16": 0.011949588477366255,
+      "foreground_mean_absolute_channel_error": 62.21898841480644
+    },
+    {
+      "name": "compact-rtl-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.16545438957476,
+      "component_pixels_above_16": 0.013472222222222222,
+      "foreground_mean_absolute_channel_error": 58.87287104622871
+    },
+    {
+      "name": "compact-rtl-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.215528959810874,
+      "component_pixels_above_16": 0.03574172576832151,
+      "foreground_mean_absolute_channel_error": 49.84517045454545
+    },
+    {
+      "name": "compact-rtl-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.3177748226950357,
+      "component_pixels_above_16": 0.03234338061465721,
+      "foreground_mean_absolute_channel_error": 51.122966062296605
+    },
+    {
+      "name": "compact-rtl-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.2941615226337448,
+      "component_pixels_above_16": 0.01316872427983539,
+      "foreground_mean_absolute_channel_error": 55.09319233311302
+    },
+    {
+      "name": "compact-rtl-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.2749296982167353,
+      "component_pixels_above_16": 0.014068930041152264,
+      "foreground_mean_absolute_channel_error": 51.54578983994433
+    },
+    {
+      "name": "compact-rtl-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.1059857837635616,
+      "component_pixels_above_16": 0.030513468013468013,
+      "foreground_mean_absolute_channel_error": 54.01171588967537
+    },
+    {
+      "name": "compact-rtl-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.9656238309016087,
+      "component_pixels_above_16": 0.030513468013468013,
+      "foreground_mean_absolute_channel_error": 61.59795918367347
+    },
+    {
+      "name": "compact-rtl-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2047822359396434,
+      "component_pixels_above_16": 0.012391975308641976,
+      "foreground_mean_absolute_channel_error": 73.83958793230316
+    },
+    {
+      "name": "compact-rtl-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4524348422496571,
+      "component_pixels_above_16": 0.017458847736625514,
+      "foreground_mean_absolute_channel_error": 77.5849367784497
+    },
+    {
+      "name": "compact-rtl-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 3.767326170510133,
+      "component_pixels_above_16": 0.031407232704402516,
+      "foreground_mean_absolute_channel_error": 50.13103530392332
+    },
+    {
+      "name": "compact-rtl-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 2.973314116002795,
+      "component_pixels_above_16": 0.02834119496855346,
+      "foreground_mean_absolute_channel_error": 50.28325329674518
+    },
+    {
+      "name": "compact-rtl-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.245372085048011,
+      "component_pixels_above_16": 0.012453703703703703,
+      "foreground_mean_absolute_channel_error": 57.36852605538265
+    },
+    {
+      "name": "compact-rtl-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.3091152263374486,
+      "component_pixels_above_16": 0.014362139917695473,
+      "foreground_mean_absolute_channel_error": 57.97438846714209
+    },
+    {
+      "name": "compact-rtl-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.205110062893082,
+      "component_pixels_above_16": 0.03784067085953879,
+      "foreground_mean_absolute_channel_error": 55.05804980708523
+    },
+    {
+      "name": "compact-rtl-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.5336084905660377,
+      "component_pixels_above_16": 0.03497117400419287,
+      "foreground_mean_absolute_channel_error": 52.783604581072936
+    },
+    {
+      "name": "compact-rtl-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.4235459533607682,
+      "component_pixels_above_16": 0.013621399176954733,
+      "foreground_mean_absolute_channel_error": 50.99931719428926
+    },
+    {
+      "name": "compact-rtl-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.509207818930041,
+      "component_pixels_above_16": 0.016306584362139918,
+      "foreground_mean_absolute_channel_error": 50.63883573954891
+    },
+    {
+      "name": "dark-compact-ltr-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.9081128747795413,
+      "component_pixels_above_16": 0.04252645502645502,
+      "foreground_mean_absolute_channel_error": 47.93713091668938
+    },
+    {
+      "name": "dark-compact-ltr-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5956128747795413,
+      "component_pixels_above_16": 0.03136574074074074,
+      "foreground_mean_absolute_channel_error": 52.43197506123358
+    },
+    {
+      "name": "dark-compact-ltr-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4526851851851852,
+      "component_pixels_above_16": 0.01618827160493827,
+      "foreground_mean_absolute_channel_error": 85.44649520927886
+    },
+    {
+      "name": "dark-compact-ltr-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 0.9490775034293553,
+      "component_pixels_above_16": 0.012818930041152263,
+      "foreground_mean_absolute_channel_error": 66.58270179237338
+    },
+    {
+      "name": "dark-compact-ltr-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 4.655761936635431,
+      "component_pixels_above_16": 0.07772757697456492,
+      "foreground_mean_absolute_channel_error": 32.800133663560956
+    },
+    {
+      "name": "dark-compact-ltr-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.0539491298527444,
+      "component_pixels_above_16": 0.04365796519410977,
+      "foreground_mean_absolute_channel_error": 25.084032457708705
+    },
+    {
+      "name": "dark-compact-ltr-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.4869170096021949,
+      "component_pixels_above_16": 0.018950617283950616,
+      "foreground_mean_absolute_channel_error": 39.11678173367628
+    },
+    {
+      "name": "dark-compact-ltr-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.0015740740740742,
+      "component_pixels_above_16": 0.015601851851851851,
+      "foreground_mean_absolute_channel_error": 28.14545366888439
+    },
+    {
+      "name": "dark-compact-ltr-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.270835876464844,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.6497685185185187,
+      "component_pixels_above_16": 0.056878306878306875,
+      "foreground_mean_absolute_channel_error": 22.96018190654725
+    },
+    {
+      "name": "dark-compact-ltr-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.270835876464844,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.3684523809523808,
+      "component_pixels_above_16": 0.04675925925925926,
+      "foreground_mean_absolute_channel_error": 22.246983779843266
+    },
+    {
+      "name": "dark-compact-ltr-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.6286351165980795,
+      "component_pixels_above_16": 0.022443415637860082,
+      "foreground_mean_absolute_channel_error": 29.38807864994581
+    },
+    {
+      "name": "dark-compact-ltr-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.1689043209876544,
+      "component_pixels_above_16": 0.01888888888888889,
+      "foreground_mean_absolute_channel_error": 22.094672636428523
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.5445987654320987,
+      "component_pixels_above_16": 0.037210648148148145,
+      "foreground_mean_absolute_channel_error": 47.93713091668938
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.2571952160493827,
+      "component_pixels_above_16": 0.036646412037037036,
+      "foreground_mean_absolute_channel_error": 42.59976333515383
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.07548225308642,
+      "component_pixels_above_16": 0.036458333333333336,
+      "foreground_mean_absolute_channel_error": 39.44349738795711
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.774826388888889,
+      "component_pixels_above_16": 0.04403935185185185,
+      "foreground_mean_absolute_channel_error": 43.343427495291905
+    },
+    {
+      "name": "dark-compact-ltr-centered",
+      "maximum_item_bounds_delta": {
+        "x": 3.5416717529296875,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.404981674382716,
+      "component_pixels_above_16": 0.035054976851851855,
+      "foreground_mean_absolute_channel_error": 46.66797679206438
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.2711612654320987,
+      "component_pixels_above_16": 0.02744502314814815,
+      "foreground_mean_absolute_channel_error": 52.43197506123358
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4526851851851852,
+      "component_pixels_above_16": 0.01618827160493827,
+      "foreground_mean_absolute_channel_error": 85.44649520927886
+    },
+    {
+      "name": "dark-compact-ltr-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 0.9490775034293553,
+      "component_pixels_above_16": 0.012818930041152263,
+      "foreground_mean_absolute_channel_error": 66.58270179237338
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.862815208825847,
+      "component_pixels_above_16": 0.045582151300236406,
+      "foreground_mean_absolute_channel_error": 18.753172527366075
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.566518912529551,
+      "component_pixels_above_16": 0.045050236406619384,
+      "foreground_mean_absolute_channel_error": 16.810584778326714
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.398936170212766,
+      "component_pixels_above_16": 0.04484338061465721,
+      "foreground_mean_absolute_channel_error": 15.711873163486066
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.9912874310480695,
+      "component_pixels_above_16": 0.050118203309692674,
+      "foreground_mean_absolute_channel_error": 18.28562823756174
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.601526792750197,
+      "component_pixels_above_16": 0.03615543735224586,
+      "foreground_mean_absolute_channel_error": 17.91040521278762
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.4214506172839507,
+      "component_pixels_above_16": 0.017813786008230453,
+      "foreground_mean_absolute_channel_error": 28.598785243468956
+    },
+    {
+      "name": "dark-compact-ltr-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 0.9303463648834019,
+      "component_pixels_above_16": 0.014393004115226338,
+      "foreground_mean_absolute_channel_error": 19.603766764269963
+    },
+    {
+      "name": "dark-compact-ltr-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.515819542947202,
+      "component_pixels_above_16": 0.0754580378250591,
+      "foreground_mean_absolute_channel_error": 23.203947201743052
+    },
+    {
+      "name": "dark-compact-ltr-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 4.2708282470703125,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.1596384948778566,
+      "component_pixels_above_16": 0.047414302600472816,
+      "foreground_mean_absolute_channel_error": 17.825361048501545
+    },
+    {
+      "name": "dark-compact-ltr-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.6049639917695473,
+      "component_pixels_above_16": 0.021965020576131686,
+      "foreground_mean_absolute_channel_error": 22.540750915750916
+    },
+    {
+      "name": "dark-compact-ltr-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.0830727023319615,
+      "component_pixels_above_16": 0.017839506172839505,
+      "foreground_mean_absolute_channel_error": 15.747160863596655
+    },
+    {
+      "name": "dark-compact-ltr-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.900411522633745,
+      "component_pixels_above_16": 0.04137205387205387,
+      "foreground_mean_absolute_channel_error": 50.268644617380026
+    },
+    {
+      "name": "dark-compact-ltr-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.6666717529296875,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.6384025439580996,
+      "component_pixels_above_16": 0.03201459034792368,
+      "foreground_mean_absolute_channel_error": 54.58016448959845
+    },
+    {
+      "name": "dark-compact-ltr-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.542127914951989,
+      "component_pixels_above_16": 0.017695473251028805,
+      "foreground_mean_absolute_channel_error": 81.92529835109775
+    },
+    {
+      "name": "dark-compact-ltr-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.1211093964334704,
+      "component_pixels_above_16": 0.014948559670781894,
+      "foreground_mean_absolute_channel_error": 67.65342026285832
+    },
+    {
+      "name": "dark-compact-ltr-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 4.058184835779175,
+      "component_pixels_above_16": 0.06636530398322851,
+      "foreground_mean_absolute_channel_error": 22.276578391863367
+    },
+    {
+      "name": "dark-compact-ltr-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 2.856804682040531,
+      "component_pixels_above_16": 0.04145702306079665,
+      "foreground_mean_absolute_channel_error": 16.99422686846622
+    },
+    {
+      "name": "dark-compact-ltr-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.5123645404663923,
+      "component_pixels_above_16": 0.019891975308641976,
+      "foreground_mean_absolute_channel_error": 23.71586904473677
+    },
+    {
+      "name": "dark-compact-ltr-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.1407338820301782,
+      "component_pixels_above_16": 0.0182201646090535,
+      "foreground_mean_absolute_channel_error": 18.28479097909791
+    },
+    {
+      "name": "dark-compact-ltr-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.3602681691125085,
+      "component_pixels_above_16": 0.06605083857442348,
+      "foreground_mean_absolute_channel_error": 20.5658727703887
+    },
+    {
+      "name": "dark-compact-ltr-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 5.666656494140625,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.3877664220824597,
+      "component_pixels_above_16": 0.04946278825995807,
+      "foreground_mean_absolute_channel_error": 16.745476947020297
+    },
+    {
+      "name": "dark-compact-ltr-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.7956824417009603,
+      "component_pixels_above_16": 0.02690329218106996,
+      "foreground_mean_absolute_channel_error": 19.792461037978516
+    },
+    {
+      "name": "dark-compact-ltr-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.3577914951989025,
+      "component_pixels_above_16": 0.023503086419753086,
+      "foreground_mean_absolute_channel_error": 15.3299614363506
+    },
+    {
+      "name": "dark-compact-rtl-small-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.42527557319224,
+      "component_pixels_above_16": 0.04379960317460317,
+      "foreground_mean_absolute_channel_error": 56.32408917890157
+    },
+    {
+      "name": "dark-compact-rtl-small-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.11277557319224,
+      "component_pixels_above_16": 0.03263888888888889,
+      "foreground_mean_absolute_channel_error": 62.69064269064269
+    },
+    {
+      "name": "dark-compact-rtl-small-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.13980109739369,
+      "component_pixels_above_16": 0.012680041152263375,
+      "foreground_mean_absolute_channel_error": 78.88097780942209
+    },
+    {
+      "name": "dark-compact-rtl-small-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2974965706447188,
+      "component_pixels_above_16": 0.015905349794238684,
+      "foreground_mean_absolute_channel_error": 78.18743542054143
+    },
+    {
+      "name": "dark-compact-rtl-small-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 5.004428826416778,
+      "component_pixels_above_16": 0.07829651941097725,
+      "foreground_mean_absolute_channel_error": 35.26094990956987
+    },
+    {
+      "name": "dark-compact-rtl-small-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 3.6297467648371264,
+      "component_pixels_above_16": 0.045900267737617136,
+      "foreground_mean_absolute_channel_error": 29.64533479192306
+    },
+    {
+      "name": "dark-compact-rtl-small-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.3213340192043896,
+      "component_pixels_above_16": 0.016929012345679013,
+      "foreground_mean_absolute_channel_error": 36.097146070575
+    },
+    {
+      "name": "dark-compact-rtl-small-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.295329218106996,
+      "component_pixels_above_16": 0.018199588477366257,
+      "foreground_mean_absolute_channel_error": 34.95024530223086
+    },
+    {
+      "name": "dark-compact-rtl-small-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 4.184997795414462,
+      "component_pixels_above_16": 0.05841600529100529,
+      "foreground_mean_absolute_channel_error": 26.254620976116303
+    },
+    {
+      "name": "dark-compact-rtl-small-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.9015321869488537,
+      "component_pixels_above_16": 0.048214285714285716,
+      "foreground_mean_absolute_channel_error": 25.70476605954848
+    },
+    {
+      "name": "dark-compact-rtl-small-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.486915294924554,
+      "component_pixels_above_16": 0.020262345679012347,
+      "foreground_mean_absolute_channel_error": 27.56752887276892
+    },
+    {
+      "name": "dark-compact-rtl-small-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 1.3333358764648438,
+        "width": 2.1354141235351562,
+        "height": 0.6666679382324219
+      },
+      "component_mean_absolute_channel_error": 1.4387860082304527,
+      "component_pixels_above_16": 0.021646090534979425,
+      "foreground_mean_absolute_channel_error": 26.42347453353505
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.99711612654321,
+      "component_pixels_above_16": 0.03832465277777778,
+      "foreground_mean_absolute_channel_error": 56.32408917890157
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.7332465277777778,
+      "component_pixels_above_16": 0.03765914351851852,
+      "foreground_mean_absolute_channel_error": 51.60582877959927
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.564940200617284,
+      "component_pixels_above_16": 0.03745659722222222,
+      "foreground_mean_absolute_channel_error": 48.745669507836126
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.226369598765432,
+      "component_pixels_above_16": 0.04513888888888889,
+      "foreground_mean_absolute_channel_error": 50.30588766072637
+    },
+    {
+      "name": "dark-compact-rtl-centered",
+      "maximum_item_bounds_delta": {
+        "x": 3.53125,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.100120563271605,
+      "component_pixels_above_16": 0.039380787037037034,
+      "foreground_mean_absolute_channel_error": 58.260014500634405
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.135416030883789,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 2.72367862654321,
+      "component_pixels_above_16": 0.028559027777777777,
+      "foreground_mean_absolute_channel_error": 62.69064269064269
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.13980109739369,
+      "component_pixels_above_16": 0.012680041152263375,
+      "foreground_mean_absolute_channel_error": 78.88097780942209
+    },
+    {
+      "name": "dark-compact-rtl-medium-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2974965706447188,
+      "component_pixels_above_16": 0.015905349794238684,
+      "foreground_mean_absolute_channel_error": 78.18743542054143
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.3259998029944837,
+      "component_pixels_above_16": 0.046734633569739954,
+      "foreground_mean_absolute_channel_error": 21.736109769059812
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-top-hover",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.053802206461781,
+      "component_pixels_above_16": 0.04605496453900709,
+      "foreground_mean_absolute_channel_error": 19.956002190227718
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-top-active",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 2.8988425925925925,
+      "component_pixels_above_16": 0.04584810874704492,
+      "foreground_mean_absolute_channel_error": 18.94260315006281
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-top-focus",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.45454097714736,
+      "component_pixels_above_16": 0.0512854609929078,
+      "foreground_mean_absolute_channel_error": 21.0693167477916
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.0650364460204886,
+      "component_pixels_above_16": 0.03730791962174941,
+      "foreground_mean_absolute_channel_error": 21.051492992078
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.1974074074074075,
+      "component_pixels_above_16": 0.015241769547325102,
+      "foreground_mean_absolute_channel_error": 24.73764972712453
+    },
+    {
+      "name": "dark-compact-rtl-medium-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.240414951989026,
+      "component_pixels_above_16": 0.017242798353909464,
+      "foreground_mean_absolute_channel_error": 25.423794958337727
+    },
+    {
+      "name": "dark-compact-rtl-medium-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.7935529944838455,
+      "component_pixels_above_16": 0.07528073286052009,
+      "foreground_mean_absolute_channel_error": 24.656523392925067
+    },
+    {
+      "name": "dark-compact-rtl-medium-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 6.40625,
+        "y": 0.0,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.635234436564224,
+      "component_pixels_above_16": 0.048699763593380616,
+      "foreground_mean_absolute_channel_error": 20.470259913362213
+    },
+    {
+      "name": "dark-compact-rtl-medium-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.13543701171875,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.3862037037037036,
+      "component_pixels_above_16": 0.01910493827160494,
+      "foreground_mean_absolute_channel_error": 19.85152140785528
+    },
+    {
+      "name": "dark-compact-rtl-medium-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666641235351562,
+        "width": 2.1354141235351562,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 1.3878275034293552,
+      "component_pixels_above_16": 0.02097736625514403,
+      "foreground_mean_absolute_channel_error": 19.77538145539906
+    },
+    {
+      "name": "dark-compact-rtl-large-line-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.3465628507295175,
+      "component_pixels_above_16": 0.04116161616161616,
+      "foreground_mean_absolute_channel_error": 57.38995829323067
+    },
+    {
+      "name": "dark-compact-rtl-large-line-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 3.084553872053872,
+      "component_pixels_above_16": 0.03180415263748597,
+      "foreground_mean_absolute_channel_error": 63.00850291391994
+    },
+    {
+      "name": "dark-compact-rtl-large-line-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.2050222908093278,
+      "component_pixels_above_16": 0.012726337448559671,
+      "foreground_mean_absolute_channel_error": 72.97144340602284
+    },
+    {
+      "name": "dark-compact-rtl-large-line-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 2.8333358764648438,
+        "height": 0.0
+      },
+      "component_mean_absolute_channel_error": 1.4586831275720165,
+      "component_pixels_above_16": 0.0179320987654321,
+      "foreground_mean_absolute_channel_error": 76.77470890874628
+    },
+    {
+      "name": "dark-compact-rtl-large-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 4.296479734451433,
+      "component_pixels_above_16": 0.06484538784067086,
+      "foreground_mean_absolute_channel_error": 23.61653936686362
+    },
+    {
+      "name": "dark-compact-rtl-large-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 3.2722658979734454,
+      "component_pixels_above_16": 0.041273584905660375,
+      "foreground_mean_absolute_channel_error": 19.431890152105073
+    },
+    {
+      "name": "dark-compact-rtl-large-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.3280864197530864,
+      "component_pixels_above_16": 0.017685185185185186,
+      "foreground_mean_absolute_channel_error": 20.95436089004385
+    },
+    {
+      "name": "dark-compact-rtl-large-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.833332061767578,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.4020473251028807,
+      "component_pixels_above_16": 0.01999485596707819,
+      "foreground_mean_absolute_channel_error": 22.185682873198143
+    },
+    {
+      "name": "dark-compact-rtl-large-editable-card-top",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 4.653122816212439,
+      "component_pixels_above_16": 0.06647012578616353,
+      "foreground_mean_absolute_channel_error": 21.93432657434883
+    },
+    {
+      "name": "dark-compact-rtl-large-editable-card-bottom",
+      "maximum_item_bounds_delta": {
+        "x": 8.5,
+        "y": 0.0,
+        "width": 2.833332061767578,
+        "height": 0.3333320617675781
+      },
+      "component_mean_absolute_channel_error": 3.8559792103424178,
+      "component_pixels_above_16": 0.05119234800838574,
+      "foreground_mean_absolute_channel_error": 18.99939679872466
+    },
+    {
+      "name": "dark-compact-rtl-large-editable-card-start",
+      "maximum_item_bounds_delta": {
+        "x": 2.833343505859375,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.5610699588477366,
+      "component_pixels_above_16": 0.02315843621399177,
+      "foreground_mean_absolute_channel_error": 17.402399127589966
+    },
+    {
+      "name": "dark-compact-rtl-large-editable-card-end",
+      "maximum_item_bounds_delta": {
+        "x": 0.0,
+        "y": 0.6666717529296875,
+        "width": 2.8333282470703125,
+        "height": 0.33333587646484375
+      },
+      "component_mean_absolute_channel_error": 1.6694084362139918,
+      "component_pixels_above_16": 0.026815843621399178,
+      "foreground_mean_absolute_channel_error": 18.547243193777167
+    }
+  ],
+  "verification": {
+    "date": "2026-10-28",
+    "platform": "Windows x64",
+    "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
+    "rust": "1.98.1",
+    "gpui_revision": "2c0bf70b54c018f99419f386d1cf1105dca57661",
+    "reference_revision": "f8f5595ab5e891fff6a2a06c5b3b98af643d008e",
+    "tabs_tests": 24,
+    "gallery_tests": 5,
+    "reference_style_states": 1280,
+    "reference_item_style_comparisons": 3840,
+    "benchmark_profile": "Release, windows-msvc-performance",
+    "benchmark_draw_samples_per_case": 200,
+    "benchmark_clone_samples_per_case": 10000,
+    "timings_unit": "microseconds",
+    "timings": [
+      {
+        "tabs": 3,
+        "warm_draw_median": 99.9,
+        "warm_draw_p95": 135.3,
+        "selection_layout_median": 195.3,
+        "selection_layout_p95": 209.8
+      },
+      {
+        "tabs": 30,
+        "warm_draw_median": 463.1,
+        "warm_draw_p95": 496.1,
+        "selection_layout_median": 1404.0,
+        "selection_layout_p95": 1485.4
+      },
+      {
+        "tabs": 100,
+        "warm_draw_median": 1416.8,
+        "warm_draw_p95": 1516.8,
+        "selection_layout_median": 4353.9,
+        "selection_layout_p95": 4921.9
+      },
+      {
+        "tabs": 1000,
+        "warm_draw_median": 24270.3,
+        "warm_draw_p95": 33765.6,
+        "selection_layout_median": 65701.8,
+        "selection_layout_p95": 93031.0
+      }
+    ],
+    "snapshot_clone_p95": 0.1,
+    "idle_animation_callbacks": 0,
+    "limitations": [
+      "CPU offscreen benchmarks exclude GPU presentation and end-to-end input latency.",
+      "The 1000-tab case is a stress measurement, not a 60 Hz performance target.",
+      "Reference images execute upstream CSS with snapshot-derived DOM, not live React event handling.",
+      "Native glyph advances differ from Chromium: per-tab width up to 2.8334 logical pixels, cumulative position up to 8.5.",
+      "macOS, Linux, other DPI settings, touch, and screen-reader announcements were not validated."
+    ],
+    "performance_target": "100 tabs: selection and layout p95 below 16.67 ms; 1000 tabs is diagnostic stress only.",
+    "benchmark_execution": "Recorded after native captures and compiler jobs had completed."
+  }
+}

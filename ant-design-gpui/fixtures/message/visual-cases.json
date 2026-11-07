@@ -1,0 +1,236 @@
+{
+  "types": {
+    "items": [
+      {
+        "key": "info",
+        "type": "info",
+        "content": "This is a normal message"
+      },
+      {
+        "key": "success",
+        "type": "success",
+        "content": "This is a success message"
+      },
+      {
+        "key": "error",
+        "type": "error",
+        "content": "This is an error message"
+      },
+      {
+        "key": "warning",
+        "type": "warning",
+        "content": "This is a warning message"
+      },
+      {
+        "key": "loading",
+        "type": "loading",
+        "content": "Action in progress..."
+      }
+    ]
+  },
+  "content": {
+    "items": [
+      {
+        "key": "plain",
+        "content": "A plain message without an icon"
+      },
+      {
+        "key": "custom",
+        "type": "success",
+        "icon": "smile",
+        "content": "A custom message icon"
+      },
+      {
+        "key": "hidden",
+        "icon": "none",
+        "content": "The default icon is hidden",
+        "type": "info"
+      },
+      {
+        "key": "multiline",
+        "type": "info",
+        "content": "First line\nSecond line with more information"
+      },
+      {
+        "key": "rich",
+        "type": "success",
+        "content": "Operation complete",
+        "rich": true
+      },
+      {
+        "key": "empty",
+        "content": ""
+      },
+      {
+        "key": "empty-info",
+        "type": "info",
+        "content": ""
+      }
+    ]
+  },
+  "custom": {
+    "top": 80,
+    "items": [
+      {
+        "key": "root-style",
+        "type": "info",
+        "content": "Customized root styles",
+        "style": {
+          "background": "#e6f4ff",
+          "paddingVertical": 14,
+          "paddingHorizontal": 20,
+          "radius": 12
+        }
+      },
+      {
+        "key": "semantic",
+        "type": "warning",
+        "content": "Customized semantic styles",
+        "semantic": true
+      }
+    ]
+  },
+  "list": {
+    "items": [
+      {
+        "key": "short",
+        "type": "success",
+        "content": "Saved"
+      },
+      {
+        "key": "long",
+        "type": "info",
+        "content": "This message contains a longer description so that independent centering, word wrapping and list placement can be measured across every supported theme."
+      },
+      {
+        "key": "medium",
+        "type": "warning",
+        "content": "Please check your changes before continuing"
+      }
+    ]
+  },
+  "narrow": {
+    "width": 320,
+    "height": 1000,
+    "items": [
+      {
+        "key": "sentence",
+        "type": "info",
+        "content": "This message wraps within a narrow window while preserving the reference edge spacing."
+      },
+      {
+        "key": "unbroken",
+        "type": "warning",
+        "content": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz"
+      },
+      {
+        "key": "bidi",
+        "type": "success",
+        "content": "Saved English \u05e2\u05d1\u05e8\u05d9\u05ea \u0627\u0644\u0639\u0631\u0628\u064a\u0629 123"
+      }
+    ]
+  },
+  "stack-collapsed": {
+    "stack": true,
+    "threshold": 3,
+    "items": [
+      {
+        "key": "stack-1",
+        "type": "info",
+        "content": "Message 1"
+      },
+      {
+        "key": "stack-2",
+        "type": "success",
+        "content": "Message 2 is a little longer"
+      },
+      {
+        "key": "stack-3",
+        "type": "warning",
+        "content": "Message 3"
+      },
+      {
+        "key": "stack-4",
+        "type": "info",
+        "content": "Message 4 is the latest message"
+      }
+    ]
+  },
+  "stack-expanded": {
+    "stack": true,
+    "threshold": 3,
+    "hover": true,
+    "items": [
+      {
+        "key": "stack-1",
+        "type": "info",
+        "content": "Message 1"
+      },
+      {
+        "key": "stack-2",
+        "type": "success",
+        "content": "Message 2 is a little longer"
+      },
+      {
+        "key": "stack-3",
+        "type": "warning",
+        "content": "Message 3"
+      },
+      {
+        "key": "stack-4",
+        "type": "info",
+        "content": "Message 4 is the latest message"
+      }
+    ]
+  },
+  "max-count": {
+    "maxCount": 3,
+    "items": [
+      {
+        "key": "count-1",
+        "type": "info",
+        "content": "Oldest message is discarded"
+      },
+      {
+        "key": "count-2",
+        "type": "success",
+        "content": "Message 2"
+      },
+      {
+        "key": "count-3",
+        "type": "warning",
+        "content": "Message 3"
+      },
+      {
+        "key": "count-4",
+        "type": "info",
+        "content": "Newest message 4"
+      }
+    ]
+  },
+  "tokens": {
+    "tokenCase": true,
+    "items": [
+      {
+        "key": "tokens",
+        "type": "success",
+        "content": "Customized component tokens"
+      }
+    ]
+  },
+  "holder": {
+    "holderStyles": true,
+    "items": [
+      {
+        "key": "holder-info",
+        "type": "info",
+        "content": "Holder style preserves the viewport anchor"
+      },
+      {
+        "key": "holder-success",
+        "type": "success",
+        "content": "Custom list spacing"
+      }
+    ]
+  }
+}

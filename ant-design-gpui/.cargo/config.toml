@@ -1,0 +1,4 @@
+[build]
+target-dir = "../build/ant-design-gpui"
+jobs = 2
+rustflags = ["-Dwarnings"]
