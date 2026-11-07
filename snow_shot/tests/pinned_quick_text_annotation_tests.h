@@ -142,21 +142,24 @@ struct Fixture final {
         auto* value = toolbar();
         return value && value->isVisible();
     }
-    adqt::widgets::AdButton* button(Tool tool) {
-        const QString names[] = {QStringLiteral("highlight"), QStringLiteral("wavy_underline"),
-                                 QStringLiteral("underline"), QStringLiteral("strikethrough")};
+    adqt::widgets::AdButton* button(const QString& key) {
         require(toolbar() != nullptr, "selection materializes the quick annotation toolbar");
         for (auto* popover : toolbar()->findChildren<adqt::widgets::AdPopover*>()) {
             auto* root = popover->contentWidget();
             if (root && root->objectName() == QStringLiteral("quickTextAnnotationToolbar")) {
                 auto* value = root->findChild<adqt::widgets::AdButton*>(
-                    QStringLiteral("quickTextAnnotation_%1").arg(names[static_cast<int>(tool)]));
+                    QStringLiteral("quickTextAnnotation_%1").arg(key));
                 require(value != nullptr, "quick annotation button exists on the visible popover");
                 return value;
             }
         }
         require(false, "quick annotation main popover exists");
         return nullptr;
+    }
+    adqt::widgets::AdButton* button(Tool tool) {
+        const QString names[] = {QStringLiteral("highlight"), QStringLiteral("wavy_underline"),
+                                 QStringLiteral("underline"), QStringLiteral("strikethrough")};
+        return button(names[static_cast<int>(tool)]);
     }
     void click(Tool tool) {
         button(tool)->click();
@@ -243,6 +246,48 @@ void onDemandToolbarLifetime() {
                 "hiding the pin retires its toolbar immediately");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         require(!hidden, "a hidden pin releases its quick toolbar");
+    }
+}
+
+void copyingRetiresToolbarUntilReselection() {
+    SettingsGuard settings;
+    for (int kind : {0, 1, 2}) {
+        for (int action : {0, 1, 2}) {
+            Fixture fixture(kind);
+            fixture.drag();
+            fixture.click(Tool::Underline);
+            auto expected = fixture.content->textSelectionClipboardMimeData();
+            require(expected && !expected->text().isEmpty(), "selected text is ready to copy");
+            const auto ranges = fixture.selection().ranges;
+            const auto annotations = Access::quickTextAnnotations(fixture.window).serialize();
+            QPointer<ScreenshotQuickTextAnnotationToolbar> retired = fixture.toolbar();
+            QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+            if (action == 0) {
+                fixture.keyTarget()->setFocus();
+                sendShortcut(*fixture.keyTarget(), Qt::Key_C, Qt::ControlModifier);
+            } else if (action == 1) {
+                fixture.button(QStringLiteral("copy"))->click();
+            } else {
+                Access::copyCurrentViewport(fixture.window);
+            }
+            const auto* actual = QApplication::clipboard()->mimeData();
+            require(actual && actual->text() == expected->text() &&
+                        actual->html() == expected->html(),
+                    "copy shortcut, quick button and viewport action preserve selected text MIME");
+            require(fixture.toolbar() == nullptr && retired && !retired->isVisible() &&
+                        fixture.selection().ranges == ranges &&
+                        Access::quickTextAnnotations(fixture.window).serialize() == annotations,
+                    "copying retires quick tools without clearing the selection or annotations");
+            fixture.window.move(fixture.window.pos() + QPoint(5, 5));
+            QApplication::processEvents();
+            require(!fixture.toolbarVisible(), "geometry changes do not reopen copied text tools");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(!retired, "copying safely releases the toolbar after its callback returns");
+            fixture.content->clearTextSelection();
+            fixture.drag();
+            require(fixture.toolbarVisible() && fixture.has(Tool::Underline),
+                    "reselecting the same copied passage restores its annotated tools");
+        }
     }
 }
 
@@ -700,6 +745,7 @@ void run() {
     QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
 #endif
     onDemandToolbarLifetime();
+    copyingRetiresToolbarUntilReselection();
     immediateSelectionAndStyleRules();
     settingsRenderingAndPersistence();
     onePopoverAcrossPinsAndDisplayedTextScope();

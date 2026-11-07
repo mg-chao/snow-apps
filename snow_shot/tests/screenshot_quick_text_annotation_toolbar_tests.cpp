@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QEventLoop>
+#include <QHBoxLayout>
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -363,7 +364,7 @@ void selectionControlsVisibilityAndEdits() {
     require(toolClicks == 0 && edits == 0, "selection changes alone must never apply annotations");
     auto* main = popover(toolbar, "quickTextAnnotationToolbar");
     require(main && main->isVisible() && !popover(toolbar, "quickTextAnnotationStyleToolbar"),
-            "unstyled selections show four tools without a style editor");
+            "unstyled selections show copy and four annotation tools without a style editor");
     const auto previousBounds = bodyBounds(main);
     selection.translate(60, 0);
     toolbar.updateSelection(selection, states, revision);
@@ -491,6 +492,29 @@ void selectionControlsVisibilityAndEdits() {
             "new toolbar instances restore per-tool alpha colors, patterns and hand-drawn styles");
 }
 
+void copyActionPrecedesAnnotationTools() {
+    QWidget owner;
+    owner.setGeometry(150, 250, 700, 400);
+    owner.show();
+    Toolbar toolbar(&owner);
+    toolbar.updateSelection(QRect(owner.mapToGlobal(QPoint(80, 160)), QSize(120, 30)), {}, 1);
+    auto* copy = toolButton(toolbar, "copy");
+    auto* main = popover(toolbar, "quickTextAnnotationToolbar");
+    auto* layout = qobject_cast<QHBoxLayout*>(main->contentWidget()->layout());
+    require(layout && layout->count() == 5 && layout->itemAt(0)->widget() == copy &&
+                copy->geometry().right() < toolButton(toolbar, "highlight")->geometry().left(),
+            "Copy text is the far-left action before all four annotation tools");
+    require(copy->toolTip() == QStringLiteral("Copy text") &&
+                copy->accessibleName() == copy->toolTip() && copy->focusPolicy() == Qt::NoFocus,
+            "the copy action is named accessibly and preserves selection focus");
+    int copies = 0;
+    int annotations = 0;
+    QObject::connect(&toolbar, &Toolbar::copyClicked, &owner, [&] { ++copies; });
+    QObject::connect(&toolbar, &Toolbar::toolClicked, &owner, [&] { ++annotations; });
+    copy->click();
+    require(copies == 1 && annotations == 0, "copy requests do not apply annotation tools");
+}
+
 void oneGlobalToolbarAndPreferenceValidation() {
     auto& config = snow_shot::storage::ApplicationStorage::instance().configuration();
     require(config.setValue(
@@ -561,6 +585,7 @@ void runScreenshotQuickTextAnnotationToolbarTests() {
     layoutSettlesAndColorEditsKeepAllPopupsStill();
     mainPopoverStaysAboveSelectionAndCenteredWhenEditorOpens();
     selectionControlsVisibilityAndEdits();
+    copyActionPrecedesAnnotationTools();
     oneGlobalToolbarAndPreferenceValidation();
     toolbarPairClampsAtScreenEdges();
 }

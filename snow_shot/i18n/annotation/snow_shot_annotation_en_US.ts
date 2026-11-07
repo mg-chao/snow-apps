@@ -4,6 +4,10 @@
     <context>
         <name>ScreenshotQuickTextAnnotationToolbar</name>
         <message>
+            <source>Copy text</source>
+            <translation>Copy text</translation>
+        </message>
+        <message>
             <source>Highlight</source>
             <translation>Highlight</translation>
         </message>

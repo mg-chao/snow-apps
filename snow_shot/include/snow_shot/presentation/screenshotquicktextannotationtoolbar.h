@@ -39,6 +39,7 @@ class ScreenshotQuickTextAnnotationToolbar final : public QObject {
 
   signals:
     void superseded();
+    void copyClicked();
     void toolClicked(ScreenshotTextAnnotationTool tool);
     void styleEdited(ScreenshotTextAnnotationTool tool, const ScreenshotTextAnnotationStyle& style,
                      quint32 properties);
