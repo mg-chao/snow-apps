@@ -722,16 +722,6 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<CaptureHistoryPayload> load(const CaptureHistoryRecord& record) const override {
-        return loadPayload(record, false);
-    }
-
-    std::optional<CaptureHistoryPayload>
-    loadPreservingRecord(const CaptureHistoryRecord& record) const override {
-        return loadPayload(record, true);
-    }
-
-    std::optional<CaptureHistoryPayload> loadPayload(const CaptureHistoryRecord& record,
-                                                     bool preserve) const {
         std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored)
@@ -742,8 +732,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         QFile canvas(canvasPath);
         CaptureHistoryPayload payload;
         if (!containedPath(m_root, canvasPath) || !canvas.open(QIODevice::ReadOnly)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         payload.canvasHistory = canvas.read(kMaximumCanvasBytes + 1);
@@ -751,13 +740,12 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         canvas.close();
         if (readError || payload.canvasHistory.size() != record.canvasBytes ||
             !validCanvas(payload.canvasHistory)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         for (qsizetype i = 0; i < stored->displayFileNames.size(); ++i) {
             const auto image = readImage(record, directory.filePath(stored->displayFileNames[i]),
-                                         record.displays[i].imageSize, -1, preserve);
+                                         record.displays[i].imageSize);
             if (!image)
                 return std::nullopt;
             payload.displayImages.append(*image);
@@ -766,7 +754,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                 const auto loaded =
                     readImage(record, directory.filePath(QStringLiteral("cursor_%1.png").arg(i)),
                               record.displays[i].cursor->pixelRect.size(),
-                              record.displays[i].cursor->encodedBytes, preserve);
+                              record.displays[i].cursor->encodedBytes);
                 if (!loaded)
                     return std::nullopt;
                 patch = *loaded;
@@ -931,19 +919,16 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<QImage> readImage(const CaptureHistoryRecord& record, const QString& path,
-                                    const QSize& size, qint64 encodedBytes = -1,
-                                    bool preserve = false) const {
+                                    const QSize& size, qint64 encodedBytes = -1) const {
         observe(CaptureHistoryOperation::PayloadRead);
         if (!containedPath(m_root, path) ||
             (encodedBytes >= 0 && QFileInfo(path).size() != encodedBytes)) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         const QImage image = decodeImage(path);
         if (image.isNull() || image.size() != size) {
-            if (!preserve)
-                readFailed(record);
+            readFailed(record);
             return std::nullopt;
         }
         return image;

@@ -6,13 +6,14 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotpinnedrenderpreparation.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
-#include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
 #include <QColorSpace>
 #include <QDataStream>
+#include <QDir>
 #include <QEventLoop>
-#include <QMouseEvent>
+#include <QFile>
+#include <QFileInfo>
 #include <QPainter>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -204,16 +205,11 @@ void appearanceSurvivesHistoryEditing() {
         const auto revision = repository->recordsSnapshot().revision;
         const auto imported = readImageEditingHistory(*repository, published.record);
         require(imported.error.isEmpty(), "history appearance imports successfully");
-        if (variant == 6) {
-            require(!imported.flattened && !imported.canvasHistory.isEmpty(),
-                    "plain rectangle retains editable annotations and harmless preferences");
-        } else {
-            require(imported.flattened && imported.canvasHistory.isEmpty() &&
-                        imported.canvasSession.isEmpty(),
-                    "unsupported selection appearance explicitly opens its composited pixels");
-            require(imported.image == *stored,
-                    "history import preserves the stored decoded composite pixels exactly");
-        }
+        require(imported.flattened && imported.canvasHistory.isEmpty() &&
+                    imported.canvasSession.isEmpty(),
+                "every selection appearance opens its stored result as a new image");
+        require(imported.image == *stored,
+                "history import preserves the stored decoded composite pixels exactly");
         requirePixels(exportSource(imported), *stored,
                       "history editor export preserves selection appearance without duplicates");
         require(repository->recordsSnapshot().revision == revision,
@@ -252,45 +248,111 @@ void appearanceSurvivesHistoryEditing() {
             "failed appearance import never removes the source record");
 }
 
-void historyResolutionUsesSelectedDisplays() {
+void historyImportsStoredResults() {
     QTemporaryDir directory;
-    require(directory.isValid(), "history resolution fixture directory");
+    require(directory.isValid(), "history result fixture directory");
+    auto repository = makeCaptureHistoryRepository(directory.path());
+    SnowCanvasRuntime runtime;
+    require(
+        !runtime
+             .applyAnnotationTransaction(
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[-2,26,10,6],"style":{"fill":[255,0,0,255],"stroke":[0,0,0,0]}}]})")
+             .isEmpty(),
+        "history result fixture has a baked annotation");
+    for (int variant = 0; variant < 5; ++variant) {
+        auto draft = makeDraft(runtime);
+        if (variant < 3)
+            draft.scrolling = variant != 0;
+        const auto viewport = composeHistoryResult(runtime, draft);
+        QSize size = viewport.size();
+        if (variant != 0) {
+            if (variant % 2 == 0)
+                size.rwidth() *= 4;
+            else
+                size.rheight() *= 4;
+        }
+        QImage result(size, QImage::Format_ARGB32_Premultiplied);
+        result.setColorSpace(QColorSpace::SRgb);
+        result.fill(Qt::green);
+        {
+            QPainter painter(&result);
+            painter.drawImage(QPoint(), viewport);
+        }
+        draft.resultImage = result;
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success, "history result fixture publishes");
+        const auto revision = repository->recordsSnapshot().revision;
+        const auto imported = readImageEditingHistory(*repository, published.record);
+        require(imported.error.isEmpty() && imported.flattened &&
+                    imported.canvasRect == QRectF(QPointF(), QSizeF(size)) &&
+                    imported.pixelSize == size && imported.canvasHistory.isEmpty() &&
+                    imported.canvasSession.isEmpty() && imported.samplingSources.isEmpty(),
+                "ordinary, scrolling and legacy history open the complete result in pixel space");
+        requirePixels(imported.image, result, "history imports the saved result pixels");
+        requirePixels(exportSource(imported), result,
+                      "history result exports without restoring or duplicating old annotations");
+        ImageEditingDocument document;
+        require(document.load(imported) && !document.undo() &&
+                    !document.runtime().hasDocumentContent(),
+                "history result starts a clean document without the old annotation history");
+        require(
+            !document.runtime()
+                    .applyAnnotationTransaction(
+                        R"({"version":1,"operations":[{"type":"rectangle","bounds":[2,2,10,6],"style":{"fill":[0,0,255,255],"stroke":[0,0,0,0]}}]})")
+                    .isEmpty() &&
+                document.undo(),
+            "new annotations can be edited and undone independently");
+        requirePixels(exportSource(document.snapshot()), result,
+                      "undoing new annotations preserves the baked history result");
+
+        const auto assets = repository->displayAssets(published.record);
+        require(assets && assets->result && !assets->displays.isEmpty(),
+                "history result fixture exposes its persisted assets");
+        require(QFile::remove(assets->displays.front().localFileUrl.toLocalFile()) &&
+                    QFile::remove(
+                        QDir(QFileInfo(assets->result->localFileUrl.toLocalFile()).absolutePath())
+                            .filePath(QStringLiteral("canvas_history.json"))),
+                "history result fixture removes its old display and canvas payloads");
+        const auto withoutPayload = readImageEditingHistory(*repository, published.record);
+        require(withoutPayload.error.isEmpty(), "result import does not need the original capture");
+        requirePixels(withoutPayload.image, result,
+                      "missing original payloads cannot change the imported result");
+        require(repository->recordsSnapshot().revision == revision,
+                "history result import and editing never modify the original record");
+    }
+}
+
+void historyImportsRequireStoredResults() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "missing history result fixture directory");
     auto repository = makeCaptureHistoryRepository(directory.path());
     SnowCanvasRuntime runtime;
     for (int variant = 0; variant < 3; ++variant) {
         auto draft = makeDraft(runtime);
-        draft.canvasBounds = QRect(0, 0, 200, 80);
-        draft.selection.rectangle = variant == 0 ? QRect(0, 0, 60, 40) : QRect(80, 0, 80, 40);
-        draft.displays.clear();
-        for (int i = 0; i < 2; ++i) {
-            CaptureHistoryDisplayDraft display;
-            display.stableId = QString::number(i);
-            display.name = display.stableId;
-            display.sourceCanvasRect = QRect(i * 100, 0, 100, 80);
-            display.canvasUsesPoints = true;
-            display.backingScale = i == 0 ? 1.0 : variant == 2 ? 1.25 : 2.0;
-            const QSize pixels = screenshotSelectionRenderedPixelSize(
-                display.sourceCanvasRect->size(), display.backingScale);
-            display.image = QImage(pixels, QImage::Format_ARGB32_Premultiplied);
-            display.image.setColorSpace(QColorSpace::SRgb);
-            display.image.fill(i == 0 ? Qt::red : Qt::blue);
-            draft.displays.append(std::move(display));
+        if (variant != 0)
+            draft.resultImage = composeHistoryResult(runtime, draft);
+        const auto published = repository->publish(std::move(draft)).get();
+        require(published.storage.success, "missing history result fixture publishes");
+        const auto assets = repository->displayAssets(published.record);
+        require(assets && !assets->displays.isEmpty(), "original history display is retained");
+        if (variant == 1) {
+            require(assets->result && QFile::remove(assets->result->localFileUrl.toLocalFile()),
+                    "history result fixture removes its saved result");
+        } else if (variant == 2) {
+            require(assets->result.has_value(), "history result fixture has a saved result");
+            QFile corrupt(assets->result->localFileUrl.toLocalFile());
+            require(corrupt.open(QIODevice::WriteOnly) && corrupt.write("invalid") == 7,
+                    "history result fixture corrupts its saved result");
         }
-        // The exact recorded backing scale remains authoritative when source extents round up.
-        if (variant == 2)
-            draft.displays.back().image = draft.displays.back().image.scaled(QSize(126, 101));
-        const auto published = repository->publish(draft).get();
-        require(published.storage.success, "mixed-DPI history fixture publishes");
+        const auto revision = repository->recordsSnapshot().revision;
         const auto imported = readImageEditingHistory(*repository, published.record);
-        const qreal expectedScale = variant == 0 ? 1.0 : variant == 1 ? 2.0 : 1.25;
-        const QSize expected =
-            screenshotSelectionRenderedPixelSize(draft.selection.rectangle.size(), expectedScale);
-        require(imported.error.isEmpty() && !imported.flattened &&
-                    imported.image.size() == expected &&
-                    imported.canvasRect == QRectF(draft.selection.rectangle),
-                "history import uses only selected display backing scales");
-        require(exportSource(imported).size() == expected,
-                "history editor export retains the selected display pixel resolution");
+        require(imported.image.isNull() && !imported.error.isEmpty() &&
+                    imported.canvasHistory.isEmpty() && imported.canvasSession.isEmpty(),
+                "absent or unreadable results fail without reconstructing the original selection");
+        require(QFileInfo::exists(assets->displays.front().localFileUrl.toLocalFile()) &&
+                    repository->recordsSnapshot().revision == revision &&
+                    repository->records().contains(published.record),
+                "failed result imports preserve the original history record and capture");
     }
 }
 
@@ -310,10 +372,7 @@ void layeredImportsRetainInteriorCoverage() {
             "interior layer coverage exposes only its included pixels");
 }
 
-void editableImportsPreserveResampledExportPixels() {
-    QTemporaryDir directory;
-    require(directory.isValid(), "resampled history fixture directory");
-    auto repository = makeCaptureHistoryRepository(directory.path());
+void layeredImportsPreserveResampledExportPixels() {
     SnowCanvasRuntime background;
     SnowCanvasRuntime annotations;
     require(
@@ -370,24 +429,6 @@ void editableImportsPreserveResampledExportPixels() {
             screenshotSelectionRenderedPixelSize(draft.selection.rectangle.size(), scale);
         const auto expectedBase = background.renderToImage(bounds, pixels, donors);
         const auto expected = annotations.renderToImage(bounds, pixels, donors);
-        draft.resultImage = expected;
-        const auto published = repository->publish(std::move(draft)).get();
-        require(published.storage.success, "resampled history fixture publishes");
-        const auto imported = readImageEditingHistory(*repository, published.record);
-        require(imported.error.isEmpty() && !imported.flattened,
-                "resampled history remains editable");
-        requirePixels(imported.image, expectedBase,
-                      "history import preserves export projection interpolation and cursor alpha");
-        require(imported.image.colorSpace() == QColorSpace(QColorSpace::SRgb),
-                "resampled history retains canonical capture color metadata");
-        requirePixels(exportSource(imported), expected,
-                      "untouched mixed-DPI history exports the original annotated pixels");
-        ImageEditingDocument document;
-        require(document.load(imported) && document.undo(),
-                "resampled history retains editable annotation undo");
-        requirePixels(exportSource(document.snapshot()), expectedBase,
-                      "undo removes imported annotations without leaving baked pixels");
-
         ImageEditingSource layered;
         layered.layeredImage = ScreenshotImageSource::fromLayers(std::move(layers));
         layered.canvasRect = bounds;
@@ -409,99 +450,11 @@ void editableImportsPreserveResampledExportPixels() {
             loop.exec();
         require(loaded, "layered pin source finishes independent editor preparation");
         requirePixels(window.document()->image(), expectedBase,
-                      "layered editor imports use the same projection and sampling as history");
+                      "layered editor imports preserve projection interpolation and cursor alpha");
         requirePixels(
             exportSource(window.document()->snapshot()), expected,
             "layered editor imports retain annotations without baking or resampling twice");
         window.shutdown();
-    }
-}
-
-void historyMagnifiersRetainExteriorSamplingPixels() {
-    ImageEditingSource source;
-    source.image = QImage(200, 140, QImage::Format_ARGB32_Premultiplied);
-    source.image.fill(Qt::blue);
-    {
-        QPainter painter(&source.image);
-        painter.fillRect(QRect(0, 0, 100, 140), Qt::green);
-    }
-    source.canvasRect = QRectF(0, 0, 200, 140);
-    ImageEditingDocument original;
-    require(original.load(source), "magnifier history fixture opens");
-    SnowCanvasWidget canvas(original.runtime());
-    canvas.resize(200, 140);
-    canvas.show();
-    QApplication::processEvents();
-    require(canvas.setViewportCamera(100, 70, 1) && canvas.setCanvasTool(SnowCanvasTool::Magnifier),
-            "magnifier history fixture has an unscaled creation camera");
-    const auto mouse = [&](QEvent::Type type, QPointF point, Qt::MouseButton button,
-                           Qt::MouseButtons buttons) {
-        QMouseEvent event(type, point, point, canvas.mapToGlobal(point), button, buttons,
-                          Qt::NoModifier);
-        QApplication::sendEvent(&canvas, &event);
-    };
-    const auto drag = [&](QPointF from, QPointF to) {
-        mouse(QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
-        mouse(QEvent::MouseMove, to, Qt::NoButton, Qt::LeftButton);
-        mouse(QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
-    };
-    drag({20, 50}, {40, 70});
-    drag({30, 60}, {30, 60});
-    drag({30, 104}, {160, 104});
-    require(canvas.resetEditingStatePreservingTool(), "magnifier annotation is committed");
-
-    QTemporaryDir directory;
-    auto repository = makeCaptureHistoryRepository(directory.path());
-    const QRect selection(100, 0, 100, 140);
-    for (int variant = 0; variant < 3; ++variant) {
-        CaptureHistoryDraft draft;
-        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        draft.createdUtc = QDateTime::currentDateTimeUtc();
-        draft.canvasBounds = source.canvasRect.toRect();
-        draft.selection.rectangle = selection;
-        draft.selection.shadowColor = Qt::transparent;
-        draft.canvasHistory = original.runtime().serializeDocumentHistory();
-        QList<CanvasExportSource> donors;
-        const bool separateDisplays = variant != 0;
-        for (int index = 0; index < (separateDisplays ? 2 : 1); ++index) {
-            CaptureHistoryDisplayDraft display;
-            display.stableId = QString::number(index);
-            display.name = display.stableId;
-            display.sourceCanvasRect =
-                separateDisplays ? QRect(index * 100, 0, 100, 140) : draft.canvasBounds;
-            display.canvasUsesPoints = variant == 2;
-            display.backingScale = index == 0 && variant == 2 ? 2.0 : 1.0;
-            display.image = source.image.copy(*display.sourceCanvasRect);
-            if (display.backingScale != 1)
-                display.image = display.image.scaled(display.image.size() * display.backingScale);
-            donors.append({display.image, QRectF(*display.sourceCanvasRect), {}});
-            if (variant == 2 && index == 0) {
-                display.cursorPixelRect = QRect(50, 110, 20, 20);
-                display.cursorPatch = QImage(20, 20, QImage::Format_ARGB32_Premultiplied);
-                display.cursorPatch.fill(Qt::yellow);
-                donors.append({display.cursorPatch, QRectF(25, 55, 10, 10), {}});
-                draft.cursorVisible = draft.cursorAvailable = true;
-            }
-            draft.displays.append(std::move(display));
-        }
-        const auto expected = original.runtime().renderToImage(selection, selection.size(), donors);
-        require(expected.pixelColor(60, 60) == QColor(variant == 2 ? Qt::yellow : Qt::green),
-                "the original magnifier samples an exterior display and its captured cursor");
-        draft.resultImage = expected;
-        const auto published = repository->publish(std::move(draft)).get();
-        require(published.storage.success, "magnifier history publishes its complete donors");
-        const auto imported = readImageEditingHistory(*repository, published.record);
-        require(imported.error.isEmpty() && !imported.flattened &&
-                    imported.image.size() == selection.size(),
-                "exterior donors preserve editability without changing selected display DPI");
-        requirePixels(exportSource(imported), expected,
-                      "history export retains exterior magnifier sampling pixels");
-        ImageEditingDocument document;
-        require(document.load(imported), "magnifier working copy opens");
-        require(document.crop(ImageEditingDocument::CropAxis::Rows, 120, 130) && document.undo(),
-                "exterior donors survive mixed raster undo");
-        requirePixels(exportPixels(imageEditingExportSource(document.snapshot())), expected,
-                      "export snapshots retain exterior donors across crop and undo");
     }
 }
 
@@ -997,10 +950,10 @@ void pinnedTextUsesCapturedRenderingInputs() {
 
 void runImageEditingSourceTests() {
     appearanceSurvivesHistoryEditing();
-    historyResolutionUsesSelectedDisplays();
+    historyImportsStoredResults();
+    historyImportsRequireStoredResults();
     layeredImportsRetainInteriorCoverage();
-    editableImportsPreserveResampledExportPixels();
-    historyMagnifiersRetainExteriorSamplingPixels();
+    layeredImportsPreserveResampledExportPixels();
     pinnedAppearanceSurvivesEditing();
     pinnedRasterPreparationUsesExpandedGeometry();
     pinnedRenderPlansRejectOverflowAndInvalidGeometry();

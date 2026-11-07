@@ -1976,11 +1976,15 @@ void runImageEditingTests() {
     const auto published = repository->publish(std::move(draft)).get();
     require(published.storage.success, "history fixture publishes");
     const auto snapshotRevision = repository->recordsSnapshot().revision;
+    const auto storedResult = repository->loadResultImagePreservingRecord(published.record);
+    require(storedResult.has_value(), "history fixture retains its encoded result image");
     const auto historySource = readImageEditingHistory(*repository, published.record);
-    require(historySource.error.isEmpty() && !historySource.canvasHistory.isEmpty() &&
-                historySource.canvasRect == original.canvasRect &&
-                historySource.image.size() == original.image.size(),
-            "history restores editable data and mixed DPI mapping");
+    require(historySource.error.isEmpty() && historySource.flattened &&
+                historySource.canvasHistory.isEmpty() && historySource.canvasSession.isEmpty() &&
+                historySource.canvasRect == QRectF(QPointF(), QSizeF(original.image.size())) &&
+                historySource.image == *storedResult &&
+                historySource.pixelSize == original.image.size(),
+            "history opens its stored result as a new image in pixel coordinates");
     require(repository->recordsSnapshot().revision == snapshotRevision,
             "opening history never writes record");
     const auto assets = repository->displayAssets(published.record);
@@ -1991,7 +1995,7 @@ void runImageEditingTests() {
         "corrupt history fixture");
     const auto flattened = readImageEditingHistory(*repository, published.record);
     require(flattened.error.isEmpty() && flattened.flattened && flattened.canvasHistory.isEmpty(),
-            "unreadable edit payload uses composite");
+            "history opens the result independently of its unreadable canvas history");
     require(repository->records().size() == 1 &&
                 repository->recordsSnapshot().revision == snapshotRevision,
             "failed read never prunes history");
