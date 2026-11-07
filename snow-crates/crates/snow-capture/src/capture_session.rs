@@ -513,12 +513,14 @@ impl HistoryReuseSelection {
 
 struct CapturerStore<K> {
     capturers: FxHashMap<K, Box<dyn MonitorCapturer>>,
+    selections: FxHashMap<K, backend::CaptureBackendSelection>,
 }
 
 impl<K> Default for CapturerStore<K> {
     fn default() -> Self {
         Self {
             capturers: FxHashMap::default(),
+            selections: FxHashMap::default(),
         }
     }
 }
@@ -546,6 +548,9 @@ where
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let mut capturer = create_capturer()?;
+                if let Some(selection) = self.selections.get(&key) {
+                    capturer.restore_backend_selection(*selection);
+                }
                 capturer.set_wgc_update_mode(config.windows.wgc_update_mode)?;
                 capturer.set_gpu_hdr_conversion(config.windows.gpu_hdr_conversion)?;
                 capturer.set_hdr_tonemap_lut(config.windows.hdr_tonemap_lut)?;
@@ -563,10 +568,17 @@ where
 
     fn remove(&mut self, key: K) {
         self.capturers.remove(&key);
+        self.selections.remove(&key);
     }
 
-    fn clear(&mut self) {
-        self.capturers.clear();
+    fn release_idle_resources(&mut self) {
+        for (key, capturer) in self.capturers.drain() {
+            if let Some(selection) = capturer.backend_selection() {
+                self.selections.insert(key, selection);
+            } else {
+                self.selections.remove(&key);
+            }
+        }
     }
 
     fn release_capture_access(&mut self) {
@@ -654,7 +666,7 @@ impl MonitorCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
+        self.capturers.release_idle_resources();
         self.output.clear();
     }
 }
@@ -683,7 +695,7 @@ impl WindowCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
+        self.capturers.release_idle_resources();
         self.output.clear();
     }
 }
@@ -783,7 +795,7 @@ impl RegionCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
+        self.capturers.release_idle_resources();
         self.layout = RegionLayoutRuntime::default();
         self.desktop_direct_support.clear();
         self.fallback_frames.clear();
@@ -904,7 +916,7 @@ impl CaptureSession {
     }
 
     /// Drop heavyweight capture resources and frame-history caches while
-    /// keeping the session reusable for a later capture.
+    /// keeping only successful automatic backend selections for a later capture.
     pub fn release_idle_resources(&mut self) {
         if self.config.mode != CaptureMode::Snapshot {
             return;
