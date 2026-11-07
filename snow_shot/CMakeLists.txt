@@ -6282,6 +6282,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --selection-restore-only -platform offscreen)
     add_test(NAME snow-shot-pinned-restored-state-persistence-tests
         COMMAND snow-shot-pinned-window-tests --restored-state-persistence-only -platform offscreen)
+    foreach(setting IN ITEMS zoom recognition)
+        add_test(NAME snow-shot-pinned-restore-runtime-${setting}-tests
+            COMMAND snow-shot-pinned-window-tests --restore-runtime-${setting}-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-restore-runtime-${setting}-tests PROPERTIES
+            LABELS "unit" TIMEOUT 90 RUN_SERIAL TRUE SNOW_TEST_CROSS_PLATFORM TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
     foreach(scale IN ITEMS 1 1.5 2)
         add_test(NAME snow-shot-pinned-partial-placement-restore-${scale}-tests
             COMMAND snow-shot-pinned-window-tests --partial-placement-restore-only -platform offscreen)
