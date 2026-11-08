@@ -472,19 +472,23 @@ fn cached_payload_is_ready(user_initiated: bool, failed_version: bool, valid: bo
     valid && release_retry_is_allowed(user_initiated, failed_version)
 }
 
-fn retain_release_payload(cache: &Path, accepted_hash: &str) {
+fn retain_release_payload(cache: &Path, accepted_hash: Option<&str>) {
     let Ok(entries) = std::fs::read_dir(cache) else {
         return;
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        let named_payload = name.len() == 68 + usize::from(name.ends_with(".part"))
-            && (name.ends_with(".zip") || name.ends_with(".part"))
-            && name[..64]
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
-        if named_payload
-            && !name.starts_with(accepted_hash)
+        let payload_hash = name
+            .strip_suffix(".zip")
+            .or_else(|| name.strip_suffix(".part"))
+            .filter(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            });
+        if payload_hash.is_some()
+            && payload_hash != accepted_hash
             && entry
                 .file_type()
                 .is_ok_and(|kind| kind.is_file() && !kind.is_symlink())
@@ -533,9 +537,22 @@ impl Service {
             awaiting_handoff: false,
             handoff: None,
         };
+        service.prune_installed_payloads();
         service.restore_cached_release();
         service.consume_legacy_result();
         Ok(service)
+    }
+
+    fn prune_installed_payloads(&self) {
+        // The installation record can advance before the startup probe commits the update.
+        // Keep retry/recovery payloads until that transaction has finished. Retain state.json
+        // for replay protection and to retry best-effort cleanup on subsequent launches.
+        if !transaction::transaction_pending(&self.options.root)
+            && compare_versions(&self.persisted.observed_version, &self.installed_version)
+                .is_ok_and(|order| !order.is_gt())
+        {
+            retain_release_payload(&self.options.cache_directory, None);
+        }
     }
 
     fn restore_cached_release(&mut self) {
@@ -1578,11 +1595,12 @@ async fn accept_metadata(
     if !compare_versions(&release.version, &service.installed_version)?.is_gt() {
         service.available = None;
         service.set_state("Idle", None);
+        service.prune_installed_payloads();
         write_status(writer, &service.status).await?;
         return Ok(());
     }
     fsutil::write_atomic(&cache_path(&service.options, "release.json"), &bytes)?;
-    retain_release_payload(&service.options.cache_directory, &available.sha256);
+    retain_release_payload(&service.options.cache_directory, Some(&available.sha256));
     let suppressed = is_failed_version(&service.options.root, &release.version);
     let complete = cache_path(&service.options, format!("{}.zip", available.sha256));
     let complete_valid = fsutil::verify_file(&complete, available.size, &available.sha256).is_ok();
@@ -2489,6 +2507,118 @@ mod tests {
         }
     }
 
+    #[test]
+    fn initialization_prunes_installed_downloads_and_preserves_newer_or_pending_payloads() {
+        for (installed_version, observed_version, pending, removed) in [
+            ("2.0.0", "2.0.0", false, true),
+            ("3.0.0", "2.0.0", false, true),
+            ("1.0.0", "2.0.0", false, false),
+            ("2.0.0", "2.0.0", true, false),
+            ("2.0.0", "", false, false),
+            ("2.0.0", "invalid", false, false),
+        ] {
+            let temporary = TempDir::new().unwrap();
+            let mut service = ready_service(&temporary, FakeNetwork::new([]));
+            service.persisted.observed_version = observed_version.to_owned();
+            write_persisted(&service.options, &service.persisted).unwrap();
+            let root = &service.options.root;
+            std::fs::create_dir_all(root.join("bin")).unwrap();
+            std::fs::write(
+                root.join(transaction::INSTALLATION_RECORD),
+                serde_json::to_vec(&json!({
+                    "schema": 1,
+                    "platform": crate::edition::PLATFORM,
+                    "product": crate::edition::PRODUCT,
+                    "variant": "portable",
+                    "version": installed_version,
+                    "files": [{"path": crate::edition::APP_PATH, "size": 0, "sha256": "0".repeat(64)}]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let work = root.join(transaction::UPDATE_WORK);
+            std::fs::create_dir_all(&work).unwrap();
+            std::fs::write(work.join("failed-version.txt"), b"2.0.0").unwrap();
+            if pending {
+                std::fs::write(work.join("journal.json"), b"pending recovery").unwrap();
+            }
+
+            let cache = &service.options.cache_directory;
+            let payloads = [
+                format!("{}.zip", service.persisted.observed_hash),
+                format!("{}.part", service.persisted.observed_hash),
+                format!("{}.zip", "a".repeat(64)),
+                format!("{}.part", "b".repeat(64)),
+            ];
+            for name in &payloads {
+                std::fs::write(cache.join(name), b"cached payload").unwrap();
+            }
+            let preserved = [
+                "state.json".to_owned(),
+                "release.json".to_owned(),
+                "user.zip".to_owned(),
+                format!("{}.part", "g".repeat(64)),
+                format!("{}\u{00e9}.zip", "a".repeat(62)),
+            ];
+            for name in &preserved[1..] {
+                std::fs::write(cache.join(name), b"unrelated data").unwrap();
+            }
+            let state_before = std::fs::read(cache.join("state.json")).unwrap();
+            let directory = cache.join(format!("{}.zip", "c".repeat(64)));
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(directory.join("user.txt"), b"user data").unwrap();
+            let sibling = temporary.path().join(format!("{}.zip", "d".repeat(64)));
+            std::fs::write(&sibling, b"another cache").unwrap();
+
+            let initialized =
+                Service::initialize(service.options.clone(), service.dependencies.clone()).unwrap();
+            assert_eq!(initialized.status.state, "Idle");
+            for name in &payloads {
+                assert_eq!(
+                    cache.join(name).exists(),
+                    !removed,
+                    "installed={installed_version}, observed={observed_version}, pending={pending}: {name}"
+                );
+            }
+            for name in &preserved {
+                assert!(cache.join(name).exists(), "{name}");
+            }
+            assert_eq!(
+                std::fs::read(cache.join("state.json")).unwrap(),
+                state_before
+            );
+            assert!(directory.join("user.txt").exists());
+            assert!(sibling.exists());
+            assert!(work.join("failed-version.txt").exists());
+            assert_eq!(work.join("journal.json").exists(), pending);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_download_cleanup_retries_locked_files() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        service.installed_version = "2.0.0".to_owned();
+        let payload = cache_path(
+            &service.options,
+            format!("{}.zip", service.persisted.observed_hash),
+        );
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&payload)
+            .unwrap();
+
+        service.prune_installed_payloads();
+        assert!(payload.exists());
+        drop(locked);
+        service.prune_installed_payloads();
+        assert!(!payload.exists());
+    }
+
     fn ready_service(temporary: &TempDir, network: FakeNetwork) -> Service {
         let options = ServiceOptions {
             root: temporary.path().join("root"),
@@ -3020,7 +3150,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn successful_check_reuses_only_the_current_cached_payload() {
+    async fn successful_check_reuses_or_prunes_the_current_cached_payload() {
         let temporary = TempDir::new().unwrap();
         let mut service = ready_service(&temporary, FakeNetwork::new([]));
         let package = service.available.take().unwrap();
@@ -3047,7 +3177,7 @@ mod tests {
         assert_eq!(service.status.state, "Idle");
         accept_metadata(
             &mut service,
-            release,
+            release.clone(),
             b"verified current release".to_vec(),
             false,
             &mut writer,
@@ -3057,6 +3187,22 @@ mod tests {
         assert_eq!(service.status.state, "Ready");
         assert_eq!(service.status.version, "2.0.0");
         assert_eq!(service.available.as_ref().unwrap().sha256, package.sha256);
+
+        service.installed_version.clone_from(&package.version);
+        accept_metadata(
+            &mut service,
+            release,
+            b"verified installed release".to_vec(),
+            false,
+            &mut writer,
+        )
+        .await
+        .unwrap();
+        assert_eq!(service.status.state, "Idle");
+        assert!(service.available.is_none());
+        assert!(!cache_path(&service.options, format!("{}.zip", package.sha256)).exists());
+        assert_eq!(service.persisted.observed_version, package.version);
+        assert_eq!(service.persisted.observed_hash, package.sha256);
     }
 
     #[test]
