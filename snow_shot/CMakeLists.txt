@@ -971,8 +971,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/historyselectionbar.h
     include/snow_shot/presentation/components/historypagecommon.h
     src/presentation/components/historypagecommon.cpp
-    include/snow_shot/presentation/components/thumbnailcache.h
-    src/presentation/components/thumbnailcache.cpp
     include/snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h
     src/presentation/components/pinnedwindowmanagementpagewidget.cpp
     src/presentation/services/screenshotclipboardcontent.cpp
@@ -2795,6 +2793,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
 
     snow_shot_import_offscreen_platform(snow-shot-storage-status-widget-tests)
+    add_test(NAME snow-shot-storage-status-usage-tests
+        COMMAND snow-shot-storage-status-widget-tests --storage-status-only -platform offscreen)
+    set_tests_properties(snow-shot-storage-status-usage-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-annotation-toolbar-editor-tests
         COMMAND snow-shot-storage-status-widget-tests --toolbar-editor-only -platform offscreen)
     set_tests_properties(snow-shot-annotation-toolbar-editor-tests PROPERTIES
@@ -10442,6 +10446,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         Qt6::Widgets
         Psapi
     )
+    snow_shot_import_offscreen_platform(snow-shot-history-performance-benchmark)
     if(WIN32)
         target_link_libraries(snow-shot-history-performance-benchmark PRIVATE
             PkgConfig::SNOW_SHOT_FFMPEG

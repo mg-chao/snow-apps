@@ -24,7 +24,6 @@ namespace {
 // OCR asset cache root (configurationDirectory()/assets).
 constexpr auto kHistoryDirectoryName = "capture_history";
 constexpr auto kAssetDirectoryName = "assets";
-constexpr auto kThumbnailSuffix = "png";
 
 QString cleanDirectory(const QString& path) {
     return path.isEmpty() ? QString() : QDir::cleanPath(path);
@@ -303,20 +302,30 @@ StorageResult StorageUsageTracker::clearNow(StorageCacheKind kind) {
         return StorageResult::ok();
     if (kind == StorageCacheKind::ThumbnailCache) {
         QDir directory(m_thumbnailCacheDirectory);
-        if (!directory.exists()) {
+        const QFileInfo root(m_thumbnailCacheDirectory);
+        if (!root.exists() || storageLink(root)) {
             return StorageResult::ok();
+        }
+        if (!root.isDir() || !directory.isReadable()) {
+            return StorageResult::failure(failureMessage(kind));
         }
         const QFileInfoList entries = directory.entryInfoList(QDir::Files | QDir::NoDotAndDotDot |
                                                               QDir::Hidden | QDir::System);
         int failures = 0;
         for (const QFileInfo& entry : entries) {
-            if (entry.isSymLink() ||
-                entry.suffix().compare(QLatin1String(kThumbnailSuffix), Qt::CaseInsensitive) != 0) {
+            if (storageLink(entry) ||
+                (!entry.fileName().endsWith(QLatin1String(".png"), Qt::CaseInsensitive) &&
+                 !entry.fileName().endsWith(QLatin1String(".png.size"), Qt::CaseInsensitive))) {
                 continue;
             }
             if (!QFile::remove(entry.absoluteFilePath())) {
                 ++failures;
             }
+        }
+        if (directory.isEmpty(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden |
+                              QDir::System) &&
+            !QDir().rmdir(m_thumbnailCacheDirectory)) {
+            ++failures;
         }
         return failures == 0 ? StorageResult::ok() : StorageResult::failure(failureMessage(kind));
     }

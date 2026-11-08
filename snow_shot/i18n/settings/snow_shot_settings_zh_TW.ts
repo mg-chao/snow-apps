@@ -1584,10 +1584,6 @@
             <translation>畫筆醒目提示</translation>
         </message>
         <message>
-            <source>Cached history thumbnails will be removed and rebuilt on demand</source>
-            <translation>已快取的歷史縮圖將被刪除，並在需要時重新產生</translation>
-        </message>
-        <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
@@ -1868,10 +1864,6 @@
             <translation>清除</translation>
         </message>
         <message>
-            <source>Clear cache</source>
-            <translation>清除快取</translation>
-        </message>
-        <message>
             <source>Clear closed records</source>
             <translation>清除已關閉記錄</translation>
         </message>
@@ -1890,14 +1882,6 @@
         <message>
             <source>Clear screenshot history?</source>
             <translation>清除截圖歷史？</translation>
-        </message>
-        <message>
-            <source>Clear the thumbnail cache?</source>
-            <translation>清除縮圖快取？</translation>
-        </message>
-        <message>
-            <source>Clear thumbnail cache</source>
-            <translation>清除縮圖快取</translation>
         </message>
         <message>
             <source>Click-through</source>
@@ -3596,10 +3580,6 @@
             <translation>記住上次使用的工具</translation>
         </message>
         <message>
-            <source>Remove cached screenshot-history thumbnails</source>
-            <translation>刪除已快取的截圖歷史縮圖</translation>
-        </message>
-        <message>
             <source>Remove closed windows</source>
             <translation>移除已關閉視窗</translation>
         </message>
@@ -4528,10 +4508,6 @@
             <translation>主題、字型、佈景與工具列尺寸</translation>
         </message>
         <message>
-            <source>Thumbnail cache</source>
-            <translation>縮圖快取</translation>
-        </message>
-        <message>
             <source>Thumbnail mode</source>
             <translation>縮圖模式</translation>
         </message>
@@ -5380,14 +5356,6 @@ Unavailable: %2</source>
         <message>
             <source>Switching storage directory…</source>
             <translation>正在切換儲存目錄…</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache</source>
-            <translation>縮圖快取</translation>
-        </message>
-        <message>
-            <source>Thumbnail cache disk usage</source>
-            <translation>縮圖快取磁碟用量</translation>
         </message>
         <message>
             <source>Total app storage</source>

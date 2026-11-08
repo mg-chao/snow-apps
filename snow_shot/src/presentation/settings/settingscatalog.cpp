@@ -3161,29 +3161,6 @@ SettingsItemDefinition storageStatusItem() {
     };
 }
 
-SettingsItemDefinition clearThumbnailCacheItem() {
-    SettingsActionDefinition payload;
-    payload.binding = SettingsActionBinding::ClearThumbnailCache;
-    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear"));
-    payload.iconFactory = []() { return outlined_icons::Clear(); };
-    payload.confirmation = {
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear the thumbnail cache?")),
-        settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog", "Cached history thumbnails will be removed and rebuilt on demand")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear cache")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
-    };
-    return {
-        QStringLiteral("storage.clear-thumbnails"),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear thumbnail cache")),
-        settingsText(
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Remove cached screenshot-history thumbnails")),
-        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail cache"))},
-        {},
-        payload,
-    };
-}
-
 SettingsItemDefinition clearRecordingTempItem() {
     SettingsActionDefinition payload;
     payload.binding = SettingsActionBinding::ClearRecordingTemp;
@@ -4801,8 +4778,10 @@ constexpr CatalogItemFactory catalogPageFilesHistorySectionPinnedHistoryItems[] 
 };
 
 constexpr CatalogItemFactory catalogPageFilesHistorySectionStorageStatusItems[] = {
-    {exportConfigurationItem}, {importConfigurationItem}, {storageStatusItem},
-    {clearThumbnailCacheItem}, {clearRecordingTempItem},
+    {exportConfigurationItem},
+    {importConfigurationItem},
+    {storageStatusItem},
+    {clearRecordingTempItem},
 };
 
 constexpr CatalogSectionRecord catalogPageFilesHistorySections[] = {

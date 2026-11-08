@@ -111,10 +111,14 @@ fn compile_wgc_interop() {
     ] {
         println!("cargo:rerun-if-changed={source}");
     }
-    cc::Build::new()
-        .cpp(true)
-        .std("c++20")
-        .flag_if_supported("/EHsc")
+    let mut build = cc::Build::new();
+    build.cpp(true).std("c++20");
+    if build.get_compiler().is_like_msvc() {
+        // Required for the exception boundary. A flag support probe can reject
+        // /EHsc when CMake's CRT override emits an unrelated D9025 warning.
+        build.flag("/EHsc");
+    }
+    build
         .warnings_into_errors(true)
         .file("native/wgc_interop.cpp")
         // A separate archive member is only linked when Rust tests use the fixture.
