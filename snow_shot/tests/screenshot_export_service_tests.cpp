@@ -157,7 +157,7 @@ QImage
 waitForPinnedResult(ScreenshotExportService& service,
                     const ScreenshotPinnedSelectionRequest& request,
                     std::optional<ScreenshotPinnedSelectionRequest>* deliveredRequest = nullptr,
-                    bool* deliveredSuccess = nullptr) {
+                    bool* deliveredSuccess = nullptr, std::function<void()> afterScheduled = {}) {
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -188,6 +188,8 @@ waitForPinnedResult(ScreenshotExportService& service,
             require(subscribed, "pinned result handle could not be subscribed");
         });
     require(scheduled, "pinned export was not scheduled");
+    if (afterScheduled)
+        afterScheduled();
     timeout.start();
     loop.exec();
     timeout.stop();
@@ -1110,31 +1112,44 @@ void editablePinSnapshotsRetainCoordinatesAndHistory() {
             const QRect selection(origin + QPoint(10, 5), QSize(60, 45));
             ScreenshotResultStyle style{3, 4, Qt::black};
             style.region = ScreenshotRegionGeometry(QRegion(0, 0, 20, 45) + QRect(40, 0, 20, 45));
-            const auto expected = waitForResult(
+            if (origin.x() > 0) {
+                style.borderType = ScreenshotSelectionBorderType::Border;
+                style.borderWidth = 3;
+                style.borderColor = Qt::cyan;
+                style.backgroundOpacityPercent = 25;
+            }
+            const auto annotated = waitForResult(
                 [&](QObject* receiver, auto callback) {
                     return service.requestSelectionResult(selection, style, receiver,
                                                           std::move(callback));
                 },
                 [](QImage result) { return result; });
+            SnowCanvasRuntime clean;
+            ScreenshotExportService cleanService({displays, clean, geometry});
+            const auto cleanRequest = cleanService.preparePinnedSelection(selection, style);
+            require(cleanRequest.has_value(), "prepare a styled background reference");
+            const auto expected = waitForPinnedResult(cleanService, *cleanRequest);
+            require(!hasSamePixels(expected, annotated),
+                    "the reference background excludes visible annotations");
             const auto request = service.prepareEditablePinnedSelection(selection, style);
-            require(request && request->editable && !request->layoutCompaction.enabled &&
+            require(request && !request->canvasSession.isEmpty() &&
+                        !request->layoutCompaction.enabled &&
                         request->contentCanvasRect == QRectF(selection) &&
-                        request->editable->renderSpec.pixelSize ==
-                            screenshotSelectionRenderedPixelSize(selection.size(), scale),
+                        request->surfaceCanvasRect == cleanRequest->surfaceCanvasRect,
                     "editable pin uses original coordinates and correct backing resolution");
             SnowCanvasRuntime imported;
-            require(imported.restoreDocumentSession(request->editable->documentSession) &&
+            require(imported.restoreDocumentSession(request->canvasSession) &&
                         imported.documentCheckpoint() == runtime.documentCheckpoint() &&
                         imported.canUndo() && imported.canRedo(),
                     "editable request contains full document history");
-            require(runtime.clearDocumentPreservingViewports(),
-                    "tear down source document before rendering");
-            displays.displayAt(0).image = {};
-            require(hasSamePixels(waitForPinnedResult(service, *request), expected),
-                    "pin export uses the frozen session and capture sources after source teardown");
-            const auto& layer = request->editable->imageSource.layers.first();
-            require(layer.image == image && layer.imageCanvasRect == QRectF(origin, QSize(80, 60)),
-                    "editable handoff retains original sampling donors beyond the crop");
+            const auto actual = waitForPinnedResult(service, *request, nullptr, nullptr, [&] {
+                require(runtime.clearDocumentPreservingViewports(),
+                        "tear down the source document after scheduling the pin");
+                displays.displayAt(0).image = {};
+            });
+            require(hasSamePixels(actual, expected),
+                    "editable pins use the same styled background rendering without annotations");
+            require(image.isDetached(), "completed pin rendering releases the full capture");
             require(imported.redo() && imported.undo() && imported.undo() &&
                         !imported.hasDocumentContent(),
                     "imported history supports redo and undo to an empty canvas");

@@ -12,7 +12,6 @@
 #include <QCache>
 #include <QColorSpace>
 #include <QCoreApplication>
-#include <QDataStream>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -258,7 +257,6 @@ struct PayloadSignature final {
     size_t originalHtmlHash = 0;
     size_t originalTextHash = 0;
     size_t resultStyleHash = 0;
-    size_t canvasSamplingHash = 0;
     size_t canvasSessionHash = 0;
     size_t recognitionResultsHash = 0;
     size_t textAnnotationsHash = 0;
@@ -271,7 +269,6 @@ bool operator==(const PayloadSignature& first, const PayloadSignature& second) {
            first.originalHtmlHash == second.originalHtmlHash &&
            first.originalTextHash == second.originalTextHash &&
            first.resultStyleHash == second.resultStyleHash &&
-           first.canvasSamplingHash == second.canvasSamplingHash &&
            first.canvasSessionHash == second.canvasSessionHash &&
            first.recognitionResultsHash == second.recognitionResultsHash &&
            first.textAnnotationsHash == second.textAnnotationsHash;
@@ -295,12 +292,6 @@ PayloadSignature payloadSignature(const PinnedWindowRecord& record,
     signature.originalHtmlHash = qHash(record.originalHtml);
     signature.originalTextHash = qHash(record.originalText);
     signature.resultStyleHash = payloadHash(record.resultStyle);
-    for (const auto& source : record.canvasSamplingImages)
-        signature.canvasSamplingHash =
-            qHashMulti(signature.canvasSamplingHash, source.image.cacheKey(), source.canvasRect.x(),
-                       source.canvasRect.y(), source.canvasRect.width(), source.canvasRect.height(),
-                       source.coverage.x(), source.coverage.y(), source.coverage.width(),
-                       source.coverage.height(), source.smartEraseSource);
     signature.canvasSessionHash = payloadHash(record.canvasSession);
     signature.recognitionResultsHash = payloadHash(record.recognitionResults);
     signature.textAnnotationsHash = payloadHash(record.textAnnotations);
@@ -471,8 +462,6 @@ QJsonObject payloadsToJson(const PinnedWindowRecord& record) {
     if (!record.resultStyle.isEmpty()) {
         payloads.insert(QStringLiteral("result_style"), QStringLiteral("result_style.bin"));
     }
-    if (!record.canvasSamplingImages.isEmpty())
-        payloads.insert(QStringLiteral("canvas_sampling"), QStringLiteral("canvas_sampling.bin"));
     if (!record.canvasSession.isEmpty()) {
         payloads.insert(QStringLiteral("canvas_session"), QStringLiteral("canvas_session.bin"));
     }
@@ -732,7 +721,6 @@ QJsonObject payloadsDescriptor(const StoredRecord& stored) {
 
 void clearResidentPayload(PinnedWindowRecord* record) {
     record->image = {};
-    record->canvasSamplingImages.clear();
     record->animationSource.reset();
     record->originalHtml.clear();
     record->originalText.clear();
@@ -763,26 +751,17 @@ qint64 retainedAnimationBytes(const PinnedWindowRecord& record) {
     return bytes;
 }
 
-qint64 samplingImageBytes(const PinnedWindowRecord& record) {
-    qint64 bytes = 0;
-    for (const auto& source : record.canvasSamplingImages)
-        bytes += source.image.sizeInBytes();
-    return bytes;
-}
-
 qint64 residentPayloadBytes(const StoredRecord& stored) {
     const auto& record = stored.record;
-    return record.image.sizeInBytes() + samplingImageBytes(record) +
-           2 * record.originalHtml.size() + 2 * record.originalText.size() +
-           record.resultStyle.size() + record.canvasSession.size() +
-           record.recognitionResults.size() + record.textAnnotations.size() +
-           retainedAnimationBytes(record) +
+    return record.image.sizeInBytes() + 2 * record.originalHtml.size() +
+           2 * record.originalText.size() + record.resultStyle.size() +
+           record.canvasSession.size() + record.recognitionResults.size() +
+           record.textAnnotations.size() + retainedAnimationBytes(record) +
            (stored.preparedSource ? stored.preparedSource->bytes().size() : 0);
 }
 
 void clearResidentImmutableSource(PinnedWindowRecord* record) {
     record->image = {};
-    record->canvasSamplingImages.clear();
     record->animationSource.reset();
     record->originalHtml.clear();
     record->originalText.clear();
@@ -806,61 +785,12 @@ bool writeBytes(const QString& path, const QByteArray& bytes) {
     return true;
 }
 
-bool validSamplingGeometry(const PinnedCanvasSamplingImage& source) {
-    const auto finite = [](const QRectF& rect) {
-        return rect.isValid() && std::isfinite(rect.x()) && std::isfinite(rect.y()) &&
-               std::isfinite(rect.width()) && std::isfinite(rect.height());
-    };
-    return finite(source.canvasRect) && finite(source.coverage) &&
-           source.canvasRect.contains(source.coverage);
-}
-
-bool validSamplingImages(const QList<PinnedCanvasSamplingImage>& sources) {
-    if (sources.size() > 256)
-        return false;
-    qint64 bytes = 0;
-    for (const auto& source : sources) {
-        if (source.image.isNull() || !validSamplingGeometry(source) ||
-            source.image.sizeInBytes() > kMaximumImageBytes - bytes)
-            return false;
-        bytes += source.image.sizeInBytes();
-    }
-    return true;
-}
-
-// Encode on the repository writer, never on the pin's first-frame path.
-bool writeSamplingImages(const QString& path, const QList<PinnedCanvasSamplingImage>& sources,
-                         const QString& compression) {
-    if (!validSamplingImages(sources))
-        return false;
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-    QDataStream stream(&file);
-    stream.setVersion(QDataStream::Qt_6_0);
-    stream << quint32(1) << quint32(sources.size());
-    for (const auto& source : sources) {
-        const auto bytes = encodeImage(source.image, compression);
-        if (bytes.isEmpty() || bytes.size() > kMaximumImageBytes - file.pos())
-            return false;
-        stream << source.canvasRect << source.coverage << source.smartEraseSource
-               << quint64(bytes.size());
-        if (stream.status() != QDataStream::Ok || file.write(bytes) != bytes.size())
-            return false;
-    }
-    return stream.status() == QDataStream::Ok && file.commit();
-}
-
 bool writePayload(const QString& root, const StoredRecord& stored, const QString& compression) {
     const PinnedWindowRecord& record = stored.record;
     const QString directory = payloadDirectory(root, record.id);
     if (!QDir().mkpath(directory)) {
         return false;
     }
-    if (!record.canvasSamplingImages.isEmpty() &&
-        !writeSamplingImages(QDir(directory).filePath(QStringLiteral("canvas_sampling.bin")),
-                             record.canvasSamplingImages, compression))
-        return false;
     if (record.animationSource) {
         if (!validAnimationSource(record.animationSource))
             return false;
@@ -999,8 +929,7 @@ bool validatePayloads(const QJsonObject& payloads, const QString& root, const QS
         }
         const QString fileName = it.value().toString();
         if (!safeFileName(fileName) ||
-            ((it.key() == QStringLiteral("image") || it.key() == QStringLiteral("animation") ||
-              it.key() == QStringLiteral("canvas_sampling")) &&
+            ((it.key() == QStringLiteral("image") || it.key() == QStringLiteral("animation")) &&
              !QFileInfo(QDir(directory).filePath(fileName)).isFile())) {
             return false;
         }
@@ -1032,54 +961,6 @@ bool validatePreviewPayloads(const QJsonObject& payloads, const QString& root, c
         return validFile(QStringLiteral("html"), false) && validFile(QStringLiteral("text"), false);
     }
     return validFile(QStringLiteral("image"), true);
-}
-
-bool readSamplingImages(const QString& path, PinnedWindowRecord* record,
-                        const std::function<bool(qint64)>& allocationCheck,
-                        const std::function<bool()>& cancelled) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() > kMaximumImageBytes)
-        return false;
-    QDataStream stream(&file);
-    stream.setVersion(QDataStream::Qt_6_0);
-    quint32 version = 0;
-    quint32 count = 0;
-    stream >> version >> count;
-    if (version != 1 || count == 0 || count > 256)
-        return false;
-    QList<PinnedCanvasSamplingImage> sources;
-    qint64 retainedBytes = record->image.sizeInBytes();
-    qint64 samplingBytes = 0;
-    for (quint32 i = 0; i < count; ++i) {
-        PinnedCanvasSamplingImage source;
-        quint64 length = 0;
-        stream >> source.canvasRect >> source.coverage >> source.smartEraseSource >> length;
-        if (stream.status() != QDataStream::Ok || !validSamplingGeometry(source) || length == 0 ||
-            length > quint64(file.bytesAvailable()) || length > quint64(kMaximumImageBytes) ||
-            (cancelled && cancelled()) ||
-            (allocationCheck && !allocationCheck(retainedBytes + 2 * qint64(length))))
-            return false;
-        const auto bytes = file.read(qint64(length));
-        if (bytes.size() != qint64(length))
-            return false;
-        const auto size = image_codec::inspectSize(bytes, snow::image::Format::png);
-        if (size.isEmpty() ||
-            qint64(size.width()) > (kMaximumImageBytes - samplingBytes) / 4 / size.height())
-            return false;
-        const auto budget = [&](qint64 additional) {
-            return !allocationCheck || allocationCheck(retainedBytes + additional);
-        };
-        source.image = decodeImageBytes(bytes, snow::image::Format::png, budget, cancelled, true);
-        if (source.image.isNull())
-            return false;
-        samplingBytes += source.image.sizeInBytes();
-        retainedBytes += source.image.sizeInBytes();
-        sources.append(std::move(source));
-    }
-    if (stream.status() != QDataStream::Ok || !file.atEnd())
-        return false;
-    record->canvasSamplingImages = std::move(sources);
-    return true;
 }
 
 bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindowRecord* record,
@@ -1230,12 +1111,6 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
     if (sourceOnly) {
         return true;
     }
-    if (record->canvasSamplingImages.isEmpty() &&
-        payloads.contains(QStringLiteral("canvas_sampling")) &&
-        !readSamplingImages(
-            QDir(directory).filePath(payloads.value(QStringLiteral("canvas_sampling")).toString()),
-            record, allocationCheck, cancelled))
-        return false;
     const std::pair<const char*, QByteArray*> blobs[] = {
         {"result_style", &record->resultStyle},
         {"canvas_session", &record->canvasSession},
@@ -1415,6 +1290,9 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     if (source >= 0 && source <= static_cast<int>(PinnedWindowCreationSource::SelectedFiles))
         record.creationSource = static_cast<PinnedWindowCreationSource>(source);
     QJsonObject payloads = object.value(QStringLiteral("payloads")).toObject();
+    // Older editable pins saved full capture images for sampling outside the crop.
+    // The cropped image is now the only background and sampling source.
+    payloads.remove(QStringLiteral("canvas_sampling"));
     if (!validatePayloads(payloads, root, record.id, record.sourceKind)) {
         return false;
     }
@@ -1988,8 +1866,7 @@ PinnedWindowRepository::loadRecord(const QString& id,
         const QString directory = payloadDirectory(impl->root, id);
         for (auto it = stored.payloads.begin(); it != stored.payloads.end(); ++it) {
             if (it.key() == QStringLiteral("directory") || it.key() == QStringLiteral("image") ||
-                it.key() == QStringLiteral("animation") ||
-                it.key() == QStringLiteral("canvas_sampling"))
+                it.key() == QStringLiteral("animation"))
                 continue;
             const auto name = it.value().toString();
             if (!safeFileName(name))
@@ -2001,8 +1878,7 @@ PinnedWindowRepository::loadRecord(const QString& id,
             payloadBytes += 8 * bytes;
         }
         if (!allocationCheck(payloadBytes + 2 * stored.record.image.sizeInBytes() +
-                             2 * retainedAnimationBytes(stored.record) +
-                             2 * samplingImageBytes(stored.record)))
+                             2 * retainedAnimationBytes(stored.record)))
             return std::nullopt;
     }
     const std::function<bool(qint64)> imageBudget =
@@ -2654,7 +2530,6 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
         record.originalHtml.toUtf8().size() > kMaximumPayloadBytes ||
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
-        !validSamplingImages(record.canvasSamplingImages) ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
         record.recognitionResults.size() > kMaximumPayloadBytes ||
         record.textAnnotations.size() > kMaximumPayloadBytes) {
@@ -2746,7 +2621,6 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
         record.originalHtml.toUtf8().size() > kMaximumPayloadBytes ||
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
-        !validSamplingImages(record.canvasSamplingImages) ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
         record.recognitionResults.size() > kMaximumPayloadBytes ||
         record.textAnnotations.size() > kMaximumPayloadBytes) {
@@ -2854,7 +2728,6 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         record.checkerboardEnabled = existing->record.checkerboardEnabled;
     }
     record.resultStyle = existing->record.resultStyle;
-    record.canvasSamplingImages = existing->record.canvasSamplingImages;
 
     QJsonObject payloads = existing->payloads;
     // An empty descriptor denotes a resident source awaiting its first commit.
@@ -2969,7 +2842,6 @@ StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool
         record.originalHtml.toUtf8().size() > kMaximumPayloadBytes ||
         record.originalText.toUtf8().size() > kMaximumPayloadBytes ||
         record.resultStyle.size() > kMaximumPayloadBytes ||
-        !validSamplingImages(record.canvasSamplingImages) ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
         record.recognitionResults.size() > kMaximumPayloadBytes ||
         record.textAnnotations.size() > kMaximumPayloadBytes) {
@@ -3350,7 +3222,7 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
                 candidate.bytes =
                     stored.record.canvasSession.size() + stored.record.recognitionResults.size() +
                     stored.record.textAnnotations.size() + stored.record.resultStyle.size() +
-                    samplingImageBytes(stored.record) + stored.record.originalHtml.toUtf8().size() +
+                    stored.record.originalHtml.toUtf8().size() +
                     stored.record.originalText.toUtf8().size();
                 if (stored.preparedSource.has_value())
                     candidate.bytes += stored.preparedSource->bytes().size();

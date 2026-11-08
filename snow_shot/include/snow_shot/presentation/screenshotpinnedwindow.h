@@ -254,8 +254,6 @@ class ScreenshotPinnedWindow final : public QWidget {
         QString groupId = QStringLiteral("default");
         // Editable document imports seed the model without restoring window preferences.
         QByteArray initialCanvasSession;
-        ScreenshotImageSource initialCanvasSamplingSource;
-        SnowCanvasSmartEraseSnapshot initialSmartErase;
         QByteArray initialCanvasHistory;
         QString initialCanvasTool;
     };
@@ -270,6 +268,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QRect currentNativeGeometry() const;
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
     void requestRenderedImageSnapshot(std::function<void(ScreenshotPinnedImageSnapshot)> ready);
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     void checkpointStorage();
     [[nodiscard]] ScreenshotPinnedImageSnapshot stitchingSnapshot();
     [[nodiscard]] ScreenshotPinnedImageSnapshot splittingSnapshot();
@@ -552,7 +551,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] static bool batchSavePending();
     void uploadToCloud();
     void cancelCloudUpload();
-    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     enum class ViewportExportMode { Complete, RecognitionBackground };
     [[nodiscard]] ScreenshotPinnedImageSnapshot
     renderedImageSnapshot(ViewportExportMode mode = ViewportExportMode::Complete);
@@ -579,7 +577,6 @@ class ScreenshotPinnedWindow final : public QWidget {
                                           QImage original, QImage transformed, int frameIndex,
                                           quint64 token);
     [[nodiscard]] QRect imageTransformGeometry(int quarterTurns) const;
-    [[nodiscard]] ScreenshotImageSource activeAnnotationSamplingSource() const;
     void rebuildTransformedImage();
     void applyScale(int percent);
     void applyWheelScale(double percent, const QPointF& nativeCursor);
@@ -826,9 +823,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotResultStyle m_resultStyle;
     std::optional<snow_shot::storage::PinnedBorderAppearance> m_borderAppearance;
     ScreenshotImageSource m_imageSource;
-    // Original canvas coordinates survive transforms and become active again on reset.
-    ScreenshotImageSource m_originalAnnotationSamplingSource;
-    SnowCanvasSmartEraseSnapshot m_initialSmartErase;
     QImage m_originalImage;
     QImage m_transformedImage;
     std::shared_ptr<const ScreenshotAnimationSource> m_animationSource;

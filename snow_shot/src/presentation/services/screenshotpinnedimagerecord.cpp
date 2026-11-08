@@ -84,11 +84,6 @@ preparePinnedImageRecord(storage::PinnedWindowRecord record,
     if (result.backgroundImage.isNull() || stopped())
         return prepared;
     result.backgroundCanvasRect = record.contentCanvasRect;
-    if (record.imageTransform.isIdentity()) {
-        for (const auto& source : record.canvasSamplingImages)
-            result.samplingSources.append(
-                {source.image, source.canvasRect, source.coverage, source.smartEraseSource});
-    }
     if (!result.backgroundCanvasRect.isValid() || result.backgroundCanvasRect.isEmpty()) {
         const auto source = record.canvasSourceRect;
         result.backgroundCanvasRect =

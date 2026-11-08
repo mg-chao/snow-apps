@@ -93,59 +93,59 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
     return value;
 }
 
-void editablePinSamplingImagesRoundTrip() {
+void editablePinCroppedImageRoundTrip() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
     const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto record = recordWithId(id, patternedImage(QSize(12, 6), 3));
     record.canvasSession = QByteArrayLiteral("full session with undo and redo");
-    record.canvasSamplingImages = {
-        {patternedImage(QSize(100, 50), 7), QRectF(-30, -20, 80, 40), QRectF(-20, -10, 60, 30)},
-        {patternedImage(QSize(10, 10), 9), QRectF(5, 5, 8, 8), QRectF(5, 5, 8, 8), false}};
-    const auto verify = [&](const storage::PinnedWindowRecord& loaded) {
-        require(samePixels(loaded.image, record.image) &&
-                    loaded.canvasSamplingImages.size() == record.canvasSamplingImages.size(),
-                "clean cropped base and original sampling layers round trip independently");
-        for (qsizetype i = 0; i < record.canvasSamplingImages.size(); ++i) {
-            const auto& expected = record.canvasSamplingImages[i];
-            const auto& actual = loaded.canvasSamplingImages[i];
-            require(samePixels(actual.image, expected.image) &&
-                        actual.canvasRect == expected.canvasRect &&
-                        actual.coverage == expected.coverage &&
-                        actual.smartEraseSource == expected.smartEraseSource,
-                    "sampling layers retain fractional scale, negative origin and cursor flags");
-        }
-    };
     require(repository.upsert(record).success && repository.flush().success,
-            "write editable pin sampling images");
+            "write an editable pin with only its cropped background");
     auto loaded = repository.loadRecord(id);
-    require(loaded.has_value(), "reload sampling donors after payload demotion");
-    verify(*loaded);
+    require(loaded && samePixels(loaded->image, record.image) &&
+                loaded->canvasSession == record.canvasSession,
+            "cropped background and editable session round trip independently");
     loaded->canvasSession = QByteArrayLiteral("updated undo stack");
-    loaded->canvasSamplingImages.clear();
     require(repository.updateState(*loaded).success && repository.flush().success,
-            "document-only updates retain committed immutable sampling sources");
-    storage::PinnedWindowRepository restarted(directory.path(), false);
-    loaded = restarted.loadRecord(id);
-    require(loaded && loaded->canvasSession == QByteArrayLiteral("updated undo stack"),
-            "restart loads the updated session");
-    verify(*loaded);
-    require(!restarted.loadRecord(id, [](qint64) { return false; }),
-            "sampling payload obeys allocation admission");
+            "document-only updates retain the cropped background");
     const auto sourcePath = repository.imagePath(id);
-    require(sourcePath.has_value(), "sampling pin has a clean source file");
+    require(sourcePath.has_value(), "editable pin has a cropped source file");
     const auto samplingPath =
         QFileInfo(*sourcePath).dir().filePath(QStringLiteral("canvas_sampling.bin"));
-    QFile corrupted(samplingPath);
-    require(corrupted.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
-                corrupted.write("invalid") == 7,
-            "corrupt the sampling payload");
-    corrupted.close();
-    require(!restarted.loadRecord(id), "corrupt sampling sources fail instead of losing context");
-    record.canvasSamplingImages.clear();
-    require(repository.upsert(record).success && repository.flush().success &&
-                !QFileInfo::exists(samplingPath) && repository.loadRecord(id).has_value(),
-            "replacing a pin prunes its obsolete sampling sources");
+    require(!QFileInfo::exists(samplingPath), "editable pins do not write sampling images");
+
+    QFile manifest(directory.filePath(QStringLiteral("pinned_windows_v2/index.json")));
+    require(manifest.open(QIODevice::ReadOnly), "read editable pin manifest");
+    auto root = QJsonDocument::fromJson(manifest.readAll()).object();
+    manifest.close();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto legacy = records.at(0).toObject();
+    auto payloads = legacy.value(QStringLiteral("payloads")).toObject();
+    require(!payloads.contains(QStringLiteral("canvas_sampling")),
+            "new manifests contain no sampling payload");
+    payloads.insert(QStringLiteral("canvas_sampling"), QStringLiteral("canvas_sampling.bin"));
+    legacy.insert(QStringLiteral("payloads"), payloads);
+    records.replace(0, legacy);
+    root.insert(QStringLiteral("records"), records);
+    require(manifest.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "write a legacy sampling descriptor");
+    const auto bytes = QJsonDocument(root).toJson();
+    require(manifest.write(bytes) == bytes.size(), "legacy fixture writes");
+    manifest.close();
+    for (const bool withObsoleteFile : {false, true}) {
+        if (withObsoleteFile) {
+            QFile obsolete(samplingPath);
+            require(obsolete.open(QIODevice::WriteOnly) && obsolete.write("invalid") == 7,
+                    "write an unreadable obsolete sampling payload");
+        }
+        storage::PinnedWindowRepository restarted(directory.path(), false);
+        loaded = restarted.loadRecord(id);
+        require(loaded && samePixels(loaded->image, record.image) &&
+                    loaded->canvasSession == QByteArrayLiteral("updated undo stack"),
+                "legacy pins restore without reading missing or corrupt sampling images");
+        require(!restarted.loadRecord(id, [](qint64) { return false; }),
+                "cropped background still obeys allocation admission");
+    }
 }
 
 void imagePathsResolveOnlyPersistedImages() {
@@ -3208,7 +3208,7 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--editable-pin-only"))) {
-        editablePinSamplingImagesRoundTrip();
+        editablePinCroppedImageRoundTrip();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--text-annotations-only"))) {
@@ -3271,7 +3271,7 @@ int main(int argc, char* argv[]) {
         markdownFormatMetadataRoundTrips();
         return 0;
     }
-    editablePinSamplingImagesRoundTrip();
+    editablePinCroppedImageRoundTrip();
     imagePathsResolveOnlyPersistedImages();
     pinnedTextStyleMetadataRoundTrips();
     mislabeledImageFilesSurviveRestart();
