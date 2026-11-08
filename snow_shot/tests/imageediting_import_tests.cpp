@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/components/imagedropsurface.h"
 #include "widgets/button.h"
 #include "widgets/message.h"
 #include "widgets/modal.h"
@@ -19,6 +20,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QUrl>
+#include <QScopeGuard>
 #include <atomic>
 #include <stdexcept>
 
@@ -100,6 +102,76 @@ class SelectedFiles final : public snow_shot::platform::SelectedFileBackend {
         return result;
     }
 };
+
+void previewBackgroundFollowsImageAvailability() {
+    auto& theme = styles::ThemeManager::instance();
+    const auto originalTheme = theme.themeMode();
+    const auto restoreTheme = qScopeGuard([&] { theme.setThemeMode(originalTheme); });
+    const auto background = [](ImageEditingWindow& window) {
+        QImage pixels(40, 40, QImage::Format_ARGB32_Premultiplied);
+        pixels.fill(Qt::transparent);
+        surface(window)->render(&pixels, QPoint(), QRegion(pixels.rect()),
+                                QWidget::DrawWindowBackground);
+        return pixels;
+    };
+    for (const auto mode : {styles::ThemeMode::Light, styles::ThemeMode::Dark}) {
+        theme.setThemeMode(mode);
+        ImageEditingWindow window;
+        window.presentEmpty();
+        {
+            QWidget reference(surface(window)->parentWidget());
+            reference.resize(surface(window)->size());
+            components::ImageDropSurface referenceDrop(false, &reference);
+            referenceDrop.setGeometry(reference.rect());
+            referenceDrop.show();
+            reference.show();
+            const auto render = [](QWidget* widget, QWidget::RenderFlags flags, qreal scale) {
+                QImage pixels(
+                    QSize(qRound(widget->width() * scale), qRound(widget->height() * scale)),
+                    QImage::Format_ARGB32_Premultiplied);
+                pixels.setDevicePixelRatio(scale);
+                pixels.fill(Qt::transparent);
+                widget->render(&pixels, QPoint(), QRegion(), flags);
+                return pixels;
+            };
+            for (const qreal scale : {1.0, 1.5, 2.0}) {
+                require(render(surface(window), QWidget::DrawWindowBackground, scale) ==
+                            render(&reference, QWidget::DrawWindowBackground, scale),
+                        "empty preview inherits its container background like image stitching");
+                const auto actual = render(
+                    surface(window), QWidget::DrawWindowBackground | QWidget::DrawChildren, scale);
+                const auto expected = render(
+                    &reference, QWidget::DrawWindowBackground | QWidget::DrawChildren, scale);
+                const int side = qRound(40 * scale);
+                for (const auto& corner :
+                     {QPoint(), QPoint(actual.width() - side, 0), QPoint(0, actual.height() - side),
+                      QPoint(actual.width() - side, actual.height() - side)}) {
+                    const QRect patch(corner, QSize(side, side));
+                    require(
+                        actual.copy(patch) == expected.copy(patch),
+                        "empty preview fill, dashed border and rounded corners match stitching's "
+                        "shared drop surface in both themes at every DPI scale");
+                }
+            }
+        }
+        const auto directory = qEnvironmentVariable("SNOW_IMAGE_EDITING_EMPTY_SCREENSHOT_DIR");
+        if (!directory.isEmpty()) {
+            require(QDir().mkpath(directory), "create empty editor inspection directory");
+            const auto filename = mode == styles::ThemeMode::Light ? QStringLiteral("light.png")
+                                                                   : QStringLiteral("dark.png");
+            require(surface(window)->window()->grab().save(QDir(directory).filePath(filename)),
+                    "save empty editor inspection image");
+        }
+        ImageEditingSource source;
+        source.image = QImage(80, 60, QImage::Format_ARGB32);
+        source.image.fill(Qt::transparent);
+        source.canvasRect = QRectF(QPointF(), QSizeF(source.image.size()));
+        window.present(std::move(source));
+        const auto loaded = background(window);
+        require(loaded.pixelColor(5, 5) != loaded.pixelColor(15, 5),
+                "loading an image restores the transparency checkerboard");
+    }
+}
 
 void emptyAndChooser(const QString& first, const QString& second) {
     std::function<void(QStringList)> choose;
@@ -324,6 +396,7 @@ void runImageEditingImportTests() {
     require(corrupt.open(QIODevice::WriteOnly) && corrupt.write("not an image") > 0,
             "write corrupt image");
     corrupt.close();
+    previewBackgroundFollowsImageAvailability();
     emptyAndChooser(first, second);
     selectionAndDrop(first, second, broken, folder);
     failedSelectionsAndClose(first);

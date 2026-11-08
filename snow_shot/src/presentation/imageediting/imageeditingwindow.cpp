@@ -113,11 +113,15 @@ QString imageFileFilter() {
 
 class PreviewSurface final : public QWidget {
   public:
-    explicit PreviewSurface(QWidget* parent = nullptr) : QWidget(parent) {
+    explicit PreviewSurface(ImageEditingDocument& document, QWidget* parent = nullptr)
+        : QWidget(parent), m_document(document) {
         connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
                 [this] { update(); });
+        connect(&document, &ImageEditingDocument::baseImageChanged, this, [this] { update(); });
     }
     void paintEvent(QPaintEvent*) override {
+        if (m_document.image().isNull())
+            return;
         QPainter painter(this);
         const auto theme = styles::ThemeManager::instance().themeColorScheme().map;
         constexpr int tile = 10;
@@ -137,6 +141,7 @@ class PreviewSurface final : public QWidget {
     }
 
   private:
+    const ImageEditingDocument& m_document;
     QBrush m_checkerboard;
     QColor m_background;
     QColor m_foreground;
@@ -207,7 +212,7 @@ struct ImageEditingWindow::Impl {
 
     Impl(ImageEditingWindow& owner, ImageEditingServices service)
         : q(owner), services(std::move(service)), document(&q), modal(new AdModal(&q)),
-          surface(new PreviewSurface), canvas(new ImageEditingCanvas(document, surface)),
+          surface(new PreviewSurface(document)), canvas(new ImageEditingCanvas(document, surface)),
           zoomToolbar(new components::CanvasActionToolbar(canvas)),
           stack(new QStackedLayout(surface)),
           floating(new ScreenshotFloatingToolPaletteWindow(editorOptions())),
