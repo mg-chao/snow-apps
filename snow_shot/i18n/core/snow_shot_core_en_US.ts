@@ -436,6 +436,14 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Customize toolbar</translation>
         </message>
         <message>
+            <source>Edit selected images</source>
+            <translation>Edit selected images</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>Full-screen canvas</translation>
+        </message>
+        <message>
             <source>Hide during screenshots</source>
             <translation>Hide during screenshots</translation>
         </message>
@@ -464,8 +472,20 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>Screenshot</translation>
         </message>
         <message>
+            <source>Screenshot history</source>
+            <translation>Screenshot history</translation>
+        </message>
+        <message>
             <source>Show toolbar</source>
             <translation>Show toolbar</translation>
+        </message>
+        <message>
+            <source>Split selected images</source>
+            <translation>Split selected images</translation>
+        </message>
+        <message>
+            <source>Stitch selected images</source>
+            <translation>Stitch selected images</translation>
         </message>
         <message>
             <source>Toolbar mode</source>
