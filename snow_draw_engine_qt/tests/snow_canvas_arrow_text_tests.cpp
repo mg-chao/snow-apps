@@ -324,6 +324,13 @@ void arrowAndLineControlsShowHandCursorsAndHoverHalos() {
                                          qRound((point.y() + 7.0) * dpr), 6 * dpr, 2 * dpr);
                     require(normal.copy(haloBand) != hovered.copy(haloBand),
                             "hover must paint a halo outside the normal control circle");
+                    if (point.x() != 280.0) {
+                        const QPoint controlPixel(qRound(point.x() * dpr),
+                                                  qRound((point.y() + 2.0) * dpr));
+                        require(std::abs(normal.pixelColor(controlPixel).red() -
+                                         hovered.pixelColor(controlPixel).red()) < 32,
+                                "the endpoint fill must stay above the hover halo");
+                    }
                     mouse(canvas, QEvent::MouseMove, {40.0, 40.0}, Qt::NoButton, Qt::NoButton);
                     require(render(dpr) == normal, "moving away must erase the hover halo");
                 }

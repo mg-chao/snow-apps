@@ -151,20 +151,6 @@ pub(crate) fn compose_overlay_items(
             )));
         }
     }
-    for handle in &presentation.arrow_handles {
-        if handle.kind == ArrowHandleKind::FocusPoint
-            && let Some(anchor) = handle.anchor
-        {
-            items.push(OverlayDisplayItem::FocusConnection(focus_connection_item(
-                anchor,
-                handle.center,
-                zoom,
-            )));
-        }
-        items.push(OverlayDisplayItem::Rectangle(arrow_handle_item(
-            *handle, zoom,
-        )));
-    }
     for handle in presentation
         .arrow_handles
         .iter()
@@ -182,6 +168,20 @@ pub(crate) fn compose_overlay_items(
         highlight.stroke = TRANSPARENT;
         highlight.stroke_width = 0.0;
         items.push(OverlayDisplayItem::Rectangle(highlight));
+    }
+    for handle in &presentation.arrow_handles {
+        if handle.kind == ArrowHandleKind::FocusPoint
+            && let Some(anchor) = handle.anchor
+        {
+            items.push(OverlayDisplayItem::FocusConnection(focus_connection_item(
+                anchor,
+                handle.center,
+                zoom,
+            )));
+        }
+        items.push(OverlayDisplayItem::Rectangle(arrow_handle_item(
+            *handle, zoom,
+        )));
     }
 
     for guide in &presentation.snap_guides {
@@ -1029,7 +1029,7 @@ mod tests {
     }
 
     #[test]
-    fn arrow_control_hover_draws_a_translucent_circle_at_a_constant_screen_size() {
+    fn arrow_control_hover_keeps_all_handles_above_a_constant_size_halo() {
         for kind in [
             ArrowHandleKind::Endpoint,
             ArrowHandleKind::Segment,
@@ -1047,15 +1047,21 @@ mod tests {
                     hovered: false,
                 };
                 let mut presentation = EditorPresentationState {
-                    arrow_handles: vec![handle],
+                    arrow_handles: vec![
+                        handle,
+                        ArrowHandleState {
+                            center: Point::new(handle.center.x + 7.0 / zoom, handle.center.y),
+                            ..handle
+                        },
+                    ],
                     ..Default::default()
                 };
                 let normal = compose_overlay_items(SnapConfig::default(), &presentation, view);
                 presentation.arrow_handles[0].hovered = true;
                 let hovered = compose_overlay_items(SnapConfig::default(), &presentation, view);
                 assert_eq!(hovered.len(), normal.len() + 1);
-                assert_eq!(&hovered[..normal.len()], normal.as_slice());
-                let Some(OverlayDisplayItem::Rectangle(highlight)) = hovered.last() else {
+                assert_eq!(&hovered[1..], normal.as_slice());
+                let Some(OverlayDisplayItem::Rectangle(highlight)) = hovered.first() else {
                     panic!("hover circle is missing")
                 };
                 assert_eq!(highlight.center_x, handle.center.x);
