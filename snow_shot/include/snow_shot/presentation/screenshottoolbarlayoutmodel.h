@@ -65,6 +65,11 @@ enum class Item {
 enum class Icon {
     Screenshot,
     ScreenshotDelay,
+    ScreenshotHistory,
+    FullScreenCanvas,
+    ImageStitching,
+    ImageSplitting,
+    ImageEditing,
     Select,
     Shape,
     Arrow,
@@ -365,6 +370,21 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
                         Icon::ScreenshotDelay});
         result.prepend({"screenshot", "FloatingToolbar",
                         QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot"), Icon::Screenshot});
+        result.append({"screenshot-history", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot history"),
+                       Icon::ScreenshotHistory});
+        result.append({"global-canvas", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Full-screen canvas"),
+                       Icon::FullScreenCanvas});
+        result.append({"stitch-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Stitch selected images"),
+                       Icon::ImageStitching});
+        result.append({"split-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Split selected images"),
+                       Icon::ImageSplitting});
+        result.append({"edit-selected-images", "FloatingToolbar",
+                       QT_TRANSLATE_NOOP("FloatingToolbar", "Edit selected images"),
+                       Icon::ImageEditing});
         return result;
     }
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
@@ -979,6 +999,16 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return snow_shot::presentation::icons::custom::twotone::ScreenshotFeature();
     case Icon::ScreenshotDelay:
         return custom::ScreenshotDelay();
+    case Icon::ScreenshotHistory:
+        return adqt::icons::antd::outlined::History();
+    case Icon::FullScreenCanvas:
+        return custom::FullScreenCanvas();
+    case Icon::ImageStitching:
+        return custom::ImageStitching();
+    case Icon::ImageSplitting:
+        return custom::ImageSplitting();
+    case Icon::ImageEditing:
+        return custom::ImageEditing();
     case Icon::Select:
         return custom::ToolSelect();
     case Icon::Shape:
