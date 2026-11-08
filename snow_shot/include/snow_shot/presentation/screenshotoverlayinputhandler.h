@@ -124,8 +124,9 @@ struct ScreenshotOverlayInputActions {
     std::function<bool(const QString&)> canActivateDrawingShortcut = [](const QString&) {
         return true;
     };
-    // Suppress automatic tool restoration and pending quick actions before an
-    // explicit command confirms the selection and shows the toolbar.
+    // Replace the pending capture action with an explicit toolbar command,
+    // suppress remembered tools, and allow the visible session's editing toolbar.
+    // Region selection commands must preserve the pending capture action.
     std::function<void()> prepareExplicitSelectionCommand = []() {};
     std::function<bool()> toggleGuidesForCurrentSession = []() { return false; };
     std::function<bool()> cursorVisibilityAvailable = [] { return false; };
@@ -144,6 +145,9 @@ struct ScreenshotOverlayInputActions {
     std::function<void(int minDx, int minDy, int maxDx, int maxDy)> adjustSelectionFromToolbar =
         [](int, int, int, int) {};
     std::function<bool()> selectNextPreviousSelection = [] { return false; };
+    // Suppress remembered drawing tools for an exact region replacement while
+    // preserving the pending capture action and its toolbar policy.
+    std::function<void()> prepareSelectionReplacement = [] {};
 };
 
 struct ScreenshotOverlayInputHandlerContext {
