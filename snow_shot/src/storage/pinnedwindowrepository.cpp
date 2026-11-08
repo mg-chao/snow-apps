@@ -7,6 +7,7 @@
 #include "snow_shot/storage/storagelogging.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "pinnedwindowstorageconstants_p.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 
 #include <QBuffer>
 #include <QCache>
@@ -327,8 +328,9 @@ QByteArray encodeImage(const QImage& image, const QString& compression) {
 
 QImage decodeImageBytes(const QByteArray& bytes, snow::image::Format format,
                         const std::function<bool(qint64)>& allocationCheck,
-                        const std::function<bool()>& cancelled, bool firstFrameOnly) {
-    if (allocationCheck || cancelled || firstFrameOnly) {
+                        const std::function<bool()>& cancelled, bool firstFrameOnly,
+                        QSize targetSize = {}, QSize* naturalSize = nullptr) {
+    if (allocationCheck || cancelled || firstFrameOnly || !targetSize.isEmpty()) {
         const auto size = image_codec::inspectSize(bytes, format);
         // Admission and first-frame previews share the repository's decoded RGBA limit.
         // Check before multiplying so oversized dimensions cannot overflow byte estimates.
@@ -338,6 +340,8 @@ QImage decodeImageBytes(const QByteArray& bytes, snow::image::Format format,
         if ((allocationCheck && !allocationCheck(2 * bytes.size() + 8 * pixels)) ||
             (cancelled && cancelled()))
             return {};
+        if (!targetSize.isEmpty())
+            return image_codec::decodeThumbnail(bytes, format, targetSize, naturalSize, cancelled);
         auto image = firstFrameOnly ? image_codec::decodeFirstFrame(bytes, format)
                                     : image_codec::decode(bytes, format, nullptr);
         return cancelled && cancelled() ? QImage{} : std::move(image);
@@ -350,8 +354,9 @@ QImage decodeImageBytes(const QByteArray& bytes, snow::image::Format format,
 }
 
 QImage decodeImage(const QString& path, const std::function<bool(qint64)>& allocationCheck = {},
-                   const std::function<bool()>& cancelled = {}, bool firstFrameOnly = false) {
-    if (allocationCheck || cancelled || firstFrameOnly) {
+                   const std::function<bool()>& cancelled = {}, bool firstFrameOnly = false,
+                   QSize targetSize = {}, QSize* naturalSize = nullptr) {
+    if (allocationCheck || cancelled || firstFrameOnly || !targetSize.isEmpty()) {
         QFile file(path);
         const auto encodedBytes = file.size();
         if (encodedBytes <= 0 || encodedBytes > kMaximumImageBytes ||
@@ -362,7 +367,7 @@ QImage decodeImage(const QString& path, const std::function<bool(qint64)>& alloc
         if (bytes.size() != encodedBytes || (cancelled && cancelled()))
             return {};
         return decodeImageBytes(bytes, snow::image::Format::png, allocationCheck, cancelled,
-                                firstFrameOnly);
+                                firstFrameOnly, targetSize, naturalSize);
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     return image_codec::decodeFileBgra(path, snow::image::Format::png);
@@ -965,7 +970,8 @@ bool validatePreviewPayloads(const QJsonObject& payloads, const QString& root, c
 
 bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindowRecord* record,
                   bool sourceOnly = false, const std::function<bool(qint64)>& allocationCheck = {},
-                  const std::function<bool()>& cancelled = {}) {
+                  const std::function<bool()>& cancelled = {}, QSize targetSize = {},
+                  QSize* naturalSize = nullptr) {
     if ((cancelled && cancelled()) || record == nullptr ||
         !(sourceOnly ? validatePreviewPayloads(payloads, root, record->id, record->sourceKind)
                      : validatePayloads(payloads, root, record->id, record->sourceKind))) {
@@ -978,7 +984,7 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
             const auto previewName = payloads.value(QStringLiteral("image")).toString();
             if (record->image.isNull())
                 record->image = decodeImage(QDir(directory).filePath(previewName), allocationCheck,
-                                            cancelled, true);
+                                            cancelled, true, targetSize, naturalSize);
             if (record->image.isNull() || record->image.sizeInBytes() > kMaximumImageBytes)
                 return false;
         }
@@ -1027,7 +1033,7 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
         const QString fileName = payloads.value(QStringLiteral("image")).toString();
         if (record->image.isNull())
             record->image = decodeImage(QDir(directory).filePath(fileName), allocationCheck,
-                                        cancelled, sourceOnly);
+                                        cancelled, sourceOnly, targetSize, naturalSize);
         if (record->image.isNull() || record->image.sizeInBytes() > kMaximumImageBytes) {
             return false;
         }
@@ -1074,8 +1080,9 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
             // Original files may have misleading suffixes. Inspect and decode the same bytes
             // already read for animation detection, without reopening the source file.
             if (record->image.isNull())
-                record->image = decodeImageBytes(encoded, snow::image::Format::unknown,
-                                                 allocationCheck, cancelled, sourceOnly);
+                record->image =
+                    decodeImageBytes(encoded, snow::image::Format::unknown, allocationCheck,
+                                     cancelled, sourceOnly, targetSize, naturalSize);
         }
         if (record->image.isNull() || record->image.sizeInBytes() > kMaximumImageBytes)
             return false;
@@ -1898,6 +1905,20 @@ std::optional<PinnedWindowPreviewSource>
 PinnedWindowRepository::loadPreviewSource(const QString& id,
                                           std::function<bool(qint64)> allocationCheck,
                                           std::function<bool()> cancelled) const {
+    return loadPreviewSourceImpl(id, std::move(allocationCheck), std::move(cancelled), {});
+}
+
+std::optional<PinnedWindowPreviewSource>
+PinnedWindowRepository::loadThumbnailSource(const QString& id, QSize targetSize,
+                                            std::function<bool()> cancelled) const {
+    if (targetSize.isEmpty())
+        return std::nullopt;
+    return loadPreviewSourceImpl(id, {}, std::move(cancelled), targetSize);
+}
+
+std::optional<PinnedWindowPreviewSource> PinnedWindowRepository::loadPreviewSourceImpl(
+    const QString& id, std::function<bool(qint64)> allocationCheck, std::function<bool()> cancelled,
+    QSize targetSize) const {
     if (cancelled && cancelled())
         return std::nullopt;
     std::shared_ptr<Impl> impl;
@@ -1967,10 +1988,21 @@ PinnedWindowRepository::loadPreviewSource(const QString& id,
                   return (!cancelled || !cancelled()) && allocationCheck(payloadBytes + bytes);
               })
             : std::function<bool(qint64)>();
+    QSize naturalSize = stored.record.image.size();
     if (!stored.payloads.isEmpty() &&
-        !loadPayloads(impl->root, stored.payloads, &stored.record, true, imageBudget, cancelled)) {
+        !loadPayloads(impl->root, stored.payloads, &stored.record, true, imageBudget, cancelled,
+                      targetSize, &naturalSize)) {
         return std::nullopt;
     }
+    if (cancelled && cancelled())
+        return std::nullopt;
+    if (naturalSize.isEmpty())
+        naturalSize = stored.record.image.size();
+    if (!targetSize.isEmpty() && !stored.record.image.isNull() &&
+        (stored.record.image.width() > targetSize.width() ||
+         stored.record.image.height() > targetSize.height()))
+        stored.record.image = snowCanvasScaleImage(stored.record.image, targetSize,
+                                                   Qt::KeepAspectRatio, Qt::SmoothTransformation);
     if (cancelled && cancelled())
         return std::nullopt;
     return PinnedWindowPreviewSource{stored.record.sourceKind,
@@ -1981,7 +2013,8 @@ PinnedWindowRepository::loadPreviewSource(const QString& id,
                                      std::move(stored.record.originalFileName),
                                      stored.record.createdUtc,
                                      stored.record.textStyle,
-                                     stored.record.textFormat};
+                                     stored.record.textFormat,
+                                     naturalSize};
 }
 
 std::optional<quint64> PinnedWindowRepository::previewSourceRevision(const QString& id,
@@ -2106,7 +2139,12 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summariesIncludingPending()
     return summariesImpl(true);
 }
 
-QVector<PinnedWindowSummary> PinnedWindowRepository::summariesImpl(bool includePending) const {
+QVector<PinnedWindowSummary> PinnedWindowRepository::unorderedSummaries() const {
+    return summariesImpl(false, false);
+}
+
+QVector<PinnedWindowSummary> PinnedWindowRepository::summariesImpl(bool includePending,
+                                                                   bool sorted) const {
     QVector<PinnedWindowSummary> result;
     {
         std::lock_guard access(m_accessMutex);
@@ -2125,6 +2163,8 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summariesImpl(bool includeP
             }
         }
     }
+    if (!sorted)
+        return result;
     std::sort(result.begin(), result.end(), [](const auto& first, const auto& second) {
         if (first.updatedUtc == second.updatedUtc) {
             return first.id < second.id;

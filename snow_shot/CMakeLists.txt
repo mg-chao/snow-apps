@@ -968,6 +968,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/screenshothistorypagewidget.cpp
     include/snow_shot/presentation/components/historyentrycard.h
     src/presentation/components/historyentrycard.cpp
+    include/snow_shot/presentation/components/historyentryviewport.h
+    src/presentation/components/historyentryviewport.cpp
     include/snow_shot/presentation/components/historyselectionbar.h
     include/snow_shot/presentation/components/historypagecommon.h
     src/presentation/components/historypagecommon.cpp
@@ -2854,6 +2856,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_add_translations(snow-shot-pinned-window-management-page-tests)
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-management-page-tests)
     add_test(NAME snow-shot-pinned-window-management-page-tests COMMAND snow-shot-pinned-window-management-page-tests)
+    add_test(NAME snow-shot-pinned-thumbnail-work-tests
+        COMMAND snow-shot-pinned-window-management-page-tests --thumbnail-work-only)
+    add_test(NAME snow-shot-history-thumbnail-source-tests
+        COMMAND snow-shot-pinned-window-repository-tests --thumbnail-only)
+    set_tests_properties(snow-shot-pinned-thumbnail-work-tests
+        snow-shot-history-thumbnail-source-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-collage-pinned-selection-tests
         COMMAND snow-shot-pinned-window-management-page-tests --collage-only)
     set_tests_properties(snow-shot-collage-pinned-selection-tests PROPERTIES LABELS unit
@@ -6125,6 +6135,11 @@ if(SNOW_SHOT_BUILD_TESTS)
              COMMAND snow-shot-clipboard-content-tests --mime-data-only)
     add_test(NAME snow-shot-clipboard-text-layout-tests
              COMMAND snow-shot-clipboard-content-tests --text-layout-only)
+    add_test(NAME snow-shot-history-thumbnail-text-tests
+        COMMAND snow-shot-clipboard-content-tests --thumbnail-only)
+    set_tests_properties(snow-shot-history-thumbnail-text-tests PROPERTIES LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-clipboard-text-layout-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

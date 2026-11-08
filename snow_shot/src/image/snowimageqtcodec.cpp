@@ -913,6 +913,42 @@ QImage decodeBgra(const QByteArray& encoded, snow::image::Format expectedFormat)
     return decodeBgraBytes(encoded, expectedFormat);
 }
 
+QImage decodeThumbnail(const QByteArray& encoded, snow::image::Format expectedFormat,
+                       QSize targetSize, QSize* naturalSize, AnimationCancellationCheck cancelled) {
+    if (naturalSize)
+        *naturalSize = {};
+    if (targetSize.isEmpty() || (cancelled && cancelled()))
+        return {};
+    const QSize sourceSize = inspectCanvasSize(encoded, expectedFormat);
+    if (sourceSize.isEmpty() || (cancelled && cancelled()))
+        return {};
+    if (naturalSize)
+        *naturalSize = sourceSize;
+    const QSize outputSize =
+        sourceSize.scaled(targetSize.boundedTo(sourceSize), Qt::KeepAspectRatio);
+    OwnedBackendBuffer output(new (std::nothrow) SnowShotImageCodecBuffer{}, &releaseBackendBuffer);
+    if (!output)
+        return {};
+    const auto check = [](void* context) -> int32_t {
+        const auto& callback = *static_cast<AnimationCancellationCheck*>(context);
+        return callback && callback() ? 1 : 0;
+    };
+    std::array<char, kBackendErrorCapacity> error{};
+    if (!snow_shot_image_codec_decode_thumbnail_rgba8(
+            reinterpret_cast<const uint8_t*>(encoded.constData()),
+            static_cast<uint64_t>(encoded.size()), bridgeFormat(expectedFormat),
+            static_cast<uint32_t>(std::max(outputSize.width(), outputSize.height())), &cancelled,
+            cancelled ? check : nullptr, output.get(), error.data(), error.size()))
+        return {};
+    auto image = takeDecodedImage(std::move(output), QImage::Format_RGBA8888);
+    if (cancelled && cancelled())
+        return {};
+    if (!image.isNull() && image.size() != outputSize)
+        image = snowCanvasScaleImage(image, outputSize, Qt::IgnoreAspectRatio,
+                                     Qt::SmoothTransformation);
+    return cancelled && cancelled() ? QImage{} : image;
+}
+
 QImage readManagedImage(QImageReader& reader) {
     const auto fallback = [&reader] {
         QImage image = reader.read();

@@ -1983,6 +1983,29 @@ void nativeDibMaskColoredPixelsRemainPixels() {
 #include "pinned_color_swatch_content_tests.h"
 } // namespace
 
+void textThumbnailsPreserveLayoutWithBoundedRasters() {
+    for (const bool html : {false, true}) {
+        ScreenshotClipboardOriginalContent content;
+        if (html)
+            content.html =
+                QStringLiteral("<table width='1500'><tr><td>Wide table</td></tr></table>");
+        else
+            content.text = QStringLiteral("A long pinned text line\n").repeated(120);
+        const auto full = ScreenshotClipboardContentReader::renderOriginalText(content, 2.0);
+        QSize naturalSize;
+        const auto thumbnail = ScreenshotClipboardContentReader::renderOriginalTextThumbnail(
+            content, 2.0, QSize(260, 156), &naturalSize);
+        require(full && thumbnail && naturalSize == full->image.size() &&
+                    thumbnail->image.width() <= 260 && thumbnail->image.height() <= 156 &&
+                    thumbnail->image.sizeInBytes() < full->image.sizeInBytes() &&
+                    thumbnail->formattedDocument->size() == full->formattedDocument->size(),
+                "text thumbnails preserve layout and natural dimensions with a bounded raster");
+        require(!ScreenshotClipboardContentReader::renderOriginalTextThumbnail(
+                    content, 2.0, QSize(260, 156), nullptr, [] { return true; }),
+                "cancelled text previews must not render");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
@@ -1993,6 +2016,9 @@ int main(int argc, char** argv) {
         "offscreen document tests require proportional and monospace fonts");
     QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
 #endif
+    textThumbnailsPreserveLayoutWithBoundedRasters();
+    if (application.arguments().contains(QStringLiteral("--thumbnail-only")))
+        return EXIT_SUCCESS;
     if (application.arguments().contains(QStringLiteral("--color-swatch-only"))) {
         pinnedColorSwatchContentTests();
         return EXIT_SUCCESS;

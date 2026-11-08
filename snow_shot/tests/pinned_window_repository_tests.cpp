@@ -93,6 +93,49 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
     return value;
 }
 
+void thumbnailSourcesAreBounded() {
+    const QImage original = patternedImage(QSize(1024, 512), 7);
+    for (auto format :
+         {snow::image::Format::png, snow::image::Format::jpeg, snow::image::Format::webp}) {
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        require(buffer.open(QIODevice::WriteOnly) &&
+                    snow_shot::image_codec::encodeToDevice(original, &buffer, format, {}),
+                "encode thumbnail fixture");
+        QSize naturalSize;
+        const auto thumbnail =
+            snow_shot::image_codec::decodeThumbnail(bytes, format, QSize(80, 60), &naturalSize);
+        if (thumbnail.size() != QSize(80, 40) || naturalSize != original.size())
+            std::cerr << "thumbnail format=" << static_cast<int>(format)
+                      << " image=" << thumbnail.width() << 'x' << thumbnail.height()
+                      << " natural=" << naturalSize.width() << 'x' << naturalSize.height() << '\n';
+        require(thumbnail.size() == QSize(80, 40) && naturalSize == original.size(),
+                "native thumbnail decoding preserves natural size and aspect ratio");
+        require(snow_shot::image_codec::decodeThumbnail(bytes, format, QSize(80, 60), nullptr,
+                                                        [] { return true; })
+                    .isNull(),
+                "cancelled thumbnails must not decode");
+    }
+    QTemporaryDir directory;
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    require(repository.upsert(recordWithId(id, original)).success, "seed thumbnail source");
+    const auto resident = repository.loadThumbnailSource(id, QSize(120, 100));
+    require(resident && resident->naturalSize == original.size() &&
+                resident->image.size() == QSize(120, 60),
+            "resident source thumbnails are bounded without modifying the source");
+    require(repository.flush().success, "persist thumbnail source");
+    storage::PinnedWindowRepository reopened(directory.path());
+    const auto persisted = reopened.loadThumbnailSource(id, QSize(120, 100));
+    const auto full = reopened.loadPreviewSource(id);
+    require(persisted && persisted->naturalSize == original.size() &&
+                persisted->image.size() == QSize(120, 60) && full &&
+                full->image.size() == original.size(),
+            "persisted thumbnail requests leave full-resolution source loading intact");
+    require(!reopened.loadThumbnailSource(id, QSize(120, 100), [] { return true; }),
+            "cancelled source requests must not read payloads");
+}
+
 void editablePinCroppedImageRoundTrip() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
@@ -3207,6 +3250,9 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    thumbnailSourcesAreBounded();
+    if (application.arguments().contains(QStringLiteral("--thumbnail-only")))
+        return EXIT_SUCCESS;
     if (application.arguments().contains(QStringLiteral("--editable-pin-only"))) {
         editablePinCroppedImageRoundTrip();
         return 0;

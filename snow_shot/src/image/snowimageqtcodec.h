@@ -139,6 +139,10 @@ struct ResizeResourceEstimate final {
 [[nodiscard]] QImage decodeBgra(const QByteArray& encoded, snow::image::Format expectedFormat);
 [[nodiscard]] QImage decodeFirstFrame(const QByteArray& encoded,
                                       snow::image::Format expectedFormat);
+// Preserves natural dimensions while requesting native reduction from supported codecs.
+[[nodiscard]] QImage decodeThumbnail(const QByteArray& encoded, snow::image::Format expectedFormat,
+                                     QSize targetSize, QSize* naturalSize = nullptr,
+                                     AnimationCancellationCheck cancelled = {});
 // Retains Qt's decoding, metadata and transformation behavior while putting
 // the returned raster in managed storage. Compatible readers decode in place.
 [[nodiscard]] QImage readManagedImage(QImageReader& reader);

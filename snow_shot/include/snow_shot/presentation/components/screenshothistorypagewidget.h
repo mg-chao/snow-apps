@@ -38,6 +38,12 @@ class QResizeEvent;
 class QShowEvent;
 class QHideEvent;
 class QVBoxLayout;
+namespace snow_shot::presentation::components {
+class HistoryEntryViewport;
+namespace history_page {
+class PreviewModel;
+}
+} // namespace snow_shot::presentation::components
 namespace adqt::widgets {
 class AdButton;
 class AdImageViewer;
@@ -127,6 +133,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void handleEntrySelectionChanged(const QString& entryId, bool selected);
     void requestDeleteAll();
     void removeEntry(const QString& entryId);
+    void requestEntryDeletion(const QString& entryId, QWidget* anchor);
     void handleHistoryChanged();
     void handleDisplayAssetsReady(quint64 generation,
                                   const QVector<ScreenshotHistoryAssetResolution>& resolutions);
@@ -156,9 +163,12 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QPointer<QAction> m_batchPinAction;
     adqt::widgets::AdButton* m_deselectAllButton = nullptr;
     adqt::widgets::AdPopconfirm* m_deleteSelectedConfirmation = nullptr;
+    adqt::widgets::AdPopconfirm* m_entryDeleteConfirmation = nullptr;
+    QString m_pendingEntryDeleteId;
     adqt::widgets::AdScrollArea* m_scrollArea = nullptr;
     QWidget* m_entriesHost = nullptr;
     QVBoxLayout* m_entriesLayout = nullptr;
+    snow_shot::presentation::components::HistoryEntryViewport* m_entryViewport = nullptr;
     QLabel* m_emptyIcon = nullptr;
     QLabel* m_emptyTitle = nullptr;
     QLabel* m_emptyDescription = nullptr;
@@ -168,6 +178,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
     QHash<QString, QWidget*> m_entryWidgetsById;
     QVector<QString> m_entryLayoutIds;
+    QVector<QString> m_pageRecordIds;
     QSet<QString> m_selectedRecordIds;
     QHash<QString, std::optional<snow_shot::storage::CaptureHistoryAssetSet>> m_resolvedAssets;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
@@ -176,8 +187,10 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     bool m_dirty = true;
     bool m_refreshQueued = false;
     adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
-    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    snow_shot::presentation::components::history_page::PreviewModel* m_previewModel = nullptr;
     QHash<QString, int> m_previewRows;
+    QString m_previewResultText;
+    QString m_previewDisplayText;
     bool m_updatingPagination = false;
     quint64 m_assetGeneration = 0;
     quint64 m_resultGeneration = 0;

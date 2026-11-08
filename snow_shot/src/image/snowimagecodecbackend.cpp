@@ -1237,7 +1237,8 @@ int32_t snow_shot_image_codec_encode_rgba8_stream(
 int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t expectedFormat,
                       snow::image::PixelFormat outputFormat, const char* pixelDescription,
                       SnowShotImageCodecBuffer* output, char* error, uint64_t errorCapacity,
-                      uint32_t preferredIconExtent = 0, bool firstFrameOnly = false) {
+                      uint32_t preferredIconExtent = 0, bool firstFrameOnly = false,
+                      uint32_t maximumExtent = 0, std::stop_token stop = {}) {
     clearError(error, errorCapacity);
     if (!prepareBuffer(output, error, errorCapacity)) {
         return 0;
@@ -1258,6 +1259,8 @@ int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t exp
                                       : snow::image::DecodeOptions{};
         options.output_format = outputFormat;
         options.raster_layout = snow::image::RasterLayoutPolicy::packed;
+        if (maximumExtent != 0)
+            options.maximum_extent = maximumExtent;
         if (preferredIconExtent != 0) {
             const auto information = service().inspect(input);
             if (!information || information.value().format != snow::image::Format::ico ||
@@ -1286,7 +1289,24 @@ int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t exp
         PackedDecodeSink sink(format, outputFormat, firstFrameOnly,
                               firstFrameOnly ? options.limits.maximum_owned_output_bytes
                                              : std::numeric_limits<std::uint64_t>::max());
-        snow::image::Result<void> decoded = service().decode_to_sink(input, sink, options);
+        snow::image::Result<void> decoded = service().decode_to_sink(input, sink, options, stop);
+        if (!decoded && !sink.hasImage() && maximumExtent != 0 &&
+            decoded.error().code == snow::image::ErrorCode::limit_exceeded &&
+            !stop.stop_requested()) {
+            // JPEG's smallest native scale is 1/8; request that intermediate size
+            // when the final thumbnail is smaller, then let Qt finish the resize.
+            auto inspectOptions = options;
+            inspectOptions.maximum_extent.reset();
+            const auto info = service().inspect(input, inspectOptions, stop);
+            if (info && info.value().format == snow::image::Format::jpeg) {
+                options.maximum_extent = std::max(
+                    maximumExtent,
+                    (std::max(info.value().canvas_width, info.value().canvas_height) + 7U) / 8U);
+                decoded = service().decode_to_sink(input, sink, options, stop);
+            }
+        }
+        if (stop.stop_requested())
+            return 0;
         if (!decoded && !(firstFrameOnly && sink.hasImage() &&
                           decoded.error().code == snow::image::ErrorCode::cancelled)) {
             setError(error, errorCapacity, decoded.error().message);
@@ -1674,6 +1694,23 @@ class ExportCallbackPixelSink final : public snow::image::PixelSink {
     std::span<std::byte> m_storage;
 };
 } // namespace
+
+int32_t snow_shot_image_codec_decode_thumbnail_rgba8(const uint8_t* encoded, uint64_t encodedSize,
+                                                     uint32_t expectedFormat,
+                                                     uint32_t maximumExtent, void* cancelContext,
+                                                     SnowShotImageCodecCancelCallback cancelled,
+                                                     SnowShotImageCodecBuffer* output, char* error,
+                                                     uint64_t capacity) {
+    try {
+        ExportStop stop(cancelContext, cancelled);
+        return decodePacked8(encoded, encodedSize, expectedFormat, snow::image::kRgba8,
+                             "The decoded thumbnail does not contain RGBA pixels.", output, error,
+                             capacity, 0, true, maximumExtent, stop.token());
+    } catch (...) {
+        setError(error, capacity, "Could not start thumbnail decoding.");
+        return 0;
+    }
+}
 
 int32_t snow_shot_image_codec_encode_resources(uint32_t width, uint32_t height,
                                                const SnowShotImageCodecEncodeOptions* bridgeOptions,
