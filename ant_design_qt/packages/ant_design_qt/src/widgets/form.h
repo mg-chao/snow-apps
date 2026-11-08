@@ -255,6 +255,7 @@ class AdFormItem final : public QWidget {
                  requiredMessageChanged)
   Q_PROPERTY(bool hasFeedback READ hasFeedback WRITE setHasFeedback NOTIFY hasFeedbackChanged)
   Q_PROPERTY(bool noStyle READ noStyle WRITE setNoStyle NOTIFY noStyleChanged)
+  Q_PROPERTY(int bottomMargin READ bottomMargin WRITE setBottomMargin NOTIFY bottomMarginChanged)
   Q_PROPERTY(bool itemHidden READ itemHidden WRITE setItemHidden NOTIFY itemHiddenChanged)
   Q_PROPERTY(bool validateOnChange READ validateOnChange WRITE setValidateOnChange NOTIFY
                  validateOnChangeChanged)
@@ -349,6 +350,10 @@ class AdFormItem final : public QWidget {
   bool noStyle() const;
   void setNoStyle(bool value);
 
+  // -1 uses the theme margin. Nested groups can use 0 to avoid adding it twice.
+  int bottomMargin() const;
+  void setBottomMargin(int value);
+
   bool itemHidden() const;
   void setItemHidden(bool value);
 
@@ -436,6 +441,7 @@ class AdFormItem final : public QWidget {
   void requiredMessageChanged(const QString& value);
   void hasFeedbackChanged(bool value);
   void noStyleChanged(bool value);
+  void bottomMarginChanged(int value);
   void itemHiddenChanged(bool value);
   void validateOnChangeChanged(bool value);
   void validateDebounceMsChanged(int value);
@@ -512,6 +518,7 @@ class AdFormItem final : public QWidget {
   bool hasFeedback_ = false;
   bool hasFeedbackExplicit_ = false;
   bool noStyle_ = false;
+  int bottomMargin_ = -1;
   bool itemHidden_ = false;
   bool validateOnChange_ = true;
   int validateDebounceMs_ = 0;

@@ -7240,12 +7240,12 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
         require(languages.setLanguage(locale), "load interval translations");
         QCoreApplication::processEvents();
         const QString splitLabel =
-            QString::fromUtf8(locale == QStringLiteral("zh_CN") ? "图片分割" : "圖片分割");
+            QString::fromUtf8(locale == QStringLiteral("zh_CN") ? "图像分割" : "影像分割");
         require(splitButton->toolTip() == splitLabel &&
                     splitButton->accessibleName() == splitButton->toolTip(),
                 "Image Splitting must retranslate its tooltip and accessible name");
         const QString editingLabel =
-            QString::fromUtf8(locale == QStringLiteral("zh_CN") ? "图片编辑" : "圖片編輯");
+            QString::fromUtf8(locale == QStringLiteral("zh_CN") ? "图像编辑" : "影像編輯");
         require(editingButton->toolTip() == editingLabel &&
                     editingButton->accessibleName() == editingLabel,
                 "Image Editing must retranslate its tooltip and accessible name");

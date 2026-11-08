@@ -517,7 +517,7 @@ void templatePreferencesReopenAndMerge() {
     ImageStitchingWindow first;
     first.present();
     control<AdSegmented>(first, "collageImageType")->setCurrentValue(QStringLiteral("pdf"));
-    control<AdSelect>(first, "collagePdfStitchingMethod")
+    control<AdSegmented>(first, "collagePdfStitchingMethod")
         ->setCurrentValue(static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased));
     control<AdButton>(first, "collagePdfTemplateFiveImages")->click();
     control<AdLineEdit>(first, "collagePdfImageSpacing")->setText(QStringLiteral("6.375"));

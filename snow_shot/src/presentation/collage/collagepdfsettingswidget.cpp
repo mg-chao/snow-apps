@@ -208,7 +208,7 @@ struct ImageStitchingPdfSettingsWidget::Impl final {
     ImageStitchingPdfSettingsWidget* owner;
     ImageStitchingDocument* document;
     AdForm* form;
-    AdSelect* method;
+    AdSegmented* method;
     AdFormItem* methodField;
     AdFormItem* templateField;
     std::array<TemplateButton*, 9> templates{};
@@ -275,9 +275,6 @@ struct ImageStitchingPdfSettingsWidget::Impl final {
         showError(templateField, QStringLiteral("template_type"));
         showError(orientationField, QStringLiteral("orientation"));
         showError(exportField, QStringLiteral("export_mode"));
-        method->setStatus(errors.contains(QStringLiteral("stitching_method"))
-                              ? AdSelect::Status::Error
-                              : AdSelect::Status::None);
         paper->setStatus(errors.contains(QStringLiteral("paper_size")) ? AdSelect::Status::Error
                                                                        : AdSelect::Status::None);
         for (auto& number : numbers) {
@@ -326,8 +323,11 @@ ImageStitchingPdfSettingsWidget::ImageStitchingPdfSettingsWidget(ImageStitchingD
     d.form->setRequiredMark(AdForm::RequiredMark::Hidden);
     d.form->setColon(false);
     layout->addWidget(d.form);
-    d.method = new AdSelect(d.form);
+    d.method = new AdSegmented(d.form);
     d.method->setObjectName(QStringLiteral("collagePdfStitchingMethod"));
+    d.method->setDistribution(AdSegmented::Distribution::Fill);
+    d.method->addOption({}, static_cast<int>(ImageStitchingPdfStitchingMethod::PageBased));
+    d.method->addOption({}, static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased));
     d.methodField = d.form->addField({}, d.method, QStringLiteral("stitching_method"));
     d.methodField->setValidateOnChange(false);
     auto* templateButtons = new QWidget(d.form);
@@ -410,6 +410,8 @@ ImageStitchingPdfSettingsWidget::ImageStitchingPdfSettingsWidget(ImageStitchingD
         return content;
     };
     d.customField = d.form->addField({}, customPaper(), QStringLiteral("custom"));
+    // The dimension fields already include the row's bottom margin.
+    d.customField->setBottomMargin(0);
     auto* spacing = new QWidget(d.form);
     spacing->setObjectName(QStringLiteral("collagePdfPageSpacing"));
     auto* spacingGrid = new QGridLayout(spacing);
@@ -431,7 +433,7 @@ ImageStitchingPdfSettingsWidget::ImageStitchingPdfSettingsWidget(ImageStitchingD
     d.exportMode = segmented("collagePdfExportMode");
     d.exportField = d.form->addField({}, d.exportMode, QStringLiteral("export_mode"));
     d.exportField->setValidateOnChange(false);
-    connect(d.method, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
+    connect(d.method, &AdSegmented::currentValueChanged, this, [this](const QVariant& value) {
         m_impl->edit(QStringLiteral("stitching_method"),
                      [&value](ImageStitchingPdfSettings& settings) {
                          settings.stitchingMethod =
@@ -462,10 +464,8 @@ ImageStitchingPdfSettingsWidget::~ImageStitchingPdfSettingsWidget() = default;
 void ImageStitchingPdfSettingsWidget::retranslateUi() {
     auto& d = *m_impl;
     d.syncing = true;
-    d.method->setOptions({{static_cast<int>(ImageStitchingPdfStitchingMethod::PageBased),
-                           text("Page-based stitching")},
-                          {static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased),
-                           text("Template-based stitching")}});
+    d.method->setOptionLabel(0, text("Page-based stitching"));
+    d.method->setOptionLabel(1, text("Template-based stitching"));
     d.methodField->setLabel(text("Stitching method"));
     d.method->setAccessibleName(text("Stitching method"));
     d.templateField->setLabel(text("Template"));

@@ -1313,15 +1313,15 @@
         </message>
         <message>
             <source>Animated image clarity</source>
-            <translation>動態圖片清晰度</translation>
+            <translation>動態影像清晰度</translation>
         </message>
         <message>
             <source>Animated image frame rate</source>
-            <translation>動態圖片影格率</translation>
+            <translation>動態影像影格率</translation>
         </message>
         <message>
             <source>Animated images</source>
-            <translation>動態圖片</translation>
+            <translation>動態影像</translation>
         </message>
         <message>
             <source>Annotate selected canvas text when text selection is set to always</source>
@@ -1525,7 +1525,7 @@
         </message>
         <message>
             <source>Batch actions: image stitching</source>
-            <translation>批次操作：圖片拼接</translation>
+            <translation>批次操作：影像拼接</translation>
         </message>
         <message>
             <source>Batch actions: save as file</source>
@@ -2073,7 +2073,7 @@
         </message>
         <message>
             <source>Copy the full translation result as an image when no text is selected</source>
-            <translation>未選取文字時，將完整翻譯結果複製為圖片</translation>
+            <translation>未選取文字時，將完整翻譯結果複製為影像</translation>
         </message>
         <message>
             <source>Copy to clipboard</source>
@@ -2081,7 +2081,7 @@
         </message>
         <message>
             <source>Copy translation results as an image</source>
-            <translation>將翻譯結果複製為圖片</translation>
+            <translation>將翻譯結果複製為影像</translation>
         </message>
         <message>
             <source>Core application settings</source>
@@ -2937,7 +2937,7 @@
         </message>
         <message>
             <source>Loop animated images</source>
-            <translation>循環播放動態圖片</translation>
+            <translation>循環播放動態影像</translation>
         </message>
         <message>
             <source>Low</source>
@@ -3197,11 +3197,11 @@
         </message>
         <message>
             <source>Open image splitting for each selected image file, or an empty window if no images are selected</source>
-            <translation>為每個選取的圖片檔案開啟圖片分割；未選取圖片時開啟空白視窗</translation>
+            <translation>為每個選取的影像檔案開啟影像分割；未選取影像時開啟空白視窗</translation>
         </message>
         <message>
             <source>Open image stitching with selected image files, or an empty window if no images are selected</source>
-            <translation>使用選取的圖片檔案開啟圖片拼接；未選取圖片時開啟空白視窗</translation>
+            <translation>使用選取的影像檔案開啟影像拼接；未選取影像時開啟空白視窗</translation>
         </message>
         <message>
             <source>Open pin to screen management</source>
@@ -3745,7 +3745,7 @@
         </message>
         <message>
             <source>Save recognition result as image</source>
-            <translation>將辨識結果儲存為圖片</translation>
+            <translation>將辨識結果儲存為影像</translation>
         </message>
         <message>
             <source>Save system audio and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
@@ -3785,7 +3785,7 @@
         </message>
         <message>
             <source>Screen recording and animated image export settings</source>
-            <translation>螢幕錄製與動態圖片匯出設定</translation>
+            <translation>螢幕錄製與動態影像匯出設定</translation>
         </message>
         <message>
             <source>Screen recording behavior</source>
@@ -4009,7 +4009,7 @@
         </message>
         <message>
             <source>Set the frame rate of exported animated images</source>
-            <translation>設定匯出動態圖片的影格率</translation>
+            <translation>設定匯出動態影像的影格率</translation>
         </message>
         <message>
             <source>Set the generated filename used by automatic image file saves</source>
@@ -4025,7 +4025,7 @@
         </message>
         <message>
             <source>Set the maximum resolution of exported animated images</source>
-            <translation>設定匯出動態圖片的最大解析度</translation>
+            <translation>設定匯出動態影像的最大解析度</translation>
         </message>
         <message>
             <source>Set the overall opacity of screenshot shortcut hints</source>
@@ -4393,7 +4393,7 @@
         </message>
         <message>
             <source>Stitch selected images</source>
-            <translation>拼接選取的圖片</translation>
+            <translation>拼接選取的影像</translation>
         </message>
         <message>
             <source>Storage and privacy</source>
@@ -4789,7 +4789,7 @@
         </message>
         <message>
             <source>Video, audio and animated-image recording preferences</source>
-            <translation>影片、音訊與動態圖片錄製偏好</translation>
+            <translation>影片、音訊與動態影像錄製偏好</translation>
         </message>
         <message>
             <source>View connection status and configure your MCP client</source>

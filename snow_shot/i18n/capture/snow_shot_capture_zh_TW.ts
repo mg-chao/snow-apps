@@ -574,7 +574,7 @@
         <name>SnowImageQtCodec</name>
         <message>
             <source>Could not decode animated image</source>
-            <translation>無法解碼動態圖片</translation>
+            <translation>無法解碼動態影像</translation>
         </message>
     </context>
     <context>

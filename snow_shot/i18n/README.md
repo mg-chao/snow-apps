@@ -22,13 +22,14 @@ menus, settings, tooltips, accessibility text, and status messages:
 
 | 简体中文 | English | 繁體中文 |
 | --- | --- | --- |
+| 图像 | Image | 影像 |
 | 截图 | Screenshot | 截圖 |
 | 滚动截图 | Scrolling screenshot | 捲動截圖 |
 | 固定到屏幕 | Pin to screen | 固定到螢幕 |
 | 固定到屏幕管理 | Pin to screen management | 固定到螢幕管理 |
-| 图片编辑 | Image editing | 圖片編輯 |
-| 图片拼接 | Image stitching | 圖片拼接 |
-| 图片分割 | Image splitting | 圖片分割 |
+| 图像编辑 | Image editing | 影像編輯 |
+| 图像拼接 | Image stitching | 影像拼接 |
+| 图像分割 | Image splitting | 影像分割 |
 | 文本识别 | Text recognition | 文字辨識 |
 | 原图翻译 | Original image translation | 原圖翻譯 |
 | 屏幕录制 | Screen recording | 螢幕錄製 |

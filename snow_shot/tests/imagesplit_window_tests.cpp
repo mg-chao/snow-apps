@@ -828,12 +828,12 @@ void exportAndRuntimeLanguage(const QString& directory) {
     require(languages.setLanguage(QStringLiteral("zh_CN")), "switch to simplified Chinese");
     flush();
     require(saveButton(window)->text() == QString::fromUtf8("全部保存") &&
-                window.modal()->windowTitle() == QString::fromUtf8("图片分割") &&
+                window.modal()->windowTitle() == QString::fromUtf8("图像分割") &&
                 window.lastError() == QString::fromUtf8("无法创建输出文件夹"),
             "open split window retranslates at runtime");
     require(languages.setLanguage(QStringLiteral("zh_TW")), "switch to traditional Chinese");
     flush();
-    require(window.modal()->windowTitle() == QString::fromUtf8("圖片分割"),
+    require(window.modal()->windowTitle() == QString::fromUtf8("影像分割"),
             "traditional Chinese uses the image splitting feature name");
     require(languages.setLanguage(QStringLiteral("en_US")), "restore English");
     flush();

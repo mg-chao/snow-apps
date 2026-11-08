@@ -1525,7 +1525,7 @@
         </message>
         <message>
             <source>Batch actions: image stitching</source>
-            <translation>批量操作：图片拼接</translation>
+            <translation>批量操作：图像拼接</translation>
         </message>
         <message>
             <source>Batch actions: save as file</source>
@@ -2073,7 +2073,7 @@
         </message>
         <message>
             <source>Copy the full translation result as an image when no text is selected</source>
-            <translation>未选中文本时，将完整翻译结果复制为图片</translation>
+            <translation>未选中文本时，将完整翻译结果复制为图像</translation>
         </message>
         <message>
             <source>Copy to clipboard</source>
@@ -2081,7 +2081,7 @@
         </message>
         <message>
             <source>Copy translation results as an image</source>
-            <translation>将翻译结果复制为图片</translation>
+            <translation>将翻译结果复制为图像</translation>
         </message>
         <message>
             <source>Core application settings</source>
@@ -3197,11 +3197,11 @@
         </message>
         <message>
             <source>Open image splitting for each selected image file, or an empty window if no images are selected</source>
-            <translation>为每个选中的图片文件打开图片分割；未选中图片时打开空白窗口</translation>
+            <translation>为每个选中的图像文件打开图像分割；未选中图像时打开空白窗口</translation>
         </message>
         <message>
             <source>Open image stitching with selected image files, or an empty window if no images are selected</source>
-            <translation>使用选中的图片文件打开图片拼接；未选中图片时打开空白窗口</translation>
+            <translation>使用选中的图像文件打开图像拼接；未选中图像时打开空白窗口</translation>
         </message>
         <message>
             <source>Open pin to screen management</source>
@@ -3745,7 +3745,7 @@
         </message>
         <message>
             <source>Save recognition result as image</source>
-            <translation>将识别结果保存为图片</translation>
+            <translation>将识别结果保存为图像</translation>
         </message>
         <message>
             <source>Save system audio and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time</source>
@@ -4393,7 +4393,7 @@
         </message>
         <message>
             <source>Stitch selected images</source>
-            <translation>拼接选中的图片</translation>
+            <translation>拼接选中的图像</translation>
         </message>
         <message>
             <source>Storage and privacy</source>

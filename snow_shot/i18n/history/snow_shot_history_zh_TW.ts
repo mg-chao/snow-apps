@@ -64,7 +64,7 @@
         </message>
         <message>
             <source>Image editing</source>
-            <translation>圖片編輯</translation>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Loading preview…</source>
@@ -108,7 +108,7 @@
         </message>
         <message>
             <source>Stitch images</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -244,7 +244,7 @@
         </message>
         <message>
             <source>Each image extends this many pixels past each split line</source>
-            <translation>每張圖片在每條分割線外額外保留指定像素寬度的區域</translation>
+            <translation>每張影像在每條分割線外額外保留指定像素寬度的區域</translation>
         </message>
         <message>
             <source>Enter a non-negative integer</source>
@@ -386,7 +386,7 @@
         </message>
         <message>
             <source>Image splitting preview</source>
-            <translation>圖片分割預覽</translation>
+            <translation>影像分割預覽</translation>
         </message>
         <message>
             <source>X: %1 px</source>
@@ -409,7 +409,7 @@
         </message>
         <message>
             <source>Could not read the selected image files. Please try again</source>
-            <translation>無法讀取選取的圖片檔案，請重試</translation>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -417,7 +417,7 @@
         </message>
         <message>
             <source>Discard these image splits?</source>
-            <translation>捨棄目前的圖片分割？</translation>
+            <translation>捨棄目前的影像分割？</translation>
         </message>
         <message>
             <source>Drop one image file at a time</source>
@@ -441,11 +441,11 @@
         </message>
         <message>
             <source>Image splitting</source>
-            <translation>圖片分割</translation>
+            <translation>影像分割</translation>
         </message>
         <message>
             <source>Image stitching is busy. Try again when it finishes</source>
-            <translation>圖片拼接忙碌中。請等待完成後重試</translation>
+            <translation>影像拼接忙碌中。請等待完成後重試</translation>
         </message>
         <message>
             <source>Images</source>
@@ -532,7 +532,7 @@
         </message>
         <message>
             <source>Image stitching requires too much temporary memory. Try fewer images or smaller image sizes</source>
-            <translation>此圖片拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
+            <translation>此影像拼接需要過多暫存記憶體。請減少影像數量或使用較小的影像</translation>
         </message>
         <message>
             <source>Select a paper orientation</source>
@@ -564,11 +564,11 @@
         </message>
         <message>
             <source>The image stitching export was canceled</source>
-            <translation>圖片拼接匯出已取消</translation>
+            <translation>影像拼接匯出已取消</translation>
         </message>
         <message>
             <source>The image stitching layout settings are invalid</source>
-            <translation>圖片拼接版面設定無效</translation>
+            <translation>影像拼接版面設定無效</translation>
         </message>
         <message>
             <source>The margins must leave a usable content area</source>
@@ -580,19 +580,19 @@
         </message>
         <message>
             <source>The stitched image could not be prepared for export</source>
-            <translation>無法準備圖片拼接影像以供匯出</translation>
+            <translation>無法準備影像拼接影像以供匯出</translation>
         </message>
         <message>
             <source>The stitched image exceeds the 8 GiB image limit. Try fewer images or smaller layout settings</source>
-            <translation>圖片拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定</translation>
+            <translation>影像拼接超過了 8 GiB 影像限制。請減少影像數量或調小版面設定</translation>
         </message>
         <message>
             <source>The stitched image is too large for the clipboard. Save it to a file instead</source>
-            <translation>圖片拼接過大，無法複製到剪貼簿。請儲存為檔案</translation>
+            <translation>影像拼接過大，無法複製到剪貼簿。請儲存為檔案</translation>
         </message>
         <message>
             <source>There is not enough available memory for image stitching. Try fewer images or close other image stitching windows</source>
-            <translation>可用記憶體不足，無法執行此圖片拼接操作。請減少影像數量或關閉其他圖片拼接視窗</translation>
+            <translation>可用記憶體不足，無法執行此影像拼接操作。請減少影像數量或關閉其他影像拼接視窗</translation>
         </message>
     </context>
     <context>
@@ -615,11 +615,11 @@
         </message>
         <message>
             <source>Add images to start image stitching</source>
-            <translation>新增影像以建立圖片拼接</translation>
+            <translation>新增影像以建立影像拼接</translation>
         </message>
         <message>
             <source>Add multiple image files at once</source>
-            <translation>可一次加入多張圖片</translation>
+            <translation>可一次加入多張影像</translation>
         </message>
         <message>
             <source>Background color</source>
@@ -663,7 +663,7 @@
         </message>
         <message>
             <source>Drop images to stitch</source>
-            <translation>放開滑鼠，將圖片加入圖片拼接</translation>
+            <translation>放開滑鼠，將影像加入影像拼接</translation>
         </message>
         <message>
             <source>Fit to canvas</source>
@@ -694,6 +694,10 @@
             <translation>影像 %1：%2</translation>
         </message>
         <message>
+            <source>Image preview was cancelled</source>
+            <translation>影像預覽已取消</translation>
+        </message>
+        <message>
             <source>Image sizing</source>
             <translation>影像尺寸</translation>
         </message>
@@ -715,7 +719,7 @@
         </message>
         <message>
             <source>Image stitching preview</source>
-            <translation>圖片拼接預覽</translation>
+            <translation>影像拼接預覽</translation>
         </message>
         <message>
             <source>Image type</source>
@@ -770,6 +774,10 @@
             <translation>像素</translation>
         </message>
         <message>
+            <source>Preview original image</source>
+            <translation>預覽原始影像</translation>
+        </message>
+        <message>
             <source>Purple</source>
             <translation>紫色</translation>
         </message>
@@ -808,6 +816,10 @@
         <message>
             <source>Static image</source>
             <translation>靜態影像</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>原始影像無法使用</translation>
         </message>
         <message>
             <source>Total: %1 images</source>
@@ -885,7 +897,7 @@
         </message>
         <message>
             <source>Add multiple image files at once</source>
-            <translation>可一次加入多張圖片</translation>
+            <translation>可一次加入多張影像</translation>
         </message>
         <message>
             <source>Clear</source>
@@ -1130,8 +1142,16 @@
             <translation>刪除影像</translation>
         </message>
         <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
-            <translation>拖曳影像可移動或交換位置；拖曳選取框控制點可圍繞中心等比例縮放</translation>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>拖曳影像可移動或交換位置；拖曳選取框控制點可圍繞中心等比例縮放。按住滑鼠中鍵拖曳可平移；捲動滑鼠滾輪可縮放</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Fit to canvas</source>
+            <translation>符合畫布</translation>
         </message>
         <message>
             <source>Flip horizontally</source>
@@ -1222,7 +1242,7 @@
         </message>
         <message>
             <source>All images will be removed from this stitching session</source>
-            <translation>將從此圖片拼接中移除全部影像</translation>
+            <translation>將從此影像拼接中移除全部影像</translation>
         </message>
         <message>
             <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
@@ -1258,11 +1278,11 @@
         </message>
         <message>
             <source>Copying stitched image…</source>
-            <translation>正在複製圖片拼接…</translation>
+            <translation>正在複製影像拼接…</translation>
         </message>
         <message>
             <source>Could not read the selected image files. Please try again</source>
-            <translation>無法讀取選取的圖片檔案，請重試</translation>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
         </message>
         <message>
             <source>Discard</source>
@@ -1270,7 +1290,7 @@
         </message>
         <message>
             <source>Discard this stitching session?</source>
-            <translation>捨棄此圖片拼接？</translation>
+            <translation>捨棄此影像拼接？</translation>
         </message>
         <message>
             <source>Export could not be started. Try again</source>
@@ -1286,7 +1306,7 @@
         </message>
         <message>
             <source>Image stitching</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>Images</source>
@@ -1318,11 +1338,11 @@
         </message>
         <message>
             <source>Preparing stitched image…</source>
-            <translation>正在準備圖片拼接…</translation>
+            <translation>正在準備影像拼接…</translation>
         </message>
         <message>
             <source>Reading selected image files…</source>
-            <translation>正在讀取選取的圖片檔案…</translation>
+            <translation>正在讀取選取的影像檔案…</translation>
         </message>
         <message>
             <source>Replace image</source>
@@ -1356,7 +1376,7 @@ Files:
         </message>
         <message>
             <source>Saving stitched image…</source>
-            <translation>正在儲存圖片拼接…</translation>
+            <translation>正在儲存影像拼接…</translation>
         </message>
         <message>
             <source>Screenshot %1</source>
@@ -1394,7 +1414,7 @@ Files:
         </message>
         <message>
             <source>The images and edits in this stitching session will be discarded</source>
-            <translation>將捨棄此圖片拼接中的影像與編輯</translation>
+            <translation>將捨棄此影像拼接中的影像與編輯</translation>
         </message>
         <message>
             <source>The layout settings could not be remembered: %1</source>
@@ -1583,11 +1603,11 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>圖片編輯</translation>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Image splitting</source>
-            <translation>圖片分割</translation>
+            <translation>影像分割</translation>
         </message>
         <message>
             <source>More</source>
@@ -1623,11 +1643,11 @@ Files:
         </message>
         <message>
             <source>Pinned images and text will appear here</source>
-            <translation>固定到螢幕的圖片與文字會顯示在這裡</translation>
+            <translation>固定到螢幕的影像與文字會顯示在這裡</translation>
         </message>
         <message>
             <source>Pinned window image</source>
-            <translation>固定到螢幕視窗的圖片</translation>
+            <translation>固定到螢幕視窗的影像</translation>
         </message>
         <message>
             <source>Refresh pinned windows</source>
@@ -1689,7 +1709,7 @@ Files:
         </message>
         <message>
             <source>Stitch images</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>The saved record and its open window will be removed</source>
@@ -1838,7 +1858,7 @@ Files:
         </message>
         <message>
             <source>Stitch images</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>This action cannot be undone</source>
@@ -1923,7 +1943,7 @@ Files:
         </message>
         <message>
             <source>Convert to image</source>
-            <translation>轉換為圖片</translation>
+            <translation>轉換為影像</translation>
         </message>
         <message numerus="yes">
             <source>Copied %n file(s)</source>
@@ -2045,7 +2065,7 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>圖片編輯</translation>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Image file</source>
@@ -2057,7 +2077,7 @@ Files:
         </message>
         <message>
             <source>Image stitching</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>Increase 10%</source>
@@ -2267,7 +2287,7 @@ Files:
         </message>
         <message>
             <source>The window changed while preparing the image. Please try again</source>
-            <translation>準備圖片時視窗發生變更，請重試</translation>
+            <translation>準備影像時視窗發生變更，請重試</translation>
         </message>
         <message>
             <source>The window is closed. The latest content cannot be displayed</source>
@@ -2365,7 +2385,7 @@ Files:
         </message>
         <message>
             <source>Image editing</source>
-            <translation>圖片編輯</translation>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Loading image…</source>
@@ -2569,7 +2589,7 @@ Files:
         </message>
         <message>
             <source>Image stitching</source>
-            <translation>圖片拼接</translation>
+            <translation>影像拼接</translation>
         </message>
         <message>
             <source>Lock</source>

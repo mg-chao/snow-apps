@@ -694,6 +694,10 @@
             <translation>Image %1: %2</translation>
         </message>
         <message>
+            <source>Image preview was cancelled</source>
+            <translation>Image preview was cancelled</translation>
+        </message>
+        <message>
             <source>Image sizing</source>
             <translation>Image sizing</translation>
         </message>
@@ -770,6 +774,10 @@
             <translation>Pixels</translation>
         </message>
         <message>
+            <source>Preview original image</source>
+            <translation>Preview original image</translation>
+        </message>
+        <message>
             <source>Purple</source>
             <translation>Purple</translation>
         </message>
@@ -808,6 +816,10 @@
         <message>
             <source>Static image</source>
             <translation>Static image</translation>
+        </message>
+        <message>
+            <source>The original image is unavailable</source>
+            <translation>The original image is unavailable</translation>
         </message>
         <message>
             <source>Total: %1 images</source>
@@ -1130,8 +1142,16 @@
             <translation>Delete image</translation>
         </message>
         <message>
-            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</source>
-            <translation>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center</translation>
+            <source>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center. Drag with the middle mouse button to pan; scroll to zoom</source>
+            <translation>Drag an image to move or swap it; drag its selection handles to scale proportionally around its center. Drag with the middle mouse button to pan; scroll to zoom</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>Drag image files here, or choose add images</translation>
+        </message>
+        <message>
+            <source>Fit to canvas</source>
+            <translation>Fit to canvas</translation>
         </message>
         <message>
             <source>Flip horizontally</source>

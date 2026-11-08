@@ -768,11 +768,11 @@
         </message>
         <message>
             <source>Image editing</source>
-            <translation>圖片編輯</translation>
+            <translation>影像編輯</translation>
         </message>
         <message>
             <source>Image splitting</source>
-            <translation>圖片分割</translation>
+            <translation>影像分割</translation>
         </message>
         <message>
             <source>Integers</source>

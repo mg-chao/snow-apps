@@ -17,6 +17,7 @@ class ImageStitchingPdfTemplateCanvas final : public QWidget {
     ~ImageStitchingPdfTemplateCanvas() override;
     [[nodiscard]] int pageIndex() const;
     void setPageIndex(int pageIndex);
+    void fitToCanvas();
     [[nodiscard]] QRectF pageViewportRect() const;
     [[nodiscard]] QRectF imageViewportRect(quint64 id) const;
     [[nodiscard]] QRectF cellViewportRect(quint64 id) const;
@@ -37,6 +38,7 @@ class ImageStitchingPdfTemplateCanvas final : public QWidget {
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
+    void wheelEvent(QWheelEvent*) override;
     void keyPressEvent(QKeyEvent*) override;
     void hideEvent(QHideEvent*) override;
     void showEvent(QShowEvent*) override;

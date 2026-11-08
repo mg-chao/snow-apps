@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/components/collagepdftemplatewidget.h"
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
+#include "snow_shot/presentation/components/imagedropsurface.h"
+#include "snow_shot/presentation/components/overlaycontrolbutton.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "theme/theme_manager.h"
@@ -310,6 +312,146 @@ void solidCellBordersAtEveryDpi() {
         }
     }
     themes.setConfig(originalConfig);
+}
+
+void emptyPreviewMatchesPageBasedStitching() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themes.config();
+    ImageStitchingDocument document;
+    configure(document);
+    ImageStitchingPdfTemplateWidget widget(&document);
+    ImageStitchingPdfPageGrid grid(&document);
+    show(widget);
+    show(grid);
+    auto* empty = dynamic_cast<ImageDropSurface*>(
+        widget.findChild<QWidget*>(QStringLiteral("collagePdfTemplateEmptyState")));
+    auto* pageEmpty = dynamic_cast<ImageDropSurface*>(
+        grid.findChild<QWidget*>(QStringLiteral("collagePdfEmptyState")));
+    auto* add = button(widget, "collagePdfTemplateEmptyAddImages");
+    auto* pageAdd = button(grid, "collagePdfEmptyAddImages");
+    auto* strip = widget.findChild<QWidget*>(QStringLiteral("collagePdfTemplateThumbnailStrip"));
+    auto* pageNumber = widget.findChild<QLabel*>(QStringLiteral("collagePdfTemplatePageNumber"));
+    auto* toolbar = widget.findChild<QWidget*>(QStringLiteral("collagePdfTemplateCanvasToolbar"));
+    require(empty && pageEmpty && strip && pageNumber && toolbar,
+            "empty template fixture must have its import surface and populated controls");
+    for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themes.setPreset(scheme);
+        for (const QSize size : {QSize(803, 727), QSize(480, 420)}) {
+            widget.resize(size);
+            grid.resize(size);
+            pump();
+            add->clearFocus();
+            pageAdd->clearFocus();
+            require(empty->isVisible() && !strip->isVisible() && !pageNumber->isVisible() &&
+                        !toolbar->isVisible() && empty->size() == pageEmpty->size() &&
+                        empty->size() == widget.size(),
+                    "empty templates must fill the same preview area as empty page stitching "
+                    "without pagination, thumbnails, or floating actions");
+            require(empty->title->text() == pageEmpty->title->text() &&
+                        empty->description->text() == pageEmpty->description->text() &&
+                        add->text() == pageAdd->text() && add->isVisible() &&
+                        add->accessibleName() == add->text(),
+                    "empty templates must share page stitching's import copy and accessible add "
+                    "action");
+            saveFixture(widget, "empty-template.png");
+            saveFixture(grid, "empty-pages.png");
+            require(empty->grab().toImage() == pageEmpty->grab().toImage(),
+                    "empty template and page stitching must render the same import surface "
+                    "in both themes and at different viewport sizes");
+        }
+    }
+    int additions = 0;
+    QObject::connect(&widget, &ImageStitchingPdfTemplateWidget::addImagesRequested, &widget,
+                     [&] { ++additions; });
+    add->click();
+    require(additions == 1, "empty template add action must request image import");
+    widget.setLoading(true);
+    require(!add->isEnabled() && add->busy(),
+            "empty template import must disable and busy its add action");
+    widget.setLoading(false);
+    widget.setExportBusy(true);
+    require(!add->isEnabled() && !add->busy(), "export must disable the empty template add action");
+    widget.setExportBusy(false);
+    require(add->isEnabled(), "empty template add action must recover after busy work");
+    document.append(image({80, 60}, Qt::red), QStringLiteral("First"));
+    pump();
+    require(!empty->isVisible() && strip->isVisible() && pageNumber->isVisible() &&
+                toolbar->isVisible() && !widget.canvas()->pageViewportRect().isEmpty(),
+            "adding an image must restore the template preview, navigation, and actions");
+    document.clear();
+    pump();
+    require(empty->isVisible() && !strip->isVisible() && !pageNumber->isVisible() &&
+                !toolbar->isVisible() && add->isEnabled(),
+            "clearing template images must restore the full empty import surface");
+    saveFixture(widget, "empty-template.png");
+    saveFixture(grid, "empty-pages.png");
+    themes.setConfig(originalConfig);
+}
+
+void thumbnailReplacementAndDeletion() {
+    ImageStitchingDocument document;
+    configure(document);
+    const auto first = document.append(image({80, 60}, Qt::red), QStringLiteral("first"));
+    const auto second = document.append(image({60, 80}, Qt::blue), QStringLiteral("second"));
+    ImageStitchingPdfTemplateWidget widget(&document);
+    show(widget);
+    auto* thumbnail =
+        widget.findChild<QWidget*>(QStringLiteral("collagePdfTemplateThumbnail_%1").arg(second));
+    require(thumbnail != nullptr, "PDF input thumbnail must exist");
+    thumbnail->clearFocus();
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(thumbnail, &leave);
+    pump();
+    auto* replace = button(*thumbnail, "collagePdfTemplateReplaceThumbnailImage");
+    auto* remove = button(*thumbnail, "collagePdfTemplateDeleteThumbnailImage");
+    require(!replace->isVisible() && !remove->isVisible(),
+            "unfocused PDF thumbnails hide their corner controls");
+    thumbnail->setFocus();
+    pump();
+    require(dynamic_cast<OverlayControlButton*>(replace) &&
+                dynamic_cast<OverlayControlButton*>(remove) && replace->isVisible() &&
+                remove->isVisible() && replace->size() == QSize(28, 28) &&
+                remove->pos() == QPoint(thumbnail->width() - 32, thumbnail->height() - 32) &&
+                replace->pos() == remove->pos() - QPoint(32, 0),
+            "PDF inputs use the same focused bottom-right overlays as static thumbnails");
+    saveFixture(widget, "template-thumbnail-actions.png");
+    replace->setFocus();
+    pump();
+    require(replace->isVisible() && remove->isVisible(),
+            "corner controls remain visible when focus moves into an action");
+    document.select(first);
+    quint64 replacement = 0;
+    QObject::connect(&widget, &ImageStitchingPdfTemplateWidget::replaceImageRequested, &widget,
+                     [&](quint64 id) { replacement = id; });
+    replace->click();
+    require(replacement == second && document.selectedId() == first && document.items().size() == 2,
+            "PDF thumbnail replacement targets its own input independently of selection");
+    widget.setLoading(true);
+    require(!replace->isEnabled() && remove->isEnabled(),
+            "loading blocks PDF thumbnail replacement while retaining deletion like static mode");
+    widget.setLoading(false);
+    widget.setExportBusy(true);
+    replace->click();
+    remove->click();
+    require(!replace->isEnabled() && !remove->isEnabled() && document.items().size() == 2,
+            "export disables both PDF thumbnail edits");
+    widget.setExportBusy(false);
+    QTranslator translator;
+    require(translator.load(QStringLiteral(":/i18n/snow_shot_zh_CN.qm")),
+            "load PDF thumbnail translations");
+    QApplication::installTranslator(&translator);
+    QEvent language(QEvent::LanguageChange);
+    QApplication::sendEvent(&widget, &language);
+    require(replace->toolTip() == QCoreApplication::translate("ImageStitchingPdfTemplateWidget",
+                                                              "Replace image") &&
+                remove->accessibleName() ==
+                    QCoreApplication::translate("ImageStitchingPdfTemplateWidget", "Delete image"),
+            "PDF corner actions retranslate their accessible labels and tooltips");
+    QApplication::removeTranslator(&translator);
+    remove->click();
+    pump();
+    require(document.items().size() == 1 && document.items().front().id == first,
+            "PDF thumbnail deletion removes only its own input");
 }
 
 void paginationThumbnailsAndSwaps() {
@@ -719,10 +861,17 @@ void actionsLanguageAndVisualFixtures() {
       public:
         QString translate(const char* context, const char* source, const char*,
                           int) const override {
-            return QByteArray(context) == "ImageStitchingPdfTemplateWidget" &&
-                           QByteArray(source) == "Reverse image order"
-                       ? QStringLiteral("Translated reverse")
-                       : QString{};
+            if (QByteArray(context) != "ImageStitchingPdfTemplateWidget")
+                return {};
+            if (QByteArray(source) == "Reverse image order")
+                return QStringLiteral("Translated reverse");
+            if (QByteArray(source) == "Add images to create a PDF document")
+                return QStringLiteral("Translated empty title");
+            if (QByteArray(source) == "Drag image files here, or choose add images")
+                return QStringLiteral("Translated empty description");
+            if (QByteArray(source) == "Add images")
+                return QStringLiteral("Translated add");
+            return {};
         }
     } translator;
     QApplication::installTranslator(&translator);
@@ -731,13 +880,22 @@ void actionsLanguageAndVisualFixtures() {
     require(button(widget, "collagePdfTemplateReverseImages")->accessibleName() ==
                 QStringLiteral("Translated reverse"),
             "language changes must update floating action accessibility and tooltips");
+    auto* empty = dynamic_cast<ImageDropSurface*>(
+        widget.findChild<QWidget*>(QStringLiteral("collagePdfTemplateEmptyState")));
+    auto* emptyAdd = button(widget, "collagePdfTemplateEmptyAddImages");
+    require(empty && empty->title->text() == QStringLiteral("Translated empty title") &&
+                empty->description->text() == QStringLiteral("Translated empty description") &&
+                emptyAdd->text() == QStringLiteral("Translated add") &&
+                emptyAdd->accessibleName() == emptyAdd->text(),
+            "language changes must refresh the empty template guide and its accessible add action");
     QApplication::removeTranslator(&translator);
     document.clear();
     pump();
-    require(button(widget, "collagePdfTemplateAddImages")->isVisible() &&
+    require(button(widget, "collagePdfTemplateEmptyAddImages")->isVisible() &&
+                !button(widget, "collagePdfTemplateAddImages")->isVisible() &&
                 !button(widget, "collagePdfTemplateClear")->isEnabled() &&
                 !button(widget, "collagePdfTemplateReverseImages")->isEnabled(),
-            "empty template state must keep the floating add action available");
+            "empty template state must expose its import guide instead of floating actions");
 }
 
 void fullEditorVisualFixtures() {
@@ -754,6 +912,10 @@ void fullEditorVisualFixtures() {
     ImageStitchingEditorWidget editor(&document);
     show(editor, {1180, 800});
     saveFixture(editor, "editor-template-five-image-size.png");
+    settings.stitchingMethod = ImageStitchingPdfStitchingMethod::PageBased;
+    document.setPdfSettings(settings);
+    pump();
+    saveFixture(editor, "editor-page-based.png");
     document.setOutputType(ImageStitchingOutputType::StaticImage);
     pump();
     saveFixture(editor, "editor-static-toolbar.png");
@@ -810,7 +972,9 @@ int main(int argc, char** argv) {
     try {
         sharedSelectionMetricsAndDpi();
         solidCellBordersAtEveryDpi();
+        emptyPreviewMatchesPageBasedStitching();
         paginationThumbnailsAndSwaps();
+        thumbnailReplacementAndDeletion();
         centeredResizeMoveResetAndCancellation();
         automaticContainmentAcrossTemplatesAndLayoutChanges();
         clippingBlankCellsAndDetails();
