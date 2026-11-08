@@ -418,6 +418,7 @@ impl Editor {
             self.bump_scene_state_revision();
         }
         self.state.ui.free_draw_hover_position = None;
+        self.state.ui.hovered_arrow_handle = None;
         self.state.pending_text_edit = None;
         self.state.pending_distance_value_edit = None;
         self.state.pending_new_text_draft = false;

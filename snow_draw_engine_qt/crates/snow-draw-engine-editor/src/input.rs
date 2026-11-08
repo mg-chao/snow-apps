@@ -14,6 +14,15 @@ impl Editor {
         document: &DocumentModel,
         event: InputEvent,
     ) -> Result<EditorUpdate, ErrorCode> {
+        if !matches!(
+            event,
+            InputEvent::Pointer(PointerEvent {
+                event_type: PointerEventType::Move | PointerEventType::Enter,
+                ..
+            })
+        ) {
+            self.set_hovered_arrow_handle(None);
+        }
         self.pending_command = None;
         self.state.pending_text_edit = None;
         self.state.pending_distance_value_edit = None;

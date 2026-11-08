@@ -363,9 +363,12 @@ impl Editor {
         let policy = self.tool_policy();
         let intent =
             self.resolve_primary_pointer_intent(document, policy, canvas_point, event.modifiers);
-        let (cursor, hovered_element) =
-            self.hover_feedback_for_primary_pointer_intent(document, policy, intent);
-        self.set_hovered_element(hovered_element);
+        let cursor = self.update_hover_feedback_for_primary_pointer_intent(
+            document,
+            policy,
+            intent,
+            canvas_point,
+        );
         Ok(InteractionOutput {
             consumed: false,
             capture: PointerCaptureCommand::NoChange,

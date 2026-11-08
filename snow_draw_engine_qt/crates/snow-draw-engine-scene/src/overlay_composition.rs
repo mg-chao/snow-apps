@@ -151,6 +151,24 @@ pub(crate) fn compose_overlay_items(
             )));
         }
     }
+    for handle in presentation
+        .arrow_handles
+        .iter()
+        .filter(|handle| handle.hovered)
+    {
+        let mut highlight = arrow_handle_item(*handle, zoom);
+        let size = arrow_point_handle_size(zoom) * 2.0;
+        highlight.width = size;
+        highlight.height = size;
+        highlight.corner_radii = CornerRadii::splat(size / 2.0);
+        highlight.fill = ColorRgba8 {
+            a: 0x66,
+            ..SELECTION_COLOR
+        };
+        highlight.stroke = TRANSPARENT;
+        highlight.stroke_width = 0.0;
+        items.push(OverlayDisplayItem::Rectangle(highlight));
+    }
     for handle in &presentation.arrow_handles {
         if handle.kind == ArrowHandleKind::FocusPoint
             && let Some(anchor) = handle.anchor
@@ -1011,6 +1029,59 @@ mod tests {
     }
 
     #[test]
+    fn arrow_control_hover_keeps_all_handles_above_a_constant_size_halo() {
+        for kind in [
+            ArrowHandleKind::Endpoint,
+            ArrowHandleKind::Segment,
+            ArrowHandleKind::FocusPoint,
+            ArrowHandleKind::AngleArc,
+        ] {
+            for zoom in [0.25, 1.0, 2.0, 4.0] {
+                let mut view = frame_view();
+                view.camera.zoom = zoom;
+                let handle = ArrowHandleState {
+                    kind,
+                    center: Point::new(25.0, 40.0),
+                    anchor: None,
+                    fixed_segment: false,
+                    hovered: false,
+                };
+                let mut presentation = EditorPresentationState {
+                    arrow_handles: vec![
+                        handle,
+                        ArrowHandleState {
+                            center: Point::new(handle.center.x + 7.0 / zoom, handle.center.y),
+                            ..handle
+                        },
+                    ],
+                    ..Default::default()
+                };
+                let normal = compose_overlay_items(SnapConfig::default(), &presentation, view);
+                presentation.arrow_handles[0].hovered = true;
+                let hovered = compose_overlay_items(SnapConfig::default(), &presentation, view);
+                assert_eq!(hovered.len(), normal.len() + 1);
+                assert_eq!(&hovered[1..], normal.as_slice());
+                let Some(OverlayDisplayItem::Rectangle(highlight)) = hovered.first() else {
+                    panic!("hover circle is missing")
+                };
+                assert_eq!(highlight.center_x, handle.center.x);
+                assert_eq!(highlight.center_y, handle.center.y);
+                assert_eq!(highlight.width * zoom, 20.0);
+                assert_eq!(highlight.height, highlight.width);
+                assert_eq!(
+                    highlight.fill,
+                    ColorRgba8 {
+                        a: 0x66,
+                        ..SELECTION_COLOR
+                    }
+                );
+                assert_eq!(highlight.stroke.a, 0);
+                assert_eq!(highlight.stroke_width, 0.0);
+            }
+        }
+    }
+
+    #[test]
     fn two_point_selected_arrow_hides_selection_box_and_keeps_endpoint_handles() {
         let arrow = ArrowData::from_global_points(
             &[Point::new(-40.0, -20.0), Point::new(40.0, 20.0)],
@@ -1039,12 +1110,14 @@ mod tests {
                     center: Point::new(-40.0, -20.0),
                     anchor: None,
                     fixed_segment: false,
+                    hovered: false,
                 },
                 ArrowHandleState {
                     kind: ArrowHandleKind::Endpoint,
                     center: Point::new(40.0, 20.0),
                     anchor: None,
                     fixed_segment: false,
+                    hovered: false,
                 },
             ],
             ..EditorPresentationState::default()

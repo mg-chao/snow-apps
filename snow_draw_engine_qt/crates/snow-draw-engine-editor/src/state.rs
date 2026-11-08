@@ -93,6 +93,7 @@ pub(crate) struct UiState {
     pub(crate) marquee: Option<RectangleData>,
     pub(crate) snap_guides: Vec<SnapGuide>,
     pub(crate) hovered_element: Option<ElementId>,
+    pub(crate) hovered_arrow_handle: Option<ArrowHitTarget>,
     pub(crate) free_draw_hover_position: Option<Point<f64>>,
 }
 

@@ -613,6 +613,7 @@ pub struct ArrowHandleState {
     pub center: Point<f64>,
     pub anchor: Option<Point<f64>>,
     pub fixed_segment: bool,
+    pub hovered: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

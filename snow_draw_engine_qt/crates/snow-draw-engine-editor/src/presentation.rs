@@ -787,6 +787,11 @@ impl Editor {
     ) -> Vec<ArrowHandleState> {
         let mut handles = Vec::new();
         let points = arrow.global_points();
+        let hovered = self
+            .state
+            .ui
+            .hovered_arrow_handle
+            .filter(|_| matches!(self.state.interaction, InteractionState::Idle));
         let loop_threshold = selection_handle_hit_size(self.camera().zoom) * 0.75;
         let loop_active = !arrow.is_bracket() && arrow_loop_active(arrow, loop_threshold);
         if loop_active {
@@ -795,12 +800,14 @@ impl Editor {
                 center: points[points.len() - 1],
                 anchor: None,
                 fixed_segment: false,
+                hovered: hovered == Some(ArrowHitTarget::Endpoint(ArrowEndpointEdge::End)),
             });
             handles.push(ArrowHandleState {
                 kind: ArrowHandleKind::LoopStart,
                 center: points[0],
                 anchor: None,
                 fixed_segment: false,
+                hovered: hovered == Some(ArrowHitTarget::Endpoint(ArrowEndpointEdge::Start)),
             });
         }
         for index in visible_arrow_point_indices(arrow) {
@@ -808,11 +815,19 @@ impl Editor {
                 continue;
             }
             if let Some(point) = points.get(index).copied() {
+                let target = if index == 0 {
+                    ArrowHitTarget::Endpoint(ArrowEndpointEdge::Start)
+                } else if index + 1 == points.len() {
+                    ArrowHitTarget::Endpoint(ArrowEndpointEdge::End)
+                } else {
+                    ArrowHitTarget::Point(index)
+                };
                 handles.push(ArrowHandleState {
                     kind: ArrowHandleKind::Endpoint,
                     center: point,
                     anchor: None,
                     fixed_segment: false,
+                    hovered: hovered == Some(target),
                 });
             }
         }
@@ -823,6 +838,7 @@ impl Editor {
                 center,
                 anchor: None,
                 fixed_segment: false,
+                hovered: hovered == Some(ArrowHitTarget::AngleArc),
             });
         }
 
@@ -845,15 +861,17 @@ impl Editor {
                 center: focus.point,
                 anchor,
                 fixed_segment: false,
+                hovered: hovered == Some(ArrowHitTarget::FocusPoint(focus.edge)),
             });
         }
 
-        for (_, midpoint, fixed_segment) in self.visible_arrow_segment_midpoints(arrow) {
+        for (index, midpoint, fixed_segment) in self.visible_arrow_segment_midpoints(arrow) {
             handles.push(ArrowHandleState {
                 kind: ArrowHandleKind::Segment,
                 center: midpoint,
                 anchor: None,
                 fixed_segment,
+                hovered: hovered == Some(ArrowHitTarget::Segment(index)),
             });
         }
 

@@ -381,6 +381,7 @@ fn shape_and_speech_bubble_bottom_handles_match_angle_controls_at_each_zoom() {
                 center: Point::new(-20.0, -40.0),
                 anchor: None,
                 fixed_segment: false,
+                hovered: false,
             })
             .collect(),
         ..Default::default()
