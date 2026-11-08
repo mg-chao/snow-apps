@@ -1139,6 +1139,82 @@ mod tests {
     }
 
     #[test]
+    fn native_wgc_exception_falls_back_for_snapshots_and_continuous_regions() -> CaptureResult<()> {
+        use CaptureBackendKind::{DxgiDuplication, Gdi, WindowsGraphicsCapture};
+
+        for window in [false, true] {
+            for mode in [CaptureMode::Snapshot, CaptureMode::Continuous] {
+                for dxgi_fails in [false, true] {
+                    let factory = wgc::interop::tests::factory(2);
+                    let handle = 0x10003_usize as *mut std::ffi::c_void;
+                    let native_error = if window {
+                        wgc::interop::create_for_window(&factory, HWND(handle))
+                    } else {
+                        wgc::interop::create_for_monitor(
+                            &factory,
+                            windows::Win32::Graphics::Gdi::HMONITOR(handle),
+                        )
+                    }
+                    .unwrap_err();
+                    let error = wgc::map_platform_error(native_error, "WGC item creation failed");
+                    assert!(error.to_string().contains("synthetic WGC server failure"));
+                    let wgc = Arc::new(Mutex::new(CandidateState {
+                        outcomes: VecDeque::from([Err(error)]),
+                        ..Default::default()
+                    }));
+                    let dxgi = Arc::new(Mutex::new(CandidateState {
+                        outcomes: VecDeque::from([if dxgi_fails {
+                            Err(CaptureError::Timeout)
+                        } else {
+                            Ok(())
+                        }]),
+                        ..Default::default()
+                    }));
+                    let gdi = Arc::new(Mutex::new(CandidateState::default()));
+                    let mut capturer = scripted_auto(&[
+                        (WindowsGraphicsCapture, Arc::clone(&wgc)),
+                        (DxgiDuplication, Arc::clone(&dxgi)),
+                        (Gdi, Arc::clone(&gdi)),
+                    ]);
+                    if window {
+                        capturer.target = AutoTarget::Window(WindowId::from_windows_handle(7));
+                    }
+                    capturer.set_capture_mode(mode)?;
+                    let selected = if dxgi_fails { Gdi } else { DxgiDuplication };
+                    for _ in 0..2 {
+                        let mut destination = Frame::empty();
+                        assert!(
+                            capturer
+                                .capture_region_into(
+                                    CaptureBlitRegion {
+                                        src_x: 0,
+                                        src_y: 0,
+                                        width: 2,
+                                        height: 2,
+                                        dst_x: 0,
+                                        dst_y: 0,
+                                    },
+                                    &mut destination,
+                                    false,
+                                )?
+                                .is_some()
+                        );
+                        assert_eq!(destination.dimensions(), (2, 2));
+                        assert_eq!(capturer.backend_kind(), selected);
+                    }
+                    let wgc = wgc.lock().unwrap();
+                    assert_eq!(wgc.calls, 1);
+                    assert_eq!(wgc.drops, 1);
+                    assert!(!wgc.active);
+                    assert_eq!(dxgi.lock().unwrap().calls, if dxgi_fails { 1 } else { 2 });
+                    assert_eq!(gdi.lock().unwrap().calls, if dxgi_fails { 2 } else { 0 });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn acquisition_failure_falls_back_and_success_is_sticky() -> CaptureResult<()> {
         let dxgi = Arc::new(Mutex::new(CandidateState {
             outcomes: VecDeque::from([Err(CaptureError::Timeout)]),

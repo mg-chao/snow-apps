@@ -2135,6 +2135,7 @@ name = "snow-capture"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "cc",
  "criterion",
  "crossbeam-channel",
  "half",

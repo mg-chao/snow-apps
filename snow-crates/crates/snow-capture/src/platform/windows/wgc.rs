@@ -49,6 +49,7 @@ use super::d3d11;
 use super::gpu_tonemap::{GpuF16Converter, GpuTonemapper};
 use super::monitor::{HdrMonitorMetadata, MonitorResolver, hdr_to_sdr_params};
 
+pub(super) mod interop;
 mod readback;
 mod transport;
 mod update;
@@ -134,18 +135,21 @@ fn create_monitor_capture_item(monitor: HMONITOR) -> CaptureResult<GraphicsCaptu
     let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
         .context("failed to get IGraphicsCaptureItemInterop factory")
         .map_err(CaptureError::platform)?;
-    unsafe { interop.CreateForMonitor(monitor) }
-        .context("IGraphicsCaptureItemInterop::CreateForMonitor failed")
-        .map_err(CaptureError::platform)
+    interop::create_for_monitor(&interop, monitor).map_err(|error| {
+        map_platform_error(
+            error,
+            "IGraphicsCaptureItemInterop::CreateForMonitor failed",
+        )
+    })
 }
 
 fn create_window_capture_item(window: HWND) -> CaptureResult<GraphicsCaptureItem> {
     let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
         .context("failed to get IGraphicsCaptureItemInterop factory")
         .map_err(CaptureError::platform)?;
-    unsafe { interop.CreateForWindow(window) }
-        .context("IGraphicsCaptureItemInterop::CreateForWindow failed")
-        .map_err(CaptureError::platform)
+    interop::create_for_window(&interop, window).map_err(|error| {
+        map_platform_error(error, "IGraphicsCaptureItemInterop::CreateForWindow failed")
+    })
 }
 
 pub(crate) fn validate_support() -> CaptureResult<()> {
