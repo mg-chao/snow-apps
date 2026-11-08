@@ -542,6 +542,8 @@ void capturePinKeepsEditableAnnotations() {
         ScreenshotSelectionSettingsStore selectionSettings;
         selectionSettings.setLayoutCompaction(selection.layoutCompaction);
         const auto base = fixture();
+        const auto styledBase = ScreenshotResultCompositor::compose(base.copy(selection.selection),
+                                                                    selection.resultStyle());
         ScreenshotControllerTestAccess::prepareSelection(controller, base, selection);
         auto& source = ScreenshotControllerTestAccess::runtime(controller);
         require(source.clearDocumentPreservingViewports(),
@@ -613,10 +615,16 @@ void capturePinKeepsEditableAnnotations() {
                 "editable pin keeps the exact source document");
         require(imported.canUndo() == !redoOnly && imported.canRedo(),
                 "editable pin keeps both history stacks");
-        require(samePixels(snapshot.image, base.copy(selection.selection)),
-                "editable pin keeps a clean cropped base image");
-        require(snapshot.canvasSourceRect == QRectF(selection.selection),
-                "editable pin keeps source canvas coordinates");
+        require(samePixels(snapshot.image, styledBase),
+                "editable pin bakes selection effects into the background without annotations");
+        require(snapshot.canvasSourceRect == QRectF(selection.selection).adjusted(-4, -4, 4, 4) &&
+                    snapshot.contentCanvasRect == snapshot.canvasSourceRect &&
+                    snapshot.surfaceCanvasRect == snapshot.canvasSourceRect,
+                "editable pin uses the same styled surface coordinates as a flattened pin");
+        const auto liveStyle = decodeScreenshotResultStyle(snapshot.resultStyle);
+        require(liveStyle && liveStyle->cornerRadius == 0 && liveStyle->effectWidth() == 0 &&
+                    !liveStyle->region && liveStyle->backgroundOpacityPercent == 0,
+                "the pin does not apply baked selection effects again");
         require(composite.size() == QSize(98, 63),
                 "editable pin keeps original dimensions and applies shadow once");
         require(canvas->redo() && expected.redo(),
@@ -631,8 +639,8 @@ void capturePinKeepsEditableAnnotations() {
                         !imported.hasDocumentContent() && imported.canRedo(),
                     "undo removes inherited annotations from the visible base");
             const auto clean = editablePinImage(*pin);
-            require(clean.pixelColor(24, 24) != QColor(Qt::red),
-                    "undo does not reveal baked-in annotations");
+            require(samePixels(clean, styledBase),
+                    "undo leaves exactly the styled background without baked annotations");
             require(canvas->redo() && expected.redo(), "restore first annotation for editing");
         }
         // Hit testing and a style mutation prove this is a selectable canvas object.
@@ -663,7 +671,7 @@ void capturePinKeepsEditableAnnotations() {
         closePins();
         require(storage.pinnedWindows().flush().success, "editable pin state flush succeeds");
         const auto stored = storage.pinnedWindows().loadRecord(id);
-        require(stored && samePixels(stored->image, base.copy(selection.selection)) &&
+        require(stored && samePixels(stored->image, styledBase) &&
                     imported.restoreDocumentSession(stored->canvasSession) && imported.canUndo() &&
                     imported.canRedo(),
                 "persisted pin keeps clean pixels and complete undo/redo history");
@@ -738,11 +746,22 @@ void capturePinCommitsPendingText() {
             "reset pending text transfer setting");
 }
 
-void capturePinRetainsSamplingContext() {
+void capturePinSamplesOnlyCroppedImage() {
     const snow_shot::storage::ScreenshotSettings settings;
     require(settings.setKeepAnnotationsEditableAfterPinningToScreen(true) &&
                 settings.setCopyAfterPinningToScreen(true),
             "enable sampling annotation transfer");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    auto policy = storage.captureHistory().policy();
+    policy.enabled = false;
+    require(storage.requestCaptureHistoryPolicy(policy),
+            "disable capture history to verify pin source ownership");
+    const auto normalize = [](const QImage& value) {
+        auto pixels = value.convertToFormat(QImage::Format_ARGB32);
+        pixels.setColorSpace(QColorSpace::SRgb);
+        pixels.setDevicePixelRatio(1);
+        return pixels;
+    };
     for (const bool magnifier : {false, true}) {
         ScreenshotController controller;
         QImage image(200, 140, QImage::Format_ARGB32_Premultiplied);
@@ -796,42 +815,44 @@ void capturePinRetainsSamplingContext() {
         if (magnifier)
             require(expected.pixelColor(60, 60) == QColor(Qt::green),
                     "magnifier samples pixels outside the crop");
+        const auto cropped = image.copy(selection.selection);
+        const auto expectedPin = runtime.renderToImage(
+            selection.selection, selection.selection.size(), {{cropped, selection.selection}});
+        require(!expectedPin.isNull(), "cropped sampling export succeeds");
+        if (magnifier)
+            require(normalize(expectedPin) != normalize(expected),
+                    "magnifier sampling outside the crop loses access to the full capture");
         controller.mcpPinSelectionToScreen();
         waitUntil(
             [&] {
                 return visiblePins().size() == 1 &&
-                       !ScreenshotControllerTestAccess::exportActive(controller);
+                       !ScreenshotControllerTestAccess::exportActive(controller) &&
+                       !controller.blocksApplicationUpdate();
             },
             "sampling annotation pin finishes");
         auto* pin = visiblePins().first();
-        const auto normalize = [](const QImage& value) {
-            auto pixels = value.convertToFormat(QImage::Format_ARGB32);
-            pixels.setColorSpace(QColorSpace::SRgb);
-            pixels.setDevicePixelRatio(1);
-            return pixels;
-        };
-        require(normalize(captureClipboardOutput().first) == normalize(expected),
-                "clipboard preserves original filter and exterior magnifier sampling");
-        require(normalize(editablePinImage(*pin)) == normalize(expected),
-                "pin preserves original filter and exterior magnifier sampling");
+        require(normalize(captureClipboardOutput().first) == normalize(expectedPin),
+                "automatic copying uses the pin's cropped sampling and transferred annotations");
+        require(normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "pinned filters and magnifiers sample only the cropped image");
+        require(normalize(pin->persistenceSnapshot().image) == normalize(cropped),
+                "pin retains only the clean cropped background");
+        waitUntil([&] { return image.isDetached(); },
+                  "pin releases the full capture after producing its cropped background");
         auto* canvas = pin->findChild<SnowCanvasWidget*>();
         require(canvas && canvas->undo() && canvas->redo() &&
-                    normalize(editablePinImage(*pin)) == normalize(expected),
-                "sampling annotations retain their appearance through undo and redo");
-        const auto donors = pin->persistenceSnapshot().canvasSamplingImages;
-        require(!donors.isEmpty(), "sampling pin retains its original donors");
+                    normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "sampling stays within the crop through undo and redo");
         const auto transform = [&](const QJsonObject& properties) {
             QString error;
             require(pin->automationUpdate(properties, &error) && error.isEmpty(),
                     "change sampling pin orientation");
-            require(pin->persistenceSnapshot().canvasSamplingImages.size() == donors.size(),
-                    "orientation changes retain original sampling donors");
         };
         const auto resetAndVerify = [&] {
             transform({{QStringLiteral("rotation"), QStringLiteral("reset")}});
             require(canvas->undo() && canvas->redo() &&
-                        normalize(editablePinImage(*pin)) == normalize(expected),
-                    "reset and undo/redo restore the original sampling context");
+                        normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                    "reset and undo/redo continue to sample only the cropped background");
         };
         for (const auto& properties :
              {QJsonObject{{QStringLiteral("flip"), QStringLiteral("horizontal")}},
@@ -847,21 +868,21 @@ void capturePinRetainsSamplingContext() {
         for (int turn = 0; turn < 4; ++turn)
             transform({{QStringLiteral("rotation"), QStringLiteral("clockwise")}});
         require(pin->persistenceSnapshot().imageTransform.isIdentity() && canvas->undo() &&
-                    canvas->redo() && normalize(editablePinImage(*pin)) == normalize(expected),
-                "a full rotation restores original sampling without an explicit reset");
-        // Persist a nonidentity orientation: its inactive donors must survive restoration.
+                    canvas->redo() && normalize(editablePinImage(*pin)) == normalize(expectedPin),
+                "a full rotation preserves crop-limited sampling");
+        // Restore a transformed pin and check that reset still uses only the cropped image.
         transform({{QStringLiteral("flip"), QStringLiteral("horizontal")}});
         auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
         const auto id = pin->persistenceSnapshot().id;
         pin->checkpointStorage();
         waitUntil([&] { return repository.pendingSummaries().isEmpty(); },
-                  "sampling donor persistence completes");
+                  "cropped pin persistence completes");
         closePins();
-        require(repository.flush().success, "sampling donors flush to disk");
+        require(repository.flush().success, "cropped pin flushes to disk");
         const auto stored = repository.loadRecord(id);
         require(stored && !stored->imageTransform.isIdentity() &&
-                    stored->canvasSamplingImages.size() == donors.size(),
-                "transformed pins persist their original sampling context");
+                    normalize(stored->image) == normalize(cropped),
+                "transformed pins persist only their cropped background");
         controller.showPinnedRecord(id);
         waitUntil([&] { return visiblePins().size() == 1; }, "sampling pin restores from disk");
         pin = visiblePins().first();
@@ -886,19 +907,14 @@ void editablePinRejectsInvalidDocument() {
     request.geometry.canvasSourceRect = request.contentCanvasRect;
     request.geometry.initialWindowSize = request.initialWindowSize;
     request.screen = QGuiApplication::primaryScreen();
-    auto payload = std::make_shared<ScreenshotPinnedEditableSelection>();
-    payload->imageSource = ScreenshotImageSource::fromLayers(
-        {{fixture(), request.contentCanvasRect, request.contentCanvasRect}});
-    payload->renderSpec.pixelSize = request.initialWindowSize;
-    payload->documentSession = QByteArrayLiteral("invalid canvas session");
-    request.editable = payload;
+    request.canvasSession = QByteArrayLiteral("invalid canvas session");
     auto artifact =
         std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(fixture()));
     int completions = 0;
     require(request.isPrepared() &&
                 !services.presentPinnedArtifact(
                     request, artifact,
-                    [&](bool ok, QImage) {
+                    [&](bool ok, auto) {
                         require(!ok, "invalid canvas import must fail instead of flattening");
                         ++completions;
                     }),
@@ -910,14 +926,12 @@ void editablePinRejectsInvalidDocument() {
                     .pendingSummaries()
                     .isEmpty(),
             "failed editable handoff completes once and releases its persistence reservation");
-    payload = std::make_shared<ScreenshotPinnedEditableSelection>(*payload);
-    payload->documentSession = SnowCanvasRuntime().serializeDocumentSession();
-    request.editable = payload;
+    request.canvasSession = SnowCanvasRuntime().serializeDocumentSession();
     artifact =
         std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(fixture()));
     bool ready = false;
     require(services.presentPinnedArtifact(request, artifact,
-                                           [&](bool ok, QImage) {
+                                           [&](bool ok, auto) {
                                                require(ok,
                                                        "valid pin succeeds after a failed import");
                                                ready = true;
@@ -1302,7 +1316,7 @@ int runScreenshotControllerClipboardTests(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--editable-pin-tests"))) {
         capturePinKeepsEditableAnnotations();
         capturePinCommitsPendingText();
-        capturePinRetainsSamplingContext();
+        capturePinSamplesOnlyCroppedImage();
         editablePinRejectsInvalidDocument();
         QApplication::clipboard()->clear();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

@@ -1859,9 +1859,6 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.resultStyle = encodeScreenshotResultStyle(m_resultStyle);
     record.borderAppearance = m_borderAppearance;
     record.canvasSession = m_runtime.serializeDocumentSession();
-    for (const auto& layer : m_originalAnnotationSamplingSource.layers)
-        record.canvasSamplingImages.append({layer.image, layer.imageCanvasRect,
-                                            layer.destinationCanvasRect, layer.smartEraseSource});
     record.textAnnotations = m_textAnnotations.serialize();
     record.recognitionResults =
         m_recognitionTargetReady && m_recognitionSession != nullptr
@@ -2299,8 +2296,6 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_resultSurfaceCanvasRect = surfaceCanvasRect;
     m_resultStyle = ScreenshotResultCompositor::normalizedStyle(config.resultStyle);
     m_imageSource = std::move(imageSource);
-    m_originalAnnotationSamplingSource = config.initialCanvasSamplingSource;
-    m_initialSmartErase = config.initialSmartErase;
     m_animationSource = config.animationSource;
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
@@ -2489,7 +2484,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     // interactive drawing tool. This also resets reused presentation state.
     m_canvas->setInteractionEnabled(false);
 
-    m_screenshotRenderer->setImageSource(m_imageSource, {}, activeAnnotationSamplingSource());
+    m_screenshotRenderer->setImageSource(m_imageSource);
     if (config.restorePersistentState && !m_imageTransform.isIdentity() &&
         !m_originalImage.isNull()) {
         if (animatedImage()) {
@@ -2511,7 +2506,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
         }
         m_imageSource =
             ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
-        m_screenshotRenderer->setImageSource(m_imageSource, {}, activeAnnotationSamplingSource());
+        m_screenshotRenderer->setImageSource(m_imageSource);
     }
     m_screenshotRenderer->setImageViewportPhysicalSize({});
     m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect, m_resultSurfaceCanvasRect,
@@ -4817,11 +4812,8 @@ bool ScreenshotPinnedWindow::installMaterializedImage(QImage image) {
     }
     if (m_screenshotRenderer != nullptr) {
         SNOW_SHOT_PIN_PERF_SCOPE("window.install_renderer");
-        m_screenshotRenderer->setImageSource(m_imageSource, {}, activeAnnotationSamplingSource());
+        m_screenshotRenderer->setImageSource(m_imageSource);
     }
-    if (m_initialSmartErase.data)
-        m_runtime.seedSmartEraseSnapshot(m_initialSmartErase);
-    m_initialSmartErase = {};
     m_recognitionTargetReady = false;
     updateBorderOutline();
     return true;
@@ -6523,9 +6515,6 @@ ScreenshotPinnedWindow::renderedImageSnapshot(ViewportExportMode mode) {
                         : m_runtime.smartEraseSnapshot(),
         appearance.outputOpacity,
     };
-    for (const auto& layer : activeAnnotationSamplingSource().layers)
-        request.samplingSources.append({layer.image, layer.imageCanvasRect,
-                                        layer.destinationCanvasRect, layer.smartEraseSource});
     const QRect geometry = m_animationTransformSnapshot
                                ? m_animationTransformSnapshot->contentGeometry
                                : (hideToTopActive() ? m_hideToTop->shownGeometry()
@@ -7502,8 +7491,6 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
             ? std::optional<bool>(true)
             : (content.isFormattedText() ? std::optional<bool>(false)
                                          : std::optional<bool>(content.image.hasAlphaChannel()));
-    m_originalAnnotationSamplingSource = {};
-    m_initialSmartErase = {};
     m_originalImage = std::move(content.image);
     m_originalPixelSize = m_originalImage.size();
     m_transformedImage = std::move(transformed);
@@ -7538,7 +7525,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
     }
     // The renderer revision invalidates the canvas's retained filter sources,
     // including replacements with identical geometry and unchanged annotations.
-    m_screenshotRenderer->setImageSource(m_imageSource, {}, activeAnnotationSamplingSource());
+    m_screenshotRenderer->setImageSource(m_imageSource);
     m_screenshotRenderer->setPinnedResultSurface(backgroundRect, surfaceRect, m_resultStyle);
     refreshColorSwatch();
     m_canvas->setCanvasContentVisible(true);
@@ -7641,7 +7628,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -8291,13 +8278,6 @@ QRect ScreenshotPinnedWindow::imageTransformGeometry(int quarterTurns) const {
     return snow_shot::presentation::pinnedOuterRect(target);
 }
 
-ScreenshotImageSource ScreenshotPinnedWindow::activeAnnotationSamplingSource() const {
-    // Original axis-aligned donors do not describe an oriented background. Fall back to
-    // that background while transformed, retaining the original donors for a later reset.
-    return m_imageTransform.isIdentity() ? m_originalAnnotationSamplingSource
-                                         : ScreenshotImageSource{};
-}
-
 void ScreenshotPinnedWindow::rebuildTransformedImage() {
     if (isLiveWindow()) {
         installLiveFrame(m_originalImage);
@@ -8326,7 +8306,7 @@ void ScreenshotPinnedWindow::rebuildTransformedImage() {
     const qreal effect = m_resultStyle.effectWidth();
     m_resultSurfaceCanvasRect = m_backgroundCanvasRect.adjusted(-effect, -effect, effect, effect);
     m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
-    m_screenshotRenderer->setImageSource(m_imageSource, {}, activeAnnotationSamplingSource());
+    m_screenshotRenderer->setImageSource(m_imageSource);
     m_screenshotRenderer->setPinnedResultSurface(m_backgroundCanvasRect, m_resultSurfaceCanvasRect,
                                                  m_resultStyle);
     if (m_hiddenTextSelection && m_formattedTextAvailable) {

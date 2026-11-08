@@ -2053,7 +2053,7 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
             bool completed = false;
             bool succeeded = false;
             require(services->presentPinnedArtifact(request, std::move(artifact),
-                                                    [&completed, &succeeded](bool success, QImage) {
+                                                    [&completed, &succeeded](bool success, auto) {
                                                         completed = true;
                                                         succeeded = success;
                                                     }),
@@ -17522,7 +17522,7 @@ void compactedPinExportsOnceAndRefreshesRecognition(int opacity = 0) {
     require(services.presentPinnedArtifact(request,
                                            std::make_shared<ScreenshotExportArtifact>(
                                                ScreenshotExportSource::fromImage(image)),
-                                           [&](bool success, QImage) {
+                                           [&](bool success, auto) {
                                                require(success, "compacted pin materializes");
                                                completed = true;
                                            }),
@@ -18459,7 +18459,7 @@ void pinnedExecutionAutomaticSaveOffscreen() {
             }
             int presentationCompletions = 0;
             bool presentedSuccessfully = false;
-            const auto completed = [&](bool success, QImage) {
+            const auto completed = [&](bool success, auto) {
                 ++presentationCompletions;
                 presentedSuccessfully = success;
             };
@@ -28159,7 +28159,6 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--export-snapshot-only"))) {
-            pinnedExportsPreserveSamplingDonorEligibility();
             pinnedExportCacheRetainsOnlyCompletedOutput();
             pinnedRecognitionSerializationIsAsynchronousAndCancellable();
             pinnedSnapshotMemoryMetadataTracksCachedDocument();

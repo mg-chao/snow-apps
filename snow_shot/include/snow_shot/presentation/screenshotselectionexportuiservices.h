@@ -111,10 +111,12 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                              const QRect& nativeGeometry,
                                              const ScreenshotHistoryEntry& entry,
                                              PinnedCompletion completion);
+    using PinnedArtifactCompletion =
+        std::function<void(bool, std::shared_ptr<ScreenshotExportArtifact>)>;
     [[nodiscard]] bool
     presentPinnedArtifact(const ScreenshotPinnedSelectionRequest& request,
                           std::shared_ptr<ScreenshotExportArtifact> artifact,
-                          PinnedCompletion completion = {},
+                          PinnedArtifactCompletion completion = {},
                           std::optional<ScreenshotAutomaticSaveRequest> automaticSave = {});
     [[nodiscard]] bool
     presentPinnedImageArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact, QScreen* screen,
