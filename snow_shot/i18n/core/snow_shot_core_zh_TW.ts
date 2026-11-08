@@ -330,6 +330,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
     <context>
         <name>DiagnosticsService</name>
         <message>
+            <source>A diagnostics file could not be read</source>
+            <translation>無法讀取診斷檔案</translation>
+        </message>
+        <message>
             <source>A log file could not be read</source>
             <translation>無法讀取記錄檔</translation>
         </message>
@@ -366,6 +370,14 @@ so every moment on screen can be expressed clearly and shared easily</source>
             <translation>無法初始化本機當機資料庫</translation>
         </message>
         <message>
+            <source>The log archive could not be saved</source>
+            <translation>無法儲存記錄壓縮檔</translation>
+        </message>
+        <message>
+            <source>The log archive directory could not be created</source>
+            <translation>無法建立記錄壓縮檔目錄</translation>
+        </message>
+        <message>
             <source>The log directory is not writable</source>
             <translation>無法寫入記錄目錄</translation>
         </message>
@@ -384,6 +396,10 @@ so every moment on screen can be expressed clearly and shared easily</source>
         <message>
             <source>The preferred log directory is unavailable; a fallback is in use</source>
             <translation>首選記錄目錄無法使用，目前使用備用目錄</translation>
+        </message>
+        <message>
+            <source>There is not enough space for a log archive</source>
+            <translation>沒有足夠的空間儲存記錄壓縮檔</translation>
         </message>
         <message>
             <source>There is not enough space for a log snapshot</source>

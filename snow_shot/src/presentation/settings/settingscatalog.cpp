@@ -3161,6 +3161,26 @@ SettingsItemDefinition storageStatusItem() {
     };
 }
 
+SettingsItemDefinition exportLogsItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ExportLogs;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy"));
+    payload.iconFactory = []() { return outlined_icons::Copy(); };
+    payload.successMessage =
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Logs archive copied to the clipboard"));
+    return {
+        QStringLiteral("storage.export-logs"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export logs")),
+        settingsText(
+            QT_TRANSLATE_NOOP("SettingsCatalog",
+                              "Copy all logs and crash reports as a ZIP archive to the clipboard")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Diagnostics")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Crash reports"))},
+        {},
+        payload,
+    };
+}
+
 SettingsItemDefinition clearRecordingTempItem() {
     SettingsActionDefinition payload;
     payload.binding = SettingsActionBinding::ClearRecordingTemp;
@@ -4778,10 +4798,8 @@ constexpr CatalogItemFactory catalogPageFilesHistorySectionPinnedHistoryItems[] 
 };
 
 constexpr CatalogItemFactory catalogPageFilesHistorySectionStorageStatusItems[] = {
-    {exportConfigurationItem},
-    {importConfigurationItem},
-    {storageStatusItem},
-    {clearRecordingTempItem},
+    {exportConfigurationItem}, {importConfigurationItem}, {storageStatusItem},
+    {exportLogsItem},          {clearRecordingTempItem},
 };
 
 constexpr CatalogSectionRecord catalogPageFilesHistorySections[] = {

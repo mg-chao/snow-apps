@@ -156,39 +156,6 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
     addStatusItem(m_descriptions, QStringLiteral("mode"), m_modeValue);
     addStatusItem(m_descriptions, QStringLiteral("error"), m_errorValue);
     layout->addWidget(m_descriptions);
-    auto* actions = new QHBoxLayout();
-    actions->setContentsMargins(0, 0, 0, 0);
-    m_copyLogFeedback = new QLabel(this);
-    m_copyLogFeedback->setObjectName(QStringLiteral("settings-storage-log-copy-feedback"));
-    m_copyLogFeedback->setWordWrap(true);
-    m_copyLogButton = new adqt::widgets::AdButton(this);
-    m_copyLogButton->setObjectName(QStringLiteral("settings-storage-copy-today-log"));
-    m_copyLogButton->setIconRef(adqt::icons::antd::outlined::Copy());
-    m_copyLogButton->setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
-    layout->addWidget(m_copyLogFeedback);
-    actions->addStretch(1);
-    actions->addWidget(m_copyLogButton);
-    layout->addLayout(actions);
-    connect(m_copyLogButton, &QAbstractButton::clicked, this, [this] {
-        m_copyLogOutcome = 0;
-        m_copyLogFeedback->clear();
-        static_cast<void>(m_runtimeSession.triggerAction(
-            snow_shot::presentation::settings::SettingsActionBinding::CopyTodayLog));
-        syncStatus(m_runtimeSession.storageStatus());
-    });
-    connect(&m_runtimeSession,
-            &snow_shot::presentation::settings::SettingsRuntimeSession::actionFinished, this,
-            [this](snow_shot::presentation::settings::SettingsActionBinding action, bool success,
-                   const QString& error) {
-                if (action !=
-                    snow_shot::presentation::settings::SettingsActionBinding::CopyTodayLog)
-                    return;
-                m_copyLogOutcome = success ? 1 : -1;
-                m_copyLogError = error;
-                retranslateUi();
-                syncStatus(m_runtimeSession.storageStatus());
-            });
-
     connect(m_refreshButton, &QAbstractButton::clicked, this,
             [this]() { m_runtimeSession.refreshStorageStatus(); });
     connect(&m_runtimeSession,
@@ -204,9 +171,9 @@ void StorageStatusSettingsWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
     const QVector<QLabel*> valueLabels{
-        m_totalValue,         m_historyValue,     m_entryCountValue, m_pinnedValue,    m_ocrValue,
-        m_recordingTempValue, m_otherValue,       m_locationValue,   m_modeValue,      m_errorValue,
-        m_diagnosticsValue,   m_logLocationValue, m_logStatusValue,  m_copyLogFeedback};
+        m_totalValue,         m_historyValue,     m_entryCountValue, m_pinnedValue, m_ocrValue,
+        m_recordingTempValue, m_otherValue,       m_locationValue,   m_modeValue,   m_errorValue,
+        m_diagnosticsValue,   m_logLocationValue, m_logStatusValue};
     QVector<QLabel*> labels = valueLabels;
     if (m_directoryModal)
         labels << m_directoryProgressLabel;
@@ -268,14 +235,6 @@ void StorageStatusSettingsWidget::retranslateUi() {
         m_directoryConfirmation->setAcceptText(tr("Proceed"));
         m_directoryConfirmation->setRejectText(tr("Cancel"));
     }
-    m_copyLogButton->setText(tr("Copy today's log file"));
-    m_copyLogButton->setAccessibleName(tr("Copy today's log file"));
-    m_copyLogFeedback->setText(
-        m_copyLogOutcome > 0   ? tr("Log file copied")
-        : m_copyLogOutcome < 0 ? tr("Could not copy the log file: %1")
-                                     .arg(QCoreApplication::translate(
-                                         "DiagnosticsService", m_copyLogError.toUtf8().constData()))
-                               : QString());
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("diagnostics")),
                                  tr("Logs and crash reports"));
     m_descriptions->setItemLabel(m_descriptions->indexOf(QStringLiteral("logLocation")),
@@ -365,9 +324,6 @@ void StorageStatusSettingsWidget::syncStatus(const snow_shot::storage::StorageSt
             u'\n' + QCoreApplication::translate("DiagnosticsService",
                                                 status.diagnostics.lastError.toUtf8().constData());
     m_logStatusValue->setText(diagnosticsState);
-    const auto copyState = m_runtimeSession.actionState(
-        snow_shot::presentation::settings::SettingsActionBinding::CopyTodayLog);
-    m_copyLogButton->setEnabled(copyState.enabled && !copyState.busy);
     m_locationValue->setText(status.effectiveDirectory.isEmpty() ? tr("Unavailable")
                                                                  : status.effectiveDirectory);
     m_modeValue->setText(modeText(status.effectiveMode));

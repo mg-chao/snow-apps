@@ -23,6 +23,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/update/startupupdate.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/diagnostics/diagnosticspaths.h"
 #include "snow_shot/diagnostics/ffmpegdiagnostics.h"
 #include "diagnosticsbridge.h"
 #include "startupregistrationreport.h"
@@ -88,32 +89,21 @@ int runOcrProxyStartupTests(int argc, char** argv);
 namespace {
 snow_shot::diagnostics::DiagnosticsOptions
 startupDiagnosticsOptions(const QString& selectedDirectory, const QString& applicationName) {
-    snow_shot::diagnostics::DiagnosticsOptions options;
     const bool storeManaged = snow_shot::app::distribution::isStoreManaged();
+    bool unifiedApplicationData = false;
+#ifdef Q_OS_WIN
+    unifiedApplicationData = !storeManaged;
+#endif
     const QString stableRoot =
         storeManaged ? snow_shot::app::distribution::writableDataDirectory()
-                     : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    // A missing package data root must never turn a relative path into a writable log
-    // directory in the current working directory or the standalone application's state.
-    if (storeManaged && !QDir::isAbsolutePath(stableRoot))
-        return options;
-    if (!selectedDirectory.isEmpty())
-        options.directories.append(QDir(selectedDirectory).filePath(QStringLiteral("logs")));
-    options.directories.append(QDir(stableRoot).filePath(QStringLiteral("logs")));
-    // Crashpad registers process-wide exception resources once. Its live database must
-    // stay at a stable path while the user-selected data/log directory is migrated.
-    options.crashCaptureDirectory = QDir(stableRoot).filePath(QStringLiteral("logs/crashes"));
+                     : QStandardPaths::writableLocation(unifiedApplicationData
+                                                            ? QStandardPaths::AppDataLocation
+                                                            : QStandardPaths::AppLocalDataLocation);
     const QString temporaryRoot =
         QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath();
-    if (!storeManaged || QDir::isAbsolutePath(temporaryRoot)) {
-        const QString relative =
-            storeManaged
-                ? QStringLiteral("SnowShot/%1/%2/logs")
-                      .arg(applicationName, snow_shot::app::distribution::packageFamilyName())
-                : QStringLiteral("SnowShot/%1/logs").arg(applicationName);
-        options.directories.append(QDir(temporaryRoot).filePath(relative));
-    }
-    return options;
+    return snow_shot::diagnostics::diagnosticsOptionsForPaths(
+        {unifiedApplicationData, selectedDirectory, stableRoot, temporaryRoot, applicationName,
+         storeManaged ? snow_shot::app::distribution::packageFamilyName() : QString()});
 }
 
 #ifndef Q_OS_MACOS

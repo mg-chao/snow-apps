@@ -163,7 +163,7 @@
         "ClearPinnedHistory",
         "ClearThumbnailCache",
         "ClearRecordingTemp",
-        "CopyTodayLog",
+        "ExportLogs",
         "ExportConfiguration",
         "ImportConfiguration"
       ]

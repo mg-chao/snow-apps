@@ -1089,6 +1089,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Another clipboard operation replaced the log export</source>
+            <translation>其他剪貼簿操作取代了記錄匯出</translation>
+        </message>
+        <message>
             <source>Could not restore the Windows context menu preference</source>
             <translation>無法還原 Windows 右鍵選單偏好設定</translation>
         </message>
@@ -1984,12 +1988,20 @@
             <translation>控制截圖顏色選擇器的顯示時機</translation>
         </message>
         <message>
+            <source>Copy</source>
+            <translation>複製</translation>
+        </message>
+        <message>
             <source>Copy after pinning to screen</source>
             <translation>固定到螢幕後複製</translation>
         </message>
         <message>
             <source>Copy after text recognition</source>
             <translation>文字辨識後複製</translation>
+        </message>
+        <message>
+            <source>Copy all logs and crash reports as a ZIP archive to the clipboard</source>
+            <translation>將所有記錄與當機報告打包為 ZIP 壓縮檔並複製到剪貼簿</translation>
         </message>
         <message>
             <source>Copy application settings as a zip archive to the clipboard</source>
@@ -2070,6 +2082,10 @@
         <message>
             <source>Core application settings</source>
             <translation>核心應用程式設定</translation>
+        </message>
+        <message>
+            <source>Crash reports</source>
+            <translation>當機報告</translation>
         </message>
         <message>
             <source>Current monitor</source>
@@ -2260,6 +2276,10 @@
             <translation>銷毀</translation>
         </message>
         <message>
+            <source>Diagnostics</source>
+            <translation>診斷</translation>
+        </message>
+        <message>
             <source>Disable global shortcuts</source>
             <translation>停用全域快速鍵</translation>
         </message>
@@ -2446,6 +2466,10 @@
         <message>
             <source>Export configuration</source>
             <translation>匯出設定</translation>
+        </message>
+        <message>
+            <source>Export logs</source>
+            <translation>匯出記錄</translation>
         </message>
         <message>
             <source>Export recording</source>
@@ -2918,6 +2942,10 @@
         <message>
             <source>Locked shadow color</source>
             <translation>鎖定陰影顏色</translation>
+        </message>
+        <message>
+            <source>Logs archive copied to the clipboard</source>
+            <translation>記錄壓縮檔已複製到剪貼簿</translation>
         </message>
         <message>
             <source>Loop animated images</source>
@@ -5150,14 +5178,6 @@ Unavailable: %2</source>
             <translation>選擇儲存目錄</translation>
         </message>
         <message>
-            <source>Copy today's log file</source>
-            <translation>複製今日記錄檔</translation>
-        </message>
-        <message>
-            <source>Could not copy the log file: %1</source>
-            <translation>無法複製記錄檔：%1</translation>
-        </message>
-        <message>
             <source>Current storage location: %1</source>
             <translation>目前儲存位置：%1</translation>
         </message>
@@ -5212,10 +5232,6 @@ Unavailable: %2</source>
         <message>
             <source>Latest storage error</source>
             <translation>最近的儲存錯誤</translation>
-        </message>
-        <message>
-            <source>Log file copied</source>
-            <translation>已複製記錄檔</translation>
         </message>
         <message>
             <source>Log location</source>

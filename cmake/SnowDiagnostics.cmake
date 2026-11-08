@@ -33,7 +33,8 @@ add_library(snow_shot_diagnostics STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/diagnostics.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/crashcollector.cpp")
 target_include_directories(snow_shot_diagnostics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_diagnostics PUBLIC Qt6::Core PRIVATE snow_shot_crash_bridge)
+target_link_libraries(snow_shot_diagnostics PUBLIC Qt6::Core
+    PRIVATE snow_shot_crash_bridge MINIZIP::minizip-ng)
 if(APPLE)
     target_sources(snow_shot_diagnostics PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/applicationqos.cpp")
     target_link_libraries(snow_shot_diagnostics PRIVATE snow_shot_rust_ffi_selector)

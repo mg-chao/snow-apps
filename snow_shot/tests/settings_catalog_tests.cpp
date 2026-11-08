@@ -4222,8 +4222,25 @@ int main(int argc, char** argv) {
         require(section && section->items.size() == 5 &&
                     section->items.at(0).id == u"configuration.export" &&
                     section->items.at(1).id == u"configuration.import" &&
-                    section->items.at(2).id == u"storage.status",
+                    section->items.at(2).id == u"storage.status" &&
+                    section->items.at(3).id == u"storage.export-logs" &&
+                    section->items.at(4).id == u"storage.clear-recording-temp",
                 "backup and restore precede storage status in the shared category");
+        require(!catalog.item({QStringLiteral("files-history"), QStringLiteral("storage-status"),
+                               QStringLiteral("storage.clear-thumbnails")}),
+                "retired thumbnail cache cleanup stays absent from the catalog");
+        const auto& exportItem = section->items.at(3);
+        const auto* exportAction =
+            std::get_if<settings::SettingsActionDefinition>(&exportItem.payload);
+        require(exportItem.title.translated() == u"Export logs" && exportAction &&
+                    exportAction->binding == settings::SettingsActionBinding::ExportLogs &&
+                    exportAction->buttonText.translated() == u"Copy" &&
+                    exportAction->successMessage.has_value(),
+                "log export has the standard Copy action and completion feedback");
+        const auto matches = settings::SettingsSearchIndex(settings::builtInSettingsRegistry())
+                                 .search(QStringLiteral("Export logs"));
+        require(!matches.isEmpty() && matches.front().location.itemId == exportItem.id,
+                "log export is discoverable by its title");
 #ifdef Q_OS_WIN
         require(section->title.translated() == u"Data storage" &&
                     section->items.at(2).title.translated() == u"Data storage",

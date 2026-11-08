@@ -1228,7 +1228,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
             if (observation)
                 observation->deleteLater();
         };
-        if (binding == settings::SettingsActionBinding::CopyTodayLog) {
+        if (binding == settings::SettingsActionBinding::ExportLogs) {
             QObject::connect(
                 ports.settings, &settings::SettingsRuntimeSession::actionFinished, observation,
                 [this, observation = QPointer<QObject>(observation), id,
@@ -1280,7 +1280,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 {QStringLiteral("revision"), static_cast<qint64>(configuration().revision())}});
         if (!lifetime)
             return;
-        if (binding != settings::SettingsActionBinding::CopyTodayLog && !cache)
+        if (binding != settings::SettingsActionBinding::ExportLogs && !cache)
             observe();
     } else if (method == u"snow_shot_templates_list") {
         const auto kind = params.value(QStringLiteral("kind")).toString();

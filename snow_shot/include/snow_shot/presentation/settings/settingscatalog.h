@@ -373,7 +373,7 @@ enum class SettingsActionBinding {
     ClearPinnedHistory,
     ClearThumbnailCache,
     ClearRecordingTemp,
-    CopyTodayLog,
+    ExportLogs,
     ExportConfiguration,
     ImportConfiguration,
 };

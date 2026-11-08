@@ -915,8 +915,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                 return StorageDirectoryChangeResult{false, flush.error, {}};
             auto& diagnostics = diagnostics::DiagnosticsService::instance();
             const bool hadDiagnostics = !diagnosticOptions.directories.isEmpty();
+            const bool fixedDiagnostics = !app::distribution::isStoreManaged();
             const QString captureDatabase = diagnostics.crashCaptureDirectory();
-            if (hadDiagnostics)
+            if (hadDiagnostics && !fixedDiagnostics)
                 diagnostics.shutdown();
             std::unique_ptr<PinnedWindowRepository> prepared;
             bool exchanged = false;
@@ -934,7 +935,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             // The native handler keeps writing to its process-lifetime database even
             // while the log writer is stopped. Never copy or remove that live database.
             options.includePath = [expectedPins, migrate, source = before.effectiveDirectory,
-                                   captureDatabase](const QString& path) {
+                                   captureDatabase, fixedDiagnostics](const QString& path) {
+                if (fixedDiagnostics && (path == u"logs" || path.startsWith(u"logs/")))
+                    return false;
                 const QString absolute = QDir::cleanPath(QDir(source).filePath(path));
                 if (!captureDatabase.isEmpty() &&
                     (absolute.compare(captureDatabase, Qt::CaseInsensitive) == 0 ||
@@ -989,7 +992,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             };
             outcome = changeStorageDirectory(options);
             prepared.reset();
-            if (hadDiagnostics) {
+            if (hadDiagnostics && !fixedDiagnostics) {
                 auto next = diagnosticOptions;
                 if (outcome.success) {
                     const QString oldRoot = QDir::cleanPath(before.effectiveDirectory) + u'/';
