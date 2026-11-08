@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdftemplatewidget.h"
 #include "collageimageediting_p.h"
+#include "collagethumbnailactions_p.h"
+#include "collageoriginalpreview_p.h"
 
 #include "snow_shot/presentation/components/canvasactiontoolbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "snow_shot/presentation/components/imagedropsurface.h"
 #include "snow_draw_engine_qt/snow_canvas_overlay_style.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snowimageqtcodec.h"
 #include "collageresourcebudget_p.h"
 #include "collagepreviewrows_p.h"
@@ -45,8 +49,6 @@
 namespace snow_shot::presentation::components {
 namespace {
 using adqt::widgets::AdButton;
-using adqt::widgets::AdImageListModel;
-using adqt::widgets::AdImageViewer;
 using adqt::widgets::AdScrollArea;
 namespace icons = adqt::icons::antd::outlined;
 constexpr auto dragType = "application/x-snow-shot-collage-item";
@@ -62,9 +64,11 @@ QString templateText(const char* source) {
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Template stitching preview"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget",
                       "Drag an image to move or swap it; drag its selection handles to scale "
-                      "proportionally around its center"),
+                      "proportionally around its center. Drag with the middle mouse button to "
+                      "pan; scroll to zoom"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Add images"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Clear all"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Fit to canvas"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Reverse image order"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Rotate clockwise by 90°"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Rotate counterclockwise by 90°"),
@@ -75,6 +79,8 @@ QString templateText(const char* source) {
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Preview original image"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Delete image"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Add images to create a PDF document"),
+    QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget",
+                      "Drag image files here, or choose add images"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget", "Image %1: %2"),
     QT_TRANSLATE_NOOP("ImageStitchingPdfTemplateWidget",
                       "Select to show this image's page; drag onto another image to swap"),
@@ -140,44 +146,6 @@ void paintImage(QPainter& painter, const QRectF& target, const ImageStitchingIte
     painter.restore();
 }
 
-class OriginalReply final : public adqt::widgets::AdImageReply {
-  public:
-    OriginalReply(const ImageStitchingItem* item, QObject* parent)
-        : AdImageReply(parent), m_image(item ? item->image : QImage{}),
-          m_owner(item ? item->resourceOwner : nullptr) {
-        QTimer::singleShot(0, this, [this] {
-            if (!isFinished()) {
-                if (m_image.isNull())
-                    fail(templateText("The original image is unavailable"));
-                else
-                    succeed(m_image);
-            }
-        });
-    }
-    void abort() override {
-        if (!isFinished())
-            fail(templateText("Image preview was cancelled"));
-    }
-
-  private:
-    QImage m_image;
-    std::shared_ptr<void> m_owner;
-};
-
-class OriginalLoader final : public adqt::widgets::AdImageLoader {
-  public:
-    OriginalLoader(ImageStitchingDocument* document, QObject* parent)
-        : AdImageLoader(parent), m_document(document) {}
-    adqt::widgets::AdImageReply* load(const QUrl& source, const adqt::widgets::AdImageLoadOptions&,
-                                      QObject* parent) override {
-        const int index = m_document ? m_document->indexOf(source.path().toULongLong()) : -1;
-        return new OriginalReply(index < 0 ? nullptr : &m_document->items()[index], parent);
-    }
-
-  private:
-    QPointer<ImageStitchingDocument> m_document;
-};
-
 class TemplateThumbnail final : public QWidget {
   public:
     TemplateThumbnail(ImageStitchingDocument* document, quint64 id, QWidget* parent)
@@ -187,12 +155,25 @@ class TemplateThumbnail final : public QWidget {
         setFixedSize(thumbnailWidth, thumbnailHeight);
         setFocusPolicy(Qt::StrongFocus);
         setAcceptDrops(true);
+        m_actions = new image_stitching_detail::ThumbnailActions(
+            this, "collagePdfTemplateReplaceThumbnailImage",
+            "collagePdfTemplateDeleteThumbnailImage");
+        connect(m_actions->replace, &AdButton::clicked, this, [this] {
+            if (replaceRequested)
+                replaceRequested(m_id);
+        });
+        connect(m_actions->remove, &AdButton::clicked, this, [this] { m_document->remove(m_id); });
         retranslate();
     }
     std::function<void(quint64)> previewRequested;
+    std::function<void(quint64)> replaceRequested;
     std::function<void(quint64, bool)> draggingChanged;
-    bool editing = true;
+    void setEditingEnabled(bool enabled, bool replacementAllowed) {
+        m_editing = enabled;
+        m_actions->setEditingEnabled(enabled, replacementAllowed);
+    }
     void retranslate() {
+        m_actions->retranslate(templateText("Replace image"), templateText("Delete image"));
         const int index = m_document->indexOf(m_id);
         if (index < 0)
             return;
@@ -240,7 +221,7 @@ class TemplateThumbnail final : public QWidget {
         m_pressed = false;
     }
     void mouseMoveEvent(QMouseEvent* event) override {
-        if (!editing || !m_pressed || !event->buttons().testFlag(Qt::LeftButton) ||
+        if (!m_editing || !m_pressed || !event->buttons().testFlag(Qt::LeftButton) ||
             (event->position() - m_press).manhattanLength() < QApplication::startDragDistance())
             return;
         m_pressed = false;
@@ -266,7 +247,7 @@ class TemplateThumbnail final : public QWidget {
         } else if (event->key() == Qt::Key_Space) {
             m_document->select(m_id);
         } else if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) &&
-                   editing) {
+                   m_editing) {
             m_document->remove(m_id);
         } else if (index >= 0 && (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right)) {
             const auto next = std::clamp(index + (event->key() == Qt::Key_Left ? -1 : 1), 0,
@@ -279,7 +260,7 @@ class TemplateThumbnail final : public QWidget {
         event->accept();
     }
     void dragEnterEvent(QDragEnterEvent* event) override {
-        m_target = editing && draggedId(event->mimeData(), m_document) != 0 &&
+        m_target = m_editing && draggedId(event->mimeData(), m_document) != 0 &&
                    draggedId(event->mimeData(), m_document) != m_id;
         if (m_target)
             event->acceptProposedAction();
@@ -296,7 +277,7 @@ class TemplateThumbnail final : public QWidget {
     void dropEvent(QDropEvent* event) override {
         m_target = false;
         const auto source = draggedId(event->mimeData(), m_document);
-        if (editing && source && m_document->swapItems(source, m_id))
+        if (m_editing && source && m_document->swapItems(source, m_id))
             event->acceptProposedAction();
         update();
     }
@@ -316,6 +297,8 @@ class TemplateThumbnail final : public QWidget {
     QPointF m_press;
     bool m_pressed = false;
     bool m_target = false;
+    bool m_editing = true;
+    image_stitching_detail::ThumbnailActions* m_actions = nullptr;
 };
 } // namespace
 
@@ -326,13 +309,22 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
     ImageStitchingPdfComposedPage page;
     int pageIndex = 0;
     QRectF paper;
+    QRectF available;
+    qreal fitScale = 1;
     qreal viewScale = 1;
+    qreal zoom = 1;
+    QPointF offset;
+    QPointF panLast;
+    bool panning = false;
     CanvasActionToolbar* toolbar = nullptr;
     CanvasActionToolbar* selectionToolbar = nullptr;
     std::array<AdButton*, 8> actions{};
     AdButton* add = nullptr;
     AdButton* clear = nullptr;
     AdButton* reverse = nullptr;
+    AdButton* fit = nullptr;
+    ImageDropSurface* empty = nullptr;
+    AdButton* emptyAdd = nullptr;
     bool loading = false;
     bool exporting = false;
     quint64 gestureId = 0;
@@ -545,6 +537,10 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
         return 0;
     }
     void cancelGesture() {
+        if (panning) {
+            panning = false;
+            owner->unsetCursor();
+        }
         if (!gestureId && !targetId)
             return;
         gestureId = 0;
@@ -559,14 +555,20 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
         owner->update();
     }
     void geometry() {
-        const QRectF available(24, 24, std::max(1, owner->width() - 48),
-                               std::max(1, owner->height() - 24 - 56));
+        empty->setGeometry(owner->rect());
+        available = QRectF(24, 24, std::max(1, owner->width() - 48),
+                           std::max(1, owner->height() - 24 - 56));
         if (page.isValid()) {
             const auto fitted = page.pageMillimeters.scaled(available.size(), Qt::KeepAspectRatio);
-            paper = {available.center() - QPointF(fitted.width() / 2, fitted.height() / 2), fitted};
-            viewScale = fitted.width() / page.pageMillimeters.width();
+            fitScale = fitted.width() / page.pageMillimeters.width();
+            viewScale = fitScale * zoom;
+            const auto pageSize = page.pageMillimeters * viewScale;
+            paper = {available.center() + offset -
+                         QPointF(pageSize.width() / 2, pageSize.height() / 2),
+                     pageSize};
         } else {
             paper = {};
+            fitScale = 1;
             viewScale = 1;
         }
         toolbar->adjustSize();
@@ -588,11 +590,16 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
         }
         owner->setProperty("paperRect", paper);
         owner->setProperty("pageIndex", pageIndex);
+        owner->setProperty("zoom", zoom);
+        owner->setProperty("viewportOffset", offset);
         if (detailTimer)
             detailTimer->start();
         owner->update();
     }
     void enabled() {
+        const bool isEmpty = document->items().isEmpty();
+        empty->setVisible(isEmpty);
+        toolbar->setVisible(!isEmpty);
         const bool selected = cellFor(document->selectedId()) != nullptr;
         for (auto* action : actions)
             action->setEnabled(selected && !exporting);
@@ -600,12 +607,16 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
         actions[6]->setEnabled(selected);
         add->setEnabled(!loading && !exporting);
         add->setBusy(loading);
+        fit->setEnabled(page.isValid());
+        emptyAdd->setEnabled(!loading && !exporting);
+        emptyAdd->setBusy(loading);
         clear->setEnabled(!exporting && !document->items().isEmpty());
         reverse->setEnabled(!loading && !exporting && document->items().size() > 1);
         geometry();
     }
     void refresh(bool followSelection = true) {
         cancelGesture();
+        const bool hadValidPage = page.isValid();
         const int previous = pageIndex;
         const auto settings = document->lastValidPdfSettings();
         const int count =
@@ -617,6 +628,10 @@ struct ImageStitchingPdfTemplateCanvas::Impl {
         if (pageIndex != previous)
             cancelDetails();
         page = calculateImageStitchingPdfComposedPage(document->items(), settings, pageIndex);
+        if (!hadValidPage && page.isValid()) {
+            zoom = 1;
+            offset = {};
+        }
         enabled();
         if (pageIndex != previous)
             emit owner->pageChanged(pageIndex);
@@ -638,6 +653,19 @@ ImageStitchingPdfTemplateCanvas::ImageStitchingPdfTemplateCanvas(ImageStitchingD
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
     setAcceptDrops(true);
+    d.empty = new ImageDropSurface(false, this);
+    d.empty->setObjectName(QStringLiteral("collagePdfTemplateEmptyState"));
+    auto* emptyLayout = static_cast<QVBoxLayout*>(d.empty->layout());
+    d.emptyAdd = new AdButton(d.empty);
+    d.emptyAdd->setObjectName(QStringLiteral("collagePdfTemplateEmptyAddImages"));
+    d.emptyAdd->setIconRef(icons::Plus());
+    d.emptyAdd->setButtonStyle(AdButton::ButtonStyle::Solid);
+    d.emptyAdd->setAccentRole(AdButton::AccentRole::Primary);
+    d.emptyAdd->setFocusPolicy(Qt::StrongFocus);
+    emptyLayout->insertSpacing(emptyLayout->count() - 1, 8);
+    emptyLayout->insertWidget(emptyLayout->count() - 1, d.emptyAdd, 0, Qt::AlignHCenter);
+    connect(d.emptyAdd, &AdButton::clicked, this,
+            &ImageStitchingPdfTemplateCanvas::addImagesRequested);
     d.detailTimer = new QTimer(this);
     d.detailTimer->setSingleShot(true);
     d.detailTimer->setInterval(70);
@@ -650,6 +678,8 @@ ImageStitchingPdfTemplateCanvas::ImageStitchingPdfTemplateCanvas(ImageStitchingD
                              "collagePdfTemplateReverseImages");
     d.add = d.toolbar->addAction(icons::Plus(), "collagePdfTemplateAddImages");
     d.toolbar->addSeparator();
+    d.fit = d.toolbar->addAction(icons::Fullscreen(), "collagePdfTemplateFitToCanvas");
+    connect(d.fit, &AdButton::clicked, this, &ImageStitchingPdfTemplateCanvas::fitToCanvas);
     d.clear = d.toolbar->addAction(icons::IconDelete(), "collagePdfTemplateClear");
     d.clear->setAccentRole(AdButton::AccentRole::Danger);
     connect(d.add, &AdButton::clicked, this, &ImageStitchingPdfTemplateCanvas::addImagesRequested);
@@ -707,7 +737,10 @@ ImageStitchingPdfTemplateCanvas::ImageStitchingPdfTemplateCanvas(ImageStitchingD
     connect(document, &ImageStitchingDocument::pdfPlacementChanged, this,
             [this](quint64) { m_impl->refresh(false); });
     connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
-            [this] { update(); });
+            [this] {
+                m_impl->empty->refreshTheme();
+                update();
+            });
     retranslateUi();
     d.refresh();
 }
@@ -716,6 +749,13 @@ ImageStitchingPdfTemplateCanvas::~ImageStitchingPdfTemplateCanvas() {
 }
 int ImageStitchingPdfTemplateCanvas::pageIndex() const {
     return m_impl->pageIndex;
+}
+void ImageStitchingPdfTemplateCanvas::fitToCanvas() {
+    auto& d = *m_impl;
+    d.cancelGesture();
+    d.zoom = 1;
+    d.offset = {};
+    d.geometry();
 }
 void ImageStitchingPdfTemplateCanvas::setPageIndex(int index) {
     auto& d = *m_impl;
@@ -760,8 +800,13 @@ void ImageStitchingPdfTemplateCanvas::setExportBusy(bool busy) {
 void ImageStitchingPdfTemplateCanvas::retranslateUi() {
     auto& d = *m_impl;
     setAccessibleName(templateText("Template stitching preview"));
-    setAccessibleDescription(templateText("Drag an image to move or swap it; drag its selection "
-                                          "handles to scale proportionally around its center"));
+    setAccessibleDescription(templateText(
+        "Drag an image to move or swap it; drag its selection handles to scale proportionally "
+        "around its center. Drag with the middle mouse button to pan; scroll to zoom"));
+    d.empty->title->setText(templateText("Add images to create a PDF document"));
+    d.empty->description->setText(templateText("Drag image files here, or choose add images"));
+    d.emptyAdd->setText(templateText("Add images"));
+    d.emptyAdd->setAccessibleName(d.emptyAdd->text());
     constexpr std::array<const char*, 8> labels{"Rotate clockwise by 90°",
                                                 "Rotate counterclockwise by 90°",
                                                 "Flip horizontally",
@@ -774,8 +819,11 @@ void ImageStitchingPdfTemplateCanvas::retranslateUi() {
         d.actions[index]->setToolTip(templateText(labels[index]));
         d.actions[index]->setAccessibleName(d.actions[index]->toolTip());
     }
-    for (const auto& [button, label] : std::array<std::pair<AdButton*, const char*>, 3>{
-             {{d.add, "Add images"}, {d.clear, "Clear all"}, {d.reverse, "Reverse image order"}}}) {
+    for (const auto& [button, label] :
+         std::array<std::pair<AdButton*, const char*>, 4>{{{d.add, "Add images"},
+                                                           {d.clear, "Clear all"},
+                                                           {d.reverse, "Reverse image order"},
+                                                           {d.fit, "Fit to canvas"}}}) {
         button->setToolTip(templateText(label));
         button->setAccessibleName(button->toolTip());
     }
@@ -783,15 +831,10 @@ void ImageStitchingPdfTemplateCanvas::retranslateUi() {
 }
 void ImageStitchingPdfTemplateCanvas::paintEvent(QPaintEvent*) {
     const auto& d = *m_impl;
+    if (d.document->items().isEmpty())
+        return;
     const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
     QPainter painter(this);
-    painter.fillRect(rect(), theme.colorFillAlter);
-    if (d.document->items().isEmpty()) {
-        painter.setPen(theme.colorTextSecondary);
-        painter.drawText(rect().adjusted(24, 24, -24, -56), Qt::AlignCenter | Qt::TextWordWrap,
-                         templateText("Add images to create a PDF document"));
-        return;
-    }
     if (!d.page.isValid()) {
         painter.setPen(theme.colorError);
         painter.drawText(rect().adjusted(24, 24, -24, -56), Qt::AlignCenter | Qt::TextWordWrap,
@@ -842,6 +885,14 @@ void ImageStitchingPdfTemplateCanvas::resizeEvent(QResizeEvent*) {
 }
 void ImageStitchingPdfTemplateCanvas::mousePressEvent(QMouseEvent* event) {
     auto& d = *m_impl;
+    if (event->button() == Qt::MiddleButton) {
+        d.cancelGesture();
+        d.panning = true;
+        d.panLast = event->position();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
     if (event->button() != Qt::LeftButton || d.loading || d.exporting)
         return;
     setFocus(Qt::MouseFocusReason);
@@ -880,6 +931,13 @@ void ImageStitchingPdfTemplateCanvas::mousePressEvent(QMouseEvent* event) {
 }
 void ImageStitchingPdfTemplateCanvas::mouseMoveEvent(QMouseEvent* event) {
     auto& d = *m_impl;
+    if (d.panning) {
+        d.offset += event->position() - d.panLast;
+        d.panLast = event->position();
+        d.geometry();
+        event->accept();
+        return;
+    }
     if (!d.gestureId || !event->buttons().testFlag(Qt::LeftButton)) {
         const auto handle = snowCanvasImageSelectionHandleAt(
             imageViewportRect(d.document->selectedId()), event->position());
@@ -916,6 +974,12 @@ void ImageStitchingPdfTemplateCanvas::mouseMoveEvent(QMouseEvent* event) {
 }
 void ImageStitchingPdfTemplateCanvas::mouseReleaseEvent(QMouseEvent* event) {
     auto& d = *m_impl;
+    if (event->button() == Qt::MiddleButton && d.panning) {
+        d.panning = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
     if (event->button() != Qt::LeftButton || !d.gestureId)
         return;
     if (d.moved && !d.loading && !d.exporting) {
@@ -937,6 +1001,28 @@ void ImageStitchingPdfTemplateCanvas::mouseReleaseEvent(QMouseEvent* event) {
             d.document->setPdfPlacement(id, placement);
     }
     d.geometry();
+    event->accept();
+}
+void ImageStitchingPdfTemplateCanvas::wheelEvent(QWheelEvent* event) {
+    auto& d = *m_impl;
+    d.cancelGesture();
+    if (!d.page.isValid() || d.viewScale <= 0) {
+        event->accept();
+        return;
+    }
+    const double steps = usesPreciseWheelDelta(*event) ? event->pixelDelta().y() / 100.0
+                                                       : event->angleDelta().y() / 120.0;
+    if (steps != 0) {
+        const qreal nextZoom = std::clamp(d.zoom * std::pow(1.15, steps), .05, 16.0);
+        const qreal nextScale = d.fitScale * nextZoom;
+        const QPointF nextOrigin =
+            event->position() - (event->position() - d.paper.topLeft()) * (nextScale / d.viewScale);
+        const QSizeF pageSize = d.page.pageMillimeters * nextScale;
+        d.zoom = nextZoom;
+        d.offset = nextOrigin -
+                   (d.available.center() - QPointF(pageSize.width() / 2, pageSize.height() / 2));
+        d.geometry();
+    }
     event->accept();
 }
 void ImageStitchingPdfTemplateCanvas::keyPressEvent(QKeyEvent* event) {
@@ -1018,16 +1104,15 @@ struct ImageStitchingPdfTemplateWidget::Impl {
     QLabel* pageLabel = nullptr;
     AdButton* previous = nullptr;
     AdButton* next = nullptr;
+    QWidget* navigationBar = nullptr;
     AdScrollArea* strip = nullptr;
     QWidget* content = nullptr;
     QHash<quint64, TemplateThumbnail*> thumbnails;
     quint64 activeDrag = 0;
     quint64 previousSelected = 0;
-    AdImageViewer* viewer = nullptr;
-    AdImageListModel* model = nullptr;
+    image_stitching_detail::OriginalPreview* originalPreview = nullptr;
     bool loading = false;
     bool exporting = false;
-    quint64 revision = std::numeric_limits<quint64>::max();
     void navigation() {
         const int count = static_cast<int>(
             imageStitchingPdfPageCount(document->items().size(), document->lastValidPdfSettings()));
@@ -1036,25 +1121,10 @@ struct ImageStitchingPdfTemplateWidget::Impl {
                   : templateText("No pages"));
         previous->setEnabled(canvas->pageIndex() > 0);
         next->setEnabled(canvas->pageIndex() + 1 < count);
+        navigationBar->setVisible(count > 0);
     }
     void openOriginal(quint64 id) {
-        const int index = document->indexOf(id);
-        if (index < 0)
-            return;
-        if (revision != document->contentRevision()) {
-            revision = document->contentRevision();
-            adqt::widgets::AdImageItems items;
-            items.reserve(document->items().size());
-            for (const auto& item : document->items()) {
-                QUrl source;
-                source.setScheme(QStringLiteral("collage-template-original"));
-                source.setPath(QString::number(item.id));
-                source.setQuery(QString::number(item.image.cacheKey()));
-                items.push_back({source, QFileInfo(item.label).fileName()});
-            }
-            model->setItems(items);
-        }
-        viewer->openAt(index);
+        originalPreview->open(id);
     }
     void visibleThumbnails() {
         if (!owner->isVisible())
@@ -1083,13 +1153,16 @@ struct ImageStitchingPdfTemplateWidget::Impl {
             if (!thumbnail) {
                 thumbnail = new TemplateThumbnail(document, id, content);
                 thumbnail->previewRequested = [this](quint64 imageId) { openOriginal(imageId); };
+                thumbnail->replaceRequested = [this](quint64 imageId) {
+                    emit owner->replaceImageRequested(imageId);
+                };
                 thumbnail->draggingChanged = [this](quint64 imageId, bool dragging) {
                     activeDrag = dragging ? imageId : 0;
                     visibleThumbnails();
                 };
                 thumbnails.insert(id, thumbnail);
             }
-            thumbnail->editing = !loading && !exporting;
+            thumbnail->setEditingEnabled(!exporting, !loading);
             thumbnail->move(index * thumbnailStep + 2, 2);
             thumbnail->retranslate();
             thumbnail->show();
@@ -1127,14 +1200,6 @@ struct ImageStitchingPdfTemplateWidget::Impl {
     void refresh() {
         if (!owner->isVisible())
             return;
-        if (viewer->isVisible() && revision != document->contentRevision()) {
-            quint64 viewedId = document->selectedId();
-            const auto originals = model->items();
-            if (viewer->currentRow() >= 0 && viewer->currentRow() < originals.size())
-                viewedId = originals[viewer->currentRow()].source.path().toULongLong();
-            viewer->close();
-            openOriginal(document->indexOf(viewedId) >= 0 ? viewedId : document->selectedId());
-        }
         const auto width =
             std::max<qint64>(1, qint64(document->items().size()) * thumbnailStep + 4);
         content->setFixedSize(int(std::min<qint64>(width, QWIDGETSIZE_MAX)), thumbnailHeight + 4);
@@ -1160,7 +1225,9 @@ ImageStitchingPdfTemplateWidget::ImageStitchingPdfTemplateWidget(ImageStitchingD
     layout->addWidget(d.notice);
     d.canvas = new ImageStitchingPdfTemplateCanvas(document, this);
     layout->addWidget(d.canvas, 1);
-    auto* navigation = new QHBoxLayout;
+    d.navigationBar = new QWidget(this);
+    auto* navigation = new QHBoxLayout(d.navigationBar);
+    navigation->setContentsMargins(0, 0, 0, 0);
     navigation->addStretch();
     d.previous = new AdButton(this);
     d.previous->setObjectName(QStringLiteral("collagePdfTemplatePreviousPage"));
@@ -1176,7 +1243,7 @@ ImageStitchingPdfTemplateWidget::ImageStitchingPdfTemplateWidget(ImageStitchingD
     d.next->setButtonStyle(AdButton::ButtonStyle::Text);
     navigation->addWidget(d.next);
     navigation->addStretch();
-    layout->addLayout(navigation);
+    layout->addWidget(d.navigationBar);
     d.strip = new AdScrollArea(this);
     d.strip->setObjectName(QStringLiteral("collagePdfTemplateThumbnailStrip"));
     d.strip->setFrameShape(QFrame::NoFrame);
@@ -1192,12 +1259,8 @@ ImageStitchingPdfTemplateWidget::ImageStitchingPdfTemplateWidget(ImageStitchingD
     // QScrollArea::setWidget enables background filling on the content widget.
     d.content->setAutoFillBackground(false);
     layout->addWidget(d.strip);
-    d.viewer = new AdImageViewer(this);
-    d.viewer->setObjectName(QStringLiteral("collagePdfTemplateOriginalViewer"));
-    d.viewer->setOwnerWindow(this);
-    d.viewer->setImageLoader(new OriginalLoader(document, this));
-    d.model = new AdImageListModel(this);
-    d.viewer->setModel(d.model);
+    d.originalPreview = new image_stitching_detail::OriginalPreview(
+        document, this, "collagePdfTemplateOriginalViewer", "ImageStitchingPdfTemplateWidget");
     connect(d.canvas, &ImageStitchingPdfTemplateCanvas::addImagesRequested, this,
             &ImageStitchingPdfTemplateWidget::addImagesRequested);
     connect(d.canvas, &ImageStitchingPdfTemplateCanvas::clearRequested, this,
@@ -1259,7 +1322,7 @@ void ImageStitchingPdfTemplateWidget::showEvent(QShowEvent* event) {
 void ImageStitchingPdfTemplateWidget::hideEvent(QHideEvent* event) {
     if (m_impl->activeDrag)
         QDrag::cancel();
-    m_impl->viewer->close();
+    m_impl->originalPreview->close();
     QWidget::hideEvent(event);
 }
 void ImageStitchingPdfTemplateWidget::changeEvent(QEvent* event) {

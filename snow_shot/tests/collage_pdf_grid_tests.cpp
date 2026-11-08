@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
+#include "snow_shot/presentation/components/overlaycontrolbutton.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/divider.h"
 #include "widgets/image.h"
@@ -25,6 +27,7 @@
 #include <QTranslator>
 #include <QTimer>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -206,6 +209,77 @@ void pageLayoutAndResponsiveColumns() {
             "invalid edits must explain and retain the last valid page preview");
 }
 
+void solidContentBordersAtEveryDpi() {
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themes.config();
+    ImageStitchingDocument document;
+    const auto id = document.append(image({80, 120}), QStringLiteral("Border fixture"));
+    document.select(0);
+    ImageStitchingPdfPageGrid grid(&document);
+    show(grid);
+    for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themes.setPreset(scheme);
+        for (const qreal margin : {0.0, 10.0}) {
+            auto settings = document.pdfSettings();
+            settings.marginLeftMm = settings.marginRightMm = margin;
+            settings.marginTopMm = settings.marginBottomMm = margin;
+            document.setPdfSettings(settings);
+            pump();
+            auto* page = card(grid, id);
+            auto palette = page->palette();
+            palette.setColor(QPalette::Window, QColor(32, 48, 64));
+            page->setPalette(palette);
+            page->setAutoFillBackground(true);
+            auto* preview = page->findChild<AdImage*>();
+            waitUntil([&] { return !preview->loading(); });
+            // The page-number badge intentionally sits above guides near the paper's top left.
+            page->findChild<QLabel*>(QStringLiteral("collagePdfPageNumber"))->hide();
+            const auto content = page->property("contentRect").toRectF();
+            for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+                const QPoint offset(3, 5);
+                QImage rendered(
+                    QSize(qCeil((page->width() + 6) * dpr), qCeil((page->height() + 10) * dpr)),
+                    QImage::Format_ARGB32_Premultiplied);
+                rendered.setDevicePixelRatio(dpr);
+                rendered.fill(Qt::transparent);
+                {
+                    QPainter painter(&rendered);
+                    page->render(&painter, offset);
+                }
+                const QRectF bounds((content.topLeft() + offset) * dpr, content.size() * dpr);
+                for (int edge = 0; edge < 4; ++edge) {
+                    const bool vertical = edge < 2;
+                    const int across =
+                        qRound(vertical ? (edge == 0 ? bounds.left() : bounds.right())
+                                        : (edge == 2 ? bounds.top() : bounds.bottom()));
+                    const int start = qCeil(vertical ? bounds.top() : bounds.left()) + 8;
+                    const int end = qFloor(vertical ? bounds.bottom() : bounds.right()) - 8;
+                    for (int along = start; along <= end; ++along) {
+                        int thickness = 0;
+                        for (int pixel = across - 4; pixel <= across + 4; ++pixel) {
+                            const QPoint sample =
+                                vertical ? QPoint(pixel, along) : QPoint(along, pixel);
+                            if (rendered.pixelColor(sample) == QColor(0xf0, 0xf0, 0xf0))
+                                ++thickness;
+                        }
+                        require(
+                            thickness == qRound(dpr),
+                            qPrintable(QStringLiteral("Page content edge %1 at DPR %2, margin %3, "
+                                                      "position %4 has thickness %5; expected %6")
+                                           .arg(edge)
+                                           .arg(dpr)
+                                           .arg(margin)
+                                           .arg(along)
+                                           .arg(thickness)
+                                           .arg(qRound(dpr))));
+                    }
+                }
+            }
+        }
+    }
+    themes.setConfig(originalConfig);
+}
+
 void imageSizedPagePreview() {
     ImageStitchingDocument document;
     const auto first = document.append(image({80, 40}), QStringLiteral("Wide"));
@@ -268,8 +342,8 @@ void keyboardActionsAndBusyStates() {
     require(replace->isVisible() && remove->isVisible() && preview->isVisible(),
             "keyboard selection must expose every page action in the floating toolbar");
     for (auto* page : {firstCard, card(grid, second)})
-        require(page->findChildren<AdButton*>().isEmpty(),
-                "page thumbnails must leave corner actions in the selection toolbar");
+        require(page->findChildren<AdButton*>().size() == 2,
+                "page thumbnails expose replace and delete corner actions alongside the toolbar");
     require(!replace->geometry().intersects(remove->geometry()) &&
                 !remove->geometry().intersects(preview->geometry()) &&
                 !replace->accessibleName().isEmpty(),
@@ -284,8 +358,9 @@ void keyboardActionsAndBusyStates() {
     QEnterEvent hover(QPointF(20, 20), QPointF(20, 20), firstCard->mapToGlobal(QPoint(20, 20)));
     QApplication::sendEvent(firstCard, &hover);
     require(!toolbar->isVisible() && document.selectedId() == 0 &&
-                firstCard->findChildren<AdButton*>().isEmpty(),
-            "hovering an unselected page must keep its corners and selection toolbar clear");
+                button(firstCard, "collagePdfReplaceThumbnailImage")->isVisible() &&
+                button(firstCard, "collagePdfDeleteThumbnailImage")->isVisible(),
+            "hovering an unselected page reveals its corner actions without selecting the page");
     firstCard->setFocus();
     pump();
     replace->setFocus();
@@ -403,6 +478,50 @@ void bottomToolbarAndReversePageOrder() {
     document.clear();
     pump();
     require(!reverse->isEnabled(), "clearing all pages must disable reversal");
+}
+
+void thumbnailReplacementAndDeletion() {
+    ImageStitchingDocument document;
+    const auto first = document.append(image({80, 40}), QStringLiteral("first"));
+    const auto second = document.append(image({40, 80}, Qt::blue), QStringLiteral("second"));
+    ImageStitchingPdfPageGrid grid(&document);
+    show(grid);
+    auto* thumbnail = card(grid, second);
+    auto* replace = button(thumbnail, "collagePdfReplaceThumbnailImage");
+    auto* remove = button(thumbnail, "collagePdfDeleteThumbnailImage");
+    thumbnail->setFocus();
+    pump();
+    require(dynamic_cast<OverlayControlButton*>(replace) &&
+                dynamic_cast<OverlayControlButton*>(remove) && replace->isVisible() &&
+                remove->isVisible() && remove->size() == QSize(28, 28) &&
+                remove->pos() == QPoint(thumbnail->width() - 32, thumbnail->height() - 32) &&
+                replace->pos() == remove->pos() - QPoint(32, 0) &&
+                replace->accessibleName() == replace->toolTip(),
+            "PDF page thumbnails share static image corner controls and keyboard visibility");
+    quint64 replacement = 0;
+    QObject::connect(&grid, &ImageStitchingPdfPageGrid::replaceImageRequested, &grid,
+                     [&](quint64 id) { replacement = id; });
+    document.select(first);
+    replace->click();
+    require(replacement == second && document.items().size() == 2,
+            "page corner replacement targets its own image instead of the selected page");
+    grid.setLoading(true);
+    require(!replace->isEnabled() && remove->isEnabled(),
+            "loading blocks page replacement while retaining deletion");
+    grid.setLoading(false);
+    grid.setExportBusy(true);
+    remove->click();
+    require(!replace->isEnabled() && !remove->isEnabled() && document.items().size() == 2,
+            "export blocks both page corner edits");
+    grid.setExportBusy(false);
+    grid.resize(900, 700);
+    pump();
+    require(remove->pos() == QPoint(thumbnail->width() - 32, thumbnail->height() - 32),
+            "corner actions follow responsive page thumbnail geometry");
+    remove->click();
+    pump();
+    require(document.items().size() == 1 && document.items().front().id == first,
+            "page corner deletion removes only its own input");
 }
 
 void selectedPageFloatingToolbar() {
@@ -813,10 +932,12 @@ int main(int argc, char** argv) {
                     storage.initialize({directory.path(), directory.path(), 60000}).success,
                 "grid tests must isolate application storage in a temporary directory");
         pageLayoutAndResponsiveColumns();
+        solidContentBordersAtEveryDpi();
         imageSizedPagePreview();
         keyboardActionsAndBusyStates();
         bottomToolbarAndReversePageOrder();
         selectedPageFloatingToolbar();
+        thumbnailReplacementAndDeletion();
         insertionReorderAndAutoscroll();
         originalPreviewIsolationAndOrder();
         emptyImportAndVirtualization();

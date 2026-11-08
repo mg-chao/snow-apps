@@ -8,6 +8,7 @@
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
 #include "widgets/divider.h"
+#include "widgets/image.h"
 #include "widgets/input_number.h"
 #include "widgets/segmented.h"
 #include "widgets/scroll_area.h"
@@ -17,6 +18,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QElapsedTimer>
+#include <QFontDatabase>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLayout>
@@ -636,6 +638,74 @@ void thumbnailScrollBarOverlaysTheList() {
     pump();
     verify(false);
 }
+void thumbnailNumbersAreHorizontallyCentered() {
+#ifdef Q_OS_WIN
+    const QDir fonts(qEnvironmentVariable("WINDIR") + QStringLiteral("/Fonts"));
+    const int fontId =
+        QFontDatabase::addApplicationFont(fonts.filePath(QStringLiteral("segoeui.ttf")));
+    require(fontId >= 0, "thumbnail number rendering must use an available offscreen font");
+    const QFont numberFont(QFontDatabase::applicationFontFamilies(fontId).front(), 9);
+#endif
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = themes.config();
+    for (const auto theme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themes.setPreset(theme);
+        ImageStitchingDocument document;
+        for (int index = 0; index < 10; ++index)
+            document.append(image({32, 24}), QString::number(index));
+        ImageStitchingEditorWidget editor(&document);
+        editor.resize(1800, 700);
+        editor.show();
+        pump();
+        const auto verify = [&] {
+            for (const int index : {0, 9}) {
+                auto* thumbnail = editor.findChild<QWidget*>(
+                    QStringLiteral("collageThumbnail_%1").arg(document.items()[index].id));
+                require(thumbnail != nullptr, "number alignment fixture must have a thumbnail");
+#ifdef Q_OS_WIN
+                thumbnail->setFont(numberFont);
+#endif
+                const auto background = themes.resolveTheme(thumbnail).colorBgContainer;
+                for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+                    QImage rendered(
+                        QSize(qCeil(thumbnail->width() * dpr), qCeil(thumbnail->height() * dpr)),
+                        QImage::Format_ARGB32_Premultiplied);
+                    rendered.setDevicePixelRatio(dpr);
+                    rendered.fill(Qt::transparent);
+                    {
+                        QPainter painter(&rendered);
+                        thumbnail->render(&painter, {}, {}, QWidget::DrawWindowBackground);
+                    }
+                    int left = rendered.width();
+                    int right = -1;
+                    for (int y = qCeil((thumbnail->height() - 19) * dpr);
+                         y < qFloor((thumbnail->height() - 3) * dpr); ++y) {
+                        for (int x = qCeil(5 * dpr); x < qFloor((thumbnail->width() - 5) * dpr);
+                             ++x) {
+                            if (rendered.pixelColor(x, y) != background) {
+                                left = std::min(left, x);
+                                right = std::max(right, x);
+                            }
+                        }
+                    }
+                    require(right >= left && std::abs((left + right + 1) / (2 * dpr) -
+                                                      thumbnail->width() / 2.0) <= 2,
+                            "single- and double-digit thumbnail numbers must center across the "
+                            "full card width in either theme and at every DPI");
+                }
+            }
+        };
+        verify();
+        document.reverseItems();
+        pump();
+        verify();
+    }
+    themes.setConfig(originalConfig);
+#ifdef Q_OS_WIN
+    QFontDatabase::removeApplicationFont(fontId);
+#endif
+}
+
 void thumbnailActionsUseTranslucentOverlays() {
     auto& themes = adqt::theme::ThemeManager::instance();
     const auto originalConfig = themes.config();
@@ -705,6 +775,91 @@ void thumbnailActionsUseTranslucentOverlays() {
                 "the translucent delete action must remove only its own image");
     }
     themes.setConfig(originalConfig);
+}
+
+void selectedImageReplacementAndOriginalPreview() {
+    ImageStitchingDocument document;
+    const auto first = document.append(image({480, 320}), QStringLiteral("first"));
+    const auto second = document.append(image({320, 480}, Qt::blue), QStringLiteral("second"));
+    ImageStitchingEditorWidget editor(&document);
+    editor.resize(1100, 760);
+    editor.show();
+    editor.activateWindow();
+    document.select(second);
+    pump();
+    auto* toolbar = editor.canvas()->findChild<QWidget*>(QStringLiteral("collageImageToolbar"));
+    auto* replace = button(toolbar, "collageReplaceSelected");
+    auto* preview = button(toolbar, "collagePreviewImage");
+    require(toolbar && toolbar->isVisible() && toolbar->findChildren<AdButton*>().size() == 8 &&
+                replace->x() < preview->x() &&
+                preview->x() < button(toolbar, "collageDeleteSelected")->x(),
+            "static selection actions match PDF action order and include replace and preview");
+    quint64 replaced = 0;
+    QObject::connect(&editor, &ImageStitchingEditorWidget::replaceImageRequested, &editor,
+                     [&](quint64 id) { replaced = id; });
+    replace->click();
+    require(replaced == second && document.items().size() == 2,
+            "selection replacement requests the existing workflow for the selected input");
+    document.rotate(second, true);
+    preview->click();
+    pump();
+    auto* viewer =
+        editor.findChild<adqt::widgets::AdImageViewer*>(QStringLiteral("collageOriginalViewer"));
+    require(viewer && viewer->isVisible() && viewer->currentRow() == document.indexOf(second),
+            "static original preview opens the selected input");
+    const auto* model = qobject_cast<adqt::widgets::AdImageListModel*>(viewer->model());
+    require(model != nullptr, "original preview exposes the shared input list");
+    auto* reply =
+        viewer->imageLoader()->load(model->items()[viewer->currentRow()].source, {}, &editor);
+    pump();
+    require(reply->isFinished() &&
+                reply->image().cacheKey() == document.items()[1].image.cacheKey() &&
+                reply->image().size() == QSize(320, 480),
+            "original preview loads full source pixels without applying stitching transforms");
+    delete reply;
+    document.swapItems(first, second);
+    pump();
+    require(viewer->isVisible() && viewer->currentRow() == document.indexOf(second),
+            "open static preview follows the viewed image through reordering");
+    document.replace(second, image({640, 360}, Qt::green), QStringLiteral("replacement"));
+    pump();
+    require(viewer->isVisible() &&
+                model->items()[viewer->currentRow()].source.query() ==
+                    QString::number(document.items()[document.indexOf(second)].image.cacheKey()),
+            "replacement refreshes an open original preview");
+    viewer->close();
+    editor.setLoading(true);
+    require(!replace->isEnabled() && preview->isEnabled() &&
+                button(toolbar, "collageDeleteSelected")->isEnabled(),
+            "loading blocks replacement while retaining existing-image actions like PDF");
+    editor.setLoading(false);
+    const auto revision = document.contentRevision();
+    editor.setExportBusy(true);
+    for (auto* action : toolbar->findChildren<AdButton*>()) {
+        require(action->isEnabled() == (action == preview),
+                "export keeps only original preview enabled in the selection toolbar");
+        if (action != preview)
+            action->click();
+    }
+    require(document.contentRevision() == revision && document.items().size() == 2,
+            "disabled selection actions cannot modify export inputs");
+    preview->click();
+    pump();
+    require(viewer->isVisible(), "original preview remains available during export");
+    editor.setExportBusy(false);
+    document.remove(second);
+    pump();
+    require(viewer->isVisible() && viewer->currentRow() == document.indexOf(first),
+            "removing the viewed image selects a surviving original");
+    document.clear();
+    pump();
+    require(!viewer->isVisible(), "clearing inputs closes static original preview");
+    document.append(image({40, 30}), QStringLiteral("new input"));
+    preview->click();
+    pump();
+    document.setOutputType(ImageStitchingOutputType::PdfDocument);
+    pump();
+    require(!viewer->isVisible(), "switching output modes closes the static original viewer");
 }
 
 void floatingBottomToolbarControlsCollection() {
@@ -808,34 +963,38 @@ void floatingFitToCanvasFollowsViewport() {
     editor.resize(1000, 700);
     editor.show();
     pump();
-    require(dynamic_cast<OverlayControlButton*>(fit) && fit->parentWidget() == canvas &&
-                fit->text().isEmpty() && fit->sizeClass() == AdButton::SizeClass::Medium &&
-                fit->size() == QSize(32, 32) && fit->iconSize() == QSize(18, 18) &&
+    auto* toolbar = editor.findChild<QWidget*>(QStringLiteral("collageCanvasToolbar"));
+    require(toolbar && fit->parentWidget() == toolbar && fit->text().isEmpty() &&
+                fit->sizeClass() == AdButton::SizeClass::Small && fit->size() == QSize(26, 26) &&
+                fit->focusPolicy() == Qt::StrongFocus &&
                 fit->toolTip() == QStringLiteral("Fit to canvas") &&
                 fit->accessibleName() == fit->toolTip(),
-            "fit must reuse the accessible floating icon button inside the canvas");
-    const auto verifyCorner = [&] {
-        require(fit->isVisible() && canvas->rect().contains(fit->geometry()) &&
-                    canvas->width() - fit->geometry().right() - 1 == 12 &&
-                    canvas->height() - fit->geometry().bottom() - 1 == 12,
-                "fit must stay at the canvas bottom-right corner");
-        require(!fit->isEnabled() || canvas->childAt(fit->geometry().center()) == fit,
-                "the enabled floating fit button must remain above the preview");
+            "fit must share the accessible floating collection toolbar with PDF previews");
+    const auto verifyToolbar = [&] {
+        const QRect preview(canvas->mapTo(&editor, QPoint{}), canvas->size());
+        require(fit->isVisible() && toolbar->rect().contains(fit->geometry()) &&
+                    preview.contains(toolbar->geometry()) &&
+                    std::abs(toolbar->geometry().center().x() - preview.center().x()) <= 1 &&
+                    preview.bottom() - toolbar->geometry().bottom() == 12,
+                "fit stays in the toolbar centered above the canvas bottom edge");
+        require(!fit->isEnabled() ||
+                    editor.childAt(fit->mapTo(&editor, fit->rect().center())) == fit,
+                "the enabled floating fit button remains above the preview");
     };
-    require(!fit->isVisible() && !fit->isEnabled(),
-            "fit must stay hidden and disabled while the empty state replaces the preview");
+    require(fit->isVisible() && !fit->isEnabled(),
+            "the empty collection toolbar keeps fit visible and disabled");
     const auto first = document.append(image({800, 400}), QStringLiteral("first"));
     const auto second = document.append(image({400, 800}, Qt::blue), QStringLiteral("second"));
     pump();
     require(fit->isEnabled(), "adding images must enable the floating fit action");
-    verifyCorner();
+    verifyToolbar();
     const auto fittedZoom = canvas->zoom();
     const auto fittedOffset = canvas->offset();
     wheel(canvas, {120, 100}, 240);
     mouse(canvas, QEvent::MouseButtonPress, {50, 50}, Qt::MiddleButton, Qt::MiddleButton);
     mouse(canvas, QEvent::MouseMove, {140, 125}, Qt::NoButton, Qt::MiddleButton);
     mouse(canvas, QEvent::MouseButtonRelease, {140, 125}, Qt::MiddleButton, Qt::NoButton);
-    verifyCorner();
+    verifyToolbar();
     const auto selection = document.selectedId();
     click(fit);
     require(qFuzzyCompare(canvas->zoom(), fittedZoom) &&
@@ -846,10 +1005,10 @@ void floatingFitToCanvasFollowsViewport() {
             "clicking fit must restore the full preview without changing selection");
     editor.resize(850, 550);
     pump();
-    verifyCorner();
+    verifyToolbar();
     editor.resize(1300, 800);
     pump();
-    verifyCorner();
+    verifyToolbar();
     const auto resizedZoom = canvas->zoom();
     wheel(canvas, {120, 100}, 120);
     fit->setFocus();
@@ -861,8 +1020,8 @@ void floatingFitToCanvasFollowsViewport() {
             "the floating fit action must remain keyboard accessible");
     document.clear();
     pump();
-    require(!fit->isVisible() && !fit->isEnabled(),
-            "clearing the result must hide and disable the floating fit action");
+    require(fit->isVisible() && !fit->isEnabled(),
+            "clearing the result disables fit in the empty collection toolbar");
 }
 void arrangementChangesFitToCanvas() {
     ImageStitchingDocument document;
@@ -1052,7 +1211,7 @@ void invalidLayoutKeepsSelectionAndTransformsUsable() {
     document.setSettings(invalidSettings);
     require(!document.layout().isValid() && canvas->imageViewportRect(first).isEmpty(),
             "resource-limited layout must retain images without invalid preview geometry");
-    require(!button(canvas, "collageFitToCanvas")->isEnabled(),
+    require(!button(&editor, "collageFitToCanvas")->isEnabled(),
             "fit must be disabled when the preview layout is invalid");
     pump();
     require(toolbar && toolbar->isVisible() && canvas->rect().contains(toolbar->geometry()) &&
@@ -1077,12 +1236,14 @@ void invalidLayoutKeepsSelectionAndTransformsUsable() {
                 document.items()[1].image.cacheKey() == secondPixels,
             "recovery controls must preserve collection, settings, and original image pixels");
     editor.setExportBusy(true);
-    require(!toolbar->isVisible(), "export must still hide transform recovery controls");
+    require(toolbar->isVisible() && !button(toolbar, "collageRotateClockwise")->isEnabled() &&
+                button(toolbar, "collagePreviewImage")->isEnabled(),
+            "export keeps original preview available while disabling transform recovery");
     editor.setExportBusy(false);
     require(toolbar->isVisible(), "recovery controls must return when export is no longer busy");
     document.setSettings(initialSettings);
     pump();
-    require(document.layout().isValid() && button(canvas, "collageFitToCanvas")->isEnabled() &&
+    require(document.layout().isValid() && button(&editor, "collageFitToCanvas")->isEnabled() &&
                 !canvas->imageViewportRect(second).isEmpty() && document.selectedId() == second &&
                 toolbar->isVisible(),
             "correcting resource-limited settings must restore the selected image preview");
@@ -2037,6 +2198,15 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
         button(editor.canvas(), "collageRotateClockwise")->accessibleName() ==
             QCoreApplication::translate("ImageStitchingEditorWidget", "Rotate clockwise by 90°"),
         "language change must refresh floating toolbar accessibility");
+    for (const auto* name : {"collageReplaceSelected", "collagePreviewImage"}) {
+        auto* action = button(editor.canvas(), name);
+        const auto source = QByteArray(name) == "collageReplaceSelected" ? "Replace image"
+                                                                         : "Preview original image";
+        const auto label = QCoreApplication::translate("ImageStitchingEditorWidget", source);
+        require(label != QString::fromLatin1(source) && action->toolTip() == label &&
+                    action->accessibleName() == label,
+                "new selection actions retranslate tooltips and accessible names");
+    }
     auto* direction =
         editor.findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageDirection"));
     auto* sizing = editor.findChild<adqt::widgets::AdSegmented*>(QStringLiteral("collageSizing"));
@@ -2076,7 +2246,7 @@ void languageChangesPreserveSettingsAndRefreshLabels() {
             border->toolTip() == QCoreApplication::translate("ImageStitchingEditorWidget",
                                                              "Percentage of the grid cell width"),
         "language changes must preserve active units and refresh their accessibility and help");
-    auto* fit = button(editor.canvas(), "collageFitToCanvas");
+    auto* fit = button(&editor, "collageFitToCanvas");
     require(fit->text().isEmpty() &&
                 fit->toolTip() ==
                     QCoreApplication::translate("ImageStitchingEditorWidget", "Fit to canvas") &&
@@ -2269,7 +2439,9 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arguments.contains(QStringLiteral("--thumbnail-actions-only"))) {
+            thumbnailNumbersAreHorizontallyCentered();
             thumbnailActionsUseTranslucentOverlays();
+            selectedImageReplacementAndOriginalPreview();
             floatingBottomToolbarControlsCollection();
             ScreenshotExportCoordinator::shared().shutdown();
             std::cout << "Collage thumbnail action tests passed\n";
@@ -2297,7 +2469,9 @@ int main(int argc, char** argv) {
         externalImageDrops();
         replacementHighlightMatchesDrawEngineMarquee();
         thumbnailScrollBarOverlaysTheList();
+        thumbnailNumbersAreHorizontallyCentered();
         thumbnailActionsUseTranslucentOverlays();
+        selectedImageReplacementAndOriginalPreview();
         floatingBottomToolbarControlsCollection();
         floatingFitToCanvasFollowsViewport();
         arrangementChangesFitToCanvas();

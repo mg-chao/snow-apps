@@ -19,6 +19,7 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
+#include <QLabel>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPixmap>
@@ -26,6 +27,7 @@
 #include <QThread>
 #include <QTranslator>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -90,6 +92,12 @@ QImage image() {
 
 void refresh() {
     QApplication::processEvents();
+}
+
+void settleLayout() {
+    // Nested form hosts post layout requests to their parents on successive event turns.
+    for (int pass = 0; pass < 4; ++pass)
+        refresh();
 }
 
 bool uniformMargins(const ImageStitchingPdfSettings& settings, qreal value) {
@@ -279,6 +287,58 @@ void imageSizeSelection() {
             "returning to a paper size restores the saved orientation and margin controls");
 }
 
+void customPaperSpacing() {
+    ImageStitchingDocument document;
+    auto settings = document.pdfSettings();
+    settings.paperSize = ImageStitchingPdfPaperSize::Custom;
+    document.setPdfSettings(settings);
+    ImageStitchingPdfSettingsWidget widget(&document);
+    widget.resize(360, widget.sizeHint().height());
+    widget.show();
+    refresh();
+    auto* width = control<AdLineEdit>(widget, "collagePdfCustomWidth");
+    auto* height = control<AdLineEdit>(widget, "collagePdfCustomHeight");
+    auto* margin = control<AdLineEdit>(widget, "collagePdfMargin");
+    auto* exportMode = control<AdSegmented>(widget, "collagePdfExportMode");
+    const auto top = [&widget](QWidget* controlWidget) {
+        return controlWidget->mapTo(&widget, QPoint{}).y();
+    };
+    const auto checkSpacing = [&] {
+        settleLayout();
+        const int dimensionBottom =
+            std::max(top(width) + width->height(), top(height) + height->height());
+        const int customGap = top(fieldFor(margin)) - dimensionBottom;
+        const int standardGap = top(fieldFor(exportMode)) - top(margin) - margin->height();
+        if (customGap <= 0 || customGap != standardGap)
+            std::cerr << "custom gap=" << customGap << ", standard gap=" << standardGap
+                      << ", method=" << static_cast<int>(document.pdfSettings().stitchingMethod)
+                      << '\n';
+        require(customGap > 0 && customGap == standardGap,
+                "custom paper dimensions have the same bottom spacing as other form rows");
+    };
+    for (const auto method : {ImageStitchingPdfStitchingMethod::PageBased,
+                              ImageStitchingPdfStitchingMethod::TemplateBased}) {
+        settings.stitchingMethod = method;
+        document.setPdfSettings(settings);
+        checkSpacing();
+        const int validHeight = widget.sizeHint().height();
+        width->setText(QStringLiteral("0"));
+        settleLayout();
+        auto* feedback =
+            fieldFor(width)->findChild<QLabel*>(QStringLiteral("ad-form-item-explain"));
+        require(feedback && feedback->isVisible() && !feedback->text().isEmpty() &&
+                    top(fieldFor(margin)) >= top(feedback) + feedback->height(),
+                "custom dimension errors stay visible without overlapping page margin");
+        width->setText(QStringLiteral("210"));
+        checkSpacing();
+        require(widget.sizeHint().height() == validHeight,
+                "correcting custom dimensions removes the validation space");
+        QEvent languageChange(QEvent::LanguageChange);
+        QCoreApplication::sendEvent(&widget, &languageChange);
+        checkSpacing();
+    }
+}
+
 void templateSettingsAndImageSize() {
     ImageStitchingDocument document;
     document.append(image(), QStringLiteral("original"));
@@ -286,7 +346,7 @@ void templateSettingsAndImageSize() {
     widget.resize(360, 1000);
     widget.show();
     refresh();
-    auto* method = control<AdSelect>(widget, "collagePdfStitchingMethod");
+    auto* method = control<AdSegmented>(widget, "collagePdfStitchingMethod");
     auto* templates = control<QWidget>(widget, "collagePdfTemplates");
     auto* margin = control<AdLineEdit>(widget, "collagePdfMargin");
     auto* spacing = control<AdLineEdit>(widget, "collagePdfImageSpacing");
@@ -303,7 +363,8 @@ void templateSettingsAndImageSize() {
     method->setCurrentValue(static_cast<int>(ImageStitchingPdfStitchingMethod::TemplateBased));
     control<AdButton>(widget, "collagePdfTemplateFiveImages")->click();
     spacing->setText(QStringLiteral("6.125"));
-    refresh();
+    settleLayout();
+    // Centering within the shared row can round differently for the two fields.
     require(
         templates->isVisible() && templates->findChildren<AdButton*>().size() == 9 &&
             spacing->isVisible() &&
@@ -312,7 +373,8 @@ void templateSettingsAndImageSize() {
             !control<AdButton>(widget, "collagePdfTemplateTwoImages")->isChecked() &&
             document.pdfSettings().imageSpacingMm == 6.125 &&
             spacing->mapTo(&widget, QPoint{}).x() > margin->mapTo(&widget, QPoint{}).x() &&
-            spacing->mapTo(&widget, QPoint{}).y() == margin->mapTo(&widget, QPoint{}).y() &&
+            std::abs(spacing->mapTo(&widget, QPoint{}).y() -
+                     margin->mapTo(&widget, QPoint{}).y()) <= 1 &&
             edits.contains(QStringLiteral("stitching_method")) &&
             edits.contains(QStringLiteral("template_type")) &&
             edits.contains(QStringLiteral("image_spacing_mm")),
@@ -702,6 +764,7 @@ int main(int argc, char** argv) {
         }
         validSettingsUpdateAndValidation();
         imageSizeSelection();
+        customPaperSpacing();
         templateSettingsAndImageSize();
         invalidSelectionsHaveFieldErrors();
         rawInvalidDraftSurvivesRefresh();

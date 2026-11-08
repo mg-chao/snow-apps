@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
+#include "collageimageediting_p.h"
+#include "collagethumbnailactions_p.h"
 
 #include "snow_shot/presentation/components/canvasactiontoolbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -273,9 +275,6 @@ class MemoryImageLoader final : public adqt::widgets::AdImageLoader {
             painter.drawImage(QPointF{}, item.preview);
             painter.restore();
         }
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(180, 180, 180), 1, Qt::DashLine));
-        painter.drawRect(mapped(layout.contentMillimeters));
         painter.end();
         m_thumbnails.insert(id, {size, item.revision, m_settingsRevision, page, reservation});
         if (thumbnailCacheChanged)
@@ -321,6 +320,28 @@ class InsertionMarker final : public QWidget {
     }
 };
 
+class PdfPageContentBorder final : public QWidget {
+  public:
+    explicit PdfPageContentBorder(QWidget* parent) : QWidget(parent) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+    }
+
+    void setContentRect(const QRectF& bounds) {
+        m_bounds = bounds;
+        update();
+    }
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        image_stitching_detail::paintPreviewBorder(painter, m_bounds, QColor(0xf0, 0xf0, 0xf0));
+    }
+
+  private:
+    QRectF m_bounds;
+};
+
 class PdfPageCard final : public QWidget {
   public:
     PdfPageCard(ImageStitchingDocument* document, AdImageViewer* viewer, MemoryImageLoader* loader,
@@ -341,15 +362,27 @@ class PdfPageCard final : public QWidget {
         m_image->setSemanticStyles(imageStyle);
         m_image->setFocusPolicy(Qt::NoFocus);
         m_image->installEventFilter(this);
+        m_contentBorder = new PdfPageContentBorder(this);
         m_number = new QLabel(this);
         m_number->setObjectName(QStringLiteral("collagePdfPageNumber"));
         m_number->setAlignment(Qt::AlignCenter);
         m_number->setAttribute(Qt::WA_TransparentForMouseEvents);
         m_number->setStyleSheet(SequenceNumberBadgeStyle::styleSheet());
+        m_actions = new image_stitching_detail::ThumbnailActions(
+            this, "collagePdfReplaceThumbnailImage", "collagePdfDeleteThumbnailImage");
+        connect(m_actions->replace, &AdButton::clicked, this, [this] {
+            if (replaceRequested)
+                replaceRequested(m_id);
+        });
+        connect(m_actions->remove, &AdButton::clicked, this, [this] {
+            if (removeRequested)
+                removeRequested(m_id);
+        });
     }
 
     std::function<void(quint64)> selected;
     std::function<void(quint64)> removeRequested;
+    std::function<void(quint64)> replaceRequested;
     std::function<void(quint64)> previewRequested;
     std::function<void(quint64)> dragRequested;
     std::function<void(quint64, int)> navigateRequested;
@@ -369,8 +402,9 @@ class PdfPageCard final : public QWidget {
         m_image->setSource({});
     }
 
-    void setEditingEnabled(bool editing) {
+    void setEditingEnabled(bool editing, bool replacementAllowed) {
         m_editing = editing;
+        m_actions->setEditingEnabled(editing, replacementAllowed);
     }
 
     void setItem(const ImageStitchingItem& item, int row, const ImageStitchingPdfSettings& settings,
@@ -402,6 +436,7 @@ class PdfPageCard final : public QWidget {
     }
 
     void retranslate() {
+        m_actions->retranslate(gridText("Replace image"), gridText("Delete image"));
         setToolTip(m_label);
         setAccessibleName(gridText("Page %1: %2").arg(m_ordinal).arg(m_label));
         m_number->setAccessibleName(gridText("Page %1").arg(m_ordinal));
@@ -424,9 +459,6 @@ class PdfPageCard final : public QWidget {
         painter.setPen(QPen(theme.colorBorderSecondary, 1));
         painter.setBrush(Qt::white);
         painter.drawRect(m_paper);
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(180, 180, 180), 1, Qt::DashLine));
-        painter.drawRect(m_content);
         painter.setPen(theme.colorText);
         const QRect labelRect(10, height() - 29, width() - 20, 20);
         painter.drawText(labelRect, Qt::AlignHCenter | Qt::AlignVCenter,
@@ -548,6 +580,9 @@ class PdfPageCard final : public QWidget {
         // for AdImage's final border pixel while keeping its border transparent.
         m_image->setGeometry(m_paper.toAlignedRect().adjusted(0, 0, 1, 1));
         m_image->show();
+        m_contentBorder->setGeometry(rect());
+        m_contentBorder->setContentRect(m_content);
+        m_contentBorder->raise();
         m_number->setGeometry(
             QRect(QPoint(qRound(m_paper.left()), qRound(m_paper.top())) +
                       QPoint(SequenceNumberBadgeStyle::inset, SequenceNumberBadgeStyle::inset),
@@ -568,7 +603,9 @@ class PdfPageCard final : public QWidget {
     bool m_pressed = false;
     bool m_editing = true;
     AdImage* m_image = nullptr;
+    PdfPageContentBorder* m_contentBorder = nullptr;
     QLabel* m_number = nullptr;
+    image_stitching_detail::ThumbnailActions* m_actions = nullptr;
 };
 } // namespace
 
@@ -664,7 +701,7 @@ struct ImageStitchingPdfPageGrid::Impl {
         add->setBusy(loading);
         clear->setEnabled(!exporting && !document->items().isEmpty());
         for (auto* card : cards)
-            card->setEditingEnabled(!exporting);
+            card->setEditingEnabled(!exporting, !loading);
         positionSelectionToolbar();
         if (loading || exporting) {
             dropHint->hide();
@@ -810,6 +847,9 @@ struct ImageStitchingPdfPageGrid::Impl {
                 card = new PdfPageCard(document, viewer, loader, content);
                 card->selected = [this](quint64 itemId) { document->select(itemId); };
                 card->removeRequested = [this](quint64 itemId) { deleteItem(itemId); };
+                card->replaceRequested = [this](quint64 itemId) {
+                    emit owner->replaceImageRequested(itemId);
+                };
                 card->previewRequested = [this](quint64 itemId) { openPreview(itemId); };
                 card->navigateRequested = [this](quint64 itemId, int key) {
                     navigate(itemId, key);
@@ -824,7 +864,7 @@ struct ImageStitchingPdfPageGrid::Impl {
                 continue;
             it.value()->setGeometry(cardRect(index));
             it.value()->setItem(document->items()[index], index, settings, pageRevision);
-            it.value()->setEditingEnabled(!exporting);
+            it.value()->setEditingEnabled(!exporting, !loading);
             it.value()->show();
         }
         owner->setProperty("materializedPageCount", cards.size());
@@ -1226,6 +1266,7 @@ ImageStitchingPdfPageGrid::~ImageStitchingPdfPageGrid() {
     for (auto* card : d.cards) {
         card->selected = {};
         card->removeRequested = {};
+        card->replaceRequested = {};
         card->previewRequested = {};
         card->dragRequested = {};
         card->navigateRequested = {};

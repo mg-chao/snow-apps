@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/components/collageeditorwidget.h"
 #include "collagepreviewrows_p.h"
 #include "collageimageediting_p.h"
+#include "collagethumbnailactions_p.h"
+#include "collageoriginalpreview_p.h"
 #include "snow_shot/presentation/components/collagepdfpagegrid.h"
 #include "snow_shot/presentation/components/collagepdfsettingswidget.h"
 #include "snow_shot/presentation/components/collagepdftemplatewidget.h"
@@ -89,6 +91,9 @@ constexpr std::array<const char*, 8> kColorValues{"#FFFFFF", "#000000", "#8C8C8C
 // These strings also supply labels constructed dynamically by the form and toolbar.
 [[maybe_unused]] constexpr std::array kTranslations{
     QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Replace image"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Preview original image"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "The original image is unavailable"),
+    QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image preview was cancelled"),
     QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Delete image"),
     QT_TRANSLATE_NOOP("ImageStitchingEditorWidget", "Image %1: %2"),
     QT_TRANSLATE_NOOP("ImageStitchingEditorWidget",
@@ -365,48 +370,27 @@ class ImageStitchingThumbnail final : public QWidget {
         setFixedSize(kThumbnailSize);
         setFocusPolicy(Qt::StrongFocus);
         setAcceptDrops(true);
-        setMouseTracking(true);
-        m_replace = new OverlayControlButton(
-            OverlayControlButton::Intent::Primary,
-            snow_shot::presentation::icons::custom::outlined::ReplaceImage(), this);
-        m_replace->setObjectName(QStringLiteral("collageReplaceImage"));
-        m_remove = new OverlayControlButton(OverlayControlButton::Intent::Destructive,
-                                            icons::IconDelete(), this);
-        m_remove->setObjectName(QStringLiteral("collageDeleteImage"));
-        for (auto* button : {m_replace, m_remove}) {
-            button->setSizeClass(AdButton::SizeClass::Small);
-            button->setFixedSize(28, 28);
-            button->setIconSize(QSize(16, 16));
-            button->setFocusPolicy(Qt::StrongFocus);
-        }
-        constexpr int actionMargin = 4;
-        constexpr int actionSpacing = 4;
-        m_remove->move(width() - m_remove->width() - actionMargin,
-                       height() - m_remove->height() - actionMargin);
-        m_replace->move(m_remove->x() - m_replace->width() - actionSpacing, m_remove->y());
-        m_replace->installEventFilter(this);
-        m_remove->installEventFilter(this);
-        connect(m_replace, &QAbstractButton::clicked, this, [this] {
+        m_actions = new image_stitching_detail::ThumbnailActions(this, "collageReplaceImage",
+                                                                 "collageDeleteImage");
+        connect(m_actions->replace, &QAbstractButton::clicked, this, [this] {
             if (editStarted)
                 editStarted();
             if (replaceRequested)
                 replaceRequested(m_id);
         });
-        connect(m_remove, &QAbstractButton::clicked, this, [this] {
+        connect(m_actions->remove, &QAbstractButton::clicked, this, [this] {
             if (editStarted)
                 editStarted();
             m_document->remove(m_id);
         });
         retranslate();
-        reveal();
     }
     std::function<void(quint64)> selected;
     std::function<void(quint64)> replaceRequested;
     std::function<void()> editStarted;
     void setEditingEnabled(bool enabled, bool replacementAllowed) {
         m_editing = enabled;
-        m_replace->setEnabled(enabled && replacementAllowed);
-        m_remove->setEnabled(enabled);
+        m_actions->setEditingEnabled(enabled, replacementAllowed);
     }
     void setItem(const ImageStitchingItem& item, int ordinal, bool force = false) {
         if (!force && m_revision == item.revision && m_ordinal == ordinal && m_label == item.label)
@@ -422,10 +406,7 @@ class ImageStitchingThumbnail final : public QWidget {
         update();
     }
     void retranslate() {
-        m_replace->setToolTip(text("Replace image"));
-        m_replace->setAccessibleName(m_replace->toolTip());
-        m_remove->setToolTip(text("Delete image"));
-        m_remove->setAccessibleName(m_remove->toolTip());
+        m_actions->retranslate(text("Replace image"), text("Delete image"));
         setAccessibleName(text("Image %1: %2").arg(m_ordinal).arg(m_label));
         setAccessibleDescription(
             text("Select to center this image; drag onto another image to swap"));
@@ -454,7 +435,7 @@ class ImageStitchingThumbnail final : public QWidget {
             drawTransformedPreview(painter, target, m_preview, m_transform);
         }
         painter.setPen(theme.colorTextSecondary);
-        painter.drawText(QRect(5, height() - 20, m_replace->x() - 10, 17), Qt::AlignCenter,
+        painter.drawText(QRect(5, height() - 20, width() - 10, 17), Qt::AlignCenter,
                          QString::number(m_ordinal));
         if (m_document->selectedId() == m_id || hasFocus()) {
             painter.setBrush(Qt::NoBrush);
@@ -462,32 +443,13 @@ class ImageStitchingThumbnail final : public QWidget {
             painter.drawRoundedRect(outer, theme.borderRadiusSM, theme.borderRadiusSM);
         }
     }
-    void enterEvent(QEnterEvent* event) override {
-        m_hovered = true;
-        reveal();
-        QWidget::enterEvent(event);
-    }
-    void leaveEvent(QEvent* event) override {
-        m_hovered = false;
-        reveal();
-        QWidget::leaveEvent(event);
-    }
     void focusInEvent(QFocusEvent* event) override {
-        reveal();
         update();
         QWidget::focusInEvent(event);
     }
     void focusOutEvent(QFocusEvent* event) override {
-        QTimer::singleShot(0, this, [this] {
-            reveal();
-            update();
-        });
+        QTimer::singleShot(0, this, [this] { update(); });
         QWidget::focusOutEvent(event);
-    }
-    bool eventFilter(QObject* object, QEvent* event) override {
-        if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut)
-            QTimer::singleShot(0, this, [this] { reveal(); });
-        return QWidget::eventFilter(object, event);
     }
     void mousePressEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
@@ -549,12 +511,6 @@ class ImageStitchingThumbnail final : public QWidget {
     }
 
   private:
-    void reveal() {
-        const bool visible =
-            m_hovered || hasFocus() || m_replace->hasFocus() || m_remove->hasFocus();
-        m_replace->setVisible(visible);
-        m_remove->setVisible(visible);
-    }
     ImageStitchingDocument* m_document;
     quint64 m_id;
     quint64 m_revision = std::numeric_limits<quint64>::max();
@@ -563,11 +519,9 @@ class ImageStitchingThumbnail final : public QWidget {
     QString m_label;
     QPointF m_press;
     int m_ordinal = 1;
-    bool m_hovered = false;
     bool m_target = false;
     bool m_editing = true;
-    AdButton* m_replace = nullptr;
-    AdButton* m_remove = nullptr;
+    image_stitching_detail::ThumbnailActions* m_actions = nullptr;
 };
 } // namespace
 
@@ -621,10 +575,10 @@ struct ImageStitchingPreviewCanvas::Impl {
     ImageStitchingStaticPlacement pendingPlacement;
     bool automaticFit = true;
     bool editing = true;
+    bool replacementAllowed = true;
     bool rendering = true;
     CanvasActionToolbar* toolbar = nullptr;
-    std::array<AdButton*, 6> actions{};
-    OverlayControlButton* fit = nullptr;
+    std::array<AdButton*, 8> actions{};
 
     void cancelDetails() {
         for (const auto& job : detailJobs)
@@ -886,8 +840,12 @@ struct ImageStitchingPreviewCanvas::Impl {
         previewStatisticsChanged();
         const auto selected = viewportRect(document->selectedId());
         const bool layoutRecovery = !layout.isValid() && indexById.contains(document->selectedId());
+        const bool hasSelection = indexById.contains(document->selectedId());
+        for (auto* action : actions)
+            action->setEnabled(hasSelection && editing);
+        actions[5]->setEnabled(hasSelection && editing && replacementAllowed);
+        actions[6]->setEnabled(hasSelection);
         const bool showToolbar =
-            editing &&
             (layoutRecovery || (!selected.isEmpty() && selected.intersects(owner->rect())));
         toolbar->setVisible(showToolbar);
         if (showToolbar) {
@@ -913,11 +871,6 @@ struct ImageStitchingPreviewCanvas::Impl {
             toolbar->move(x, y);
             toolbar->raise();
         }
-        constexpr int fitInset = 12;
-        fit->move(std::max(0, owner->width() - fit->width() - fitInset),
-                  std::max(0, owner->height() - fit->height() - fitInset));
-        fit->setEnabled(layout.isValid());
-        fit->raise();
         owner->update();
         detailTimer->start();
     }
@@ -1037,21 +990,27 @@ ImageStitchingPreviewCanvas::ImageStitchingPreviewCanvas(ImageStitchingDocument*
     connect(d.detailTimer, &QTimer::timeout, this, [this] { m_impl->requestDetails(); });
     d.toolbar = new CanvasActionToolbar(this);
     d.toolbar->setObjectName(QStringLiteral("collageImageToolbar"));
-    const std::array<adqt::icons::IconRef, 6> refs{
+    const std::array<adqt::icons::IconRef, 8> refs{
         icons::RotateRight(),
         icons::RotateLeft(),
         snow_shot::presentation::icons::custom::outlined::FlipHorizontal(),
         snow_shot::presentation::icons::custom::outlined::FlipVertical(),
         icons::Reload(),
+        snow_shot::presentation::icons::custom::outlined::ReplaceImage(),
+        icons::Eye(),
         icons::IconDelete()};
-    const std::array<const char*, 6> names{
+    const std::array<const char*, 8> names{
         "collageRotateClockwise", "collageRotateCounterclockwise", "collageFlipHorizontal",
-        "collageFlipVertical",    "collageResetTransform",         "collageDeleteSelected"};
+        "collageFlipVertical",    "collageResetTransform",         "collageReplaceSelected",
+        "collagePreviewImage",    "collageDeleteSelected"};
     for (std::size_t i = 0; i < d.actions.size(); ++i) {
         if (i == 5)
             d.toolbar->addSeparator();
         d.actions[i] = d.toolbar->addAction(refs[i], names[i]);
-        connect(d.actions[i], &QAbstractButton::pressed, this, [this] { preserveViewport(); });
+        connect(d.actions[i], &QAbstractButton::pressed, this, [this] {
+            preserveViewport();
+            m_impl->cancelGesture();
+        });
     }
     d.actions.back()->setAccentRole(AdButton::AccentRole::Danger);
     connect(d.actions[0], &QAbstractButton::clicked, this,
@@ -1065,12 +1024,11 @@ ImageStitchingPreviewCanvas::ImageStitchingPreviewCanvas(ImageStitchingDocument*
     connect(d.actions[4], &QAbstractButton::clicked, this,
             [document] { document->resetTransform(document->selectedId()); });
     connect(d.actions[5], &QAbstractButton::clicked, this,
+            [this, document] { emit replaceImageRequested(document->selectedId()); });
+    connect(d.actions[6], &QAbstractButton::clicked, this,
+            [this, document] { emit previewOriginalRequested(document->selectedId()); });
+    connect(d.actions[7], &QAbstractButton::clicked, this,
             [document] { document->remove(document->selectedId()); });
-    d.fit =
-        new OverlayControlButton(OverlayControlButton::Intent::Primary, icons::Fullscreen(), this);
-    d.fit->setObjectName(QStringLiteral("collageFitToCanvas"));
-    d.fit->setFocusPolicy(Qt::StrongFocus);
-    connect(d.fit, &QAbstractButton::clicked, this, &ImageStitchingPreviewCanvas::fitToCanvas);
     connect(document, &ImageStitchingDocument::changed, this, [this] { m_impl->refresh(); });
     connect(document, &ImageStitchingDocument::selectionChanged, this, [this] {
         m_impl->cancelGesture();
@@ -1098,6 +1056,9 @@ qreal ImageStitchingPreviewCanvas::zoom() const {
 }
 QPointF ImageStitchingPreviewCanvas::offset() const {
     return m_impl->offset;
+}
+bool ImageStitchingPreviewCanvas::canFitToCanvas() const {
+    return m_impl->layout.isValid();
 }
 QRectF ImageStitchingPreviewCanvas::imageViewportRect(quint64 id) const {
     return m_impl->viewportRect(id);
@@ -1136,10 +1097,11 @@ void ImageStitchingPreviewCanvas::centerImage(quint64 id) {
 void ImageStitchingPreviewCanvas::preserveViewport() {
     m_impl->automaticFit = false;
 }
-void ImageStitchingPreviewCanvas::setEditingEnabled(bool enabled) {
-    if (m_impl->editing == enabled)
+void ImageStitchingPreviewCanvas::setEditingEnabled(bool enabled, bool replacementAllowed) {
+    if (m_impl->editing == enabled && m_impl->replacementAllowed == replacementAllowed)
         return;
     m_impl->editing = enabled;
+    m_impl->replacementAllowed = replacementAllowed;
     m_impl->cancelGesture();
     m_impl->geometryChanged();
 }
@@ -1164,16 +1126,15 @@ void ImageStitchingPreviewCanvas::retranslateUi() {
     setAccessibleDescription(
         text("Drag an image to move or swap it; drag selection handles to "
              "scale around its center. Drag with the middle mouse button to pan; scroll to zoom"));
-    const std::array<const char*, 6> labels{
+    const std::array<const char*, 8> labels{
         "Rotate clockwise by 90°", "Rotate counterclockwise by 90°",
         "Flip horizontally",       "Flip vertically",
-        "Reset transform",         "Delete image"};
+        "Reset transform",         "Replace image",
+        "Preview original image",  "Delete image"};
     for (std::size_t i = 0; i < labels.size(); ++i) {
         m_impl->actions[i]->setToolTip(text(labels[i]));
         m_impl->actions[i]->setAccessibleName(m_impl->actions[i]->toolTip());
     }
-    m_impl->fit->setToolTip(text("Fit to canvas"));
-    m_impl->fit->setAccessibleName(m_impl->fit->toolTip());
     update();
 }
 void ImageStitchingPreviewCanvas::paintEvent(QPaintEvent*) {
@@ -1433,6 +1394,7 @@ struct ImageStitchingEditorWidget::Impl {
     ImageStitchingEditorWidget* owner = nullptr;
     ImageStitchingDocument* document = nullptr;
     ImageStitchingPreviewCanvas* canvas = nullptr;
+    image_stitching_detail::OriginalPreview* originalPreview = nullptr;
     ImageStitchingPdfPageGrid* pdfGrid = nullptr;
     ImageStitchingPdfTemplateWidget* pdfTemplate = nullptr;
     ImageStitchingPdfSettingsWidget* pdfSettings = nullptr;
@@ -1450,6 +1412,7 @@ struct ImageStitchingEditorWidget::Impl {
     AdButton* add = nullptr;
     AdButton* clear = nullptr;
     AdButton* reverse = nullptr;
+    AdButton* fit = nullptr;
     CanvasActionToolbar* canvasToolbar = nullptr;
     AdScrollArea* strip = nullptr;
     QWidget* thumbnails = nullptr;
@@ -1568,10 +1531,11 @@ struct ImageStitchingEditorWidget::Impl {
         add->setBusy(loading);
         clear->setEnabled(!exporting && !document->items().isEmpty());
         reverse->setEnabled(!loading && !exporting && document->items().size() > 1);
+        fit->setEnabled(canvas->canFitToCanvas());
         form->setEnabled(!exporting);
         for (auto* thumbnail : thumbnailById)
             thumbnail->setEditingEnabled(!exporting, !loading);
-        canvas->setEditingEnabled(!exporting && !loading);
+        canvas->setEditingEnabled(!exporting, !loading);
         emptyAdd->setEnabled(!loading && !exporting);
         emptyAdd->setBusy(loading);
         pdfGrid->setLoading(loading);
@@ -1626,6 +1590,8 @@ struct ImageStitchingEditorWidget::Impl {
     void refresh(bool force = false) {
         syncing = true;
         const bool pdf = document->outputType() == ImageStitchingOutputType::PdfDocument;
+        if (pdf)
+            originalPreview->close();
         outputType->setCurrentValue(pdf ? QStringLiteral("pdf") : QStringLiteral("static"));
         pdfSettingsField->setVisible(pdf);
         pdfSettings->setVisible(pdf);
@@ -1750,6 +1716,7 @@ struct ImageStitchingEditorWidget::Impl {
         emptyState->setVisible(empty);
         positionDropHint();
         const auto layout = document->layout();
+        fit->setEnabled(layout.isValid());
         dimensions->setText(
             layout.isValid() ? text("%1 × %2 px").arg(layout.size.width()).arg(layout.size.height())
                              : QString{});
@@ -1824,6 +1791,12 @@ ImageStitchingEditorWidget::ImageStitchingEditorWidget(ImageStitchingDocument* d
     auto* previewColumn = new QVBoxLayout;
     previewColumn->setSpacing(theme.marginXS);
     d.canvas = new ImageStitchingPreviewCanvas(document, this);
+    d.originalPreview = new image_stitching_detail::OriginalPreview(
+        document, this, "collageOriginalViewer", "ImageStitchingEditorWidget");
+    connect(d.canvas, &ImageStitchingPreviewCanvas::replaceImageRequested, this,
+            &ImageStitchingEditorWidget::replaceImageRequested);
+    connect(d.canvas, &ImageStitchingPreviewCanvas::previewOriginalRequested, this,
+            [this](quint64 id) { m_impl->originalPreview->open(id); });
     previewColumn->addWidget(d.canvas, 1);
     d.pdfGrid = new ImageStitchingPdfPageGrid(document, this);
     previewColumn->addWidget(d.pdfGrid, 1);
@@ -2040,6 +2013,9 @@ ImageStitchingEditorWidget::ImageStitchingEditorWidget(ImageStitchingDocument* d
         snow_shot::presentation::icons::custom::outlined::ReverseOrder(), "collageReverseImages");
     d.add = d.canvasToolbar->addAction(icons::Plus(), "collageAddImages");
     d.canvasToolbar->addSeparator();
+    d.fit = d.canvasToolbar->addAction(icons::Fullscreen(), "collageFitToCanvas");
+    d.fit->setEnabled(d.canvas->canFitToCanvas());
+    connect(d.fit, &QAbstractButton::clicked, this, [this] { m_impl->canvas->fitToCanvas(); });
     d.clear = d.canvasToolbar->addAction(icons::IconDelete(), "collageClearAll");
     d.clear->setAccentRole(AdButton::AccentRole::Danger);
     d.canvas->installEventFilter(this);
@@ -2228,6 +2204,8 @@ void ImageStitchingEditorWidget::retranslateUi() {
     }
     d.add->setToolTip(text("Add images"));
     d.add->setAccessibleName(d.add->toolTip());
+    d.fit->setToolTip(text("Fit to canvas"));
+    d.fit->setAccessibleName(d.fit->toolTip());
     d.reverse->setToolTip(text("Reverse image order"));
     d.reverse->setAccessibleName(d.reverse->toolTip());
     d.emptyPrompt->setText(text("Add images to start image stitching"));
@@ -2266,6 +2244,7 @@ void ImageStitchingEditorWidget::resizeEvent(QResizeEvent* event) {
 
 void ImageStitchingEditorWidget::hideEvent(QHideEvent* event) {
     m_impl->dropHint->hide();
+    m_impl->originalPreview->close();
     QWidget::hideEvent(event);
 }
 

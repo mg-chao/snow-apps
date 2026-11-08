@@ -20,14 +20,19 @@ class ImageStitchingPreviewCanvas final : public QWidget {
     ~ImageStitchingPreviewCanvas() override;
     [[nodiscard]] qreal zoom() const;
     [[nodiscard]] QPointF offset() const;
+    [[nodiscard]] bool canFitToCanvas() const;
     [[nodiscard]] QRectF imageViewportRect(quint64 id) const;
     [[nodiscard]] QRectF cellViewportRect(quint64 id) const;
     void fitToCanvas();
     void centerImage(quint64 id);
     void preserveViewport();
-    void setEditingEnabled(bool enabled);
+    void setEditingEnabled(bool enabled, bool replacementAllowed = true);
     void setRenderingEnabled(bool enabled);
     void retranslateUi();
+
+  signals:
+    void replaceImageRequested(quint64 id);
+    void previewOriginalRequested(quint64 id);
 
   protected:
     void paintEvent(QPaintEvent*) override;

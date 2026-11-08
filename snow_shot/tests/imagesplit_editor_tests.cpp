@@ -523,9 +523,9 @@ class SizeLabelTranslator final : public QTranslator {
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (QByteArray(context) == "ImageSplitEditorWidget") {
             if (QByteArray(source) == "Width per image")
-                return QStringLiteral("每张图片宽度");
+                return QStringLiteral("每张图像宽度");
             if (QByteArray(source) == "Height per image")
-                return QStringLiteral("每张图片高度");
+                return QStringLiteral("每张图像高度");
         }
         return {};
     }
@@ -578,11 +578,11 @@ void preciseSizeUsesSharedFormLabel() {
     QApplication::installTranslator(&translator);
     QEvent language(QEvent::LanguageChange);
     QApplication::sendEvent(&editor, &language);
-    require(field->label() == QStringLiteral("每张图片高度") && label->text() == field->label() &&
+    require(field->label() == QStringLiteral("每张图像高度") && label->text() == field->label() &&
                 size->accessibleName() == field->label() && document.state() == state,
             "runtime language changes must refresh the shared size label and accessible name");
     direction->setCurrentValue(QStringLiteral("vertical"));
-    require(field->label() == QStringLiteral("每张图片宽度") && label->text() == field->label() &&
+    require(field->label() == QStringLiteral("每张图像宽度") && label->text() == field->label() &&
                 size->accessibleName() == field->label(),
             "changing direction must update the translated size label and accessible name");
     QApplication::removeTranslator(&translator);

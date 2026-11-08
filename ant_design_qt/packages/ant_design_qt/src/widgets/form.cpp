@@ -1286,6 +1286,18 @@ void AdFormItem::setNoStyle(bool value) {
   refresh();
 }
 
+int AdFormItem::bottomMargin() const { return bottomMargin_; }
+
+void AdFormItem::setBottomMargin(int value) {
+  value = std::max(-1, value);
+  if (bottomMargin_ == value) {
+    return;
+  }
+  bottomMargin_ = value;
+  emit bottomMarginChanged(bottomMargin_);
+  refresh();
+}
+
 bool AdFormItem::itemHidden() const { return itemHidden_; }
 
 void AdFormItem::setItemHidden(bool value) {
@@ -1905,9 +1917,10 @@ void AdFormItem::rebuildItemLayout(const detail::FormVisualStyle* resolvedStyle)
   };
   itemLayoutGrid_->setContentsMargins(
       0, 0, 0,
-      noStyle_
-          ? 0
-          : (inlineLayout ? style.metrics.inlineItemMarginBottom : style.metrics.itemMarginBottom));
+      noStyle_ ? 0
+               : (bottomMargin_ >= 0 ? bottomMargin_
+                                     : (inlineLayout ? style.metrics.inlineItemMarginBottom
+                                                     : style.metrics.itemMarginBottom)));
   itemLayoutGrid_->setHorizontalSpacing(0);
   itemLayoutGrid_->setVerticalSpacing(0);
   itemLayoutGrid_->setColumnMinimumWidth(
@@ -2117,14 +2130,13 @@ void AdFormItem::updateAdditionalSpacing(const detail::FormVisualStyle* resolved
       resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
   const bool inlineLayout = effectiveInlineLayout();
   const bool helpVisible = hasVisibleHelpMessage();
-  const int bottomMargin =
-      noStyle_ ? 0
-               : (inlineLayout ? style.metrics.inlineItemMarginBottom
-                               : (helpVisible ? 0 : style.metrics.itemMarginBottom));
+  const int itemMargin = bottomMargin_ >= 0 ? bottomMargin_ : style.metrics.itemMarginBottom;
+  const int layoutMargin =
+      inlineLayout && bottomMargin_ < 0 ? style.metrics.inlineItemMarginBottom : itemMargin;
+  const int bottomMargin = noStyle_ || helpVisible ? 0 : layoutMargin;
   itemLayoutGrid_->setContentsMargins(0, 0, 0, bottomMargin);
   if (additionalHost_) {
-    additionalHost_->setMinimumHeight(!noStyle_ && helpVisible ? style.metrics.itemMarginBottom
-                                                               : 0);
+    additionalHost_->setMinimumHeight(!noStyle_ && helpVisible ? itemMargin : 0);
   }
   updateGeometry();
 }
