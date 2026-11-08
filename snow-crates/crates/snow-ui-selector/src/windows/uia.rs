@@ -261,18 +261,22 @@ fn build_uia_window_cache(
 ) -> Result<(Vec<UiaWindow>, WindowSpatialIndex)> {
     let hwnds = window::enumerate_top_windows()?;
     let monitors = MonitorCache::from_displays(displays);
+    let desktop_windows = window::DesktopWindows::new();
     Ok(collect_window_snapshot(hwnds, excluded_hwnds, |hwnd| {
-        if window::is_window_cloaked(hwnd) {
-            return None;
-        }
-        monitors.clip_rect_to_visible_area(window::visible_window_rect(hwnd)?)
+        let rect = (!window::is_window_cloaked(hwnd))
+            .then(|| window::visible_window_rect(hwnd))
+            .flatten();
+        let monitors = &monitors;
+        let desktop_windows = &desktop_windows;
+        rect.into_iter()
+            .flat_map(move |rect| monitors.selection_rects(rect, || desktop_windows.contains(hwnd)))
     }))
 }
 
-fn collect_window_snapshot(
+fn collect_window_snapshot<R: IntoIterator<Item = RECT>>(
     hwnds: Vec<HWND>,
     excluded_hwnds: &[HWND],
-    mut visible_bounds: impl FnMut(HWND) -> Option<RECT>,
+    mut visible_bounds: impl FnMut(HWND) -> R,
 ) -> (Vec<UiaWindow>, WindowSpatialIndex) {
     let mut excluded_raw = excluded_hwnds
         .iter()
@@ -286,20 +290,19 @@ fn collect_window_snapshot(
         if excluded_raw.binary_search(&(hwnd.0 as isize)).is_ok() {
             continue;
         }
-        let Some(bounds) = visible_bounds(hwnd) else {
-            continue;
-        };
-        let cache_index = windows.len();
-        windows.push(UiaWindow {
-            hwnd: hwnd.0 as isize,
-            bounds,
-            tree: WindowTree::new(hwnd, bounds),
-        });
-        entries.push(IndexedWindow {
-            envelope: rect_to_aabb(bounds),
-            cache_index,
-            z_order,
-        });
+        for bounds in visible_bounds(hwnd) {
+            let cache_index = windows.len();
+            windows.push(UiaWindow {
+                hwnd: hwnd.0 as isize,
+                bounds,
+                tree: WindowTree::new(hwnd, bounds),
+            });
+            entries.push(IndexedWindow {
+                envelope: rect_to_aabb(bounds),
+                cache_index,
+                z_order,
+            });
+        }
     }
     (windows, WindowSpatialIndex::build(entries))
 }
@@ -384,6 +387,59 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result.path.unwrap()[0].rect, bounds().into());
+    }
+
+    #[test]
+    fn desktop_queries_and_refinement_stay_on_the_hit_monitor() {
+        let _serial = UIA_TEST_LOCK.lock().unwrap();
+        let _com = ComApartment::new().unwrap();
+        let monitors = [
+            RECT {
+                left: -1920,
+                top: 0,
+                right: 0,
+                bottom: 1080,
+            },
+            RECT {
+                left: 0,
+                top: -200,
+                right: 2560,
+                bottom: 1440,
+            },
+        ];
+        let (windows, window_index) = collect_window_snapshot(vec![hwnd(1)], &[], |_| monitors);
+        let mut initial = UiaBackend {
+            windows,
+            window_index,
+            provider: NativeProvider::new().unwrap(),
+        };
+        let mut refinement = UiaBackend::from_snapshot(&initial.snapshot()).unwrap();
+        let cancelled = || true;
+        let control = QueryControl::foreground_with_cancellation(&cancelled);
+        for backend in [&mut initial, &mut refinement] {
+            for (point, expected) in [
+                (POINT { x: -1, y: 100 }, monitors[0]),
+                (POINT { x: 0, y: 100 }, monitors[1]),
+            ] {
+                for mode in [crate::HitTestMode::Window, crate::HitTestMode::UiElement] {
+                    // Cancellation exercises the element fallback without calling a live provider.
+                    let result = backend.query(point, mode, &control, &mut |_| {}).unwrap();
+                    assert_eq!(result.path.unwrap(), [ElementRect::new(expected)]);
+                }
+            }
+            assert!(
+                backend
+                    .query(
+                        POINT { x: -1, y: -100 },
+                        crate::HitTestMode::Window,
+                        &control,
+                        &mut |_| {}
+                    )
+                    .unwrap()
+                    .path
+                    .is_none()
+            );
+        }
     }
 
     #[test]
