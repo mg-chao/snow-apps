@@ -425,7 +425,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     std::function<platform::windows::AdministratorResult(bool, bool)> m_startupSettingsApply;
     QPointer<MainWindowSkinController> m_skinController;
     QMetaObject::Connection m_skinStatusConnection;
-    bool m_copyLogBusy = false;
+    bool m_exportLogsBusy = false;
     bool m_configurationBusy = false;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<translation::TranslationService> m_translationService;

@@ -2277,10 +2277,10 @@ SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding bi
             status.writeAvailable && !status.historyClearing,
             status.historyClearing,
         };
-    case SettingsActionBinding::CopyTodayLog:
-        return {status.diagnostics.loggingAvailable && !m_copyLogBusy &&
+    case SettingsActionBinding::ExportLogs:
+        return {!status.diagnostics.directory.isEmpty() && !m_exportLogsBusy &&
                     !status.diagnostics.exporting,
-                m_copyLogBusy || status.diagnostics.exporting};
+                m_exportLogsBusy || status.diagnostics.exporting};
     case SettingsActionBinding::ClearThumbnailCache:
         return {status.appUsage.thumbnailCacheBytes > 0 && !status.cacheClearing &&
                     !status.appUsage.scanning,
@@ -2318,13 +2318,12 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         emit synchronized();
         return result.success;
     }
-    case SettingsActionBinding::CopyTodayLog: {
+    case SettingsActionBinding::ExportLogs: {
         if (!actionState(binding).enabled)
             return false;
-        m_copyLogBusy = true;
+        m_exportLogsBusy = true;
         emit synchronized();
-        const auto future =
-            diagnostics::DiagnosticsService::instance().exportDay(QDate::currentDate());
+        const auto future = diagnostics::DiagnosticsService::instance().exportLogs();
         const auto publication = ScreenshotClipboardService::reservePublication();
         auto* poll = new QTimer(this);
         poll->setInterval(25);
@@ -2341,8 +2340,11 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
                     "DiagnosticsService", "The diagnostics writer stopped unexpectedly");
             }
             if (!result.success) {
-                m_copyLogBusy = false;
+                m_exportLogsBusy = false;
                 emit synchronized();
+                emit operationMessage(QCoreApplication::translate(
+                                          "DiagnosticsService", result.error.toUtf8().constData()),
+                                      false);
                 emit actionFinished(binding, false, result.error);
                 return;
             }
@@ -2351,15 +2353,30 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             const auto handle = ScreenshotClipboardService::commitMimeData(
                 QApplication::clipboard(), this, mime, publication,
                 [this, path = result.path, binding](ScreenshotClipboardCommitResult committed) {
-                    m_copyLogBusy = false;
-                    if (committed.succeeded())
+                    m_exportLogsBusy = false;
+                    const bool published = committed.succeeded() && !committed.superseded;
+                    const QString error =
+                        committed.superseded
+                            ? QCoreApplication::translate(
+                                  "SettingsBackend",
+                                  "Another clipboard operation replaced the log export")
+                            : committed.errorString();
+                    if (published)
                         diagnostics::DiagnosticsService::instance().protectSnapshot(path);
+                    else {
+                        diagnostics::DiagnosticsService::instance().discardSnapshot(path);
+                        emit operationMessage(error, committed.superseded);
+                    }
                     emit synchronized();
-                    emit actionFinished(binding, committed.succeeded(), committed.errorString());
+                    emit actionFinished(binding, published, error);
                 });
             if (!handle.isValid()) {
-                m_copyLogBusy = false;
+                m_exportLogsBusy = false;
+                diagnostics::DiagnosticsService::instance().discardSnapshot(result.path);
                 emit synchronized();
+                emit operationMessage(
+                    QCoreApplication::translate("SettingsBackend", "The clipboard is unavailable"),
+                    false);
                 emit actionFinished(
                     binding, false,
                     QCoreApplication::translate("SettingsBackend", "The clipboard is unavailable"));
@@ -2626,7 +2643,7 @@ bool BuiltInSettingsBackend::importConfigurationSnapshot(
 
 storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {
     auto status = storage::ApplicationStorage::instance().status();
-    status.diagnostics.exporting = status.diagnostics.exporting || m_copyLogBusy;
+    status.diagnostics.exporting = status.diagnostics.exporting || m_exportLogsBusy;
     return status;
 }
 

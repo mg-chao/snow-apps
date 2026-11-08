@@ -3,6 +3,7 @@
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "diagnosticsbridge.h"
+#include "snow_shot/platform/minizippath.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -16,6 +17,12 @@
 #include <QSysInfo>
 #include <QThread>
 #include <QUuid>
+#include <QScopeGuard>
+
+#include <mz.h>
+#include <mz_strm.h>
+#include <mz_zip.h>
+#include <mz_zip_rw.h>
 
 #include <algorithm>
 #include <condition_variable>
@@ -556,11 +563,14 @@ struct DiagnosticsService::Impl {
                         !safePath(folder.absoluteFilePath())) {
                         continue;
                     }
-                    const QString file =
-                        QDir(folder.absoluteFilePath())
-                            .filePath(
-                                QStringLiteral("snow-shot-%1.log").arg(date.toString(Qt::ISODate)));
-                    if (QFileInfo(file).isFile() && safePath(file)) {
+                    const QStringList names{
+                        QStringLiteral("snow-shot-%1.log").arg(date.toString(Qt::ISODate)),
+                        QStringLiteral("snow-shot-logs-*.zip")};
+                    for (const QFileInfo& snapshot :
+                         QDir(folder.absoluteFilePath()).entryInfoList(names, QDir::Files)) {
+                        const QString file = snapshot.absoluteFilePath();
+                        if (!safePath(file))
+                            continue;
                         result.push_back(
                             {file,
                              date,
@@ -864,6 +874,148 @@ struct DiagnosticsService::Impl {
                                                         "The log snapshot could not be saved"))};
         }
         pendingSnapshot = path;
+        maintenance();
+        return {true, path, {}};
+    }
+
+    LogExportResult exportArchive() {
+        const auto failure = [](const char* message) {
+            return LogExportResult{false, {}, QString::fromUtf8(message)};
+        };
+        const char* saveError =
+            QT_TRANSLATE_NOOP("DiagnosticsService", "The log archive could not be saved");
+        if (output.isOpen() && !output.flush())
+            return failure(saveError);
+
+        // Snapshot the inventory and sizes once. Other sessions and the emergency
+        // writer may continue appending while this worker streams their files.
+        auto files = artifacts();
+        std::sort(files.begin(), files.end(),
+                  [](const Artifact& a, const Artifact& b) { return a.path < b.path; });
+        const QDateTime now = options.clock();
+        if (output.isOpen() && !output.flush())
+            return failure(saveError);
+        for (auto& entry : files)
+            entry.bytes = QFileInfo(entry.path).size();
+        const QString directory =
+            QDir(state.directory)
+                .filePath(QStringLiteral("exports/%1-%2")
+                              .arg(now.date().toString(Qt::ISODate),
+                                   QUuid::createUuid().toString(QUuid::Id128)));
+        if (!prepareDirectory(directory))
+            return failure(QT_TRANSLATE_NOOP("DiagnosticsService",
+                                             "The log archive directory could not be created"));
+        const QString path =
+            QDir(directory).filePath(QStringLiteral("snow-shot-logs-%1.zip")
+                                         .arg(now.toString(QStringLiteral("yyyyMMdd-HHmmss"))));
+        const QString temporary = path + QStringLiteral(".tmp");
+        auto archiveLock = std::make_unique<QLockFile>(path + QStringLiteral(".lock"));
+        archiveLock->setStaleLockTime(0);
+        if (!archiveLock->tryLock(0))
+            return failure(saveError);
+        bool saved = false;
+        void* writer = mz_zip_writer_create();
+        const auto cleanup = qScopeGuard([&] {
+            if (writer)
+                mz_zip_writer_delete(&writer);
+            QFile::remove(temporary);
+            if (!saved)
+                QFile::remove(path);
+            archiveLock.reset();
+            if (!saved)
+                QDir().rmdir(directory);
+        });
+        if (!writer || mz_zip_writer_open_file(writer, platform::minizipPath(temporary).constData(),
+                                               0, 0) != MZ_OK)
+            return failure(saveError);
+
+        QSet<QString> sources;
+        QSet<QString> names;
+        QByteArray buffer(64 * 1024, Qt::Uninitialized);
+        for (const Artifact& entry : files) {
+            if ((!entry.text && !entry.collector) || !safePath(entry.path))
+                continue;
+            const QString canonical = QFileInfo(entry.path).canonicalFilePath();
+            if (!canonical.isEmpty() && sources.contains(canonical))
+                continue;
+            sources.insert(canonical);
+            QString name;
+            if (entry.collector) {
+                name =
+                    QStringLiteral("crashes/%1.dmp").arg(QFileInfo(entry.path).completeBaseName());
+            } else {
+                for (const QString& root : roots) {
+                    const QString relative = QDir(root).relativeFilePath(entry.path);
+                    if (!relative.startsWith(u"../") && QDir::isRelativePath(relative)) {
+                        name = relative;
+                        break;
+                    }
+                }
+            }
+            if (name.isEmpty())
+                return failure(saveError);
+            // Fallback roots can contain the same relative filename. Keep both.
+            const QString original = name;
+            for (int suffix = 2; names.contains(name); ++suffix)
+                name = QStringLiteral("%1-%2").arg(original).arg(suffix);
+            names.insert(name);
+
+            QFile file(entry.path);
+            if (!file.open(QIODevice::ReadOnly))
+                return failure(QT_TRANSLATE_NOOP("DiagnosticsService",
+                                                 "A diagnostics file could not be read"));
+            const QByteArray encodedName = name.toUtf8();
+            mz_zip_file info{};
+            info.filename = encodedName.constData();
+            info.flag = MZ_ZIP_FLAG_UTF8;
+            info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
+            info.uncompressed_size = entry.bytes;
+            if (mz_zip_writer_entry_open(writer, &info) != MZ_OK)
+                return failure(saveError);
+            qint64 remaining = entry.bytes;
+            while (remaining > 0) {
+                const qint64 count =
+                    file.read(buffer.data(), std::min<qint64>(buffer.size(), remaining));
+                if (count <= 0)
+                    return failure(QT_TRANSLATE_NOOP("DiagnosticsService",
+                                                     "A diagnostics file could not be read"));
+                if (mz_zip_writer_entry_write(writer, buffer.constData(),
+                                              static_cast<int32_t>(count)) != count)
+                    return failure(saveError);
+                remaining -= count;
+            }
+            if (mz_zip_writer_entry_close(writer) != MZ_OK)
+                return failure(saveError);
+            if (entry.collector) {
+                auto context = entry.reportContext;
+                context.insert(QStringLiteral("dump_id"), entry.reportId);
+                context.insert(QStringLiteral("created"),
+                               entry.reportCreated.toString(Qt::ISODateWithMs));
+                const QByteArray json = QJsonDocument(context).toJson(QJsonDocument::Compact);
+                const QByteArray contextName = (name + QStringLiteral(".json")).toUtf8();
+                info.filename = contextName.constData();
+                info.uncompressed_size = json.size();
+                if (mz_zip_writer_add_buffer(writer, const_cast<char*>(json.constData()),
+                                             static_cast<int32_t>(json.size()), &info) != MZ_OK)
+                    return failure(saveError);
+            }
+        }
+        if (mz_zip_writer_close(writer) != MZ_OK)
+            return failure(saveError);
+        mz_zip_writer_delete(&writer);
+        // Reserve budget after capturing every source, so retention cannot remove
+        // evidence before it is safely contained in the archive.
+        pendingSnapshot.clear();
+        snapshotLock.reset();
+        maintenance(QFileInfo(temporary).size());
+        if (budgetBlocked)
+            return failure(QT_TRANSLATE_NOOP("DiagnosticsService",
+                                             "There is not enough space for a log archive"));
+        if (!QFile::rename(temporary, path))
+            return failure(saveError);
+        pendingSnapshot = path;
+        snapshotLock = std::move(archiveLock);
+        saved = true;
         maintenance();
         return {true, path, {}};
     }
@@ -1284,17 +1436,59 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
         }
         session->state.exporting = true;
     }
+    session->tasks.push_back({{},
+                              {},
+                              QtInfoMsg,
+                              [session, date, promise] {
+                                  LogExportResult result;
+                                  try {
+                                      result = session->exportNow(date);
+                                  } catch (...) {
+                                      result.error = QString::fromUtf8(
+                                          QT_TRANSLATE_NOOP("DiagnosticsService",
+                                                            "The log snapshot could not be saved"));
+                                  }
+                                  {
+                                      std::lock_guard<std::mutex> stateLock(session->stateMutex);
+                                      session->state.exporting = false;
+                                  }
+                                  promise->set_value(std::move(result));
+                                  session->notify();
+                              },
+                              true});
+    session->wake.notify_one();
+    session->notify();
+    return future;
+}
+
+std::shared_future<LogExportResult> DiagnosticsService::exportLogs() {
+    const auto session = sessionSnapshot();
+    auto promise = std::make_shared<std::promise<LogExportResult>>();
+    auto future = promise->get_future().share();
+    std::lock_guard<std::mutex> lock(session->mutex);
+    {
+        std::lock_guard<std::mutex> stateLock(session->stateMutex);
+        if (!session->running || session->stopping || session->state.exporting) {
+            promise->set_value(
+                {false,
+                 {},
+                 QString::fromUtf8(QT_TRANSLATE_NOOP(
+                     "DiagnosticsService", "Log export is unavailable or already running"))});
+            return future;
+        }
+        session->state.exporting = true;
+    }
     session->tasks.push_back(
         {{},
          {},
          QtInfoMsg,
-         [session, date, promise] {
+         [session, promise] {
              LogExportResult result;
              try {
-                 result = session->exportNow(date);
+                 result = session->exportArchive();
              } catch (...) {
-                 result.error = QString::fromUtf8(QT_TRANSLATE_NOOP(
-                     "DiagnosticsService", "The log snapshot could not be saved"));
+                 result.error = QString::fromUtf8(
+                     QT_TRANSLATE_NOOP("DiagnosticsService", "The log archive could not be saved"));
              }
              {
                  std::lock_guard<std::mutex> stateLock(session->stateMutex);
@@ -1307,6 +1501,23 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
     session->wake.notify_one();
     session->notify();
     return future;
+}
+
+void DiagnosticsService::discardSnapshot(const QString& path) {
+    const auto session = sessionSnapshot();
+    std::lock_guard<std::mutex> lock(session->mutex);
+    if (!session->running || session->stopping)
+        return;
+    session->tasks.push_back({{}, {}, QtInfoMsg, [session, path] {
+                                  if (session->pendingSnapshot != path)
+                                      return;
+                                  session->pendingSnapshot.clear();
+                                  session->snapshotLock.reset();
+                                  if (session->remove(path))
+                                      QDir().rmdir(QFileInfo(path).absolutePath());
+                                  session->maintenance();
+                              }});
+    session->wake.notify_one();
 }
 
 void DiagnosticsService::protectSnapshot(const QString& path) {

@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
+#include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
@@ -9,10 +10,12 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/screenshotclipboardservice.h"
 
 #include "antd_icons.h"
 #include "theme/theme_manager.h"
 #include "widgets/alert.h"
+#include "widgets/button.h"
 #include "widgets/descriptions.h"
 #include "widgets/field_group.h"
 #include "widgets/form.h"
@@ -33,6 +36,7 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QFile>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QThread>
 #include <QUrl>
@@ -271,12 +275,13 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
     settings::SettingsActionState
     actionState(settings::SettingsActionBinding binding) const override {
-        if (binding == settings::SettingsActionBinding::CopyTodayLog)
+        if (binding == settings::SettingsActionBinding::ExportLogs)
             return {!m_status.diagnostics.exporting, m_status.diagnostics.exporting};
         return {true, false};
     }
-    bool triggerAction(settings::SettingsActionBinding, const QString& = {},
+    bool triggerAction(settings::SettingsActionBinding binding, const QString& = {},
                        bool = false) override {
+        actions.append(binding);
         return true;
     }
     storage::StorageStatus storageStatus() const override {
@@ -305,6 +310,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         emit synchronized();
     }
 
+    QVector<settings::SettingsActionBinding> actions;
     int migrations = 0;
     bool requestedMigration = false;
     QString requestedDirectory;
@@ -1090,7 +1096,20 @@ void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
             "pinned toolbar editor test must restore the original layout");
 }
 
-void diagnosticsStateAndCopyFeedback() {
+class LogExportTranslator final : public QTranslator {
+  public:
+    QString translate(const char* context, const char* source, const char*, int) const override {
+        if (QByteArray(context) == "SettingsCatalog") {
+            if (QByteArray(source) == "Export logs")
+                return QStringLiteral("Translated export logs");
+            if (QByteArray(source) == "Copy")
+                return QStringLiteral("Translated copy");
+        }
+        return {};
+    }
+};
+
+void diagnosticsStateAndExportRow() {
     const auto registry = storageStatusRegistry();
     FakeSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
@@ -1107,26 +1126,59 @@ void diagnosticsStateAndCopyFeedback() {
     auto* location =
         widget.findChild<QLabel*>(QStringLiteral("settings-status-value-log-location"));
     auto* usage = widget.findChild<QLabel*>(QStringLiteral("settings-status-value-diagnostics"));
-    auto* copy =
-        widget.findChild<QAbstractButton*>(QStringLiteral("settings-storage-copy-today-log"));
+    require(!widget.findChild<QAbstractButton*>(QStringLiteral("settings-storage-copy-today-log")),
+            "the old daily-log button is removed");
     require(location && location->text() == status.diagnostics.directory && location->wordWrap(),
             "log path wraps without shortening");
     require(location->textInteractionFlags().testFlag(Qt::TextSelectableByMouse),
             "log path selectable");
     require(usage && usage->text() == QStringLiteral("2.00 KiB"), "diagnostics bytes visible");
-    require(copy && !copy->isEnabled(), "repeat activation blocked during export");
+    const auto& builtIn = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession pageSession(builtIn, backend);
+    SettingsPageWidget page(builtIn, QStringLiteral("files-history"), pageSession);
+    page.resize(900, 1000);
+    page.show();
+    page.reveal({QStringLiteral("files-history"), QStringLiteral("storage-status"),
+                 QStringLiteral("storage.export-logs")});
+    flushEvents();
+    auto* copy = page.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("settings-control-storage-export-logs"));
+    auto* clear = page.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("settings-control-storage-clear-recording-temp"));
+    require(!page.findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("settings-control-storage-clear-thumbnails")),
+            "retired thumbnail cache cleanup stays absent from the settings page");
+    require(copy && clear && copy->text() == QStringLiteral("Copy") && !copy->isEnabled() &&
+                copy->busy(),
+            "standard export row has a Copy button and blocks repeat activation during export");
+    require(copy->mapTo(&page, QPoint()).y() < clear->mapTo(&page, QPoint()).y() &&
+                copy->mapTo(&page, QPoint()).x() + copy->width() ==
+                    clear->mapTo(&page, QPoint()).x() + clear->width(),
+            "export is immediately above cleanup with right-aligned action controls");
     status.diagnostics.exporting = false;
     backend.publish(status);
     flushEvents();
     require(copy->isEnabled(), "copy enabled after completion");
-    emit backend.actionFinished(settings::SettingsActionBinding::CopyTodayLog, true, {});
-    auto* feedback =
-        widget.findChild<QLabel*>(QStringLiteral("settings-storage-log-copy-feedback"));
-    require(feedback && feedback->text() == QStringLiteral("Log file copied"),
-            "async completion reaches widget");
+    copy->click();
+    require(backend.actions == QVector{settings::SettingsActionBinding::ExportLogs},
+            "Copy invokes the log-export action without a confirmation dialog");
+    emit backend.actionFinished(settings::SettingsActionBinding::ExportLogs, true, {});
+    flushEvents();
+    const auto notifications = page.findChildren<adqt::widgets::AdMessageHandle*>();
+    require(std::any_of(notifications.cbegin(), notifications.cend(),
+                        [](const auto* message) {
+                            return message->content() ==
+                                   QStringLiteral("Logs archive copied to the clipboard");
+                        }),
+            "async completion uses the standard success notification");
+    LogExportTranslator translator;
+    require(QCoreApplication::installTranslator(&translator), "export translator installs");
     QEvent language(QEvent::LanguageChange);
-    QCoreApplication::sendEvent(&widget, &language);
-    require(!copy->accessibleName().isEmpty(), "copy action has an accessible translated name");
+    QCoreApplication::sendEvent(&page, &language);
+    require(copy->text() == QStringLiteral("Translated copy") &&
+                copy->accessibleName() == QStringLiteral("Translated export logs"),
+            "export action label and accessible name retranslate on language changes");
+    QCoreApplication::removeTranslator(&translator);
 }
 void copyPublishesStableFileAndPreservesClipboardOnFailure() {
     QTemporaryDir directory;
@@ -1145,7 +1197,7 @@ void copyPublishesStableFileAndPreservesClipboardOnFailure() {
                          ++completions;
                          succeeded = success;
                      });
-    const auto copy = settings::SettingsActionBinding::CopyTodayLog;
+    const auto copy = settings::SettingsActionBinding::ExportLogs;
     require(backend.triggerAction(copy), "copy action starts");
     require(!backend.triggerAction(copy), "concurrent copy rejected");
     QElapsedTimer timer;
@@ -1160,12 +1212,32 @@ void copyPublishesStableFileAndPreservesClipboardOnFailure() {
     QFile snapshot(urls.front().toLocalFile());
     require(snapshot.open(QIODevice::ReadOnly), "copied attachment exists");
     const auto content = snapshot.readAll();
+    require(snapshot.fileName().endsWith(QStringLiteral(".zip")) && content.startsWith("PK"),
+            "clipboard attachment is a ZIP archive");
     snapshot.close();
     diagnostics.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("after.copy"));
     require(diagnostics.flush(), "later records flushed");
     require(snapshot.open(QIODevice::ReadOnly) && snapshot.readAll() == content,
             "attachment is immutable");
     snapshot.close();
+    require(backend.triggerAction(copy), "superseded export starts");
+    static_cast<void>(ScreenshotClipboardService::reservePublication());
+    timer.restart();
+    while (completions < 2 && timer.elapsed() < 5000) {
+        flushEvents();
+        QThread::msleep(5);
+    }
+    require(completions == 2 && !succeeded && QApplication::clipboard()->mimeData()->urls() == urls,
+            "superseded publication reports failure and preserves the current clipboard");
+    require(diagnostics.flush(), "discarded publication cleanup completes");
+    QDirIterator archives(directory.path(), {QStringLiteral("*.zip")}, QDir::Files,
+                          QDirIterator::Subdirectories);
+    int archiveCount = 0;
+    while (archives.hasNext()) {
+        archives.next();
+        ++archiveCount;
+    }
+    require(archiveCount == 1, "unpublished ZIP is removed while the copied ZIP remains");
     diagnostics.shutdown();
     QTemporaryDir failedDirectory;
     options.directories = {QDir(failedDirectory.path()).canonicalPath()};
@@ -1175,11 +1247,11 @@ void copyPublishesStableFileAndPreservesClipboardOnFailure() {
     blocker.close();
     require(backend.triggerAction(copy), "failing export starts");
     timer.restart();
-    while (completions < 2 && timer.elapsed() < 5000) {
+    while (completions < 3 && timer.elapsed() < 5000) {
         flushEvents();
         QThread::msleep(5);
     }
-    require(completions == 2 && !succeeded, "export failure reported");
+    require(completions == 3 && !succeeded, "export failure reported");
     require(QApplication::clipboard()->mimeData()->urls() == urls,
             "failed export preserves previous clipboard");
     diagnostics.shutdown();
@@ -1546,6 +1618,12 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--log-export-only"))) {
+        diagnosticsStateAndExportRow();
+        copyPublishesStableFileAndPreservesClipboardOnFailure();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     directoryDialogMatchesApiEditor();
     directoryDialogLifecycle();
     if (application.arguments().contains(QStringLiteral("--storage-directory-only"))) {
@@ -1561,7 +1639,7 @@ int main(int argc, char** argv) {
     recordingToolbarToolsCanMoveStackHideAndReset();
     pinnedToolbarExportToolsCanMoveAndHideByDrop();
     pinnedToolbarSectionResetRefreshesEditor();
-    diagnosticsStateAndCopyFeedback();
+    diagnosticsStateAndExportRow();
     copyPublishesStableFileAndPreservesClipboardOnFailure();
     storage::ApplicationStorage::instance().shutdown();
     return 0;

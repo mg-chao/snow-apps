@@ -150,6 +150,24 @@ void scanCategorizesAppOwnedLocations() {
             "the last published snapshot must carry the final usage");
 }
 
+void legacyLogsOutsideConfiguredRootsAreNotScanned() {
+    TrackerDirs dirs;
+    const QString legacy = QDir(dirs.appData).filePath(QStringLiteral("logs"));
+    const QString current = dirs.temporary.filePath(QStringLiteral("roaming/logs"));
+    writeBytes(QDir(legacy).filePath(QStringLiteral("old.log")), 99);
+    writeBytes(QDir(current).filePath(QStringLiteral("current.log")), 17);
+    QStringList observed;
+    auto options = trackerOptions(dirs, {});
+    options.diagnosticsDirectories = {current, QDir(current).filePath(QStringLiteral("crashes"))};
+    options.directoryScanObserved = [&](const QString& path) { observed.append(path); };
+    storage::StorageUsageTracker tracker(options);
+    tracker.requestRefresh();
+    tracker.drain();
+    require(tracker.usage().diagnosticsBytes == 17 && !observed.contains(legacy) &&
+                QFileInfo(QDir(legacy).filePath(QStringLiteral("old.log"))).size() == 99,
+            "usage only scans the configured diagnostic roots and leaves legacy logs untouched");
+}
+
 void constructionDefersScanningUntilRefresh() {
     TrackerDirs dirs;
     writeBytes(QDir(dirs.appData).filePath(QStringLiteral("config.json")), 10);
@@ -587,6 +605,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--distribution-paths-only")))
         return 0;
     scanCategorizesAppOwnedLocations();
+    legacyLogsOutsideConfiguredRootsAreNotScanned();
     constructionDefersScanningUntilRefresh();
     workerRestartsAfterGoingIdle();
     missingLocationsReportZeroUsage();

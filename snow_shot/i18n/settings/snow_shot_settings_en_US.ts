@@ -1089,6 +1089,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Another clipboard operation replaced the log export</source>
+            <translation>Another clipboard operation replaced the log export</translation>
+        </message>
+        <message>
             <source>Could not restore the Windows context menu preference</source>
             <translation>Could not restore the Windows context menu preference</translation>
         </message>
@@ -1984,12 +1988,20 @@
             <translation>Control when the screenshot color picker is visible</translation>
         </message>
         <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
             <source>Copy after pinning to screen</source>
             <translation>Copy after pinning to screen</translation>
         </message>
         <message>
             <source>Copy after text recognition</source>
             <translation>Copy after text recognition</translation>
+        </message>
+        <message>
+            <source>Copy all logs and crash reports as a ZIP archive to the clipboard</source>
+            <translation>Copy all logs and crash reports as a ZIP archive to the clipboard</translation>
         </message>
         <message>
             <source>Copy application settings as a zip archive to the clipboard</source>
@@ -2070,6 +2082,10 @@
         <message>
             <source>Core application settings</source>
             <translation>Core application settings</translation>
+        </message>
+        <message>
+            <source>Crash reports</source>
+            <translation>Crash reports</translation>
         </message>
         <message>
             <source>Current monitor</source>
@@ -2260,6 +2276,10 @@
             <translation>Destroy</translation>
         </message>
         <message>
+            <source>Diagnostics</source>
+            <translation>Diagnostics</translation>
+        </message>
+        <message>
             <source>Disable global shortcuts</source>
             <translation>Disable global shortcuts</translation>
         </message>
@@ -2446,6 +2466,10 @@
         <message>
             <source>Export configuration</source>
             <translation>Export configuration</translation>
+        </message>
+        <message>
+            <source>Export logs</source>
+            <translation>Export logs</translation>
         </message>
         <message>
             <source>Export recording</source>
@@ -2918,6 +2942,10 @@
         <message>
             <source>Locked shadow color</source>
             <translation>Locked shadow color</translation>
+        </message>
+        <message>
+            <source>Logs archive copied to the clipboard</source>
+            <translation>Logs archive copied to the clipboard</translation>
         </message>
         <message>
             <source>Loop animated images</source>
@@ -5150,14 +5178,6 @@ Unavailable: %2</translation>
             <translation>Choose storage directory</translation>
         </message>
         <message>
-            <source>Copy today's log file</source>
-            <translation>Copy today's log file</translation>
-        </message>
-        <message>
-            <source>Could not copy the log file: %1</source>
-            <translation>Could not copy the log file: %1</translation>
-        </message>
-        <message>
             <source>Current storage location: %1</source>
             <translation>Current storage location: %1</translation>
         </message>
@@ -5212,10 +5232,6 @@ Unavailable: %2</translation>
         <message>
             <source>Latest storage error</source>
             <translation>Latest storage error</translation>
-        </message>
-        <message>
-            <source>Log file copied</source>
-            <translation>Log file copied</translation>
         </message>
         <message>
             <source>Log location</source>

@@ -107,7 +107,9 @@ class DiagnosticsService final : public QObject {
     bool flush(std::chrono::milliseconds timeout = std::chrono::seconds(2));
     void requestMaintenance();
     std::shared_future<LogExportResult> exportDay(const QDate& date);
+    std::shared_future<LogExportResult> exportLogs();
     void protectSnapshot(const QString& path);
+    void discardSnapshot(const QString& path);
     static QString sanitize(QString text);
 
   signals:

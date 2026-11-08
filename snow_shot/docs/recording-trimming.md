@@ -103,7 +103,7 @@ Video packet mux failures also log the actual/requested encoder, hardware fallba
 dimensions/FPS, native and submitted packet timing, both time bases, previous successful video DTS,
 and drain state. Packet values are captured before FFmpeg consumes the packet. These diagnostics
 do not change the encoder's timestamp policy or add packet details to the error dialog.
-Use **Copy today's log file** in storage settings after a failure; include the approximate failure
+Use **Export logs** → **Copy** in storage settings after a failure; include the approximate failure
 time when reporting it. Ordinary FFmpeg progress remains on its existing console path.
 
 Build the application and the recording and diagnostics test executables, then run:

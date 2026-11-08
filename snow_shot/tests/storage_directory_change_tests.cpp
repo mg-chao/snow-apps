@@ -307,6 +307,7 @@ void liveSwitch(bool migrate) {
     logOptions.installMessageHandler = false;
     logOptions.enableCrashCapture = false;
     require(diagnostics.initialize(logOptions), "start source diagnostics");
+    const QString diagnosticSession = diagnostics.status().sessionId;
     require(app.flushNow().success, "flush before migration");
     std::atomic_bool stopDiagnostics{false};
     std::atomic_bool invalidSession{false};
@@ -316,9 +317,8 @@ void liveSwitch(bool migrate) {
         diagnosticsStarted.set_value();
         while (!stopDiagnostics.load()) {
             const auto state = diagnostics.status();
-            if (state.sessionId.isEmpty() ||
-                (state.directory != QDir(source).filePath(QStringLiteral("logs")) &&
-                 state.directory != QDir(target).filePath(QStringLiteral("logs"))) ||
+            if (state.sessionId != diagnosticSession ||
+                state.directory != QDir(source).filePath(QStringLiteral("logs")) ||
                 diagnostics.options().directories.isEmpty() || diagnostics.directories().isEmpty())
                 invalidSession.store(true);
             diagnostics.record(QtInfoMsg, QStringLiteral("test"),
@@ -359,9 +359,11 @@ void liveSwitch(bool migrate) {
             "new directory immediately active");
     require(app.smartSelectionMode() == snow_shot::SmartSelectionMode::Disabled,
             "settings preserved");
-    require(diagnostics.status().directory == QDir(target).filePath(QStringLiteral("logs")) &&
+    require(diagnostics.status().directory == QDir(source).filePath(QStringLiteral("logs")) &&
+                diagnostics.status().sessionId == diagnosticSession &&
+                !QFileInfo::exists(QDir(target).filePath(QStringLiteral("logs"))) &&
                 diagnostics.flush(),
-            "diagnostics follow new root");
+            "diagnostics stay in place without restarting during data migration");
     require(history->records().size() == (migrate ? 1 : 0), "history migration follows switch");
     if (migrate)
         require(history->load(history->records().front()).has_value(),

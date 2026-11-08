@@ -2475,6 +2475,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-diagnostics-tests PRIVATE snow_shot_diagnostics)
     add_test(NAME snow-shot-diagnostics-tests COMMAND snow-shot-diagnostics-tests)
     set_tests_properties(snow-shot-diagnostics-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_executable(snow-shot-diagnostics-export-tests tests/diagnostics_export_tests.cpp)
+    target_link_libraries(snow-shot-diagnostics-export-tests PRIVATE
+        snow_shot_diagnostics MINIZIP::minizip-ng)
+    add_test(NAME snow-shot-diagnostics-export-tests COMMAND snow-shot-diagnostics-export-tests)
+    set_tests_properties(snow-shot-diagnostics-export-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    if(WIN32)
+        set_tests_properties(snow-shot-diagnostics-export-tests PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     if(WIN32)
         set_tests_properties(snow-shot-diagnostics-tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$ENV{PATH}")
@@ -2797,6 +2806,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-storage-status-widget-tests --storage-status-only -platform offscreen)
     set_tests_properties(snow-shot-storage-status-usage-tests PROPERTIES
         LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-log-export-settings-tests
+        COMMAND snow-shot-storage-status-widget-tests --log-export-only -platform offscreen)
+    set_tests_properties(snow-shot-log-export-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-annotation-toolbar-editor-tests

@@ -330,6 +330,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
     <context>
         <name>DiagnosticsService</name>
         <message>
+            <source>A diagnostics file could not be read</source>
+            <translation>A diagnostics file could not be read</translation>
+        </message>
+        <message>
             <source>A log file could not be read</source>
             <translation>A log file could not be read</translation>
         </message>
@@ -366,6 +370,14 @@ so every moment on screen can be expressed clearly and shared easily</translatio
             <translation>The local crash database could not be initialized</translation>
         </message>
         <message>
+            <source>The log archive could not be saved</source>
+            <translation>The log archive could not be saved</translation>
+        </message>
+        <message>
+            <source>The log archive directory could not be created</source>
+            <translation>The log archive directory could not be created</translation>
+        </message>
+        <message>
             <source>The log directory is not writable</source>
             <translation>The log directory is not writable</translation>
         </message>
@@ -384,6 +396,10 @@ so every moment on screen can be expressed clearly and shared easily</translatio
         <message>
             <source>The preferred log directory is unavailable; a fallback is in use</source>
             <translation>The preferred log directory is unavailable; a fallback is in use</translation>
+        </message>
+        <message>
+            <source>There is not enough space for a log archive</source>
+            <translation>There is not enough space for a log archive</translation>
         </message>
         <message>
             <source>There is not enough space for a log snapshot</source>
