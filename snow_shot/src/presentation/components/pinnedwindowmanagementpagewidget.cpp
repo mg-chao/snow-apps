@@ -8,6 +8,7 @@
 #include "snow_shot/platform/filemanager.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_shot/presentation/components/historyentrycard.h"
+#include "snow_shot/presentation/components/historyentryviewport.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
@@ -27,8 +28,10 @@
 #include "widgets/pagination.h"
 #include "widgets/popconfirm.h"
 #include "widgets/select.h"
+#include "widgets/scroll_area.h"
 
 #include <QBoxLayout>
+#include <QApplication>
 #include <QCache>
 #include <QEvent>
 #include <QFrame>
@@ -39,12 +42,14 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QShowEvent>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <limits>
 #include <utility>
 
 using namespace snow_shot;
@@ -56,10 +61,17 @@ namespace storage = snow_shot::storage;
 namespace history_page = snow_shot::presentation::components::history_page;
 using snow_shot::presentation::components::HistoryEntryCard;
 
-bool pinnedRowPreviewFailed(const QFrame* row) {
-    const auto* preview =
-        row ? row->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"))
-            : nullptr;
+class PinnedEntryCard final : public HistoryEntryCard {
+  public:
+    using HistoryEntryCard::HistoryEntryCard;
+    adqt::widgets::AdImage* preview = nullptr;
+    adqt::widgets::AdButton* showButton = nullptr;
+    adqt::widgets::AdButton* removeButton = nullptr;
+    adqt::widgets::AdButton* moreButton = nullptr;
+};
+
+bool pinnedRowPreviewFailed(const HistoryEntryCard* row) {
+    const auto* preview = row ? static_cast<const PinnedEntryCard*>(row)->preview : nullptr;
     return preview && preview->loadFailed();
 }
 
@@ -84,9 +96,17 @@ QImage loadPinnedImage(storage::PinnedWindowRepository* repository, const QStrin
     return record->image;
 }
 
-QImage loadPinnedPreview(storage::PinnedWindowRepository* repository, const QString& id,
-                         const PinnedColorSwatchStyle& swatchStyle) {
-    const auto source = repository->loadPreviewSource(id);
+struct PinnedPreviewCacheEntry {
+    QImage image;
+    QSize naturalSize;
+};
+
+PinnedPreviewCacheEntry loadPinnedPreview(storage::PinnedWindowRepository* repository,
+                                          const QString& id,
+                                          const PinnedColorSwatchStyle& swatchStyle,
+                                          QSize targetSize,
+                                          const std::function<bool()>& cancelled = {}) {
+    const auto source = repository->loadThumbnailSource(id, targetSize, cancelled);
     if (!source) {
         return {};
     }
@@ -96,17 +116,14 @@ QImage loadPinnedPreview(storage::PinnedWindowRepository* repository, const QStr
         content.text = source->originalText;
         content.textStyle = source->textStyle;
         content.textFormat = source->textFormat;
-        const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
-            content, source->firstCreationTextDpi, {}, {}, swatchStyle);
-        return rendered ? rendered->image : QImage{};
+        QSize naturalSize;
+        const auto rendered = ScreenshotClipboardContentReader::renderOriginalTextThumbnail(
+            content, source->firstCreationTextDpi, targetSize, &naturalSize, cancelled,
+            swatchStyle);
+        return {rendered ? rendered->image : QImage{}, naturalSize};
     }
-    return source->image;
+    return {source->image, source->naturalSize};
 }
-
-struct PinnedPreviewCacheEntry {
-    QImage image;
-    QSize naturalSize;
-};
 
 QString swatchAppearanceKey(const PinnedColorSwatchStyle& style) {
     return QStringList{QStringLiteral("swatch-v2"),
@@ -125,6 +142,11 @@ QString swatchAppearanceKey(const PinnedColorSwatchStyle& style) {
 }
 
 class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSource {
+    struct PreviewWork {
+        std::atomic_bool cancelled{false};
+        QVector<quint64> requests;
+    };
+
   public:
     std::optional<QString> imagePath(const QString& id) const override {
         auto& applicationStorage = storage::ApplicationStorage::instance();
@@ -163,7 +185,8 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
     }
 
     QVector<storage::PinnedWindowSummary> records() const override {
-        const auto records = storage::ApplicationStorage::instance().pinnedWindows().summaries();
+        const auto records =
+            storage::ApplicationStorage::instance().pinnedWindows().unorderedSummaries();
         if (m_previewCache.isEmpty())
             return records;
         QSet<QString> retainedIds;
@@ -196,6 +219,28 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
 
     void cancelPreviews() override {
         m_previewEpoch->fetch_add(1);
+        for (const auto& work : std::as_const(m_previewWork))
+            work->cancelled.store(true);
+        m_previewWork.clear();
+        m_previewRequests.clear();
+        m_waitingPreviewRequests.clear();
+    }
+
+    void cancelPreview(quint64 requestId) override {
+        m_waitingPreviewRequests.remove(requestId);
+        const auto request = m_previewRequests.find(requestId);
+        if (request == m_previewRequests.end())
+            return;
+        const QString key = request.value();
+        m_previewRequests.erase(request);
+        const auto work = m_previewWork.value(key);
+        if (!work)
+            return;
+        work->requests.removeAll(requestId);
+        if (work->requests.isEmpty()) {
+            work->cancelled.store(true);
+            m_previewWork.remove(key);
+        }
     }
 
     void requestPreview(const QString& id, quint64 requestId, const QSize& targetSize) override {
@@ -230,42 +275,64 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
             emit previewReady(id, requestId, cached->image, cached->naturalSize);
             return;
         }
+        m_previewRequests.insert(requestId, cacheKey);
+        if (const auto existing = m_previewWork.value(cacheKey)) {
+            existing->requests.push_back(requestId);
+            return;
+        }
+        const auto work = std::make_shared<PreviewWork>();
+        work->requests.push_back(requestId);
+        if (m_previewWork.isEmpty())
+            m_previewPriority = 0;
+        m_previewWork.insert(cacheKey, work);
+        if (m_previewPriority < std::numeric_limits<int>::max())
+            ++m_previewPriority;
         const auto alive = m_alive;
         const auto previewEpoch = m_previewEpoch;
         const quint64 requestedEpoch = previewEpoch->load();
         const quint64 storageGeneration = m_storageGeneration;
         auto* receiver = this;
-        applicationStorage.pinnedPreviewPool().start(snow_shot::runtime::trackRuntimeWork(
-            [alive, previewEpoch, requestedEpoch, receiver, repository, id, requestId, boundedSize,
-             cacheKey, storageGeneration, retryAllowed, swatchStyle]() {
+        applicationStorage.pinnedPreviewPool().start(
+            snow_shot::runtime::trackRuntimeWork([alive, previewEpoch, requestedEpoch, receiver,
+                                                  repository, id, work, boundedSize, cacheKey,
+                                                  storageGeneration, retryAllowed, swatchStyle]() {
                 snow_shot::platform::applyApplicationQoSToCurrentThread();
-                if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                const auto cancelled = [alive, previewEpoch, requestedEpoch, work] {
+                    return work->cancelled.load() || !alive->load() ||
+                           previewEpoch->load() != requestedEpoch;
+                };
+                if (cancelled()) {
                     return;
                 }
-                QImage image = loadPinnedPreview(repository, id, swatchStyle);
-                const QSize naturalSize = image.size();
-                if (!image.isNull() && (image.width() > boundedSize.width() ||
-                                        image.height() > boundedSize.height())) {
-                    image = snowCanvasScaleImage(image, boundedSize, Qt::KeepAspectRatio,
-                                                 Qt::SmoothTransformation);
-                }
-                if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                const auto preview =
+                    loadPinnedPreview(repository, id, swatchStyle, boundedSize, cancelled);
+                const auto& image = preview.image;
+                const auto& naturalSize = preview.naturalSize;
+                if (cancelled()) {
                     return;
                 }
                 QMetaObject::invokeMethod(
                     &storage::ApplicationStorage::instance(),
                     snow_shot::runtime::trackRuntimeWork(
-                        [alive, previewEpoch, requestedEpoch, receiver, id, requestId, cacheKey,
-                         image, naturalSize, boundedSize, storageGeneration, retryAllowed]() {
-                            if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                        [alive, previewEpoch, requestedEpoch, receiver, id, work, cacheKey, image,
+                         naturalSize, boundedSize, storageGeneration, retryAllowed]() {
+                            if (!alive->load() || previewEpoch->load() != requestedEpoch ||
+                                work->cancelled.load()) {
                                 return;
                             }
+                            if (receiver->m_previewWork.value(cacheKey) != work)
+                                return;
+                            receiver->m_previewWork.remove(cacheKey);
+                            const auto requests = work->requests;
                             auto& applicationStorage = storage::ApplicationStorage::instance();
                             if (image.isNull() && retryAllowed &&
                                 (applicationStorage.directoryChanging() ||
                                  receiver->m_storageGeneration != storageGeneration)) {
-                                receiver->retryPreviewAfterDirectoryChange(
-                                    id, requestId, boundedSize, requestedEpoch);
+                                for (quint64 requestId : requests) {
+                                    receiver->m_previewRequests.remove(requestId);
+                                    receiver->retryPreviewAfterDirectoryChange(
+                                        id, requestId, boundedSize, requestedEpoch);
+                                }
                                 return;
                             }
                             if (!image.isNull()) {
@@ -275,10 +342,16 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
                                     cacheKey, new PinnedPreviewCacheEntry{image, naturalSize},
                                     static_cast<int>(cost));
                             }
-                            emit receiver->previewReady(id, requestId, image, naturalSize);
+                            for (quint64 requestId : requests) {
+                                if (!alive->load())
+                                    break;
+                                if (receiver->m_previewRequests.remove(requestId))
+                                    emit receiver->previewReady(id, requestId, image, naturalSize);
+                            }
                         }),
                     Qt::QueuedConnection);
-            }));
+            }),
+            m_previewPriority);
     }
 
     void requestFullImage(const QString& id, quint64 requestId) override {
@@ -334,10 +407,12 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         }
         const auto alive = m_alive;
         const auto previewEpoch = m_previewEpoch;
+        m_waitingPreviewRequests.insert(requestId);
         connect(
             &applicationStorage, &storage::ApplicationStorage::directoryChangeFinished, this,
             [this, alive, previewEpoch, requestedEpoch, id, requestId, targetSize](const auto&) {
-                if (alive->load() && previewEpoch->load() == requestedEpoch)
+                if (alive->load() && previewEpoch->load() == requestedEpoch &&
+                    m_waitingPreviewRequests.remove(requestId))
                     requestPreviewAttempt(id, requestId, targetSize, false);
             },
             Qt::SingleShotConnection);
@@ -348,6 +423,10 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
     std::shared_ptr<std::atomic<quint64>> m_previewEpoch =
         std::make_shared<std::atomic<quint64>>(0);
     mutable QCache<QString, PinnedPreviewCacheEntry> m_previewCache;
+    QHash<QString, std::shared_ptr<PreviewWork>> m_previewWork;
+    QHash<quint64, QString> m_previewRequests;
+    QSet<quint64> m_waitingPreviewRequests;
+    int m_previewPriority = 0;
 };
 
 class PinnedImageReply final : public adqt::widgets::AdImageReply {
@@ -386,13 +465,23 @@ class PinnedImageReply final : public adqt::widgets::AdImageReply {
             Qt::QueuedConnection);
     }
 
+    ~PinnedImageReply() override {
+        cancelRequest();
+    }
+
     void abort() override {
         if (!isFinished()) {
+            cancelRequest();
             fail(QStringLiteral("Pinned image load aborted"));
         }
     }
 
   private:
+    void cancelRequest() {
+        if (!isFinished() && m_source && !m_targetSize.isEmpty())
+            m_source->cancelPreview(m_requestId);
+    }
+
     void completeImage(const QString& id, quint64 requestId, const QImage& image,
                        const QSize& naturalSize) {
         if (isFinished() || id != m_id || requestId != m_requestId) {
@@ -441,7 +530,7 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
     m_previewViewer = new adqt::widgets::AdImageViewer(this);
     m_previewViewer->setOwnerWindow(this);
     m_previewViewer->setImageLoader(new PinnedImageLoader(m_source, m_previewViewer));
-    m_previewModel = new adqt::widgets::AdImageListModel(m_previewViewer);
+    m_previewModel = new history_page::PreviewModel(m_previewViewer);
     m_previewViewer->setModel(m_previewModel);
     setObjectName(QStringLiteral("pinnedWindowManagementPage"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -570,6 +659,8 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
     m_entryLayout = new QVBoxLayout(m_entries);
     m_entryLayout->setContentsMargins(0, 0, 0, 0);
     m_entryLayout->setSpacing(metric.marginSM);
+    m_entryViewport = new presentation::components::HistoryEntryViewport(
+        container->scrollArea(), m_entries, m_entryLayout, [this] { rebuildEntries(); }, this);
     m_entries->installEventFilter(this);
     layout->addWidget(m_entries, 1);
     m_emptyIcon = new QLabel(m_entries);
@@ -650,14 +741,18 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
                 rebuildFilteredRecords(true);
             });
     connect(m_pagination, &adqt::widgets::AdPagination::currentPageChanged, this, [this](int) {
-        if (!m_updatingPagination)
+        if (!m_updatingPagination) {
+            m_entryViewport->resetScroll();
             rebuildEntries();
+        }
     });
     connect(m_pagination, &adqt::widgets::AdPagination::pageSizeChanged, this,
             [this](int pageSize) {
                 storage::InterfaceSettings().setPinnedWindowManagementPageSize(pageSize);
-                if (!m_updatingPagination)
+                if (!m_updatingPagination) {
+                    m_entryViewport->resetScroll();
                     rebuildEntries();
+                }
             });
     connect(m_source, &PinnedWindowManagementDataSource::changed, this,
             &PinnedWindowManagementPageWidget::handleSourceChanged);
@@ -730,7 +825,14 @@ void PinnedWindowManagementPageWidget::refresh() {
 void PinnedWindowManagementPageWidget::handleSourceChanged() {
     m_dirty = true;
     if (isVisible()) {
-        refresh();
+        if (!m_refreshQueued) {
+            m_refreshQueued = true;
+            QTimer::singleShot(0, this, [this] {
+                m_refreshQueued = false;
+                if (m_dirty && isVisible())
+                    refresh();
+            });
+        }
     } else if (m_previewViewer->isVisible()) {
         m_previewViewer->close();
     }
@@ -745,6 +847,8 @@ void PinnedWindowManagementPageWidget::captureActivePreviewRevision() {
 }
 
 void PinnedWindowManagementPageWidget::rebuildFilteredRecords(bool resetPage) {
+    if (resetPage)
+        m_entryViewport->resetScroll();
     m_filteredRecords.clear();
     const auto filter = history_page::currentFilter(m_sourceFilter, m_dates);
     for (const auto& record : std::as_const(m_records)) {
@@ -783,28 +887,36 @@ void PinnedWindowManagementPageWidget::rebuildPreview() {
     m_previewViewer->close();
     m_previewAltText = altText;
     m_previewRows.clear();
-    adqt::widgets::AdImageItems items;
-    for (const auto& record : std::as_const(m_filteredRecords)) {
-        QUrl source;
-        source.setScheme(QStringLiteral("pinned"));
-        source.setPath(record.id);
-        m_previewRows.insert(record.id, static_cast<int>(items.size()));
-        items.push_back({source, altText});
-    }
-    m_previewModel->setItems(items);
+    for (int index = 0; index < m_filteredRecords.size(); ++index)
+        m_previewRows.insert(m_filteredRecords[index].id, index);
+    m_previewModel->reset(static_cast<int>(m_filteredRecords.size()),
+                          [records = m_filteredRecords, altText](int row) {
+                              QUrl source;
+                              source.setScheme(QStringLiteral("pinned"));
+                              source.setPath(records[row].id);
+                              return adqt::widgets::AdImageItem{source, altText};
+                          });
 }
 
 void PinnedWindowManagementPageWidget::rebuildEntries() {
     const auto [first, last] =
         history_page::pageRange(m_pagination, static_cast<int>(m_filteredRecords.size()));
+    m_pageIds.clear();
+    for (int index = first; index < last; ++index)
+        m_pageIds.push_back(m_filteredRecords[index].id);
+    int focusedRow = -1;
+    for (auto it = m_entryRows.cbegin(); it != m_entryRows.cend(); ++it)
+        if (it.value() && it.value()->isAncestorOf(QApplication::focusWidget()))
+            focusedRow = static_cast<int>(m_pageIds.indexOf(it.key()));
+    const auto wantedRows = m_entryViewport->wantedRows(last - first, focusedRow);
     QSet<QString> retainedIds;
     QVector<QString> nextPageIds;
-    for (int index = first; index < last; ++index) {
-        const QString& id = m_filteredRecords[index].id;
+    for (int row : wantedRows) {
+        const QString& id = m_filteredRecords[first + row].id;
         retainedIds.insert(id);
         nextPageIds.push_back(id);
     }
-    bool layoutChanged = nextPageIds != m_pageIds || m_entryLayout->count() == 0;
+    bool layoutChanged = nextPageIds != m_visibleIds || m_entryLayout->count() == 0;
     for (const QString& id : std::as_const(nextPageIds)) {
         const auto revision = m_source ? m_source->previewRevision(id) : std::nullopt;
         if (m_entryRows.value(id).isNull() || !revision ||
@@ -836,8 +948,7 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
             }
         }
     }
-    m_pageIds = std::move(nextPageIds);
-    bool createdRows = false;
+    m_visibleIds = std::move(nextPageIds);
     QHash<QString, QString> groups;
     if (m_source) {
         for (const auto& group : m_source->groups()) {
@@ -846,10 +957,12 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         }
     }
 
-    for (int index = first; index < last; ++index) {
+    QMap<int, QWidget*> rows;
+    for (int rowIndex : wantedRows) {
+        const int index = first + rowIndex;
         const auto record = m_filteredRecords[index];
         const auto previewRevision = m_source ? m_source->previewRevision(record.id) : std::nullopt;
-        HistoryEntryCard* row = m_entryRows.value(record.id);
+        auto* row = static_cast<PinnedEntryCard*>(m_entryRows.value(record.id).data());
         if (row != nullptr &&
             (!previewRevision || m_entryPreviewRevisions.value(record.id) != *previewRevision ||
              pinnedRowPreviewFailed(row))) {
@@ -864,8 +977,7 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
             row = nullptr;
         }
         if (row == nullptr) {
-            createdRows = true;
-            row = new HistoryEntryCard(m_entries);
+            row = new PinnedEntryCard(m_entries);
             row->setObjectName(QStringLiteral("pinnedManagementRecord"));
             row->setProperty("recordId", record.id);
             auto* details = row->detailsWidget();
@@ -887,18 +999,21 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                                             : tr("Not closed"));
             status->setObjectName(QStringLiteral("pinnedManagementStatus"));
             auto* show = new adqt::widgets::AdButton(details);
+            row->showButton = show;
             show->setObjectName(QStringLiteral("pinnedManagementEntryShow"));
             show->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
             show->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
             show->setText(record.ignored ? tr("Restore") : tr("Show"));
             row->addAction(show);
             auto* remove = new adqt::widgets::AdButton(details);
+            row->removeButton = remove;
             remove->setObjectName(QStringLiteral("pinnedManagementEntryDelete"));
             remove->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
             remove->setAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
             remove->setText(tr("Delete"));
             row->addAction(remove);
             auto* more = new adqt::widgets::AdButton(details);
+            row->moreButton = more;
             more->setObjectName(QStringLiteral("pinnedManagementEntryMore"));
             more->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
             more->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
@@ -956,6 +1071,7 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                 presentation::ActionPopupMenu::Surface::Widget);
 
             auto* preview = new adqt::widgets::AdImage(row);
+            row->preview = preview;
             preview->setObjectName(QStringLiteral("pinnedManagementPreview"));
             adqt::widgets::AdImage::SemanticStyles imageStyles;
             imageStyles.root.borderColor = QColor(Qt::transparent);
@@ -992,11 +1108,11 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                         updateSelectionBar();
                     });
             m_entryRows.insert(record.id, row);
+            row->applyTheme(m_scheme);
             if (previewRevision)
                 m_entryPreviewRevisions.insert(record.id, *previewRevision);
         }
-        auto* checkbox = row->findChild<adqt::widgets::AdCheckbox*>(
-            QStringLiteral("pinnedManagementEntrySelection"));
+        auto* checkbox = row->selectionCheckbox();
         checkbox->setText(
             record.activityUtc().toLocalTime().toString(QStringLiteral("yyyy-MM-dd  HH:mm:ss")));
         checkbox->setAccessibleName(tr("Select record"));
@@ -1004,18 +1120,14 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
             const QSignalBlocker blocker(checkbox);
             checkbox->setChecked(m_selected.contains(record.id));
         }
-        row->findChild<QLabel*>(QStringLiteral("pinnedManagementSourceBadge"))
-            ->setText(sourceLabel(record.creationSource));
-        row->findChild<QLabel*>(QStringLiteral("pinnedManagementGroup"))
-            ->setText(tr("Group: %1").arg(groups.value(record.groupId, tr("Default"))));
-        row->findChild<QLabel*>(QStringLiteral("pinnedManagementStatus"))
-            ->setText(record.ignored  ? tr("Closed")
-                      : record.hidden ? tr("Hidden")
-                                      : tr("Not closed"));
-        row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryShow"))
-            ->setText(record.ignored ? tr("Restore") : tr("Show"));
-        auto* more =
-            row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryMore"));
+        row->sourceLabel()->setText(sourceLabel(record.creationSource));
+        row->summaryLabel()->setText(
+            tr("Group: %1").arg(groups.value(record.groupId, tr("Default"))));
+        row->metadataLabel()->setText(record.ignored  ? tr("Closed")
+                                      : record.hidden ? tr("Hidden")
+                                                      : tr("Not closed"));
+        row->showButton->setText(record.ignored ? tr("Restore") : tr("Show"));
+        auto* more = row->moreButton;
         more->setText(tr("More"));
         more->setToolTip(tr("More actions"));
         more->setAccessibleName(tr("More actions"));
@@ -1048,19 +1160,15 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
             split->setText(label);
             split->setToolTip(label);
         }
-        row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryDelete"))
-            ->setText(tr("Delete"));
+        row->removeButton->setText(tr("Delete"));
         const QString altText = tr("Pinned window image");
-        row->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"))
-            ->setAltText(altText);
-        row->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"))
-            ->setPreviewRow(m_previewRows.value(record.id));
-        if (layoutChanged)
-            m_entryLayout->addWidget(row);
-        row->show();
+        row->preview->setAltText(altText);
+        row->preview->setPreviewRow(m_previewRows.value(record.id));
+        rows.insert(rowIndex, row);
     }
 
     if (m_pageIds.isEmpty()) {
+        m_entryViewport->clear();
         m_emptyTitle->setText(m_records.isEmpty() ? tr("No pinned windows")
                                                   : tr("No matching pinned windows"));
         m_emptyDescription->setText(
@@ -1081,12 +1189,9 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         m_emptyIcon->hide();
         m_emptyTitle->hide();
         m_emptyDescription->hide();
-        if (layoutChanged)
-            m_entryLayout->addStretch(1);
+        m_entryViewport->setRows(last - first, rows);
     }
     updateSelectionBar();
-    if (createdRows)
-        applyTheme(m_scheme);
 }
 
 void PinnedWindowManagementPageWidget::updateHeader() {

@@ -255,6 +255,15 @@ snow_shot_image_codec_decode_first_rgba8(const uint8_t* encoded, uint64_t encode
                                          uint32_t expected_format, SnowShotImageCodecBuffer* output,
                                          char* error, uint64_t error_capacity);
 
+// Requests decoder-native reduction; the Qt adapter performs the final aspect-fit resize.
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
+snow_shot_image_codec_decode_thumbnail_rgba8(const uint8_t* encoded, uint64_t encoded_size,
+                                             uint32_t expected_format, uint32_t maximum_extent,
+                                             void* cancel_context,
+                                             SnowShotImageCodecCancelCallback cancelled,
+                                             SnowShotImageCodecBuffer* output, char* error,
+                                             uint64_t error_capacity);
+
 // Decode only the ICO frame nearest the requested extent (first entry wins ties).
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
 snow_shot_image_codec_decode_icon_rgba8(const uint8_t* encoded, uint64_t encoded_size,

@@ -18,6 +18,10 @@ class QLabel;
 class QVBoxLayout;
 namespace snow_shot::presentation::components {
 class HistoryEntryCard;
+class HistoryEntryViewport;
+namespace history_page {
+class PreviewModel;
+}
 } // namespace snow_shot::presentation::components
 namespace adqt::widgets {
 class AdButton;
@@ -44,6 +48,7 @@ class PinnedWindowManagementDataSource : public QObject {
     }
     virtual void requestFullImage(const QString& id, quint64 requestId) = 0;
     virtual void cancelPreviews() {}
+    virtual void cancelPreview(quint64) {}
     virtual void showRecord(const QString& id) = 0;
     virtual void showRecords(const QStringList& ids) = 0;
     [[nodiscard]] virtual bool revealRecord(const QString&) {
@@ -127,24 +132,27 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     QString m_pendingEntryDeleteId;
     QWidget* m_entries = nullptr;
     QVBoxLayout* m_entryLayout = nullptr;
+    snow_shot::presentation::components::HistoryEntryViewport* m_entryViewport = nullptr;
     QLabel* m_emptyIcon = nullptr;
     QLabel* m_emptyTitle = nullptr;
     QLabel* m_emptyDescription = nullptr;
     QVector<snow_shot::storage::PinnedWindowSummary> m_records;
     QVector<snow_shot::storage::PinnedWindowSummary> m_filteredRecords;
     QVector<QString> m_pageIds;
+    QVector<QString> m_visibleIds;
     QHash<QString, QPointer<snow_shot::presentation::components::HistoryEntryCard>> m_entryRows;
     QHash<QString, quint64> m_entryPreviewRevisions;
     QSet<QString> m_selected;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
     qreal m_backgroundOpacity = 1.0;
     adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
-    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    snow_shot::presentation::components::history_page::PreviewModel* m_previewModel = nullptr;
     QHash<QString, int> m_previewRows;
     QString m_previewAltText;
     QString m_activePreviewId;
     std::optional<quint64> m_activePreviewRevision;
     bool m_dirty = false;
+    bool m_refreshQueued = false;
     bool m_updatingPagination = false;
 };
 
