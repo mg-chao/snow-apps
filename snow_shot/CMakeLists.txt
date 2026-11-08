@@ -8926,6 +8926,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-tool-toggle-tests
         COMMAND snow-shot-screen-recording-controller-tests --tool-toggle-only -platform offscreen)
     set_tests_properties(snow-shot-recording-tool-toggle-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-toolbar-placement-tests
+        COMMAND snow-shot-screen-recording-controller-tests --placement-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-toolbar-placement-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-toolbar-mixed-dpi-placement-tests
+        COMMAND snow-shot-screen-recording-controller-tests --placement-only
+            -platform offscreen:configfile=recording_toolbar_screens.json)
+    set_tests_properties(snow-shot-recording-toolbar-mixed-dpi-placement-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     add_test(NAME snow-shot-recording-eraser-tests
         COMMAND snow-shot-screen-recording-controller-tests --eraser-only -platform offscreen)
     set_tests_properties(snow-shot-recording-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)

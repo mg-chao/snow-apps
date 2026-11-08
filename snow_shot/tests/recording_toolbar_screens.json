@@ -1,0 +1,24 @@
+{
+  "screens": [
+    {
+      "name": "primary",
+      "x": 0,
+      "y": 0,
+      "width": 3840,
+      "height": 2160,
+      "logicalDpi": 144,
+      "logicalBaseDpi": 96
+    },
+    {
+      "name": "left",
+      "x": -3840,
+      "y": 0,
+      "width": 3840,
+      "height": 2160,
+      "logicalDpi": 96,
+      "logicalBaseDpi": 96
+    }
+  ],
+  "windowFrameMargins": false,
+  "synchronousWindowSystemEvents": true
+}
