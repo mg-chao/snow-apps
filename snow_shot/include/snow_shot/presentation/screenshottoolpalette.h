@@ -773,6 +773,7 @@ class ScreenshotToolPalette final : public QWidget,
     void markLayoutDirty(bool rowOrderChanged = false);
     void updateToolbarRowGeometry(bool styleToolbarVisible);
     void setActiveToolButton(adqt::widgets::AdButton* activeButton);
+    bool clearActiveToolState();
     bool setStyleControlsActive(Tool tool);
     QWidget* styleControlsForTool(Tool tool) const;
     [[nodiscard]] bool toolUsesStyleToolbar(Tool tool) const;

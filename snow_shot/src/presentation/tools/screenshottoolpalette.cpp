@@ -1943,9 +1943,8 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_releasingSecondaryResources) {
         return;
     }
-    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible) {
-        setRecordingExportSettingsVisible(false);
-    }
+    const bool closeExportSettings =
+        m_options.recordingDrawingMode && m_recordExportSettingsVisible;
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
                                 (!toolUsesStyleToolbar(tool) ||
                                  (m_activeStyleTool.has_value() && *m_activeStyleTool == tool));
@@ -2008,6 +2007,10 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (activeToolNoop) {
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("palette.active_tool_noop");
         const bool styleControlsChanged = setStyleControlsActive(tool);
+        if (closeExportSettings) {
+            setRecordingExportSettingsVisible(false);
+            return;
+        }
         const bool visibilityChanged = applyActiveToolSecondaryToolbarVisibility();
         if (styleControlsChanged || visibilityChanged) {
             updateToolbarGeometry();
@@ -2104,6 +2107,12 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     updateHistoryActionAvailability();
     const bool styleControlsChanged = setStyleControlsActive(tool);
     secondaryContentsEvicted = finishStyleControlsActivation(tool) || secondaryContentsEvicted;
+    if (closeExportSettings) {
+        // Commit the destination row together with closing Export settings. A
+        // separate collapsed-row commit would re-anchor the native window twice.
+        setRecordingExportSettingsVisible(false);
+        return;
+    }
     const bool visibilityChanged = applyActiveToolSecondaryToolbarVisibility();
     if (visibilityChanged || secondaryContentsEvicted) {
         updateToolbarGeometry();
@@ -2232,19 +2241,23 @@ void ScreenshotToolPalette::setSelectionOpacity(qreal opacity, bool mixed) {
 }
 
 void ScreenshotToolPalette::clearActiveTool() {
+    if (clearActiveToolState()) {
+        updateToolbarGeometry();
+        update();
+        emit visibleContentChanged();
+    }
+}
+
+bool ScreenshotToolPalette::clearActiveToolState() {
     const bool secondaryContentsEvicted = evictSecondaryToolbarContents();
     if (!m_activeTool.has_value() && m_activeToolButton == nullptr && !secondaryContentsEvicted) {
-        return;
+        return false;
     }
     m_activeTool.reset();
     setActiveToolButton(nullptr);
     updateHistoryActionAvailability();
     m_activeStyleTool.reset();
-    if (secondaryContentsEvicted || applyActiveToolSecondaryToolbarVisibility()) {
-        updateToolbarGeometry();
-        update();
-        emit visibleContentChanged();
-    }
+    return secondaryContentsEvicted || applyActiveToolSecondaryToolbarVisibility();
 }
 
 std::optional<ScreenshotToolPalette::Tool> ScreenshotToolPalette::activeTool() const {
@@ -5320,7 +5333,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         toolbar_settings::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     const bool alreadyActive =
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
-        : requestedButton != nullptr ? m_activeToolButton == requestedButton
+        : requestedButton != nullptr             ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     if (alreadyActive) {
         activateDefaultToolbarTool();
@@ -8125,15 +8138,17 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     if (!visible && m_recordSettingsModal != nullptr) {
         m_recordSettingsModal->close();
     }
-    if (visible && m_options.recordingDrawingMode && m_activeTool.has_value()) {
-        clearActiveTool();
-        emit selectRequested();
-    }
     if (m_recordExportSettingsVisible == visible) {
         return;
     }
+    const bool clearDrawingTool =
+        visible && m_options.recordingDrawingMode && m_activeTool.has_value();
     m_recordExportSettingsVisible = visible;
-    emit recordingExportSettingsVisibleChanged(visible);
+    if (clearDrawingTool) {
+        // Retire drawing controls without publishing the temporary collapsed
+        // layout. Placement must observe only the completed settings row.
+        static_cast<void>(clearActiveToolState());
+    }
     setScreenshotToolPaletteButtonActive(m_recordExportSettingsButton, visible);
     if (visible) {
         static_cast<void>(setSecondaryToolbarVisibility(false, false));
@@ -8143,6 +8158,10 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     markLayoutDirty(true);
     updateToolbarGeometry();
     emit visibleContentChanged();
+    emit recordingExportSettingsVisibleChanged(visible);
+    if (clearDrawingTool) {
+        emit selectRequested();
+    }
 }
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
