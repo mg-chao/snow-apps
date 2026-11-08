@@ -153,6 +153,14 @@
             <translation>%1 像素</translation>
         </message>
         <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 自動化」中允許 Snow Shot 存取 Finder，然後再試一次</translation>
+        </message>
+        <message>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>無法讀取選取的影像檔案，請重試</translation>
+        </message>
+        <message>
             <source>No available output filename was found</source>
             <translation>找不到可用的輸出檔名</translation>
         </message>
@@ -161,8 +169,20 @@
             <translation>無法準備要匯出的編輯內容</translation>
         </message>
         <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>檔案管理員無法使用，請開啟後再試一次</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>檔案管理員傳回選取檔案的時間過長，請重試</translation>
+        </message>
+        <message>
             <source>The image could not be loaded</source>
             <translation>無法載入影像</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
         </message>
         <message>
             <source>The save directory is not available</source>
@@ -2352,6 +2372,14 @@ Files:
     <context>
         <name>snow_shot::presentation::ImageEditingWindow</name>
         <message>
+            <source>Add images</source>
+            <translation>新增影像</translation>
+        </message>
+        <message>
+            <source>Add images to start image editing</source>
+            <translation>新增影像以開始影像編輯</translation>
+        </message>
+        <message>
             <source>Configure cloud upload before uploading an image</source>
             <translation>上傳影像前請先設定雲端上傳</translation>
         </message>
@@ -2366,6 +2394,14 @@ Files:
         <message>
             <source>Discard changes?</source>
             <translation>捨棄變更？</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>將影像檔案拖曳至此處，或選擇「新增影像」</translation>
+        </message>
+        <message>
+            <source>Drop images to edit</source>
+            <translation>放開影像以進行編輯</translation>
         </message>
         <message>
             <source>Export completed</source>
@@ -2388,12 +2424,20 @@ Files:
             <translation>影像編輯</translation>
         </message>
         <message>
+            <source>Images</source>
+            <translation>影像</translation>
+        </message>
+        <message>
             <source>Loading image…</source>
             <translation>正在載入影像…</translation>
         </message>
         <message>
             <source>No recognition result is available to export</source>
             <translation>沒有可匯出的辨識結果</translation>
+        </message>
+        <message>
+            <source>Open each image in its own window</source>
+            <translation>在獨立視窗中開啟每張影像</translation>
         </message>
         <message>
             <source>Printing is unavailable</source>
@@ -2410,6 +2454,10 @@ Files:
         <message>
             <source>The image could not be loaded</source>
             <translation>無法載入影像</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>影像過大，或記憶體不足，無法載入</translation>
         </message>
         <message>
             <source>This editing window has unsaved changes</source>

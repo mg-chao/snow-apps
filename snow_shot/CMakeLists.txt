@@ -5333,6 +5333,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/spreadsheet_open_test_support.h
         ${SNOW_SHOT_IMAGE_EDITING_SOURCES}
         tests/imageediting_tests.cpp
+        tests/imageediting_import_tests.cpp
         tests/imageediting_canvas_tests.cpp
         tests/imageediting_document_tests.cpp
         tests/imageediting_translation_tests.cpp
@@ -5470,6 +5471,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_compile_options(snow-shot-pinned-window-tests PRIVATE /bigobj)
     endif()
     target_link_libraries(snow-shot-pinned-window-tests PRIVATE
+        snow_shot_collage_core
         snow_shot_file_manager
         snow_stitch_images_c
         snow_shot_diagnostics
@@ -5539,7 +5541,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     foreach(_snow_editor_regression IN ITEMS
-        close source smart-erase save pin canvas document translation branch history conversion-availability
+        close source smart-erase save pin canvas document translation branch history conversion-availability import
         automatic-selection)
         set(_snow_editor_regression_test
             "snow-shot-image-editing-${_snow_editor_regression}-tests")

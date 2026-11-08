@@ -1135,6 +1135,7 @@ void runImageEditingEntryPointTests() {
     verifySourceLoading(source());
     verifyScrollingSourceImport();
 }
+void runImageEditingImportTests();
 void runImageEditingLifetimeTests();
 void runImageEditingCloseTests();
 void runImageEditingSourceTests();
@@ -1155,6 +1156,10 @@ void runImageEditingTests() {
         QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
     require(font >= 0, "editor fixtures load the bundled font");
     QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+    if (QApplication::arguments().contains(QStringLiteral("--image-editing-import-only"))) {
+        runImageEditingImportTests();
+        return;
+    }
     if (QApplication::arguments().contains(
             QStringLiteral("--image-editing-text-annotations-only"))) {
         ImageEditingSource original;
@@ -1394,7 +1399,7 @@ void runImageEditingTests() {
             auto* surface = editor.canvas()->window();
             require(surface->isVisible() && surface->windowHandle() &&
                         surface->windowHandle()->isVisible(),
-                    "the image editor surface opens with its floating toolbar");
+                    "the image editor surface opens immediately");
 #if defined(Q_OS_WIN)
             if (QGuiApplication::platformName() == QStringLiteral("windows")) {
                 const auto hwnd = reinterpret_cast<HWND>(surface->winId());
@@ -1403,6 +1408,11 @@ void runImageEditingTests() {
             }
 #endif
             auto* toolbar = editor.palette()->window();
+            if (editor.document()->image().isNull()) {
+                require(!toolbar->isVisible(),
+                        "editing controls stay hidden until the first image loads");
+                return;
+            }
             require(toolbar->isVisible() && editor.palette()->mainPanel()->isVisible() &&
                         toolbar->windowHandle() && toolbar->windowHandle()->isVisible(),
                     "main editing toolbar opens immediately without a resize or user interaction");

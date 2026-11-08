@@ -153,6 +153,14 @@
             <translation>%1 像素</translation>
         </message>
         <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试</translation>
+        </message>
+        <message>
+            <source>Could not read the selected image files. Please try again</source>
+            <translation>无法读取选中的图像文件，请重试</translation>
+        </message>
+        <message>
             <source>No available output filename was found</source>
             <translation>未找到可用的输出文件名</translation>
         </message>
@@ -161,8 +169,20 @@
             <translation>无法准备要导出的编辑内容</translation>
         </message>
         <message>
+            <source>The file manager is unavailable. Open it and try again</source>
+            <translation>文件管理器不可用，请打开后重试</translation>
+        </message>
+        <message>
+            <source>The file manager took too long to return the selected files. Please try again</source>
+            <translation>文件管理器返回选中文件的时间过长，请重试</translation>
+        </message>
+        <message>
             <source>The image could not be loaded</source>
             <translation>无法加载图像</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>图像过大，或内存不足，无法加载</translation>
         </message>
         <message>
             <source>The save directory is not available</source>
@@ -2352,6 +2372,14 @@ Files:
     <context>
         <name>snow_shot::presentation::ImageEditingWindow</name>
         <message>
+            <source>Add images</source>
+            <translation>添加图像</translation>
+        </message>
+        <message>
+            <source>Add images to start image editing</source>
+            <translation>添加图像以开始图像编辑</translation>
+        </message>
+        <message>
             <source>Configure cloud upload before uploading an image</source>
             <translation>上传图像前请先配置云上传</translation>
         </message>
@@ -2366,6 +2394,14 @@ Files:
         <message>
             <source>Discard changes?</source>
             <translation>放弃更改？</translation>
+        </message>
+        <message>
+            <source>Drag image files here, or choose add images</source>
+            <translation>将图像文件拖到此处，或选择“添加图像”</translation>
+        </message>
+        <message>
+            <source>Drop images to edit</source>
+            <translation>拖放图像以进行编辑</translation>
         </message>
         <message>
             <source>Export completed</source>
@@ -2388,12 +2424,20 @@ Files:
             <translation>图像编辑</translation>
         </message>
         <message>
+            <source>Images</source>
+            <translation>图像</translation>
+        </message>
+        <message>
             <source>Loading image…</source>
             <translation>正在加载图像…</translation>
         </message>
         <message>
             <source>No recognition result is available to export</source>
             <translation>没有可导出的识别结果</translation>
+        </message>
+        <message>
+            <source>Open each image in its own window</source>
+            <translation>在独立窗口中打开每张图像</translation>
         </message>
         <message>
             <source>Printing is unavailable</source>
@@ -2410,6 +2454,10 @@ Files:
         <message>
             <source>The image could not be loaded</source>
             <translation>无法加载图像</translation>
+        </message>
+        <message>
+            <source>The image is too large or there is not enough memory to load it</source>
+            <translation>图像过大，或内存不足，无法加载</translation>
         </message>
         <message>
             <source>This editing window has unsaved changes</source>

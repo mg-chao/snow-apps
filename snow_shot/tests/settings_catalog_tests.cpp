@@ -2586,6 +2586,9 @@ void globalShortcutActionsHaveStableContracts() {
         {Action::SplitSelectedImages, "other", "quick.split-selected-images",
          "global_shortcuts/split_selected_images",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::EditSelectedImages, "other", "quick.edit-selected-images",
+         "global_shortcuts/edit_selected_images",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
          "global_shortcuts/translate_selected_text",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -2648,7 +2651,7 @@ void globalShortcutActionsHaveStableContracts() {
     }
 
     require(actions.size() == expectations.size() &&
-                expectations.size() == 28 + WINDOW_TOPMOST_ACTION_COUNT,
+                expectations.size() == 29 + WINDOW_TOPMOST_ACTION_COUNT,
             "the global-hotkeys catalog must expose all shortcut actions exactly once");
     const auto* stitch = catalog.itemForShortcut(Action::StitchSelectedImages);
     const auto* stitchSchema = storage::ConfigurationSchema::entry(
@@ -2668,6 +2671,14 @@ void globalShortcutActionsHaveStableContracts() {
                 snow_shot::presentation::icons::custom::outlined::ImageSplitting() &&
             splitSchema && splitSchema->defaultValue.toArray().isEmpty(),
         "split selected images uses its existing icon and starts unassigned");
+    const auto* edit = catalog.itemForShortcut(Action::EditSelectedImages);
+    const auto* editSchema = storage::ConfigurationSchema::entry(
+        QStringLiteral("global_shortcuts/edit_selected_images"));
+    require(edit && edit->title.translated() == QStringLiteral("Edit selected images") &&
+                std::get<settings::SettingsShortcutActionDefinition>(edit->payload).iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::ImageEditing() &&
+                editSchema && editSchema->defaultValue.toArray().isEmpty(),
+            "edit selected images uses its existing icon and starts unassigned");
     const auto* pinnedManagementShortcut =
         catalog.itemForShortcut(Action::OpenPinToScreenManagement);
     const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
@@ -2743,10 +2754,10 @@ void globalShortcutActionsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
-                trayGroups.at(3).options.size() == 7 + WINDOW_TOPMOST_ACTION_COUNT &&
+                trayGroups.at(3).options.size() == 8 + WINDOW_TOPMOST_ACTION_COUNT &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
                 trayGroups.at(4).options.size() == 4 &&
-                trayOptionIds.size() == 31 + WINDOW_TOPMOST_ACTION_COUNT &&
+                trayOptionIds.size() == 32 + WINDOW_TOPMOST_ACTION_COUNT &&
                 trayOptionIds.at(6) == QStringLiteral("quick.screenshot-scrolling") &&
                 trayOptionIds.at(8) == QStringLiteral("quick.screenshot-save") &&
                 trayOptionIds.at(9) == QStringLiteral("quick.screenshot-quick-save") &&
@@ -2762,25 +2773,26 @@ void globalShortcutActionsHaveStableContracts() {
                 trayOptionIds.at(21) == QStringLiteral("quick.global-canvas") &&
                 trayOptionIds.at(22) == QStringLiteral("quick.stitch-selected-images") &&
                 trayOptionIds.at(23) == QStringLiteral("quick.split-selected-images") &&
-                trayOptionIds.at(24) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(25 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                trayOptionIds.at(24) == QStringLiteral("quick.edit-selected-images") &&
+                trayOptionIds.at(25) == QStringLiteral("quick.translate-selected-text") &&
                 trayOptionIds.at(26 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                    QStringLiteral("quick.toggle-global-hotkeys") &&
                 trayOptionIds.at(27 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                trayOptionIds.at(28 + WINDOW_TOPMOST_ACTION_COUNT) ==
                     QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(28 + WINDOW_TOPMOST_ACTION_COUNT) ==
-                    QStringLiteral("tray.show-main-window") &&
                 trayOptionIds.at(29 + WINDOW_TOPMOST_ACTION_COUNT) ==
+                    QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(30 + WINDOW_TOPMOST_ACTION_COUNT) ==
                     QStringLiteral("tray.restart-app") &&
                 trayGroups.at(4).options.at(2).kind ==
                     settings::SettingsTrayMenuOptionKind::RestartApp &&
                 trayGroups.at(4).options.at(2).iconFactory &&
                 trayGroups.at(4).options.at(2).iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::Restart() &&
-                trayOptionIds.at(30 + WINDOW_TOPMOST_ACTION_COUNT) == QStringLiteral("tray.exit") &&
+                trayOptionIds.at(31 + WINDOW_TOPMOST_ACTION_COUNT) == QStringLiteral("tray.exit") &&
                 trayMenuSchema != nullptr && trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -2795,7 +2807,8 @@ void globalShortcutActionsHaveStableContracts() {
          {QStringLiteral("quick.open-pin-to-screen-management"),
           QStringLiteral("quick.hide-show-all-windows"), QStringLiteral("quick.global-canvas"),
           QStringLiteral("quick.stitch-selected-images"),
-          QStringLiteral("quick.split-selected-images")}) {
+          QStringLiteral("quick.split-selected-images"),
+          QStringLiteral("quick.edit-selected-images")}) {
         require(!trayMenuSchema->defaultValue.toArray().contains(id),
                 "optional tray actions must remain hidden by default");
         const auto normalized = storage::ConfigurationSchema::normalize(
@@ -2955,24 +2968,25 @@ void globalShortcutActionsHaveStableContracts() {
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
     require(otherShortcuts != nullptr &&
-                otherShortcuts->items.size() == 7 + WINDOW_TOPMOST_ACTION_COUNT &&
+                otherShortcuts->items.size() == 8 + WINDOW_TOPMOST_ACTION_COUNT &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
                 otherShortcuts->items.at(1).id == QStringLiteral("quick.global-canvas") &&
                 otherShortcuts->items.at(2).id == QStringLiteral("quick.stitch-selected-images") &&
                 otherShortcuts->items.at(3).id == QStringLiteral("quick.split-selected-images") &&
-                otherShortcuts->items.at(4).id == QStringLiteral("quick.translate-selected-text") &&
-                otherShortcuts->items.at(5 + WINDOW_TOPMOST_ACTION_COUNT).id ==
-                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                otherShortcuts->items.at(4).id == QStringLiteral("quick.edit-selected-images") &&
+                otherShortcuts->items.at(5).id == QStringLiteral("quick.translate-selected-text") &&
                 otherShortcuts->items.at(6 + WINDOW_TOPMOST_ACTION_COUNT).id ==
+                    QStringLiteral("quick.toggle-global-hotkeys") &&
+                otherShortcuts->items.at(7 + WINDOW_TOPMOST_ACTION_COUNT).id ==
                     QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
             "Other quick actions expose history, canvas, stitching, splitting, translation, and "
             "hotkey toggles");
 #ifdef Q_OS_WIN
     const auto* windowTopmost = catalog.itemForShortcut(Action::ToggleWindowUnderCursorAlwaysOnTop);
-    require(windowTopmost && otherShortcuts->items.at(5).id == windowTopmost->id &&
+    require(windowTopmost && otherShortcuts->items.at(6).id == windowTopmost->id &&
                 windowTopmost->title.translated() ==
                     QStringLiteral("Toggle always on top for the window under the cursor") &&
-                trayOptionIds.at(25) == windowTopmost->id &&
+                trayOptionIds.at(26) == windowTopmost->id &&
                 !trayMenuSchema->defaultValue.toArray().contains(windowTopmost->id),
             "window-under-cursor topmost follows translation and starts hidden in the tray");
     const settings::SettingsSearchIndex topmostSearch(settings::builtInSettingsRegistry());
@@ -3268,6 +3282,10 @@ void searchIndexIsGeneratedAndRanked() {
     require(!split.isEmpty() &&
                 split.first().location.itemId == QStringLiteral("quick.split-selected-images"),
             "selected-image splitting is searchable by its action title");
+    const auto edit = index.search(QStringLiteral("Edit selected images"));
+    require(!edit.isEmpty() &&
+                edit.first().location.itemId == QStringLiteral("quick.edit-selected-images"),
+            "selected-image editing is searchable by its action title");
     const auto updates = index.search(QStringLiteral("Software updates"));
     require(!updates.isEmpty() &&
                 updates.constFirst().location.itemId == QStringLiteral("updates.mode"),
